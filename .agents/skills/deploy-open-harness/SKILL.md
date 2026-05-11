@@ -1,208 +1,198 @@
 ---
 name: deploy-open-harness
-description: Guides a user through collecting the credentials needed to deploy their own copy of Open Harness, deploying this repo on Vercel, and completing first-run setup. Use for requests about deploying, self-hosting, configuring credentials, or getting started with a fork of this app.
+description: Guides a user through deploying or debugging a self-hosted Open Agents or older Open Harness fork on Vercel. Use for requests about deploying this app, configuring Vercel OAuth, GitHub Apps, Neon, Upstash Redis/KV, AI Gateway, Vercel Sandbox, or first-run setup.
 ---
 
-You are helping a user deploy their own copy of Open Harness.
+You are helping a user deploy or repair a self-hosted Open Agents install on Vercel.
 
-Base your guidance on the current codebase, not on older Harness-era setup assumptions.
+The skill name is legacy. Treat the current project as Open Agents unless the user explicitly says they are working on the older Open Harness app.
 
-## First rule: verify current requirements from the repo
+## First Rule
 
-Before giving deployment advice, read these files if you have not already:
+Verify current requirements from the repo before giving setup advice:
 
 - `README.md`
 - `apps/web/.env.example`
-- `apps/web/lib/db/client.ts`
-- `apps/web/lib/jwe/encrypt.ts`
-- `apps/web/lib/crypto.ts`
-- `apps/web/app/api/auth/signin/vercel/route.ts`
-- `apps/web/app/api/auth/vercel/callback/route.ts`
-- `apps/web/app/api/github/app/install/route.ts`
-- `apps/web/app/api/github/app/callback/route.ts`
-- `apps/web/lib/github/app-auth.ts`
+- `apps/web/lib/auth/config.ts`
 - `apps/web/lib/redis.ts`
-- `apps/web/lib/sandbox/config.ts`
+- `apps/web/lib/rate-limit.ts`
+- `packages/agent/models.ts`
+- `packages/sandbox/vercel/config.ts`
+- `docs/deployment/vercel-open-agents-setup.md` if present
 
-If the code and the docs disagree, trust the code and say so.
+If older docs mention `JWE_SECRET`, `ENCRYPTION_KEY`, `/api/auth/vercel/callback`, or `/api/auth/github/callback`, check current code before repeating them.
 
-Do not rely on `scripts/setup.sh`.
+## Deployment Shape
 
-## Goals
+Use Vercel hosting with:
 
-Help the user:
-
-1. Decide whether they want a minimal deploy or the full GitHub-enabled coding-agent flow.
-2. Collect only the credentials actually required for that scope.
-3. Understand where to obtain each credential.
-4. Deploy this repo on Vercel.
-5. Complete first-run verification.
-6. Leave with a short next-steps checklist.
-
-## Safety rules
-
-- Never ask the user to paste secrets into chat.
-- Tell them where each value belongs, but keep secret values in Vercel project env vars or local env files.
-- Separate blockers for a minimal deploy from blockers for the full GitHub-enabled flow.
-- Be explicit when something is optional.
-
-## Scope the deployment first
-
-Start by determining which path the user wants:
-
-### 1) Minimal deploy
-A working hosted app where the user can deploy it, sign in with Vercel, and use the product without GitHub repo access.
-
-### 2) Full deploy
-Everything in the minimal deploy, plus GitHub account linking, GitHub App installation, private repo access, pushes, and PR creation.
-
-If the user is unsure, recommend **minimal deploy first**, then layer on GitHub.
-
-## Credential checklist
-
-Use this checklist when guiding the user.
-
-### Required for the app to run
-
-- `POSTGRES_URL`
-- `JWE_SECRET`
-
-### Required for a usable hosted deployment
-
-- `ENCRYPTION_KEY`
-- `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID`
-- `VERCEL_APP_CLIENT_SECRET`
-
-### Required for GitHub-enabled repo flows
-
-- `NEXT_PUBLIC_GITHUB_CLIENT_ID`
-- `GITHUB_CLIENT_SECRET`
-- `GITHUB_APP_ID`
-- `GITHUB_APP_PRIVATE_KEY`
-- `NEXT_PUBLIC_GITHUB_APP_SLUG`
-- `GITHUB_WEBHOOK_SECRET`
-
-### Optional
-
-- `REDIS_URL` or `KV_URL`
-- `VERCEL_PROJECT_PRODUCTION_URL`
-- `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`
-- `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`
-- `ELEVENLABS_API_KEY`
-
-## How to explain each credential
-
-### PostgreSQL
-Tell the user to create a Postgres database and copy the connection string into `POSTGRES_URL`.
-
-### JWE secret
-Explain that this is required for session encryption.
-
-Recommended generation command:
-
-```bash
-openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n'
+```text
+Framework: Next.js
+Root Directory: apps/web
+Install Command: bun install
+Build Command: bun run build
+Node.js: 24.x
+Include source files outside root: enabled
 ```
 
-### Encryption key
-Explain that provider tokens are encrypted at rest and the value must be a 64-character hex string.
+Required services:
 
-Recommended generation command:
+- Neon Postgres for `POSTGRES_URL`.
+- Upstash Redis/KV for `REDIS_URL` or `KV_URL` in production. Production rate-limited endpoints fail closed with `Rate limit unavailable` when Redis is absent or unreachable.
+- Vercel AI Gateway for model inference. Vercel deployments can use OIDC automatically; explicit/local auth uses `AI_GATEWAY_API_KEY`.
+- Vercel Sandbox for execution.
 
-```bash
-openssl rand -hex 32
+For Hobby deployments, set:
+
+```env
+OPEN_AGENTS_RESOURCE_PROFILE=hobby
 ```
 
-### Vercel OAuth app
-Tell the user to create a Vercel OAuth app and set:
+## Env Checklist
 
-- Callback URL: `https://YOUR_DOMAIN/api/auth/vercel/callback`
-- For local dev: `http://localhost:3000/api/auth/vercel/callback`
+Minimum runtime:
 
-Store the credentials as:
+```env
+POSTGRES_URL=
+BETTER_AUTH_SECRET=
+```
 
-- `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID`
-- `VERCEL_APP_CLIENT_SECRET`
+Canonical production URL:
 
-### GitHub App
-Tell the user they do not need a separate GitHub OAuth app. Open Harness uses the GitHub App's user authorization flow.
+```env
+BETTER_AUTH_URL=https://YOUR_DOMAIN
+VERCEL_PROJECT_PRODUCTION_URL=https://YOUR_DOMAIN
+NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=https://YOUR_DOMAIN
+```
 
-Tell the user to create a GitHub App and set:
+Vercel sign-in:
 
-- Homepage URL: `https://YOUR_DOMAIN`
-- Callback URL: `https://YOUR_DOMAIN/api/github/app/callback`
-- Setup URL: `https://YOUR_DOMAIN/api/github/app/callback`
-- For local dev: homepage `http://localhost:3000`, callback/setup `http://localhost:3000/api/github/app/callback`
+```env
+NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
+VERCEL_APP_CLIENT_SECRET=
+```
 
-Also tell them to:
+GitHub repo access:
 
-- enable "Request user authorization (OAuth) during installation"
-- use the GitHub App Client ID and Client Secret for `NEXT_PUBLIC_GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`
-- make the app public if they want org installs to work cleanly
-- generate a webhook secret
-- download/generate the private key
+```env
+NEXT_PUBLIC_GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+NEXT_PUBLIC_GITHUB_APP_SLUG=
+GITHUB_WEBHOOK_SECRET=
+```
 
-Store the values as:
+Production rate limiting:
 
-- `NEXT_PUBLIC_GITHUB_CLIENT_ID`
-- `GITHUB_CLIENT_SECRET`
-- `GITHUB_APP_ID`
-- `GITHUB_APP_PRIVATE_KEY`
-- `NEXT_PUBLIC_GITHUB_APP_SLUG`
-- `GITHUB_WEBHOOK_SECRET`
+```env
+REDIS_URL=
+# or
+KV_URL=
+```
 
-Mention that `GITHUB_APP_PRIVATE_KEY` can be stored either as PEM contents with escaped newlines or as a base64-encoded PEM.
+Optional:
 
-### Redis / KV
-Explain that Redis is optional. It improves resumable streams, stop signaling, and caching, but it is not required for the first deploy.
+```env
+AI_GATEWAY_API_KEY=
+RATE_LIMIT_TIMEOUT_MS=
+VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
+ELEVENLABS_API_KEY=
+```
 
-## Deployment flow
+Never ask the user to paste secrets into chat. Put secrets directly in Vercel env vars or local ignored env files.
 
-Guide the user through this sequence:
+## Vercel OAuth App
+
+Create from Vercel Team Settings -> Apps.
+
+Use:
+
+```text
+Website: https://YOUR_DOMAIN
+Authorization Callback URL: https://YOUR_DOMAIN/api/auth/callback/vercel
+```
+
+Scopes:
+
+```text
+openid
+email
+profile
+```
+
+Avoid `offline_access` unless the app explicitly allows it. If login redirects with `invalid_scope`, remove unsupported scopes from both the Vercel app settings and the Better Auth provider request.
+
+Store:
+
+```env
+NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
+VERCEL_APP_CLIENT_SECRET=
+```
+
+## GitHub App
+
+Do not create a separate GitHub OAuth App. Open Agents uses the GitHub App OAuth credentials for identity and GitHub App installation tokens for repo access.
+
+Configure:
+
+```text
+Homepage URL: https://YOUR_DOMAIN
+Callback URL: https://YOUR_DOMAIN/api/auth/callback/github
+Setup URL: https://YOUR_DOMAIN/api/github/app/callback
+Webhook URL: https://YOUR_DOMAIN/api/github/webhook
+```
+
+Recommended repository permissions:
+
+```text
+Contents: Read and write
+Pull requests: Read and write
+Checks: Read-only
+Commit statuses: Read-only
+Deployments: Read-only
+Issues: Read-only
+Metadata: mandatory
+Actions: No access
+Workflows: No access unless editing .github/workflows is required
+```
+
+Manual event subscriptions are not required for the basic install/repo flow. Add PR, issue, push, check, or workflow events only when the code consumes them.
+
+Store the private key as escaped PEM contents or base64-encoded PEM in `GITHUB_APP_PRIVATE_KEY`.
+
+## Deployment Flow
 
 1. Fork the repo.
-2. Import it into Vercel at the repo root.
-3. Add the baseline env vars:
-   - `POSTGRES_URL`
-   - `JWE_SECRET`
-   - `ENCRYPTION_KEY`
-4. Deploy once to get a stable production URL.
-5. Create the Vercel OAuth app using that production URL.
-6. Add `NEXT_PUBLIC_VERCEL_APP_CLIENT_ID` and `VERCEL_APP_CLIENT_SECRET`.
-7. Redeploy.
-8. If the user wants the full GitHub flow, create the GitHub App using the production URL, add the GitHub env vars, and redeploy again.
-9. Optionally add Redis/KV and the production URL vars.
+2. Import it into Vercel and fix project settings.
+3. Add Neon/Postgres and `BETTER_AUTH_SECRET`.
+4. Deploy once to get the stable production URL.
+5. Set `BETTER_AUTH_URL` and production URL env vars.
+6. Create the Vercel OAuth app, add Vercel OAuth env vars, and redeploy.
+7. Create the GitHub App, add GitHub env vars, and redeploy.
+8. Add Upstash Redis/KV before testing project/session creation in production, then redeploy.
+9. Test Vercel login, GitHub App installation, repo selection, session creation, sandbox start, and a simple agent prompt.
 
-If the user already has a custom domain ready, it is fine to use that domain from the start instead of the default `vercel.app` production URL.
+## Failure Map
 
-## First-run verification
+- `invalid_scope` after Vercel sign-in: unsupported OAuth scope, often `offline_access`.
+- `Rate limit unavailable`: missing/unreachable `REDIS_URL` or `KV_URL`, or Redis rate-limit checks timing out. Add Upstash Redis/KV, redeploy, and optionally raise `RATE_LIMIT_TIMEOUT_MS`.
+- No repos after GitHub install: verify app installation scope, GitHub App env vars, setup callback, and private key format.
+- Model calls fail: verify Vercel AI Gateway access/OIDC or set `AI_GATEWAY_API_KEY`.
+- Sandbox start fails on Hobby: set `OPEN_AGENTS_RESOURCE_PROFILE=hobby` and redeploy.
 
-For a minimal deploy, walk the user through:
+## Verification Commands
 
-1. Open the production site.
-2. Sign in with Vercel.
-3. Confirm they land in the app successfully.
-4. Create a session and confirm the basic UI loads.
+```bash
+vercel env ls --scope <team>
+vercel inspect <deployment-url> --scope <team>
+vercel logs <deployment-url> --scope <team>
+```
 
-For the full deploy, also verify:
+After pulling env locally, Redis can be smoke-tested from `apps/web`:
 
-1. GitHub account linking works.
-2. GitHub App installation completes.
-3. Installations or repos appear in the UI.
-4. A repo-backed session can start.
-5. The sandbox starts and the agent can work in the repo.
+```bash
+bun -e 'import Redis from "ioredis"; const r = new Redis(process.env.REDIS_URL ?? process.env.KV_URL); console.log(await r.ping()); r.disconnect();'
+```
 
-If something fails, identify the missing credential or callback mismatch instead of giving generic advice.
-
-## Response format
-
-When helping a user, prefer this structure:
-
-1. **Target scope** — minimal or full.
-2. **Credential checklist** — grouped into required now vs optional later.
-3. **How to get each missing credential** — short, concrete instructions.
-4. **Deploy steps** — only the next actions the user should take.
-5. **Verification** — what to click/test after deploy.
-6. **Next upgrades** — Redis, GitHub, voice, custom domain, snapshot override, only if relevant.
-
-Be concise. Keep the user moving toward the next unblocker.
+Keep responses concise and concrete: identify the next missing setup piece, tell the user exactly where it belongs, then verify after redeploy.

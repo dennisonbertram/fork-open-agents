@@ -83,6 +83,8 @@ GITHUB_WEBHOOK_SECRET=
 ```env
 REDIS_URL=
 KV_URL=
+AI_GATEWAY_API_KEY=
+RATE_LIMIT_TIMEOUT_MS=
 OPEN_AGENTS_RESOURCE_PROFILE=
 VERCEL_PROJECT_PRODUCTION_URL=
 NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=
@@ -90,7 +92,9 @@ VERCEL_SANDBOX_BASE_SNAPSHOT_ID=
 ELEVENLABS_API_KEY=
 ```
 
-- `REDIS_URL` / `KV_URL`: optional skills metadata cache (falls back to in-memory when not configured).
+- `REDIS_URL` / `KV_URL`: required in production for rate-limited session, sandbox, PR, and agent-work endpoints. Some non-critical caches fall back to in-memory when not configured, but production rate limiting fails closed.
+- `AI_GATEWAY_API_KEY`: optional explicit key for Vercel AI Gateway. Vercel deployments can use OIDC auth automatically.
+- `RATE_LIMIT_TIMEOUT_MS`: optional timeout override for Redis-backed rate-limit checks.
 - `OPEN_AGENTS_RESOURCE_PROFILE`: optional deployment resource profile. Set to `hobby` to use Hobby-compatible defaults for chat and sandbox resources; leave unset for standard behavior.
 - `VERCEL_PROJECT_PRODUCTION_URL` / `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`: canonical production URL for metadata and some callback behavior.
 - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID`: optional base snapshot for fresh sandboxes. If unset, sandboxes start from Vercel's standard Sandbox runtime. Use a snapshot created in/accessible to your own Vercel scope.
@@ -138,7 +142,7 @@ ELEVENLABS_API_KEY=
    - make the app public if you want org installs to work cleanly
 
 9. Add the GitHub App env vars and redeploy.
-10. Optionally add Redis/KV, `OPEN_AGENTS_RESOURCE_PROFILE=hobby` for Hobby-compatible resource defaults, the canonical production URL vars, and your own `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` if you want fresh sandboxes to start from a preconfigured image.
+10. Add Redis/KV before testing production project creation. Then optionally add `OPEN_AGENTS_RESOURCE_PROFILE=hobby` for Hobby-compatible resource defaults, the canonical production URL vars, and your own `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` if you want fresh sandboxes to start from a preconfigured image.
 
 ## Local setup
 
@@ -187,6 +191,8 @@ Then set:
 NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=...
 VERCEL_APP_CLIENT_SECRET=...
 ```
+
+Use only the `openid`, `email`, and `profile` scopes unless the Vercel app explicitly supports more. A redirect with `invalid_scope` usually means the app is requesting a scope such as `offline_access` that was not enabled for that app.
 
 ### GitHub App
 

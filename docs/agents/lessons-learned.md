@@ -4,6 +4,7 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 
 ## General / Tooling
 
+- For Open Agents self-hosting, verify deployment requirements from current code and `apps/web/.env.example`; older Open Harness-era notes can mention stale `JWE_SECRET`, `ENCRYPTION_KEY`, or pre-Better Auth callback routes that no longer match the app.
 - Skill discovery de-duplicates by first-seen name, so project skill directories must be scanned before user-level directories to allow project overrides.
 - The system prompt should list all model-invocable skills (including non-user-invocable ones), and reserve user-invocable filtering for the slash-command UI.
 - Glob patterns ending in `**` (for example `"**"` or `"src/**"`) should be treated as recursive, even when `**` is the final segment.
@@ -96,6 +97,10 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 
 ## GitHub App / PR Flows
 
+- For self-hosted Open Agents, the GitHub App uses the GitHub App's OAuth credentials for Better Auth plus installation tokens for repo access; a separate GitHub OAuth app is not required.
+- GitHub App setup URLs for current Better Auth flow are `https://YOUR_DOMAIN/api/auth/callback/github`, `https://YOUR_DOMAIN/api/github/app/callback`, and `https://YOUR_DOMAIN/api/github/webhook`; do not use old `/api/auth/github/*` or `/api/github/app/callback` as the OAuth callback.
+- Start GitHub App permissions narrowly: Contents read/write, Pull requests read/write, Checks read-only, Commit statuses read-only, Deployments read-only, Issues read-only, Metadata mandatory. Leave Actions/Workflows disabled unless editing Actions workflow files becomes a product requirement.
+- The basic Open Agents GitHub App flow does not need manual webhook event subscriptions; installation lifecycle events are delivered for GitHub Apps, and additional events should be added only for features that consume live PR/issue/push/check updates.
 - GitHub App install flow uses a three-path strategy: (1) no linked account -- OAuth authorize URL with explicit `redirect_uri`, callback chains to install with `target_id`; (2) linked account but no installations -- `installations/new/permissions?target_id={githubId}` directly; (3) linked account with installations -- `select_target` for the account/org picker. Disable "Request user authorization (OAuth) during installation" on the GitHub App -- it causes auto-redirect loops for already-authorized users on both `select_target` and `installations/new/permissions`.
 - GitHub App must be made **public** for the org picker to appear during installation. While the app is private, `/installations/select_target` only shows the owner's personal account -- users cannot install on organizations. Use "Make public" in the GitHub App's Danger Zone when ready.
 - Use `/installations/select_target` instead of `/installations/new` for the GitHub App install URL; the latter silently redirects to an existing personal installation's settings page instead of showing the account/org picker.
