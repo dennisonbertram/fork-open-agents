@@ -8,6 +8,7 @@ import {
   GitPullRequestClosed,
   Link2,
   PanelLeft,
+  ShieldCheck,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,8 @@ export function SessionHeader() {
     gitPanelOpen,
     setGitPanelOpen,
     setGitPanelTab,
+    rightPanelView,
+    setRightPanelView,
     hasActionNeeded,
     changesCount,
     hasCommittedChanges,
@@ -84,6 +87,7 @@ export function SessionHeader() {
         : "files";
 
     setGitPanelTab(defaultTab);
+    setRightPanelView("git");
     setGitPanelOpen(true);
   }, [
     session.prNumber,
@@ -92,16 +96,27 @@ export function SessionHeader() {
     changesCount,
     setGitPanelOpen,
     setGitPanelTab,
+    setRightPanelView,
   ]);
 
   const handleGitPanelToggle = useCallback(() => {
-    if (gitPanelOpen) {
+    if (gitPanelOpen && rightPanelView === "git") {
       setGitPanelOpen(false);
       return;
     }
 
     openGitPanel();
-  }, [gitPanelOpen, openGitPanel, setGitPanelOpen]);
+  }, [gitPanelOpen, openGitPanel, rightPanelView, setGitPanelOpen]);
+
+  const handleVerifiedBuildPanelToggle = useCallback(() => {
+    if (gitPanelOpen && rightPanelView === "verified-build") {
+      setGitPanelOpen(false);
+      return;
+    }
+
+    setRightPanelView("verified-build");
+    setGitPanelOpen(true);
+  }, [gitPanelOpen, rightPanelView, setGitPanelOpen, setRightPanelView]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -204,24 +219,51 @@ export function SessionHeader() {
                 size="icon"
                 className={cn(
                   "relative h-7 w-7 shrink-0",
-                  gitPanelOpen && "bg-accent text-accent-foreground",
+                  gitPanelOpen &&
+                    rightPanelView === "git" &&
+                    "bg-accent text-accent-foreground",
                 )}
                 onClick={handleGitPanelToggle}
               >
                 <GitIcon
-                  className={cn("h-4 w-4", !gitPanelOpen && iconColor)}
+                  className={cn(
+                    "h-4 w-4",
+                    !(gitPanelOpen && rightPanelView === "git") && iconColor,
+                  )}
                 />
-                {!gitPanelOpen && hasActionNeeded && (
-                  <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-500" />
-                )}
-                {!gitPanelOpen && !hasActionNeeded && hasCommittedChanges && (
-                  <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-blue-500" />
-                )}
+                {!(gitPanelOpen && rightPanelView === "git") &&
+                  hasActionNeeded && (
+                    <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-amber-500" />
+                  )}
+                {!(gitPanelOpen && rightPanelView === "git") &&
+                  !hasActionNeeded &&
+                  hasCommittedChanges && (
+                    <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-blue-500" />
+                  )}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {`${tooltipText} · ⌘⇧B / Ctrl+Shift+B`}
             </TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 shrink-0",
+                  gitPanelOpen &&
+                    rightPanelView === "verified-build" &&
+                    "bg-accent text-accent-foreground",
+                )}
+                onClick={handleVerifiedBuildPanelToggle}
+              >
+                <ShieldCheck className="h-4 w-4 text-blue-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Verified Build</TooltipContent>
           </Tooltip>
         </div>
       </div>

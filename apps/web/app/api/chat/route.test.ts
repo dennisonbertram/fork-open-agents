@@ -44,6 +44,7 @@ let compareAndSetDefaultResult = true;
 let compareAndSetResults: boolean[] = [];
 let startCalls: unknown[][] = [];
 let routeEvents: string[] = [];
+let verifiedBuildRunCalls: unknown[] = [];
 let preferencesState: {
   autoCommitPush: boolean;
   autoCreatePr: boolean;
@@ -190,6 +191,42 @@ mock.module("@/lib/db/sessions", () => ({
   upsertChatMessageScoped: async () => ({ status: "inserted" as const }),
 }));
 
+mock.module("@/lib/harness/run-mapping", () => ({
+  getVerifiedBuildRunByIdForUser: async () => null,
+  getLatestVerifiedBuildRunForChat: async () => null,
+  getVerifiedBuildEventsForRun: async () => [],
+  startVerifiedBuildRun: async (input: unknown) => {
+    verifiedBuildRunCalls.push(input);
+    return {
+      id: "vbrun-1",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      userId: "user-1",
+      harnessRunId: "harness-run-1",
+      mode: "verified_build",
+      status: "accepted",
+      tenantId: "tenant-1",
+      projectId: "project-1",
+      actorId: "user-1",
+      idempotencyKey: "idem-1",
+      intentSummary: "Fix the bug",
+      selectionReason: "mutating_software_work",
+      lastEventId: null,
+      lastEventName: null,
+      lastEventAt: null,
+      planApprovalState: "not_required",
+      pendingApprovalKind: null,
+      finalReportArtifactId: null,
+      goNoGo: "unknown",
+      createdAt: new Date("2026-01-01T00:00:00Z"),
+      updatedAt: new Date("2026-01-01T00:00:00Z"),
+    };
+  },
+  updateVerifiedBuildRunFromHarnessStatus: async () => {},
+  toVerifiedBuildRunSnapshot: (run: unknown) => run,
+  toVerifiedBuildEventSnapshot: (event: unknown) => event,
+}));
+
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => preferencesState,
 }));
@@ -262,6 +299,7 @@ describe("/api/chat route", () => {
     compareAndSetResults = [];
     startCalls = [];
     routeEvents = [];
+    verifiedBuildRunCalls = [];
     cachedSkillsState = null;
     discoverSkillDirsCalls = [];
     existingUserMessageCount = 0;
@@ -313,6 +351,49 @@ describe("/api/chat route", () => {
     const response = await POST(createValidRequest());
 
     expect(response.ok).toBe(true);
+  });
+
+  test("routes mutating prompts through Verified Build when harness is enabled", async () => {
+    const previousEnv = {
+      HARNESS_ENABLED: process.env.HARNESS_ENABLED,
+      HARNESS_BASE_URL: process.env.HARNESS_BASE_URL,
+      HARNESS_SERVICE_TOKEN: process.env.HARNESS_SERVICE_TOKEN,
+      HARNESS_TENANT_ID: process.env.HARNESS_TENANT_ID,
+      HARNESS_DEFAULT_PROJECT_ID: process.env.HARNESS_DEFAULT_PROJECT_ID,
+    };
+    Object.assign(process.env, {
+      HARNESS_ENABLED: "true",
+      HARNESS_BASE_URL: "http://localhost:4318",
+      HARNESS_SERVICE_TOKEN: "service-token",
+      HARNESS_TENANT_ID: "tenant-1",
+      HARNESS_DEFAULT_PROJECT_ID: "project-1",
+    });
+
+    try {
+      const { POST } = await routeModulePromise;
+      const response = await POST(createValidRequest());
+
+      expect(response.ok).toBe(true);
+      expect(response.headers.get("x-verified-build-run-id")).toBe("vbrun-1");
+      expect(startCalls).toHaveLength(0);
+      expect(verifiedBuildRunCalls).toHaveLength(1);
+      expect(verifiedBuildRunCalls[0]).toMatchObject({
+        input: {
+          sessionId: "session-1",
+          chatId: "chat-1",
+          latestUserMessageId: "user-1",
+          mode: "verified_build",
+        },
+      });
+    } finally {
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 
   test("returns 400 for archived sessions without starting a workflow", async () => {

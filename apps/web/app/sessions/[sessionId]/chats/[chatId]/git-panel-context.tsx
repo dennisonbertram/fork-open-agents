@@ -13,6 +13,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export type GitPanelTab = "diff" | "pr" | "files";
+export type RightPanelView = "git" | "verified-build";
 export type ActiveView = "chat" | "diff" | "file";
 export type DiffScope = "uncommitted" | "branch";
 
@@ -24,6 +25,10 @@ type GitPanelContextValue = {
   /** Active tab within the git panel */
   gitPanelTab: GitPanelTab;
   setGitPanelTab: (tab: GitPanelTab) => void;
+
+  /** Which operator surface is currently shown in the right rail */
+  rightPanelView: RightPanelView;
+  setRightPanelView: (view: RightPanelView) => void;
 
   /** Active view in the main content area (chat messages vs diff) */
   activeView: ActiveView;
@@ -87,6 +92,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
   const isMobile = useIsMobile();
   const [gitPanelOpen, setGitPanelOpen] = useState(false);
   const [gitPanelTab, setGitPanelTab] = useState<GitPanelTab>("files");
+  const [rightPanelView, setRightPanelView] = useState<RightPanelView>("git");
   const [activeView, setActiveView] = useState<ActiveView>("chat");
   const [focusedDiffFile, setFocusedDiffFile] = useState<string | null>(null);
   const [focusedDiffRequestId, setFocusedDiffRequestId] = useState(0);
@@ -128,6 +134,8 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
       setGitPanelOpen,
       gitPanelTab,
       setGitPanelTab,
+      rightPanelView,
+      setRightPanelView,
       activeView,
       setActiveView,
       changesTabDismissed,
@@ -157,6 +165,7 @@ export function GitPanelProvider({ children }: { children: ReactNode }) {
     [
       gitPanelOpen,
       gitPanelTab,
+      rightPanelView,
       activeView,
       changesTabDismissed,
       focusedDiffFile,

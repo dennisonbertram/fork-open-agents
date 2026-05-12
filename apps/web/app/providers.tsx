@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import {
   Suspense,
   createContext,
@@ -16,6 +17,11 @@ import { SWRConfig } from "swr";
 import { GitHubReconnectGate } from "@/components/github-reconnect-gate";
 import { authClient } from "@/lib/auth/client";
 import { FetchError } from "@/lib/swr";
+
+const Agentation = dynamic(
+  () => import("agentation").then((module) => module.Agentation),
+  { ssr: false },
+);
 
 const THEME_STORAGE_KEY = "open-agents-theme";
 const DARK_MODE_MEDIA_QUERY = "(prefers-color-scheme: dark)";
@@ -136,6 +142,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <Suspense fallback={null}>
           <GitHubReconnectGate />
         </Suspense>
+        {process.env.NODE_ENV === "development" && <Agentation />}
       </SWRConfig>
       <Toaster theme={resolvedTheme} />
     </ThemeContext.Provider>

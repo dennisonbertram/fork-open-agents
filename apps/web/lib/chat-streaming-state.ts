@@ -4,6 +4,7 @@ import type {
   WebAgentPrDataPart,
   WebAgentUIMessage,
   WebAgentUIMessagePart,
+  WebAgentVerifiedBuildDataPart,
 } from "@/app/types";
 
 export type ChatUiStatus = "submitted" | "streaming" | "ready" | "error";
@@ -16,6 +17,12 @@ export function isGitDataPart(
   part: WebAgentUIMessagePart,
 ): part is WebAgentCommitDataPart | WebAgentPrDataPart {
   return part.type === "data-commit" || part.type === "data-pr";
+}
+
+export function isVerifiedBuildDataPart(
+  part: WebAgentUIMessagePart,
+): part is WebAgentVerifiedBuildDataPart {
+  return part.type === "data-verified-build";
 }
 
 export function shouldRenderGitDataPart(
@@ -45,6 +52,10 @@ export function hasRenderableAssistantPart(
 
   if (isGitDataPart(part)) {
     return shouldRenderGitDataPart(part);
+  }
+
+  if (isVerifiedBuildDataPart(part)) {
+    return true;
   }
 
   return false;

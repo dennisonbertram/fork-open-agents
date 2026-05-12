@@ -261,6 +261,90 @@ export const chatReads = pgTable(
   ],
 );
 
+export const verifiedBuildRuns = pgTable(
+  "verified_build_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    harnessRunId: text("harness_run_id").notNull().unique(),
+    mode: text("mode", {
+      enum: ["investigation", "verified_build"],
+    }).notNull(),
+    status: text("status").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    projectId: text("project_id"),
+    actorId: text("actor_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    intentSummary: text("intent_summary"),
+    selectionReason: text("selection_reason"),
+    lastEventId: text("last_event_id"),
+    lastEventName: text("last_event_name"),
+    lastEventAt: timestamp("last_event_at"),
+    planApprovalState: text("plan_approval_state", {
+      enum: ["not_required", "pending", "approved", "rejected"],
+    })
+      .notNull()
+      .default("not_required"),
+    pendingApprovalKind: text("pending_approval_kind"),
+    finalReportArtifactId: text("final_report_artifact_id"),
+    goNoGo: text("go_no_go", {
+      enum: ["unknown", "go", "no_go"],
+    })
+      .notNull()
+      .default("unknown"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("verified_build_runs_session_chat_idx").on(
+      table.sessionId,
+      table.chatId,
+    ),
+    index("verified_build_runs_user_status_idx").on(table.userId, table.status),
+    index("verified_build_runs_harness_run_id_idx").on(table.harnessRunId),
+    uniqueIndex("verified_build_runs_idempotency_idx").on(
+      table.tenantId,
+      table.projectId,
+      table.actorId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const verifiedBuildEvents = pgTable(
+  "verified_build_events",
+  {
+    id: text("id").primaryKey(),
+    verifiedBuildRunId: text("verified_build_run_id")
+      .notNull()
+      .references(() => verifiedBuildRuns.id, { onDelete: "cascade" }),
+    harnessEventId: text("harness_event_id").notNull(),
+    eventName: text("event_name").notNull(),
+    eventPayload: jsonb("event_payload").notNull(),
+    eventAt: timestamp("event_at"),
+    receivedAt: timestamp("received_at").defaultNow().notNull(),
+    requestId: text("request_id"),
+  },
+  (table) => [
+    uniqueIndex("verified_build_events_run_event_idx").on(
+      table.verifiedBuildRunId,
+      table.harnessEventId,
+    ),
+    index("verified_build_events_run_received_idx").on(
+      table.verifiedBuildRunId,
+      table.receivedAt,
+    ),
+  ],
+);
+
 export const workflowRuns = pgTable(
   "workflow_runs",
   {
@@ -326,6 +410,10 @@ export type ChatMessage = typeof chatMessages.$inferSelect;
 export type NewChatMessage = typeof chatMessages.$inferInsert;
 export type ChatRead = typeof chatReads.$inferSelect;
 export type NewChatRead = typeof chatReads.$inferInsert;
+export type VerifiedBuildRun = typeof verifiedBuildRuns.$inferSelect;
+export type NewVerifiedBuildRun = typeof verifiedBuildRuns.$inferInsert;
+export type VerifiedBuildEvent = typeof verifiedBuildEvents.$inferSelect;
+export type NewVerifiedBuildEvent = typeof verifiedBuildEvents.$inferInsert;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;

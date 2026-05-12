@@ -28,6 +28,7 @@ import {
   RefreshCw,
   RotateCcw,
   Share2,
+  ShieldCheck,
   Square,
   Trash2,
   X,
@@ -58,6 +59,7 @@ import type {
   WebAgentUIMessage,
   WebAgentUIMessagePart,
   WebAgentUIToolPart,
+  WebAgentVerifiedBuildDataPart,
 } from "@/app/types";
 import {
   AssistantFileLink,
@@ -80,6 +82,7 @@ import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call";
 import { OpenFileProvider } from "@/components/tool-call/open-file-context";
 import { Button } from "@/components/ui/button";
+import { VerifiedBuildStatusBadge } from "@/components/verified-build/status-badge";
 import {
   Dialog,
   DialogClose,
@@ -109,6 +112,7 @@ import {
   hasRenderableAssistantPart,
   isChatInFlight as isChatInFlightStatus,
   isGitDataPart,
+  isVerifiedBuildDataPart,
   shouldKeepCollapsedReasoningStreaming,
   shouldRenderGitDataPart,
   shouldShowThinkingIndicator,
@@ -182,6 +186,10 @@ const FileTabView = dynamic(
 const GitPanel = dynamic(() => import("./git-panel").then((m) => m.GitPanel), {
   ssr: false,
 });
+const VerifiedBuildPanel = dynamic(
+  () => import("./verified-build-panel").then((m) => m.VerifiedBuildPanel),
+  { ssr: false },
+);
 
 const emptySubscribe = () => () => {};
 
@@ -394,6 +402,35 @@ function GitDataPartCard({
 
       {/* Subtitle (commit message when SHA is shown as detail) */}
       {subtitle && <p className="sr-only">{subtitle}</p>}
+    </div>
+  );
+}
+
+function VerifiedBuildDataPartCard({
+  part,
+  onOpenPanel,
+}: {
+  part: WebAgentVerifiedBuildDataPart;
+  onOpenPanel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <div className="h-px flex-1 bg-border/60" />
+      <button
+        type="button"
+        onClick={onOpenPanel}
+        className="group/verified flex max-w-[82%] items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
+      >
+        <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-blue-500" />
+        <span className="truncate text-xs font-medium text-muted-foreground group-hover/verified:text-foreground">
+          Verified Build
+        </span>
+        <VerifiedBuildStatusBadge status={part.data.status} />
+        <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+          {part.data.harnessRunId}
+        </span>
+      </button>
+      <div className="h-px flex-1 bg-border/60" />
     </div>
   );
 }
@@ -1045,6 +1082,9 @@ export function SessionChatContent({
   const {
     activeView,
     gitPanelOpen,
+    rightPanelView,
+    setGitPanelOpen,
+    setRightPanelView,
     shareRequested,
     setShareRequested,
     setHasActionNeeded,
@@ -1054,6 +1094,10 @@ export function SessionChatContent({
     headerActionsRef,
   } = useGitPanel();
   const { preferences } = useUserPreferences();
+  const openVerifiedBuildPanel = useCallback(() => {
+    setRightPanelView("verified-build");
+    setGitPanelOpen(true);
+  }, [setGitPanelOpen, setRightPanelView]);
   const isIosDevice = useMemo(() => {
     if (typeof navigator === "undefined") {
       return false;
@@ -2938,50 +2982,61 @@ export function SessionChatContent({
     [archiveSession, router, updateSessionPullRequest],
   );
 
-  const gitPanelElement = gitPanelOpen ? (
-    <GitPanel
-      session={session}
-      hasRepo={hasRepo}
-      hasExistingPr={hasExistingPr}
-      existingPrUrl={existingPrUrl}
-      prDeploymentUrl={prDeploymentUrl}
-      buildingDeploymentUrl={buildingDeploymentUrl}
-      failedDeploymentUrl={failedDeploymentUrl}
-      isDeploymentStale={isDeploymentStale}
-      isDeploymentFailed={isDeploymentFailed}
-      hasUncommittedGitChanges={hasUncommittedGitChanges}
-      supportsRepoCreation={supportsRepoCreation}
-      hasDiff={Boolean(diff || session.cachedDiff)}
-      canCloseAndArchive={canCloseAndArchive}
-      diffFiles={diff?.files ?? null}
-      diffSummary={diff?.summary ?? null}
-      diffRefreshing={diffRefreshing}
-      onCreateRepoClick={() => setRepoDialogOpen(true)}
-      refreshDiff={refreshDiff}
-      onMerged={handleMerged}
-      onCloseAndArchiveClick={() => setCloseDialogOpen(true)}
-      onFixChecks={handleFixChecks}
-      onFixConflicts={(baseBranchRef) => handleFixConflicts(baseBranchRef)}
-      hasSandbox={sandboxInfo !== null}
-      gitStatus={gitStatus}
-      gitStatusLoading={gitStatusLoading}
-      refreshGitStatus={refreshGitStatus}
-      onCommitted={handleCommitted}
-      isAgentWorking={hasPendingResponse || isChatInFlight}
-      onPrDetected={(pr) => {
-        updateSessionPullRequest(pr);
-        void refreshGitStatus().catch(() => {});
-      }}
-      onGitMessage={upsertSyntheticAssistantGitMessage}
-    />
-  ) : null;
+  const gitPanelElement =
+    gitPanelOpen && rightPanelView === "git" ? (
+      <GitPanel
+        session={session}
+        hasRepo={hasRepo}
+        hasExistingPr={hasExistingPr}
+        existingPrUrl={existingPrUrl}
+        prDeploymentUrl={prDeploymentUrl}
+        buildingDeploymentUrl={buildingDeploymentUrl}
+        failedDeploymentUrl={failedDeploymentUrl}
+        isDeploymentStale={isDeploymentStale}
+        isDeploymentFailed={isDeploymentFailed}
+        hasUncommittedGitChanges={hasUncommittedGitChanges}
+        supportsRepoCreation={supportsRepoCreation}
+        hasDiff={Boolean(diff || session.cachedDiff)}
+        canCloseAndArchive={canCloseAndArchive}
+        diffFiles={diff?.files ?? null}
+        diffSummary={diff?.summary ?? null}
+        diffRefreshing={diffRefreshing}
+        onCreateRepoClick={() => setRepoDialogOpen(true)}
+        refreshDiff={refreshDiff}
+        onMerged={handleMerged}
+        onCloseAndArchiveClick={() => setCloseDialogOpen(true)}
+        onFixChecks={handleFixChecks}
+        onFixConflicts={(baseBranchRef) => handleFixConflicts(baseBranchRef)}
+        hasSandbox={sandboxInfo !== null}
+        gitStatus={gitStatus}
+        gitStatusLoading={gitStatusLoading}
+        refreshGitStatus={refreshGitStatus}
+        onCommitted={handleCommitted}
+        isAgentWorking={hasPendingResponse || isChatInFlight}
+        onPrDetected={(pr) => {
+          updateSessionPullRequest(pr);
+          void refreshGitStatus().catch(() => {});
+        }}
+        onGitMessage={upsertSyntheticAssistantGitMessage}
+      />
+    ) : null;
+
+  const verifiedBuildPanelElement =
+    gitPanelOpen && rightPanelView === "verified-build" ? (
+      <VerifiedBuildPanel sessionId={session.id} chatId={chatInfo.id} />
+    ) : null;
 
   return (
     <>
       {/* Git panel portaled to layout-level for full page height */}
       {gitPanelOpen &&
         panelPortalRef.current &&
+        rightPanelView === "git" &&
         createPortal(gitPanelElement, panelPortalRef.current)}
+      {gitPanelOpen &&
+        panelPortalRef.current &&
+        rightPanelView === "verified-build" &&
+        createPortal(verifiedBuildPanelElement, panelPortalRef.current)}
 
       {/* Header actions portaled from chat-level state */}
       {headerActionsRef.current &&
@@ -3522,6 +3577,20 @@ export function SessionChatContent({
                                       className="max-w-full"
                                     >
                                       <GitDataPartCard part={p} />
+                                    </div>
+                                  );
+                                }
+
+                                if (isVerifiedBuildDataPart(p)) {
+                                  return (
+                                    <div
+                                      key={`${m.id}-${group.renderKey}`}
+                                      className="max-w-full"
+                                    >
+                                      <VerifiedBuildDataPartCard
+                                        part={p}
+                                        onOpenPanel={openVerifiedBuildPanel}
+                                      />
                                     </div>
                                   );
                                 }

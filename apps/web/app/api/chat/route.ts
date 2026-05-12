@@ -2,6 +2,17 @@ import { createUIMessageStreamResponse, type InferUIMessageChunk } from "ai";
 import { checkBotProtection } from "@/lib/botid";
 import { start } from "workflow/api";
 import type { WebAgentUIMessage } from "@/app/types";
+import { createHarnessClient } from "@/lib/harness/client";
+import { getHarnessConfig } from "@/lib/harness/config";
+import { logHarnessEvent } from "@/lib/harness/logger";
+import { getRequestId } from "@/lib/harness/request-id";
+import {
+  startVerifiedBuildRun,
+  toVerifiedBuildRunSnapshot,
+} from "@/lib/harness/run-mapping";
+import type { VerifiedBuildRunSnapshot } from "@/lib/harness/types";
+import { classifyVerifiedBuildTask } from "@/lib/verified-build/task-classifier";
+import { decideVerifiedBuildMode } from "@/lib/verified-build/mode-policy";
 import {
   claimChatActiveStreamId,
   compareAndSetChatActiveStreamId,
@@ -41,6 +52,42 @@ function getLatestUserMessage(messages: WebAgentUIMessage[]) {
   return null;
 }
 
+function createVerifiedBuildStartedStream(params: {
+  run: VerifiedBuildRunSnapshot;
+  requestId: string;
+  reason: string;
+}): ReadableStream<WebAgentUIMessageChunk> {
+  return new ReadableStream<WebAgentUIMessageChunk>({
+    start(controller) {
+      const assistantMessageId = crypto.randomUUID();
+      const textId = `${assistantMessageId}:text`;
+      controller.enqueue({ type: "start", messageId: assistantMessageId });
+      controller.enqueue({
+        type: "data-verified-build",
+        id: `${assistantMessageId}:verified-build`,
+        data: {
+          status: params.run.status,
+          runId: params.run.id,
+          harnessRunId: params.run.harnessRunId,
+          mode: params.run.mode,
+          reason: params.reason,
+          requestId: params.requestId,
+        },
+      });
+      controller.enqueue({ type: "text-start", id: textId });
+      controller.enqueue({
+        type: "text-delta",
+        id: textId,
+        delta:
+          "I’m routing this through Verified Build so the code-changing work runs with gates, evidence, and a final go/no-go report.",
+      });
+      controller.enqueue({ type: "text-end", id: textId });
+      controller.enqueue({ type: "finish", finishReason: "stop" });
+      controller.close();
+    },
+  });
+}
+
 export async function POST(req: Request) {
   // 1. Validate session
   const authResult = await requireAuthenticatedUser();
@@ -68,6 +115,7 @@ export async function POST(req: Request) {
     return chatIdentifiers.response;
   }
   const { sessionId, chatId } = chatIdentifiers;
+  const requestId = getRequestId(req.headers);
 
   // 3. Verify session + chat ownership
   const chatContext = await requireOwnedSessionChat({
@@ -133,6 +181,76 @@ export async function POST(req: Request) {
     persistLatestUserMessage(chatId, messages),
     persistAssistantMessagesWithToolResults(chatId, messages),
   ]);
+
+  const harnessConfig = getHarnessConfig();
+  const classification = classifyVerifiedBuildTask(messages);
+  const modeDecision = decideVerifiedBuildMode({
+    classification,
+    config: harnessConfig,
+  });
+
+  logHarnessEvent("info", {
+    event: "verified_build.mode.selected",
+    request_id: requestId,
+    session_id: sessionId,
+    chat_id: chatId,
+    mode: classification.mode,
+    reason_code: classification.reasonCode,
+    confidence: classification.confidence,
+    direct_mode_allowed: harnessConfig.allowedDirectMode,
+  });
+
+  if (
+    modeDecision.action === "start_verified_build" ||
+    modeDecision.action === "start_investigation"
+  ) {
+    const latestUserMessage = getLatestUserMessage(messages);
+    if (!latestUserMessage) {
+      return Response.json(
+        { error: "A user message is required" },
+        { status: 400 },
+      );
+    }
+
+    try {
+      const run = await startVerifiedBuildRun({
+        client: createHarnessClient(harnessConfig),
+        input: {
+          sessionId,
+          chatId,
+          userId,
+          latestUserMessageId: latestUserMessage.id,
+          intentSummary: classification.summary,
+          selectionReason: modeDecision.reason,
+          mode:
+            modeDecision.action === "start_investigation"
+              ? "investigation"
+              : "verified_build",
+          requestId,
+        },
+      });
+
+      return createUIMessageStreamResponse({
+        stream: createVerifiedBuildStartedStream({
+          run: toVerifiedBuildRunSnapshot(run),
+          requestId,
+          reason: modeDecision.reason,
+        }),
+        headers: {
+          "x-verified-build-run-id": run.id,
+          "x-request-id": requestId,
+        },
+      });
+    } catch {
+      return Response.json(
+        {
+          error: "Verified Build could not be started",
+          requestId,
+        },
+        { status: 502, headers: { "X-Request-ID": requestId } },
+      );
+    }
+  }
 
   // Start the durable workflow
   const run = await start(runAgentWorkflow, [

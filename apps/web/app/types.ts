@@ -65,11 +65,21 @@ export type WebAgentWorkspaceStatusData = {
   message: string;
 };
 
+export type WebAgentVerifiedBuildData = {
+  status: string;
+  runId: string;
+  harnessRunId: string;
+  mode: "investigation" | "verified_build";
+  reason: string;
+  requestId: string;
+};
+
 export type WebAgentDataParts = {
   commit: WebAgentCommitData;
   pr: WebAgentPrData;
   snippet: WebAgentSnippetData;
   "workspace-status": WebAgentWorkspaceStatusData;
+  "verified-build": WebAgentVerifiedBuildData;
 };
 
 // All types derived from the agent
@@ -92,6 +102,10 @@ export type WebAgentPrDataPart = Extract<
 export type WebAgentSnippetDataPart = Extract<
   WebAgentUIMessagePart,
   { type: "data-snippet" }
+>;
+export type WebAgentVerifiedBuildDataPart = Extract<
+  WebAgentUIMessagePart,
+  { type: "data-verified-build" }
 >;
 export type WebAgentUIToolPart =
   | DynamicToolUIPart
