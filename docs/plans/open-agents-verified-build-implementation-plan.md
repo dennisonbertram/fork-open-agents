@@ -7,7 +7,7 @@ Primary source strategy: `/Users/dennisonbertram/Develop/autonomous-build-infra/
 
 This plan turns Open Agents into a consumer of the AutoBuilder harness verified-build control plane. Open Agents keeps ownership of conversation, intent, session state, product UI, user approvals, and sandbox provider wiring. The harness owns governed mutation, workcell execution, gates, evidence, repair, cancellation truth, audit, trace, metrics, and final go/no-go reports.
 
-Read [Verified Build Roadmap](verified-build-roadmap.md) first to understand where the build currently is and what evidence is required to advance. Then read [Verified Build Observability Requirements](verified-build-observability-requirements.md), [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md), and [Verified Build Contracts V0](verified-build-contracts-v0.md).
+Read [Verified Build Roadmap](verified-build-roadmap.md) first to understand where the build currently is and what evidence is required to advance. Then read [Verified Build Builder Observability](verified-build-builder-observability.md) so the implementation process itself stays inspectable. Runtime/product observability for completed Verified Build runs lives in [Verified Build Runtime Observability Requirements](verified-build-observability-requirements.md). The product and contract foundations live in [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md) and [Verified Build Contracts V0](verified-build-contracts-v0.md).
 
 The target user promise is:
 

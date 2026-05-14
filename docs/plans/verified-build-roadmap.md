@@ -12,7 +12,8 @@ This roadmap is the short, durable status map for building Verified Build. It ex
 
 The deeper model docs are:
 
-- [Verified Build Observability Requirements](verified-build-observability-requirements.md)
+- [Verified Build Builder Observability](verified-build-builder-observability.md)
+- [Verified Build Runtime Observability Requirements](verified-build-observability-requirements.md)
 - [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md)
 - [Verified Build Contracts V0](verified-build-contracts-v0.md)
 - [Open Agents Verified Build Implementation Plan](open-agents-verified-build-implementation-plan.md)
@@ -25,14 +26,14 @@ The repo-local agent skill is:
 
 Current step: **Step 2, Executable Contracts**.
 
-Step 0 defined the concept model. Step 1 made the planning and observability foundation durable enough for future agents. Step 2 must not advance until the contracts are executable, tested, and observable in deterministic fixtures.
+Step 0 defined the concept model. Step 1 made the builder/process observability foundation durable enough for future agents. Step 2 must not advance until the contracts are executable, tested, and observable in deterministic fixtures.
 
 ## Roadmap
 
 | Step | Name | Goal | Status |
 | --- | --- | --- | --- |
 | 0 | Concept Model | Define the coordinator, workers, trust loop, artifacts, and evidence model. | Complete |
-| 1 | Observability Foundation | Save the repo-local guidance future agents need before implementation starts. | Complete |
+| 1 | Builder Observability Foundation | Save the repo-local guidance future agents need before implementation starts. | Complete |
 | 2 | Executable Contracts | Turn artifact docs into typed schemas and validation tests. | Next |
 | 3 | Dry-Run Coordinator | Prove the coordinator loop with mocked workers and deterministic traces. | Not started |
 | 4 | Harness Integration | Connect the coordinator contracts to harness gates, audit, cancellation, and reports. | Not started |
@@ -69,16 +70,18 @@ Exit gate:
 
 Status: complete.
 
-### Step 1: Observability Foundation
+### Step 1: Builder Observability Foundation
 
-Goal: make future Verified Build work observable before runtime implementation starts.
+Goal: make the process of building Verified Build observable before runtime implementation starts.
 
 Build:
 
 - repo-local `verified-build-observability` skill;
 - roadmap status and exit gates;
-- observability requirements;
+- builder observability requirements;
+- runtime observability requirements clearly separated as a later product capability;
 - required reading order for future agents;
+- build map and work packet expectations;
 - rules that prevent implementation from advancing without evidence;
 - links between the roadmap, observability requirements, contracts, operating model, and implementation plan.
 
@@ -86,8 +89,9 @@ Completion evidence:
 
 - `.agents/skills/verified-build-observability/SKILL.md` exists;
 - the skill tells future agents which docs to read before touching Verified Build;
-- this roadmap identifies observability as the first implementation step;
-- observability requirements define what future agents need to inspect each build phase;
+- [Verified Build Builder Observability](verified-build-builder-observability.md) defines what future agents need to inspect the implementation process;
+- [Verified Build Runtime Observability Requirements](verified-build-observability-requirements.md) defines the later runtime/product observability surface;
+- this roadmap identifies builder observability as the first implementation step;
 - `git diff --check` passes;
 - `bun --bun run ci` passes.
 

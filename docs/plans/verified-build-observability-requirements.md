@@ -1,10 +1,10 @@
-# Verified Build Observability Requirements
+# Verified Build Runtime Observability Requirements
 
 Prepared: 2026-05-14
 
 ## Purpose
 
-Verified Build should be observable before it is powerful. The system should not depend on a coordinator saying "done" because the transcript looks plausible. It should expose enough structured state that a human, a coordinator, or a future coding agent can inspect the build and understand:
+Verified Build runs should be observable before they are powerful. The system should not depend on a coordinator saying "done" because the transcript looks plausible. It should expose enough structured state that a human, a coordinator, or a future coding agent can inspect a running or completed build and understand:
 
 - what the user asked for;
 - what the coordinator planned;
@@ -15,11 +15,12 @@ Verified Build should be observable before it is powerful. The system should not
 - what was repaired;
 - why the final decision is `go` or `no_go`.
 
-This document defines the observability needed to build Verified Build confidently inside Open Agents.
+This document defines runtime/product observability for future Verified Build runs. For the observability needed by humans and coding agents while building Verified Build itself, read [Verified Build Builder Observability](verified-build-builder-observability.md) first.
 
 Related docs:
 
 - [Verified Build Roadmap](verified-build-roadmap.md)
+- [Verified Build Builder Observability](verified-build-builder-observability.md)
 - [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md)
 - [Verified Build Contracts V0](verified-build-contracts-v0.md)
 - [Open Agents Verified Build Implementation Plan](open-agents-verified-build-implementation-plan.md)
@@ -36,45 +37,42 @@ If a worker can claim something is complete, the claim should be tied to contrac
 
 If the system can report `go`, the report should map every required behavior to passing evidence.
 
-## What A Future Agent Needs
+## What A Future Runtime Inspector Needs
 
-A future coding agent working in this repo needs a small set of reliable signals before it can drive the build flow:
+A future coordinator, operator, or coding agent inspecting a Verified Build run needs a small set of reliable runtime signals before it can trust the build flow:
 
-- current roadmap step;
-- current acceptance gate;
-- commands that prove the gate;
-- contract schemas and fixtures;
-- deterministic traces for passing and failing runs;
+- run id, status, owner, mode, and intent summary;
+- current coordinator state;
+- current workcell states;
+- assigned and forbidden surfaces;
 - event names and state transitions;
+- artifact refs and redaction status;
 - evidence coverage matrix;
+- gate results;
+- integration attempts;
 - failure and repair history;
-- final report status and rationale;
-- redaction status for artifacts and logs.
+- final report status and rationale.
 
-These signals should live in the repo or in queryable runtime state, not only in chat history.
+The builder-process version of these signals lives in [Verified Build Builder Observability](verified-build-builder-observability.md). The runtime version should live in queryable state, not only in agent chat history.
 
 ## Observability Layers
 
-### 1. Roadmap Observability
+### 1. Roadmap Linkage
 
-Purpose: make the build process itself visible.
+Purpose: make sure runtime observability work remains tied to the build roadmap.
 
 Required artifacts:
 
-- repo-local `verified-build-observability` skill;
 - [Verified Build Roadmap](verified-build-roadmap.md)
-- current step;
-- status for every roadmap step;
-- exit gate for every step;
-- proof required to advance;
-- links to relevant docs, tests, fixtures, and commands.
+- [Verified Build Builder Observability](verified-build-builder-observability.md)
+- runtime observability step gates;
+- links to runtime tests, fixtures, event definitions, and UI surfaces.
 
 Minimum requirement before implementation:
 
-- future agents have a local skill that tells them to read this observability plan before touching Verified Build;
-- the roadmap identifies the current step and the next exit gate;
-- every later step has an exit gate;
-- the roadmap update rules prevent silent advancement.
+- future agents have a local skill that tells them to read the builder observability plan before touching Verified Build;
+- runtime observability work has an explicit roadmap gate;
+- runtime event, evidence, trace, and artifact expectations are linked from the relevant step.
 
 Agent-readable question:
 
@@ -386,7 +384,7 @@ These fixtures are the first proof that the trust loop is real.
 
 | Roadmap step | Observability required before starting |
 | --- | --- |
-| Step 1: Observability Foundation | Roadmap, observability requirements, and repo-local skill exist. |
+| Step 1: Builder Observability Foundation | Roadmap, builder observability doc, runtime observability requirements, and repo-local skill exist. |
 | Step 2: Executable Contracts | Step 1 is complete; roadmap links to contract docs. |
 | Step 3: Dry-Run Coordinator | Contract schemas, validation tests, and fixtures exist. |
 | Step 4: Harness Integration | Dry-run event timeline and evidence matrix exist. |

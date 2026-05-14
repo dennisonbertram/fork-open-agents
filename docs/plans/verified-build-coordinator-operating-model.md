@@ -6,7 +6,7 @@ Prepared: 2026-05-14
 
 Verified Build turns Open Agents from a single coding agent in a sandbox into a governed software-building organization.
 
-The current build status lives in [Verified Build Roadmap](verified-build-roadmap.md). The observability requirements for making this build process inspectable live in [Verified Build Observability Requirements](verified-build-observability-requirements.md). The concrete v0 artifact shapes for this model live in [Verified Build Contracts V0](verified-build-contracts-v0.md).
+The current build status lives in [Verified Build Roadmap](verified-build-roadmap.md). The process-level observability requirements for humans and coding agents building this system live in [Verified Build Builder Observability](verified-build-builder-observability.md). Runtime/product observability for future Verified Build runs lives in [Verified Build Runtime Observability Requirements](verified-build-observability-requirements.md). The concrete v0 artifact shapes for this model live in [Verified Build Contracts V0](verified-build-contracts-v0.md).
 
 The coordinator is a model agent with tools and memory, but it is not the primary coder. It communicates with the user, maintains intent, commissions research, decomposes work, launches scoped workers or sub-coordinators, integrates results, and decides whether evidence is strong enough to report go or no-go.
 

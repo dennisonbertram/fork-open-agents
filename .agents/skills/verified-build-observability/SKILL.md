@@ -1,26 +1,27 @@
 ---
 name: verified-build-observability
-description: Use when planning, designing, implementing, or reviewing Verified Build, autonomous build coordination, coordinator tools, workcells, evidence, repair loops, harness integration, or related observability. Ensures future agents read the roadmap and observability requirements before changing code.
+description: Use when planning, designing, implementing, or reviewing Verified Build, autonomous build coordination, coordinator tools, workcells, evidence, repair loops, harness integration, or related observability. Ensures future agents read the roadmap and builder observability requirements before changing code.
 ---
 
 # Verified Build Observability
 
 Use this skill before changing any Verified Build behavior, contracts, coordinator logic, workcell execution, evidence handling, repair flow, harness integration, or UI.
 
-The goal is to keep Verified Build inspectable before it becomes powerful. Do not treat a coordinator transcript as proof of completion. Completion must be backed by contracts, events, evidence, gates, repair history, and a final go/no-go report.
+The first goal is to keep the process of building Verified Build inspectable for humans and future agents. Runtime observability for autonomous build runs comes later. Do not treat a coordinator transcript as proof of completion. Completion must be backed by contracts, events, evidence, gates, repair history, and a final go/no-go report.
 
 ## Required Reading Order
 
 1. Read `docs/plans/verified-build-roadmap.md` to identify the current roadmap step and exit gate.
-2. Read `docs/plans/verified-build-observability-requirements.md` to identify the required observability for that step.
-3. Read `docs/plans/verified-build-contracts-v0.md` when touching schemas, fixtures, evidence, workcells, integrations, or final reports.
-4. Read `docs/plans/verified-build-coordinator-operating-model.md` when touching coordinator behavior, tools, delegation, research packets, or repair loops.
-5. Read `docs/plans/open-agents-verified-build-implementation-plan.md` when touching Open Agents integration, harness routes, persistence, UI, or production readiness.
+2. Read `docs/plans/verified-build-builder-observability.md` to identify how future agents should observe and continue the implementation process.
+3. Read `docs/plans/verified-build-observability-requirements.md` when touching runtime/product observability for Verified Build runs.
+4. Read `docs/plans/verified-build-contracts-v0.md` when touching schemas, fixtures, evidence, workcells, integrations, or final reports.
+5. Read `docs/plans/verified-build-coordinator-operating-model.md` when touching coordinator behavior, tools, delegation, research packets, or repair loops.
+6. Read `docs/plans/open-agents-verified-build-implementation-plan.md` when touching Open Agents integration, harness routes, persistence, UI, or production readiness.
 
 ## Operating Rules
 
 - Start by naming the current roadmap step and the exit gate for the requested work.
-- Build observability before runtime behavior for the same capability.
+- Build builder/process observability before runtime behavior for the same capability.
 - Do not advance a roadmap step without evidence listed in the roadmap.
 - Do not implement real workers before contract validation, fixture traces, and dry-run evidence matrices exist.
 - Do not let workers claim completion without a valid completion packet.
@@ -34,6 +35,9 @@ The goal is to keep Verified Build inspectable before it becomes powerful. Do no
 For every Verified Build change, check whether the change adds or alters:
 
 - roadmap step or exit gate;
+- builder work packet expectations;
+- implementation file map;
+- settled decision;
 - contract schema;
 - fixture trace;
 - coordinator event;

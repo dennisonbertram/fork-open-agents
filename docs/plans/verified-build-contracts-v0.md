@@ -5,7 +5,7 @@ Status: draft contract layer for the coordinator operating model
 
 ## Purpose
 
-This document turns the [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md) into concrete v0 contracts. The current build sequence lives in [Verified Build Roadmap](verified-build-roadmap.md), and the required inspection/debugging surface lives in [Verified Build Observability Requirements](verified-build-observability-requirements.md).
+This document turns the [Verified Build Coordinator Operating Model](verified-build-coordinator-operating-model.md) into concrete v0 contracts. The current build sequence lives in [Verified Build Roadmap](verified-build-roadmap.md), the process-level builder guidance lives in [Verified Build Builder Observability](verified-build-builder-observability.md), and the future runtime inspection/debugging surface lives in [Verified Build Runtime Observability Requirements](verified-build-observability-requirements.md).
 
 These contracts are the nouns that make coordinator tools legible. The coordinator should not reason in low-level mechanics such as "reserve scope" or "ask for evidence." It should create and inspect artifacts with clear meaning:
 
