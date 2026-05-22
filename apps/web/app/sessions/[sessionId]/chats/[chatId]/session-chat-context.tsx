@@ -163,6 +163,8 @@ type SessionChatContextValue = {
   refreshSkills: () => Promise<void>;
   /** Update session snapshot info after saving */
   updateSessionSnapshot: (snapshotUrl: string, snapshotCreatedAt: Date) => void;
+  /** Update the sandbox runtime UX mode for this session */
+  updateRuntimeMode: (runtimeMode: Session["runtimeMode"]) => Promise<void>;
   /** Preferred sandbox mode to request when creating a new sandbox */
   preferredSandboxType: string;
   /** Whether the current sandbox mode supports git diff */
@@ -252,6 +254,7 @@ type SessionChatMetadataContextValue = Pick<
   | "updateSessionTitle"
   | "updateChatModel"
   | "updateSessionSnapshot"
+  | "updateRuntimeMode"
   | "preferredSandboxType"
   | "supportsDiff"
   | "supportsRepoCreation"
@@ -745,6 +748,34 @@ export function SessionChatProvider({
     [],
   );
 
+  const updateRuntimeMode = useCallback(
+    async (runtimeMode: Session["runtimeMode"]) => {
+      const previousSession = sessionRecord;
+      const optimisticSession: Session = {
+        ...sessionRecord,
+        runtimeMode,
+      };
+
+      setSessionRecord(optimisticSession);
+
+      const res = await fetch(`/api/sessions/${sessionRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ runtimeMode }),
+      });
+
+      const data = (await res.json()) as { session?: Session; error?: string };
+
+      if (!res.ok) {
+        setSessionRecord(previousSession);
+        throw new Error(data.error ?? "Failed to update runtime mode");
+      }
+
+      setSessionRecord(data.session ?? optimisticSession);
+    },
+    [sessionRecord],
+  );
+
   const setSandboxTypeFromUnknown = useCallback((type: unknown) => {
     const sandboxType = asKnownSandboxType(type);
     if (!sandboxType) return;
@@ -1095,6 +1126,7 @@ export function SessionChatProvider({
       updateSessionTitle,
       updateChatModel,
       updateSessionSnapshot,
+      updateRuntimeMode,
       preferredSandboxType,
       supportsDiff,
       supportsRepoCreation,
@@ -1121,6 +1153,7 @@ export function SessionChatProvider({
       updateSessionTitle,
       updateChatModel,
       updateSessionSnapshot,
+      updateRuntimeMode,
       preferredSandboxType,
       supportsDiff,
       supportsRepoCreation,

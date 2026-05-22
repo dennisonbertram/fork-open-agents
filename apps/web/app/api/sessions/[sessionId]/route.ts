@@ -11,6 +11,7 @@ import { getServerSession } from "@/lib/session/get-server-session";
 interface UpdateSessionRequest {
   title?: string;
   status?: "running" | "completed" | "failed" | "archived";
+  runtimeMode?: "classic" | "managed_runtime";
   linesAdded?: number;
   linesRemoved?: number;
   prNumber?: number;
@@ -65,6 +66,14 @@ export async function PATCH(
     body = (await req.json()) as UpdateSessionRequest;
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  if (
+    body.runtimeMode !== undefined &&
+    body.runtimeMode !== "classic" &&
+    body.runtimeMode !== "managed_runtime"
+  ) {
+    return Response.json({ error: "Invalid runtime mode" }, { status: 400 });
   }
 
   const shouldStopSandboxAfterArchive =

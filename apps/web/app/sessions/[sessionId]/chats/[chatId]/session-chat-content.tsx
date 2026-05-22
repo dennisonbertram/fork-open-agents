@@ -27,8 +27,11 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  ScanEye,
+  ScrollText,
   Share2,
   ShieldCheck,
+  Settings2,
   Square,
   Trash2,
   X,
@@ -93,6 +96,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 import {
   Tooltip,
@@ -1224,6 +1235,7 @@ export function SessionChatContent({
     unarchiveSession: _unarchiveSession,
     updateChatModel,
     updateSessionTitle,
+    updateRuntimeMode,
     preferredSandboxType,
     supportsDiff,
     supportsRepoCreation,
@@ -2739,6 +2751,7 @@ export function SessionChatContent({
   const devServer = useDevServer({
     sessionId: session.id,
     canRun: canRunDevServer,
+    runtimeMode: session.runtimeMode,
   });
   const codeEditor = useCodeEditor({
     sessionId: session.id,
@@ -3045,6 +3058,50 @@ export function SessionChatContent({
           <div className="flex items-center gap-1">
             {canRunDevServer && (
               <>
+                <DropdownMenu>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="hidden h-7 w-7 sm:inline-flex"
+                          aria-label="Runtime mode"
+                        >
+                          <Settings2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">Runtime mode</TooltipContent>
+                  </Tooltip>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>Runtime mode</DropdownMenuLabel>
+                    <DropdownMenuRadioGroup
+                      value={session.runtimeMode}
+                      onValueChange={(value) => {
+                        if (
+                          value !== "classic" &&
+                          value !== "managed_runtime"
+                        ) {
+                          return;
+                        }
+                        void updateRuntimeMode(value).catch((error) => {
+                          console.error(
+                            "Failed to update runtime mode:",
+                            error,
+                          );
+                        });
+                      }}
+                    >
+                      <DropdownMenuRadioItem value="classic">
+                        Classic
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="managed_runtime">
+                        Managed runtime
+                      </DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuContent>
+                </DropdownMenu>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <span className="hidden sm:inline-flex">
@@ -3052,6 +3109,7 @@ export function SessionChatContent({
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        aria-label={codeEditor.menuLabel}
                         onClick={() => void codeEditor.handleOpen()}
                         disabled={isCodeEditorActionDisabled}
                       >
@@ -3079,6 +3137,7 @@ export function SessionChatContent({
                             variant="ghost"
                             size="icon"
                             className="h-5 w-5 rounded-sm"
+                            aria-label="Open dev server"
                             onClick={() => void devServer.handlePrimaryAction()}
                           >
                             <Globe className="h-3 w-3" />
@@ -3088,12 +3147,68 @@ export function SessionChatContent({
                           Open dev server
                         </TooltipContent>
                       </Tooltip>
+                      {devServer.showManagedActions ? (
+                        <>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 rounded-sm"
+                                aria-label="Open dev server logs"
+                                onClick={() => void devServer.handleOpenLogs()}
+                              >
+                                <ScrollText className="h-3 w-3" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              Open dev server logs
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-5 w-5 rounded-sm"
+                                aria-label="Run browser check"
+                                disabled={
+                                  devServer.browserCheckState.status ===
+                                  "running"
+                                }
+                                onClick={() =>
+                                  void devServer.handleBrowserCheck()
+                                }
+                              >
+                                {devServer.browserCheckState.status ===
+                                "running" ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <ScanEye className="h-3 w-3" />
+                                )}
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">
+                              {devServer.browserCheckState.status === "running"
+                                ? "Running browser check..."
+                                : devServer.browserCheckState.status ===
+                                    "passed"
+                                  ? "Browser check passed"
+                                  : devServer.browserCheckState.status ===
+                                      "failed"
+                                    ? devServer.browserCheckState.summary
+                                    : "Run browser check"}
+                            </TooltipContent>
+                          </Tooltip>
+                        </>
+                      ) : null}
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-5 w-5 rounded-sm"
+                            aria-label="Stop dev server"
                             onClick={() => void devServer.handleStopAction()}
                           >
                             <Square className="h-2.5 w-2.5 fill-current" />
@@ -3112,6 +3227,11 @@ export function SessionChatContent({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          aria-label={
+                            devServer.state.status === "starting"
+                              ? "Starting dev server"
+                              : "Stopping dev server"
+                          }
                           disabled
                         >
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -3130,6 +3250,7 @@ export function SessionChatContent({
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          aria-label="Start dev server"
                           onClick={() => void devServer.handlePrimaryAction()}
                         >
                           <Play className="h-3.5 w-3.5 fill-current" />

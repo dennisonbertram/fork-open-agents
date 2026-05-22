@@ -15,7 +15,12 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - AI SDK stream handles may return `PromiseLike` values (not full `Promise`), so avoid methods like `.finally()` and use `then`/`catch` patterns that work with `PromiseLike`.
 - After schema edits, review generated Drizzle migrations for unrelated schema drift changes before committing (for example defaults on untouched columns), since `drizzle-kit generate` can include those alongside intended changes.
 - `bunx @vercel/config validate` executes the CLI under Node via its shebang and cannot parse TypeScript-style `vercel.ts` imports; use `bunx --bun @vercel/config validate` (or `bun node_modules/@vercel/config/dist/cli.js validate`) for reliable local validation.
+- In Codex desktop/non-interactive shells, `bun run <script>` can still execute native CLIs through the app's bundled Node runtime; if `oxfmt`/Ultracite fails to load native bindings, rerun the same package script as `bun --bun run <script>` (for example `bun --bun run ci`) instead of invoking tool binaries directly.
 - Successful Vercel CLI auth (`vercel whoami`, team/project REST APIs, `.vercel` linking) does **not** guarantee Workflow observability access. `workflow inspect ... --backend vercel` can still fail with `401 {"error":{"code":"unauthorized","message":"You are not allowed to access this endpoint."}}` when the user/token lacks the Vercel product permission documented as `Vercel Workflow` (and possibly related Observability access), even if `WORKFLOW_VERCEL_AUTH_TOKEN` is passed explicitly from the Vercel CLI auth file.
+
+## Auth / OAuth
+
+- For local Vercel sign-in, the Vercel OAuth app must register the exact Better Auth callback `http://localhost:3000/api/auth/callback/vercel` alongside the production callback. In production, `BETTER_AUTH_URL` pins Vercel sign-in to the canonical callback; in local development without `BETTER_AUTH_URL`, the app derives `redirect_uri` from the request host. Verify behavior by POSTing to `/api/auth/sign-in/social` and checking the returned Vercel URL.
 
 ## Next.js
 

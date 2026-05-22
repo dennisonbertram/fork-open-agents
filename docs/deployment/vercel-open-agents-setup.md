@@ -94,6 +94,14 @@ Website: https://YOUR_DOMAIN
 Authorization Callback URL: https://YOUR_DOMAIN/api/auth/callback/vercel
 ```
 
+For local development, also add this callback URL to the same Vercel OAuth app:
+
+```text
+http://localhost:3000/api/auth/callback/vercel
+```
+
+When `BETTER_AUTH_URL` is set, Vercel sign-in uses that canonical production callback even if the deployment is opened through another Vercel alias. Local development without `BETTER_AUTH_URL` derives the OAuth `redirect_uri` from the incoming request host. If Next.js starts on a different local port, either restart it on `3000` or add that exact callback URL in Vercel too.
+
 Scopes:
 
 ```text

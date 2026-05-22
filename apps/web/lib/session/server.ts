@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import type { Session } from "./types";
 import { auth } from "@/lib/auth/config";
+import { getTestAuthSessionFromCookieHeader } from "./test-auth";
 
 function extractUsername(user: {
   name?: string | null;
@@ -15,6 +16,13 @@ function extractUsername(user: {
 export async function getSessionFromReq(
   req: NextRequest,
 ): Promise<Session | undefined> {
+  const testSession = getTestAuthSessionFromCookieHeader(
+    req.headers.get("cookie"),
+  );
+  if (testSession) {
+    return testSession;
+  }
+
   const baSession = await auth.api.getSession({
     headers: req.headers,
   });

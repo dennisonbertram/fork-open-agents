@@ -260,6 +260,13 @@
       "when": 1778546333112,
       "tag": "0036_sturdy_madelyne_pryor",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1779457847400,
+      "tag": "0037_loose_quasar",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { cache } from "react";
 import { auth } from "@/lib/auth/config";
+import { getTestAuthSessionFromCookieHeader } from "./test-auth";
 import type { Session } from "./types";
 
 function extractUsername(user: {
@@ -15,8 +16,16 @@ function extractUsername(user: {
 
 export const getServerSession = cache(
   async (): Promise<Session | undefined> => {
+    const requestHeaders = await headers();
+    const testSession = getTestAuthSessionFromCookieHeader(
+      requestHeaders.get("cookie"),
+    );
+    if (testSession) {
+      return testSession;
+    }
+
     const baSession = await auth.api.getSession({
-      headers: await headers(),
+      headers: requestHeaders,
     });
 
     if (!baSession?.user) {

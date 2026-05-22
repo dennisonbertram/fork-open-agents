@@ -185,6 +185,8 @@ For local development, use:
 http://localhost:3000/api/auth/callback/vercel
 ```
 
+Add both the production callback and this local callback to the same Vercel OAuth app. When `BETTER_AUTH_URL` is set, Vercel sign-in uses that canonical callback URL; local development without `BETTER_AUTH_URL` derives the callback from the local request host.
+
 Then set:
 
 ```env

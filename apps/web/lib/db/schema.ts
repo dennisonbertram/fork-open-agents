@@ -159,6 +159,11 @@ export const sessions = pgTable(
       .default([]),
     // Unified sandbox state
     sandboxState: jsonb("sandbox_state").$type<SandboxState>(),
+    runtimeMode: text("runtime_mode", {
+      enum: ["classic", "managed_runtime"],
+    })
+      .notNull()
+      .default("classic"),
     // Lifecycle orchestration state for sandbox management
     lifecycleState: text("lifecycle_state", {
       enum: [
@@ -214,6 +219,93 @@ export const chats = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("chats_session_id_idx").on(table.sessionId)],
+);
+
+export const sandboxServices = pgTable(
+  "sandbox_services",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["dev_server", "code_editor", "custom"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["stopped", "starting", "running", "failed", "stale"],
+    }).notNull(),
+    packageDir: text("package_dir"),
+    command: text("command").notNull(),
+    port: integer("port").notNull(),
+    url: text("url"),
+    pid: text("pid"),
+    commandId: text("command_id"),
+    logPath: text("log_path"),
+    healthPath: text("health_path"),
+    lastHealthStatus: integer("last_health_status"),
+    lastStartedAt: timestamp("last_started_at"),
+    lastSeenAt: timestamp("last_seen_at"),
+    lastStoppedAt: timestamp("last_stopped_at"),
+    relaunchOnResume: boolean("relaunch_on_resume").notNull().default(true),
+    failureMessage: text("failure_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("sandbox_services_session_kind_idx").on(table.sessionId, table.kind),
+    index("sandbox_services_session_status_idx").on(
+      table.sessionId,
+      table.status,
+    ),
+    uniqueIndex("sandbox_services_session_kind_port_idx").on(
+      table.sessionId,
+      table.kind,
+      table.port,
+    ),
+  ],
+);
+
+export const sandboxBrowserRuns = pgTable(
+  "sandbox_browser_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    serviceId: text("service_id").references(() => sandboxServices.id, {
+      onDelete: "set null",
+    }),
+    status: text("status", {
+      enum: ["queued", "running", "passed", "failed"],
+    }).notNull(),
+    targetUrl: text("target_url").notNull(),
+    summary: text("summary"),
+    consoleErrors: jsonb("console_errors").notNull().default([]),
+    networkErrors: jsonb("network_errors").notNull().default([]),
+    steps: jsonb("steps").notNull().default([]),
+    artifactRefs: jsonb("artifact_refs").notNull().default([]),
+    redactionStatus: text("redaction_status", {
+      enum: ["pending", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("pending"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("sandbox_browser_runs_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("sandbox_browser_runs_service_idx").on(table.serviceId),
+  ],
 );
 
 export const shares = pgTable(
@@ -404,6 +496,10 @@ export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
 export type NewVercelProjectLink = typeof vercelProjectLinks.$inferInsert;
 export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
+export type SandboxService = typeof sandboxServices.$inferSelect;
+export type NewSandboxService = typeof sandboxServices.$inferInsert;
+export type SandboxBrowserRun = typeof sandboxBrowserRuns.$inferSelect;
+export type NewSandboxBrowserRun = typeof sandboxBrowserRuns.$inferInsert;
 export type Share = typeof shares.$inferSelect;
 export type NewShare = typeof shares.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;
