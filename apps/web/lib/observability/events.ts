@@ -69,6 +69,8 @@ export function toSessionEventSnapshot(
 export async function recordSessionEvent(
   input: RecordSessionEventInput,
 ): Promise<SessionEvent> {
+  "use step";
+
   const [event] = await db
     .insert(sessionEvents)
     .values({
@@ -104,6 +106,8 @@ export async function recordSessionEvent(
 export async function emitSessionEvent(
   input: RecordSessionEventInput,
 ): Promise<SessionEvent | null> {
+  "use step";
+
   try {
     return await recordSessionEvent(input);
   } catch (error) {
