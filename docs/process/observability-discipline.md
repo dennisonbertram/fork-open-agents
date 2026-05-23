@@ -36,6 +36,8 @@ Ask these before implementing non-trivial behavior:
 ## Managed Runtime And Verified Build
 
 Managed runtime and Verified Build features need stronger evidence than a label.
+Use the [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) for
+managed-runtime issue acceptance criteria and completion gates.
 
 Minimum signals:
 

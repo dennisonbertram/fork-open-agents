@@ -16,6 +16,8 @@ Start here:
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
+- [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
+  evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
   handoff.
 

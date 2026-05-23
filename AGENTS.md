@@ -13,6 +13,7 @@ This file provides guidance for AI coding agents working in this repository.
 - [Development Workflow](docs/process/development-workflow.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Observability Discipline](docs/process/observability-discipline.md)
+- [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
 
 ## Repository Ownership And Upstream Policy
 
@@ -51,6 +52,10 @@ For managed runtime, sandbox, workflow, browser, deploy, auth, or GitHub App
 changes, include observability evidence: user-visible status, runtime/sandbox
 attribution, logs/events/metadata, browser or service evidence when relevant,
 and final verification notes.
+
+For managed runtime work specifically, do not claim the runtime path is proven
+unless the evidence satisfies
+[Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md).
 
 ## Authentication
 
