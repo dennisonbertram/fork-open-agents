@@ -77,10 +77,12 @@ function parseLaunchResponse(
 
 export function useDevServer({
   sessionId,
+  chatId,
   canRun,
   runtimeMode,
 }: {
   sessionId: string;
+  chatId: string;
   canRun: boolean;
   runtimeMode: "classic" | "managed_runtime";
 }): DevServerControls {
@@ -275,6 +277,7 @@ export function useDevServer({
         body: JSON.stringify({
           serviceId,
           targetUrl: state.info.url,
+          chatId,
         }),
       });
       const body: unknown = await response.json().catch(() => null);
@@ -314,7 +317,7 @@ export function useDevServer({
         description: message,
       });
     }
-  }, [sessionId, state]);
+  }, [chatId, sessionId, state]);
 
   const handleOpenLogs = useCallback(async () => {
     if (state.status !== "ready") {

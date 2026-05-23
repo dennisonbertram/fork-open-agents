@@ -84,6 +84,18 @@ describe("chat streaming state", () => {
           profileRunId: "profile-run-1",
         },
         evidence: [],
+        serviceEvidence: {
+          total: 0,
+          running: 0,
+          failed: 0,
+          latest: null,
+        },
+        browserEvidence: {
+          total: 0,
+          passed: 0,
+          failed: 0,
+          latest: null,
+        },
         limitations: [],
       },
     } as unknown as AssistantPart;

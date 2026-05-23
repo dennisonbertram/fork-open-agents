@@ -99,6 +99,8 @@ const spies = {
     }),
   ),
   emitSessionEvent: mock(() => Promise.resolve(null)),
+  listManagedServices: mock(async (): Promise<unknown[]> => []),
+  listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
 };
 
 let testSessionRecord: {
@@ -357,6 +359,14 @@ mock.module("./chat-sandbox-runtime", () => ({
   resolveChatSandboxRuntime: spies.resolveChatSandboxRuntime,
 }));
 
+mock.module("@/lib/sandbox/runtime/service-launch", () => ({
+  listManagedServices: spies.listManagedServices,
+}));
+
+mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
+  listManagedBrowserRuns: spies.listManagedBrowserRuns,
+}));
+
 const { runAgentWorkflow } = await import("./chat");
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -568,6 +578,18 @@ describe("runAgentWorkflow", () => {
             "Workflow, sandbox, and profile run attribution were recorded.",
             "Profile setup/probe details are available in Runtime Inspector.",
           ],
+          serviceEvidence: {
+            total: 0,
+            running: 0,
+            failed: 0,
+            latest: null,
+          },
+          browserEvidence: {
+            total: 0,
+            passed: 0,
+            failed: 0,
+            latest: null,
+          },
           limitations: [
             "Service/dev-server evidence is captured only when a managed service is started.",
             "Browser/screenshot evidence is captured only when a browser check is run.",
@@ -582,6 +604,110 @@ describe("runAgentWorkflow", () => {
         parts: expect.arrayContaining([proofParts[0]]),
       }),
     );
+    expect(spies.listManagedServices).toHaveBeenCalledWith({
+      sessionId: "session-1",
+    });
+    expect(spies.listManagedBrowserRuns).toHaveBeenCalledWith({
+      sessionId: "session-1",
+      chatId: "chat-1",
+    });
+  });
+
+  test("includes managed service and browser evidence in runtime proof data", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+    spies.listManagedServices.mockImplementationOnce(() =>
+      Promise.resolve([
+        {
+          id: "service-1",
+          kind: "dev_server",
+          status: "running",
+          packagePath: "apps/web",
+          port: 3000,
+          url: "https://preview.example.test",
+          logPath: "/workspace/apps/web/.open-agents-managed-dev-server.log",
+          lastHealthStatus: 200,
+          failureMessage: null,
+        },
+      ]),
+    );
+    spies.listManagedBrowserRuns.mockImplementationOnce(() =>
+      Promise.resolve([
+        {
+          id: "browser-1",
+          status: "passed",
+          targetUrl: "https://preview.example.test",
+          summary: "Browser check loaded the preview and captured a snapshot.",
+          consoleErrors: [],
+          networkErrors: [],
+          steps: [],
+          artifactRefs: [{ kind: "screenshot", path: "/tmp/screenshot.png" }],
+          redactionStatus: "passed",
+        },
+      ]),
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofPart = writtenChunks.find(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    expect(proofPart).toMatchObject({
+      type: "data-runtime-proof",
+      data: {
+        evidence: expect.arrayContaining([
+          "Managed dev-server evidence recorded: service-1 running on port 3000 (HTTP 200).",
+          "Browser/screenshot evidence recorded: browser-1 passed with 1 artifact.",
+        ]),
+        serviceEvidence: {
+          total: 1,
+          running: 1,
+          failed: 0,
+          latest: {
+            id: "service-1",
+            kind: "dev_server",
+            status: "running",
+            packagePath: "apps/web",
+            port: 3000,
+            url: "https://preview.example.test",
+            logPath: "/workspace/apps/web/.open-agents-managed-dev-server.log",
+            lastHealthStatus: 200,
+            failureMessage: null,
+          },
+        },
+        browserEvidence: {
+          total: 1,
+          passed: 1,
+          failed: 0,
+          latest: {
+            id: "browser-1",
+            status: "passed",
+            targetUrl: "https://preview.example.test",
+            summary:
+              "Browser check loaded the preview and captured a snapshot.",
+            artifactCount: 1,
+            redactionStatus: "passed",
+          },
+        },
+        limitations: [],
+      },
+    });
   });
 
   test("streams transient workspace setup status from runtime prep", async () => {

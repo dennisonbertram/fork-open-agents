@@ -86,6 +86,35 @@ export type WebAgentRuntimeProofData = {
     profileRunId: string | null;
   };
   evidence: string[];
+  serviceEvidence: {
+    total: number;
+    running: number;
+    failed: number;
+    latest: {
+      id: string;
+      kind: string;
+      status: string;
+      packagePath: string;
+      port: number;
+      url: string | null;
+      logPath: string | null;
+      lastHealthStatus: number | null;
+      failureMessage: string | null;
+    } | null;
+  };
+  browserEvidence: {
+    total: number;
+    passed: number;
+    failed: number;
+    latest: {
+      id: string;
+      status: string;
+      targetUrl: string;
+      summary: string | null;
+      artifactCount: number;
+      redactionStatus: string;
+    } | null;
+  };
   limitations: string[];
 };
 

@@ -468,6 +468,8 @@ function RuntimeProofDataPartCard({
 }) {
   const limitationCount = part.data.limitations.length;
   const proofPassed = part.data.status === "completed";
+  const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
+  const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
 
   return (
     <div className="flex items-center gap-3 py-1">
@@ -494,6 +496,16 @@ function RuntimeProofDataPartCard({
         <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
           {part.data.profile.id}
         </span>
+        {latestServiceStatus && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
+            service {latestServiceStatus}
+          </span>
+        )}
+        {latestBrowserStatus && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
+            browser {latestBrowserStatus}
+          </span>
+        )}
         {limitationCount > 0 && (
           <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
             {limitationCount} limitation{limitationCount === 1 ? "" : "s"}
@@ -2830,6 +2842,7 @@ export function SessionChatContent({
     runtimeToolsDisabledReason ?? codeEditorDisabledReason;
   const devServer = useDevServer({
     sessionId: session.id,
+    chatId: chatInfo.id,
     canRun: canRunDevServer,
     runtimeMode: session.runtimeMode,
   });
@@ -3126,21 +3139,25 @@ export function SessionChatContent({
   return (
     <>
       {/* Git panel portaled to layout-level for full page height */}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "git" &&
         createPortal(gitPanelElement, panelPortalRef.current)}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "verified-build" &&
         createPortal(verifiedBuildPanelElement, panelPortalRef.current)}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "runtime" &&
         createPortal(runtimePanelElement, panelPortalRef.current)}
 
       {/* Header actions portaled from chat-level state */}
-      {headerActionsRef.current &&
+      {hasMounted &&
+        headerActionsRef.current &&
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
