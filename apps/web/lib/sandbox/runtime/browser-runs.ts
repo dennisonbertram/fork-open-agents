@@ -12,6 +12,7 @@ import {
   sandboxBrowserRuns,
 } from "@/lib/db/schema";
 import { emitSessionEvent } from "@/lib/observability/events";
+import { getManagedBrowserSessionName } from "./browser-session-name";
 import { redactSandboxLog } from "./service-logs";
 
 type ConnectedSandbox = Awaited<ReturnType<typeof connectSandbox>>;
@@ -260,7 +261,7 @@ export async function runManagedBrowserCheck(params: {
     },
   });
 
-  const sessionName = `open-agents-${params.sessionId}-${runId}`;
+  const sessionName = getManagedBrowserSessionName(runId);
   const commands: string[][] = [
     ["--session", sessionName, "open", params.targetUrl],
     ["--session", sessionName, "wait", "--load", "networkidle"],
