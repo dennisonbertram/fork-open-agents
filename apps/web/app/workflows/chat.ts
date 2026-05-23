@@ -9,6 +9,8 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type { OpenAgentCallOptions } from "@open-agents/agent";
+import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
+import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
 import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
@@ -20,6 +22,8 @@ import type {
   WebAgentMessageMetadata,
   WebAgentPrData,
   WebAgentPrDataPart,
+  WebAgentRuntimeProofData,
+  WebAgentRuntimeProofDataPart,
   WebAgentStepFinishMetadata,
   WebAgentUIMessage,
 } from "@/app/types";
@@ -576,9 +580,206 @@ function buildPrData(
   };
 }
 
+function buildRuntimeProofData(params: {
+  workflowRunId: string;
+  workflowStatus: WorkflowRunStatus;
+  sandboxName: string | null;
+  managedRuntime: NonNullable<
+    Awaited<ReturnType<typeof resolveChatSandboxRuntime>>["managedRuntime"]
+  >;
+  artifacts: RuntimeProofArtifacts;
+}): WebAgentRuntimeProofData {
+  const serviceEvidence = summarizeRuntimeServiceEvidence(
+    params.artifacts.services,
+  );
+  const browserEvidence = summarizeRuntimeBrowserEvidence(
+    params.artifacts.browserRuns,
+  );
+  const evidence = [
+    "Managed runtime was selected for this workflow.",
+    "Workflow, sandbox, and profile run attribution were recorded.",
+    "Profile setup/probe details are available in Runtime Inspector.",
+  ];
+  const limitations: string[] = [];
+
+  if (serviceEvidence.latest === null) {
+    limitations.push(
+      "Service/dev-server evidence is captured only when a managed service is started.",
+    );
+  } else if (serviceEvidence.running === 0) {
+    limitations.push("No running managed service was recorded.");
+  } else {
+    evidence.push(formatServiceEvidenceSummary(serviceEvidence.latest));
+  }
+
+  if (browserEvidence.latest === null) {
+    limitations.push(
+      "Browser/screenshot evidence is captured only when a browser check is run.",
+    );
+  } else if (browserEvidence.passed === 0) {
+    limitations.push("No passed browser/screenshot check was recorded.");
+  } else {
+    evidence.push(formatBrowserEvidenceSummary(browserEvidence.latest));
+  }
+
+  if (params.artifacts.errorMessage) {
+    limitations.push(
+      `Runtime service/browser evidence lookup failed: ${params.artifacts.errorMessage}`,
+    );
+  }
+
+  if (
+    !params.managedRuntime.profileId ||
+    !params.managedRuntime.profileVersion ||
+    !params.managedRuntime.profileDisplayName
+  ) {
+    limitations.push("Managed runtime profile metadata was incomplete.");
+  }
+
+  if (!params.managedRuntime.profileRunId) {
+    limitations.push("No managed runtime profile run id was recorded.");
+  }
+
+  return {
+    status: params.workflowStatus === "completed" ? "completed" : "failed",
+    runtimeMode: "managed_runtime",
+    workflowRunId: params.workflowRunId,
+    sandboxName: params.sandboxName,
+    profile: {
+      id: params.managedRuntime.profileId ?? "unknown",
+      version: params.managedRuntime.profileVersion ?? "unknown",
+      displayName:
+        params.managedRuntime.profileDisplayName ?? "Unknown managed profile",
+      profileRunId: params.managedRuntime.profileRunId ?? null,
+    },
+    evidence,
+    serviceEvidence,
+    browserEvidence,
+    limitations,
+  };
+}
+
+type RuntimeProofArtifacts = {
+  services: ManagedServiceResponse[];
+  browserRuns: BrowserRunResponse[];
+  errorMessage: string | null;
+};
+
+const EMPTY_RUNTIME_PROOF_ARTIFACTS: RuntimeProofArtifacts = {
+  services: [],
+  browserRuns: [],
+  errorMessage: null,
+};
+
+function getArtifactCount(artifactRefs: unknown): number {
+  return Array.isArray(artifactRefs) ? artifactRefs.length : 0;
+}
+
+function summarizeRuntimeServiceEvidence(
+  services: ManagedServiceResponse[],
+): WebAgentRuntimeProofData["serviceEvidence"] {
+  const latest = services[0] ?? null;
+
+  return {
+    total: services.length,
+    running: services.filter((service) => service.status === "running").length,
+    failed: services.filter((service) => service.status === "failed").length,
+    latest: latest
+      ? {
+          id: latest.id,
+          kind: latest.kind,
+          status: latest.status,
+          packagePath: latest.packagePath,
+          port: latest.port,
+          url: latest.url,
+          logPath: latest.logPath,
+          lastHealthStatus: latest.lastHealthStatus,
+          failureMessage: latest.failureMessage,
+        }
+      : null,
+  };
+}
+
+function summarizeRuntimeBrowserEvidence(
+  browserRuns: BrowserRunResponse[],
+): WebAgentRuntimeProofData["browserEvidence"] {
+  const latest = browserRuns[0] ?? null;
+
+  return {
+    total: browserRuns.length,
+    passed: browserRuns.filter((run) => run.status === "passed").length,
+    failed: browserRuns.filter((run) => run.status === "failed").length,
+    latest: latest
+      ? {
+          id: latest.id,
+          status: latest.status,
+          targetUrl: latest.targetUrl,
+          summary: latest.summary,
+          artifactCount: getArtifactCount(latest.artifactRefs),
+          redactionStatus: latest.redactionStatus,
+        }
+      : null,
+  };
+}
+
+function formatServiceEvidenceSummary(
+  service: NonNullable<WebAgentRuntimeProofData["serviceEvidence"]["latest"]>,
+): string {
+  const healthSuffix =
+    typeof service.lastHealthStatus === "number"
+      ? ` (HTTP ${service.lastHealthStatus})`
+      : "";
+  return `Managed dev-server evidence recorded: ${service.id} ${service.status} on port ${service.port}${healthSuffix}.`;
+}
+
+function formatBrowserEvidenceSummary(
+  browserRun: NonNullable<
+    WebAgentRuntimeProofData["browserEvidence"]["latest"]
+  >,
+): string {
+  return `Browser/screenshot evidence recorded: ${browserRun.id} ${browserRun.status} with ${browserRun.artifactCount} artifact${
+    browserRun.artifactCount === 1 ? "" : "s"
+  }.`;
+}
+
+async function collectRuntimeProofArtifacts(params: {
+  sessionId: string;
+  chatId: string;
+}): Promise<RuntimeProofArtifacts> {
+  "use step";
+
+  try {
+    const [serviceModule, browserModule] = await Promise.all([
+      import("@/lib/sandbox/runtime/service-launch"),
+      import("@/lib/sandbox/runtime/browser-runs"),
+    ]);
+    const [services, browserRuns] = await Promise.all([
+      serviceModule.listManagedServices({ sessionId: params.sessionId }),
+      browserModule.listManagedBrowserRuns({
+        sessionId: params.sessionId,
+        chatId: params.chatId,
+      }),
+    ]);
+
+    return {
+      services,
+      browserRuns,
+      errorMessage: null,
+    };
+  } catch (error) {
+    return {
+      ...EMPTY_RUNTIME_PROOF_ARTIFACTS,
+      errorMessage: getErrorMessage(error),
+    };
+  }
+}
+
 function upsertAssistantDataPart(
   message: WebAgentUIMessage,
-  part: WebAgentCommitDataPart | WebAgentPrDataPart,
+  part:
+    | WebAgentCommitDataPart
+    | WebAgentPrDataPart
+    | WebAgentRuntimeProofDataPart,
 ): WebAgentUIMessage {
   const nextParts = [...message.parts];
   const existingIndex = nextParts.findIndex(
@@ -600,7 +801,10 @@ function upsertAssistantDataPart(
 
 async function sendDataPart(
   writable: Writable,
-  part: WebAgentCommitDataPart | WebAgentPrDataPart,
+  part:
+    | WebAgentCommitDataPart
+    | WebAgentPrDataPart
+    | WebAgentRuntimeProofDataPart,
 ) {
   "use step";
   const writer = writable.getWriter();
@@ -1131,6 +1335,36 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
 
+    workflowStatus = wasAborted
+      ? "aborted"
+      : exhaustedMaxSteps
+        ? "failed"
+        : "completed";
+
+    if (runtime.runtimeMode === "managed_runtime" && runtime.managedRuntime) {
+      const runtimeProofArtifacts = await collectRuntimeProofArtifacts({
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+      });
+      const runtimeProofPart: WebAgentRuntimeProofDataPart = {
+        type: "data-runtime-proof",
+        id: `${assistantId}:runtime-proof`,
+        data: buildRuntimeProofData({
+          workflowRunId,
+          workflowStatus,
+          sandboxName: runtimeSandboxName,
+          managedRuntime: runtime.managedRuntime,
+          artifacts: runtimeProofArtifacts,
+        }),
+      };
+      pendingAssistantResponse = upsertAssistantDataPart(
+        pendingAssistantResponse,
+        runtimeProofPart,
+      );
+      await sendDataPart(writable, runtimeProofPart);
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+    }
+
     await Promise.all([
       clearActiveStream(options.chatId, workflowRunId),
       sendFinish(writable).then(() => closeStream(writable)),
@@ -1139,12 +1373,6 @@ export async function runAgentWorkflow(options: Options) {
         : []),
     ]);
     streamClosed = true;
-
-    workflowStatus = wasAborted
-      ? "aborted"
-      : exhaustedMaxSteps
-        ? "failed"
-        : "completed";
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;

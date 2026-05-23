@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
 import type { connectSandbox } from "@open-agents/sandbox";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   type NewSandboxBrowserRun,
@@ -198,10 +198,17 @@ async function runAgentBrowserCommand(params: {
 
 export async function listManagedBrowserRuns(params: {
   sessionId: string;
+  chatId?: string | null;
   limit?: number;
 }): Promise<BrowserRunResponse[]> {
+  const where = params.chatId
+    ? and(
+        eq(sandboxBrowserRuns.sessionId, params.sessionId),
+        eq(sandboxBrowserRuns.chatId, params.chatId),
+      )
+    : eq(sandboxBrowserRuns.sessionId, params.sessionId);
   const records = await db.query.sandboxBrowserRuns.findMany({
-    where: eq(sandboxBrowserRuns.sessionId, params.sessionId),
+    where,
     orderBy: [desc(sandboxBrowserRuns.createdAt)],
     limit: params.limit ?? 20,
   });

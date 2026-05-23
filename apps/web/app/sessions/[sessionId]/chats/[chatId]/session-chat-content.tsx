@@ -58,6 +58,7 @@ import type { CheckRun } from "@/lib/github/pulls";
 import type {
   WebAgentCommitDataPart,
   WebAgentPrDataPart,
+  WebAgentRuntimeProofDataPart,
   WebAgentSnippetDataPart,
   WebAgentUIMessage,
   WebAgentUIMessagePart,
@@ -123,6 +124,7 @@ import {
   hasRenderableAssistantPart,
   isChatInFlight as isChatInFlightStatus,
   isGitDataPart,
+  isRuntimeProofDataPart,
   isVerifiedBuildDataPart,
   shouldKeepCollapsedReasoningStreaming,
   shouldRenderGitDataPart,
@@ -264,6 +266,10 @@ function getPartIdentity(part: WebAgentUIMessagePart): string {
   }
 
   if (isGitDataPart(part)) {
+    return part.id ? `data:${part.type}:${part.id}` : `data:${part.type}`;
+  }
+
+  if (isRuntimeProofDataPart(part)) {
     return part.id ? `data:${part.type}:${part.id}` : `data:${part.type}`;
   }
 
@@ -447,6 +453,64 @@ function VerifiedBuildDataPartCard({
         <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
           {part.data.harnessRunId}
         </span>
+      </button>
+      <div className="h-px flex-1 bg-border/60" />
+    </div>
+  );
+}
+
+function RuntimeProofDataPartCard({
+  part,
+  onOpenPanel,
+}: {
+  part: WebAgentRuntimeProofDataPart;
+  onOpenPanel: () => void;
+}) {
+  const limitationCount = part.data.limitations.length;
+  const proofPassed = part.data.status === "completed";
+  const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
+  const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
+
+  return (
+    <div className="flex items-center gap-3 py-1">
+      <div className="h-px flex-1 bg-border/60" />
+      <button
+        type="button"
+        onClick={onOpenPanel}
+        className="group/runtime-proof flex max-w-[86%] items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
+      >
+        <ScanEye className="h-3.5 w-3.5 shrink-0 text-cyan-500" />
+        <span className="truncate text-xs font-medium text-muted-foreground group-hover/runtime-proof:text-foreground">
+          Managed runtime proof
+        </span>
+        <span
+          className={cn(
+            "rounded-full border px-1.5 py-px text-[10px] font-medium",
+            proofPassed
+              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
+          )}
+        >
+          {part.data.status}
+        </span>
+        <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
+          {part.data.profile.id}
+        </span>
+        {latestServiceStatus && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
+            service {latestServiceStatus}
+          </span>
+        )}
+        {latestBrowserStatus && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
+            browser {latestBrowserStatus}
+          </span>
+        )}
+        {limitationCount > 0 && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
+            {limitationCount} limitation{limitationCount === 1 ? "" : "s"}
+          </span>
+        )}
       </button>
       <div className="h-px flex-1 bg-border/60" />
     </div>
@@ -1114,6 +1178,10 @@ export function SessionChatContent({
   const { preferences } = useUserPreferences();
   const openVerifiedBuildPanel = useCallback(() => {
     setRightPanelView("verified-build");
+    setGitPanelOpen(true);
+  }, [setGitPanelOpen, setRightPanelView]);
+  const openRuntimePanel = useCallback(() => {
+    setRightPanelView("runtime");
     setGitPanelOpen(true);
   }, [setGitPanelOpen, setRightPanelView]);
   const isIosDevice = useMemo(() => {
@@ -2774,6 +2842,7 @@ export function SessionChatContent({
     runtimeToolsDisabledReason ?? codeEditorDisabledReason;
   const devServer = useDevServer({
     sessionId: session.id,
+    chatId: chatInfo.id,
     canRun: canRunDevServer,
     runtimeMode: session.runtimeMode,
   });
@@ -3070,21 +3139,25 @@ export function SessionChatContent({
   return (
     <>
       {/* Git panel portaled to layout-level for full page height */}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "git" &&
         createPortal(gitPanelElement, panelPortalRef.current)}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "verified-build" &&
         createPortal(verifiedBuildPanelElement, panelPortalRef.current)}
-      {gitPanelOpen &&
+      {hasMounted &&
+        gitPanelOpen &&
         panelPortalRef.current &&
         rightPanelView === "runtime" &&
         createPortal(runtimePanelElement, panelPortalRef.current)}
 
       {/* Header actions portaled from chat-level state */}
-      {headerActionsRef.current &&
+      {hasMounted &&
+        headerActionsRef.current &&
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
@@ -3784,6 +3857,20 @@ export function SessionChatContent({
                                       <VerifiedBuildDataPartCard
                                         part={p}
                                         onOpenPanel={openVerifiedBuildPanel}
+                                      />
+                                    </div>
+                                  );
+                                }
+
+                                if (isRuntimeProofDataPart(p)) {
+                                  return (
+                                    <div
+                                      key={`${m.id}-${group.renderKey}`}
+                                      className="max-w-full"
+                                    >
+                                      <RuntimeProofDataPartCard
+                                        part={p}
+                                        onOpenPanel={openRuntimePanel}
                                       />
                                     </div>
                                   );

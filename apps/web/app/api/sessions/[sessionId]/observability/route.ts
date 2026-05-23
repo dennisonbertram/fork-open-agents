@@ -65,7 +65,7 @@ export async function GET(req: Request, context: RouteContext) {
         ? listManagedServices({ sessionId })
         : Promise.resolve([]),
       sessionContext.sessionRecord.runtimeMode === "managed_runtime"
-        ? listManagedBrowserRuns({ sessionId, limit: 20 })
+        ? listManagedBrowserRuns({ sessionId, chatId, limit: 20 })
         : Promise.resolve([]),
     ]);
 

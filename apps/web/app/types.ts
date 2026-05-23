@@ -74,12 +74,57 @@ export type WebAgentVerifiedBuildData = {
   requestId: string;
 };
 
+export type WebAgentRuntimeProofData = {
+  status: "completed" | "failed" | "blocked";
+  runtimeMode: "managed_runtime";
+  workflowRunId: string;
+  sandboxName: string | null;
+  profile: {
+    id: string;
+    version: string;
+    displayName: string;
+    profileRunId: string | null;
+  };
+  evidence: string[];
+  serviceEvidence: {
+    total: number;
+    running: number;
+    failed: number;
+    latest: {
+      id: string;
+      kind: string;
+      status: string;
+      packagePath: string;
+      port: number;
+      url: string | null;
+      logPath: string | null;
+      lastHealthStatus: number | null;
+      failureMessage: string | null;
+    } | null;
+  };
+  browserEvidence: {
+    total: number;
+    passed: number;
+    failed: number;
+    latest: {
+      id: string;
+      status: string;
+      targetUrl: string;
+      summary: string | null;
+      artifactCount: number;
+      redactionStatus: string;
+    } | null;
+  };
+  limitations: string[];
+};
+
 export type WebAgentDataParts = {
   commit: WebAgentCommitData;
   pr: WebAgentPrData;
   snippet: WebAgentSnippetData;
   "workspace-status": WebAgentWorkspaceStatusData;
   "verified-build": WebAgentVerifiedBuildData;
+  "runtime-proof": WebAgentRuntimeProofData;
 };
 
 // All types derived from the agent
@@ -106,6 +151,10 @@ export type WebAgentSnippetDataPart = Extract<
 export type WebAgentVerifiedBuildDataPart = Extract<
   WebAgentUIMessagePart,
   { type: "data-verified-build" }
+>;
+export type WebAgentRuntimeProofDataPart = Extract<
+  WebAgentUIMessagePart,
+  { type: "data-runtime-proof" }
 >;
 export type WebAgentUIToolPart =
   | DynamicToolUIPart
