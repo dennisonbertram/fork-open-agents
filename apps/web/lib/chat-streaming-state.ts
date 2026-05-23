@@ -2,6 +2,7 @@ import { isReasoningUIPart, isToolUIPart } from "ai";
 import type {
   WebAgentCommitDataPart,
   WebAgentPrDataPart,
+  WebAgentRuntimeProofDataPart,
   WebAgentUIMessage,
   WebAgentUIMessagePart,
   WebAgentVerifiedBuildDataPart,
@@ -23,6 +24,12 @@ export function isVerifiedBuildDataPart(
   part: WebAgentUIMessagePart,
 ): part is WebAgentVerifiedBuildDataPart {
   return part.type === "data-verified-build";
+}
+
+export function isRuntimeProofDataPart(
+  part: WebAgentUIMessagePart,
+): part is WebAgentRuntimeProofDataPart {
+  return part.type === "data-runtime-proof";
 }
 
 export function shouldRenderGitDataPart(
@@ -55,6 +62,10 @@ export function hasRenderableAssistantPart(
   }
 
   if (isVerifiedBuildDataPart(part)) {
+    return true;
+  }
+
+  if (isRuntimeProofDataPart(part)) {
     return true;
   }
 

@@ -70,6 +70,23 @@ describe("chat streaming state", () => {
       type: "data-commit",
       data: { status: "skipped" },
     } as unknown as AssistantPart;
+    const runtimeProofPart = {
+      type: "data-runtime-proof",
+      data: {
+        status: "completed",
+        runtimeMode: "managed_runtime",
+        workflowRunId: "wrun-1",
+        sandboxName: "session_session-1",
+        profile: {
+          id: "web-bun-agent-browser",
+          version: "2026-05-23.1",
+          displayName: "Web app with Bun and browser checks",
+          profileRunId: "profile-run-1",
+        },
+        evidence: [],
+        limitations: [],
+      },
+    } as unknown as AssistantPart;
 
     expect(hasRenderableAssistantPart(emptyTextPart)).toBe(false);
     expect(hasRenderableAssistantPart(textPart)).toBe(true);
@@ -80,6 +97,7 @@ describe("chat streaming state", () => {
     );
     expect(hasRenderableAssistantPart(gitDataPart)).toBe(true);
     expect(hasRenderableAssistantPart(skippedCommitPart)).toBe(false);
+    expect(hasRenderableAssistantPart(runtimeProofPart)).toBe(true);
     expect(
       shouldRenderGitDataPart(
         skippedCommitPart as Parameters<typeof shouldRenderGitDataPart>[0],

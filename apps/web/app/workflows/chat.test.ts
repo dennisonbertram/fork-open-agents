@@ -523,6 +523,67 @@ describe("runAgentWorkflow", () => {
     });
   });
 
+  test("emits managed runtime proof data when managed runtime completes", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofParts = writtenChunks.filter(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    expect(proofParts).toEqual([
+      {
+        type: "data-runtime-proof",
+        id: "gen-id-1:runtime-proof",
+        data: {
+          status: "completed",
+          runtimeMode: "managed_runtime",
+          workflowRunId: "wrun_test-123",
+          sandboxName: "session_session-1",
+          profile: {
+            id: "web-bun-agent-browser",
+            version: "2026-05-23.1",
+            displayName: "Web app with Bun and browser checks",
+            profileRunId: "profile-run-1",
+          },
+          evidence: [
+            "Managed runtime was selected for this workflow.",
+            "Workflow, sandbox, and profile run attribution were recorded.",
+            "Profile setup/probe details are available in Runtime Inspector.",
+          ],
+          limitations: [
+            "Service/dev-server evidence is captured only when a managed service is started.",
+            "Browser/screenshot evidence is captured only when a browser check is run.",
+          ],
+        },
+      },
+    ]);
+
+    expect(spies.persistAssistantMessage).toHaveBeenLastCalledWith(
+      "chat-1",
+      expect.objectContaining({
+        parts: expect.arrayContaining([proofParts[0]]),
+      }),
+    );
+  });
+
   test("streams transient workspace setup status from runtime prep", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
       writtenChunks.push({ type: "start", messageId: params.assistantId });

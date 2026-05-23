@@ -20,6 +20,8 @@ import type {
   WebAgentMessageMetadata,
   WebAgentPrData,
   WebAgentPrDataPart,
+  WebAgentRuntimeProofData,
+  WebAgentRuntimeProofDataPart,
   WebAgentStepFinishMetadata,
   WebAgentUIMessage,
 } from "@/app/types";
@@ -576,9 +578,59 @@ function buildPrData(
   };
 }
 
+function buildRuntimeProofData(params: {
+  workflowRunId: string;
+  workflowStatus: WorkflowRunStatus;
+  sandboxName: string | null;
+  managedRuntime: NonNullable<
+    Awaited<ReturnType<typeof resolveChatSandboxRuntime>>["managedRuntime"]
+  >;
+}): WebAgentRuntimeProofData {
+  const evidence = [
+    "Managed runtime was selected for this workflow.",
+    "Workflow, sandbox, and profile run attribution were recorded.",
+    "Profile setup/probe details are available in Runtime Inspector.",
+  ];
+  const limitations = [
+    "Service/dev-server evidence is captured only when a managed service is started.",
+    "Browser/screenshot evidence is captured only when a browser check is run.",
+  ];
+
+  if (
+    !params.managedRuntime.profileId ||
+    !params.managedRuntime.profileVersion ||
+    !params.managedRuntime.profileDisplayName
+  ) {
+    limitations.push("Managed runtime profile metadata was incomplete.");
+  }
+
+  if (!params.managedRuntime.profileRunId) {
+    limitations.push("No managed runtime profile run id was recorded.");
+  }
+
+  return {
+    status: params.workflowStatus === "completed" ? "completed" : "failed",
+    runtimeMode: "managed_runtime",
+    workflowRunId: params.workflowRunId,
+    sandboxName: params.sandboxName,
+    profile: {
+      id: params.managedRuntime.profileId ?? "unknown",
+      version: params.managedRuntime.profileVersion ?? "unknown",
+      displayName:
+        params.managedRuntime.profileDisplayName ?? "Unknown managed profile",
+      profileRunId: params.managedRuntime.profileRunId ?? null,
+    },
+    evidence,
+    limitations,
+  };
+}
+
 function upsertAssistantDataPart(
   message: WebAgentUIMessage,
-  part: WebAgentCommitDataPart | WebAgentPrDataPart,
+  part:
+    | WebAgentCommitDataPart
+    | WebAgentPrDataPart
+    | WebAgentRuntimeProofDataPart,
 ): WebAgentUIMessage {
   const nextParts = [...message.parts];
   const existingIndex = nextParts.findIndex(
@@ -600,7 +652,10 @@ function upsertAssistantDataPart(
 
 async function sendDataPart(
   writable: Writable,
-  part: WebAgentCommitDataPart | WebAgentPrDataPart,
+  part:
+    | WebAgentCommitDataPart
+    | WebAgentPrDataPart
+    | WebAgentRuntimeProofDataPart,
 ) {
   "use step";
   const writer = writable.getWriter();
@@ -1131,6 +1186,31 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
 
+    workflowStatus = wasAborted
+      ? "aborted"
+      : exhaustedMaxSteps
+        ? "failed"
+        : "completed";
+
+    if (runtime.runtimeMode === "managed_runtime" && runtime.managedRuntime) {
+      const runtimeProofPart: WebAgentRuntimeProofDataPart = {
+        type: "data-runtime-proof",
+        id: `${assistantId}:runtime-proof`,
+        data: buildRuntimeProofData({
+          workflowRunId,
+          workflowStatus,
+          sandboxName: runtimeSandboxName,
+          managedRuntime: runtime.managedRuntime,
+        }),
+      };
+      pendingAssistantResponse = upsertAssistantDataPart(
+        pendingAssistantResponse,
+        runtimeProofPart,
+      );
+      await sendDataPart(writable, runtimeProofPart);
+      await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+    }
+
     await Promise.all([
       clearActiveStream(options.chatId, workflowRunId),
       sendFinish(writable).then(() => closeStream(writable)),
@@ -1139,12 +1219,6 @@ export async function runAgentWorkflow(options: Options) {
         : []),
     ]);
     streamClosed = true;
-
-    workflowStatus = wasAborted
-      ? "aborted"
-      : exhaustedMaxSteps
-        ? "failed"
-        : "completed";
   } catch (error) {
     workflowStatus = wasAborted ? "aborted" : "failed";
     caughtError = error;
