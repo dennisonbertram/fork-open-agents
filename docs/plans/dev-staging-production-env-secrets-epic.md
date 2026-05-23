@@ -2,7 +2,7 @@
 
 Prepared: 2026-05-23
 Status: planning, not ready for implementation
-GitHub issue: https://github.com/vercel-labs/open-agents/issues/887
+GitHub issue: https://github.com/dennisonbertram/fork-open-agents/issues/1
 
 ## Executive Summary
 
