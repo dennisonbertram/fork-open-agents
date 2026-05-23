@@ -696,9 +696,18 @@ export async function runAgentWorkflow(options: Options) {
       ),
     };
 
+    const managedRuntimeAgentContext =
+      runtime.managedRuntime ??
+      (runtime.runtimeMode === "managed_runtime"
+        ? { sandboxName: runtime.sandboxState.sandboxName }
+        : undefined);
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
+      runtimeMode: runtime.runtimeMode,
+      ...(managedRuntimeAgentContext
+        ? { managedRuntime: managedRuntimeAgentContext }
+        : {}),
       sandbox: {
         state: runtime.sandboxState,
         workingDirectory: runtime.workingDirectory,

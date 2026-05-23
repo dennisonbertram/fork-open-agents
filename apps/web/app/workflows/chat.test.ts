@@ -12,6 +12,7 @@ type TestResolvedChatSandboxRuntime = {
     sandboxName: string;
     expiresAt: number;
   };
+  runtimeMode: "classic" | "managed_runtime";
   workingDirectory: string;
   currentBranch: string;
   environmentDetails: string;
@@ -31,6 +32,7 @@ function createResolvedChatSandboxRuntime(
       sandboxName: "session_session-1",
       expiresAt: Date.now() + 60_000,
     },
+    runtimeMode: "classic",
     workingDirectory: "/vercel/sandbox",
     currentBranch: "main",
     environmentDetails: "test sandbox",
@@ -138,6 +140,7 @@ let agentResponseHeaders: Record<string, string> | undefined;
 let agentResponseBody: unknown;
 let agentProviderMetadata: Record<string, unknown> | undefined;
 let agentInputMessages: unknown;
+let agentStreamOptions: unknown;
 
 function buildAgentSteps() {
   return [
@@ -204,8 +207,15 @@ mock.module("./chat-post-finish", () => spies);
 mock.module("@/app/config", () => ({
   webAgent: {
     tools: {},
-    stream: async ({ messages }: { messages: unknown }) => {
+    stream: async ({
+      messages,
+      options,
+    }: {
+      messages: unknown;
+      options: unknown;
+    }) => {
       agentInputMessages = messages;
+      agentStreamOptions = options;
       return {
         toUIMessageStream: (opts: {
           sendStart?: boolean;
@@ -387,6 +397,7 @@ beforeEach(() => {
   agentResponseBody = undefined;
   agentProviderMetadata = undefined;
   agentInputMessages = undefined;
+  agentStreamOptions = undefined;
   streamOnFinishCallback = undefined;
   testSessionRecord = {
     id: "session-1",
@@ -461,6 +472,28 @@ describe("runAgentWorkflow", () => {
     const types = writtenChunks.map((c) => c.type);
     expect(types[0]).toBe("start");
     expect(types[types.length - 1]).toBe("finish");
+  });
+
+  test("passes managed runtime mode into agent options", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(agentStreamOptions).toMatchObject({
+      runtimeMode: "managed_runtime",
+      managedRuntime: {
+        sandboxName: "session_session-1",
+      },
+    });
   });
 
   test("streams transient workspace setup status from runtime prep", async () => {

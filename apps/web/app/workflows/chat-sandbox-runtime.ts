@@ -45,6 +45,12 @@ type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
 export type ResolvedChatSandboxRuntime = {
   sandboxState: SandboxState;
   runtimeMode: SessionRecord["runtimeMode"];
+  managedRuntime?: {
+    profileId: string;
+    profileVersion: string;
+    profileDisplayName: string;
+    sandboxName?: string;
+  };
   workingDirectory: string;
   currentBranch?: string;
   environmentDetails?: string;
@@ -350,6 +356,10 @@ export async function resolveChatSandboxRuntime(params: {
     }),
   ]);
 
+  const managedRuntimeProfile =
+    session.runtimeMode === "managed_runtime"
+      ? getManagedRuntimeProfile()
+      : undefined;
   const managedRuntimeNotes =
     session.runtimeMode === "managed_runtime"
       ? await ensureManagedRuntimeEnvironment({ sandbox })
@@ -369,6 +379,16 @@ export async function resolveChatSandboxRuntime(params: {
   return {
     sandboxState,
     runtimeMode: session.runtimeMode,
+    ...(managedRuntimeProfile
+      ? {
+          managedRuntime: {
+            profileId: managedRuntimeProfile.id,
+            profileVersion: managedRuntimeProfile.version,
+            profileDisplayName: managedRuntimeProfile.displayName,
+            sandboxName: sandboxState.sandboxName,
+          },
+        }
+      : {}),
     workingDirectory: sandbox.workingDirectory,
     currentBranch: sandbox.currentBranch,
     environmentDetails:

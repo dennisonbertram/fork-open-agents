@@ -41,16 +41,62 @@ const taskPendingToolCallSchema = z.object({
 
 export type TaskPendingToolCall = z.infer<typeof taskPendingToolCallSchema>;
 
+const taskRuntimeOutputSchema = z.object({
+  mode: z.literal("managed_runtime"),
+  label: z.literal("Managed runtime worker"),
+  workerType: z.string(),
+  profileId: z.string().optional(),
+  profileVersion: z.string().optional(),
+  profileDisplayName: z.string().optional(),
+  sandboxName: z.string().optional(),
+});
+
 export const taskOutputSchema = z.object({
   pending: taskPendingToolCallSchema.optional(),
   toolCallCount: z.number().int().nonnegative().optional(),
   startedAt: z.number().int().nonnegative().optional(),
   modelId: z.string().optional(),
+  runtime: taskRuntimeOutputSchema.optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
 
 export type TaskToolOutput = z.infer<typeof taskOutputSchema>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function getManagedRuntimeOutput(
+  experimentalContext: unknown,
+  workerType: string,
+): TaskToolOutput["runtime"] {
+  if (!isRecord(experimentalContext)) {
+    return undefined;
+  }
+
+  if (experimentalContext.runtimeMode !== "managed_runtime") {
+    return undefined;
+  }
+
+  const managedRuntime = isRecord(experimentalContext.managedRuntime)
+    ? experimentalContext.managedRuntime
+    : {};
+
+  return {
+    mode: "managed_runtime",
+    label: "Managed runtime worker",
+    workerType,
+    profileId: getString(managedRuntime.profileId),
+    profileVersion: getString(managedRuntime.profileVersion),
+    profileDisplayName: getString(managedRuntime.profileDisplayName),
+    sandboxName: getString(managedRuntime.sandboxName),
+  };
+}
 
 export const taskTool = tool({
   needsApproval: false,
@@ -63,6 +109,7 @@ WHEN TO USE:
 - Clearly-scoped work that can be delegated with explicit instructions
 - Work where focused execution would clutter the main conversation
 - Tasks that match one of the available subagent descriptions above
+- Managed runtime coordinator mode, where repository exploration, implementation, and verification must be delegated
 
 WHEN NOT TO USE (do it yourself):
 - Simple, single-file or single-change edits
@@ -92,6 +139,7 @@ IMPORTANT:
     const sandboxContext = getSandboxContext(experimental_context, "task");
     const model = getSubagentModel(experimental_context, "task");
     const subagentModelId = typeof model === "string" ? model : model.modelId;
+    const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
 
@@ -113,7 +161,7 @@ IMPORTANT:
     let usage: LanguageModelUsage | undefined;
 
     // Emit an initial state so UIs can show elapsed time from a stable timestamp.
-    yield { toolCallCount, startedAt, modelId: subagentModelId };
+    yield { toolCallCount, startedAt, modelId: subagentModelId, runtime };
 
     for await (const part of result.fullStream) {
       if (part.type === "tool-call") {
@@ -125,6 +173,7 @@ IMPORTANT:
           usage,
           startedAt,
           modelId: subagentModelId,
+          runtime,
         };
       }
 
@@ -138,6 +187,7 @@ IMPORTANT:
           usage,
           startedAt,
           modelId: subagentModelId,
+          runtime,
         };
       }
     }
@@ -150,6 +200,7 @@ IMPORTANT:
       usage: finalUsage,
       startedAt,
       modelId: subagentModelId,
+      runtime,
     };
   },
   toModelOutput: ({ output: { final: messages } }) => {

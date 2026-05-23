@@ -5,12 +5,19 @@ import path from "node:path";
 import type { ToolNeedsApprovalFunction } from "./utils";
 
 const sandboxRegistry = new Map<string, Record<string, unknown>>();
+let mockToolLoopAgentStream:
+  | ((args: Record<string, unknown>) => Record<string, unknown>)
+  | undefined;
 
 mock.module("ai", () => {
   class MockToolLoopAgent {
     constructor(_config: unknown) {}
 
-    stream() {
+    stream(args: Record<string, unknown>) {
+      if (mockToolLoopAgentStream) {
+        return mockToolLoopAgentStream(args);
+      }
+
       throw new Error(
         "MockToolLoopAgent.stream should not be called in this test",
       );
@@ -464,6 +471,7 @@ describe("tools execute behavior", () => {
 
   afterEach(() => {
     sandboxRegistry.clear();
+    mockToolLoopAgentStream = undefined;
   });
 
   test("webFetchTool treats curl exit 23 as a truncated success", async () => {
@@ -763,6 +771,93 @@ describe("tools execute behavior", () => {
       "`executor` - Use for well-scoped implementation work, including edits, scaffolding, refactors, and other file changes",
     );
     expect(taskTool.description).toContain("up to 100 tool steps");
+  });
+
+  test("taskTool emits managed runtime attribution for delegated workers", async () => {
+    const finalMessages = [
+      {
+        role: "assistant",
+        content: "Worker finished.",
+      },
+    ];
+    const usage = { inputTokens: 7, outputTokens: 3, totalTokens: 10 };
+
+    mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
+      expect(args).toMatchObject({
+        options: {
+          task: "Apply change",
+          sandbox: {
+            workingDirectory: "/repo",
+          },
+        },
+      });
+
+      return {
+        fullStream: (async function* () {
+          yield {
+            type: "tool-call",
+            toolName: "bash",
+            input: { command: "bun test" },
+          };
+          yield {
+            type: "finish-step",
+            usage,
+          };
+        })(),
+        response: Promise.resolve({ messages: finalMessages }),
+        usage: Promise.resolve(usage),
+      };
+    });
+
+    const outputs: unknown[] = [];
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        task: "Apply change",
+        instructions: "Update the greeting and run tests.",
+      },
+      executionOptions({
+        sandbox: {
+          workingDirectory: "/repo",
+        },
+        model: { modelId: "test-model" },
+        runtimeMode: "managed_runtime",
+        managedRuntime: {
+          profileId: "web-bun-agent-browser",
+          profileVersion: "2026-05-23.1",
+          profileDisplayName: "Web app with Bun and browser checks",
+          sandboxName: "session_session-1",
+        },
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    for await (const output of result) {
+      outputs.push(output);
+    }
+
+    expect(outputs[0]).toMatchObject({
+      runtime: {
+        mode: "managed_runtime",
+        label: "Managed runtime worker",
+        workerType: "executor",
+        profileId: "web-bun-agent-browser",
+        profileVersion: "2026-05-23.1",
+        profileDisplayName: "Web app with Bun and browser checks",
+        sandboxName: "session_session-1",
+      },
+    });
+    expect(outputs.at(-1)).toMatchObject({
+      final: finalMessages,
+      runtime: {
+        mode: "managed_runtime",
+        label: "Managed runtime worker",
+        workerType: "executor",
+      },
+    });
   });
 
   test("buildSystemPrompt lists subagents from the shared registry", () => {

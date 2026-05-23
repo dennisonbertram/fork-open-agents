@@ -359,9 +359,18 @@ export function TaskRenderer({
   const toolCount =
     output?.toolCallCount ?? (isComplete ? countToolCalls(output?.final) : 0);
   const tokenCount = output?.usage?.inputTokens ?? null;
+  const runtimeLabel =
+    output?.runtime?.mode === "managed_runtime"
+      ? output.runtime.profileDisplayName
+        ? `Managed runtime worker · ${output.runtime.profileDisplayName}`
+        : "Managed runtime worker"
+      : null;
 
   // Build mono stats for right-aligned meta
   const statParts: string[] = [];
+  if (runtimeLabel) {
+    statParts.push(runtimeLabel);
+  }
   if (toolCount > 0) {
     statParts.push(`${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
   }

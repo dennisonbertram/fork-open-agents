@@ -24,6 +24,16 @@ import {
   writeFileTool,
 } from "./tools";
 
+export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
+export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
+
+export type ManagedRuntimeAgentContext = {
+  profileId?: string;
+  profileVersion?: string;
+  profileDisplayName?: string;
+  sandboxName?: string;
+};
+
 export interface AgentModelSelection {
   id: GatewayModelId;
   providerOptionsOverrides?: ProviderOptionsByProvider;
@@ -44,6 +54,15 @@ const callOptionsSchema = z.object({
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
+  runtimeMode: z.enum(OPEN_AGENT_RUNTIME_MODES).optional(),
+  managedRuntime: z
+    .object({
+      profileId: z.string().optional(),
+      profileVersion: z.string().optional(),
+      profileDisplayName: z.string().optional(),
+      sandboxName: z.string().optional(),
+    })
+    .optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -75,6 +94,58 @@ const tools = {
   skill: skillTool,
   web_fetch: webFetchTool,
 } satisfies ToolSet;
+
+export const OPEN_AGENT_TOOL_NAMES = Object.keys(tools) as Array<
+  keyof typeof tools
+>;
+
+export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
+  "todo_write",
+  "task",
+  "ask_user_question",
+  "skill",
+  "web_fetch",
+] as const satisfies ReadonlyArray<keyof typeof tools>;
+
+function pickTools(
+  sourceTools: ToolSet,
+  allowedToolNames: ReadonlyArray<string>,
+): ToolSet {
+  const nextTools: ToolSet = {};
+
+  for (const toolName of allowedToolNames) {
+    const candidate = sourceTools[toolName];
+    if (candidate) {
+      nextTools[toolName] = candidate;
+    }
+  }
+
+  return nextTools;
+}
+
+export function getOpenAgentToolsForRuntimeMode(
+  runtimeMode: OpenAgentRuntimeMode = "classic",
+): ToolSet {
+  if (runtimeMode === "managed_runtime") {
+    return pickTools(tools, MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES);
+  }
+
+  return tools;
+}
+
+export function getRuntimeModeToolPolicy(
+  runtimeMode: OpenAgentRuntimeMode = "classic",
+  requestedTools?: ToolSet,
+): ToolSet {
+  if (runtimeMode !== "managed_runtime") {
+    return requestedTools ?? tools;
+  }
+
+  return pickTools(
+    requestedTools ?? tools,
+    MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  );
+}
 
 export const openAgent = new ToolLoopAgent({
   model: defaultModel,
@@ -114,6 +185,9 @@ export const openAgent = new ToolLoopAgent({
     const customInstructions = options.customInstructions;
     const sandbox = options.sandbox;
     const skills = options.skills ?? [];
+    const runtimeMode = options.runtimeMode ?? "classic";
+    const managedRuntime =
+      runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -122,13 +196,17 @@ export const openAgent = new ToolLoopAgent({
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,
+      runtimeMode,
     });
 
     return {
       ...settings,
       model: callModel,
       tools: addCacheControl({
-        tools: settings.tools ?? tools,
+        tools: getRuntimeModeToolPolicy(
+          runtimeMode,
+          settings.tools,
+        ) as typeof tools,
         model: callModel,
       }),
       instructions,
@@ -137,6 +215,8 @@ export const openAgent = new ToolLoopAgent({
         skills,
         model: callModel,
         subagentModel,
+        runtimeMode,
+        managedRuntime,
       },
     };
   },

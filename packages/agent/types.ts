@@ -21,6 +21,13 @@ export interface AgentContext {
   skills?: SkillMetadata[];
   model: LanguageModel;
   subagentModel?: LanguageModel;
+  runtimeMode?: "classic" | "managed_runtime";
+  managedRuntime?: {
+    profileId?: string;
+    profileVersion?: string;
+    profileDisplayName?: string;
+    sandboxName?: string;
+  };
 }
 
 export interface SandboxExecutionContext {

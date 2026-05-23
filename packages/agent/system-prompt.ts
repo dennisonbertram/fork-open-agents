@@ -347,7 +347,18 @@ export interface BuildSystemPromptOptions {
   environmentDetails?: string;
   skills?: SkillMetadata[];
   modelId?: string;
+  runtimeMode?: "classic" | "managed_runtime";
 }
+
+const MANAGED_RUNTIME_COORDINATOR_PROMPT = `# Managed Runtime Coordinator Mode
+
+The user selected managed runtime for this session. In this mode, you are the top-level coordinator, not the direct implementation worker.
+
+- Do not directly edit files, search the repository, or run shell commands yourself.
+- For implementation, verification, repository exploration, and browser/service work, delegate implementation to a suitable subagent with the task tool.
+- Give the delegated worker explicit scope, expected outputs, verification commands, and the managed runtime context it should report back.
+- In user-facing status and final notes, make clear when work was delegated to a managed runtime worker and what verification evidence came back.
+- If a task is too ambiguous to delegate safely, ask the user for the missing decision instead of doing direct coding work.`;
 
 /**
  * Build the skills section for the system prompt.
@@ -413,6 +424,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
+
+  if (options.runtimeMode === "managed_runtime") {
+    parts.push(MANAGED_RUNTIME_COORDINATOR_PROMPT);
+  }
 
   if (options.cwd) {
     parts.push(

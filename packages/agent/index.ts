@@ -2,10 +2,21 @@ export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,
+  ManagedRuntimeAgentContext,
   OpenAgentCallOptions,
   OpenAgentModelInput,
+  OpenAgentRuntimeMode,
 } from "./open-agent";
-export { defaultModel, defaultModelLabel, openAgent } from "./open-agent";
+export {
+  defaultModel,
+  defaultModelLabel,
+  getOpenAgentToolsForRuntimeMode,
+  getRuntimeModeToolPolicy,
+  MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  OPEN_AGENT_RUNTIME_MODES,
+  OPEN_AGENT_TOOL_NAMES,
+  openAgent,
+} from "./open-agent";
 // Skills exports
 export { discoverSkills, parseSkillFrontmatter } from "./skills/discovery";
 export { extractSkillBody, substituteArguments } from "./skills/loader";

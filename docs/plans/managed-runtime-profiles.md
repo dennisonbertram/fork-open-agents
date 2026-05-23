@@ -218,6 +218,16 @@ Disallowed coordinator actions:
 
 This prevents the coordinator from doing the work itself and then presenting it as managed runtime work.
 
+Current enforcement slice:
+
+- `@open-agents/agent` exposes a managed-runtime tool policy.
+- In `managed_runtime` mode, the top-level agent receives only coordinator-safe tools: todo updates, task delegation, user questions, skills, and web fetch.
+- Direct repository read/write/edit/search/bash tools are removed from the top-level agent in managed mode.
+- Workflow setup passes runtime mode and managed runtime profile/sandbox attribution into the agent call.
+- Delegated `task` workers emit managed-runtime attribution in their tool output so the UI can show that work is running through a managed runtime worker.
+
+This is not the final multi-sandbox workcell system. It is the first enforceable coordinator boundary using the existing subagent worker path while the broader Verified Build contracts and worker model mature.
+
 ### Worker Runtime Agent
 
 The worker runtime agent runs inside a managed sandbox. It can receive ordinary coding tools, but all tool calls must be attributed to a runtime instance.
@@ -390,6 +400,8 @@ Exit gate: a naive user can tell which runtime profile was used and whether requ
 
 - Add managed-runtime enforcement mode.
 - Remove direct mutation tools from the top-level coordinator in managed mode.
+- Pass managed runtime profile/sandbox attribution through the agent context.
+- Surface delegated worker attribution in task output/UI metadata.
 - Add coordinator tools for launching workers and querying runtime status.
 - Attribute every worker tool call to a sandbox instance.
 
