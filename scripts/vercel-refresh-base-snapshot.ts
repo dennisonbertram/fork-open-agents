@@ -20,11 +20,30 @@ import {
 } from "../apps/web/lib/sandbox/config";
 
 const SANDBOX_BASE_SNAPSHOT_CONFIG_PATH = "apps/web/lib/sandbox/config.ts";
+const MANAGED_RUNTIME_BUN_INSTALL_COMMAND = [
+  "if command -v bun >/dev/null 2>&1; then command -v bun; exit 0; fi",
+  "if command -v npm >/dev/null 2>&1; then npm install -g bun || true; fi",
+  "if ! command -v bun >/dev/null 2>&1; then curl -fsSL https://bun.sh/install | bash; fi",
+  'export PATH="$HOME/.bun/bin:$PATH"',
+  "if command -v bun >/dev/null 2>&1; then",
+  '  bun_path="$(command -v bun)"',
+  "  mkdir -p /usr/local/bin 2>/dev/null || true",
+  '  ln -sf "$bun_path" /usr/local/bin/bun 2>/dev/null || true',
+  "fi",
+  "command -v bun",
+].join("\n");
+const MANAGED_RUNTIME_SNAPSHOT_COMMANDS = [
+  MANAGED_RUNTIME_BUN_INSTALL_COMMAND,
+  "npm install -g agent-browser",
+  "command -v bun",
+  "command -v agent-browser",
+] as const;
 
 interface CliOptions {
   baseSnapshotId?: string;
   sandboxTimeoutMs?: number;
   commandTimeoutMs?: number;
+  managedRuntimeDefaults?: boolean;
   commands: string[];
 }
 
@@ -40,6 +59,7 @@ function printUsage() {
 Options:
   --from <snapshot-id>         Override the starting snapshot id
   --command <shell-command>    Command to run inside the sandbox. Repeat as needed.
+  --managed-runtime-defaults   Install the default managed runtime toolchain (Bun and agent-browser)
   --sandbox-timeout-ms <ms>    Sandbox lifetime for the refresh run
   --command-timeout-ms <ms>    Timeout for each setup command (default: ${DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS})
   --help                       Show this message
@@ -75,6 +95,7 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
   let baseSnapshotId: string | undefined;
   let sandboxTimeoutMs: number | undefined;
   let commandTimeoutMs: number | undefined;
+  let managedRuntimeDefaults = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -92,6 +113,11 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
     if (arg === "--command") {
       commands.push(requireOptionValue(argv, index, arg));
       index += 1;
+      continue;
+    }
+
+    if (arg === "--managed-runtime-defaults") {
+      managedRuntimeDefaults = true;
       continue;
     }
 
@@ -120,6 +146,7 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
     baseSnapshotId,
     sandboxTimeoutMs,
     commandTimeoutMs,
+    managedRuntimeDefaults,
     commands,
   };
 }
@@ -133,7 +160,12 @@ async function main() {
 
   const result = await refreshBaseSnapshot({
     baseSnapshotId: parsed.baseSnapshotId ?? DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-    commands: parsed.commands,
+    commands: [
+      ...(parsed.managedRuntimeDefaults
+        ? MANAGED_RUNTIME_SNAPSHOT_COMMANDS
+        : []),
+      ...parsed.commands,
+    ],
     sandboxTimeoutMs: parsed.sandboxTimeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
     commandTimeoutMs: parsed.commandTimeoutMs,
     ports: DEFAULT_SANDBOX_PORTS,

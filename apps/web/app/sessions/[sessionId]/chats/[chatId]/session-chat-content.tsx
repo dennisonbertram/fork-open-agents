@@ -2747,7 +2747,24 @@ export function SessionChatContent({
     !isRestoringSnapshot &&
     !isReconnectingSandbox &&
     !isHibernatingUi;
+  const runtimeToolsDisabledReason = isArchived
+    ? "Archived sessions cannot run sandbox tools."
+    : isCreatingSandbox
+      ? "The sandbox is still being created."
+      : isRestoringSnapshot || isServerRestoring
+        ? "The sandbox is still restoring."
+        : isReconnectingSandbox
+          ? "The sandbox is reconnecting."
+          : isHibernatingUi
+            ? "The sandbox is hibernating."
+            : isServerHibernated && hasSnapshot
+              ? "Restore the sandbox before using runtime tools."
+              : !isSandboxActive
+                ? "Send a message to start the sandbox before using runtime tools."
+                : null;
   const canUseCodeEditor = codeEditorDisabledReason === null;
+  const codeEditorActionDisabledReason =
+    runtimeToolsDisabledReason ?? codeEditorDisabledReason;
   const devServer = useDevServer({
     sessionId: session.id,
     canRun: canRunDevServer,
@@ -2758,7 +2775,7 @@ export function SessionChatContent({
     canRun: canRunDevServer && canUseCodeEditor,
   });
   const isCodeEditorActionDisabled =
-    !canUseCodeEditor ||
+    Boolean(codeEditorActionDisabledReason) ||
     codeEditor.state.status === "starting" ||
     codeEditor.state.status === "stopping";
 
@@ -2848,8 +2865,7 @@ export function SessionChatContent({
     (isDeploymentStale ? buildingDeploymentUrl : null) ??
     prDeploymentUrl ??
     (isDeploymentFailed ? failedDeploymentUrl : null);
-  const showHeaderActions =
-    canRunDevServer || Boolean(previewDeploymentTargetUrl);
+  const showHeaderActions = true;
 
   // When auto-commit lands (transitions from committing to clean), mark the
   // current preview deployment as stale so the UI shows "Deploying…" until
@@ -3056,215 +3072,237 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
-            {canRunDevServer && (
-              <>
-                <DropdownMenu>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <DropdownMenuTrigger asChild>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    "hidden h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium sm:inline-flex",
+                    session.runtimeMode === "managed_runtime"
+                      ? "border-blue-500/30 bg-blue-500/10 text-blue-600 dark:text-blue-300"
+                      : "border-border bg-muted/40 text-muted-foreground",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-1.5 w-1.5 rounded-full",
+                      session.runtimeMode === "managed_runtime"
+                        ? "bg-blue-500"
+                        : "bg-muted-foreground/60",
+                    )}
+                  />
+                  {session.runtimeMode === "managed_runtime"
+                    ? "Managed"
+                    : "Classic"}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="max-w-72 text-pretty">
+                {session.runtimeMode === "managed_runtime"
+                  ? "Managed runtime is selected. The agent gets managed-runtime context, and dev server logs/browser checks use managed runtime services."
+                  : "Classic runtime is selected. Switch runtime mode before starting work to use managed runtime services."}
+              </TooltipContent>
+            </Tooltip>
+            <>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="hidden h-7 w-7 sm:inline-flex"
+                        aria-label="Runtime mode"
+                      >
+                        <Settings2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Runtime mode</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuLabel>Runtime mode</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={session.runtimeMode}
+                    onValueChange={(value) => {
+                      if (value !== "classic" && value !== "managed_runtime") {
+                        return;
+                      }
+                      void updateRuntimeMode(value).catch((error) => {
+                        console.error("Failed to update runtime mode:", error);
+                      });
+                    }}
+                  >
+                    <DropdownMenuRadioItem value="classic">
+                      Classic
+                    </DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="managed_runtime">
+                      Managed runtime
+                    </DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="hidden sm:inline-flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={codeEditor.menuLabel}
+                      onClick={() => void codeEditor.handleOpen()}
+                      disabled={isCodeEditorActionDisabled}
+                    >
+                      {codeEditor.state.status === "starting" ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Code2 className="h-3.5 w-3.5" />
+                      )}
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-72 text-pretty">
+                  {codeEditorActionDisabledReason ?? codeEditor.menuLabel}
+                </TooltipContent>
+              </Tooltip>
+              <div className="hidden h-7 items-center sm:flex">
+                {devServer.state.status === "ready" ? (
+                  <div className="flex items-center rounded-md border border-border px-0.5">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="hidden h-7 w-7 sm:inline-flex"
-                          aria-label="Runtime mode"
+                          className="h-5 w-5 rounded-sm"
+                          aria-label="Open dev server"
+                          onClick={() => void devServer.handlePrimaryAction()}
                         >
-                          <Settings2 className="h-3.5 w-3.5" />
+                          <Globe className="h-3 w-3" />
                         </Button>
-                      </DropdownMenuTrigger>
-                    </TooltipTrigger>
-                    <TooltipContent side="bottom">Runtime mode</TooltipContent>
-                  </Tooltip>
-                  <DropdownMenuContent align="end" className="w-56">
-                    <DropdownMenuLabel>Runtime mode</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup
-                      value={session.runtimeMode}
-                      onValueChange={(value) => {
-                        if (
-                          value !== "classic" &&
-                          value !== "managed_runtime"
-                        ) {
-                          return;
-                        }
-                        void updateRuntimeMode(value).catch((error) => {
-                          console.error(
-                            "Failed to update runtime mode:",
-                            error,
-                          );
-                        });
-                      }}
-                    >
-                      <DropdownMenuRadioItem value="classic">
-                        Classic
-                      </DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="managed_runtime">
-                        Managed runtime
-                      </DropdownMenuRadioItem>
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="hidden sm:inline-flex">
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        Open dev server
+                      </TooltipContent>
+                    </Tooltip>
+                    {devServer.showManagedActions ? (
+                      <>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 rounded-sm"
+                              aria-label="Open dev server logs"
+                              onClick={() => void devServer.handleOpenLogs()}
+                            >
+                              <ScrollText className="h-3 w-3" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            Open dev server logs
+                          </TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-5 w-5 rounded-sm"
+                              aria-label="Run browser check"
+                              disabled={
+                                devServer.browserCheckState.status === "running"
+                              }
+                              onClick={() =>
+                                void devServer.handleBrowserCheck()
+                              }
+                            >
+                              {devServer.browserCheckState.status ===
+                              "running" ? (
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                              ) : (
+                                <ScanEye className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">
+                            {devServer.browserCheckState.status === "running"
+                              ? "Running browser check..."
+                              : devServer.browserCheckState.status === "passed"
+                                ? "Browser check passed"
+                                : devServer.browserCheckState.status ===
+                                    "failed"
+                                  ? devServer.browserCheckState.summary
+                                  : "Run browser check"}
+                          </TooltipContent>
+                        </Tooltip>
+                      </>
+                    ) : null}
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-5 w-5 rounded-sm"
+                          aria-label="Stop dev server"
+                          onClick={() => void devServer.handleStopAction()}
+                        >
+                          <Square className="h-2.5 w-2.5 fill-current" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        Stop dev server
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                ) : devServer.state.status === "starting" ||
+                  devServer.state.status === "stopping" ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
-                        aria-label={codeEditor.menuLabel}
-                        onClick={() => void codeEditor.handleOpen()}
-                        disabled={isCodeEditorActionDisabled}
+                        aria-label={
+                          devServer.state.status === "starting"
+                            ? "Starting dev server"
+                            : "Stopping dev server"
+                        }
+                        disabled
                       >
-                        {codeEditor.state.status === "starting" ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Code2 className="h-3.5 w-3.5" />
-                        )}
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       </Button>
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className="max-w-72 text-pretty"
-                  >
-                    {codeEditorDisabledReason ?? codeEditor.menuLabel}
-                  </TooltipContent>
-                </Tooltip>
-                <div className="hidden h-7 items-center sm:flex">
-                  {devServer.state.status === "ready" ? (
-                    <div className="flex items-center rounded-md border border-border px-0.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 rounded-sm"
-                            aria-label="Open dev server"
-                            onClick={() => void devServer.handlePrimaryAction()}
-                          >
-                            <Globe className="h-3 w-3" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          Open dev server
-                        </TooltipContent>
-                      </Tooltip>
-                      {devServer.showManagedActions ? (
-                        <>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5 rounded-sm"
-                                aria-label="Open dev server logs"
-                                onClick={() => void devServer.handleOpenLogs()}
-                              >
-                                <ScrollText className="h-3 w-3" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              Open dev server logs
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="h-5 w-5 rounded-sm"
-                                aria-label="Run browser check"
-                                disabled={
-                                  devServer.browserCheckState.status ===
-                                  "running"
-                                }
-                                onClick={() =>
-                                  void devServer.handleBrowserCheck()
-                                }
-                              >
-                                {devServer.browserCheckState.status ===
-                                "running" ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <ScanEye className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">
-                              {devServer.browserCheckState.status === "running"
-                                ? "Running browser check..."
-                                : devServer.browserCheckState.status ===
-                                    "passed"
-                                  ? "Browser check passed"
-                                  : devServer.browserCheckState.status ===
-                                      "failed"
-                                    ? devServer.browserCheckState.summary
-                                    : "Run browser check"}
-                            </TooltipContent>
-                          </Tooltip>
-                        </>
-                      ) : null}
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-5 w-5 rounded-sm"
-                            aria-label="Stop dev server"
-                            onClick={() => void devServer.handleStopAction()}
-                          >
-                            <Square className="h-2.5 w-2.5 fill-current" />
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          Stop dev server
-                        </TooltipContent>
-                      </Tooltip>
-                    </div>
-                  ) : devServer.state.status === "starting" ||
-                    devServer.state.status === "stopping" ? (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          aria-label={
-                            devServer.state.status === "starting"
-                              ? "Starting dev server"
-                              : "Stopping dev server"
-                          }
-                          disabled
-                        >
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        {devServer.state.status === "starting"
-                          ? "Starting dev server..."
-                          : "Stopping dev server..."}
-                      </TooltipContent>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {devServer.state.status === "starting"
+                        ? "Starting dev server..."
+                        : "Stopping dev server..."}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <span className="inline-flex">
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
                           aria-label="Start dev server"
+                          disabled={runtimeToolsDisabledReason !== null}
                           onClick={() => void devServer.handlePrimaryAction()}
                         >
                           <Play className="h-3.5 w-3.5 fill-current" />
                         </Button>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom">
-                        Start dev server
-                      </TooltipContent>
-                    </Tooltip>
-                  )}
-                </div>
-              </>
-            )}
-            {previewDeploymentTargetUrl && (
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent
+                      side="bottom"
+                      className="max-w-72 text-pretty"
+                    >
+                      {runtimeToolsDisabledReason ?? "Start dev server"}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+              </div>
+            </>
+            {previewDeploymentTargetUrl ? (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -3302,6 +3340,25 @@ export function SessionChatContent({
                   {isDeploymentStale
                     ? "Open latest preview deployment (building)"
                     : "Open latest preview deployment"}
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="hidden sm:inline-flex">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label="Open latest preview deployment"
+                      disabled
+                    >
+                      <Globe className="h-3.5 w-3.5" />
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-72 text-pretty">
+                  No preview deployment is available yet.
                 </TooltipContent>
               </Tooltip>
             )}

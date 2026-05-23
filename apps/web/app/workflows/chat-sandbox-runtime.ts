@@ -41,8 +41,22 @@ import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
 
+const MANAGED_RUNTIME_BUN_INSTALL_COMMAND = [
+  "if command -v bun >/dev/null 2>&1; then command -v bun; exit 0; fi",
+  "if command -v npm >/dev/null 2>&1; then npm install -g bun || true; fi",
+  "if ! command -v bun >/dev/null 2>&1; then curl -fsSL https://bun.sh/install | bash; fi",
+  'export PATH="$HOME/.bun/bin:$PATH"',
+  "if command -v bun >/dev/null 2>&1; then",
+  '  bun_path="$(command -v bun)"',
+  "  mkdir -p /usr/local/bin 2>/dev/null || true",
+  '  ln -sf "$bun_path" /usr/local/bin/bun 2>/dev/null || true',
+  "fi",
+  "command -v bun",
+].join("\n");
+
 export type ResolvedChatSandboxRuntime = {
   sandboxState: SandboxState;
+  runtimeMode: SessionRecord["runtimeMode"];
   workingDirectory: string;
   currentBranch?: string;
   environmentDetails?: string;
@@ -178,6 +192,83 @@ async function sendStart(messageId: string) {
   }
 }
 
+async function ensureManagedRuntimeEnvironment(params: {
+  sandbox: Sandbox;
+}): Promise<string[]> {
+  const notes: string[] = [];
+
+  await sendWorkspaceStatus({
+    status: "setting-up",
+    message: "Managed runtime selected. Preparing sandbox environment...",
+  });
+
+  const bunProbe = await params.sandbox.exec(
+    "command -v bun",
+    params.sandbox.workingDirectory,
+    30_000,
+  );
+
+  if (bunProbe.success) {
+    notes.push("Bun is available in the managed runtime.");
+    return notes;
+  }
+
+  await sendWorkspaceStatus({
+    status: "setting-up",
+    message: "Managed runtime selected. Installing Bun toolchain...",
+  });
+
+  const bunInstall = await params.sandbox.exec(
+    MANAGED_RUNTIME_BUN_INSTALL_COMMAND,
+    params.sandbox.workingDirectory,
+    120_000,
+  );
+
+  if (!bunInstall.success) {
+    const summary = [bunInstall.stderr, bunInstall.stdout]
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .join("\n");
+    console.warn(
+      `Managed runtime could not install Bun automatically: ${summary}`,
+    );
+    notes.push(
+      "Bun was not available and automatic installation failed. Verify the package manager before running Bun commands.",
+    );
+    await sendWorkspaceStatus({
+      status: "setting-up",
+      message:
+        "Managed runtime is active, but Bun could not be installed automatically.",
+    });
+    return notes;
+  }
+
+  const verifyBun = await params.sandbox.exec(
+    "command -v bun",
+    params.sandbox.workingDirectory,
+    30_000,
+  );
+
+  if (verifyBun.success) {
+    notes.push("Bun was installed for this managed runtime session.");
+    await sendWorkspaceStatus({
+      status: "setting-up",
+      message: "Managed runtime is active. Bun toolchain is ready.",
+    });
+    return notes;
+  }
+
+  notes.push(
+    "Bun installation completed, but Bun was not found on PATH. Verify tool availability before running project scripts.",
+  );
+  await sendWorkspaceStatus({
+    status: "setting-up",
+    message:
+      "Managed runtime is active, but Bun was not found after installation.",
+  });
+  return notes;
+}
+
 export async function resolveChatSandboxRuntime(params: {
   userId: string;
   sessionId: string;
@@ -272,6 +363,11 @@ export async function resolveChatSandboxRuntime(params: {
     }),
   ]);
 
+  const managedRuntimeNotes =
+    session.runtimeMode === "managed_runtime"
+      ? await ensureManagedRuntimeEnvironment({ sandbox })
+      : [];
+
   kickSandboxLifecycleWorkflow({
     sessionId: params.sessionId,
     reason: "sandbox-created",
@@ -285,9 +381,13 @@ export async function resolveChatSandboxRuntime(params: {
 
   return {
     sandboxState,
+    runtimeMode: session.runtimeMode,
     workingDirectory: sandbox.workingDirectory,
     currentBranch: sandbox.currentBranch,
-    environmentDetails: sandbox.environmentDetails,
+    environmentDetails:
+      session.runtimeMode === "managed_runtime"
+        ? `${sandbox.environmentDetails}\n\n# Managed Runtime\n\n- Runtime mode: managed runtime.\n- The user selected managed runtime for this session. Make that explicit in status updates and final verification notes when runtime behavior matters.\n- Managed runtime service previews, service logs, and browser checks are available from the app UI for local web apps.\n- The app prepares the sandbox toolchain before the agent starts, but still verify command availability before assuming a tool exists.\n${managedRuntimeNotes.map((note) => `- ${note}`).join("\n")}`
+        : sandbox.environmentDetails,
     skills,
     didSetupWorkspace,
     sessionTitle: session.title,

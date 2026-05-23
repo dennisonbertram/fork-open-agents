@@ -18,6 +18,8 @@ const MAX_SDK_TIMEOUT_MS = 18_000_000; // Vercel API limit: 5 hours
 const MAX_PROACTIVE_TIMEOUT_MS = MAX_SDK_TIMEOUT_MS - TIMEOUT_BUFFER_MS;
 const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // 5 minutes default timeout for reconnected sandboxes
 const DETACHED_QUICK_FAILURE_WINDOW_MS = 2_000;
+const DEFAULT_COMMAND_PATH =
+  "/root/.bun/bin:/home/vc/.bun/bin:/home/sandbox/.bun/bin:/usr/local/bin:/usr/bin:/bin";
 
 interface SandboxRouteLike {
   port: number;
@@ -424,9 +426,9 @@ export class VercelSandbox implements Sandbox {
 - GitHub CLI (gh) is NOT available; do not call GitHub write APIs from this sandbox
 - GitHub writes are handled by the broker outside this sandbox. Do not configure credentials, commit, or push from inside the sandbox.
 - Node.js runtime with npm/pnpm available
-- Bun and jq are preinstalled
+- Bun, jq, and agent-browser availability depends on the base snapshot. Verify with \`command -v <tool>\` before relying on them.
 - Dependencies may not be installed. Before running project scripts (build, typecheck, lint, test), check if \`node_modules\` exists and run the package manager install command if needed (e.g. \`bun install\`, \`npm install\`)
-- This snapshot includes agent-browser; when validating UI or end-to-end behavior, start the dev server and use agent-browser against the local dev server URL
+- When validating UI or end-to-end behavior, start the dev server and use agent-browser against the local dev server URL if agent-browser is available; otherwise report that browser automation is unavailable in the sandbox
 - This sandbox already runs on Vercel; do not suggest deploying to Vercel just to obtain a shareable preview link
 ${hostLine}${portLines}${runtimeEnvLine}`;
   }
@@ -472,12 +474,13 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
   private getCommandEnv(): Record<string, string> | undefined {
     const runtimePreviewEnv = this.getRuntimePreviewEnv();
-    if (!this.env && Object.keys(runtimePreviewEnv).length === 0) {
-      return undefined;
-    }
+    const commandPath = this.env?.PATH
+      ? `${DEFAULT_COMMAND_PATH}:${this.env.PATH}`
+      : DEFAULT_COMMAND_PATH;
 
     return {
       ...this.env,
+      PATH: commandPath,
       ...runtimePreviewEnv,
     };
   }
