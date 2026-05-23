@@ -42,10 +42,12 @@ bun run web            # Run web app
 
 # Quality checks (REQUIRED after making any changes)
 bun run ci                                 # Required: run format check, lint, typecheck, and tests
+bun --bun run ci                           # Codex/recovery-safe equivalent when native CLIs load under Node
 turbo typecheck                            # Type check all packages
 
 # Linting and formatting (Ultracite - oxlint + oxfmt, run from root)
 bun run check                              # Lint and format check all files
+bun --bun run check                        # Codex/recovery-safe equivalent for oxfmt native bindings
 bun run fix                                # Lint fix and format all files
 
 # Filter by package (use --filter)
@@ -62,7 +64,18 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 **CI/script execution rules:**
 
 - Run project checks through package scripts (for example `bun run ci`, `bun run --cwd apps/web db:check`).
+- In Codex desktop or crash-recovery shells, prefer `bun --bun run <script>` for scripts that invoke native Bun-installed CLIs (especially `check`/`ci`). This keeps the script under Bun instead of the app's bundled Node runtime, which can fail to load `oxfmt` native bindings.
 - Prefer `bun run <script>` over invoking tool binaries directly (`bunx`, `bun x`, `tsc`, `eslint`, etc.) so local runs match CI behavior.
+
+## Local Service Recovery
+
+- If `bun` or `railway` is missing after a machine crash, check PATH/bootstrap before changing the app: on this machine Bun lives in `~/.bun/bin` and Railway in `~/.railway/bin`.
+- Repair dependencies from the repo root with `bun install --frozen-lockfile`.
+- Start the local web app with `bun run web`; it serves `http://localhost:3000` and loads `apps/web/.env.local` / `apps/web/.env`.
+- Verify local health with `curl -I http://localhost:3000` and `curl http://localhost:3000/api/auth/info`.
+- Local Vercel sign-in requires the Vercel OAuth app to include `http://localhost:3000/api/auth/callback/vercel` alongside the production callback.
+- Railway CLI auth and install state are separate from project linking. Use `railway whoami --json` to verify auth; `railway status --json` only works after this repo is linked to the correct Railway project.
+- Do not link or deploy to Railway based on a guessed project name. Confirm the project URL or project ID first, then use `railway link <project-id>` or explicit `--project`/`--environment` flags.
 
 ## Git Commands
 
