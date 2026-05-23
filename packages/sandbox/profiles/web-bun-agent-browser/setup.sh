@@ -22,20 +22,38 @@ ln -sf "$bun_path" "$profile_bin_dir/bun"
 echo "bun: $(command -v bun)"
 bun --version
 
-if ! command -v agent-browser >/dev/null 2>&1; then
-  if command -v bun >/dev/null 2>&1; then
-    bun install -g agent-browser
-  elif command -v npm >/dev/null 2>&1; then
-    npm install -g agent-browser
-  else
-    echo "No package manager is available to install agent-browser." >&2
-    exit 1
-  fi
+if ! command -v bun >/dev/null 2>&1; then
+  echo "Bun is required before installing agent-browser for this profile." >&2
+  exit 1
 fi
 
+rm -f "$profile_bin_dir/agent-browser" "$HOME/.bun/bin/agent-browser"
+rm -rf "$HOME/.bun/install/global/node_modules/agent-browser"
+bun install -g agent-browser
+
 echo "agent-browser: $(command -v agent-browser)"
-agent_browser_path="$(command -v agent-browser)"
-ln -sf "$agent_browser_path" "$profile_bin_dir/agent-browser"
+agent_browser_bin_dir="$HOME/.bun/install/global/node_modules/agent-browser/bin"
+platform="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
+case "$arch" in
+  x86_64 | amd64) agent_browser_arch="x64" ;;
+  arm64 | aarch64) agent_browser_arch="arm64" ;;
+  *)
+    echo "Unsupported agent-browser architecture: $arch" >&2
+    exit 1
+    ;;
+esac
+agent_browser_path="$agent_browser_bin_dir/agent-browser-$platform-$agent_browser_arch"
+if [ ! -x "$agent_browser_path" ]; then
+  echo "agent-browser native binary was not found after install: $agent_browser_path" >&2
+  exit 1
+fi
+
+rm -f "$profile_bin_dir/agent-browser"
+printf '#!/usr/bin/env sh\nexec %s "$@"\n' "$agent_browser_path" > "$profile_bin_dir/agent-browser"
+chmod +x "$profile_bin_dir/agent-browser"
+agent-browser --help >/dev/null
+agent-browser install --with-deps
 
 if command -v node >/dev/null 2>&1; then
   echo "node: $(node --version)"
