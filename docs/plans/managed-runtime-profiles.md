@@ -58,7 +58,7 @@ Example profile:
 ```json
 {
   "id": "web-bun-agent-browser",
-  "version": "2026-05-23.1",
+  "version": "2026-05-23.2",
   "displayName": "Web app with Bun and browser checks",
   "expectedTools": ["bun", "agent-browser"],
   "optionalTools": ["node", "npm"],
@@ -83,7 +83,15 @@ The current first script is:
 packages/sandbox/profiles/web-bun-agent-browser/setup.sh
 ```
 
-This script installs Bun and `agent-browser` for the default web profile. It is deliberately profile-specific. Future profiles can install a different runtime or no runtime at all.
+This script installs Bun, `agent-browser`, browser OS dependencies, and the
+browser binary that `agent-browser` needs for the default web profile. It is
+deliberately profile-specific. Future profiles can install a different runtime
+or no runtime at all.
+
+`agent-browser` is currently installed as a Bun-managed package, then the profile
+creates a stable shim to the package's native binary for the sandbox platform.
+That keeps Node and npm as optional observations instead of global sandbox
+assumptions.
 
 ### Snapshot
 
@@ -248,7 +256,7 @@ Worker output should include a completion packet:
 Every visible tool call in the chat should show its execution scope:
 
 - `Coordinator`
-- `Sandbox web-bun-agent-browser@2026-05-23.1 / session_session-id`
+- `Sandbox web-bun-agent-browser@2026-05-23.2 / session_session-id`
 - `Sandbox worker-2 / checks repair`
 
 The current transcript style, where a managed turn still shows generic `Read`, `Glob`, and `Bash`, is not enough. Tool calls need a badge or grouping that says which runtime produced them.
@@ -294,7 +302,7 @@ Managed runtime
 web-1: working on UI change
 checks-1: running test suite
 
-Profile: web-bun-agent-browser@2026-05-23.1
+Profile: web-bun-agent-browser@2026-05-23.2
 Tools verified: bun, agent-browser
 Optional tools: node unavailable, npm unavailable
 ```

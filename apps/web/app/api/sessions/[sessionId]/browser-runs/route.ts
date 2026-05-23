@@ -8,6 +8,7 @@ import {
   runManagedBrowserCheck,
 } from "@/lib/sandbox/runtime/browser-runs";
 import { getSandboxService } from "@/lib/sandbox/runtime/service-records";
+import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 
 type RouteContext = {
@@ -100,6 +101,9 @@ export async function POST(req: Request, context: RouteContext) {
 
   const sandbox = await connectSandbox(
     sessionContext.sessionRecord.sandboxState,
+    {
+      ports: DEFAULT_SANDBOX_PORTS,
+    },
   );
   const run = await runManagedBrowserCheck({
     sessionId,

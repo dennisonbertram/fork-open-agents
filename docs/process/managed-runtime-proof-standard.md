@@ -28,7 +28,7 @@ Every proof bundle should include these records or explicitly state why a record
 is not applicable.
 
 1. **Claim**: the concrete claim being made, for example "this run used managed
-   runtime profile `web-bun-agent-browser@2026-05-23.1`."
+   runtime profile `web-bun-agent-browser@2026-05-23.2`."
 2. **Provenance**: session id, chat id, workflow run id, profile run id,
    sandbox id or name, worker id when present, source SHA when deployment is
    involved, and timestamps.

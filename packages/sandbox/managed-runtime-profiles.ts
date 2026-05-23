@@ -52,13 +52,22 @@ const INSTALL_AGENT_BROWSER_COMMAND = [
   'profile_bin_dir="$HOME/.open-agents/bin"',
   'export PATH="$profile_bin_dir:$HOME/.bun/bin:$HOME/.bun/install/global/bin:/usr/local/bin:/usr/bin:/bin:$PATH"',
   'mkdir -p "$profile_bin_dir"',
-  "if command -v agent-browser >/dev/null 2>&1; then command -v agent-browser;",
-  "elif command -v bun >/dev/null 2>&1; then bun install -g agent-browser;",
-  "elif command -v npm >/dev/null 2>&1; then npm install -g agent-browser;",
-  'else echo "No package manager is available to install agent-browser." >&2; exit 1; fi',
+  'if ! command -v bun >/dev/null 2>&1; then echo "Bun is required before installing agent-browser for this profile." >&2; exit 1; fi',
+  'rm -f "$profile_bin_dir/agent-browser" "$HOME/.bun/bin/agent-browser"',
+  'rm -rf "$HOME/.bun/install/global/node_modules/agent-browser"',
+  "bun install -g agent-browser",
+  'agent_browser_bin_dir="$HOME/.bun/install/global/node_modules/agent-browser/bin"',
+  "platform=\"$(uname -s | tr '[:upper:]' '[:lower:]')\"",
+  'arch="$(uname -m)"',
+  'case "$arch" in x86_64|amd64) agent_browser_arch="x64" ;; arm64|aarch64) agent_browser_arch="arm64" ;; *) echo "Unsupported agent-browser architecture: $arch" >&2; exit 1 ;; esac',
+  'agent_browser_path="$agent_browser_bin_dir/agent-browser-$platform-$agent_browser_arch"',
+  'if [ ! -x "$agent_browser_path" ]; then echo "agent-browser native binary was not found after install: $agent_browser_path" >&2; exit 1; fi',
+  'rm -f "$profile_bin_dir/agent-browser"',
+  'printf \'#!/usr/bin/env sh\\nexec %s "$@"\\n\' "$agent_browser_path" > "$profile_bin_dir/agent-browser"',
+  'chmod +x "$profile_bin_dir/agent-browser"',
+  "agent-browser --help >/dev/null",
+  "agent-browser install --with-deps",
   "command -v agent-browser",
-  'agent_browser_path="$(command -v agent-browser)"',
-  'ln -sf "$agent_browser_path" "$profile_bin_dir/agent-browser"',
 ].join("\n");
 
 export const DEFAULT_MANAGED_RUNTIME_PROFILE_ID = "web-bun-agent-browser";
@@ -66,7 +75,7 @@ export const DEFAULT_MANAGED_RUNTIME_PROFILE_ID = "web-bun-agent-browser";
 export const MANAGED_RUNTIME_PROFILES = [
   {
     id: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
-    version: "2026-05-23.1",
+    version: "2026-05-23.2",
     displayName: "Web app with Bun and browser checks",
     description:
       "Baseline Open Agents managed runtime profile for JavaScript/TypeScript web repositories that need Bun scripts, exposed preview ports, and browser smoke checks.",
@@ -74,7 +83,7 @@ export const MANAGED_RUNTIME_PROFILES = [
       repoPath: "packages/sandbox/profiles/web-bun-agent-browser/setup.sh",
       sandboxPath: "/tmp/open-agents/profiles/web-bun-agent-browser/setup.sh",
       command: "bash /tmp/open-agents/profiles/web-bun-agent-browser/setup.sh",
-      timeoutMs: 180_000,
+      timeoutMs: 300_000,
     },
     setupCommands: [
       {
@@ -87,7 +96,7 @@ export const MANAGED_RUNTIME_PROFILES = [
         id: "install-agent-browser",
         label: "Install agent-browser",
         command: INSTALL_AGENT_BROWSER_COMMAND,
-        timeoutMs: 180_000,
+        timeoutMs: 300_000,
       },
     ],
     verificationCommands: [
@@ -117,8 +126,9 @@ export const MANAGED_RUNTIME_PROFILES = [
       {
         id: "verify-agent-browser",
         label: "Verify agent-browser",
-        command: "command -v agent-browser",
-        timeoutMs: 30_000,
+        command:
+          'command -v agent-browser && agent-browser --help >/dev/null && test -d "$HOME/.agent-browser/browsers"',
+        timeoutMs: 60_000,
         required: true,
       },
     ],
