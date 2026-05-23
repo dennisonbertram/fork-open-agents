@@ -342,6 +342,13 @@ export async function recordWorkflowUsage(
     workflowRunId: string;
     chatId: string;
     sessionId: string;
+    requestId?: string | null;
+    runtimeMode?: "classic" | "managed_runtime" | null;
+    sandboxName?: string | null;
+    managedRuntimeProfileId?: string | null;
+    managedRuntimeProfileVersion?: string | null;
+    managedRuntimeProfileRunId?: string | null;
+    errorMessage?: string | null;
     status: WorkflowRunStatus;
     startedAt: string;
     finishedAt: string;
@@ -363,6 +370,15 @@ export async function recordWorkflowUsage(
           sessionId: workflowRun.sessionId,
           userId,
           modelId,
+          requestId: workflowRun.requestId ?? null,
+          runtimeMode: workflowRun.runtimeMode ?? null,
+          sandboxName: workflowRun.sandboxName ?? null,
+          managedRuntimeProfileId: workflowRun.managedRuntimeProfileId ?? null,
+          managedRuntimeProfileVersion:
+            workflowRun.managedRuntimeProfileVersion ?? null,
+          managedRuntimeProfileRunId:
+            workflowRun.managedRuntimeProfileRunId ?? null,
+          errorMessage: workflowRun.errorMessage ?? null,
           status: workflowRun.status,
           startedAt: workflowRun.startedAt,
           finishedAt: workflowRun.finishedAt,

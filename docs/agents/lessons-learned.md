@@ -17,6 +17,7 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - `bunx @vercel/config validate` executes the CLI under Node via its shebang and cannot parse TypeScript-style `vercel.ts` imports; use `bunx --bun @vercel/config validate` (or `bun node_modules/@vercel/config/dist/cli.js validate`) for reliable local validation.
 - In Codex desktop/non-interactive shells, `bun run <script>` can still execute native CLIs through the app's bundled Node runtime; if `oxfmt`/Ultracite fails to load native bindings, rerun the same package script as `bun --bun run <script>` (for example `bun --bun run ci`) instead of invoking tool binaries directly.
 - Successful Vercel CLI auth (`vercel whoami`, team/project REST APIs, `.vercel` linking) does **not** guarantee Workflow observability access. `workflow inspect ... --backend vercel` can still fail with `401 {"error":{"code":"unauthorized","message":"You are not allowed to access this endpoint."}}` when the user/token lacks the Vercel product permission documented as `Vercel Workflow` (and possibly related Observability access), even if `WORKFLOW_VERCEL_AUTH_TOKEN` is passed explicitly from the Vercel CLI auth file.
+- Strong agent process needs executable issue/PR structure, not only prose docs: standard issue templates should require protected path, behavior contract, tests to add first, observability evidence, red/green TDD audit trail, deploy impact, and definition of done.
 
 ## Auth / OAuth
 
@@ -82,6 +83,10 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - Managed runtime enforcement must be implemented as a tool boundary, not only prompt guidance. In managed mode, remove direct read/write/edit/search/bash tools from the top-level agent and pass runtime profile/sandbox attribution into delegated worker outputs so users can distinguish coordinator activity from worker execution.
 - Sandbox install scripts should be source-controlled and usable both for snapshot creation and per-session fallback. Snapshots make installed applications fast to start, but setup/probe scripts remain the source of truth when snapshots are missing, stale, or being rebuilt.
 - Vercel standard sandboxes run as `vercel-sandbox` with `$HOME=/home/vercel-sandbox`; `/vercel` is root-owned. Runtime profile shims should be written under `$HOME/.open-agents/bin` and that path must be included in sandbox command `PATH`.
+- Managed runtime observability should persist profile setup/verification as structured command observations, not raw stdout/stderr. Store short redacted summaries, command ids, durations, exit codes, and the profile run id so the UI can prove what happened without leaking secrets.
+- Session-level runtime events should be a shared ledger across workflow, profile setup, services, browser checks, and harness events. Narrow feature tables are still useful for detail records, but the user needs one chronological inspector to trust which runtime did the work.
+- Do not emit duplicate user-visible session events for replayed harness SSE events. Treat the feature-specific event insert as the idempotency gate, then mirror only newly-persisted events into the shared session ledger.
+- Package-manager selection for sandbox dev servers must probe sandbox PATH before launching commands. Respect lockfiles and `packageManager` declarations when present, but when metadata is absent choose an actually available package manager; if none exists, emit a blocked runtime event that points back to managed profile setup instead of assuming `npm`, `bun`, or `node`.
 
 ## Chat / Streaming UI
 

@@ -1,0 +1,194 @@
+name: Feature slice
+description: A buildable, PR-sized feature or improvement
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: why
+    attributes:
+      label: Why this matters
+      description: What user, operator, or product outcome does this unlock?
+    validations:
+      required: true
+  - type: textarea
+    id: protected_path
+    attributes:
+      label: User/operator path protected
+      description: Name the concrete path this ticket makes better or safer.
+      placeholder: |
+        A user/operator can ...
+    validations:
+      required: true
+  - type: textarea
+    id: behavior_contract
+    attributes:
+      label: Behavior contract
+      description: Describe the intended visible behavior in scenario form.
+      placeholder: |
+        - Given ...
+          When ...
+          Then ...
+    validations:
+      required: true
+  - type: textarea
+    id: product_spec
+    attributes:
+      label: Product and design spec
+      description: Describe UX, states, copy, accessibility, and permission boundaries.
+      placeholder: |
+        - Entry point:
+        - Primary flow:
+        - Empty/loading/success/error states:
+        - Permissions/auth boundaries:
+        - Accessibility/usability notes:
+        - Copy or terminology:
+    validations:
+      required: true
+  - type: textarea
+    id: integration_spec
+    attributes:
+      label: Integration spec
+      description: Describe how this plugs into app, agent, sandbox, workflow, DB, and deployment surfaces.
+      placeholder: |
+        - Routes/components/API surfaces:
+        - Agent/sandbox/workflow surfaces:
+        - Data model/migrations/events/background jobs:
+        - External services/config/env vars:
+        - Observability/status/logging/evidence:
+        - Backward compatibility:
+    validations:
+      required: true
+  - type: textarea
+    id: in_scope
+    attributes:
+      label: In scope
+      description: Specific behavior this issue should implement.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: out_scope
+    attributes:
+      label: Out of scope
+      description: Adjacent work that must stay out of this PR-sized slice.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: research_context
+    attributes:
+      label: Research and context sources
+      description: List repo docs, prior incidents, Context7/vendor docs, or assumptions that shape this issue.
+      placeholder: |
+        - Repo docs:
+        - External docs or Context7 IDs:
+        - Prior issues/incidents:
+        - Decision or assumption:
+    validations:
+      required: true
+  - type: textarea
+    id: agent_todos
+    attributes:
+      label: Agent todo checklist
+      description: Ordered checkboxes concrete enough that another agent can continue the work.
+      value: |
+        - [ ] Read the relevant context docs and identify the protected path.
+        - [ ] Review the product/design and integration specs before editing.
+        - [ ] Run the smallest meaningful baseline command for the touched surface.
+        - [ ] Add or identify the failing unit/contract test for the smallest behavior.
+        - [ ] Add or identify the larger behavior/integration proof for the protected path.
+        - [ ] Confirm the expected red state before implementation.
+        - [ ] Commit the failing test-only change on the work branch, or document why a separate red commit is not practical.
+        - [ ] Implement the smallest change that turns the targeted test green.
+        - [ ] Confirm the behavior/integration proof goes green only after the implementation.
+        - [ ] Commit the green implementation separately from the red test commit when practical.
+        - [ ] Run the targeted test and adjacent suite.
+        - [ ] Run `bun --bun run ci`, or document approved/pre-existing failures.
+        - [ ] Update docs with verification and observability notes.
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: Tests to add first
+      description: Name the unit/contract, behavior, integration, or regression tests that should fail before implementation.
+      placeholder: |
+        - Smallest unit/contract test:
+          - Test file:
+          - Expected red command:
+          - Expected red reason:
+        - Behavior/integration proof:
+          - Test file or smoke:
+          - Expected red command:
+          - Expected red reason:
+        - What should only go green after all lower-level TDD tests pass:
+    validations:
+      required: true
+  - type: textarea
+    id: observability
+    attributes:
+      label: Observability and user feedback
+      description: What evidence will prove the system did the work and make failures understandable?
+      placeholder: |
+        - User-visible status:
+        - Logs/events/metadata:
+        - Runtime/sandbox/profile attribution:
+        - Screenshots/browser/service evidence:
+        - Failure modes surfaced:
+    validations:
+      required: true
+  - type: textarea
+    id: tdd_audit
+    attributes:
+      label: TDD audit trail
+      description: Plan the red/green commit evidence for this issue.
+      value: |
+        - [ ] Red test commit planned:
+          - Commit:
+          - Failing command/output:
+        - [ ] Green implementation commit planned:
+          - Commit:
+          - Passing command/output:
+        - [ ] If red and green work cannot be separated into commits, explain why:
+    validations:
+      required: true
+  - type: textarea
+    id: regression_concerns
+    attributes:
+      label: Regression risks and concerns
+      description: What existing behavior, data, operator workflow, provider contract, or deployment path could this break?
+      placeholder: |
+        - Risk:
+        - Mitigation/test:
+        - Open concern:
+    validations:
+      required: true
+  - type: textarea
+    id: deploy
+    attributes:
+      label: Deploy or migration impact
+      description: Note Vercel, Neon, Upstash, GitHub App, workflow, sandbox, docs, or env var impacts.
+      placeholder: |
+        - None
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      value: |
+        - [ ] Smallest behavior/contract test observed red first
+        - [ ] Behavior/integration proof observed red before implementation when applicable
+        - [ ] Red test commit exists on the work branch, or exception is documented
+        - [ ] Green implementation commit exists after the red test commit, or exception is documented
+        - [ ] Targeted tests pass
+        - [ ] Adjacent suite passes
+        - [ ] `git diff --check` passes
+        - [ ] `bun --bun run ci` passes or approved/pre-existing failures are documented
+        - [ ] Docs updated
+        - [ ] Observability evidence is available to users/operators
+        - [ ] Deploy notes included
+    validations:
+      required: true

@@ -1,0 +1,130 @@
+name: Bug regression
+description: A bug fix that must include a failing regression test first
+title: "fix: "
+labels: ["type:bug", "type:regression"]
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What happened? Include logs, status, screenshots, or reproduction notes when available.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: Give deterministic local steps where possible. If the bug was live-only, say what local regression should be created.
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: regression
+    attributes:
+      label: Regression test plan
+      description: Name the small regression test and the larger behavior/integration proof it should feed.
+      placeholder: |
+        - Smallest regression test:
+          - Test file:
+          - Expected red command:
+          - Expected red reason:
+        - Behavior/integration proof:
+          - Test file or smoke:
+          - Expected red command:
+          - Expected red reason:
+        - What should only go green after the fix:
+    validations:
+      required: true
+  - type: textarea
+    id: blast_radius
+    attributes:
+      label: Blast radius
+      description: What user, operator, deployment, or data path could this affect?
+    validations:
+      required: true
+  - type: textarea
+    id: observability
+    attributes:
+      label: Observability evidence
+      description: What user-visible, operator-visible, or log/event evidence should prove the bug is fixed?
+      placeholder: |
+        - User-facing status/evidence:
+        - Logs/events/metadata:
+        - Screenshots/browser/service proof:
+        - Failure mode now surfaced:
+    validations:
+      required: true
+  - type: textarea
+    id: research_context
+    attributes:
+      label: Research and context sources
+      description: List known issues, incidents, logs, docs, or provider behavior relevant to this regression.
+      placeholder: |
+        - Known issue or incident:
+        - Repo docs:
+        - External docs or Context7 IDs:
+        - Assumption:
+    validations:
+      required: true
+  - type: textarea
+    id: agent_todos
+    attributes:
+      label: Agent todo checklist
+      description: Ordered checkboxes concrete enough that another agent can continue the fix.
+      value: |
+        - [ ] Reproduce or explain why the bug cannot be reproduced locally.
+        - [ ] Add the failing regression test named above.
+        - [ ] Add or identify the behavior/integration proof for the affected path.
+        - [ ] Confirm the expected red state before implementation.
+        - [ ] Commit the failing test-only change on the work branch, or document why a separate red commit is not practical.
+        - [ ] Implement the smallest fix that turns the regression test green.
+        - [ ] Confirm the behavior/integration proof goes green only after the fix.
+        - [ ] Commit the green fix separately from the red test commit when practical.
+        - [ ] Run the targeted regression test and adjacent suite.
+        - [ ] Update docs or known issues if applicable.
+        - [ ] Include deploy or rollback notes if production was affected.
+    validations:
+      required: true
+  - type: textarea
+    id: tdd_audit
+    attributes:
+      label: TDD audit trail
+      description: Plan the red/green commit evidence for this bug.
+      value: |
+        - [ ] Red regression commit planned:
+          - Commit:
+          - Failing command/output:
+        - [ ] Green fix commit planned:
+          - Commit:
+          - Passing command/output:
+        - [ ] If red and green work cannot be separated into commits, explain why:
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Definition of done
+      value: |
+        - [ ] Regression test observed red first
+        - [ ] Behavior/integration proof observed red before implementation when applicable
+        - [ ] Red test commit exists on the work branch, or exception is documented
+        - [ ] Green fix commit exists after the red test commit, or exception is documented
+        - [ ] Fix implemented with the regression test
+        - [ ] Targeted tests pass
+        - [ ] Adjacent suite passes
+        - [ ] Known issue updated if applicable
+        - [ ] `git diff --check` passes
+        - [ ] `bun --bun run ci` passes or approved/pre-existing failures are documented
+        - [ ] Deploy or rollback notes included if production was affected
+    validations:
+      required: true

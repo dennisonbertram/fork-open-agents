@@ -60,6 +60,7 @@ const callOptionsSchema = z.object({
       profileId: z.string().optional(),
       profileVersion: z.string().optional(),
       profileDisplayName: z.string().optional(),
+      profileRunId: z.string().optional(),
       sandboxName: z.string().optional(),
     })
     .optional(),

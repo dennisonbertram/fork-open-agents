@@ -49,6 +49,7 @@ import {
 } from "@/lib/model-access";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { emitSessionEvent } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
 import type {
   WorkflowRunStatus,
@@ -65,6 +66,7 @@ type Options = {
   sessionId: string;
   userId: string;
   requestUrl: string;
+  requestId?: string;
   authSession: AuthSessionContext;
   selectedModelId?: string;
   modelId?: string;
@@ -293,6 +295,10 @@ function getSetupErrorMessage(error: unknown): string {
   }
 
   return "Workspace setup failed. Try again in a moment.";
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function isStepTimingError(
@@ -605,6 +611,24 @@ export async function runAgentWorkflow(options: Options) {
     throw new Error("runAgentWorkflow requires at least one message");
   }
 
+  const runStartedAt = new Date();
+  await emitSessionEvent({
+    sessionId: options.sessionId,
+    chatId: options.chatId,
+    userId: options.userId,
+    source: "workflow",
+    actorType: "workflow",
+    eventName: "workflow.started",
+    status: "started",
+    summary: "Agent workflow started.",
+    requestId: options.requestId ?? null,
+    workflowRunId,
+    payload: {
+      messageCount: options.messages.length,
+      maxSteps: options.maxSteps ?? null,
+    },
+  });
+
   // Self-register this workflow's runId onto the chat as the very first step.
   // The HTTP POST handler also writes this (via compareAndSetChatActiveStreamId
   // after `start()` returns), but that write is best-effort and can be lost
@@ -617,6 +641,18 @@ export async function runAgentWorkflow(options: Options) {
     workflowRunId,
   );
   if (activeStreamClaim === "conflict") {
+    await emitSessionEvent({
+      sessionId: options.sessionId,
+      chatId: options.chatId,
+      userId: options.userId,
+      source: "workflow",
+      actorType: "workflow",
+      eventName: "workflow.skipped.active_stream_conflict",
+      status: "skipped",
+      summary: "Another workflow already owns this chat stream.",
+      requestId: options.requestId ?? null,
+      workflowRunId,
+    });
     // Another workflow claimed the slot while this run was queued or starting.
     // Exit before emitting chunks or persisting messages so only the owning
     // workflow can mutate this chat.
@@ -654,7 +690,6 @@ export async function runAgentWorkflow(options: Options) {
 
   let originalMessagesForStep: WebAgentUIMessage[] = [latestMessage];
 
-  const runStartedAt = new Date();
   const previousResponseMessage =
     latestMessage.role === "assistant" ? latestMessage : undefined;
   const stepTimings: WorkflowRunStepTiming[] = [];
@@ -667,13 +702,20 @@ export async function runAgentWorkflow(options: Options) {
   let caughtError: unknown;
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
+  let runtimeMode: "classic" | "managed_runtime" | null = null;
+  let runtimeSandboxName: string | null = null;
+  let managedRuntimeProfileId: string | null = null;
+  let managedRuntimeProfileVersion: string | null = null;
+  let managedRuntimeProfileRunId: string | null = null;
 
   try {
     const [runtime, modelRuntime, modelMessages] = await Promise.all([
       resolveChatSandboxRuntime({
         userId: options.userId,
         sessionId: options.sessionId,
+        chatId: options.chatId,
         assistantId,
+        workflowRunId,
       }),
       resolveChatModelRuntime({
         userId: options.userId,
@@ -687,6 +729,39 @@ export async function runAgentWorkflow(options: Options) {
     ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
+    runtimeMode = runtime.runtimeMode;
+    runtimeSandboxName = runtime.sandboxState.sandboxName ?? null;
+    managedRuntimeProfileId = runtime.managedRuntime?.profileId ?? null;
+    managedRuntimeProfileVersion =
+      runtime.managedRuntime?.profileVersion ?? null;
+    managedRuntimeProfileRunId = runtime.managedRuntime?.profileRunId ?? null;
+    await emitSessionEvent({
+      sessionId: options.sessionId,
+      chatId: options.chatId,
+      userId: options.userId,
+      source: "workflow",
+      actorType: "workflow",
+      eventName: "workflow.runtime.resolved",
+      status: "succeeded",
+      summary:
+        runtime.runtimeMode === "managed_runtime"
+          ? "Managed runtime context is active for this workflow."
+          : "Classic runtime context is active for this workflow.",
+      requestId: options.requestId ?? null,
+      workflowRunId,
+      sandboxName: runtimeSandboxName,
+      managedRuntimeProfileRunId,
+      payload: {
+        runtimeMode: runtime.runtimeMode,
+        sandboxName: runtimeSandboxName,
+        workingDirectory: runtime.workingDirectory,
+        currentBranch: runtime.currentBranch,
+        managedRuntime: runtime.managedRuntime ?? null,
+        selectedModelId,
+        modelId,
+        skillCount: runtime.skills.length,
+      },
+    });
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
       metadata: withModelMetadata(
@@ -734,6 +809,8 @@ export async function runAgentWorkflow(options: Options) {
           workflowRunId,
           options.chatId,
           options.sessionId,
+          options.userId,
+          options.requestId ?? null,
           selectedModelId,
           modelId,
           agentOptions,
@@ -838,6 +915,21 @@ export async function runAgentWorkflow(options: Options) {
           pendingCommitPart,
         );
         await sendDataPart(writable, pendingCommitPart);
+        await emitSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "github",
+          actorType: "workflow",
+          eventName: "workflow.auto_commit.started",
+          status: "started",
+          summary: "Auto-commit started.",
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+          payload: { repoOwner, repoName },
+        });
         autoCommitResult = await runAutoCommitStep({
           userId: options.userId,
           sessionId: options.sessionId,
@@ -852,6 +944,37 @@ export async function runAgentWorkflow(options: Options) {
           id: commitPartId,
           data: buildCommitData(autoCommitResult, repoOwner, repoName),
         };
+        await emitSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "github",
+          actorType: "workflow",
+          eventName: autoCommitResult.error
+            ? "workflow.auto_commit.failed"
+            : autoCommitResult.committed
+              ? "workflow.auto_commit.succeeded"
+              : "workflow.auto_commit.skipped",
+          status: autoCommitResult.error
+            ? "failed"
+            : autoCommitResult.committed
+              ? "succeeded"
+              : "skipped",
+          summary: autoCommitResult.error
+            ? `Auto-commit failed: ${autoCommitResult.error}`
+            : autoCommitResult.committed
+              ? "Auto-commit completed."
+              : "Auto-commit found no changes to commit.",
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+          payload: {
+            committed: autoCommitResult.committed,
+            pushed: autoCommitResult.pushed,
+            commitSha: autoCommitResult.commitSha,
+          },
+        });
         pendingAssistantResponse = upsertAssistantDataPart(
           pendingAssistantResponse,
           resolvedCommitPart,
@@ -887,6 +1010,21 @@ export async function runAgentWorkflow(options: Options) {
           pendingPrPart,
         );
         await sendDataPart(writable, pendingPrPart);
+        await emitSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "github",
+          actorType: "workflow",
+          eventName: "workflow.auto_pr.started",
+          status: "started",
+          summary: "Auto-PR creation started.",
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+          payload: { repoOwner, repoName },
+        });
         const autoPrResult = await runAutoCreatePrStep({
           userId: options.userId,
           sessionId: options.sessionId,
@@ -901,6 +1039,38 @@ export async function runAgentWorkflow(options: Options) {
           id: prPartId,
           data: buildPrData(autoPrResult),
         };
+        await emitSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "github",
+          actorType: "workflow",
+          eventName: autoPrResult.error
+            ? "workflow.auto_pr.failed"
+            : autoPrResult.skipped
+              ? "workflow.auto_pr.skipped"
+              : "workflow.auto_pr.succeeded",
+          status: autoPrResult.error
+            ? "failed"
+            : autoPrResult.skipped
+              ? "skipped"
+              : "succeeded",
+          summary: autoPrResult.error
+            ? `Auto-PR failed: ${autoPrResult.error}`
+            : autoPrResult.skipped
+              ? `Auto-PR skipped: ${autoPrResult.skipReason ?? "not needed"}`
+              : "Auto-PR completed.",
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+          payload: {
+            created: autoPrResult.created,
+            syncedExisting: autoPrResult.syncedExisting,
+            prNumber: autoPrResult.prNumber,
+            prUrl: autoPrResult.prUrl,
+          },
+        });
         pendingAssistantResponse = upsertAssistantDataPart(
           pendingAssistantResponse,
           resolvedPrPart,
@@ -919,6 +1089,22 @@ export async function runAgentWorkflow(options: Options) {
               "Auto-commit did not leave origin in sync with HEAD",
           },
         };
+        await emitSessionEvent({
+          sessionId: options.sessionId,
+          chatId: options.chatId,
+          userId: options.userId,
+          source: "github",
+          actorType: "workflow",
+          eventName: "workflow.auto_pr.skipped",
+          status: "skipped",
+          summary:
+            autoCommitResult?.error ??
+            "Auto-PR skipped because auto-commit did not leave origin in sync with HEAD.",
+          requestId: options.requestId ?? null,
+          workflowRunId,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileRunId,
+        });
         pendingAssistantResponse = upsertAssistantDataPart(
           pendingAssistantResponse,
           skippedPrPart,
@@ -981,6 +1167,13 @@ export async function runAgentWorkflow(options: Options) {
           workflowRunId,
           chatId: options.chatId,
           sessionId: options.sessionId,
+          requestId: options.requestId ?? null,
+          runtimeMode,
+          sandboxName: runtimeSandboxName,
+          managedRuntimeProfileId,
+          managedRuntimeProfileVersion,
+          managedRuntimeProfileRunId,
+          errorMessage: caughtError ? getErrorMessage(caughtError) : null,
           status: workflowStatus,
           startedAt: runStartedAt.toISOString(),
           finishedAt: runFinishedAt.toISOString(),
@@ -988,6 +1181,43 @@ export async function runAgentWorkflow(options: Options) {
           stepTimings,
         },
       );
+      await emitSessionEvent({
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        source: "workflow",
+        actorType: "workflow",
+        eventName:
+          workflowStatus === "completed"
+            ? "workflow.completed"
+            : workflowStatus === "aborted"
+              ? "workflow.aborted"
+              : "workflow.failed",
+        status:
+          workflowStatus === "completed"
+            ? "succeeded"
+            : workflowStatus === "aborted"
+              ? "skipped"
+              : "failed",
+        summary:
+          workflowStatus === "completed"
+            ? "Agent workflow completed."
+            : workflowStatus === "aborted"
+              ? "Agent workflow was stopped."
+              : `Agent workflow failed: ${caughtError ? getErrorMessage(caughtError) : "unknown error"}`,
+        requestId: options.requestId ?? null,
+        workflowRunId,
+        sandboxName: runtimeSandboxName,
+        managedRuntimeProfileRunId,
+        payload: {
+          runtimeMode,
+          modelId,
+          selectedModelId,
+          stepCount: stepTimings.length,
+          totalDurationMs: runFinishedAt.getTime() - runStartedAt.getTime(),
+          finishReason: finalFinishReason ?? null,
+        },
+      });
     }
   }
 
@@ -1004,6 +1234,8 @@ const runAgentStep = async (
   workflowRunId: string,
   chatId: string,
   sessionId: string,
+  userId: string,
+  requestId: string | null,
   selectedModelId: string,
   modelId: string,
   agentOptions: OpenAgentCallOptions,
@@ -1016,8 +1248,31 @@ const runAgentStep = async (
 
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController);
+  const stepSandboxName = agentOptions.sandbox.state.sandboxName ?? null;
+  const stepManagedRuntimeProfileRunId =
+    agentOptions.managedRuntime?.profileRunId ?? null;
 
   try {
+    await emitSessionEvent({
+      sessionId,
+      chatId,
+      userId,
+      source: "workflow",
+      actorType: "coordinator",
+      eventName: "workflow.step.started",
+      status: "started",
+      summary: `Agent step ${stepNumber} started.`,
+      requestId,
+      workflowRunId,
+      sandboxName: stepSandboxName,
+      managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+      payload: {
+        stepNumber,
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+        modelId,
+        selectedModelId,
+      },
+    });
     let responseMessage: WebAgentUIMessage | undefined;
     let lastStepUsage: LanguageModelUsage | undefined;
     let lastStepCost: number | undefined;
@@ -1206,6 +1461,34 @@ const runAgentStep = async (
     }
 
     const stepFinishedAt = new Date();
+    await emitSessionEvent({
+      sessionId,
+      chatId,
+      userId,
+      source: "workflow",
+      actorType: "coordinator",
+      eventName: "workflow.step.completed",
+      status: "succeeded",
+      summary: `Agent step ${stepNumber} completed with ${finishReason}.`,
+      requestId,
+      workflowRunId,
+      sandboxName: stepSandboxName,
+      managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+      payload: {
+        stepNumber,
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+        finishReason,
+        rawFinishReason: rawFinishReason ?? null,
+        durationMs: stepFinishedAt.getTime() - stepStartedAt.getTime(),
+        modelStepCount: steps.length,
+        toolCallCount: steps.reduce(
+          (count, step) => count + step.toolCalls.length,
+          0,
+        ),
+        usage: stepUsage ?? null,
+        cost: stepsCost ?? null,
+      },
+    });
 
     return {
       responseMessage,
@@ -1228,6 +1511,24 @@ const runAgentStep = async (
 
     if (isAbortError(error)) {
       const abortedFinishReason: FinishReason = "stop";
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "workflow.step.aborted",
+        status: "skipped",
+        summary: `Agent step ${stepNumber} was stopped.`,
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          durationMs: stepFinishedAt.getTime() - stepStartedAt.getTime(),
+        },
+      });
       return {
         responseMessage: undefined,
         responseMessages: [],
@@ -1247,6 +1548,25 @@ const runAgentStep = async (
 
     const errorWithStepTiming =
       error instanceof Error ? error : new Error(String(error));
+    await emitSessionEvent({
+      sessionId,
+      chatId,
+      userId,
+      source: "workflow",
+      actorType: "coordinator",
+      eventName: "workflow.step.failed",
+      status: "failed",
+      summary: `Agent step ${stepNumber} failed: ${getErrorMessage(errorWithStepTiming)}`,
+      requestId,
+      workflowRunId,
+      sandboxName: stepSandboxName,
+      managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+      payload: {
+        stepNumber,
+        durationMs: stepFinishedAt.getTime() - stepStartedAt.getTime(),
+        errorName: errorWithStepTiming.name,
+      },
+    });
     Object.assign(errorWithStepTiming, {
       stepTiming: buildStepTiming(
         stepNumber,

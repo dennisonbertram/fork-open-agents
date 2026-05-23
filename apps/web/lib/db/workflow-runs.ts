@@ -19,6 +19,13 @@ export async function recordWorkflowRun(data: {
   sessionId: string;
   userId: string;
   modelId?: string;
+  requestId?: string | null;
+  runtimeMode?: "classic" | "managed_runtime" | null;
+  sandboxName?: string | null;
+  managedRuntimeProfileId?: string | null;
+  managedRuntimeProfileVersion?: string | null;
+  managedRuntimeProfileRunId?: string | null;
+  errorMessage?: string | null;
   status: WorkflowRunStatus;
   startedAt: string;
   finishedAt: string;
@@ -34,6 +41,13 @@ export async function recordWorkflowRun(data: {
         sessionId: data.sessionId,
         userId: data.userId,
         modelId: data.modelId ?? null,
+        requestId: data.requestId ?? null,
+        runtimeMode: data.runtimeMode ?? null,
+        sandboxName: data.sandboxName ?? null,
+        managedRuntimeProfileId: data.managedRuntimeProfileId ?? null,
+        managedRuntimeProfileVersion: data.managedRuntimeProfileVersion ?? null,
+        managedRuntimeProfileRunId: data.managedRuntimeProfileRunId ?? null,
+        errorMessage: data.errorMessage ?? null,
         status: data.status,
         startedAt: new Date(data.startedAt),
         finishedAt: new Date(data.finishedAt),

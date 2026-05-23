@@ -5,6 +5,13 @@ import {
   requireOwnedSessionWithSandboxGuard,
 } from "@/app/api/sessions/_lib/session-context";
 import { DEFAULT_SANDBOX_PORTS } from "@/lib/sandbox/config";
+import {
+  detectJavaScriptPackageManager,
+  getAncestorDirectories,
+  getPackageManagerLockfiles,
+  INSTALL_COMMANDS,
+  type JavaScriptPackageManager,
+} from "@/lib/sandbox/runtime/js-package-manager";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 
 type RouteContext = {
@@ -23,7 +30,6 @@ export type DevServerStopResponse = {
   port: number;
 };
 
-type PackageManager = "bun" | "pnpm" | "yarn" | "npm";
 type DevFramework =
   | "next"
   | "vite"
@@ -71,21 +77,6 @@ interface PersistedDevServerTarget {
 const SUPPORTED_PORTS = new Set(DEFAULT_SANDBOX_PORTS);
 const DEV_SERVER_PIDFILE_PREFIX = ".open-agents-dev-server";
 const DEV_SERVER_STATE_FILENAME = `${DEV_SERVER_PIDFILE_PREFIX}-state.json`;
-const INSTALL_COMMANDS: Record<PackageManager, string> = {
-  bun: "bun install",
-  pnpm: "pnpm install",
-  yarn: "yarn install",
-  npm: "npm install",
-};
-const PACKAGE_MANAGER_LOCKFILES: Array<{
-  manager: PackageManager;
-  files: string[];
-}> = [
-  { manager: "bun", files: ["bun.lockb", "bun.lock"] },
-  { manager: "pnpm", files: ["pnpm-lock.yaml", "pnpm-workspace.yaml"] },
-  { manager: "yarn", files: ["yarn.lock"] },
-  { manager: "npm", files: ["package-lock.json"] },
-];
 const PACKAGE_JSON_FIND_COMMAND =
   "find . \\( -path '*/node_modules/*' -o -path '*/.git/*' -o -path '*/.next/*' -o -path '*/dist/*' -o -path '*/build/*' -o -path '*/coverage/*' -o -path '*/.turbo/*' \\) -prune -o -name package.json -print | sort";
 
@@ -431,113 +422,6 @@ function pickBestCandidate(
   return candidate ?? null;
 }
 
-async function pathExists(
-  sandbox: ConnectedSandbox,
-  targetPath: string,
-): Promise<boolean> {
-  try {
-    await sandbox.access(targetPath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function getAncestorDirectories(startDir: string, stopDir: string): string[] {
-  const directories: string[] = [];
-  let currentDir = startDir;
-
-  while (true) {
-    directories.push(currentDir);
-
-    if (currentDir === stopDir) {
-      break;
-    }
-
-    const nextDir = path.posix.dirname(currentDir);
-    if (nextDir === currentDir) {
-      break;
-    }
-
-    currentDir = nextDir;
-  }
-
-  return directories;
-}
-
-function parsePackageManagerName(
-  packageManagerField: string | undefined,
-): PackageManager | null {
-  if (!packageManagerField) {
-    return null;
-  }
-
-  const [packageManagerName] = packageManagerField.split("@");
-  switch (packageManagerName) {
-    case "bun":
-    case "pnpm":
-    case "yarn":
-    case "npm":
-      return packageManagerName;
-    default:
-      return null;
-  }
-}
-
-async function detectPackageManager(
-  sandbox: ConnectedSandbox,
-  packageDirAbs: string,
-  packageManagerField: string | undefined,
-): Promise<{ packageManager: PackageManager; installRootAbs: string }> {
-  const ancestorDirectories = getAncestorDirectories(
-    packageDirAbs,
-    sandbox.workingDirectory,
-  );
-
-  for (const directory of ancestorDirectories) {
-    for (const entry of PACKAGE_MANAGER_LOCKFILES) {
-      for (const lockfile of entry.files) {
-        if (await pathExists(sandbox, path.posix.join(directory, lockfile))) {
-          return {
-            packageManager: entry.manager,
-            installRootAbs: directory,
-          };
-        }
-      }
-    }
-  }
-
-  for (const directory of ancestorDirectories) {
-    const packageJsonPath = path.posix.join(directory, "package.json");
-    if (!(await pathExists(sandbox, packageJsonPath))) {
-      continue;
-    }
-
-    const manifest = parseManifest(
-      await sandbox.readFile(packageJsonPath, "utf-8"),
-    );
-    const packageManager = parsePackageManagerName(manifest?.packageManager);
-    if (packageManager) {
-      return {
-        packageManager,
-        installRootAbs: directory,
-      };
-    }
-  }
-
-  return {
-    packageManager: parsePackageManagerName(packageManagerField) ?? "npm",
-    installRootAbs: packageDirAbs,
-  };
-}
-
-function getPackageManagerLockfiles(packageManager: PackageManager): string[] {
-  return (
-    PACKAGE_MANAGER_LOCKFILES.find((entry) => entry.manager === packageManager)
-      ?.files ?? []
-  );
-}
-
 async function getPathStat(sandbox: ConnectedSandbox, targetPath: string) {
   try {
     return await sandbox.stat(targetPath);
@@ -549,7 +433,7 @@ async function getPathStat(sandbox: ConnectedSandbox, targetPath: string) {
 function getDependencyInputPaths(params: {
   packageDirAbs: string;
   installRootAbs: string;
-  packageManager: PackageManager;
+  packageManager: JavaScriptPackageManager;
 }): string[] {
   const dependencyInputPaths = new Set<string>();
   const ancestorDirectories = getAncestorDirectories(
@@ -572,7 +456,7 @@ async function shouldInstallDependencies(params: {
   sandbox: ConnectedSandbox;
   packageDirAbs: string;
   installRootAbs: string;
-  packageManager: PackageManager;
+  packageManager: JavaScriptPackageManager;
 }): Promise<boolean> {
   const nodeModulesStat = await getPathStat(
     params.sandbox,
@@ -616,7 +500,7 @@ function getFrameworkArgs(framework: DevFramework, port: number): string[] {
 }
 
 function buildRunCommand(
-  packageManager: PackageManager,
+  packageManager: JavaScriptPackageManager,
   framework: DevFramework,
   port: number,
 ): string {
@@ -642,7 +526,7 @@ function getDevServerPidFilePath(packageDirAbs: string, port: number): string {
 }
 
 function buildLaunchCommand(params: {
-  packageManager: PackageManager;
+  packageManager: JavaScriptPackageManager;
   framework: DevFramework;
   port: number;
   installRootAbs: string;
@@ -953,11 +837,12 @@ export async function POST(_req: Request, context: RouteContext) {
       return Response.json(buildDevServerResponse(sandbox, target));
     }
 
-    const { packageManager, installRootAbs } = await detectPackageManager(
-      sandbox,
-      packageDirAbs,
-      candidate.packageManagerField,
-    );
+    const { packageManager, installRootAbs } =
+      await detectJavaScriptPackageManager({
+        sandbox,
+        packageDirAbs,
+        packageManagerField: candidate.packageManagerField,
+      });
     const installDependencies = await shouldInstallDependencies({
       sandbox,
       installRootAbs,
@@ -988,7 +873,12 @@ export async function POST(_req: Request, context: RouteContext) {
   } catch (error) {
     console.error("Failed to launch dev server:", error);
     return Response.json(
-      { error: "Failed to launch dev server" },
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to launch dev server",
+      },
       { status: 500 },
     );
   }

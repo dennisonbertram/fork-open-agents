@@ -260,6 +260,7 @@ export async function POST(req: Request) {
       sessionId,
       userId,
       requestUrl: req.url,
+      requestId,
       authSession: session ?? null,
       maxSteps: 500,
     },
@@ -292,6 +293,7 @@ export async function POST(req: Request) {
     stream,
     headers: {
       "x-workflow-run-id": run.runId,
+      "x-request-id": requestId,
     },
   });
 }

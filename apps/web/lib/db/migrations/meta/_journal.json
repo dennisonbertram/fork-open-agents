@@ -267,6 +267,13 @@
       "when": 1779457847400,
       "tag": "0037_loose_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1779555612476,
+      "tag": "0038_nosy_blindfold",
+      "breakpoints": true
     }
   ]
 }

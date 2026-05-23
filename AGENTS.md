@@ -9,6 +9,32 @@ This file provides guidance for AI coding agents working in this repository.
 - [Architecture & Workspace Structure](docs/agents/architecture.md)
 - [Code Style & Patterns](docs/agents/code-style.md)
 - [Lessons Learned](docs/agents/lessons-learned.md)
+- [Process Index](docs/process/index.md)
+- [Development Workflow](docs/process/development-workflow.md)
+- [Behavior-First TDD](docs/process/behavior-tdd.md)
+- [Observability Discipline](docs/process/observability-discipline.md)
+
+## Build Process
+
+Use the process docs for non-trivial work:
+
+- [Feature Ticket Format](docs/process/feature-ticket-format.md) defines the
+  GitHub issue shape for PR-sized work.
+- [GitHub Build Process](docs/process/github-build-process.md) defines the
+  issue, branch, PR, CI, and deployment structure.
+- [Regression Discipline](docs/process/regression-discipline.md) defines the
+  bug-to-regression workflow.
+- [Formatting Gate](docs/process/formatting-gate.md) defines completion checks.
+
+For behavior-changing work, name the protected user/operator path, write or
+identify the failing test first, confirm the red state, implement the smallest
+green change, and then run the adjacent suite plus `git diff --check` and
+`bun --bun run ci`.
+
+For managed runtime, sandbox, workflow, browser, deploy, auth, or GitHub App
+changes, include observability evidence: user-visible status, runtime/sandbox
+attribution, logs/events/metadata, browser or service evidence when relevant,
+and final verification notes.
 
 ## Authentication
 

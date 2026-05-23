@@ -13,6 +13,18 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
+export type ManagedRuntimeCommandObservation = {
+  commandId: string;
+  label: string;
+  status: "running" | "passed" | "failed" | "skipped";
+  required?: boolean;
+  exitCode?: number | null;
+  durationMs?: number;
+  summary?: string;
+  startedAt: string;
+  finishedAt?: string;
+};
+
 // users
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -308,6 +320,156 @@ export const sandboxBrowserRuns = pgTable(
   ],
 );
 
+export const managedRuntimeProfileRuns = pgTable(
+  "managed_runtime_profile_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workflowRunId: text("workflow_run_id"),
+    sandboxName: text("sandbox_name"),
+    profileId: text("profile_id").notNull(),
+    profileVersion: text("profile_version").notNull(),
+    profileDisplayName: text("profile_display_name").notNull(),
+    status: text("status", {
+      enum: ["running", "passed", "failed", "blocked"],
+    }).notNull(),
+    expectedTools: jsonb("expected_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    optionalTools: jsonb("optional_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    setupResults: jsonb("setup_results")
+      .$type<ManagedRuntimeCommandObservation[]>()
+      .notNull()
+      .default([]),
+    verificationResults: jsonb("verification_results")
+      .$type<ManagedRuntimeCommandObservation[]>()
+      .notNull()
+      .default([]),
+    summary: text("summary"),
+    failureMessage: text("failure_message"),
+    startedAt: timestamp("started_at").notNull(),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("managed_runtime_profile_runs_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("managed_runtime_profile_runs_workflow_idx").on(table.workflowRunId),
+    index("managed_runtime_profile_runs_status_idx").on(table.status),
+  ],
+);
+
+export const sessionEvents = pgTable(
+  "session_events",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: text("source", {
+      enum: [
+        "chat",
+        "workflow",
+        "managed_runtime",
+        "sandbox",
+        "harness",
+        "service",
+        "browser",
+        "github",
+        "system",
+      ],
+    }).notNull(),
+    actorType: text("actor_type", {
+      enum: [
+        "user",
+        "coordinator",
+        "worker",
+        "sandbox",
+        "harness",
+        "browser",
+        "github",
+        "workflow",
+        "system",
+      ],
+    }).notNull(),
+    actorId: text("actor_id"),
+    eventName: text("event_name").notNull(),
+    status: text("status", {
+      enum: [
+        "started",
+        "running",
+        "succeeded",
+        "failed",
+        "blocked",
+        "skipped",
+        "info",
+      ],
+    }).notNull(),
+    summary: text("summary"),
+    requestId: text("request_id"),
+    workflowRunId: text("workflow_run_id"),
+    harnessRunId: text("harness_run_id"),
+    sandboxName: text("sandbox_name"),
+    managedRuntimeProfileRunId: text(
+      "managed_runtime_profile_run_id",
+    ).references(() => managedRuntimeProfileRuns.id, { onDelete: "set null" }),
+    serviceId: text("service_id").references(() => sandboxServices.id, {
+      onDelete: "set null",
+    }),
+    browserRunId: text("browser_run_id").references(
+      () => sandboxBrowserRuns.id,
+      {
+        onDelete: "set null",
+      },
+    ),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    redactionStatus: text("redaction_status", {
+      enum: ["not_required", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("passed"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("session_events_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("session_events_chat_created_idx").on(table.chatId, table.createdAt),
+    index("session_events_workflow_idx").on(table.workflowRunId),
+    index("session_events_request_idx").on(table.requestId),
+    index("session_events_profile_run_idx").on(
+      table.managedRuntimeProfileRunId,
+    ),
+    index("session_events_service_idx").on(table.serviceId),
+    index("session_events_browser_run_idx").on(table.browserRunId),
+  ],
+);
+
 export const shares = pgTable(
   "shares",
   {
@@ -451,6 +613,17 @@ export const workflowRuns = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     modelId: text("model_id"),
+    requestId: text("request_id"),
+    runtimeMode: text("runtime_mode", {
+      enum: ["classic", "managed_runtime"],
+    }),
+    sandboxName: text("sandbox_name"),
+    managedRuntimeProfileId: text("managed_runtime_profile_id"),
+    managedRuntimeProfileVersion: text("managed_runtime_profile_version"),
+    managedRuntimeProfileRunId: text(
+      "managed_runtime_profile_run_id",
+    ).references(() => managedRuntimeProfileRuns.id, { onDelete: "set null" }),
+    errorMessage: text("error_message"),
     status: text("status", {
       enum: ["completed", "aborted", "failed"],
     }).notNull(),
@@ -463,6 +636,9 @@ export const workflowRuns = pgTable(
     index("workflow_runs_chat_id_idx").on(table.chatId),
     index("workflow_runs_session_id_idx").on(table.sessionId),
     index("workflow_runs_user_id_idx").on(table.userId),
+    index("workflow_runs_request_id_idx").on(table.requestId),
+    index("workflow_runs_runtime_mode_idx").on(table.runtimeMode),
+    index("workflow_runs_profile_run_idx").on(table.managedRuntimeProfileRunId),
   ],
 );
 
@@ -500,6 +676,12 @@ export type SandboxService = typeof sandboxServices.$inferSelect;
 export type NewSandboxService = typeof sandboxServices.$inferInsert;
 export type SandboxBrowserRun = typeof sandboxBrowserRuns.$inferSelect;
 export type NewSandboxBrowserRun = typeof sandboxBrowserRuns.$inferInsert;
+export type ManagedRuntimeProfileRun =
+  typeof managedRuntimeProfileRuns.$inferSelect;
+export type NewManagedRuntimeProfileRun =
+  typeof managedRuntimeProfileRuns.$inferInsert;
+export type SessionEvent = typeof sessionEvents.$inferSelect;
+export type NewSessionEvent = typeof sessionEvents.$inferInsert;
 export type Share = typeof shares.$inferSelect;
 export type NewShare = typeof shares.$inferInsert;
 export type ChatMessage = typeof chatMessages.$inferSelect;

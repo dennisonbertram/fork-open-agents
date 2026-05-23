@@ -26,6 +26,7 @@ export interface AgentContext {
     profileId?: string;
     profileVersion?: string;
     profileDisplayName?: string;
+    profileRunId?: string;
     sandboxName?: string;
   };
 }

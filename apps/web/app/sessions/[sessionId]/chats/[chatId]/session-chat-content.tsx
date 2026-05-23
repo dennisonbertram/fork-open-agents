@@ -201,6 +201,13 @@ const VerifiedBuildPanel = dynamic(
   () => import("./verified-build-panel").then((m) => m.VerifiedBuildPanel),
   { ssr: false },
 );
+const RuntimeObservabilityPanel = dynamic(
+  () =>
+    import("./runtime-observability-panel").then(
+      (m) => m.RuntimeObservabilityPanel,
+    ),
+  { ssr: false },
+);
 
 const emptySubscribe = () => () => {};
 
@@ -3055,6 +3062,11 @@ export function SessionChatContent({
       <VerifiedBuildPanel sessionId={session.id} chatId={chatInfo.id} />
     ) : null;
 
+  const runtimePanelElement =
+    gitPanelOpen && rightPanelView === "runtime" ? (
+      <RuntimeObservabilityPanel sessionId={session.id} chatId={chatInfo.id} />
+    ) : null;
+
   return (
     <>
       {/* Git panel portaled to layout-level for full page height */}
@@ -3066,6 +3078,10 @@ export function SessionChatContent({
         panelPortalRef.current &&
         rightPanelView === "verified-build" &&
         createPortal(verifiedBuildPanelElement, panelPortalRef.current)}
+      {gitPanelOpen &&
+        panelPortalRef.current &&
+        rightPanelView === "runtime" &&
+        createPortal(runtimePanelElement, panelPortalRef.current)}
 
       {/* Header actions portaled from chat-level state */}
       {headerActionsRef.current &&

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   ExternalLink,
   FolderGit2,
   GitMerge,
@@ -115,6 +116,16 @@ export function SessionHeader() {
     }
 
     setRightPanelView("verified-build");
+    setGitPanelOpen(true);
+  }, [gitPanelOpen, rightPanelView, setGitPanelOpen, setRightPanelView]);
+
+  const handleRuntimePanelToggle = useCallback(() => {
+    if (gitPanelOpen && rightPanelView === "runtime") {
+      setGitPanelOpen(false);
+      return;
+    }
+
+    setRightPanelView("runtime");
     setGitPanelOpen(true);
   }, [gitPanelOpen, rightPanelView, setGitPanelOpen, setRightPanelView]);
 
@@ -264,6 +275,28 @@ export function SessionHeader() {
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">Verified Build</TooltipContent>
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-7 w-7 shrink-0",
+                  gitPanelOpen &&
+                    rightPanelView === "runtime" &&
+                    "bg-accent text-accent-foreground",
+                )}
+                aria-label="Runtime inspector"
+                onClick={handleRuntimePanelToggle}
+              >
+                <Activity className="h-4 w-4 text-cyan-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              Runtime inspector: sandbox, profile, service, and browser evidence
+            </TooltipContent>
           </Tooltip>
         </div>
       </div>

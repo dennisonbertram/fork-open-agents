@@ -1,0 +1,70 @@
+name: Research spike
+description: Time-boxed research before adopting a package, API, architecture, provider, or process
+title: "research: "
+labels: ["type:research"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What decision should this research make possible?
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options to compare
+      placeholder: |
+        - Option A:
+        - Option B:
+    validations:
+      required: true
+  - type: textarea
+    id: docs
+    attributes:
+      label: Documentation sources
+      description: Use Context7 for libraries, SDKs, APIs, CLIs, frameworks, and cloud services.
+      placeholder: |
+        - Context7 library ID:
+        - Vendor docs:
+        - Existing repo docs:
+    validations:
+      required: true
+  - type: textarea
+    id: decision_criteria
+    attributes:
+      label: Decision criteria
+      description: What constraints decide the recommendation?
+      placeholder: |
+        - Security:
+        - Reliability:
+        - Developer experience:
+        - Testability:
+        - Observability:
+        - Cost/runtime risk:
+    validations:
+      required: true
+  - type: textarea
+    id: agent_todos
+    attributes:
+      label: Agent todo checklist
+      description: Ordered checkboxes concrete enough that another agent can continue the spike.
+      value: |
+        - [ ] Read the relevant repo context docs.
+        - [ ] Fetch current docs with Context7 when this involves a library, framework, SDK, API, CLI tool, or cloud service.
+        - [ ] Compare the listed options against the decision criteria.
+        - [ ] Capture the recommendation in `docs/research/` or a process doc.
+        - [ ] Create follow-up implementation issues if needed.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Expected output
+      value: |
+        - [ ] Recommendation captured in docs
+        - [ ] Tradeoffs and risks listed
+        - [ ] Follow-up implementation issues created if needed
+        - [ ] No production code changed unless explicitly promoted to implementation
+    validations:
+      required: true

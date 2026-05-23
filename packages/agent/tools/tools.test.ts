@@ -826,6 +826,7 @@ describe("tools execute behavior", () => {
           profileId: "web-bun-agent-browser",
           profileVersion: "2026-05-23.1",
           profileDisplayName: "Web app with Bun and browser checks",
+          profileRunId: "profile-run-1",
           sandboxName: "session_session-1",
         },
       }),
@@ -847,6 +848,7 @@ describe("tools execute behavior", () => {
         profileId: "web-bun-agent-browser",
         profileVersion: "2026-05-23.1",
         profileDisplayName: "Web app with Bun and browser checks",
+        profileRunId: "profile-run-1",
         sandboxName: "session_session-1",
       },
     });

@@ -48,6 +48,7 @@ const taskRuntimeOutputSchema = z.object({
   profileId: z.string().optional(),
   profileVersion: z.string().optional(),
   profileDisplayName: z.string().optional(),
+  profileRunId: z.string().optional(),
   sandboxName: z.string().optional(),
 });
 
@@ -94,6 +95,7 @@ function getManagedRuntimeOutput(
     profileId: getString(managedRuntime.profileId),
     profileVersion: getString(managedRuntime.profileVersion),
     profileDisplayName: getString(managedRuntime.profileDisplayName),
+    profileRunId: getString(managedRuntime.profileRunId),
     sandboxName: getString(managedRuntime.sandboxName),
   };
 }

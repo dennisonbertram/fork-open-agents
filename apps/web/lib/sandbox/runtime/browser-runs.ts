@@ -11,6 +11,7 @@ import {
   type SandboxBrowserRun,
   sandboxBrowserRuns,
 } from "@/lib/db/schema";
+import { emitSessionEvent } from "@/lib/observability/events";
 import { redactSandboxLog } from "./service-logs";
 
 type ConnectedSandbox = Awaited<ReturnType<typeof connectSandbox>>;
@@ -30,6 +31,17 @@ export type BrowserRunResponse = {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getSandboxName(sandbox: ConnectedSandbox): string | null {
+  const state = sandbox.getState?.();
+  return isRecord(state) && typeof state.sandboxName === "string"
+    ? state.sandboxName
+    : null;
 }
 
 function toResponse(run: SandboxBrowserRun): BrowserRunResponse {
@@ -198,6 +210,7 @@ export async function listManagedBrowserRuns(params: {
 
 export async function runManagedBrowserCheck(params: {
   sessionId: string;
+  userId: string;
   chatId?: string | null;
   serviceId?: string | null;
   targetUrl: string;
@@ -221,6 +234,23 @@ export async function runManagedBrowserCheck(params: {
     redactionStatus: "pending",
     startedAt,
     finishedAt: null,
+  });
+  await emitSessionEvent({
+    sessionId: params.sessionId,
+    chatId: params.chatId ?? null,
+    userId: params.userId,
+    source: "browser",
+    actorType: "browser",
+    eventName: "managed_browser_check.started",
+    status: "started",
+    summary: `Browser check started for ${params.targetUrl}.`,
+    sandboxName: getSandboxName(params.sandbox),
+    serviceId: params.serviceId ?? null,
+    browserRunId: runId,
+    payload: {
+      targetUrl: params.targetUrl,
+      serviceId: params.serviceId ?? null,
+    },
   });
 
   const sessionName = `open-agents-${params.sessionId}-${runId}`;
@@ -259,6 +289,24 @@ export async function runManagedBrowserCheck(params: {
         redactionStatus: "passed",
         finishedAt: new Date(),
       });
+      await emitSessionEvent({
+        sessionId: params.sessionId,
+        chatId: params.chatId ?? null,
+        userId: params.userId,
+        source: "browser",
+        actorType: "browser",
+        eventName: "managed_browser_check.failed",
+        status: "failed",
+        summary: failed.summary,
+        sandboxName: getSandboxName(params.sandbox),
+        serviceId: params.serviceId ?? null,
+        browserRunId: runId,
+        payload: {
+          targetUrl: params.targetUrl,
+          failedCommand: command,
+          stepCount: steps.length,
+        },
+      });
       return toResponse(failed);
     }
 
@@ -271,6 +319,24 @@ export async function runManagedBrowserCheck(params: {
         artifactRefs: [],
         redactionStatus: "passed",
         finishedAt: new Date(),
+      });
+      await emitSessionEvent({
+        sessionId: params.sessionId,
+        chatId: params.chatId ?? null,
+        userId: params.userId,
+        source: "browser",
+        actorType: "browser",
+        eventName: "managed_browser_check.failed",
+        status: "failed",
+        summary: failed.summary,
+        sandboxName: getSandboxName(params.sandbox),
+        serviceId: params.serviceId ?? null,
+        browserRunId: runId,
+        payload: {
+          targetUrl: params.targetUrl,
+          documentFailures,
+          stepCount: steps.length,
+        },
       });
       return toResponse(failed);
     }
@@ -288,6 +354,24 @@ export async function runManagedBrowserCheck(params: {
     ],
     redactionStatus: "passed",
     finishedAt: new Date(),
+  });
+  await emitSessionEvent({
+    sessionId: params.sessionId,
+    chatId: params.chatId ?? null,
+    userId: params.userId,
+    source: "browser",
+    actorType: "browser",
+    eventName: "managed_browser_check.passed",
+    status: "succeeded",
+    summary: passed.summary,
+    sandboxName: getSandboxName(params.sandbox),
+    serviceId: params.serviceId ?? null,
+    browserRunId: runId,
+    payload: {
+      targetUrl: params.targetUrl,
+      stepCount: steps.length,
+      artifactRefs: passed.artifactRefs,
+    },
   });
   return toResponse(passed);
 }

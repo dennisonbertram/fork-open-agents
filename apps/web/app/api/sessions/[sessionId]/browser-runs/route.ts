@@ -103,6 +103,7 @@ export async function POST(req: Request, context: RouteContext) {
   );
   const run = await runManagedBrowserCheck({
     sessionId,
+    userId: authResult.userId,
     chatId: getString(body.chatId) ?? null,
     serviceId: service?.id ?? null,
     targetUrl,

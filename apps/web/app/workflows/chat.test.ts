@@ -21,6 +21,13 @@ type TestResolvedChatSandboxRuntime = {
   sessionTitle: string;
   repoOwner?: string;
   repoName?: string;
+  managedRuntime?: {
+    profileId?: string;
+    profileVersion?: string;
+    profileDisplayName?: string;
+    profileRunId?: string;
+    sandboxName?: string;
+  };
 };
 
 function createResolvedChatSandboxRuntime(
@@ -91,6 +98,7 @@ const spies = {
       prUrl: "https://github.com/acme/repo/pull/42",
     }),
   ),
+  emitSessionEvent: mock(() => Promise.resolve(null)),
 };
 
 let testSessionRecord: {
@@ -339,6 +347,10 @@ mock.module("@/lib/db/sessions", () => ({
 
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => testPreferences,
+}));
+
+mock.module("@/lib/observability/events", () => ({
+  emitSessionEvent: spies.emitSessionEvent,
 }));
 
 mock.module("./chat-sandbox-runtime", () => ({

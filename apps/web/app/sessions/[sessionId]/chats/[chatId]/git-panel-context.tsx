@@ -13,7 +13,7 @@ import {
 import { useIsMobile } from "@/hooks/use-mobile";
 
 export type GitPanelTab = "diff" | "pr" | "files";
-export type RightPanelView = "git" | "verified-build";
+export type RightPanelView = "git" | "verified-build" | "runtime";
 export type ActiveView = "chat" | "diff" | "file";
 export type DiffScope = "uncommitted" | "branch";
 

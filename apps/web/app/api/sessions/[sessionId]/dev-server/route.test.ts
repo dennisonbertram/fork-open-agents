@@ -26,6 +26,7 @@ let fileContents = new Map<string, string>();
 let existingPaths = new Set<string>();
 let pathEntries = new Map<string, MockPathEntry>();
 let runningPids = new Set<string>();
+let availableCommands = new Set<string>();
 let lastLaunchCommand: string | null = null;
 let lastLaunchCwd: string | null = null;
 let currentMtimeMs = 1_000;
@@ -121,6 +122,13 @@ const requireOwnedSessionWithSandboxGuardMock = mock(async () => ({
 const execMock = mock(async (command: string) => {
   if (command.includes("find .")) {
     return successResult(currentFindOutput);
+  }
+
+  if (command.startsWith("command -v ")) {
+    const commandName = command.match(/^command -v '([^']+)'/)?.[1];
+    return commandName && availableCommands.has(commandName)
+      ? successResult()
+      : failureResult("not found");
   }
 
   if (command.startsWith("kill -0 ")) {
@@ -227,6 +235,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     pathEntries = new Map<string, MockPathEntry>();
     seedDefaultWorkspace();
     runningPids = new Set<string>();
+    availableCommands = new Set(["bun"]);
     lastLaunchCommand = null;
     lastLaunchCwd = null;
     currentSessionRecord.sandboxState.expiresAt = Date.now() + 60_000;
@@ -412,6 +421,38 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(runningPids.has(RUNNING_PID)).toBe(false);
     expect(existingPaths.has(DEV_SERVER_PID_FILE)).toBe(false);
     expect(existingPaths.has(DEV_SERVER_STATE_FILE)).toBe(false);
+  });
+
+  test("uses an available package manager when package metadata does not declare one", async () => {
+    const { POST } = await routeModulePromise;
+
+    setMockFile(
+      "/vercel/sandbox/package.json",
+      JSON.stringify({
+        scripts: {
+          dev: "turbo dev",
+        },
+      }),
+    );
+    removeMockPath("/vercel/sandbox/bun.lock");
+    availableCommands = new Set(["bun"]);
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(lastLaunchCommand).not.toBeNull();
+
+    if (!lastLaunchCommand) {
+      throw new Error("Expected execDetached to receive a launch command");
+    }
+
+    expect(lastLaunchCommand).toContain("bun install");
+    expect(lastLaunchCommand).toContain("bun run dev");
   });
 
   test("reinstalls dependencies when a package manifest changed after node_modules was created", async () => {

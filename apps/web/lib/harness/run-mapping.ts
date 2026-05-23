@@ -8,6 +8,7 @@ import {
   type VerifiedBuildEvent,
   type VerifiedBuildRun,
 } from "@/lib/db/schema";
+import { emitSessionEvent } from "@/lib/observability/events";
 import type { HarnessClient } from "./client";
 import { getHarnessConfig } from "./config";
 import { reduceHarnessEvent } from "./events";
@@ -19,6 +20,46 @@ import type {
   VerifiedBuildEventSnapshot,
   VerifiedBuildRunSnapshot,
 } from "./types";
+
+function statusFromHarnessEvent(
+  eventName: string,
+):
+  | "started"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "skipped"
+  | "info" {
+  if (eventName.endsWith(".failed") || eventName === "run.failed") {
+    return "failed";
+  }
+  if (
+    eventName.endsWith(".completed") ||
+    eventName === "run.completed" ||
+    eventName === "gate.completed"
+  ) {
+    return "succeeded";
+  }
+  if (
+    eventName.endsWith(".cancelled") ||
+    eventName.endsWith(".canceled") ||
+    eventName === "run.cancelled" ||
+    eventName === "run.canceled"
+  ) {
+    return "skipped";
+  }
+  if (eventName === "approval.required") {
+    return "blocked";
+  }
+  if (eventName.endsWith(".started") || eventName.endsWith(".created")) {
+    return "started";
+  }
+  if (eventName.endsWith(".running")) {
+    return "running";
+  }
+  return "info";
+}
 
 export function buildVerifiedBuildIdempotencyKey(params: {
   sessionId: string;
@@ -243,6 +284,25 @@ export async function startVerifiedBuildRun(params: {
     throw new Error("Failed to persist Verified Build run mapping");
   }
 
+  await emitSessionEvent({
+    sessionId: run.sessionId,
+    chatId: run.chatId,
+    userId: run.userId,
+    source: "harness",
+    actorType: "harness",
+    eventName: "harness.run.started",
+    status: "started",
+    summary: `Verified Build ${run.mode} run started.`,
+    requestId: params.input.requestId,
+    harnessRunId: run.harnessRunId,
+    payload: {
+      mode: run.mode,
+      status: run.status,
+      intentSummary: run.intentSummary,
+      selectionReason: run.selectionReason,
+    },
+  });
+
   return run;
 }
 
@@ -283,7 +343,7 @@ export async function persistVerifiedBuildEvent(params: {
   requestId?: string | null;
 }): Promise<void> {
   const redactedPayload = redactHarnessPayload(params.eventPayload);
-  await db
+  const [persistedEvent] = await db
     .insert(verifiedBuildEvents)
     .values({
       id: nanoid(),
@@ -299,7 +359,11 @@ export async function persistVerifiedBuildEvent(params: {
         verifiedBuildEvents.verifiedBuildRunId,
         verifiedBuildEvents.harnessEventId,
       ],
-    });
+    })
+    .returning({ id: verifiedBuildEvents.id });
+  if (!persistedEvent) {
+    return;
+  }
 
   const reduction = reduceHarnessEvent(params.eventName, redactedPayload);
   await db
@@ -312,4 +376,27 @@ export async function persistVerifiedBuildEvent(params: {
       updatedAt: new Date(),
     })
     .where(eq(verifiedBuildRuns.id, params.verifiedBuildRunId));
+
+  const run = await db.query.verifiedBuildRuns.findFirst({
+    where: eq(verifiedBuildRuns.id, params.verifiedBuildRunId),
+  });
+  if (run) {
+    await emitSessionEvent({
+      sessionId: run.sessionId,
+      chatId: run.chatId,
+      userId: run.userId,
+      source: "harness",
+      actorType: "harness",
+      eventName: `harness.${params.eventName}`,
+      status: statusFromHarnessEvent(params.eventName),
+      summary: `Verified Build event: ${params.eventName}`,
+      requestId: params.requestId ?? null,
+      harnessRunId: run.harnessRunId,
+      payload: {
+        harnessEventId: params.harnessEventId,
+        eventName: params.eventName,
+        payload: redactedPayload,
+      },
+    });
+  }
 }
