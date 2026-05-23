@@ -8,6 +8,7 @@ export {
 } from "./snapshot-refresh";
 export type {
   RefreshBaseSnapshotCommandResult,
+  RefreshBaseSnapshotFile,
   RefreshBaseSnapshotOptions,
   RefreshBaseSnapshotResult,
 } from "./snapshot-refresh";

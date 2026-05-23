@@ -19,7 +19,7 @@ const MAX_PROACTIVE_TIMEOUT_MS = MAX_SDK_TIMEOUT_MS - TIMEOUT_BUFFER_MS;
 const DEFAULT_RECONNECT_TIMEOUT_MS = 300_000; // 5 minutes default timeout for reconnected sandboxes
 const DETACHED_QUICK_FAILURE_WINDOW_MS = 2_000;
 const DEFAULT_COMMAND_PATH =
-  "/root/.bun/bin:/home/vc/.bun/bin:/home/sandbox/.bun/bin:/usr/local/bin:/usr/bin:/bin";
+  "/home/vercel-sandbox/.open-agents/bin:/home/vercel-sandbox/.bun/bin:/home/vercel-sandbox/.bun/install/global/bin:/root/.open-agents/bin:/root/.bun/bin:/root/.bun/install/global/bin:/home/vc/.open-agents/bin:/home/vc/.bun/bin:/home/vc/.bun/install/global/bin:/home/sandbox/.open-agents/bin:/home/sandbox/.bun/bin:/home/sandbox/.bun/install/global/bin:/usr/local/bin:/usr/bin:/bin";
 
 interface SandboxRouteLike {
   port: number;

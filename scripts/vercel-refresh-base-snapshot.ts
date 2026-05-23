@@ -9,10 +9,19 @@
  *   bun run scripts/vercel-refresh-base-snapshot.ts --from snap_123 --command "apt-get install -y ripgrep"
  */
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS,
+  type RefreshBaseSnapshotFile,
   refreshBaseSnapshot,
-} from "@open-agents/sandbox/vercel";
+} from "../packages/sandbox/vercel";
+import {
+  DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+  getManagedRuntimeProfile,
+  getManagedRuntimeSnapshotCommands,
+  MANAGED_RUNTIME_PROFILES,
+} from "../packages/sandbox/managed-runtime-profiles";
 import {
   DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
   DEFAULT_SANDBOX_PORTS,
@@ -20,30 +29,14 @@ import {
 } from "../apps/web/lib/sandbox/config";
 
 const SANDBOX_BASE_SNAPSHOT_CONFIG_PATH = "apps/web/lib/sandbox/config.ts";
-const MANAGED_RUNTIME_BUN_INSTALL_COMMAND = [
-  "if command -v bun >/dev/null 2>&1; then command -v bun; exit 0; fi",
-  "if command -v npm >/dev/null 2>&1; then npm install -g bun || true; fi",
-  "if ! command -v bun >/dev/null 2>&1; then curl -fsSL https://bun.sh/install | bash; fi",
-  'export PATH="$HOME/.bun/bin:$PATH"',
-  "if command -v bun >/dev/null 2>&1; then",
-  '  bun_path="$(command -v bun)"',
-  "  mkdir -p /usr/local/bin 2>/dev/null || true",
-  '  ln -sf "$bun_path" /usr/local/bin/bun 2>/dev/null || true',
-  "fi",
-  "command -v bun",
-].join("\n");
-const MANAGED_RUNTIME_SNAPSHOT_COMMANDS = [
-  MANAGED_RUNTIME_BUN_INSTALL_COMMAND,
-  "npm install -g agent-browser",
-  "command -v bun",
-  "command -v agent-browser",
-] as const;
 
 interface CliOptions {
   baseSnapshotId?: string;
+  fromStandardRuntime?: boolean;
   sandboxTimeoutMs?: number;
   commandTimeoutMs?: number;
   managedRuntimeDefaults?: boolean;
+  managedRuntimeProfileId?: string;
   commands: string[];
 }
 
@@ -58,14 +51,17 @@ function printUsage() {
 
 Options:
   --from <snapshot-id>         Override the starting snapshot id
+  --from-standard-runtime      Start from Vercel's standard runtime even when a base snapshot is configured
   --command <shell-command>    Command to run inside the sandbox. Repeat as needed.
-  --managed-runtime-defaults   Install the default managed runtime toolchain (Bun and agent-browser)
+  --managed-runtime-defaults   Install the default managed runtime profile (${DEFAULT_MANAGED_RUNTIME_PROFILE_ID})
+  --managed-runtime-profile <profile-id>
+                               Install a named managed runtime profile. Available: ${MANAGED_RUNTIME_PROFILES.map((profile) => profile.id).join(", ")}
   --sandbox-timeout-ms <ms>    Sandbox lifetime for the refresh run
   --command-timeout-ms <ms>    Timeout for each setup command (default: ${DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS})
   --help                       Show this message
 
 Current configured base snapshot:
-  ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID}`);
+  ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID ?? "<none; standard runtime will be used>"}`);
 }
 
 function requireOptionValue(
@@ -93,9 +89,11 @@ function parsePositiveNumber(value: string, option: string): number {
 function parseArgs(argv: string[]): CliOptions | HelpResult {
   const commands: string[] = [];
   let baseSnapshotId: string | undefined;
+  let fromStandardRuntime = false;
   let sandboxTimeoutMs: number | undefined;
   let commandTimeoutMs: number | undefined;
   let managedRuntimeDefaults = false;
+  let managedRuntimeProfileId: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -106,12 +104,25 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
 
     if (arg === "--from") {
       baseSnapshotId = requireOptionValue(argv, index, arg);
+      fromStandardRuntime = false;
       index += 1;
+      continue;
+    }
+
+    if (arg === "--from-standard-runtime") {
+      baseSnapshotId = undefined;
+      fromStandardRuntime = true;
       continue;
     }
 
     if (arg === "--command") {
       commands.push(requireOptionValue(argv, index, arg));
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--managed-runtime-profile") {
+      managedRuntimeProfileId = requireOptionValue(argv, index, arg);
       index += 1;
       continue;
     }
@@ -144,9 +155,11 @@ function parseArgs(argv: string[]): CliOptions | HelpResult {
 
   return {
     baseSnapshotId,
+    fromStandardRuntime,
     sandboxTimeoutMs,
     commandTimeoutMs,
     managedRuntimeDefaults,
+    managedRuntimeProfileId,
     commands,
   };
 }
@@ -158,11 +171,37 @@ async function main() {
     return;
   }
 
+  const managedRuntimeProfile =
+    parsed.managedRuntimeDefaults || parsed.managedRuntimeProfileId
+      ? getManagedRuntimeProfile(
+          parsed.managedRuntimeProfileId ?? DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+        )
+      : null;
+  const profileSetupFiles: RefreshBaseSnapshotFile[] =
+    managedRuntimeProfile?.setupScript
+      ? [
+          {
+            path: managedRuntimeProfile.setupScript.sandboxPath,
+            content: readFileSync(
+              path.join(
+                process.cwd(),
+                managedRuntimeProfile.setupScript.repoPath,
+              ),
+              "utf-8",
+            ),
+            executable: true,
+          },
+        ]
+      : [];
+
   const result = await refreshBaseSnapshot({
-    baseSnapshotId: parsed.baseSnapshotId ?? DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+    baseSnapshotId: parsed.fromStandardRuntime
+      ? undefined
+      : (parsed.baseSnapshotId ?? DEFAULT_SANDBOX_BASE_SNAPSHOT_ID),
+    files: profileSetupFiles,
     commands: [
-      ...(parsed.managedRuntimeDefaults
-        ? MANAGED_RUNTIME_SNAPSHOT_COMMANDS
+      ...(managedRuntimeProfile
+        ? getManagedRuntimeSnapshotCommands(managedRuntimeProfile)
         : []),
       ...parsed.commands,
     ],
@@ -174,7 +213,14 @@ async function main() {
 
   console.log("");
   console.log(`New snapshot id: ${result.snapshotId}`);
-  console.log(`Started from snapshot: ${result.sourceSnapshotId}`);
+  console.log(
+    `Started from snapshot: ${result.sourceSnapshotId ?? "<standard runtime>"}`,
+  );
+  if (managedRuntimeProfile) {
+    console.log(
+      `Managed runtime profile: ${managedRuntimeProfile.id}@${managedRuntimeProfile.version}`,
+    );
+  }
   console.log(
     `Update ${SANDBOX_BASE_SNAPSHOT_CONFIG_PATH} to use: "${result.snapshotId}"`,
   );

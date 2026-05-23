@@ -13,6 +13,11 @@ interface MockSnapshotSandbox {
     cwd: string,
     timeoutMs: number,
   ) => Promise<ExecResult>;
+  writeFile: (
+    path: string,
+    content: string,
+    encoding: "utf-8",
+  ) => Promise<void>;
   stop: () => Promise<void>;
   snapshot?: () => Promise<{ snapshotId: string }>;
 }
@@ -34,6 +39,7 @@ function createSandbox(
   return {
     workingDirectory: "/vercel/sandbox",
     exec: async () => createExecResult(),
+    writeFile: async () => {},
     stop: async () => {},
     snapshot: async () => ({ snapshotId: "snap-next" }),
     ...overrides,
@@ -129,6 +135,77 @@ describe("refreshBaseSnapshot", () => {
       "Creating snapshot from prepared sandbox.",
       "Created snapshot snap-next.",
     ]);
+  });
+
+  test("writes setup scripts before running snapshot commands", async () => {
+    const writeCalls: Array<{
+      path: string;
+      content: string;
+      encoding: "utf-8";
+    }> = [];
+    const execCalls: Array<{
+      command: string;
+      cwd: string;
+      timeoutMs: number;
+    }> = [];
+    const logs: string[] = [];
+
+    await refreshBaseSnapshot(
+      {
+        sandboxTimeoutMs: 300_000,
+        files: [
+          {
+            path: "/tmp/open-agents/setup.sh",
+            content: "#!/usr/bin/env bash\necho setup\n",
+            executable: true,
+          },
+        ],
+        commands: ["bash /tmp/open-agents/setup.sh", "bun --version"],
+        commandTimeoutMs: 60_000,
+        log: (message) => logs.push(message),
+      },
+      {
+        connectSandbox: async () =>
+          createSandbox({
+            writeFile: async (path, content, encoding) => {
+              writeCalls.push({ path, content, encoding });
+            },
+            exec: async (command, cwd, timeoutMs) => {
+              execCalls.push({ command, cwd, timeoutMs });
+              return createExecResult({ stdout: `ran ${command}` });
+            },
+          }),
+      },
+    );
+
+    expect(writeCalls).toEqual([
+      {
+        path: "/tmp/open-agents/setup.sh",
+        content: "#!/usr/bin/env bash\necho setup\n",
+        encoding: "utf-8",
+      },
+    ]);
+    expect(execCalls).toEqual([
+      {
+        command: "chmod +x '/tmp/open-agents/setup.sh'",
+        cwd: "/vercel/sandbox",
+        timeoutMs: 60_000,
+      },
+      {
+        command: "bash /tmp/open-agents/setup.sh",
+        cwd: "/vercel/sandbox",
+        timeoutMs: 60_000,
+      },
+      {
+        command: "bun --version",
+        cwd: "/vercel/sandbox",
+        timeoutMs: 60_000,
+      },
+    ]);
+    expect(logs).toContain(
+      "Creating sandbox from the standard Vercel runtime.",
+    );
+    expect(logs).toContain("Writing setup file 1/1: /tmp/open-agents/setup.sh");
   });
 
   test("stops the sandbox and surfaces command output when setup fails", async () => {

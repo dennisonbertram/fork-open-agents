@@ -77,6 +77,10 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - Client UI `sandboxUiStatus` must check server `lifecycleTiming.state` (from status poll) as primary source, not only local `sandboxInfo`; otherwise UI stays "Active" after server-side hibernation until the local timeout expires or user refreshes.
 - The `isSandboxActive` client flag must incorporate `lifecycleTiming.state`; local `isSandboxValid(sandboxInfo)` alone is insufficient because the server can hibernate the sandbox while the local timeout is still valid.
 - In the sandbox lifecycle evaluator, treat any non-null chat `activeStreamId` as an authoritative no-hibernate signal; do not inspect workflow status or clear stream ids from the lifecycle path, and recheck immediately before snapshotting to avoid racing a newly-started stream.
+- Managed runtime must not assume Node, npm, Bun, Python, or any other tool exists in every sandbox. Toolchains belong to versioned runtime profiles with setup scripts and verification probes; Bun is only the first default web-profile install used to prove the mechanism.
+- A "managed runtime" label is not proof that managed execution happened. Tool calls and status events need sandbox/profile attribution, and enforcement mode should remove direct mutation tools from the top-level coordinator so code changes can only come from managed worker sandboxes.
+- Sandbox install scripts should be source-controlled and usable both for snapshot creation and per-session fallback. Snapshots make installed applications fast to start, but setup/probe scripts remain the source of truth when snapshots are missing, stale, or being rebuilt.
+- Vercel standard sandboxes run as `vercel-sandbox` with `$HOME=/home/vercel-sandbox`; `/vercel` is root-owned. Runtime profile shims should be written under `$HOME/.open-agents/bin` and that path must be included in sandbox command `PATH`.
 
 ## Chat / Streaming UI
 

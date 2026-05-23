@@ -6,6 +6,7 @@ export const DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 interface SnapshotSandbox {
   workingDirectory: string;
   exec(command: string, cwd: string, timeoutMs: number): Promise<ExecResult>;
+  writeFile(path: string, content: string, encoding: "utf-8"): Promise<void>;
   stop(): Promise<void>;
   snapshot?(): Promise<SnapshotResult>;
 }
@@ -15,13 +16,20 @@ type SnapshotSandboxConnector = (
 ) => Promise<SnapshotSandbox>;
 
 export interface RefreshBaseSnapshotOptions {
-  baseSnapshotId: string;
+  baseSnapshotId?: string;
+  files?: RefreshBaseSnapshotFile[];
   commands?: string[];
   sandboxTimeoutMs: number;
   commandTimeoutMs?: number;
   ports?: number[];
   env?: Record<string, string>;
   log?: (message: string) => void;
+}
+
+export interface RefreshBaseSnapshotFile {
+  path: string;
+  content: string;
+  executable?: boolean;
 }
 
 export interface RefreshBaseSnapshotCommandResult {
@@ -33,7 +41,7 @@ export interface RefreshBaseSnapshotCommandResult {
 }
 
 export interface RefreshBaseSnapshotResult {
-  sourceSnapshotId: string;
+  sourceSnapshotId?: string;
   snapshotId: string;
   commandResults: RefreshBaseSnapshotCommandResult[];
 }
@@ -69,6 +77,10 @@ function formatCommandFailure(command: string, result: ExecResult): string {
   return sections.join("\n\n");
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export async function refreshBaseSnapshot(
   options: RefreshBaseSnapshotOptions,
   dependencies: RefreshBaseSnapshotDependencies = {},
@@ -85,16 +97,22 @@ export async function refreshBaseSnapshot(
   let snapshotCreated = false;
 
   try {
-    log(`Creating sandbox from base snapshot ${options.baseSnapshotId}.`);
+    log(
+      options.baseSnapshotId
+        ? `Creating sandbox from base snapshot ${options.baseSnapshotId}.`
+        : "Creating sandbox from the standard Vercel runtime.",
+    );
     // Skip git init so the new base image does not ship `.git` in /vercel/sandbox
     // (would break `git clone … .` for agent sandboxes).
     sandbox = await connectSnapshotSandbox({
       state: { type: "vercel" },
       options: {
-        baseSnapshotId: options.baseSnapshotId,
         timeout: options.sandboxTimeoutMs,
         persistent: false,
         skipGitWorkspaceBootstrap: true,
+        ...(options.baseSnapshotId !== undefined && {
+          baseSnapshotId: options.baseSnapshotId,
+        }),
         ...(options.ports !== undefined && { ports: options.ports }),
         ...(options.env !== undefined && { env: options.env }),
       },
@@ -107,6 +125,34 @@ export async function refreshBaseSnapshot(
     }
 
     const commandResults: RefreshBaseSnapshotCommandResult[] = [];
+    const files = options.files ?? [];
+
+    for (const [index, file] of files.entries()) {
+      log(`Writing setup file ${index + 1}/${files.length}: ${file.path}`);
+      await sandbox.writeFile(file.path, file.content, "utf-8");
+
+      if (file.executable) {
+        const chmodCommand = `chmod +x ${shellQuote(file.path)}`;
+        log(`Marking setup file executable: ${file.path}`);
+        const chmodResult = await sandbox.exec(
+          chmodCommand,
+          sandbox.workingDirectory,
+          commandTimeoutMs,
+        );
+
+        commandResults.push({
+          command: chmodCommand,
+          exitCode: chmodResult.exitCode,
+          stdout: chmodResult.stdout,
+          stderr: chmodResult.stderr,
+          truncated: chmodResult.truncated,
+        });
+
+        if (!chmodResult.success) {
+          throw new Error(formatCommandFailure(chmodCommand, chmodResult));
+        }
+      }
+    }
 
     for (const [index, command] of commands.entries()) {
       log(`Running command ${index + 1}/${commands.length}: ${command}`);
