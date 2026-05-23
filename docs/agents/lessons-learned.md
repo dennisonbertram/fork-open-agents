@@ -112,6 +112,11 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 
 ## GitHub App / PR Flows
 
+- This fork is independent from `vercel-labs/open-agents`: treat Vercel Labs as
+  read-only upstream unless the user explicitly requests an upstream write. If
+  the user's fork has issues disabled or a target repo cannot be resolved, do
+  not create fallback issues/PRs in upstream; report the blocker and keep the
+  plan in the fork's docs.
 - For self-hosted Open Agents, the GitHub App uses the GitHub App's OAuth credentials for Better Auth plus installation tokens for repo access; a separate GitHub OAuth app is not required.
 - GitHub App setup URLs for current Better Auth flow are `https://YOUR_DOMAIN/api/auth/callback/github`, `https://YOUR_DOMAIN/api/github/app/callback`, and `https://YOUR_DOMAIN/api/github/webhook`; do not use old `/api/auth/github/*` or `/api/github/app/callback` as the OAuth callback.
 - Start GitHub App permissions narrowly: Contents read/write, Pull requests read/write, Checks read-only, Commit statuses read-only, Deployments read-only, Issues read-only, Metadata mandatory. Leave Actions/Workflows disabled unless editing Actions workflow files becomes a product requirement.

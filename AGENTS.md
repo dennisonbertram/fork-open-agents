@@ -14,6 +14,22 @@ This file provides guidance for AI coding agents working in this repository.
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Observability Discipline](docs/process/observability-discipline.md)
 
+## Repository Ownership And Upstream Policy
+
+This project is being developed independently in Dennison Bertram's GitHub
+workspace. Treat `vercel-labs/open-agents` as an upstream source only.
+
+- Do not push commits, branches, tags, issues, pull requests, releases, or
+  workflow changes to `vercel-labs/open-agents` or any Vercel Labs repository
+  unless the user explicitly asks for that exact upstream write.
+- It is acceptable, and expected, to fetch or pull updates from
+  `vercel-labs/open-agents` so this fork can stay current with upstream.
+- Before any GitHub write, verify the target with `git remote -v`,
+  `gh repo view`, or the equivalent GitHub API data. The expected working
+  target for this checkout is the user's fork/workspace, not Vercel Labs.
+- If the fork, issue tracker, or PR target is ambiguous or disabled, stop and
+  report that instead of falling back to Vercel Labs upstream.
+
 ## Build Process
 
 Use the process docs for non-trivial work:
