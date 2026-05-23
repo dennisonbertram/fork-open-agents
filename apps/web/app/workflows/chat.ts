@@ -40,8 +40,6 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
-import { getChatById, getSessionById } from "@/lib/db/sessions";
-import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   filterModelVariantsForSession,
   sanitizeSelectedModelIdForSession,
@@ -49,7 +47,7 @@ import {
 } from "@/lib/model-access";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
-import { emitSessionEvent } from "@/lib/observability/events";
+import type { RecordSessionEventInput } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
 import type {
   WorkflowRunStatus,
@@ -149,6 +147,11 @@ async function resolveChatModelRuntime(params: {
 }): Promise<ChatModelRuntime> {
   "use step";
 
+  const [{ getChatById, getSessionById }, { getUserPreferences }] =
+    await Promise.all([
+      import("@/lib/db/sessions"),
+      import("@/lib/db/user-preferences"),
+    ]);
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
     getChatById(params.chatId),
@@ -234,6 +237,15 @@ const generateId = async () => {
   "use step";
   return generateIdAi();
 };
+
+async function emitWorkflowSessionEvent(
+  input: RecordSessionEventInput,
+): Promise<void> {
+  "use step";
+
+  const { emitSessionEvent } = await import("@/lib/observability/events");
+  await emitSessionEvent(input);
+}
 
 async function persistInputMessages(
   chatId: string,
@@ -604,6 +616,7 @@ export async function runAgentWorkflow(options: Options) {
 
   const { workflowRunId } = getWorkflowMetadata();
   const writable = getWritable<UIMessageChunk>();
+  const emitSessionEvent = emitWorkflowSessionEvent;
 
   const latestMessage = options.messages.at(-1);
 
@@ -1245,6 +1258,7 @@ const runAgentStep = async (
 
   const stepStartedAt = new Date();
   const { webAgent } = await import("@/app/config");
+  const { emitSessionEvent } = await import("@/lib/observability/events");
 
   const abortController = new AbortController();
   const stopMonitor = startStopMonitor(workflowRunId, abortController);

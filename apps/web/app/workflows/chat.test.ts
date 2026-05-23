@@ -442,6 +442,21 @@ beforeEach(() => {
 });
 
 describe("runAgentWorkflow", () => {
+  test("keeps database-backed modules behind step-local imports", async () => {
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    expect(source).not.toContain(
+      'import { emitSessionEvent } from "@/lib/observability/events";',
+    );
+    expect(source).not.toContain(
+      'import { getChatById, getSessionById } from "@/lib/db/sessions";',
+    );
+    expect(source).not.toContain(
+      'import { getUserPreferences } from "@/lib/db/user-preferences";',
+    );
+    expect(source).toContain("async function emitWorkflowSessionEvent");
+  });
+
   test("throws when no messages provided", async () => {
     try {
       await runAgentWorkflow(makeOptions({ messages: [] }));
