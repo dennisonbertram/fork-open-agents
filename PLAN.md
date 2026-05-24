@@ -1,15 +1,15 @@
-Summary: Plan a phased dev -> staging -> production release pipeline with a matching environment-variable safety model. The detailed epic plan is `docs/plans/dev-staging-production-env-secrets-epic.md`; the GitHub epic is https://github.com/vercel-labs/open-agents/issues/887.
+Summary: Plan the Composio tool-access epic for Open Agents. The detailed epic plan is `docs/plans/composio-agent-tools-epic.md`; the GitHub epic is https://github.com/dennisonbertram/fork-open-agents/issues/8. The design treats Composio as a session-scoped external action plane with a chat-bar selector, settings setup, and per-agent tool policy.
 
-Context: Open Agents currently has one CI workflow, Vercel deployment guidance, production env documentation, disabled Vercel Development env syncing to sandboxes, GitHub credential brokering via sandbox network policy, and recent runtime observability work. `/Users/dennison/develop/centaur` exists but is empty, so no Centar example was available to inspect. Current Vercel docs confirm custom environments, branch-matched env vars, target-specific deploys, and production promotion behavior.
+Context: Current Composio docs and local Agent University research agree that v3 integrations should use `@composio/core` sessions plus `@composio/vercel` for AI SDK tools. Composio sessions expose meta tools, can be restricted by toolkit/auth config/connected account, and should be reused across multi-turn conversations by persisting `sessionId`. Open Agents already builds per-turn `OpenAgentCallOptions` in `apps/web/app/workflows/chat.ts` and `packages/agent/open-agent.ts` already supports dynamic `settings.tools` in `prepareCall`.
 
-System Impact: The pipeline and env-var design should not be separate features. Promotion gates, secret scopes, sandbox runtime profiles, migration safety, OAuth callbacks, DB/Redis isolation, and user-visible deployment evidence all become part of one release trust boundary.
+System Impact: Composio adds a new source of truth for external-service action capability. Open Agents should own user preferences, chat overrides, selected agent profiles, and observability; Composio should own third-party OAuth credentials, connected account status, toolkit execution, and remote tool logs. The workflow must persist and reuse Composio session IDs to avoid losing meta-tool memory between outer AI SDK tool-loop steps.
 
-Approach: Do not jump straight to a full release train. First add trusted evidence and secret boundaries: branch protection, deployment records, health/smoke checks, environment inventories, and a server-side secret broker that passes references and scoped grants instead of raw values. Then introduce dev and staging environments once CI, migrations, and sandbox env grants are observable and reversible.
+Approach: Build the smallest coherent path first: configuration and status surfaces, then main-agent session injection, then chat-bar profile selection, then per-agent settings and subagent rollout. Do not preload direct app tool schemas or let every agent inherit all external tools by default. Start with allowlisted toolkits, `workbench: { enable: false }`, no in-chat OAuth links, and explicit user/operator status when Composio is unavailable or a connection is missing.
 
 Changes:
-- `docs/plans/dev-staging-production-env-secrets-epic.md` - Epic plan covering pipeline stages, readiness gates, environment isolation, secret broker architecture, sandbox injection rules, observability, tests, and rollout phases.
+- `docs/plans/composio-agent-tools-epic.md` - Epic plan covering target architecture, state ownership, rollout slices, issue bodies, tests, observability, migration impact, and open decisions.
 
 Verification:
-- Validate assumptions against current repo docs and code paths.
-- Re-check Vercel custom environment and env-var behavior with current docs before implementation.
-- Each future implementation slice should add deterministic tests first, then local/preview/staging smoke evidence.
+- Validate implementation slices against current Composio docs before coding.
+- For future code slices, add red tests first for config validation, DB normalization, workflow tool injection, chat payload persistence, and missing-connection UX.
+- Run `bun --bun run ci` and Agent Browser smoke for settings and chat-bar changes.
