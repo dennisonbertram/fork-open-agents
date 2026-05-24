@@ -60,6 +60,7 @@ export function ToolCallsSummaryBar({
   isStreaming,
   toolCallCount,
   changedFiles,
+  activityLabel,
   durationMs,
   startedAt,
   statusWordSeed,
@@ -70,6 +71,8 @@ export function ToolCallsSummaryBar({
   toolCallCount: number;
   /** Unique file paths modified by write/edit tool calls in this turn. */
   changedFiles: string[];
+  /** Current live work item to surface while tool details are collapsed. */
+  activityLabel?: string | null;
   /** Final generation duration in ms (for completed messages). */
   durationMs: number | null;
   /** ISO timestamp of when generation started — i.e. the preceding user
@@ -133,6 +136,11 @@ export function ToolCallsSummaryBar({
     const elapsedLabel = formatElapsedTime(elapsedSeconds);
     desktopSegments.push(elapsedLabel);
     mobileSegments.push(elapsedLabel);
+  }
+
+  if (activityLabel) {
+    desktopSegments.push(activityLabel);
+    mobileSegments.push(activityLabel);
   }
 
   if (toolCallLabel) {

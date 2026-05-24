@@ -144,6 +144,14 @@ IMPORTANT:
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
+    const startedAt = Date.now();
+    let toolCallCount = 0;
+    let pending: TaskPendingToolCall | undefined;
+    let usage: LanguageModelUsage | undefined;
+
+    // Emit before starting the subagent stream so chat UIs can show that the
+    // delegated worker has actually started, even before its first tool call.
+    yield { toolCallCount, startedAt, modelId: subagentModelId, runtime };
 
     const result = await subagent.stream({
       prompt:
@@ -156,14 +164,6 @@ IMPORTANT:
       },
       abortSignal,
     });
-
-    const startedAt = Date.now();
-    let toolCallCount = 0;
-    let pending: TaskPendingToolCall | undefined;
-    let usage: LanguageModelUsage | undefined;
-
-    // Emit an initial state so UIs can show elapsed time from a stable timestamp.
-    yield { toolCallCount, startedAt, modelId: subagentModelId, runtime };
 
     for await (const part of result.fullStream) {
       if (part.type === "tool-call") {

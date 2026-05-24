@@ -5,6 +5,10 @@ import { useMemo, useState, type ReactNode } from "react";
 import type { WebAgentUIMessage } from "@/app/types";
 import { ToolCallsSummaryBar } from "./tool-calls-summary-bar";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
  * Determines if a message has any tool call or reasoning content
  * that should be collapsible.
@@ -47,6 +51,108 @@ function messageHasActiveApproval(message: WebAgentUIMessage): boolean {
   );
 }
 
+function formatSubagentType(value: unknown): string {
+  return typeof value === "string" && value.length > 0
+    ? `${value.charAt(0).toUpperCase()}${value.slice(1)}`
+    : "Subagent";
+}
+
+function truncateStatus(value: string, maxLength = 72): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  return `${value.slice(0, maxLength - 3)}...`;
+}
+
+function basenamePath(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return null;
+  }
+
+  const normalized = value.replaceAll("\\", "/");
+  const segments = normalized.split("/").filter(Boolean);
+  return segments.at(-1) ?? normalized;
+}
+
+function formatPendingTaskTool(value: unknown): string | null {
+  if (!isRecord(value) || typeof value.name !== "string") {
+    return null;
+  }
+
+  const input = isRecord(value.input) ? value.input : {};
+  const displayName = `${value.name.charAt(0).toUpperCase()}${value.name.slice(1)}`;
+
+  switch (value.name) {
+    case "bash": {
+      const command =
+        typeof input.command === "string" ? truncateStatus(input.command) : "";
+      return command ? `${displayName} ${command}` : displayName;
+    }
+    case "read":
+    case "write":
+    case "edit": {
+      const file = basenamePath(input.filePath);
+      return file ? `${displayName} ${file}` : displayName;
+    }
+    case "grep":
+    case "glob": {
+      const pattern =
+        typeof input.pattern === "string" ? truncateStatus(input.pattern) : "";
+      return pattern ? `${displayName} ${pattern}` : displayName;
+    }
+    default:
+      return displayName;
+  }
+}
+
+function getTaskActivityLabel(
+  message: WebAgentUIMessage,
+  isStreaming: boolean,
+): string | null {
+  if (!isStreaming) {
+    return null;
+  }
+
+  for (const part of message.parts.toReversed()) {
+    if (!isToolUIPart(part) || part.type !== "tool-task") {
+      continue;
+    }
+
+    const isActive =
+      part.state === "input-streaming" ||
+      part.state === "input-available" ||
+      (part.state === "output-available" && part.preliminary === true);
+
+    if (!isActive) {
+      continue;
+    }
+
+    const output = part.state === "output-available" ? part.output : undefined;
+    const runtime = isRecord(output) ? output.runtime : undefined;
+    const runtimeLabel =
+      isRecord(runtime) && runtime.mode === "managed_runtime"
+        ? "Managed runtime worker"
+        : `${formatSubagentType(part.input?.subagentType)} worker`;
+    const pending = isRecord(output)
+      ? formatPendingTaskTool(output.pending)
+      : null;
+
+    if (pending) {
+      return `${runtimeLabel}: ${pending}`;
+    }
+
+    const task =
+      typeof part.input?.task === "string" && part.input.task.length > 0
+        ? truncateStatus(part.input.task)
+        : "starting";
+
+    return `${runtimeLabel}: ${task}`;
+  }
+
+  return null;
+}
+
 export type AssistantMessageGroupsProps = {
   message: WebAgentUIMessage;
   isStreaming: boolean;
@@ -85,6 +191,11 @@ export function AssistantMessageGroups({
 
   const changedFiles = useMemo(() => getChangedFiles(message), [message]);
 
+  const activityLabel = useMemo(
+    () => getTaskActivityLabel(message, isStreaming),
+    [message, isStreaming],
+  );
+
   const hasActiveApproval = useMemo(
     () => messageHasActiveApproval(message),
     [message],
@@ -106,6 +217,7 @@ export function AssistantMessageGroups({
         isStreaming={isStreaming}
         toolCallCount={toolCallCount}
         changedFiles={changedFiles}
+        activityLabel={activityLabel}
         durationMs={durationMs}
         startedAt={startedAt}
         statusWordSeed={message.id}

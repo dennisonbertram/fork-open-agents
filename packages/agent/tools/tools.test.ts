@@ -6,7 +6,9 @@ import type { ToolNeedsApprovalFunction } from "./utils";
 
 const sandboxRegistry = new Map<string, Record<string, unknown>>();
 let mockToolLoopAgentStream:
-  | ((args: Record<string, unknown>) => Record<string, unknown>)
+  | ((
+      args: Record<string, unknown>,
+    ) => Record<string, unknown> | Promise<Record<string, unknown>>)
   | undefined;
 
 mock.module("ai", () => {
@@ -858,6 +860,94 @@ describe("tools execute behavior", () => {
         mode: "managed_runtime",
         label: "Managed runtime worker",
         workerType: "executor",
+      },
+    });
+  });
+
+  test("taskTool emits initial worker status before subagent stream startup completes", async () => {
+    const finalMessages = [
+      {
+        role: "assistant",
+        content: "Worker finished.",
+      },
+    ];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    let resolveStream:
+      | ((stream: {
+          fullStream: AsyncIterable<unknown>;
+          response: Promise<{ messages: typeof finalMessages }>;
+          usage: Promise<typeof usage>;
+        }) => void)
+      | undefined;
+
+    mockToolLoopAgentStream = mock(
+      () =>
+        new Promise<Record<string, unknown>>((resolve) => {
+          resolveStream = (stream) =>
+            resolve(stream as unknown as Record<string, unknown>);
+        }),
+    );
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        task: "Apply change",
+        instructions: "Update one file.",
+      },
+      executionOptions({
+        sandbox: {
+          workingDirectory: "/repo",
+        },
+        model: { modelId: "test-model" },
+        runtimeMode: "managed_runtime",
+        managedRuntime: {
+          profileDisplayName: "Web app with Bun and browser checks",
+        },
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    const iterator = result[Symbol.asyncIterator]();
+    const firstOutput = await Promise.race([
+      iterator.next(),
+      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 20)),
+    ]);
+
+    expect(firstOutput).not.toBe("timed-out");
+    expect(firstOutput).toMatchObject({
+      done: false,
+      value: {
+        toolCallCount: 0,
+        modelId: "test-model",
+        runtime: {
+          mode: "managed_runtime",
+          workerType: "executor",
+          profileDisplayName: "Web app with Bun and browser checks",
+        },
+      },
+    });
+
+    const finalOutput = iterator.next();
+    await Promise.resolve();
+
+    if (!resolveStream) {
+      throw new Error("Subagent stream was not requested after initial yield");
+    }
+
+    resolveStream({
+      fullStream: (async function* () {})(),
+      response: Promise.resolve({ messages: finalMessages }),
+      usage: Promise.resolve(usage),
+    });
+
+    await expect(finalOutput).resolves.toMatchObject({
+      done: false,
+      value: {
+        final: finalMessages,
+        usage,
       },
     });
   });
