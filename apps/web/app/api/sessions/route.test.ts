@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { defaultComposioAgentDefaults } from "@/lib/composio/types";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 
 let currentSession: {
@@ -27,6 +28,16 @@ mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
 
+mock.module("@/lib/botid", () => ({
+  checkBotProtection: async () => ({ isBot: false }),
+}));
+
+mock.module("@/lib/rate-limit", () => ({
+  checkRateLimit: async () => null,
+  rateLimitKey: (parts: Array<number | string | null | undefined>) =>
+    parts.filter((part) => part !== null && part !== undefined).join(":"),
+}));
+
 mock.module("@/lib/random-city", () => ({
   getRandomCityName: () => "Oslo",
 }));
@@ -45,6 +56,13 @@ mock.module("@/lib/db/user-preferences", () => ({
     globalSkillRefs: [{ source: "vercel/ai", skillName: "ai-sdk" }],
     modelVariants: [],
     enabledModelIds: [],
+    composioAgentDefaults: {
+      ...defaultComposioAgentDefaults,
+      main: {
+        defaultProfileId: "profile-main",
+        allowChatOverride: true,
+      },
+    },
   }),
 }));
 
@@ -87,6 +105,7 @@ mock.module("@/lib/db/sessions", () => ({
         sessionId: String(input.session.id),
         title: String(input.initialChat.title),
         modelId: String(input.initialChat.modelId),
+        composioSelection: input.initialChat.composioSelection,
         createdAt: new Date(),
         updatedAt: new Date(),
       },
@@ -297,6 +316,27 @@ describe("/api/sessions POST vercel project linking", () => {
     expect(response.status).toBe(200);
     expect(createCalls[0]).toMatchObject({
       globalSkillRefs: [{ source: "vercel/ai", skillName: "ai-sdk" }],
+    });
+  });
+
+  test("new sessions seed the initial chat from the main Composio default", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      chat: { composioSelection: unknown };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.chat.composioSelection).toEqual({
+      mainProfileId: "profile-main",
     });
   });
 

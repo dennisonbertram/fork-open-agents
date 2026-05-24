@@ -60,6 +60,21 @@ describe("openAgent runtime tool policy", () => {
     expect(classicTools).toEqual([...OPEN_AGENT_TOOL_NAMES]);
   });
 
+  test("merges caller-provided tools with the direct toolset in classic mode", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_CREATE_ISSUE" };
+    const classicTools = getRuntimeModeToolPolicy("classic", {
+      COMPOSIO_GITHUB_CREATE_ISSUE: composioTool,
+    } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1]);
+
+    expect(Object.keys(classicTools)).toEqual([
+      ...OPEN_AGENT_TOOL_NAMES,
+      "COMPOSIO_GITHUB_CREATE_ISSUE",
+    ]);
+    expect(classicTools.COMPOSIO_GITHUB_CREATE_ISSUE as unknown).toBe(
+      composioTool,
+    );
+  });
+
   test("removes direct coding and shell tools in managed runtime mode", () => {
     const managedTools = Object.keys(
       getOpenAgentToolsForRuntimeMode("managed_runtime"),
@@ -87,7 +102,9 @@ describe("openAgent runtime tool policy", () => {
       requestedTools,
     );
 
-    expect(Object.keys(filteredTools)).toEqual(["task", "web_fetch"]);
+    expect(Object.keys(filteredTools)).toEqual([
+      ...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+    ]);
   });
 
   test("injects managed runtime coordinator instructions into the system prompt", () => {

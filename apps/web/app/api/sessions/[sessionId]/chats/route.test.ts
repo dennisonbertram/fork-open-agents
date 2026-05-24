@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  type ChatComposioSelection,
+  defaultComposioAgentDefaults,
+} from "@/lib/composio/types";
 
 type AuthResult =
   | {
@@ -30,6 +34,7 @@ type ChatRecord = {
   sessionId: string;
   title: string;
   modelId: string;
+  composioSelection: ChatComposioSelection;
 };
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
@@ -51,6 +56,7 @@ let createdChat: ChatRecord = {
   sessionId: "session-1",
   title: "New chat",
   modelId: "model-default",
+  composioSelection: { mainProfileId: "profile-main" },
 };
 
 const getSummaryCalls: Array<{ sessionId: string; userId: string }> = [];
@@ -59,6 +65,7 @@ const createChatCalls: Array<{
   sessionId: string;
   title: string;
   modelId: string;
+  composioSelection: ChatComposioSelection;
 }> = [];
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -85,6 +92,7 @@ mock.module("@/lib/db/sessions", () => ({
     sessionId: string;
     title: string;
     modelId: string;
+    composioSelection: ChatComposioSelection;
   }) => {
     createChatCalls.push(input);
     return createdChat;
@@ -105,6 +113,13 @@ mock.module("@/lib/db/user-preferences", () => ({
     globalSkillRefs: [],
     modelVariants: [],
     enabledModelIds: [],
+    composioAgentDefaults: {
+      ...defaultComposioAgentDefaults,
+      main: {
+        defaultProfileId: "profile-main",
+        allowChatOverride: true,
+      },
+    },
   }),
 }));
 
@@ -139,6 +154,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-1",
       title: "New chat",
       modelId: "model-default",
+      composioSelection: { mainProfileId: "profile-main" },
     };
     getSummaryCalls.length = 0;
     createChatCalls.length = 0;
@@ -213,6 +229,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-1",
       title: "Existing",
       modelId: "model-existing",
+      composioSelection: { mainProfileId: null },
     };
     const { POST } = await routeModulePromise;
 
@@ -233,6 +250,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-2",
       title: "Elsewhere",
       modelId: "model-existing",
+      composioSelection: { mainProfileId: null },
     };
     const { POST } = await routeModulePromise;
 
@@ -263,6 +281,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
         sessionId: "session-abc",
         title: "New chat",
         modelId: "model-default",
+        composioSelection: { mainProfileId: "profile-main" },
       },
     ]);
     expect(body.chat.id).toBe("generated-chat-id");

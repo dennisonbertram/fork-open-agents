@@ -2,6 +2,13 @@ import type { SandboxState } from "@open-agents/sandbox";
 import type { ModelVariant } from "@/lib/model-variants";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
+  type ChatComposioSelection,
+  type ComposioAgentDefaults,
+  type ComposioAgentKey,
+  defaultChatComposioSelection,
+  defaultComposioAgentDefaults,
+} from "@/lib/composio/types";
+import {
   boolean,
   index,
   integer,
@@ -225,6 +232,10 @@ export const chats = pgTable(
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     modelId: text("model_id").default("anthropic/claude-haiku-4.5"),
+    composioSelection: jsonb("composio_selection")
+      .$type<ChatComposioSelection>()
+      .notNull()
+      .default(defaultChatComposioSelection),
     activeStreamId: text("active_stream_id"),
     lastAssistantMessageAt: timestamp("last_assistant_message_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -699,6 +710,82 @@ export type NewWorkflowRunStep = typeof workflowRunSteps.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 
+export const composioToolProfiles = pgTable(
+  "composio_tool_profiles",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    toolkitSlugs: jsonb("toolkit_slugs").$type<string[]>().notNull(),
+    authConfigIdsByToolkit: jsonb("auth_config_ids_by_toolkit")
+      .$type<Record<string, string | null>>()
+      .notNull()
+      .default({}),
+    connectedAccountIdsByToolkit: jsonb("connected_account_ids_by_toolkit")
+      .$type<Record<string, string[]>>()
+      .notNull()
+      .default({}),
+    workbenchEnabled: boolean("workbench_enabled").notNull().default(false),
+    allowInChatConnectionManagement: boolean(
+      "allow_in_chat_connection_management",
+    )
+      .notNull()
+      .default(false),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("composio_tool_profiles_user_idx").on(table.userId),
+    uniqueIndex("composio_tool_profiles_user_name_idx").on(
+      table.userId,
+      table.name,
+    ),
+  ],
+);
+
+export const composioAgentSessions = pgTable(
+  "composio_agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    agentKey: text("agent_key", {
+      enum: ["main", "explorer", "executor", "design"],
+    })
+      .$type<ComposioAgentKey>()
+      .notNull(),
+    profileId: text("profile_id")
+      .notNull()
+      .references(() => composioToolProfiles.id, { onDelete: "cascade" }),
+    configHash: text("config_hash").notNull(),
+    composioSessionId: text("composio_session_id").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("composio_agent_sessions_user_idx").on(table.userId),
+    index("composio_agent_sessions_chat_idx").on(table.chatId),
+    uniqueIndex("composio_agent_sessions_lookup_idx").on(
+      table.userId,
+      table.chatId,
+      table.agentKey,
+      table.profileId,
+      table.configHash,
+    ),
+  ],
+);
+
+export type ComposioToolProfile = typeof composioToolProfiles.$inferSelect;
+export type NewComposioToolProfile = typeof composioToolProfiles.$inferInsert;
+export type ComposioAgentSession = typeof composioAgentSessions.$inferSelect;
+export type NewComposioAgentSession = typeof composioAgentSessions.$inferInsert;
+
 // User preferences for settings
 export const userPreferences = pgTable("user_preferences", {
   id: text("id").primaryKey(),
@@ -733,6 +820,10 @@ export const userPreferences = pgTable("user_preferences", {
     .$type<string[]>()
     .notNull()
     .default([]),
+  composioAgentDefaults: jsonb("composio_agent_defaults")
+    .$type<ComposioAgentDefaults>()
+    .notNull()
+    .default(defaultComposioAgentDefaults),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

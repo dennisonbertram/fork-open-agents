@@ -5,6 +5,7 @@ import {
   isToolUIPart,
   type LanguageModelUsage,
   type ModelMessage,
+  type ToolSet,
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
@@ -280,6 +281,13 @@ function getSetupErrorMessage(error: unknown): string {
 
   if (error.message === "Session is archived") {
     return "This session is archived. Unarchive it to continue.";
+  }
+
+  if (
+    error.name === "ComposioSetupError" ||
+    error.message.includes("Composio")
+  ) {
+    return error.message;
   }
 
   return "Workspace setup failed. Try again in a moment.";
@@ -1458,6 +1466,8 @@ const runAgentStep = async (
 
   const stepStartedAt = new Date();
   const { webAgent } = await import("@/app/config");
+  const { resolveComposioToolsForChat } =
+    await import("@/lib/composio/session");
   const { emitSessionEvent } = await import("@/lib/observability/events");
 
   const abortController = new AbortController();
@@ -1507,9 +1517,91 @@ const runAgentStep = async (
     let totalMessageUsage = existingTotalMessageUsage;
     let totalMessageCost = existingTotalMessageCost;
 
+    let composioTools: ToolSet | undefined;
+    try {
+      const composioResult = await resolveComposioToolsForChat({
+        userId,
+        chatId,
+        agentKey: "main",
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+      });
+
+      if (composioResult.status === "ready") {
+        composioTools = composioResult.tools;
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "composio.profile.selected",
+          status: "succeeded",
+          summary: `Using Composio profile: ${composioResult.profile.name}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            profileId: composioResult.profile.id,
+            profileName: composioResult.profile.name,
+            toolkitSlugs: composioResult.profile.toolkitSlugs,
+            configHash: composioResult.configHash,
+            composioSessionId: composioResult.composioSessionId,
+            toolCount: Object.keys(composioResult.tools).length,
+          },
+        });
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: composioResult.reusedSession
+            ? "composio.session.reused"
+            : "composio.session.created",
+          status: "succeeded",
+          summary: composioResult.reusedSession
+            ? "Reused Composio tool session."
+            : "Created Composio tool session.",
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            profileId: composioResult.profile.id,
+            configHash: composioResult.configHash,
+            composioSessionId: composioResult.composioSessionId,
+          },
+        });
+      }
+    } catch (error) {
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "composio.session.failed",
+        status: "failed",
+        summary: `Composio tools failed: ${getErrorMessage(error)}`,
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          errorName: error instanceof Error ? error.name : "Error",
+        },
+      });
+      throw error;
+    }
+
     const result = await webAgent.stream({
       messages,
       options: agentOptions,
+      ...(composioTools ? { tools: composioTools } : {}),
       abortSignal: abortController.signal,
     });
 

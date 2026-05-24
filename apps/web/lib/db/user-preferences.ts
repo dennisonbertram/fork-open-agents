@@ -7,6 +7,11 @@ import {
   normalizeGlobalSkillRefs,
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
+import {
+  type ComposioAgentDefaults,
+  defaultComposioAgentDefaults,
+  normalizeComposioAgentDefaults,
+} from "@/lib/composio/types";
 import { db } from "./client";
 import { userPreferences, type UserPreferences } from "./schema";
 
@@ -25,6 +30,7 @@ export interface UserPreferencesData {
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];
+  composioAgentDefaults: ComposioAgentDefaults;
 }
 
 const DEFAULT_PREFERENCES: UserPreferencesData = {
@@ -40,6 +46,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   globalSkillRefs: [],
   modelVariants: [],
   enabledModelIds: [],
+  composioAgentDefaults: defaultComposioAgentDefaults,
 };
 
 const VALID_SANDBOX_TYPES: SandboxType[] = ["vercel"];
@@ -79,20 +86,23 @@ function normalizeEnabledModelIds(value: unknown): string[] {
 }
 
 export function toUserPreferencesData(
-  row?: Pick<
-    UserPreferences,
-    | "defaultModelId"
-    | "defaultSubagentModelId"
-    | "defaultSandboxType"
-    | "defaultDiffMode"
-    | "autoCommitPush"
-    | "autoCreatePr"
-    | "alertsEnabled"
-    | "alertSoundEnabled"
-    | "publicUsageEnabled"
-    | "globalSkillRefs"
-    | "modelVariants"
-    | "enabledModelIds"
+  row?: Partial<
+    Pick<
+      UserPreferences,
+      | "defaultModelId"
+      | "defaultSubagentModelId"
+      | "defaultSandboxType"
+      | "defaultDiffMode"
+      | "autoCommitPush"
+      | "autoCreatePr"
+      | "alertsEnabled"
+      | "alertSoundEnabled"
+      | "publicUsageEnabled"
+      | "globalSkillRefs"
+      | "modelVariants"
+      | "enabledModelIds"
+      | "composioAgentDefaults"
+    >
   >,
 ): UserPreferencesData {
   const parsedModelVariants = modelVariantsSchema.safeParse(
@@ -114,6 +124,9 @@ export function toUserPreferencesData(
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
+    composioAgentDefaults: normalizeComposioAgentDefaults(
+      row?.composioAgentDefaults,
+    ),
   };
 }
 
@@ -184,6 +197,9 @@ export async function updateUserPreferences(
       modelVariants: updates.modelVariants ?? DEFAULT_PREFERENCES.modelVariants,
       enabledModelIds:
         updates.enabledModelIds ?? DEFAULT_PREFERENCES.enabledModelIds,
+      composioAgentDefaults:
+        updates.composioAgentDefaults ??
+        DEFAULT_PREFERENCES.composioAgentDefaults,
     })
     .returning();
 

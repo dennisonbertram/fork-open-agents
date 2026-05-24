@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  type ChatComposioSelection,
+  defaultChatComposioSelection,
+} from "@/lib/composio/types";
 
 type AuthResult =
   | {
@@ -18,6 +22,7 @@ type OwnedSessionChatResult =
         id: string;
         sessionId: string;
         modelId: string;
+        composioSelection: ChatComposioSelection;
         activeStreamId: string | null;
       };
     }
@@ -36,6 +41,7 @@ type ChatRecord = {
   sessionId: string;
   title: string;
   modelId: string;
+  composioSelection: ChatComposioSelection;
 };
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
@@ -46,6 +52,7 @@ let ownedSessionChatResult: OwnedSessionChatResult = {
     id: "chat-1",
     sessionId: "session-1",
     modelId: "model-1",
+    composioSelection: defaultChatComposioSelection,
     activeStreamId: null,
   },
 };
@@ -67,6 +74,7 @@ let updatedChat: ChatRecord | null = {
   sessionId: "session-1",
   title: "Updated",
   modelId: "model-updated",
+  composioSelection: { mainProfileId: "profile-updated" },
 };
 let chatsInSession: Array<{ id: string }> = [
   { id: "chat-1" },
@@ -75,7 +83,11 @@ let chatsInSession: Array<{ id: string }> = [
 
 const updateChatCalls: Array<{
   chatId: string;
-  patch: { title?: string; modelId?: string };
+  patch: {
+    title?: string;
+    modelId?: string;
+    composioSelection?: ChatComposioSelection;
+  };
 }> = [];
 const deleteChatCalls: string[] = [];
 
@@ -87,7 +99,11 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/db/sessions", () => ({
   updateChat: async (
     chatId: string,
-    patch: { title?: string; modelId?: string },
+    patch: {
+      title?: string;
+      modelId?: string;
+      composioSelection?: ChatComposioSelection;
+    },
   ) => {
     updateChatCalls.push({ chatId, patch });
     return updatedChat;
@@ -150,6 +166,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         id: "chat-1",
         sessionId: "session-1",
         modelId: "model-1",
+        composioSelection: defaultChatComposioSelection,
         activeStreamId: null,
       },
     };
@@ -165,6 +182,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       sessionId: "session-1",
       title: "Updated",
       modelId: "model-updated",
+      composioSelection: { mainProfileId: "profile-updated" },
     };
     chatsInSession = [{ id: "chat-1" }, { id: "chat-2" }];
     updateChatCalls.length = 0;
@@ -191,6 +209,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         id: "chat-1",
         sessionId: "session-1",
         modelId: "model-1",
+        composioSelection: { mainProfileId: "profile-1" },
         activeStreamId: "stream-1",
       },
     };
@@ -208,7 +227,12 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
 
     const response = await GET(createGetRequest(), createContext());
     const body = (await response.json()) as {
-      chat: { id: string; modelId: string; activeStreamId: string | null };
+      chat: {
+        id: string;
+        modelId: string;
+        composioSelection: ChatComposioSelection;
+        activeStreamId: string | null;
+      };
       isStreaming: boolean;
       messages: ChatMessageRecord["parts"][];
     };
@@ -217,6 +241,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     expect(body.chat).toEqual({
       id: "chat-1",
       modelId: "model-1",
+      composioSelection: { mainProfileId: "profile-1" },
       activeStreamId: "stream-1",
     });
     expect(body.isStreaming).toBe(true);
@@ -303,6 +328,39 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       },
     ]);
     expect(body.chat.id).toBe("chat-1");
+  });
+
+  test("PATCH persists Composio chat selection", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        composioSelection: {
+          mainProfileId: "profile-1",
+          agentProfileOverrides: {
+            executor: "profile-2",
+            explorer: null,
+          },
+        },
+      }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateChatCalls).toEqual([
+      {
+        chatId: "chat-1",
+        patch: {
+          composioSelection: {
+            mainProfileId: "profile-1",
+            agentProfileOverrides: {
+              executor: "profile-2",
+              explorer: null,
+            },
+          },
+        },
+      },
+    ]);
   });
 
   test("PATCH returns 404 when updateChat returns null", async () => {

@@ -73,6 +73,7 @@ export async function POST(req: Request, context: RouteContext) {
       sessionId,
       title: `Fork of ${chatContext.chat.title}`,
       modelId: chatContext.chat.modelId,
+      composioSelection: chatContext.chat.composioSelection,
     },
   });
 

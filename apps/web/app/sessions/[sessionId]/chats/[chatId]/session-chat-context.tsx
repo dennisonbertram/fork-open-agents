@@ -33,6 +33,7 @@ import {
 } from "@/hooks/use-session-git-status";
 import { useSessionSkills } from "@/hooks/use-session-skills";
 import type { Chat, Session } from "@/lib/db/schema";
+import type { ChatComposioSelection } from "@/lib/composio/types";
 import { type ModelOption, withMissingModelOption } from "@/lib/model-options";
 import {
   clearSandboxResumeState,
@@ -119,6 +120,9 @@ type SessionChatContextValue = {
   unarchiveSession: () => Promise<void>;
   updateSessionTitle: (title: string) => Promise<void>;
   updateChatModel: (modelId: string) => Promise<void>;
+  updateChatComposioSelection: (
+    selection: ChatComposioSelection,
+  ) => Promise<void>;
   /** Whether the chat had persisted messages when it was loaded */
   hadInitialMessages: boolean;
   /** The initial message snapshot used for SSR hydration */
@@ -253,6 +257,7 @@ type SessionChatMetadataContextValue = Pick<
   | "unarchiveSession"
   | "updateSessionTitle"
   | "updateChatModel"
+  | "updateChatComposioSelection"
   | "updateSessionSnapshot"
   | "updateRuntimeMode"
   | "preferredSandboxType"
@@ -1045,6 +1050,38 @@ export function SessionChatProvider({
     [sessionRecord.id, chatInfo.id],
   );
 
+  const updateChatComposioSelection = useCallback(
+    async (selection: ChatComposioSelection) => {
+      const previousSelection = chatInfo.composioSelection;
+      setChatInfo((prev) => ({
+        ...prev,
+        composioSelection: selection,
+        updatedAt: new Date(),
+      }));
+
+      const res = await fetch(
+        `/api/sessions/${sessionRecord.id}/chats/${chatInfo.id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ composioSelection: selection }),
+        },
+      );
+
+      const data = (await res.json()) as { chat?: Chat; error?: string };
+      if (!res.ok || !data.chat) {
+        setChatInfo((prev) => ({
+          ...prev,
+          composioSelection: previousSelection,
+        }));
+        throw new Error(data.error ?? "Failed to update chat tools");
+      }
+
+      setChatInfo(data.chat);
+    },
+    [chatInfo.composioSelection, chatInfo.id, sessionRecord.id],
+  );
+
   const runtimeContextValue = useMemo<SessionChatRuntimeContextValue>(
     () => ({
       chat,
@@ -1125,6 +1162,7 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updateChatModel,
+      updateChatComposioSelection,
       updateSessionSnapshot,
       updateRuntimeMode,
       preferredSandboxType,
@@ -1152,6 +1190,7 @@ export function SessionChatProvider({
       unarchiveSession,
       updateSessionTitle,
       updateChatModel,
+      updateChatComposioSelection,
       updateSessionSnapshot,
       updateRuntimeMode,
       preferredSandboxType,

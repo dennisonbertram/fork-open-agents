@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
+import { defaultChatComposioSelection } from "@/lib/composio/types";
 import type { Chat } from "@/lib/db/schema";
 import { fetcherNoStore } from "@/lib/swr";
 
@@ -497,6 +498,7 @@ export function useSessionChats(
       sessionId,
       title: "New chat",
       modelId: data?.defaultModelId ?? null,
+      composioSelection: defaultChatComposioSelection,
       activeStreamId: null,
       lastAssistantMessageAt: null,
       createdAt: now,
@@ -589,6 +591,7 @@ export function useSessionChats(
       sessionId,
       title: `Fork of ${sourceChat.title}`,
       modelId: sourceChat.modelId,
+      composioSelection: sourceChat.composioSelection,
       activeStreamId: null,
       lastAssistantMessageAt: null,
       createdAt: now,

@@ -99,6 +99,9 @@ const spies = {
     }),
   ),
   emitSessionEvent: mock(() => Promise.resolve(null)),
+  resolveComposioToolsForChat: mock(
+    async (): Promise<unknown> => ({ status: "off" as const }),
+  ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
 };
@@ -151,6 +154,7 @@ let agentResponseBody: unknown;
 let agentProviderMetadata: Record<string, unknown> | undefined;
 let agentInputMessages: unknown;
 let agentStreamOptions: unknown;
+let agentStreamTools: unknown;
 
 function buildAgentSteps() {
   return [
@@ -220,12 +224,15 @@ mock.module("@/app/config", () => ({
     stream: async ({
       messages,
       options,
+      tools,
     }: {
       messages: unknown;
       options: unknown;
+      tools?: unknown;
     }) => {
       agentInputMessages = messages;
       agentStreamOptions = options;
+      agentStreamTools = tools;
       return {
         toUIMessageStream: (opts: {
           sendStart?: boolean;
@@ -355,6 +362,10 @@ mock.module("@/lib/observability/events", () => ({
   emitSessionEvent: spies.emitSessionEvent,
 }));
 
+mock.module("@/lib/composio/session", () => ({
+  resolveComposioToolsForChat: spies.resolveComposioToolsForChat,
+}));
+
 mock.module("./chat-sandbox-runtime", () => ({
   resolveChatSandboxRuntime: spies.resolveChatSandboxRuntime,
 }));
@@ -420,6 +431,7 @@ beforeEach(() => {
   agentProviderMetadata = undefined;
   agentInputMessages = undefined;
   agentStreamOptions = undefined;
+  agentStreamTools = undefined;
   streamOnFinishCallback = undefined;
   testSessionRecord = {
     id: "session-1",
@@ -509,6 +521,99 @@ describe("runAgentWorkflow", () => {
     const types = writtenChunks.map((c) => c.type);
     expect(types[0]).toBe("start");
     expect(types[types.length - 1]).toBe("finish");
+  });
+
+  test("resolves Composio for the main agent without passing tools when off", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.resolveComposioToolsForChat).toHaveBeenCalledWith({
+      userId: "user-1",
+      chatId: "chat-1",
+      agentKey: "main",
+      runtimeMode: "classic",
+    });
+    expect(agentStreamTools).toBeUndefined();
+  });
+
+  test("passes selected Composio tools into the agent stream with evidence", async () => {
+    const composioTools = {
+      COMPOSIO_GITHUB_CREATE_ISSUE: { description: "Create an issue" },
+    };
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+      status: "ready" as const,
+      tools: composioTools,
+      profile: {
+        id: "profile-1",
+        name: "GitHub",
+        toolkitSlugs: ["github"],
+      },
+      composioSessionId: "composio-session-1",
+      configHash: "hash-1",
+      reusedSession: false,
+    }));
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(agentStreamTools).toBe(composioTools);
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.profile.selected",
+        status: "succeeded",
+        summary: "Using Composio profile: GitHub.",
+        payload: expect.objectContaining({
+          profileId: "profile-1",
+          toolkitSlugs: ["github"],
+          configHash: "hash-1",
+          composioSessionId: "composio-session-1",
+          toolCount: 1,
+        }),
+      }),
+    );
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.session.created",
+        status: "succeeded",
+        payload: expect.objectContaining({
+          profileId: "profile-1",
+          configHash: "hash-1",
+          composioSessionId: "composio-session-1",
+        }),
+      }),
+    );
+  });
+
+  test("surfaces Composio setup failures before model invocation", async () => {
+    const setupError = new Error(
+      "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+    );
+    setupError.name = "ComposioSetupError";
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+      throw setupError;
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Composio tools are selected",
+    );
+
+    expect(agentInputMessages).toBeUndefined();
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta:
+            "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+        },
+      ]),
+    );
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.session.failed",
+        status: "failed",
+        summary:
+          "Composio tools failed: Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+      }),
+    );
   });
 
   test("passes managed runtime mode into agent options", async () => {

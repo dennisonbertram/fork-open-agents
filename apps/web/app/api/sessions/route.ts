@@ -370,6 +370,10 @@ export async function POST(req: Request) {
         id: nanoid(),
         title: "New chat",
         modelId: preferences.defaultModelId,
+        composioSelection: {
+          mainProfileId:
+            preferences.composioAgentDefaults.main.defaultProfileId,
+        },
       },
     });
 

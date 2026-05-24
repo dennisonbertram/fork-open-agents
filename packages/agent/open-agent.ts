@@ -138,14 +138,13 @@ export function getRuntimeModeToolPolicy(
   runtimeMode: OpenAgentRuntimeMode = "classic",
   requestedTools?: ToolSet,
 ): ToolSet {
+  const mergedTools = requestedTools ? { ...tools, ...requestedTools } : tools;
+
   if (runtimeMode !== "managed_runtime") {
-    return requestedTools ?? tools;
+    return mergedTools;
   }
 
-  return pickTools(
-    requestedTools ?? tools,
-    MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
-  );
+  return pickTools(mergedTools, MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES);
 }
 
 export const openAgent = new ToolLoopAgent({

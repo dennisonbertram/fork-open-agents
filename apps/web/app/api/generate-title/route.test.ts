@@ -27,6 +27,16 @@ mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
 
+mock.module("@/lib/botid", () => ({
+  checkBotProtection: async () => ({ isBot: false }),
+}));
+
+mock.module("@/lib/rate-limit", () => ({
+  checkRateLimit: async () => null,
+  rateLimitKey: (parts: Array<number | string | null | undefined>) =>
+    parts.filter((part) => part !== null && part !== undefined).join(":"),
+}));
+
 const routeModulePromise = import("./route");
 
 function createJsonRequest(body: unknown): Request {

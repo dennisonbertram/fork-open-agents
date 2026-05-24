@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { defaultChatComposioSelection } from "@/lib/composio/types";
 import {
   applySessionSummary,
   applySessionSummaryFromChats,
@@ -17,6 +18,7 @@ function createChat(
     sessionId: "session-1",
     title: `Chat ${id}`,
     modelId: "anthropic/claude-haiku-4.5",
+    composioSelection: defaultChatComposioSelection,
     activeStreamId: null,
     lastAssistantMessageAt: null,
     createdAt: now,

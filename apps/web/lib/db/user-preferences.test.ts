@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import { defaultComposioAgentDefaults } from "@/lib/composio/types";
 
 mock.module("./client", () => ({
   db: {},
@@ -23,6 +24,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      composioAgentDefaults: defaultComposioAgentDefaults,
     });
   });
 
@@ -185,6 +187,7 @@ describe("toUserPreferencesData", () => {
         },
       ],
       enabledModelIds: [],
+      composioAgentDefaults: defaultComposioAgentDefaults,
     });
   });
 

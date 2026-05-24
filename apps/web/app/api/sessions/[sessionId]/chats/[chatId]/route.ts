@@ -9,6 +9,10 @@ import {
   getChatsBySessionId,
   updateChat,
 } from "@/lib/db/sessions";
+import {
+  chatComposioSelectionInputSchema,
+  type ChatComposioSelection,
+} from "@/lib/composio/types";
 
 type RouteContext = {
   params: Promise<{ sessionId: string; chatId: string }>;
@@ -17,12 +21,14 @@ type RouteContext = {
 interface UpdateChatRequest {
   title?: string;
   modelId?: string;
+  composioSelection?: ChatComposioSelection;
 }
 
 export interface ChatRefreshResponse {
   chat: {
     id: string;
     modelId: string | null;
+    composioSelection: ChatComposioSelection;
     activeStreamId: string | null;
   };
   isStreaming: boolean;
@@ -53,6 +59,7 @@ export async function GET(_req: Request, context: RouteContext) {
     chat: {
       id: chatContext.chat.id,
       modelId,
+      composioSelection: chatContext.chat.composioSelection,
       activeStreamId: chatContext.chat.activeStreamId,
     },
     isStreaming: chatContext.chat.activeStreamId !== null,
@@ -86,20 +93,37 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const nextTitle = body.title?.trim();
   const nextModelId = body.modelId?.trim();
+  const nextComposioSelection =
+    body.composioSelection === undefined
+      ? undefined
+      : chatComposioSelectionInputSchema.safeParse(body.composioSelection);
 
-  if (!nextTitle && !nextModelId) {
+  if (!nextTitle && !nextModelId && nextComposioSelection === undefined) {
     return Response.json(
       { error: "At least one field is required" },
       { status: 400 },
     );
   }
+  if (nextComposioSelection && !nextComposioSelection.success) {
+    return Response.json(
+      { error: "Invalid composioSelection" },
+      { status: 400 },
+    );
+  }
 
-  const updatePayload: { title?: string; modelId?: string } = {};
+  const updatePayload: {
+    title?: string;
+    modelId?: string;
+    composioSelection?: ChatComposioSelection;
+  } = {};
   if (nextTitle) {
     updatePayload.title = nextTitle;
   }
   if (nextModelId) {
     updatePayload.modelId = nextModelId;
+  }
+  if (nextComposioSelection?.success) {
+    updatePayload.composioSelection = nextComposioSelection.data;
   }
 
   const updatedChat = await updateChat(chatId, updatePayload);

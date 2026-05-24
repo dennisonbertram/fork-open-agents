@@ -3,6 +3,7 @@
 import {
   ArrowLeft,
   Cable,
+  Blocks,
   LogOut,
   Menu,
   Settings as SettingsIcon,
@@ -26,6 +27,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AccountsSectionSkeleton } from "./accounts-section";
+import { ComposioSectionSkeleton } from "./composio-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { PreferencesSectionSkeleton } from "./preferences-section";
@@ -82,6 +84,12 @@ const baseSidebarItems = [
     label: "Connections",
     href: "/settings/connections",
     icon: Cable,
+  },
+  {
+    id: "composio",
+    label: "Composio",
+    href: "/settings/composio",
+    icon: Blocks,
   },
   {
     id: "models",
@@ -239,6 +247,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fallbackContent =
     activeItem?.id === "connections" ? (
       <ConnectionsPageSkeleton />
+    ) : activeItem?.id === "composio" ? (
+      <ComposioSectionSkeleton />
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (

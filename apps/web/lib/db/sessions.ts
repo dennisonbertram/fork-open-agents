@@ -70,7 +70,7 @@ export async function createSession(data: NewSession) {
 
 interface CreateSessionWithInitialChatInput {
   session: NewSession;
-  initialChat: Pick<NewChat, "id" | "title" | "modelId">;
+  initialChat: Pick<NewChat, "id" | "title" | "modelId" | "composioSelection">;
 }
 
 export async function createSessionWithInitialChat(
@@ -92,6 +92,7 @@ export async function createSessionWithInitialChat(
         sessionId: session.id,
         title: input.initialChat.title,
         modelId: input.initialChat.modelId,
+        composioSelection: input.initialChat.composioSelection,
       })
       .returning();
     if (!chat) {
@@ -375,6 +376,7 @@ export async function getChatSummariesBySessionId(
       sessionId: chats.sessionId,
       title: chats.title,
       modelId: chats.modelId,
+      composioSelection: chats.composioSelection,
       activeStreamId: chats.activeStreamId,
       lastAssistantMessageAt: chats.lastAssistantMessageAt,
       createdAt: chats.createdAt,
@@ -526,7 +528,10 @@ type ForkChatThroughMessageInput = {
   userId: string;
   sourceChatId: string;
   throughMessageId: string;
-  forkedChat: Pick<NewChat, "id" | "sessionId" | "title" | "modelId">;
+  forkedChat: Pick<
+    NewChat,
+    "id" | "sessionId" | "title" | "modelId" | "composioSelection"
+  >;
 };
 
 type ForkChatThroughMessageResult =
