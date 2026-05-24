@@ -155,6 +155,7 @@ let agentProviderMetadata: Record<string, unknown> | undefined;
 let agentInputMessages: unknown;
 let agentStreamOptions: unknown;
 let agentStreamTools: unknown;
+let agentStreamError: Error | undefined;
 
 function buildAgentSteps() {
   return [
@@ -242,6 +243,7 @@ mock.module("@/app/config", () => ({
             part: Record<string, unknown>;
           }) => unknown;
           onFinish?: (args: { responseMessage: unknown }) => void;
+          onError?: (error: unknown) => string;
         }) => {
           const priorAssistantMessage = opts.originalMessages?.at(-1);
           const assistantMessage = (
@@ -266,6 +268,12 @@ mock.module("@/app/config", () => ({
           // Return an async iterable that yields parts and calls onFinish
           return {
             async *[Symbol.asyncIterator]() {
+              if (agentStreamError) {
+                opts.onError?.(agentStreamError);
+                throw new Error(
+                  "No output generated. Check the stream for errors.",
+                );
+              }
               for (const part of agentStreamParts) {
                 yield part;
 
@@ -432,6 +440,7 @@ beforeEach(() => {
   agentInputMessages = undefined;
   agentStreamOptions = undefined;
   agentStreamTools = undefined;
+  agentStreamError = undefined;
   streamOnFinishCallback = undefined;
   testSessionRecord = {
     id: "session-1",
@@ -925,6 +934,51 @@ describe("runAgentWorkflow", () => {
           type: "text-delta",
           id: "setup-error",
           delta: "This session is archived. Unarchive it to continue.",
+        },
+      ]),
+    );
+  });
+
+  test("streams managed runtime setup details when profile setup fails", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
+      writtenChunks.push({ type: "start", messageId: params.assistantId });
+      const error = new Error(
+        "Managed runtime profile setup failed while running Install agent-browser for browser smoke checks for Web app with Bun and browser checks (web-bun-agent-browser). agent-browser lets the managed runtime open preview URLs, inspect the UI, capture browser errors, and run browser smoke checks after the app starts.",
+      );
+      error.name = "WorkspaceSetupError";
+      throw error;
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Managed runtime profile setup failed",
+    );
+
+    const setupErrorChunk = writtenChunks.find(
+      (chunk) => chunk.type === "text-delta" && chunk.id === "setup-error",
+    );
+    expect(setupErrorChunk?.type).toBe("text-delta");
+    if (setupErrorChunk?.type === "text-delta") {
+      expect(setupErrorChunk.delta).toContain("web-bun-agent-browser");
+      expect(setupErrorChunk.delta).toContain("agent-browser");
+    }
+  });
+
+  test("streams AI Gateway credit restriction details when model streaming fails", async () => {
+    agentStreamError = new Error(
+      "GatewayInternalServerError: Free credits temporarily have restricted access due to abuse. no_providers_available RestrictedModelsError",
+    );
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Provider error",
+    );
+
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta:
+            "The model call failed in Vercel AI Gateway because free credits are temporarily restricted for this project. Add paid AI Gateway credits or switch to a model/provider with available credits, then retry.",
         },
       ]),
     );

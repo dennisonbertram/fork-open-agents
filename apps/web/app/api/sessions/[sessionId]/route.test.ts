@@ -5,6 +5,7 @@ type SessionRecord = {
   id: string;
   userId: string;
   status: "running" | "completed" | "failed" | "archived";
+  managedRuntimeProfileId: string;
   sandboxState: null;
 };
 
@@ -13,12 +14,14 @@ let sessionRecord: SessionRecord | null = {
   id: "session-1",
   userId: "user-1",
   status: "running",
+  managedRuntimeProfileId: "web-bun-agent-browser",
   sandboxState: null,
 };
 const updateSessionCalls: Array<{
   sessionId: string;
   update: Record<string, unknown>;
 }> = [];
+let savedProfileExists = false;
 
 mock.module("next/server", () => ({
   after: (callback: () => void) => callback(),
@@ -35,6 +38,14 @@ mock.module("@/lib/db/sessions", () => ({
     updateSessionCalls.push({ sessionId, update });
     return sessionRecord ? { ...sessionRecord, ...update } : null;
   },
+}));
+
+mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
+  applyDraftAsSessionManagedRuntimeProfile: async () => ({
+    id: "session-profile-draft-1",
+  }),
+  getManagedRuntimeSavedProfile: async () =>
+    savedProfileExists ? { id: "session-profile-draft-1" } : undefined,
 }));
 
 mock.module("@/lib/sandbox/archive-session", () => ({
@@ -74,9 +85,11 @@ describe("/api/sessions/[sessionId]", () => {
       id: "session-1",
       userId: "user-1",
       status: "running",
+      managedRuntimeProfileId: "web-bun-agent-browser",
       sandboxState: null,
     };
     updateSessionCalls.length = 0;
+    savedProfileExists = false;
   });
 
   test("PATCH persists a valid runtime mode", async () => {
@@ -112,5 +125,62 @@ describe("/api/sessions/[sessionId]", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid runtime mode");
     expect(updateSessionCalls).toEqual([]);
+  });
+
+  test("PATCH persists a valid managed runtime profile", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ managedRuntimeProfileId: "web-bun-agent-browser" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: { managedRuntimeProfileId: "web-bun-agent-browser" },
+      },
+    ]);
+    expect(
+      (body.session as Record<string, unknown>).managedRuntimeProfileId,
+    ).toBe("web-bun-agent-browser");
+  });
+
+  test("PATCH rejects invalid managed runtime profiles", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ managedRuntimeProfileId: "unknown-profile" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid managed runtime profile");
+    expect(updateSessionCalls).toEqual([]);
+  });
+
+  test("PATCH persists a valid saved session managed runtime profile", async () => {
+    savedProfileExists = true;
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ managedRuntimeProfileId: "session-profile-draft-1" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: { managedRuntimeProfileId: "session-profile-draft-1" },
+      },
+    ]);
+    expect(
+      (body.session as Record<string, unknown>).managedRuntimeProfileId,
+    ).toBe("session-profile-draft-1");
   });
 });

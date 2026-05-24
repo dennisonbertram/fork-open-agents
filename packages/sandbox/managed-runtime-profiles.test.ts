@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { getManagedRuntimeProfile } from "./managed-runtime-profiles";
+import {
+  getManagedRuntimeProfile,
+  isManagedRuntimeProfileId,
+  listManagedRuntimeProfiles,
+  normalizeManagedRuntimeProfileId,
+} from "./managed-runtime-profiles";
 
 describe("managed runtime profiles", () => {
   test("default web profile scopes browser prerequisites to the profile", () => {
@@ -32,6 +37,17 @@ describe("managed runtime profiles", () => {
     );
     expect(verifyAgentBrowser?.command).toContain(
       'test -d "$HOME/.agent-browser/browsers"',
+    );
+  });
+
+  test("lists and validates built-in managed runtime profiles", () => {
+    expect(listManagedRuntimeProfiles().map((profile) => profile.id)).toContain(
+      "web-bun-agent-browser",
+    );
+    expect(isManagedRuntimeProfileId("web-bun-agent-browser")).toBe(true);
+    expect(isManagedRuntimeProfileId("unknown-profile")).toBe(false);
+    expect(normalizeManagedRuntimeProfileId("unknown-profile")).toBe(
+      "web-bun-agent-browser",
     );
   });
 });

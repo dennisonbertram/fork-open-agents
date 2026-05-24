@@ -38,6 +38,16 @@ export {
   type AskUserQuestionOutput,
   type AskUserQuestionToolUIPart,
 } from "./tools/ask-user-question";
+export type {
+  SetupManagedRuntimeProfileInput,
+  SetupManagedRuntimeProfileOutput,
+  SetupManagedRuntimeProfileToolUIPart,
+} from "./tools/managed-runtime-profile-builder";
+export {
+  managedRuntimeProfileDraftSchema,
+  setupManagedRuntimeProfileInputSchema,
+  setupManagedRuntimeProfileOutputSchema,
+} from "./tools/managed-runtime-profile-builder";
 export type { SkillToolInput } from "./tools/skill";
 // Tool exports
 export type {

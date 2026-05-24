@@ -1,4 +1,5 @@
 import { getServerSession } from "@/lib/session/get-server-session";
+import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import {
   getUserPreferences,
   type DiffMode,
@@ -14,6 +15,7 @@ interface UpdatePreferencesRequest {
   defaultModelId?: string;
   defaultSubagentModelId?: string | null;
   defaultSandboxType?: SandboxType;
+  defaultManagedRuntimeProfileId?: string;
   defaultDiffMode?: DiffMode;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
@@ -58,6 +60,17 @@ export async function PATCH(req: Request) {
       return Response.json({ error: "Invalid sandbox type" }, { status: 400 });
     }
     updates.defaultSandboxType = body.defaultSandboxType;
+  }
+
+  if (body.defaultManagedRuntimeProfileId !== undefined) {
+    if (!isManagedRuntimeProfileId(body.defaultManagedRuntimeProfileId)) {
+      return Response.json(
+        { error: "Invalid managed runtime profile" },
+        { status: 400 },
+      );
+    }
+    updates.defaultManagedRuntimeProfileId =
+      body.defaultManagedRuntimeProfileId;
   }
 
   if (body.defaultDiffMode !== undefined) {

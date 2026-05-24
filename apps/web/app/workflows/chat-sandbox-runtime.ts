@@ -4,7 +4,10 @@ import {
   type Sandbox,
   type SandboxState,
 } from "@open-agents/sandbox";
-import { getManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
+import {
+  getManagedRuntimeProfile,
+  type ManagedRuntimeProfile,
+} from "@open-agents/sandbox/managed-runtime-profiles";
 import type { UIMessageChunk } from "ai";
 import { getWritable } from "workflow";
 import type { WebAgentWorkspaceStatusData } from "@/app/types";
@@ -20,6 +23,7 @@ import {
 } from "@/lib/github/app";
 import { getGitHubUserProfile } from "@/lib/github/users";
 import { emitSessionEvent } from "@/lib/observability/events";
+import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import {
   appendManagedRuntimeSetupResult,
   appendManagedRuntimeVerificationResult,
@@ -49,6 +53,13 @@ import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
+
+export class WorkspaceSetupError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "WorkspaceSetupError";
+  }
+}
 
 export type ResolvedChatSandboxRuntime = {
   sandboxState: SandboxState;
@@ -195,6 +206,43 @@ async function sendStart(messageId: string) {
   }
 }
 
+function compactCommandOutput(output: string): string {
+  return output
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .slice(-4)
+    .join("\n");
+}
+
+function buildSetupStepMessage(params: {
+  profile: ReturnType<typeof getManagedRuntimeProfile>;
+  command: ReturnType<typeof getManagedRuntimeProfile>["setupCommands"][number];
+  stepNumber: number;
+  totalSteps: number;
+}) {
+  return [
+    `Managed runtime profile setup (${params.stepNumber}/${params.totalSteps}): ${params.command.label}.`,
+    `Profile: ${params.profile.displayName} (${params.profile.id}).`,
+    params.command.description,
+  ].join(" ");
+}
+
+function buildVerificationStepMessage(params: {
+  profile: ReturnType<typeof getManagedRuntimeProfile>;
+  command: ReturnType<
+    typeof getManagedRuntimeProfile
+  >["verificationCommands"][number];
+  stepNumber: number;
+  totalSteps: number;
+}) {
+  return [
+    `Managed runtime profile verification (${params.stepNumber}/${params.totalSteps}): ${params.command.label}.`,
+    `Profile: ${params.profile.displayName} (${params.profile.id}).`,
+    params.command.description,
+  ].join(" ");
+}
+
 async function ensureManagedRuntimeEnvironment(params: {
   session: SessionRecord;
   chatId?: string | null;
@@ -202,9 +250,10 @@ async function ensureManagedRuntimeEnvironment(params: {
   workflowRunId?: string | null;
   sandbox: Sandbox;
   sandboxName?: string | null;
+  profile: ManagedRuntimeProfile;
 }): Promise<{ notes: string[]; profileRunId?: string }> {
   const notes: string[] = [];
-  const profile = getManagedRuntimeProfile();
+  const { profile } = params;
   let profileRunId: string | undefined;
 
   try {
@@ -226,7 +275,9 @@ async function ensureManagedRuntimeEnvironment(params: {
 
   await sendWorkspaceStatus({
     status: "setting-up",
-    message: `Managed runtime selected. Preparing profile ${profile.displayName}...`,
+    message: `Managed runtime selected: ${profile.displayName} (${profile.id}). This profile installs ${profile.expectedTools.join(
+      " and ",
+    )} so the agent can run web app commands and browser checks in the sandbox.`,
   });
   await emitSessionEvent({
     sessionId: params.session.id,
@@ -248,10 +299,15 @@ async function ensureManagedRuntimeEnvironment(params: {
     },
   });
 
-  for (const setupCommand of profile.setupCommands) {
+  for (const [index, setupCommand] of profile.setupCommands.entries()) {
     await sendWorkspaceStatus({
       status: "setting-up",
-      message: `Managed runtime profile setup: ${setupCommand.label}...`,
+      message: buildSetupStepMessage({
+        profile,
+        command: setupCommand,
+        stepNumber: index + 1,
+        totalSteps: profile.setupCommands.length,
+      }),
     });
     await emitSessionEvent({
       sessionId: params.session.id,
@@ -274,11 +330,22 @@ async function ensureManagedRuntimeEnvironment(params: {
     });
 
     const commandStartedAt = new Date();
-    const result = await params.sandbox.exec(
-      setupCommand.command,
-      params.sandbox.workingDirectory,
-      setupCommand.timeoutMs ?? 120_000,
-    );
+    let result: Awaited<ReturnType<typeof params.sandbox.exec>>;
+    try {
+      result = await params.sandbox.exec(
+        setupCommand.command,
+        params.sandbox.workingDirectory,
+        setupCommand.timeoutMs ?? 120_000,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Unknown error: ${String(error)}`;
+      throw new WorkspaceSetupError(
+        `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}). ${setupCommand.description} Error: ${message}`,
+      );
+    }
     const commandFinishedAt = new Date();
     const observation = buildManagedRuntimeCommandObservation({
       command: setupCommand,
@@ -325,6 +392,7 @@ async function ensureManagedRuntimeEnvironment(params: {
         .map((value) => value.trim())
         .filter((value) => value.length > 0)
         .join("\n");
+      const compactSummary = compactCommandOutput(summary);
       console.warn(
         `Managed runtime profile setup failed (${setupCommand.id}): ${summary}`,
       );
@@ -333,7 +401,7 @@ async function ensureManagedRuntimeEnvironment(params: {
       );
       await sendWorkspaceStatus({
         status: "setting-up",
-        message: `Managed runtime is active, but profile setup failed: ${setupCommand.label}.`,
+        message: `Managed runtime profile setup failed: ${setupCommand.label}. ${setupCommand.description}`,
       });
       if (profileRunId) {
         try {
@@ -364,11 +432,34 @@ async function ensureManagedRuntimeEnvironment(params: {
         managedRuntimeProfileRunId: profileRunId ?? null,
         payload: observation,
       });
+      if (setupCommand.required ?? true) {
+        throw new WorkspaceSetupError(
+          [
+            `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
+            setupCommand.description,
+            compactSummary ? `Command output: ${compactSummary}` : "",
+          ]
+            .filter((part) => part.length > 0)
+            .join(" "),
+        );
+      }
       return { notes, profileRunId };
     }
   }
 
-  for (const verificationCommand of profile.verificationCommands) {
+  for (const [
+    index,
+    verificationCommand,
+  ] of profile.verificationCommands.entries()) {
+    await sendWorkspaceStatus({
+      status: "setting-up",
+      message: buildVerificationStepMessage({
+        profile,
+        command: verificationCommand,
+        stepNumber: index + 1,
+        totalSteps: profile.verificationCommands.length,
+      }),
+    });
     await emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
@@ -636,7 +727,11 @@ export async function resolveChatSandboxRuntime(params: {
 
   const managedRuntimeProfile =
     session.runtimeMode === "managed_runtime"
-      ? getManagedRuntimeProfile()
+      ? await resolveManagedRuntimeProfile({
+          userId: params.userId,
+          sessionId: session.id,
+          profileId: session.managedRuntimeProfileId,
+        })
       : undefined;
   const managedRuntimeEnvironment =
     session.runtimeMode === "managed_runtime"
@@ -647,6 +742,7 @@ export async function resolveChatSandboxRuntime(params: {
           workflowRunId: params.workflowRunId ?? null,
           sandbox,
           sandboxName: sandboxState.sandboxName ?? null,
+          profile: managedRuntimeProfile!,
         })
       : { notes: [] };
   const managedRuntimeNotes = managedRuntimeEnvironment.notes;

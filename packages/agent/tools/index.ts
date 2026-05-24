@@ -15,5 +15,11 @@ export {
   type AskUserQuestionToolUIPart,
   type AskUserQuestionInput,
 } from "./ask-user-question";
+export {
+  setupManagedRuntimeProfileTool,
+  type SetupManagedRuntimeProfileInput,
+  type SetupManagedRuntimeProfileOutput,
+  type SetupManagedRuntimeProfileToolUIPart,
+} from "./managed-runtime-profile-builder";
 export { skillTool, type SkillToolInput } from "./skill";
 export { webFetchTool } from "./fetch";

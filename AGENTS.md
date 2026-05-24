@@ -57,6 +57,10 @@ For managed runtime work specifically, do not claim the runtime path is proven
 unless the evidence satisfies
 [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md).
 
+At the end of any implementation, include a concise summary of what was built,
+what changed for users, and what was verified so the next person can quickly
+understand the shipped work without reading the full transcript.
+
 ## Authentication
 
 Authentication uses [Better Auth](https://www.better-auth.com/) with Vercel OAuth (sign-in) and GitHub OAuth (repo access). Config lives in `apps/web/lib/auth/config.ts`. Sessions are managed by better-auth's built-in session system — there is no manual JWE/encryption layer.

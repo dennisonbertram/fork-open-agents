@@ -169,6 +169,8 @@ type SessionChatContextValue = {
   updateSessionSnapshot: (snapshotUrl: string, snapshotCreatedAt: Date) => void;
   /** Update the sandbox runtime UX mode for this session */
   updateRuntimeMode: (runtimeMode: Session["runtimeMode"]) => Promise<void>;
+  /** Update the managed runtime profile for this session */
+  updateManagedRuntimeProfile: (profileId: string) => Promise<void>;
   /** Preferred sandbox mode to request when creating a new sandbox */
   preferredSandboxType: string;
   /** Whether the current sandbox mode supports git diff */
@@ -260,6 +262,7 @@ type SessionChatMetadataContextValue = Pick<
   | "updateChatComposioSelection"
   | "updateSessionSnapshot"
   | "updateRuntimeMode"
+  | "updateManagedRuntimeProfile"
   | "preferredSandboxType"
   | "supportsDiff"
   | "supportsRepoCreation"
@@ -781,6 +784,36 @@ export function SessionChatProvider({
     [sessionRecord],
   );
 
+  const updateManagedRuntimeProfile = useCallback(
+    async (profileId: string) => {
+      const previousSession = sessionRecord;
+      const optimisticSession: Session = {
+        ...sessionRecord,
+        managedRuntimeProfileId: profileId,
+      };
+
+      setSessionRecord(optimisticSession);
+
+      const res = await fetch(`/api/sessions/${sessionRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ managedRuntimeProfileId: profileId }),
+      });
+
+      const data = (await res.json()) as { session?: Session; error?: string };
+
+      if (!res.ok) {
+        setSessionRecord(previousSession);
+        throw new Error(
+          data.error ?? "Failed to update managed runtime profile",
+        );
+      }
+
+      setSessionRecord(data.session ?? optimisticSession);
+    },
+    [sessionRecord],
+  );
+
   const setSandboxTypeFromUnknown = useCallback((type: unknown) => {
     const sandboxType = asKnownSandboxType(type);
     if (!sandboxType) return;
@@ -1165,6 +1198,7 @@ export function SessionChatProvider({
       updateChatComposioSelection,
       updateSessionSnapshot,
       updateRuntimeMode,
+      updateManagedRuntimeProfile,
       preferredSandboxType,
       supportsDiff,
       supportsRepoCreation,
@@ -1193,6 +1227,7 @@ export function SessionChatProvider({
       updateChatComposioSelection,
       updateSessionSnapshot,
       updateRuntimeMode,
+      updateManagedRuntimeProfile,
       preferredSandboxType,
       supportsDiff,
       supportsRepoCreation,

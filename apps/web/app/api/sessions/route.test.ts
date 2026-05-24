@@ -47,6 +47,7 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultModelId: "anthropic/claude-haiku-4.5",
     defaultSubagentModelId: null,
     defaultSandboxType: "vercel",
+    defaultManagedRuntimeProfileId: "web-bun-agent-browser",
     defaultDiffMode: "unified",
     autoCommitPush: false,
     autoCreatePr: false,
@@ -112,8 +113,11 @@ mock.module("@/lib/db/sessions", () => ({
     };
   },
   getArchivedSessionCountByUserId: async () => 0,
+  deleteSession: async () => undefined,
+  getSessionById: async () => null,
   getSessionsWithUnreadByUserId: async () => [],
   getUsedSessionTitles: async () => new Set<string>(),
+  updateSession: async () => null,
 }));
 
 const routeModulePromise = import("./route");
@@ -193,6 +197,7 @@ describe("/api/sessions POST vercel project linking", () => {
       vercelProjectName: "app",
       vercelTeamId: "team-1",
       vercelTeamSlug: "acme",
+      managedRuntimeProfileId: "web-bun-agent-browser",
     });
     expect(body.session.vercelProjectId).toBe("project-1");
     expect(body.session.vercelProjectName).toBe("app");

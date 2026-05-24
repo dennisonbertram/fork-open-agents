@@ -79,6 +79,8 @@ const { MAX_BODY_LENGTH, isAllowedWebUrl, webFetchTool } =
   await import("./fetch");
 const { globTool } = await import("./glob");
 const { grepTool } = await import("./grep");
+const { setupManagedRuntimeProfileTool } =
+  await import("./managed-runtime-profile-builder");
 const { readFileTool } = await import("./read");
 const { skillTool } = await import("./skill");
 const { taskTool } = await import("./task");
@@ -659,6 +661,52 @@ describe("tools execute behavior", () => {
       type: "text",
       value:
         "User declined to answer questions. You should continue without this information or ask in a different way.",
+    });
+  });
+
+  test("setupManagedRuntimeProfileTool reports applied profile ids to the model", () => {
+    const output = setupManagedRuntimeProfileTool.toModelOutput?.({
+      toolCallId: "tool-call-1",
+      input: {
+        goal: "Prepare managed runtime setup",
+        repoSignals: [],
+        draft: {
+          displayName: "Bun app",
+          description: "Install and verify Bun",
+          setupCommands: [
+            {
+              id: "install",
+              label: "Install",
+              description: "Install dependencies",
+              command: "bun install",
+            },
+          ],
+          verificationCommands: [
+            {
+              id: "verify",
+              label: "Verify",
+              description: "Verify Bun",
+              command: "bun --version",
+            },
+          ],
+          expectedTools: ["bun"],
+          optionalTools: [],
+          defaultPorts: [3000],
+        },
+        questionsForUser: [],
+      },
+      output: {
+        decision: "approved",
+        savedProfileId: "session-profile-draft-1",
+        appliedToSessionId: "session-1",
+        notes: "Use this for the workspace.",
+      },
+    });
+
+    expect(output).toEqual({
+      type: "text",
+      value:
+        "The user approved the managed runtime profile draft. Saved profile id: session-profile-draft-1. Applied to session: session-1. Notes: Use this for the workspace.",
     });
   });
 

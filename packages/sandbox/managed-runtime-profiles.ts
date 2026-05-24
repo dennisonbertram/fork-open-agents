@@ -1,6 +1,7 @@
 export type ManagedRuntimeProfileCommand = {
   id: string;
   label: string;
+  description: string;
   command: string;
   timeoutMs?: number;
   required?: boolean;
@@ -88,13 +89,17 @@ export const MANAGED_RUNTIME_PROFILES = [
     setupCommands: [
       {
         id: "install-bun",
-        label: "Install Bun",
+        label: "Install Bun JavaScript runtime",
+        description:
+          "Bun is installed first because this web profile uses it to run JavaScript/TypeScript projects and to install profile tools.",
         command: INSTALL_BUN_COMMAND,
         timeoutMs: 180_000,
       },
       {
         id: "install-agent-browser",
-        label: "Install agent-browser",
+        label: "Install agent-browser for browser smoke checks",
+        description:
+          "agent-browser lets the managed runtime open preview URLs, inspect the UI, capture browser errors, and run browser smoke checks after the app starts.",
         command: INSTALL_AGENT_BROWSER_COMMAND,
         timeoutMs: 300_000,
       },
@@ -103,6 +108,8 @@ export const MANAGED_RUNTIME_PROFILES = [
       {
         id: "observe-node",
         label: "Observe Node.js availability",
+        description:
+          "Node.js is optional for this profile; this check records whether it is already present in the sandbox.",
         command:
           'if command -v node >/dev/null 2>&1; then node --version; else echo "node unavailable"; fi',
         timeoutMs: 30_000,
@@ -111,6 +118,8 @@ export const MANAGED_RUNTIME_PROFILES = [
       {
         id: "observe-npm",
         label: "Observe npm availability",
+        description:
+          "npm is optional for this profile; this check records whether it is already present in the sandbox.",
         command:
           'if command -v npm >/dev/null 2>&1; then npm --version; else echo "npm unavailable"; fi',
         timeoutMs: 30_000,
@@ -119,6 +128,8 @@ export const MANAGED_RUNTIME_PROFILES = [
       {
         id: "verify-bun",
         label: "Verify Bun",
+        description:
+          "Confirms the Bun executable is on PATH before the agent relies on Bun commands.",
         command: "command -v bun && bun --version",
         timeoutMs: 30_000,
         required: true,
@@ -126,6 +137,8 @@ export const MANAGED_RUNTIME_PROFILES = [
       {
         id: "verify-agent-browser",
         label: "Verify agent-browser",
+        description:
+          "Confirms agent-browser and its browser dependencies are installed before browser checks are offered.",
         command:
           'command -v agent-browser && agent-browser --help >/dev/null && test -d "$HOME/.agent-browser/browsers"',
         timeoutMs: 60_000,
@@ -150,6 +163,27 @@ export function getManagedRuntimeProfile(
   }
 
   return profile;
+}
+
+export function listManagedRuntimeProfiles(): ManagedRuntimeProfile[] {
+  return MANAGED_RUNTIME_PROFILES.map((profile) => profile);
+}
+
+export function isManagedRuntimeProfileId(
+  profileId: unknown,
+): profileId is ManagedRuntimeProfile["id"] {
+  return (
+    typeof profileId === "string" &&
+    MANAGED_RUNTIME_PROFILES.some((profile) => profile.id === profileId)
+  );
+}
+
+export function normalizeManagedRuntimeProfileId(
+  profileId: unknown,
+): ManagedRuntimeProfile["id"] {
+  return isManagedRuntimeProfileId(profileId)
+    ? profileId
+    : DEFAULT_MANAGED_RUNTIME_PROFILE_ID;
 }
 
 export function getManagedRuntimeSnapshotCommands(

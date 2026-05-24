@@ -12,6 +12,7 @@ export interface UserPreferences {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
   defaultSandboxType: SandboxType;
+  defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;
   autoCommitPush: boolean;
   autoCreatePr: boolean;

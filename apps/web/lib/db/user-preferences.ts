@@ -1,5 +1,9 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import {
+  DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+  normalizeManagedRuntimeProfileId,
+} from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -21,6 +25,7 @@ export interface UserPreferencesData {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
   defaultSandboxType: SandboxType;
+  defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;
   autoCommitPush: boolean;
   autoCreatePr: boolean;
@@ -37,6 +42,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultModelId: APP_DEFAULT_MODEL_ID,
   defaultSubagentModelId: null,
   defaultSandboxType: "vercel",
+  defaultManagedRuntimeProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
   defaultDiffMode: "unified",
   autoCommitPush: false,
   autoCreatePr: false,
@@ -92,6 +98,7 @@ export function toUserPreferencesData(
       | "defaultModelId"
       | "defaultSubagentModelId"
       | "defaultSandboxType"
+      | "defaultManagedRuntimeProfileId"
       | "defaultDiffMode"
       | "autoCommitPush"
       | "autoCreatePr"
@@ -113,6 +120,9 @@ export function toUserPreferencesData(
     defaultModelId: row?.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
     defaultSandboxType: normalizeSandboxType(row?.defaultSandboxType),
+    defaultManagedRuntimeProfileId: normalizeManagedRuntimeProfileId(
+      row?.defaultManagedRuntimeProfileId,
+    ),
     defaultDiffMode: normalizeDiffMode(row?.defaultDiffMode),
     autoCommitPush: row?.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
     autoCreatePr: row?.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,
@@ -182,6 +192,9 @@ export async function updateUserPreferences(
       defaultSubagentModelId: updates.defaultSubagentModelId ?? null,
       defaultSandboxType:
         updates.defaultSandboxType ?? DEFAULT_PREFERENCES.defaultSandboxType,
+      defaultManagedRuntimeProfileId:
+        updates.defaultManagedRuntimeProfileId ??
+        DEFAULT_PREFERENCES.defaultManagedRuntimeProfileId,
       defaultDiffMode:
         updates.defaultDiffMode ?? DEFAULT_PREFERENCES.defaultDiffMode,
       autoCommitPush:

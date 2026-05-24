@@ -15,6 +15,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5.4",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "unified",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -35,6 +36,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: "openai/gpt-5-mini",
       defaultSandboxType: "invalid" as never,
+      defaultManagedRuntimeProfileId: "unknown-profile",
       defaultDiffMode: "invalid" as never,
       autoCommitPush: false,
       autoCreatePr: false,
@@ -47,6 +49,7 @@ describe("toUserPreferencesData", () => {
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
+    expect(result.defaultManagedRuntimeProfileId).toBe("web-bun-agent-browser");
     expect(result.defaultDiffMode).toBe("unified");
   });
 
@@ -57,6 +60,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "hybrid" as never,
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "unified",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -79,6 +83,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -102,6 +107,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -128,6 +134,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,
@@ -149,6 +156,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: true,
       autoCreatePr: true,
@@ -171,6 +179,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: true,
       autoCreatePr: true,
@@ -198,6 +207,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
       autoCommitPush: false,
       autoCreatePr: false,

@@ -18,6 +18,7 @@ import {
   grepTool,
   readFileTool,
   skillTool,
+  setupManagedRuntimeProfileTool,
   taskTool,
   todoWriteTool,
   webFetchTool,
@@ -92,6 +93,7 @@ const tools = {
   bash: bashTool(),
   task: taskTool,
   ask_user_question: askUserQuestionTool,
+  setup_managed_runtime_profile: setupManagedRuntimeProfileTool,
   skill: skillTool,
   web_fetch: webFetchTool,
 } satisfies ToolSet;
@@ -104,6 +106,7 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   "todo_write",
   "task",
   "ask_user_question",
+  "setup_managed_runtime_profile",
   "skill",
   "web_fetch",
 ] as const satisfies ReadonlyArray<keyof typeof tools>;

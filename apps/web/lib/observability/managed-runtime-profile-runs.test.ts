@@ -28,6 +28,7 @@ describe("managed runtime profile run observability", () => {
         command: {
           id: "verify-tool",
           label: "Verify tool",
+          description: "Checks whether the tool is available.",
           command: "tool --version",
           required: false,
         },

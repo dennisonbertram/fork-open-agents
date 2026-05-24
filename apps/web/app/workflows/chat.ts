@@ -283,6 +283,10 @@ function getSetupErrorMessage(error: unknown): string {
     return "This session is archived. Unarchive it to continue.";
   }
 
+  if (name === "WorkspaceSetupError") {
+    return message;
+  }
+
   if (
     name === "ComposioSetupError" ||
     message.includes("Composio") ||
@@ -299,6 +303,20 @@ function getSetupErrorMessage(error: unknown): string {
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function getUserFacingWorkflowErrorMessage(error: unknown): string {
+  const message = getErrorMessage(error);
+
+  if (
+    message.includes("Free credits temporarily have restricted access") ||
+    message.includes("RestrictedModelsError") ||
+    message.includes("no_providers_available")
+  ) {
+    return "The model call failed in Vercel AI Gateway because free credits are temporarily restricted for this project. Add paid AI Gateway credits or switch to a model/provider with available credits, then retry.";
+  }
+
+  return getSetupErrorMessage(error);
 }
 
 function isStepTimingError(
@@ -1362,7 +1380,7 @@ export async function runAgentWorkflow(options: Options) {
     caughtError = error;
 
     if (pendingAssistantResponse.parts.length === 0 && !streamClosed) {
-      const errorText = getSetupErrorMessage(error);
+      const errorText = getUserFacingWorkflowErrorMessage(error);
       pendingAssistantResponse = {
         ...pendingAssistantResponse,
         parts: [{ type: "text", text: errorText }],
@@ -1479,6 +1497,7 @@ const runAgentStep = async (
   const stepSandboxName = agentOptions.sandbox.state.sandboxName ?? null;
   const stepManagedRuntimeProfileRunId =
     agentOptions.managedRuntime?.profileRunId ?? null;
+  let lastStreamError: unknown;
 
   try {
     await emitSessionEvent({
@@ -1614,6 +1633,11 @@ const runAgentStep = async (
       generateMessageId: () => messageId,
       sendStart: false,
       sendFinish: false,
+      onError: (error) => {
+        lastStreamError = error;
+        console.error(error);
+        return getErrorMessage(error);
+      },
       messageMetadata: ({ part: streamPart }) => {
         if (streamPart.type === "finish-step") {
           lastStepUsage = streamPart.usage;
@@ -1856,8 +1880,13 @@ const runAgentStep = async (
       };
     }
 
+    const baseError = error instanceof Error ? error : new Error(String(error));
     const errorWithStepTiming =
-      error instanceof Error ? error : new Error(String(error));
+      lastStreamError && baseError.message.includes("No output generated")
+        ? new Error(
+            `${baseError.message}\n\nProvider error: ${getErrorMessage(lastStreamError)}`,
+          )
+        : baseError;
     await emitSessionEvent({
       sessionId,
       chatId,

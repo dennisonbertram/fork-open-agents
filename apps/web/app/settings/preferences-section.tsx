@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
+import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { Plus, Search, Trash2, X } from "lucide-react";
 import { type ThemePreference, useTheme } from "@/app/providers";
 import {
@@ -50,6 +51,8 @@ const DIFF_MODE_OPTIONS: Array<{ id: DiffMode; name: string }> = [
   { id: "unified", name: "Unified" },
   { id: "split", name: "Split" },
 ];
+
+const MANAGED_RUNTIME_PROFILE_OPTIONS = listManagedRuntimeProfiles();
 
 function isThemePreference(value: string): value is ThemePreference {
   return THEME_OPTIONS.some((option) => option.id === value);
@@ -252,6 +255,17 @@ function usePreferencesSectionState() {
       await updatePreferences({ defaultSandboxType: sandboxType });
     } catch (error) {
       console.error("Failed to update sandbox preference:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleManagedRuntimeProfileChange = async (profileId: string) => {
+    setIsSaving(true);
+    try {
+      await updatePreferences({ defaultManagedRuntimeProfileId: profileId });
+    } catch (error) {
+      console.error("Failed to update managed runtime profile:", error);
     } finally {
       setIsSaving(false);
     }
@@ -474,6 +488,7 @@ function usePreferencesSectionState() {
     handleModelChange,
     handleSubagentModelChange,
     handleSandboxChange,
+    handleManagedRuntimeProfileChange,
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
@@ -510,6 +525,7 @@ export function PreferencesSection() {
     globalSkillsError,
     handleThemeChange,
     handleSandboxChange,
+    handleManagedRuntimeProfileChange,
     handleDiffModeChange,
     handleAutoCommitPushChange,
     handleAutoCreatePrChange,
@@ -568,6 +584,31 @@ export function PreferencesSection() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="managed-runtime-profile">
+                Managed runtime profile
+              </Label>
+              <Select
+                value={preferences?.defaultManagedRuntimeProfileId}
+                onValueChange={handleManagedRuntimeProfileChange}
+                disabled={isSaving}
+              >
+                <SelectTrigger id="managed-runtime-profile" className="w-full">
+                  <SelectValue placeholder="Select a runtime profile" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MANAGED_RUNTIME_PROFILE_OPTIONS.map((profile) => (
+                    <SelectItem key={profile.id} value={profile.id}>
+                      {profile.displayName}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Used when creating new managed runtime sessions.
+              </p>
             </div>
 
             <div className="grid gap-2">

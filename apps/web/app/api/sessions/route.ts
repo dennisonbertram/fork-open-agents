@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import { checkBotProtection } from "@/lib/botid";
 import {
   createSessionWithInitialChat,
@@ -37,6 +38,7 @@ interface CreateSessionRequest {
   cloneUrl?: string;
   isNewBranch?: boolean;
   sandboxType?: "vercel";
+  managedRuntimeProfileId?: string;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
   vercelProject?: VercelProjectSelection | null;
@@ -197,6 +199,16 @@ export async function POST(req: Request) {
   }
 
   if (
+    body.managedRuntimeProfileId !== undefined &&
+    !isManagedRuntimeProfileId(body.managedRuntimeProfileId)
+  ) {
+    return Response.json(
+      { error: "Invalid managed runtime profile" },
+      { status: 400 },
+    );
+  }
+
+  if (
     body.autoCommitPush !== undefined &&
     typeof body.autoCommitPush !== "boolean"
   ) {
@@ -275,6 +287,7 @@ export async function POST(req: Request) {
     cloneUrl,
     isNewBranch,
     sandboxType = "vercel",
+    managedRuntimeProfileId,
     autoCommitPush,
     autoCreatePr,
   } = body;
@@ -361,6 +374,8 @@ export async function POST(req: Request) {
         autoCreatePrOverride: effectiveAutoCommitPush
           ? effectiveAutoCreatePr
           : false,
+        managedRuntimeProfileId:
+          managedRuntimeProfileId ?? preferences.defaultManagedRuntimeProfileId,
         globalSkillRefs: preferences.globalSkillRefs,
         sandboxState: { type: sandboxType },
         lifecycleState: "provisioning",

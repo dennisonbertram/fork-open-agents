@@ -281,6 +281,41 @@
       "when": 1779632700923,
       "tag": "0039_slim_starfox",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1779659615449,
+      "tag": "0040_brave_johnny_blaze",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1779659969559,
+      "tag": "0041_sharp_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1779660363753,
+      "tag": "0042_aromatic_nextwave",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1779661027090,
+      "tag": "0043_familiar_sharon_ventura",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1779664298486,
+      "tag": "0044_wild_logan",
+      "breakpoints": true
     }
   ]
 }

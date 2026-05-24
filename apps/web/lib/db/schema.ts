@@ -1,4 +1,6 @@
 import type { SandboxState } from "@open-agents/sandbox";
+import type { ManagedRuntimeProfileCommand } from "@open-agents/sandbox/managed-runtime-profiles";
+import type { SetupManagedRuntimeProfileInput } from "@open-agents/agent";
 import type { ModelVariant } from "@/lib/model-variants";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
@@ -31,6 +33,9 @@ export type ManagedRuntimeCommandObservation = {
   startedAt: string;
   finishedAt?: string;
 };
+
+export type ManagedRuntimeProfileDraftData =
+  SetupManagedRuntimeProfileInput["draft"];
 
 // users
 export const users = pgTable("users", {
@@ -183,6 +188,9 @@ export const sessions = pgTable(
     })
       .notNull()
       .default("classic"),
+    managedRuntimeProfileId: text("managed_runtime_profile_id")
+      .notNull()
+      .default("web-bun-agent-browser"),
     // Lifecycle orchestration state for sandbox management
     lifecycleState: text("lifecycle_state", {
       enum: [
@@ -382,6 +390,130 @@ export const managedRuntimeProfileRuns = pgTable(
     ),
     index("managed_runtime_profile_runs_workflow_idx").on(table.workflowRunId),
     index("managed_runtime_profile_runs_status_idx").on(table.status),
+  ],
+);
+
+export const managedRuntimeSavedProfiles = pgTable(
+  "managed_runtime_saved_profiles",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "cascade",
+    }),
+    sourceDraftId: text("source_draft_id"),
+    scope: text("scope", {
+      enum: ["session", "repo", "user_default"],
+    })
+      .notNull()
+      .default("session"),
+    version: text("version").notNull(),
+    displayName: text("display_name").notNull(),
+    description: text("description").notNull(),
+    setupCommands: jsonb("setup_commands")
+      .$type<ManagedRuntimeProfileCommand[]>()
+      .notNull()
+      .default([]),
+    verificationCommands: jsonb("verification_commands")
+      .$type<ManagedRuntimeProfileCommand[]>()
+      .notNull()
+      .default([]),
+    expectedTools: jsonb("expected_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    optionalTools: jsonb("optional_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    defaultPorts: jsonb("default_ports")
+      .$type<number[]>()
+      .notNull()
+      .default([]),
+    latestTestRunId: text("latest_test_run_id"),
+    testResults: jsonb("test_results")
+      .$type<ManagedRuntimeCommandObservation[]>()
+      .notNull()
+      .default([]),
+    testFailureMessage: text("test_failure_message"),
+    testedAt: timestamp("tested_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("managed_runtime_saved_profiles_user_idx").on(table.userId),
+    index("managed_runtime_saved_profiles_session_idx").on(table.sessionId),
+  ],
+);
+
+export const managedRuntimeProfileDrafts = pgTable(
+  "managed_runtime_profile_drafts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    toolCallId: text("tool_call_id").notNull(),
+    status: text("status", {
+      enum: [
+        "draft_ready",
+        "testing",
+        "tested",
+        "needs_changes",
+        "revision_requested",
+        "approved",
+        "applied",
+        "discarded",
+      ],
+    })
+      .notNull()
+      .default("draft_ready"),
+    targetScope: text("target_scope", {
+      enum: ["session", "repo", "user_default"],
+    })
+      .notNull()
+      .default("session"),
+    goal: text("goal").notNull(),
+    repoSignals: jsonb("repo_signals").$type<string[]>().notNull().default([]),
+    profileDraft: jsonb("profile_draft")
+      .$type<ManagedRuntimeProfileDraftData>()
+      .notNull(),
+    questionsForUser: jsonb("questions_for_user")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    latestTestRunId: text("latest_test_run_id"),
+    testResults: jsonb("test_results")
+      .$type<ManagedRuntimeCommandObservation[]>()
+      .notNull()
+      .default([]),
+    testFailureMessage: text("test_failure_message"),
+    testedAt: timestamp("tested_at"),
+    userInstructions: text("user_instructions"),
+    userDecision: text("user_decision", {
+      enum: ["approved", "revise", "discarded"],
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("managed_runtime_profile_drafts_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("managed_runtime_profile_drafts_chat_idx").on(table.chatId),
+    uniqueIndex("managed_runtime_profile_drafts_tool_call_idx").on(
+      table.sessionId,
+      table.toolCallId,
+    ),
   ],
 );
 
@@ -691,6 +823,14 @@ export type ManagedRuntimeProfileRun =
   typeof managedRuntimeProfileRuns.$inferSelect;
 export type NewManagedRuntimeProfileRun =
   typeof managedRuntimeProfileRuns.$inferInsert;
+export type ManagedRuntimeProfileDraft =
+  typeof managedRuntimeProfileDrafts.$inferSelect;
+export type NewManagedRuntimeProfileDraft =
+  typeof managedRuntimeProfileDrafts.$inferInsert;
+export type ManagedRuntimeSavedProfile =
+  typeof managedRuntimeSavedProfiles.$inferSelect;
+export type NewManagedRuntimeSavedProfile =
+  typeof managedRuntimeSavedProfiles.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
 export type NewSessionEvent = typeof sessionEvents.$inferInsert;
 export type Share = typeof shares.$inferSelect;
@@ -800,6 +940,9 @@ export const userPreferences = pgTable("user_preferences", {
   defaultSandboxType: text("default_sandbox_type", {
     enum: ["vercel"],
   }).default("vercel"),
+  defaultManagedRuntimeProfileId: text("default_managed_runtime_profile_id")
+    .notNull()
+    .default("web-bun-agent-browser"),
   defaultDiffMode: text("default_diff_mode", {
     enum: ["unified", "split"],
   }).default("unified"),

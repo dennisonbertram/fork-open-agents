@@ -4,6 +4,7 @@
  * Tool call component that renders tool invocations for the web app.
  */
 import type { WebAgentUIToolPart } from "@/app/types";
+import type { SetupManagedRuntimeProfileOutput } from "@open-agents/agent";
 import {
   extractRenderState,
   getToolName,
@@ -22,14 +23,21 @@ import { TodoRenderer } from "./renderers/todo-renderer";
 import { AskUserQuestionRenderer } from "./renderers/ask-user-question-renderer";
 import { FetchRenderer } from "./renderers/fetch-renderer";
 import { SkillRenderer } from "./renderers/skill-renderer";
+import { ManagedRuntimeProfileBuilderRenderer } from "./renderers/managed-runtime-profile-builder-renderer";
 
 export type ToolCallProps = {
   part: WebAgentUIToolPart;
   activeApprovalId?: string | null;
   cwd?: string;
+  sessionId?: string;
+  chatId?: string;
   isStreaming?: boolean;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onManagedRuntimeProfileOutput?: (
+    toolCallId: string,
+    output: SetupManagedRuntimeProfileOutput,
+  ) => void;
 };
 
 /**
@@ -39,9 +47,12 @@ export function ToolCall({
   part,
   activeApprovalId = null,
   cwd = DEFAULT_WORKING_DIRECTORY,
+  sessionId,
+  chatId,
   isStreaming = false,
   onApprove,
   onDeny,
+  onManagedRuntimeProfileOutput,
 }: ToolCallProps) {
   const state = extractRenderState(part, activeApprovalId, isStreaming);
   const approvalProps = { onApprove, onDeny };
@@ -72,6 +83,18 @@ export function ToolCall({
     case "tool-ask_user_question":
       // AskUserQuestion tool doesn't require approval, handled separately
       return <AskUserQuestionRenderer part={part} state={state} />;
+    case "tool-setup_managed_runtime_profile":
+      return (
+        <ManagedRuntimeProfileBuilderRenderer
+          part={part}
+          state={state}
+          sessionId={sessionId}
+          chatId={chatId}
+          onSubmitOutput={(output) =>
+            onManagedRuntimeProfileOutput?.(part.toolCallId, output)
+          }
+        />
+      );
     case "tool-web_fetch":
       return <FetchRenderer part={part} state={state} {...approvalProps} />;
     case "tool-skill":

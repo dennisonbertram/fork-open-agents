@@ -1,6 +1,7 @@
 "use client";
 
 import type { AskUserQuestionInput } from "@open-agents/agent";
+import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { formatTokens } from "@open-agents/shared";
 import {
   isReasoningUIPart,
@@ -49,6 +50,7 @@ import {
 import { createPortal } from "react-dom";
 import useSWR from "swr";
 import type { ChatRefreshResponse } from "@/app/api/sessions/[sessionId]/chats/[chatId]/route";
+import type { ManagedRuntimeProfilesResponse } from "@/app/api/sessions/[sessionId]/managed-runtime/profiles/route";
 import type { MergePullRequestResult } from "@/lib/github/actions/pr";
 import {
   getDeploymentUrl,
@@ -104,6 +106,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -140,6 +143,7 @@ import {
   estimateModelUsageCost,
 } from "@/lib/models";
 import { getPrDeploymentRefreshInterval } from "@/lib/pr-deployment-polling";
+import { fetcher } from "@/lib/swr";
 
 import { streamdownPlugins } from "@/lib/streamdown-config";
 import { cn } from "@/lib/utils";
@@ -154,6 +158,12 @@ import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
 import { useGitPanel } from "./git-panel-context";
+import {
+  ManagedRuntimeProfileEvidenceBadge,
+  getManagedRuntimeProfileEvidenceSummary,
+} from "./managed-runtime-profile-evidence-badge";
+import { syncApprovedManagedRuntimeProfile } from "./managed-runtime-profile-approval-sync";
+import { ManagedRuntimeProfileManager } from "./managed-runtime-profile-manager";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -1313,6 +1323,7 @@ export function SessionChatContent({
     updateChatComposioSelection,
     updateSessionTitle,
     updateRuntimeMode,
+    updateManagedRuntimeProfile,
     preferredSandboxType,
     supportsDiff,
     supportsRepoCreation,
@@ -1329,6 +1340,34 @@ export function SessionChatContent({
     modelOptions,
     modelOptionsLoading,
   } = useSessionChatMetadataContext();
+  const { data: managedRuntimeProfilesData, mutate: mutateManagedProfiles } =
+    useSWR<ManagedRuntimeProfilesResponse>(
+      `/api/sessions/${session.id}/managed-runtime/profiles`,
+      fetcher,
+      { revalidateOnFocus: false },
+    );
+  const managedRuntimeProfiles = useMemo(
+    () =>
+      managedRuntimeProfilesData?.profiles ??
+      listManagedRuntimeProfiles().map((profile) => ({
+        id: profile.id,
+        version: profile.version,
+        displayName: profile.displayName,
+        description: profile.description,
+        setupCommandCount: profile.setupCommands.length,
+        verificationCommandCount: profile.verificationCommands.length,
+        expectedTools: profile.expectedTools,
+        optionalTools: profile.optionalTools,
+        defaultPorts: profile.defaultPorts,
+        source: "built_in" as const,
+        testedAt: null,
+      })),
+    [managedRuntimeProfilesData?.profiles],
+  );
+  const selectedManagedRuntimeProfile =
+    managedRuntimeProfiles.find(
+      (profile) => profile.id === session.managedRuntimeProfileId,
+    ) ?? managedRuntimeProfiles[0];
   const {
     chat,
     contextLimit,
@@ -3203,7 +3242,12 @@ export function SessionChatContent({
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-72 text-pretty">
                 {session.runtimeMode === "managed_runtime"
-                  ? "Managed runtime is selected. The agent gets managed-runtime context, and dev server logs/browser checks use managed runtime services."
+                  ? `Managed runtime is selected with ${
+                      selectedManagedRuntimeProfile?.displayName ??
+                      "the selected profile"
+                    }. ${getManagedRuntimeProfileEvidenceSummary(
+                      selectedManagedRuntimeProfile,
+                    )} The agent gets managed-runtime context, and dev server logs/browser checks use managed runtime services.`
                   : "Classic runtime is selected. Switch runtime mode before starting work to use managed runtime services."}
               </TooltipContent>
             </Tooltip>
@@ -3224,7 +3268,7 @@ export function SessionChatContent({
                   </TooltipTrigger>
                   <TooltipContent side="bottom">Runtime mode</TooltipContent>
                 </Tooltip>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuLabel>Runtime mode</DropdownMenuLabel>
                   <DropdownMenuRadioGroup
                     value={session.runtimeMode}
@@ -3244,6 +3288,56 @@ export function SessionChatContent({
                       Managed runtime
                     </DropdownMenuRadioItem>
                   </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel>Managed profile</DropdownMenuLabel>
+                  <DropdownMenuRadioGroup
+                    value={session.managedRuntimeProfileId}
+                    onValueChange={(value) => {
+                      void updateManagedRuntimeProfile(value).catch((error) => {
+                        console.error(
+                          "Failed to update managed runtime profile:",
+                          error,
+                        );
+                      });
+                    }}
+                  >
+                    {managedRuntimeProfiles.map((profile) => (
+                      <DropdownMenuRadioItem
+                        key={profile.id}
+                        value={profile.id}
+                        className="items-start"
+                      >
+                        <span className="flex flex-col gap-0.5">
+                          <span className="flex items-center gap-1.5">
+                            <span>{profile.displayName}</span>
+                            <ManagedRuntimeProfileEvidenceBadge
+                              profile={profile}
+                            />
+                          </span>
+                          <span className="text-muted-foreground text-xs">
+                            {profile.expectedTools.length > 0
+                              ? profile.expectedTools.join(", ")
+                              : "No required tools"}
+                          </span>
+                        </span>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <div className="px-1 py-1">
+                    <ManagedRuntimeProfileManager
+                      disabled={!selectedManagedRuntimeProfile}
+                      onProfileDeleted={async (fallbackProfileId) => {
+                        await updateManagedRuntimeProfile(fallbackProfileId);
+                        await mutateManagedProfiles();
+                      }}
+                      onProfileSaved={() => {
+                        void mutateManagedProfiles();
+                      }}
+                      profile={selectedManagedRuntimeProfile}
+                      sessionId={session.id}
+                    />
+                  </div>
                 </DropdownMenuContent>
               </DropdownMenu>
               <Tooltip>
@@ -3831,6 +3925,8 @@ export function SessionChatContent({
                                     >
                                       <ToolCall
                                         part={p as WebAgentUIToolPart}
+                                        sessionId={session.id}
+                                        chatId={chatInfo.id}
                                         isStreaming={isMessageStreaming}
                                         onApprove={(id) =>
                                           addToolApprovalResponse({
@@ -3845,6 +3941,42 @@ export function SessionChatContent({
                                             reason,
                                           })
                                         }
+                                        onManagedRuntimeProfileOutput={(
+                                          toolCallId,
+                                          output,
+                                        ) => {
+                                          if (
+                                            output.decision === "approved" &&
+                                            output.savedProfileId
+                                          ) {
+                                            const savedProfileId =
+                                              output.savedProfileId;
+                                            void (async () => {
+                                              try {
+                                                await syncApprovedManagedRuntimeProfile(
+                                                  savedProfileId,
+                                                  {
+                                                    currentRuntimeMode:
+                                                      session.runtimeMode,
+                                                    mutateManagedProfiles,
+                                                    updateManagedRuntimeProfile,
+                                                    updateRuntimeMode,
+                                                  },
+                                                );
+                                              } catch (error) {
+                                                console.error(
+                                                  "Failed to sync applied managed runtime profile:",
+                                                  error,
+                                                );
+                                              }
+                                            })();
+                                          }
+                                          addToolOutput({
+                                            tool: "setup_managed_runtime_profile",
+                                            toolCallId,
+                                            output,
+                                          });
+                                        }}
                                       />
                                     </div>
                                   );

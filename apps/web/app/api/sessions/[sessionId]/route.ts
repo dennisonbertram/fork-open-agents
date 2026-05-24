@@ -1,9 +1,11 @@
 import { after } from "next/server";
+import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import {
   deleteSession,
   getSessionById,
   updateSession,
 } from "@/lib/db/sessions";
+import { getManagedRuntimeSavedProfile } from "@/lib/db/managed-runtime-saved-profiles";
 import { archiveSession } from "@/lib/sandbox/archive-session";
 import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -12,6 +14,7 @@ interface UpdateSessionRequest {
   title?: string;
   status?: "running" | "completed" | "failed" | "archived";
   runtimeMode?: "classic" | "managed_runtime";
+  managedRuntimeProfileId?: string;
   linesAdded?: number;
   linesRemoved?: number;
   prNumber?: number;
@@ -74,6 +77,25 @@ export async function PATCH(
     body.runtimeMode !== "managed_runtime"
   ) {
     return Response.json({ error: "Invalid runtime mode" }, { status: 400 });
+  }
+
+  if (body.managedRuntimeProfileId !== undefined) {
+    const savedProfile = isManagedRuntimeProfileId(body.managedRuntimeProfileId)
+      ? undefined
+      : await getManagedRuntimeSavedProfile({
+          userId: session.user.id,
+          sessionId,
+          profileId: body.managedRuntimeProfileId,
+        });
+    if (
+      !isManagedRuntimeProfileId(body.managedRuntimeProfileId) &&
+      !savedProfile
+    ) {
+      return Response.json(
+        { error: "Invalid managed runtime profile" },
+        { status: 400 },
+      );
+    }
   }
 
   const shouldStopSandboxAfterArchive =

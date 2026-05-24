@@ -11,6 +11,7 @@ const preferencesState = {
   defaultModelId: "anthropic/claude-haiku-4.5",
   defaultSubagentModelId: null as string | null,
   defaultSandboxType: "vercel" as const,
+  defaultManagedRuntimeProfileId: "web-bun-agent-browser",
   defaultDiffMode: "unified" as const,
   autoCommitPush: false,
   autoCreatePr: false,
@@ -57,6 +58,7 @@ describe("/api/settings/preferences", () => {
     currentSession = { user: { id: "user-1" } };
     preferencesState.defaultModelId = "anthropic/claude-haiku-4.5";
     preferencesState.defaultSubagentModelId = null;
+    preferencesState.defaultManagedRuntimeProfileId = "web-bun-agent-browser";
     preferencesState.modelVariants = [];
     preferencesState.enabledModelIds = [];
     updateCalls.length = 0;
@@ -85,6 +87,9 @@ describe("/api/settings/preferences", () => {
     expect(body.preferences.autoCommitPush).toBe(false);
     expect(body.preferences.autoCreatePr).toBe(false);
     expect(body.preferences.defaultSandboxType).toBe("vercel");
+    expect(body.preferences.defaultManagedRuntimeProfileId).toBe(
+      "web-bun-agent-browser",
+    );
     expect(body.preferences.globalSkillRefs).toEqual([]);
   });
 
@@ -139,6 +144,43 @@ describe("/api/settings/preferences", () => {
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid sandbox type");
     expect(updateCalls).toHaveLength(0);
+  });
+
+  test("PATCH rejects invalid managed runtime profiles", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        defaultManagedRuntimeProfileId: "unknown-profile",
+      }),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid managed runtime profile");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  test("PATCH updates the default managed runtime profile", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+    });
+    expect(body.preferences.defaultManagedRuntimeProfileId).toBe(
+      "web-bun-agent-browser",
+    );
   });
 
   test("PATCH rejects invalid autoCommitPush values", async () => {

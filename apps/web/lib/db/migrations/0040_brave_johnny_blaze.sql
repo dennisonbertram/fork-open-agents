@@ -1,0 +1,2 @@
+ALTER TABLE "sessions" ADD COLUMN "managed_runtime_profile_id" text DEFAULT 'web-bun-agent-browser' NOT NULL;--> statement-breakpoint
+ALTER TABLE "user_preferences" ADD COLUMN "default_managed_runtime_profile_id" text DEFAULT 'web-bun-agent-browser' NOT NULL;
