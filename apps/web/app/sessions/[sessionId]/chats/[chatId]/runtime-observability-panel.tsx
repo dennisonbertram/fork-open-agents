@@ -2,6 +2,7 @@
 
 import {
   Activity,
+  AlertTriangle,
   CheckCircle2,
   Clock3,
   Globe,
@@ -11,6 +12,11 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  getComposioErrorKind,
+  getComposioUserFacingError,
+  redactComposioErrorMessage,
+} from "@/lib/composio/errors";
 import { cn } from "@/lib/utils";
 import {
   type ManagedRuntimeCommandObservationJson,
@@ -100,13 +106,15 @@ function EmptyState({ children }: { children: ReactNode }) {
 }
 
 function EventRow({ event }: { event: SessionEventJson }) {
+  const summary = event.summary
+    ? redactComposioErrorMessage(event.summary)
+    : event.eventName;
+
   return (
     <div className="border-b border-border/60 px-3 py-2 last:border-b-0">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-xs font-medium">
-            {event.summary ?? event.eventName}
-          </p>
+          <p className="truncate text-xs font-medium">{summary}</p>
           <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
             {event.source} · {event.eventName}
           </p>
@@ -122,6 +130,68 @@ function EventRow({ event }: { event: SessionEventJson }) {
         )}
       </div>
     </div>
+  );
+}
+
+function normalizeEventSummary(event: SessionEventJson): string {
+  return redactComposioErrorMessage(event.summary ?? event.eventName);
+}
+
+function getEventDedupeKey(event: SessionEventJson): string {
+  return `${event.status}:${event.eventName}:${normalizeEventSummary(event)}`;
+}
+
+function collapseDuplicateEvents(events: SessionEventJson[]): Array<{
+  event: SessionEventJson;
+  count: number;
+}> {
+  const rows: Array<{ event: SessionEventJson; count: number }> = [];
+
+  for (const event of events) {
+    const last = rows.at(-1);
+    if (last && getEventDedupeKey(last.event) === getEventDedupeKey(event)) {
+      last.count += 1;
+      continue;
+    }
+    rows.push({ event, count: 1 });
+  }
+
+  return rows;
+}
+
+function LikelyIssue({ events }: { events: SessionEventJson[] }) {
+  const composioEvent = events.find(
+    (event) =>
+      event.eventName.startsWith("composio.") ||
+      getComposioErrorKind(event.summary) !== "unknown",
+  );
+  const failedEvent = events.find((event) => event.status === "failed");
+  const issueEvent = composioEvent ?? failedEvent;
+
+  if (!issueEvent) {
+    return null;
+  }
+
+  const isComposioIssue =
+    issueEvent.eventName.startsWith("composio.") ||
+    getComposioErrorKind(issueEvent.summary) !== "unknown";
+  const summary = isComposioIssue
+    ? getComposioUserFacingError(issueEvent.summary)
+    : normalizeEventSummary(issueEvent);
+
+  return (
+    <Section title="Likely Issue">
+      <div className="flex gap-2 px-3 py-3 text-xs">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+        <div className="min-w-0 space-y-1">
+          <p className="font-medium text-foreground">{summary}</p>
+          <p className="text-muted-foreground">
+            The detailed event timeline below keeps raw workflow evidence for
+            debugging.
+          </p>
+        </div>
+      </div>
+    </Section>
   );
 }
 
@@ -193,6 +263,7 @@ export function RuntimeObservabilityPanel({
     : [];
   const visibleBrowserRuns = data?.browserRuns.slice(0, 5) ?? [];
   const visibleEvents = data?.events.slice(0, 40) ?? [];
+  const visibleEventRows = collapseDuplicateEvents(visibleEvents);
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -271,6 +342,8 @@ export function RuntimeObservabilityPanel({
               value={latestProfileRun?.id ?? "No managed profile run yet"}
             />
           </Section>
+
+          <LikelyIssue events={data?.events ?? []} />
 
           <Section title="Managed Profile">
             {latestProfileRun ? (
@@ -378,10 +451,17 @@ export function RuntimeObservabilityPanel({
           </Section>
 
           <Section title="Event Timeline">
-            {visibleEvents.length ? (
+            {visibleEventRows.length ? (
               <>
-                {visibleEvents.map((event) => (
-                  <EventRow key={event.id} event={event} />
+                {visibleEventRows.map(({ event, count }) => (
+                  <div key={event.id} className="relative">
+                    <EventRow event={event} />
+                    {count > 1 ? (
+                      <span className="absolute top-2 right-3 rounded-full border border-border bg-background px-1.5 text-[10px] text-muted-foreground">
+                        {count} retries
+                      </span>
+                    ) : null}
+                  </div>
                 ))}
                 {(data?.events.length ?? 0) > visibleEvents.length && (
                   <div className="px-3 py-2 text-[10px] text-muted-foreground">

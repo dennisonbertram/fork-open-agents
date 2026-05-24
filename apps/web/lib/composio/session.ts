@@ -18,6 +18,7 @@ import {
   getComposioProfileConfigHash,
 } from "./session-config";
 import { toComposioUserId } from "./user-id";
+import { getComposioUserFacingError } from "./errors";
 
 export {
   buildComposioSessionConfig,
@@ -50,10 +51,7 @@ function toSetupError(error: unknown): ComposioSetupError {
     return error;
   }
 
-  const message = error instanceof Error ? error.message : String(error);
-  return new ComposioSetupError(
-    message || "Composio tools could not be prepared.",
-  );
+  return new ComposioSetupError(getComposioUserFacingError(error));
 }
 
 export async function resolveComposioToolsForChat(params: {

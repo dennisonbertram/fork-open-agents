@@ -4438,6 +4438,8 @@ export function SessionChatContent({
                               size="icon"
                               onClick={openFilePicker}
                               disabled={isArchived}
+                              aria-label="Attach files"
+                              title="Attach files"
                               className="h-8 w-8 rounded-full text-muted-foreground hover:text-foreground"
                             >
                               <Paperclip className="h-4 w-4" />
@@ -4518,6 +4520,16 @@ export function SessionChatContent({
                               disabled={
                                 isArchived || recordingState === "processing"
                               }
+                              aria-label={
+                                recordingState === "recording"
+                                  ? "Stop recording"
+                                  : "Record voice input"
+                              }
+                              title={
+                                recordingState === "recording"
+                                  ? "Stop recording"
+                                  : "Record voice input"
+                              }
                               className={`relative h-8 w-8 rounded-full ${
                                 recordingState === "recording"
                                   ? "text-red-500"
@@ -4575,6 +4587,8 @@ export function SessionChatContent({
                                     <Button
                                       type="submit"
                                       size="icon"
+                                      aria-label="Send message"
+                                      title="Send message"
                                       onTouchEnd={() => {
                                         // On iOS, tapping submit while the textarea is focused
                                         // causes the keyboard to briefly flash open then closed.

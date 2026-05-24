@@ -18,6 +18,8 @@ let createdProfileInput: unknown;
 let updatedDefaultsInput: unknown;
 let updatedProfileInput: { profileId: string; profile: unknown } | null = null;
 let deletedProfileId: string | null = null;
+const connectedAccountsList = mock(async (_params: unknown) => ({}));
+let clientError: Error | null = null;
 
 const profile = {
   id: "profile-1",
@@ -72,6 +74,19 @@ mock.module("@/lib/db/composio", () => ({
   },
 }));
 
+mock.module("@/lib/composio/client", () => ({
+  getComposioClient: () => {
+    if (clientError) {
+      throw clientError;
+    }
+    return {
+      connectedAccounts: {
+        list: connectedAccountsList,
+      },
+    };
+  },
+}));
+
 const routeModulePromise = import("./route");
 
 function request(method: string, body?: unknown): Request {
@@ -89,6 +104,8 @@ describe("/api/settings/composio", () => {
     updatedDefaultsInput = undefined;
     updatedProfileInput = null;
     deletedProfileId = null;
+    clientError = null;
+    connectedAccountsList.mockClear();
     delete process.env.COMPOSIO_API_KEY;
   });
 
@@ -106,6 +123,27 @@ describe("/api/settings/composio", () => {
     expect(body.status.configured).toBe(false);
     expect(body.profiles).toHaveLength(1);
     expect(body.defaults).toEqual(defaultComposioAgentDefaults);
+  });
+
+  test("GET live-checks configured Composio and reports invalid keys", async () => {
+    process.env.COMPOSIO_API_KEY = "ak_invalid";
+    clientError = new Error(
+      '401 {"error":{"message":"Invalid API key: ak_invalid","code":10401}}',
+    );
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+    const body = (await response.json()) as {
+      status: { configured: boolean; available: boolean; message: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.status).toMatchObject({
+      configured: true,
+      available: false,
+    });
+    expect(body.status.message).toContain("COMPOSIO_API_KEY is invalid");
+    expect(body.status.message).not.toContain("ak_invalid");
   });
 
   test("POST rejects an empty profile and accepts a bounded profile", async () => {

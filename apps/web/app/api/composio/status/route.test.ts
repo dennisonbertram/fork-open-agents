@@ -91,4 +91,24 @@ describe("/api/composio/status", () => {
       userIds: ["open_agents_user_user-1"],
     });
   });
+
+  test("reports invalid Composio API keys as an actionable status", async () => {
+    clientError = new Error(
+      '401 {"error":{"message":"Invalid API key: ak_invalid","code":10401}}',
+    );
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(createRequest("/api/composio/status?live=1"));
+    const body = (await response.json()) as {
+      status: { reason: string; available: boolean; message: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.status).toMatchObject({
+      reason: "invalid_api_key",
+      available: false,
+    });
+    expect(body.status.message).toContain("COMPOSIO_API_KEY is invalid");
+    expect(body.status.message).not.toContain("ak_invalid");
+  });
 });

@@ -10,6 +10,7 @@ import {
   type UIMessageChunk,
 } from "ai";
 import type { OpenAgentCallOptions } from "@open-agents/agent";
+import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
 import { getWorkflowMetadata, getWritable } from "workflow";
@@ -271,23 +272,26 @@ function withModelMetadata(
 }
 
 function getSetupErrorMessage(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Workspace setup failed. Try again in a moment.";
-  }
+  const message = error instanceof Error ? error.message : String(error);
+  const name = error instanceof Error ? error.name : "";
 
-  if (error.message.includes("Connect GitHub")) {
+  if (message.includes("Connect GitHub")) {
     return "Connect GitHub to access this repository, then try again.";
   }
 
-  if (error.message === "Session is archived") {
+  if (message === "Session is archived") {
     return "This session is archived. Unarchive it to continue.";
   }
 
   if (
-    error.name === "ComposioSetupError" ||
-    error.message.includes("Composio")
+    name === "ComposioSetupError" ||
+    message.includes("Composio") ||
+    message.includes("COMPOSIO_API_KEY") ||
+    message.includes("Invalid API key") ||
+    message.includes('"code":10401') ||
+    message.includes("HTTP_Unauthorized")
   ) {
-    return error.message;
+    return getComposioUserFacingError(message);
   }
 
   return "Workspace setup failed. Try again in a moment.";
@@ -1585,7 +1589,7 @@ const runAgentStep = async (
         actorType: "coordinator",
         eventName: "composio.session.failed",
         status: "failed",
-        summary: `Composio tools failed: ${getErrorMessage(error)}`,
+        summary: getComposioUserFacingError(error),
         requestId,
         workflowRunId,
         sandboxName: stepSandboxName,

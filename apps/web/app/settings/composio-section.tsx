@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, Loader2, Plus, Save, Trash2 } from "lucide-react";
+import {
+  ExternalLink,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Save,
+  Trash2,
+} from "lucide-react";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
 import type {
@@ -99,6 +106,10 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
       {children}
     </h3>
   );
+}
+
+function FieldHelp({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs text-muted-foreground">{children}</p>;
 }
 
 export function ComposioSectionSkeleton() {
@@ -239,6 +250,10 @@ function ProfileEditor({
             onChange={(event) => setToolkits(event.currentTarget.value)}
             disabled={isSaving}
           />
+          <FieldHelp>
+            Comma-separated Composio toolkit IDs, for example github, linear, or
+            hackernews.
+          </FieldHelp>
         </div>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
@@ -252,6 +267,9 @@ function ProfileEditor({
             disabled={isSaving}
             className="min-h-20 font-mono text-xs"
           />
+          <FieldHelp>
+            Optional toolkit to auth config mapping from Composio, one per line.
+          </FieldHelp>
         </div>
         <div className="grid gap-1.5">
           <Label htmlFor={`composio-accounts-${profile.id}`}>
@@ -267,6 +285,10 @@ function ProfileEditor({
             disabled={isSaving}
             className="min-h-20 font-mono text-xs"
           />
+          <FieldHelp>
+            Optional toolkit to connected account IDs when a toolkit should use
+            specific accounts.
+          </FieldHelp>
         </div>
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -281,6 +303,9 @@ function ProfileEditor({
             <Label htmlFor={`composio-workbench-${profile.id}`}>
               Workbench
             </Label>
+            <span className="text-xs text-muted-foreground">
+              Include Composio hosted workbench tools.
+            </span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <Switch
@@ -292,6 +317,9 @@ function ProfileEditor({
             <Label htmlFor={`composio-in-chat-management-${profile.id}`}>
               In-chat connection tools
             </Label>
+            <span className="text-xs text-muted-foreground">
+              Let agents create account connection links during a run.
+            </span>
           </div>
         </div>
         <div className="flex gap-2">
@@ -339,10 +367,14 @@ export function ComposioSection() {
   const profiles = data?.profiles ?? [];
   const defaults = data?.defaults;
   const status = data?.status;
+  const isComposioAvailable = status?.configured && status.available;
 
   const statusText = useMemo(() => {
     if (!status) return "Checking Composio...";
-    return status.configured ? "Configured" : "Not configured";
+    if (!status.configured) return "Not configured";
+    if (status.available) return "Configured";
+    if (status.reason === "invalid_api_key") return "Invalid API key";
+    return "Connection check failed";
   }, [status]);
 
   async function createProfile() {
@@ -376,6 +408,16 @@ export function ComposioSection() {
           ? createError.message
           : "Failed to create profile",
       );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function checkConnection() {
+    setIsSubmitting(true);
+    setActionError(null);
+    try {
+      await mutate();
     } finally {
       setIsSubmitting(false);
     }
@@ -458,17 +500,32 @@ export function ComposioSection() {
         <SectionHeader>Status</SectionHeader>
         <div className="rounded-lg border border-border/70 p-3">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="min-w-0">
               <p className="text-sm font-medium">{statusText}</p>
               <p className="text-pretty text-xs text-muted-foreground">
-                External account credentials remain in Composio. Open Agents
-                stores profile selection, toolkit slugs, account IDs, and
-                session IDs only.
+                {status?.message ??
+                  "External account credentials remain in Composio. Open Agents stores profile selection, toolkit slugs, account IDs, and session IDs only."}
               </p>
             </div>
-            <code className="rounded bg-muted px-2 py-1 text-xs">
-              COMPOSIO_API_KEY
-            </code>
+            <div className="flex shrink-0 items-center gap-2">
+              <code className="rounded bg-muted px-2 py-1 text-xs">
+                COMPOSIO_API_KEY
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={checkConnection}
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <RefreshCw />
+                )}
+                Check
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -500,11 +557,20 @@ export function ComposioSection() {
                 placeholder="github, linear"
                 disabled={isSubmitting}
               />
+              <FieldHelp>
+                Use Composio toolkit slugs. Add account IDs only for tools that
+                need a specific connection.
+              </FieldHelp>
             </div>
             <Button
               type="button"
               onClick={createProfile}
-              disabled={isSubmitting || !newName.trim() || !newToolkits.trim()}
+              disabled={
+                isSubmitting ||
+                !isComposioAvailable ||
+                !newName.trim() ||
+                !newToolkits.trim()
+              }
             >
               {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
               Add
@@ -526,9 +592,11 @@ export function ComposioSection() {
             ))}
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground">
-            No Composio profiles configured yet.
-          </p>
+          <div className="rounded-lg border border-border/70 p-3 text-sm text-muted-foreground">
+            No Composio profiles configured yet. Add a profile with toolkit
+            slugs, select it from the chat toolbar, and connect accounts only
+            when a toolkit requires authentication.
+          </div>
         )}
       </div>
 
@@ -546,7 +614,7 @@ export function ComposioSection() {
                 <Label>{AGENT_LABELS[agentKey]}</Label>
                 <Select
                   value={defaults[agentKey].defaultProfileId ?? "off"}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || !isComposioAvailable}
                   onValueChange={(value) => {
                     void updateDefaults({
                       ...defaults,
@@ -607,8 +675,11 @@ export function ComposioSection() {
                 value={authConfigId}
                 onChange={(event) => setAuthConfigId(event.currentTarget.value)}
                 placeholder="ac_..."
-                disabled={isSubmitting || !status?.configured}
+                disabled={isSubmitting || !isComposioAvailable}
               />
+              <FieldHelp>
+                Auth config IDs come from Composio connection settings.
+              </FieldHelp>
             </div>
             <div className="grid gap-1.5">
               <Label htmlFor="composio-alias">Alias</Label>
@@ -619,14 +690,19 @@ export function ComposioSection() {
                   setConnectionAlias(event.currentTarget.value)
                 }
                 placeholder="work-gmail"
-                disabled={isSubmitting || !status?.configured}
+                disabled={isSubmitting || !isComposioAvailable}
               />
+              <FieldHelp>
+                Optional readable name for the connected account.
+              </FieldHelp>
             </div>
             <Button
               type="button"
               variant="outline"
               onClick={createConnectionLink}
-              disabled={isSubmitting || !status?.configured || !authConfigId}
+              disabled={
+                isSubmitting || !isComposioAvailable || !authConfigId.trim()
+              }
             >
               {isSubmitting ? (
                 <Loader2 className="animate-spin" />

@@ -602,7 +602,7 @@ describe("runAgentWorkflow", () => {
           type: "text-delta",
           id: "setup-error",
           delta:
-            "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+            "Composio tools are selected, but COMPOSIO_API_KEY is not configured. Add the key in your deployment environment, then retry, or turn Tools off for this chat.",
         },
       ]),
     );
@@ -611,9 +611,35 @@ describe("runAgentWorkflow", () => {
         eventName: "composio.session.failed",
         status: "failed",
         summary:
-          "Composio tools failed: Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
+          "Composio tools are selected, but COMPOSIO_API_KEY is not configured. Add the key in your deployment environment, then retry, or turn Tools off for this chat.",
       }),
     );
+  });
+
+  test("surfaces wrapped invalid Composio API key errors as actionable chat text", async () => {
+    const setupError = new Error(
+      'FatalError: Step failed after 3 retries: 401 {"error":{"message":"Invalid API key: ak_invalid","code":10401,"suggested_fix":"Please check you are using a valid API key."}}',
+    );
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+      throw setupError;
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Invalid API key",
+    );
+
+    expect(agentInputMessages).toBeUndefined();
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta:
+            "Composio tools could not start because COMPOSIO_API_KEY is invalid. Update the key in your deployment environment, then retry, or turn Tools off for this chat.",
+        },
+      ]),
+    );
+    expect(JSON.stringify(writtenChunks)).not.toContain("ak_invalid");
   });
 
   test("passes managed runtime mode into agent options", async () => {

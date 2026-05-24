@@ -44,13 +44,15 @@ export function ComposioToolSelectorCompact({
     data?.profiles.find((profile) => profile.id === selection.mainProfileId) ??
     null;
   const hasProfiles = (data?.profiles.length ?? 0) > 0;
-  const isUnavailable = data ? !data.status.configured : false;
+  const isUnavailable = data
+    ? !data.status.configured || !data.status.available
+    : false;
   const disabledReason = isUnavailable
-    ? "Composio is not configured"
+    ? data?.status.message
     : hasProfiles
       ? null
       : "No Composio profiles configured";
-  const isDisabled = disabled || isLoading || isUnavailable || !hasProfiles;
+  const isDisabled = disabled || isLoading;
   const label = selectedProfile?.name ?? "Off";
 
   return (
@@ -74,6 +76,16 @@ export function ComposioToolSelectorCompact({
         <DropdownMenuLabel className="text-xs text-muted-foreground">
           External tools
         </DropdownMenuLabel>
+        {!hasProfiles ? (
+          <div className="px-2 py-1.5 text-xs text-muted-foreground">
+            No tool profiles yet.
+          </div>
+        ) : null}
+        {isUnavailable ? (
+          <div className="px-2 py-1.5 text-xs text-destructive">
+            {data?.status.message ?? "Composio is unavailable."}
+          </div>
+        ) : null}
         <DropdownMenuRadioGroup
           value={selection.mainProfileId ?? "off"}
           onValueChange={(value) => {

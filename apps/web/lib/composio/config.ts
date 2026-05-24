@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getComposioErrorKind, getComposioUserFacingError } from "./errors";
+
 export type ComposioConfigState =
   | {
       configured: true;
@@ -26,7 +28,7 @@ export type ComposioServiceStatus =
   | {
       configured: true;
       available: false;
-      reason: "unreachable";
+      reason: "invalid_api_key" | "unreachable";
       message: string;
     };
 
@@ -67,12 +69,12 @@ export function getComposioConfiguredStatus(): ComposioServiceStatus {
 export function getComposioUnavailableStatus(
   error: unknown,
 ): ComposioServiceStatus {
-  const message = error instanceof Error ? error.message : String(error);
+  const kind = getComposioErrorKind(error);
 
   return {
     configured: true,
     available: false,
-    reason: "unreachable",
-    message: message || "Composio is unreachable.",
+    reason: kind === "invalid_api_key" ? "invalid_api_key" : "unreachable",
+    message: getComposioUserFacingError(error),
   };
 }

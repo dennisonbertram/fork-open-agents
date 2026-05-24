@@ -17,7 +17,10 @@ import {
   getComposioConfiguredStatus,
   getComposioConfig,
   getComposioDisabledStatus,
+  getComposioUnavailableStatus,
 } from "@/lib/composio/config";
+import { getComposioClient } from "@/lib/composio/client";
+import { toComposioUserId } from "@/lib/composio/user-id";
 
 const updateComposioSettingsSchema = z.object({
   defaults: composioAgentDefaultsInputSchema.optional(),
@@ -37,21 +40,36 @@ export type ComposioSettingsResponse = {
   defaults: Awaited<ReturnType<typeof getComposioAgentDefaults>>;
 };
 
+async function getLiveComposioStatus(userId: string) {
+  const config = getComposioConfig();
+  if (!config.configured) {
+    return getComposioDisabledStatus();
+  }
+
+  try {
+    await getComposioClient().connectedAccounts.list({
+      userIds: [toComposioUserId(userId)],
+    });
+    return getComposioConfiguredStatus();
+  } catch (error) {
+    return getComposioUnavailableStatus(error);
+  }
+}
+
 export async function GET() {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
   }
 
-  const [profiles, defaults] = await Promise.all([
+  const [profiles, defaults, status] = await Promise.all([
     listComposioToolProfiles(authResult.userId),
     getComposioAgentDefaults(authResult.userId),
+    getLiveComposioStatus(authResult.userId),
   ]);
 
   return Response.json({
-    status: getComposioConfig().configured
-      ? getComposioConfiguredStatus()
-      : getComposioDisabledStatus(),
+    status,
     profiles,
     defaults,
   } satisfies ComposioSettingsResponse);
