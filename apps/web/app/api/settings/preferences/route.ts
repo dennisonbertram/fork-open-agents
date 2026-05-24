@@ -4,7 +4,6 @@ import {
   type DiffMode,
   updateUserPreferences,
 } from "@/lib/db/user-preferences";
-import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import {
   globalSkillRefsSchema,
@@ -25,17 +24,13 @@ interface UpdatePreferencesRequest {
   enabledModelIds?: string[];
 }
 
-export async function GET(req: Request) {
+export async function GET(_req: Request) {
   const session = await getServerSession();
   if (!session?.user) {
     return Response.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const preferences = sanitizeUserPreferencesForSession(
-    await getUserPreferences(session.user.id),
-    session,
-    req.url,
-  );
+  const preferences = await getUserPreferences(session.user.id);
   return Response.json({ preferences });
 }
 
@@ -191,11 +186,7 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const preferences = sanitizeUserPreferencesForSession(
-      await updateUserPreferences(session.user.id, updates),
-      session,
-      req.url,
-    );
+    const preferences = await updateUserPreferences(session.user.id, updates);
     return Response.json({ preferences });
   } catch (error) {
     console.error("Failed to update preferences:", error);

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 
 let currentSession: {
@@ -16,15 +16,12 @@ let currentSession: {
     name: "Nico",
   },
 };
-let existingSessionCount = 0;
 let savedLink: VercelProjectSelection | null = null;
 let currentVercelToken: string | null = "vercel-token";
 let matchingProjects: VercelProjectSelection[] = [];
 let matchingProjectsError: Error | null = null;
 const createCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
-
-const originalNodeEnv = process.env.NODE_ENV;
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
@@ -74,7 +71,6 @@ mock.module("@/lib/vercel/projects", () => ({
 }));
 
 mock.module("@/lib/db/sessions", () => ({
-  countSessionsByUserId: async () => existingSessionCount,
   createSessionWithInitialChat: async (input: {
     session: Record<string, unknown>;
     initialChat: Record<string, unknown>;
@@ -115,10 +111,6 @@ function createJsonRequest(
 }
 
 describe("/api/sessions POST vercel project linking", () => {
-  afterEach(() => {
-    Object.assign(process.env, { NODE_ENV: originalNodeEnv });
-  });
-
   beforeEach(() => {
     currentSession = {
       user: {
@@ -127,78 +119,12 @@ describe("/api/sessions POST vercel project linking", () => {
         name: "Nico",
       },
     };
-    existingSessionCount = 0;
     savedLink = null;
     currentVercelToken = "vercel-token";
     matchingProjects = [];
     matchingProjectsError = null;
     createCalls.length = 0;
     upsertCalls.length = 0;
-  });
-
-  test("blocks additional sessions for managed template trial users", async () => {
-    const { POST } = await routeModulePromise;
-
-    currentSession = {
-      authProvider: "vercel",
-      user: {
-        id: "user-1",
-        username: "nico",
-        name: "Nico",
-        email: "person@example.com",
-      },
-    };
-    existingSessionCount = 1;
-
-    const response = await POST(
-      createJsonRequest(
-        {
-          branch: "main",
-          cloneUrl: "https://github.com/vercel-labs/open-agents",
-          repoOwner: "vercel-labs",
-          repoName: "open-agents",
-        },
-        "https://open-agents.dev/api/sessions",
-      ),
-    );
-    const body = (await response.json()) as { error: string };
-
-    expect(response.status).toBe(403);
-    expect(body.error).toBe(
-      "This hosted demo includes 1 trial session. Deploy your own copy to unlock the full Open Agents template.",
-    );
-    expect(createCalls).toHaveLength(0);
-  });
-
-  test("blocks repo-backed sessions for trial users", async () => {
-    Object.assign(process.env, { NODE_ENV: "development" });
-    const { POST } = await routeModulePromise;
-
-    currentSession = {
-      authProvider: "vercel",
-      user: {
-        id: "user-1",
-        username: "nico",
-        name: "Nico",
-        email: "person@example.com",
-      },
-    };
-
-    const response = await POST(
-      createJsonRequest({
-        branch: "main",
-        cloneUrl: "https://github.com/vercel-labs/open-agents",
-        repoOwner: "vercel-labs",
-        repoName: "open-agents",
-      }),
-    );
-    const body = (await response.json()) as { error: string };
-
-    expect(response.status).toBe(403);
-    expect(body.error).toBe(
-      "GitHub-backed sessions are disabled in the hosted demo. Deploy your own copy to unlock repository support, or start a new chat without a repository.",
-    );
-    expect(createCalls).toHaveLength(0);
   });
 
   test("explicit Vercel project is validated against live repo matches before it is persisted", async () => {

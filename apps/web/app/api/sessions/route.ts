@@ -1,7 +1,6 @@
 import { nanoid } from "nanoid";
 import { checkBotProtection } from "@/lib/botid";
 import {
-  countSessionsByUserId,
   createSessionWithInitialChat,
   getArchivedSessionCountByUserId,
   getSessionsWithUnreadByUserId,
@@ -12,7 +11,6 @@ import {
   upsertVercelProjectLink,
 } from "@/lib/db/vercel-project-links";
 import { getUserPreferences } from "@/lib/db/user-preferences";
-import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
@@ -21,12 +19,6 @@ import {
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_GITHUB_SESSION_ERROR,
-  MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT,
-  MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR,
-} from "@/lib/managed-template-trial";
 import {
   isVercelInvalidTokenError,
   listMatchingVercelProjects,
@@ -193,29 +185,11 @@ export async function POST(req: Request) {
     return limited;
   }
 
-  const isTrialUser = isManagedTemplateTrialUser(session, req.url);
-  if (isTrialUser) {
-    const existingSessionCount = await countSessionsByUserId(session.user.id);
-    if (existingSessionCount >= MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT) {
-      return Response.json(
-        { error: MANAGED_TEMPLATE_TRIAL_SESSION_LIMIT_ERROR },
-        { status: 403 },
-      );
-    }
-  }
-
   let body: CreateSessionRequest;
   try {
     body = (await req.json()) as CreateSessionRequest;
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
-  }
-
-  if (isTrialUser && (body.repoOwner || body.repoName || body.cloneUrl)) {
-    return Response.json(
-      { error: MANAGED_TEMPLATE_TRIAL_GITHUB_SESSION_ERROR },
-      { status: 403 },
-    );
   }
 
   if (body.sandboxType && body.sandboxType !== "vercel") {
@@ -361,15 +335,10 @@ export async function POST(req: Request) {
       }
     }
 
-    const [title, rawPreferences] = await Promise.all([
+    const [title, preferences] = await Promise.all([
       titlePromise,
       preferencesPromise,
     ]);
-    const preferences = sanitizeUserPreferencesForSession(
-      rawPreferences,
-      session,
-      req.url,
-    );
     const effectiveAutoCommitPush =
       autoCommitPush ?? preferences.autoCommitPush;
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;

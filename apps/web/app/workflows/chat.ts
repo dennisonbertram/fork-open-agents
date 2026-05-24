@@ -44,11 +44,6 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
-import {
-  filterModelVariantsForSession,
-  sanitizeSelectedModelIdForSession,
-  sanitizeUserPreferencesForSession,
-} from "@/lib/model-access";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
@@ -175,27 +170,9 @@ async function resolveChatModelRuntime(params: {
     throw new Error("Chat not found");
   }
 
-  const preferences = rawPreferences
-    ? sanitizeUserPreferencesForSession(
-        rawPreferences,
-        params.authSession,
-        params.requestUrl,
-      )
-    : null;
-  const modelVariants = filterModelVariantsForSession(
-    getAllVariants(preferences?.modelVariants ?? []),
-    params.authSession,
-    params.requestUrl,
-  );
-  const selectedModelId =
-    sanitizeSelectedModelIdForSession(
-      chat.modelId,
-      modelVariants,
-      params.authSession,
-      params.requestUrl,
-    ) ??
-    chat.modelId ??
-    null;
+  const preferences = rawPreferences;
+  const modelVariants = getAllVariants(preferences?.modelVariants ?? []);
+  const selectedModelId = chat.modelId ?? null;
   const mainModelSelection = resolveChatModelSelection({
     selectedModelId,
     modelVariants,
@@ -203,12 +180,7 @@ async function resolveChatModelRuntime(params: {
   });
   const subagentModelSelection = preferences?.defaultSubagentModelId
     ? resolveChatModelSelection({
-        selectedModelId: sanitizeSelectedModelIdForSession(
-          preferences.defaultSubagentModelId,
-          modelVariants,
-          params.authSession,
-          params.requestUrl,
-        ),
+        selectedModelId: preferences.defaultSubagentModelId,
         modelVariants,
         missingVariantLabel: "Subagent model variant",
       })

@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
-import {
-  deleteInstallationsByUserId,
-  getInstallationsByUserId,
-} from "@/lib/db/installations";
+import { getInstallationsByUserId } from "@/lib/db/installations";
 import { getUserGitHubToken } from "@/lib/github/token";
-import { deleteGitHubAccountLink, getGitHubUsername } from "@/lib/github/users";
+import { getGitHubUsername } from "@/lib/github/users";
 import { syncUserInstallations } from "@/lib/github/sync";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -27,15 +23,6 @@ export async function GET(req: Request): Promise<Response> {
     req.url,
   );
   const redirectUrl = new URL(next, req.url);
-
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    await Promise.all([
-      deleteGitHubAccountLink(session.user.id),
-      deleteInstallationsByUserId(session.user.id),
-    ]);
-    redirectUrl.searchParams.set("github", "trial_blocked");
-    return NextResponse.redirect(redirectUrl);
-  }
 
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {

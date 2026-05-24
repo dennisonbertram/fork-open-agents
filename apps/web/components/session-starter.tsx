@@ -63,7 +63,6 @@ export function SessionStarter({
   >(undefined);
 
   const { session, loading: sessionLoading, hasGitHub } = useSession();
-  const isTrialUser = session?.isManagedTemplateTrialUser ?? false;
   const { reconnectRequired, isLoading: githubConnectionLoading } =
     useGitHubConnectionStatus({
       enabled: hasGitHub,
@@ -77,11 +76,10 @@ export function SessionStarter({
   const sandboxType = preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE;
   const sandboxName =
     SANDBOX_OPTIONS.find((s) => s.id === sandboxType)?.name ?? sandboxType;
-  const isRepoModeDisabled = sessionLoading || isTrialUser;
+  const isRepoModeDisabled = sessionLoading;
 
   const shouldLoadVercelProjects =
     mode === "repo" &&
-    !isTrialUser &&
     !githubConnectionLoading &&
     !reconnectRequired &&
     !!selectedOwner &&
@@ -96,18 +94,6 @@ export function SessionStarter({
     repoOwner: selectedOwner,
     repoName: selectedRepo,
   });
-
-  useEffect(() => {
-    if (!isTrialUser || mode === "empty") return;
-
-    setMode("empty");
-    setSelectedOwner("");
-    setSelectedRepo("");
-    setSelectedBranch(null);
-    setIsNewBranch(false);
-    setVercelProjectChoice(undefined);
-    setGitSettingsExpanded(false);
-  }, [isTrialUser, mode]);
 
   useEffect(() => {
     if (!shouldLoadVercelProjects) {
@@ -181,7 +167,6 @@ export function SessionStarter({
   const effectiveAutoCreatePr = autoCreatePr ?? defaultAutoCreatePr;
   const showVercelProjectSection =
     mode === "repo" &&
-    !isTrialUser &&
     !githubConnectionLoading &&
     !reconnectRequired &&
     !!selectedOwner &&
@@ -304,9 +289,7 @@ export function SessionStarter({
 
         {mode === "empty" && (
           <p className="text-center text-sm text-muted-foreground dark:text-neutral-500">
-            {isTrialUser
-              ? "In the hosted demo, you can start chats without connecting GitHub."
-              : "Start a new chat -- no repository required."}
+            Start a new chat -- no repository required.
           </p>
         )}
 

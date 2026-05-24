@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import type { WebAgentUIMessage } from "@/app/types";
 import { DiffsProvider } from "@/components/diffs-provider";
@@ -14,16 +13,6 @@ import {
   buildSessionChatModelOptions,
   withMissingModelOption,
 } from "@/lib/model-options";
-import {
-  filterModelVariantsForSession,
-  filterModelsForSession,
-  sanitizeSelectedModelIdForSession,
-  sanitizeUserPreferencesForSession,
-} from "@/lib/model-access";
-import {
-  isManagedTemplateTrialUser,
-  MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR,
-} from "@/lib/managed-template-trial";
 import { getAllVariants } from "@/lib/model-variants";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -115,8 +104,6 @@ export default async function SessionChatPage({
     redirect("/");
   }
 
-  const requestHost = (await headers()).get("host") ?? "";
-
   // Fetch chat, messages, models, and preferences in parallel
   const [chat, dbMessages, initialModels, rawPreferences, sessionChats] =
     await Promise.all([
@@ -164,36 +151,12 @@ export default async function SessionChatPage({
   const lastUserMessageSentAt = lastUserMessage
     ? lastUserMessage.createdAt.toISOString()
     : null;
-  const codeEditorDisabledReason = isManagedTemplateTrialUser(
-    session,
-    requestHost,
-  )
-    ? MANAGED_TEMPLATE_TRIAL_CODE_EDITOR_ERROR
-    : null;
-  const preferences = sanitizeUserPreferencesForSession(
-    rawPreferences,
-    session,
-    requestHost,
-  );
-  const modelVariants = filterModelVariantsForSession(
-    getAllVariants(preferences.modelVariants),
-    session,
-    requestHost,
-  );
-  const filteredModels = filterModelsForSession(
-    initialModels,
-    session,
-    requestHost,
-  );
-  const chatModelId =
-    sanitizeSelectedModelIdForSession(
-      chat.modelId,
-      modelVariants,
-      session,
-      requestHost,
-    ) ?? chat.modelId;
+  const codeEditorDisabledReason = null;
+  const preferences = rawPreferences;
+  const modelVariants = getAllVariants(preferences.modelVariants);
+  const chatModelId = chat.modelId;
   const initialModelOptions = withMissingModelOption(
-    buildSessionChatModelOptions(filteredModels, modelVariants),
+    buildSessionChatModelOptions(initialModels, modelVariants),
     chatModelId,
   );
 

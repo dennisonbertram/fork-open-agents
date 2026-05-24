@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { needsOnboarding } from "@/lib/onboarding";
 import { GetStartedFlow } from "./get-started-flow";
@@ -37,11 +35,6 @@ export default async function GetStartedPage({
 
   const resolvedSearchParams = await searchParams;
   const requestedStep = getSingleSearchParam(resolvedSearchParams.step);
-  const requestHost = (await headers()).get("host") ?? "";
-
-  if (isManagedTemplateTrialUser(session, requestHost)) {
-    redirect("/sessions");
-  }
 
   const onboarding = await needsOnboarding(session.user.id);
 

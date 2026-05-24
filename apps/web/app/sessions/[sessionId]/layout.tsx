@@ -1,10 +1,8 @@
-import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getChatSummariesBySessionId } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
 import { getUserPreferences } from "@/lib/db/user-preferences";
-import { sanitizeUserPreferencesForSession } from "@/lib/model-access";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { SessionLayoutShell } from "./session-layout-shell";
 
@@ -44,16 +42,10 @@ export default async function SessionLayout({
     | undefined;
 
   try {
-    const requestHost = (await headers()).get("host") ?? "";
-    const [chats, rawPreferences] = await Promise.all([
+    const [chats, preferences] = await Promise.all([
       getChatSummariesBySessionId(sessionId, session.user.id),
       getUserPreferences(session.user.id),
     ]);
-    const preferences = sanitizeUserPreferencesForSession(
-      rawPreferences,
-      session,
-      requestHost,
-    );
     initialChatsData = {
       chats,
       defaultModelId: preferences.defaultModelId,

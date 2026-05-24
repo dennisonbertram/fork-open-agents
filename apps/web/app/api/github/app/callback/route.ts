@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
-import { isManagedTemplateTrialUser } from "@/lib/managed-template-trial";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -46,11 +45,6 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const redirectUrl = new URL(redirectTo, req.url);
-
-  if (isManagedTemplateTrialUser(session, req.url)) {
-    redirectUrl.searchParams.set("github", "trial_blocked");
-    return redirectAndClearCookies(redirectUrl);
-  }
 
   const requestUrl = new URL(req.url);
   const installationId = parseInstallationId(

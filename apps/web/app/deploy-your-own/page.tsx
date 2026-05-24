@@ -57,8 +57,7 @@ const DEPLOY_TEMPLATE_URL = (() => {
 
 export const metadata: Metadata = {
   title: "Deploy your own",
-  description:
-    "Deploy your own copy of Open Agents to unlock the full template.",
+  description: "Deploy a copy of Open Agents in your Vercel account.",
 };
 
 export default function DeployYourOwnPage() {
@@ -70,8 +69,8 @@ export default function DeployYourOwnPage() {
           Deploy your own
         </h1>
         <p className="mt-4 text-base leading-7 text-muted-foreground">
-          This hosted demo has limited functionality. Deploy your own copy to
-          unlock the full Open Agents template.
+          Create a Vercel project from the Open Agents template with the
+          required storage, auth, GitHub, and sandbox settings.
         </p>
         <Button asChild className="mt-8" size="lg">
           <Link href={DEPLOY_TEMPLATE_URL} rel="noreferrer" target="_blank">

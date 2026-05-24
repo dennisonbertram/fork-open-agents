@@ -98,7 +98,7 @@ describe("/api/settings/model-variants", () => {
     expect(response.status).toBe(401);
   });
 
-  test("GET hides Opus-backed variants for managed trial users", async () => {
+  test("GET returns Opus-backed variants without hosted-demo filtering", async () => {
     preferences.modelVariants = [
       {
         id: "variant:user-opus",
@@ -122,9 +122,9 @@ describe("/api/settings/model-variants", () => {
     );
     const body = (await response.json()) as { modelVariants: ModelVariant[] };
 
-    expect(body.modelVariants.map((variant) => variant.id)).toEqual([
-      "variant:builtin:gpt-5.4-xhigh",
-    ]);
+    expect(body.modelVariants.map((variant) => variant.id)).toContain(
+      "variant:user-opus",
+    );
   });
 
   test("POST rejects invalid JSON body", async () => {
@@ -166,7 +166,7 @@ describe("/api/settings/model-variants", () => {
     expect(body.modelVariants[2]?.name).toBe("OpenAI Medium");
   });
 
-  test("POST rejects Opus-backed variants for managed trial users", async () => {
+  test("POST creates Opus-backed variants", async () => {
     currentSession = {
       authProvider: "vercel",
       user: {
@@ -189,7 +189,12 @@ describe("/api/settings/model-variants", () => {
       }),
     );
 
-    expect(response.status).toBe(403);
+    expect(response.ok).toBe(true);
+    const body = (await response.json()) as { modelVariants: ModelVariant[] };
+    expect(body.modelVariants.at(-1)).toMatchObject({
+      name: "User Opus",
+      baseModelId: "anthropic/claude-opus-4.6",
+    });
   });
 
   test("POST accepts provider options exactly at 16KB", async () => {

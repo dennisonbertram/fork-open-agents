@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { NextRequest } from "next/server";
 
 type TestSession = {
@@ -16,8 +16,6 @@ let exists = true;
 let hasGitHubLinked = false;
 let installations: Array<{ installationId: number }> = [];
 let isAdmin = false;
-
-const originalNodeEnv = process.env.NODE_ENV;
 
 mock.module("server-only", () => ({}));
 
@@ -51,10 +49,6 @@ function createRequest(url = "http://localhost/api/auth/info"): NextRequest {
 }
 
 describe("GET /api/auth/info", () => {
-  afterEach(() => {
-    Object.assign(process.env, { NODE_ENV: originalNodeEnv });
-  });
-
   beforeEach(() => {
     session = {
       authProvider: "vercel",
@@ -103,7 +97,6 @@ describe("GET /api/auth/info", () => {
       user: session?.user,
       authProvider: "vercel",
       isAdmin: false,
-      isManagedTemplateTrialUser: false,
       hasGitHub: true,
       hasGitHubAccount: true,
       hasGitHubInstallations: true,
@@ -120,44 +113,6 @@ describe("GET /api/auth/info", () => {
       user: session?.user,
       authProvider: "vercel",
       isAdmin: false,
-      isManagedTemplateTrialUser: false,
-      hasGitHub: false,
-      hasGitHubAccount: false,
-      hasGitHubInstallations: false,
-    });
-  });
-
-  test("reports managed template trial users", async () => {
-    const { GET } = await routeModulePromise;
-
-    const response = await GET(
-      createRequest("https://open-agents.dev/api/auth/info"),
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      user: session?.user,
-      authProvider: "vercel",
-      isAdmin: false,
-      isManagedTemplateTrialUser: true,
-      hasGitHub: false,
-      hasGitHubAccount: false,
-      hasGitHubInstallations: false,
-    });
-  });
-
-  test("reports local development managed template trial users", async () => {
-    Object.assign(process.env, { NODE_ENV: "development" });
-    const { GET } = await routeModulePromise;
-
-    const response = await GET(createRequest());
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({
-      user: session?.user,
-      authProvider: "vercel",
-      isAdmin: false,
-      isManagedTemplateTrialUser: true,
       hasGitHub: false,
       hasGitHubAccount: false,
       hasGitHubInstallations: false,

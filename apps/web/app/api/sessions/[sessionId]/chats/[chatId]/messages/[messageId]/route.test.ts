@@ -34,13 +34,6 @@ type DeleteMessageResult =
     };
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
-let currentAuthSession: {
-  authProvider?: "vercel" | "github";
-  user: {
-    id: string;
-    email?: string;
-  };
-} | null = null;
 let ownedSessionChatResult: OwnedSessionChatResult = {
   ok: true,
   sessionRecord: { id: "session-1" },
@@ -80,10 +73,6 @@ mock.module("workflow/api", () => ({
   }),
 }));
 
-mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () => currentAuthSession,
-}));
-
 const routeModulePromise = import("./route");
 
 function createContext(
@@ -99,7 +88,6 @@ function createContext(
 describe("/api/sessions/[sessionId]/chats/[chatId]/messages/[messageId]", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
-    currentAuthSession = null;
     ownedSessionChatResult = {
       ok: true,
       sessionRecord: { id: "session-1" },
@@ -156,34 +144,6 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/messages/[messageId]", () => 
     );
 
     expect(response.status).toBe(404);
-    expect(deleteCalls).toHaveLength(0);
-  });
-
-  test("returns 403 for managed-template trial users", async () => {
-    currentAuthSession = {
-      authProvider: "vercel",
-      user: {
-        id: "user-1",
-        email: "person@example.com",
-      },
-    };
-    const { DELETE } = await routeModulePromise;
-
-    const response = await DELETE(
-      new Request(
-        "https://open-agents.dev/api/sessions/session-1/chats/chat-1/messages/message-2",
-        {
-          method: "DELETE",
-        },
-      ),
-      createContext(),
-    );
-    const body = (await response.json()) as { error: string };
-
-    expect(response.status).toBe(403);
-    expect(body.error).toBe(
-      "Message deletion is disabled in the hosted demo. Deploy your own copy to unlock full controls.",
-    );
     expect(deleteCalls).toHaveLength(0);
   });
 

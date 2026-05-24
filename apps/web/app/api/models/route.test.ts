@@ -13,10 +13,6 @@ const requestedUrls: string[] = [];
 
 let gatewayError: unknown = null;
 let modelsDevApiData: unknown = {};
-let currentSession: {
-  authProvider?: "vercel" | "github";
-  user: { id: string; email?: string; username?: string; avatar?: string };
-} | null = null;
 
 const originalFetch = globalThis.fetch;
 
@@ -44,10 +40,6 @@ mock.module("ai", () => ({
 
 mock.module("server-only", () => ({}));
 
-mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () => currentSession,
-}));
-
 const routeModulePromise = import("./route");
 
 afterEach(() => {
@@ -60,7 +52,6 @@ describe("/api/models context window enrichment", () => {
     requestedUrls.length = 0;
     gatewayError = null;
     modelsDevApiData = {};
-    currentSession = null;
 
     globalThis.fetch = mock((input: RequestInfo | URL, _init?: RequestInit) => {
       requestedUrls.push(getRequestUrl(input));
@@ -133,7 +124,7 @@ describe("/api/models context window enrichment", () => {
     expect(requestedUrls).toContain("https://models.dev/api.json");
   });
 
-  test("hides Claude Opus models for managed trial users", async () => {
+  test("returns Claude Opus models without hosted-demo filtering", async () => {
     gatewayModels.push(
       {
         id: "anthropic/claude-opus-4.6",
@@ -144,10 +135,6 @@ describe("/api/models context window enrichment", () => {
         modelType: "language",
       },
     );
-    currentSession = {
-      authProvider: "vercel",
-      user: { id: "user-1", email: "person@example.com" },
-    };
 
     const { GET } = await routeModulePromise;
     const response = await GET(
@@ -158,6 +145,7 @@ describe("/api/models context window enrichment", () => {
     };
 
     expect(body.models.map((model) => model.id)).toEqual([
+      "anthropic/claude-opus-4.6",
       "anthropic/claude-haiku-4.5",
     ]);
   });
