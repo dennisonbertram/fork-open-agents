@@ -1,0 +1,4 @@
+.env
+.env.*
+apps/web/.env
+apps/web/.env.*
