@@ -153,6 +153,10 @@ import {
   useSessionChatRuntimeContext,
   useSessionChatWorkspaceContext,
 } from "./session-chat-context";
+import {
+  getModelOptionSelectionId,
+  parseModelOptionSelection,
+} from "@/lib/inference/model-option-id";
 import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
@@ -1942,19 +1946,25 @@ export function SessionChatContent({
     retryChatStream,
   });
 
+  const selectedModelOptionId = getModelOptionSelectionId(
+    chatInfo.modelId,
+    chatInfo.inferenceProfileId,
+  );
+
   const handleModelChange = useCallback(
-    async (modelId: string) => {
-      if (!modelId || modelId === chatInfo.modelId) return;
+    async (optionId: string) => {
+      if (!optionId || optionId === selectedModelOptionId) return;
+      const selection = parseModelOptionSelection(optionId);
       try {
         setIsUpdatingModel(true);
-        await updateChatModel(modelId);
+        await updateChatModel(selection.modelId, selection.inferenceProfileId);
       } catch (err) {
         console.error("Failed to update chat model:", err);
       } finally {
         setIsUpdatingModel(false);
       }
     },
-    [chatInfo.modelId, updateChatModel],
+    [selectedModelOptionId, updateChatModel],
   );
 
   const handleComposioSelectionChange = useCallback(
@@ -1972,8 +1982,8 @@ export function SessionChatContent({
   );
 
   const selectedModelOption = useMemo(
-    () => modelOptions.find((option) => option.id === chatInfo.modelId),
-    [modelOptions, chatInfo.modelId],
+    () => modelOptions.find((option) => option.id === selectedModelOptionId),
+    [modelOptions, selectedModelOptionId],
   );
 
   const handleFileSelect = (
@@ -4587,7 +4597,7 @@ export function SessionChatContent({
                                 }
                               >
                                 <ModelSelectorCompact
-                                  value={chatInfo.modelId}
+                                  value={selectedModelOptionId}
                                   modelOptions={modelOptions}
                                   disabled={
                                     isChatInFlight ||

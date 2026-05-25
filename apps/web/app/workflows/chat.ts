@@ -9,7 +9,11 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import type { OpenAgentCallOptions } from "@open-agents/agent";
+import {
+  toAnthropicDirectModelId,
+  type AgentModelSelection,
+  type OpenAgentCallOptions,
+} from "@open-agents/agent";
 import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
@@ -48,6 +52,8 @@ import {
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
+import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
+import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
 import type {
@@ -78,6 +84,10 @@ type Options = {
 type ChatModelRuntime = {
   selectedModelId: string;
   modelId: string;
+  inferenceRoute: InferenceRoute;
+  inferenceProfileId: string | null;
+  inferenceProfileName: string | null;
+  inferenceProvider: string | null;
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
@@ -148,11 +158,15 @@ async function resolveChatModelRuntime(params: {
 }): Promise<ChatModelRuntime> {
   "use step";
 
-  const [{ getChatById, getSessionById }, { getUserPreferences }] =
-    await Promise.all([
-      import("@/lib/db/sessions"),
-      import("@/lib/db/user-preferences"),
-    ]);
+  const [
+    { getChatById, getSessionById },
+    { getUserPreferences },
+    { getInferenceProfileByIdForUser },
+  ] = await Promise.all([
+    import("@/lib/db/sessions"),
+    import("@/lib/db/user-preferences"),
+    import("@/lib/db/inference-profiles"),
+  ]);
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
     getChatById(params.chatId),
@@ -195,10 +209,51 @@ async function resolveChatModelRuntime(params: {
   const autoCreatePrEnabled =
     autoCommitEnabled &&
     (sessionRecord.autoCreatePrOverride ?? preferences?.autoCreatePr ?? false);
+  const inferenceProfileId =
+    chat.inferenceProfileId ??
+    sessionRecord.inferenceProfileId ??
+    preferences?.defaultInferenceProfileId ??
+    null;
+  let inferenceRoute: InferenceRoute = "gateway";
+  let inferenceProfileName: string | null = null;
+  let inferenceProvider: string | null = null;
+
+  if (inferenceProfileId) {
+    const profile = await getInferenceProfileByIdForUser(
+      params.userId,
+      inferenceProfileId,
+    );
+    if (!profile || !profile.enabled) {
+      const { InferenceProfileResolutionError } =
+        await import("@/lib/inference/profile-resolution");
+      throw new InferenceProfileResolutionError(
+        "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
+      );
+    }
+
+    if (!toAnthropicDirectModelId(mainModelSelection.id)) {
+      const { InferenceProfileResolutionError } =
+        await import("@/lib/inference/profile-resolution");
+      throw new InferenceProfileResolutionError(
+        "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
+      );
+    }
+
+    inferenceRoute = "user";
+    inferenceProfileName = profile.name;
+    inferenceProvider = profile.provider;
+  }
 
   return {
-    selectedModelId: selectedModelId ?? mainModelSelection.id,
+    selectedModelId: getModelOptionSelectionId(
+      selectedModelId ?? mainModelSelection.id,
+      inferenceProfileId,
+    ),
     modelId: mainModelSelection.id,
+    inferenceRoute,
+    inferenceProfileId,
+    inferenceProfileName,
+    inferenceProvider,
     agentOptions: {
       model: mainModelSelection,
       ...(subagentModelSelection
@@ -263,11 +318,31 @@ function withModelMetadata(
   metadata: WebAgentMessageMetadata | undefined,
   selectedModelId: string,
   modelId: string,
+  inference?: {
+    inferenceRoute: InferenceRoute;
+    inferenceProfileId: string | null;
+    inferenceProfileName: string | null;
+    inferenceProvider: string | null;
+  },
 ): WebAgentMessageMetadata {
   return {
     ...metadata,
     selectedModelId,
     modelId,
+    ...(inference
+      ? {
+          inferenceRoute: inference.inferenceRoute,
+          ...(inference.inferenceProfileId
+            ? { inferenceProfileId: inference.inferenceProfileId }
+            : {}),
+          ...(inference.inferenceProfileName
+            ? { inferenceProfileName: inference.inferenceProfileName }
+            : {}),
+          ...(inference.inferenceProvider
+            ? { inferenceProvider: inference.inferenceProvider }
+            : {}),
+        }
+      : {}),
   };
 }
 
@@ -284,6 +359,10 @@ function getSetupErrorMessage(error: unknown): string {
   }
 
   if (name === "WorkspaceSetupError") {
+    return message;
+  }
+
+  if (name === "InferenceProfileResolutionError") {
     return message;
   }
 
@@ -926,6 +1005,10 @@ export async function runAgentWorkflow(options: Options) {
   let managedRuntimeProfileId: string | null = null;
   let managedRuntimeProfileVersion: string | null = null;
   let managedRuntimeProfileRunId: string | null = null;
+  let inferenceRoute: InferenceRoute = "gateway";
+  let inferenceProfileId: string | null = null;
+  let inferenceProfileName: string | null = null;
+  let inferenceProvider: string | null = null;
 
   try {
     const [runtime, modelRuntime, modelMessages] = await Promise.all([
@@ -948,6 +1031,10 @@ export async function runAgentWorkflow(options: Options) {
     ]);
     selectedModelId = options.selectedModelId ?? modelRuntime.selectedModelId;
     modelId = options.modelId ?? modelRuntime.modelId;
+    inferenceRoute = modelRuntime.inferenceRoute;
+    inferenceProfileId = modelRuntime.inferenceProfileId;
+    inferenceProfileName = modelRuntime.inferenceProfileName;
+    inferenceProvider = modelRuntime.inferenceProvider;
     runtimeMode = runtime.runtimeMode;
     runtimeSandboxName = runtime.sandboxState.sandboxName ?? null;
     managedRuntimeProfileId = runtime.managedRuntime?.profileId ?? null;
@@ -978,6 +1065,10 @@ export async function runAgentWorkflow(options: Options) {
         managedRuntime: runtime.managedRuntime ?? null,
         selectedModelId,
         modelId,
+        inferenceRoute,
+        inferenceProfileId,
+        inferenceProfileName,
+        inferenceProvider,
         skillCount: runtime.skills.length,
       },
     });
@@ -987,6 +1078,12 @@ export async function runAgentWorkflow(options: Options) {
         pendingAssistantResponse.metadata,
         selectedModelId,
         modelId,
+        {
+          inferenceRoute,
+          inferenceProfileId,
+          inferenceProfileName,
+          inferenceProvider,
+        },
       ),
     };
 
@@ -1032,6 +1129,10 @@ export async function runAgentWorkflow(options: Options) {
           options.requestId ?? null,
           selectedModelId,
           modelId,
+          inferenceRoute,
+          inferenceProfileId,
+          inferenceProfileName,
+          inferenceProvider,
           agentOptions,
           step + 1,
         );
@@ -1416,6 +1517,8 @@ export async function runAgentWorkflow(options: Options) {
           managedRuntimeProfileId,
           managedRuntimeProfileVersion,
           managedRuntimeProfileRunId,
+          inferenceRoute,
+          inferenceProfileId,
           errorMessage: caughtError ? getErrorMessage(caughtError) : null,
           status: workflowStatus,
           startedAt: runStartedAt.toISOString(),
@@ -1456,6 +1559,10 @@ export async function runAgentWorkflow(options: Options) {
           runtimeMode,
           modelId,
           selectedModelId,
+          inferenceRoute,
+          inferenceProfileId,
+          inferenceProfileName,
+          inferenceProvider,
           stepCount: stepTimings.length,
           totalDurationMs: runFinishedAt.getTime() - runStartedAt.getTime(),
           finishReason: finalFinishReason ?? null,
@@ -1467,6 +1574,16 @@ export async function runAgentWorkflow(options: Options) {
   if (caughtError) {
     throw caughtError;
   }
+}
+
+async function resolveStepInferenceProfileModel(params: {
+  userId: string;
+  inferenceProfileId: string;
+  selection: AgentModelSelection;
+}): Promise<AgentModelSelection> {
+  const { resolveInferenceProfileModelSelection } =
+    await import("@/lib/inference/profile-resolution");
+  return resolveInferenceProfileModelSelection(params);
 }
 
 const runAgentStep = async (
@@ -1481,6 +1598,10 @@ const runAgentStep = async (
   requestId: string | null,
   selectedModelId: string,
   modelId: string,
+  inferenceRoute: InferenceRoute,
+  inferenceProfileId: string | null,
+  inferenceProfileName: string | null,
+  inferenceProvider: string | null,
   agentOptions: OpenAgentCallOptions,
   stepNumber: number,
 ) => {
@@ -1500,6 +1621,23 @@ const runAgentStep = async (
   let lastStreamError: unknown;
 
   try {
+    const stepAgentOptions =
+      inferenceProfileId && agentOptions.model
+        ? {
+            ...agentOptions,
+            model: await resolveStepInferenceProfileModel({
+              userId,
+              inferenceProfileId,
+              selection:
+                typeof agentOptions.model === "string"
+                  ? ({
+                      id: agentOptions.model,
+                    } as AgentModelSelection)
+                  : (agentOptions.model as AgentModelSelection),
+            }),
+          }
+        : agentOptions;
+
     await emitSessionEvent({
       sessionId,
       chatId,
@@ -1518,6 +1656,7 @@ const runAgentStep = async (
         runtimeMode: agentOptions.runtimeMode ?? "classic",
         modelId,
         selectedModelId,
+        inferenceProfileId,
       },
     });
     let responseMessage: WebAgentUIMessage | undefined;
@@ -1623,7 +1762,7 @@ const runAgentStep = async (
 
     const result = await webAgent.stream({
       messages,
-      options: agentOptions,
+      options: stepAgentOptions,
       ...(composioTools ? { tools: composioTools } : {}),
       abortSignal: abortController.signal,
     });
@@ -1661,6 +1800,10 @@ const runAgentStep = async (
           return {
             selectedModelId,
             modelId,
+            inferenceRoute,
+            ...(inferenceProfileId ? { inferenceProfileId } : {}),
+            ...(inferenceProfileName ? { inferenceProfileName } : {}),
+            ...(inferenceProvider ? { inferenceProvider } : {}),
             lastStepUsage,
             totalMessageUsage,
             lastStepCost,
@@ -1691,6 +1834,12 @@ const runAgentStep = async (
         responseMessage.metadata,
         selectedModelId,
         modelId,
+        {
+          inferenceRoute,
+          inferenceProfileId,
+          inferenceProfileName,
+          inferenceProvider,
+        },
       ),
     };
 
@@ -1811,6 +1960,8 @@ const runAgentStep = async (
       payload: {
         stepNumber,
         runtimeMode: agentOptions.runtimeMode ?? "classic",
+        inferenceRoute,
+        inferenceProfileId,
         finishReason,
         rawFinishReason: rawFinishReason ?? null,
         durationMs: stepFinishedAt.getTime() - stepStartedAt.getTime(),

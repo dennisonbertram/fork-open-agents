@@ -14,6 +14,8 @@ export async function recordUsage(
     source: UsageSource;
     agentType?: UsageAgentType;
     model: LanguageModel | string;
+    inferenceRoute?: "gateway" | "user" | null;
+    inferenceProfileId?: string | null;
     messages: UIMessage[];
     usage: {
       inputTokens: number;
@@ -42,6 +44,8 @@ export async function recordUsage(
     agentType: data.agentType ?? "main",
     provider: provider ?? null,
     modelId: modelId ?? null,
+    inferenceRoute: data.inferenceRoute ?? null,
+    inferenceProfileId: data.inferenceProfileId ?? null,
     inputTokens: data.usage.inputTokens,
     cachedInputTokens: data.usage.cachedInputTokens,
     outputTokens: data.usage.outputTokens,

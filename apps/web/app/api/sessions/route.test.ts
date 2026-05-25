@@ -22,6 +22,7 @@ let currentVercelToken: string | null = "vercel-token";
 let matchingProjects: VercelProjectSelection[] = [];
 let matchingProjectsError: Error | null = null;
 const createCalls: Array<Record<string, unknown>> = [];
+const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
 
 mock.module("@/lib/session/get-server-session", () => ({
@@ -46,6 +47,7 @@ mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => ({
     defaultModelId: "anthropic/claude-haiku-4.5",
     defaultSubagentModelId: null,
+    defaultInferenceProfileId: "inference-profile-1",
     defaultSandboxType: "vercel",
     defaultManagedRuntimeProfileId: "web-bun-agent-browser",
     defaultDiffMode: "unified",
@@ -95,6 +97,7 @@ mock.module("@/lib/db/sessions", () => ({
     initialChat: Record<string, unknown>;
   }) => {
     createCalls.push(input.session);
+    initialChatCalls.push(input.initialChat);
     return {
       session: {
         ...input.session,
@@ -106,6 +109,7 @@ mock.module("@/lib/db/sessions", () => ({
         sessionId: String(input.session.id),
         title: String(input.initialChat.title),
         modelId: String(input.initialChat.modelId),
+        inferenceProfileId: input.initialChat.inferenceProfileId,
         composioSelection: input.initialChat.composioSelection,
         createdAt: new Date(),
         updatedAt: new Date(),
@@ -147,6 +151,7 @@ describe("/api/sessions POST vercel project linking", () => {
     matchingProjects = [];
     matchingProjectsError = null;
     createCalls.length = 0;
+    initialChatCalls.length = 0;
     upsertCalls.length = 0;
   });
 
@@ -382,5 +387,32 @@ describe("/api/sessions POST vercel project linking", () => {
       autoCommitPushOverride: true,
       autoCreatePrOverride: true,
     });
+  });
+
+  test("new sessions seed the session and initial chat from the default inference profile", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+      chat: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(createCalls[0]).toMatchObject({
+      inferenceProfileId: "inference-profile-1",
+    });
+    expect(initialChatCalls[0]).toMatchObject({
+      inferenceProfileId: "inference-profile-1",
+    });
+    expect(body.session.inferenceProfileId).toBe("inference-profile-1");
+    expect(body.chat.inferenceProfileId).toBe("inference-profile-1");
   });
 });

@@ -65,6 +65,8 @@ export function MessageModelPill({
   const {
     selectedModelId,
     modelId: resolvedModelId,
+    inferenceRoute,
+    inferenceProfileName,
     totalMessageCost,
   } = metadata;
 
@@ -112,6 +114,13 @@ export function MessageModelPill({
     tooltipParts.push(
       `Cost: ${(totalMessageCost as number).toFixed(6)} (gateway)`,
     );
+  }
+  if (inferenceRoute === "user") {
+    tooltipParts.push(
+      `Inference: ${inferenceProfileName ? `User profile (${inferenceProfileName})` : "User profile"}`,
+    );
+  } else if (inferenceRoute === "gateway") {
+    tooltipParts.push("Inference: Vercel AI Gateway");
   }
 
   const pill = (

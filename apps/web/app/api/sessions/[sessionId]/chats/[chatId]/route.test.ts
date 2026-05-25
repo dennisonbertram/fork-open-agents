@@ -22,6 +22,7 @@ type OwnedSessionChatResult =
         id: string;
         sessionId: string;
         modelId: string;
+        inferenceProfileId: string | null;
         composioSelection: ChatComposioSelection;
         activeStreamId: string | null;
       };
@@ -41,6 +42,7 @@ type ChatRecord = {
   sessionId: string;
   title: string;
   modelId: string;
+  inferenceProfileId: string | null;
   composioSelection: ChatComposioSelection;
 };
 
@@ -52,6 +54,7 @@ let ownedSessionChatResult: OwnedSessionChatResult = {
     id: "chat-1",
     sessionId: "session-1",
     modelId: "model-1",
+    inferenceProfileId: null,
     composioSelection: defaultChatComposioSelection,
     activeStreamId: null,
   },
@@ -74,7 +77,19 @@ let updatedChat: ChatRecord | null = {
   sessionId: "session-1",
   title: "Updated",
   modelId: "model-updated",
+  inferenceProfileId: null,
   composioSelection: { mainProfileId: "profile-updated" },
+};
+let inferenceProfile: {
+  id: string;
+  userId: string;
+  enabled: boolean;
+  provider: "anthropic";
+} | null = {
+  id: "inference-profile-1",
+  userId: "user-1",
+  enabled: true,
+  provider: "anthropic",
 };
 let chatsInSession: Array<{ id: string }> = [
   { id: "chat-1" },
@@ -86,6 +101,7 @@ const updateChatCalls: Array<{
   patch: {
     title?: string;
     modelId?: string;
+    inferenceProfileId?: string | null;
     composioSelection?: ChatComposioSelection;
   };
 }> = [];
@@ -102,6 +118,7 @@ mock.module("@/lib/db/sessions", () => ({
     patch: {
       title?: string;
       modelId?: string;
+      inferenceProfileId?: string | null;
       composioSelection?: ChatComposioSelection;
     },
   ) => {
@@ -113,6 +130,11 @@ mock.module("@/lib/db/sessions", () => ({
   deleteChat: async (chatId: string) => {
     deleteChatCalls.push(chatId);
   },
+}));
+
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: async (_userId: string, _profileId: string) =>
+    inferenceProfile,
 }));
 
 mock.module("@/lib/db/user-preferences", () => ({
@@ -166,6 +188,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         id: "chat-1",
         sessionId: "session-1",
         modelId: "model-1",
+        inferenceProfileId: null,
         composioSelection: defaultChatComposioSelection,
         activeStreamId: null,
       },
@@ -182,7 +205,14 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       sessionId: "session-1",
       title: "Updated",
       modelId: "model-updated",
+      inferenceProfileId: null,
       composioSelection: { mainProfileId: "profile-updated" },
+    };
+    inferenceProfile = {
+      id: "inference-profile-1",
+      userId: "user-1",
+      enabled: true,
+      provider: "anthropic",
     };
     chatsInSession = [{ id: "chat-1" }, { id: "chat-2" }];
     updateChatCalls.length = 0;
@@ -209,6 +239,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         id: "chat-1",
         sessionId: "session-1",
         modelId: "model-1",
+        inferenceProfileId: "inference-profile-1",
         composioSelection: { mainProfileId: "profile-1" },
         activeStreamId: "stream-1",
       },
@@ -230,6 +261,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       chat: {
         id: string;
         modelId: string;
+        inferenceProfileId: string | null;
         composioSelection: ChatComposioSelection;
         activeStreamId: string | null;
       };
@@ -241,6 +273,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     expect(body.chat).toEqual({
       id: "chat-1",
       modelId: "model-1",
+      inferenceProfileId: "inference-profile-1",
       composioSelection: { mainProfileId: "profile-1" },
       activeStreamId: "stream-1",
     });
@@ -328,6 +361,44 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       },
     ]);
     expect(body.chat.id).toBe("chat-1");
+  });
+
+  test("PATCH persists user inference profile separately from model id", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        modelId: "anthropic/claude-opus-4.6",
+        inferenceProfileId: "inference-profile-1",
+      }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateChatCalls).toEqual([
+      {
+        chatId: "chat-1",
+        patch: {
+          modelId: "anthropic/claude-opus-4.6",
+          inferenceProfileId: "inference-profile-1",
+        },
+      },
+    ]);
+  });
+
+  test("PATCH rejects user inference profile for non-Anthropic models", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        modelId: "openai/gpt-5.4",
+        inferenceProfileId: "inference-profile-1",
+      }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(400);
+    expect(updateChatCalls).toHaveLength(0);
   });
 
   test("PATCH persists Composio chat selection", async () => {

@@ -1,4 +1,5 @@
 import { AccountsSectionSkeleton } from "./accounts-section";
+import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import {
@@ -83,6 +84,8 @@ function ModelsPageLoading() {
         </p>
       </div>
       <ModelPreferencesSectionSkeleton />
+      <div className="border-t border-border/50" />
+      <InferenceProfilesSectionSkeleton />
       <div className="border-t border-border/50" />
       <ModelVariantsSectionSkeleton />
     </div>

@@ -11,6 +11,7 @@ export type DiffMode = "unified" | "split";
 export interface UserPreferences {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
+  defaultInferenceProfileId: string | null;
   defaultSandboxType: SandboxType;
   defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;

@@ -20,6 +20,7 @@ type OwnedSessionChatResult =
         sessionId: string;
         title: string;
         modelId: string | null;
+        inferenceProfileId: string | null;
         composioSelection: ChatComposioSelection;
         activeStreamId: string | null;
       };
@@ -34,6 +35,7 @@ type ChatRecord = {
   sessionId: string;
   title: string;
   modelId: string | null;
+  inferenceProfileId: string | null;
   composioSelection: ChatComposioSelection;
 };
 
@@ -51,6 +53,7 @@ let ownedSessionChatResult: OwnedSessionChatResult = {
     sessionId: "session-1",
     title: "Original chat",
     modelId: "model-1",
+    inferenceProfileId: "inference-profile-1",
     composioSelection: { mainProfileId: "profile-1" },
     activeStreamId: null,
   },
@@ -63,6 +66,7 @@ let forkResult: ForkResult = {
     sessionId: "session-1",
     title: "Fork of Original chat",
     modelId: "model-1",
+    inferenceProfileId: "inference-profile-1",
     composioSelection: { mainProfileId: "profile-1" },
   },
 };
@@ -77,6 +81,7 @@ const forkCalls: Array<{
     sessionId: string;
     title: string;
     modelId: string | null;
+    inferenceProfileId: string | null;
     composioSelection: ChatComposioSelection;
   };
 }> = [];
@@ -127,6 +132,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
         sessionId: "session-1",
         title: "Original chat",
         modelId: "model-1",
+        inferenceProfileId: "inference-profile-1",
         composioSelection: { mainProfileId: "profile-1" },
         activeStreamId: null,
       },
@@ -139,6 +145,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
         sessionId: "session-1",
         title: "Fork of Original chat",
         modelId: "model-1",
+        inferenceProfileId: "inference-profile-1",
         composioSelection: { mainProfileId: "profile-1" },
       },
     };
@@ -226,6 +233,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
       sessionId: "session-1",
       title: "Existing",
       modelId: "model-1",
+      inferenceProfileId: null,
       composioSelection: { mainProfileId: null },
     };
     const { POST } = await routeModulePromise;
@@ -290,6 +298,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
           sessionId: "session-1",
           title: "Fork of Original chat",
           modelId: "model-1",
+          inferenceProfileId: "inference-profile-1",
           composioSelection: { mainProfileId: "profile-1" },
         },
       },
@@ -299,6 +308,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/fork", () => {
       sessionId: "session-1",
       title: "Fork of Original chat",
       modelId: "model-1",
+      inferenceProfileId: "inference-profile-1",
       composioSelection: { mainProfileId: "profile-1" },
     });
   });

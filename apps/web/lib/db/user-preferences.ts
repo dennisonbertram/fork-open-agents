@@ -24,6 +24,7 @@ export type DiffMode = "unified" | "split";
 export interface UserPreferencesData {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
+  defaultInferenceProfileId: string | null;
   defaultSandboxType: SandboxType;
   defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;
@@ -41,6 +42,7 @@ export interface UserPreferencesData {
 const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultModelId: APP_DEFAULT_MODEL_ID,
   defaultSubagentModelId: null,
+  defaultInferenceProfileId: null,
   defaultSandboxType: "vercel",
   defaultManagedRuntimeProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
   defaultDiffMode: "unified",
@@ -97,6 +99,7 @@ export function toUserPreferencesData(
       UserPreferences,
       | "defaultModelId"
       | "defaultSubagentModelId"
+      | "defaultInferenceProfileId"
       | "defaultSandboxType"
       | "defaultManagedRuntimeProfileId"
       | "defaultDiffMode"
@@ -119,6 +122,7 @@ export function toUserPreferencesData(
   return {
     defaultModelId: row?.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
+    defaultInferenceProfileId: row?.defaultInferenceProfileId ?? null,
     defaultSandboxType: normalizeSandboxType(row?.defaultSandboxType),
     defaultManagedRuntimeProfileId: normalizeManagedRuntimeProfileId(
       row?.defaultManagedRuntimeProfileId,
@@ -190,6 +194,7 @@ export async function updateUserPreferences(
       defaultModelId:
         updates.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
       defaultSubagentModelId: updates.defaultSubagentModelId ?? null,
+      defaultInferenceProfileId: updates.defaultInferenceProfileId ?? null,
       defaultSandboxType:
         updates.defaultSandboxType ?? DEFAULT_PREFERENCES.defaultSandboxType,
       defaultManagedRuntimeProfileId:

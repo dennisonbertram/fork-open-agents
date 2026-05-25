@@ -95,6 +95,9 @@ export function ModelSelectorCompact({
 
   const selectedOption = modelOptions.find((option) => option.id === value);
   const displayText = selectedOption?.shortLabel ?? value;
+  const titleText = selectedOption?.secondaryLabel
+    ? `${displayText} via ${selectedOption.secondaryLabel}`
+    : `Change model (⌘⌥/)`;
 
   const groups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
 
@@ -114,7 +117,7 @@ export function ModelSelectorCompact({
           disabled={disabled}
           aria-label="Change model"
           aria-keyshortcuts="Meta+Alt+/"
-          title="Change model (⌘⌥/)"
+          title={titleText}
           className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60"
         >
           {selectedOption && (
@@ -156,7 +159,9 @@ export function ModelSelectorCompact({
                 {group.options.map((option) => (
                   <CommandItem
                     key={option.id}
-                    value={`${option.label} ${option.id}`}
+                    value={`${option.label} ${option.id} ${
+                      option.secondaryLabel ?? ""
+                    } ${option.description ?? ""} ${option.searchText ?? ""}`}
                     onSelect={() => handleSelect(option.id)}
                     className="flex items-center"
                   >
@@ -164,8 +169,15 @@ export function ModelSelectorCompact({
                       provider={option.provider}
                       className="mr-1.5 size-3.5 shrink-0 opacity-70"
                     />
-                    <span className="min-w-0 truncate">
-                      {option.shortLabel}
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span className="min-w-0 truncate">
+                        {option.shortLabel}
+                      </span>
+                      {option.secondaryLabel && (
+                        <span className="min-w-0 truncate text-xs text-muted-foreground">
+                          {option.secondaryLabel}
+                        </span>
+                      )}
                     </span>
                     {option.isVariant && (
                       <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">

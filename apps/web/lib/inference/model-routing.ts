@@ -1,0 +1,58 @@
+import "server-only";
+
+export function normalizeAnthropicBaseUrl(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const url = new URL(value.trim());
+  if (url.pathname === "" || url.pathname === "/") {
+    url.pathname = "/v1";
+  }
+
+  return url.toString().replace(/\/+$/, "");
+}
+
+export function redactInferenceSecret(
+  message: string,
+  secret?: string,
+): string {
+  let redacted = message;
+
+  if (secret) {
+    redacted = redacted.split(secret).join("[redacted]");
+  }
+
+  return redacted
+    .replace(/\bsk-[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+    .replace(/\bplat_[A-Za-z0-9_-]{8,}\b/g, "[redacted]")
+    .replace(/\b[A-Za-z0-9_-]{32,}\b/g, "[redacted]");
+}
+
+export function toInferenceProfileTestMessage(
+  error: unknown,
+  secret?: string,
+): string {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const message = redactInferenceSecret(rawMessage, secret);
+
+  if (
+    /\b401\b/i.test(message) ||
+    /unauthorized/i.test(message) ||
+    /invalid api key/i.test(message)
+  ) {
+    return "Anthropic credentials were rejected. Check the API key and try again.";
+  }
+
+  if (/\b404\b/i.test(message) || /not found/i.test(message)) {
+    return "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.";
+  }
+
+  if (/fetch failed|network|ENOTFOUND|ECONNREFUSED/i.test(message)) {
+    return "Could not reach the Anthropic-compatible endpoint. Check the base URL and network access.";
+  }
+
+  return message.length > 240
+    ? `${message.slice(0, 237)}...`
+    : message || "Anthropic profile test failed.";
+}

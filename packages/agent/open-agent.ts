@@ -3,6 +3,7 @@ import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
+  type DirectAnthropicConfig,
   type GatewayModelId,
   gateway,
   type ProviderOptionsByProvider,
@@ -37,7 +38,14 @@ export type ManagedRuntimeAgentContext = {
 
 export interface AgentModelSelection {
   id: GatewayModelId;
+  directAnthropic?: DirectAnthropicConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
+  attribution?: {
+    inferenceRoute?: "gateway" | "user";
+    inferenceProfileId?: string;
+    inferenceProfileName?: string;
+    provider?: string;
+  };
 }
 
 export type OpenAgentModelInput = GatewayModelId | AgentModelSelection;
@@ -178,10 +186,12 @@ export const openAgent = new ToolLoopAgent({
       : undefined;
 
     const callModel = gateway(mainSelection.id, {
+      directAnthropic: mainSelection.directAnthropic,
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
       ? gateway(subagentSelection.id, {
+          directAnthropic: subagentSelection.directAnthropic,
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;

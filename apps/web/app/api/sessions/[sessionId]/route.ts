@@ -5,6 +5,7 @@ import {
   getSessionById,
   updateSession,
 } from "@/lib/db/sessions";
+import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
 import { getManagedRuntimeSavedProfile } from "@/lib/db/managed-runtime-saved-profiles";
 import { archiveSession } from "@/lib/sandbox/archive-session";
 import { hasRuntimeSandboxState } from "@/lib/sandbox/utils";
@@ -15,6 +16,7 @@ interface UpdateSessionRequest {
   status?: "running" | "completed" | "failed" | "archived";
   runtimeMode?: "classic" | "managed_runtime";
   managedRuntimeProfileId?: string;
+  inferenceProfileId?: string | null;
   linesAdded?: number;
   linesRemoved?: number;
   prNumber?: number;
@@ -93,6 +95,28 @@ export async function PATCH(
     ) {
       return Response.json(
         { error: "Invalid managed runtime profile" },
+        { status: 400 },
+      );
+    }
+  }
+
+  if (
+    body.inferenceProfileId !== undefined &&
+    body.inferenceProfileId !== null
+  ) {
+    if (typeof body.inferenceProfileId !== "string") {
+      return Response.json(
+        { error: "Invalid inference profile" },
+        { status: 400 },
+      );
+    }
+    const profile = await getInferenceProfileByIdForUser(
+      session.user.id,
+      body.inferenceProfileId,
+    );
+    if (!profile || !profile.enabled) {
+      return Response.json(
+        { error: "Invalid inference profile" },
         { status: 400 },
       );
     }

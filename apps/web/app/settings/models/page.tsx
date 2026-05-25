@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { InferenceProfilesSection } from "../inference-profiles-section";
 import { ModelVariantsSection } from "../model-variants-section";
 import { ModelPreferencesSection } from "../preferences-section";
 
@@ -19,6 +20,10 @@ export default function ModelsPage() {
       </div>
 
       <ModelPreferencesSection />
+
+      <div className="border-t border-border/50" />
+
+      <InferenceProfilesSection />
 
       <div className="border-t border-border/50" />
 

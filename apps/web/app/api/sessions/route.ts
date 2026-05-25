@@ -376,6 +376,7 @@ export async function POST(req: Request) {
           : false,
         managedRuntimeProfileId:
           managedRuntimeProfileId ?? preferences.defaultManagedRuntimeProfileId,
+        inferenceProfileId: preferences.defaultInferenceProfileId,
         globalSkillRefs: preferences.globalSkillRefs,
         sandboxState: { type: sandboxType },
         lifecycleState: "provisioning",
@@ -385,6 +386,7 @@ export async function POST(req: Request) {
         id: nanoid(),
         title: "New chat",
         modelId: preferences.defaultModelId,
+        inferenceProfileId: preferences.defaultInferenceProfileId,
         composioSelection: {
           mainProfileId:
             preferences.composioAgentDefaults.main.defaultProfileId,

@@ -7,6 +7,7 @@ import {
   getChatMessages,
   getChatSummariesBySessionId,
 } from "@/lib/db/sessions";
+import { listInferenceProfiles } from "@/lib/db/inference-profiles";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
@@ -14,6 +15,7 @@ import {
   withMissingModelOption,
 } from "@/lib/model-options";
 import { getAllVariants } from "@/lib/model-variants";
+import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
@@ -105,14 +107,21 @@ export default async function SessionChatPage({
   }
 
   // Fetch chat, messages, models, and preferences in parallel
-  const [chat, dbMessages, initialModels, rawPreferences, sessionChats] =
-    await Promise.all([
-      getChatByIdWithRetry(chatId, sessionId),
-      getChatMessages(chatId),
-      getInitialModels(),
-      getUserPreferences(session.user.id),
-      getChatSummariesBySessionId(sessionId, session.user.id),
-    ]);
+  const [
+    chat,
+    dbMessages,
+    initialModels,
+    rawPreferences,
+    sessionChats,
+    inferenceProfiles,
+  ] = await Promise.all([
+    getChatByIdWithRetry(chatId, sessionId),
+    getChatMessages(chatId),
+    getInitialModels(),
+    getUserPreferences(session.user.id),
+    getChatSummariesBySessionId(sessionId, session.user.id),
+    listInferenceProfiles(session.user.id),
+  ]);
 
   if (!chat) {
     if (isOptimisticChatId(chatId)) {
@@ -155,9 +164,17 @@ export default async function SessionChatPage({
   const preferences = rawPreferences;
   const modelVariants = getAllVariants(preferences.modelVariants);
   const chatModelId = chat.modelId;
-  const initialModelOptions = withMissingModelOption(
-    buildSessionChatModelOptions(initialModels, modelVariants),
+  const chatModelOptionId = getModelOptionSelectionId(
     chatModelId,
+    chat.inferenceProfileId,
+  );
+  const initialModelOptions = withMissingModelOption(
+    buildSessionChatModelOptions(
+      initialModels,
+      modelVariants,
+      inferenceProfiles,
+    ),
+    chatModelOptionId,
   );
 
   const initialIsOnlyChatInSession = getInitialIsOnlyChatInSession(

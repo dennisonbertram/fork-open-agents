@@ -28,6 +28,7 @@ const {
   getProviderOptionsForModel,
   mergeProviderOptions,
   shouldApplyOpenAIReasoningDefaults,
+  toAnthropicDirectModelId,
 } = await import("./models");
 
 describe("shouldApplyOpenAIReasoningDefaults", () => {
@@ -237,6 +238,21 @@ describe("mergeProviderOptions", () => {
         include: ["reasoning.summary"],
       },
     });
+  });
+});
+
+describe("direct Anthropic model ids", () => {
+  test("maps gateway Anthropic ids to direct Anthropic provider ids", () => {
+    expect(toAnthropicDirectModelId("anthropic/claude-opus-4.6")).toBe(
+      "claude-opus-4-6",
+    );
+    expect(toAnthropicDirectModelId("anthropic/claude-haiku-4.5")).toBe(
+      "claude-haiku-4-5",
+    );
+  });
+
+  test("rejects non-Anthropic models for direct Anthropic routing", () => {
+    expect(toAnthropicDirectModelId("openai/gpt-5.4")).toBeNull();
   });
 });
 

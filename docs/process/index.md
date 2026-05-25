@@ -5,6 +5,8 @@ chat history, local memory, or vibes.
 
 Start here:
 
+- [Local Development Setup](local-development.md) - `./init.sh` bootstrap for
+  local checkouts, worktrees, sandboxes, and VMs.
 - [Development Workflow](development-workflow.md) - day-to-day implementation
   loop for non-trivial changes.
 - [Feature Ticket Format](feature-ticket-format.md) - standard issue shape for

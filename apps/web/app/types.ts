@@ -21,6 +21,10 @@ export type WebAgentStepFinishMetadata = {
 export type WebAgentMessageMetadata = {
   selectedModelId?: string;
   modelId?: string;
+  inferenceRoute?: "gateway" | "user";
+  inferenceProfileId?: string;
+  inferenceProfileName?: string;
+  inferenceProvider?: string;
   lastStepUsage?: LanguageModelUsage;
   totalMessageUsage?: LanguageModelUsage;
   /** Gateway-reported cost of the most recent step, in USD. */

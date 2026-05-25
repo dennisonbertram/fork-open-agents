@@ -28,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { AccountsSectionSkeleton } from "./accounts-section";
 import { ComposioSectionSkeleton } from "./composio-section";
+import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { PreferencesSectionSkeleton } from "./preferences-section";
@@ -252,7 +253,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (
-      <ModelVariantsSectionSkeleton />
+      <div className="space-y-6">
+        <InferenceProfilesSectionSkeleton />
+        <ModelVariantsSectionSkeleton />
+      </div>
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
     ) : (

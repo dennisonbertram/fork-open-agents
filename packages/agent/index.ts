@@ -1,4 +1,11 @@
-export { type GatewayConfig, type GatewayOptions, gateway } from "./models";
+export {
+  type DirectAnthropicConfig,
+  type GatewayConfig,
+  type GatewayOptions,
+  directAnthropicModel,
+  gateway,
+  toAnthropicDirectModelId,
+} from "./models";
 export type {
   AgentModelSelection,
   AgentSandboxContext,

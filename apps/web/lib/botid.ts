@@ -1,4 +1,5 @@
 import { checkBotId } from "botid/server";
+import { isTestAuthEnabled } from "@/lib/session/test-auth";
 
 /**
  * Shared Vercel BotID server-side configuration.
@@ -20,7 +21,7 @@ export const botIdConfig = {
 };
 
 export async function checkBotProtection() {
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" || isTestAuthEnabled()) {
     return {
       isHuman: true,
       isBot: false,

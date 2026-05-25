@@ -202,21 +202,28 @@ function usePreferencesSectionState() {
   );
   const [copiedPublicProfile, setCopiedPublicProfile] = useState(false);
 
+  const catalogModelOptions = useMemo(
+    () => modelOptions.filter((option) => option.source !== "user"),
+    [modelOptions],
+  );
   const selectedDefaultModelId =
-    preferences?.defaultModelId ?? getDefaultModelOptionId(modelOptions);
+    preferences?.defaultModelId ?? getDefaultModelOptionId(catalogModelOptions);
   const selectedSubagentModelId = preferences?.defaultSubagentModelId ?? "auto";
   const publicProfilePath = session?.user?.username
     ? `/u/${session.user.username}`
     : null;
 
   const defaultModelOptions = useMemo(
-    () => withMissingModelOption(modelOptions, selectedDefaultModelId),
-    [modelOptions, selectedDefaultModelId],
+    () => withMissingModelOption(catalogModelOptions, selectedDefaultModelId),
+    [catalogModelOptions, selectedDefaultModelId],
   );
   const subagentModelOptions = useMemo(
     () =>
-      withMissingModelOption(modelOptions, preferences?.defaultSubagentModelId),
-    [modelOptions, preferences?.defaultSubagentModelId],
+      withMissingModelOption(
+        catalogModelOptions,
+        preferences?.defaultSubagentModelId,
+      ),
+    [catalogModelOptions, preferences?.defaultSubagentModelId],
   );
 
   const handleThemeChange = (nextTheme: string) => {
@@ -468,7 +475,7 @@ function usePreferencesSectionState() {
     preferences,
     loading,
     updatePreferences,
-    modelOptions,
+    modelOptions: catalogModelOptions,
     modelOptionsLoading,
     isSaving,
     globalSkillSource,

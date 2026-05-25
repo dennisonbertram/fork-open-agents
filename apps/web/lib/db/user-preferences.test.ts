@@ -14,6 +14,7 @@ describe("toUserPreferencesData", () => {
     expect(toUserPreferencesData()).toEqual({
       defaultModelId: "openai/gpt-5.4",
       defaultSubagentModelId: null,
+      defaultInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "unified",
@@ -82,6 +83,7 @@ describe("toUserPreferencesData", () => {
     const result = toUserPreferencesData({
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
+      defaultInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
@@ -178,6 +180,7 @@ describe("toUserPreferencesData", () => {
     expect(result).toEqual({
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
+      defaultInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
