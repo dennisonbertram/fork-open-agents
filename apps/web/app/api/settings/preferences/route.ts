@@ -14,6 +14,7 @@ import {
 interface UpdatePreferencesRequest {
   defaultModelId?: string;
   defaultSubagentModelId?: string | null;
+  defaultInferenceProfileId?: string | null;
   defaultSandboxType?: SandboxType;
   defaultManagedRuntimeProfileId?: string;
   defaultDiffMode?: DiffMode;
@@ -105,6 +106,19 @@ export async function PATCH(req: Request) {
       );
     }
     updates.defaultSubagentModelId = body.defaultSubagentModelId;
+  }
+
+  if (body.defaultInferenceProfileId !== undefined) {
+    if (
+      body.defaultInferenceProfileId !== null &&
+      typeof body.defaultInferenceProfileId !== "string"
+    ) {
+      return Response.json(
+        { error: "Invalid defaultInferenceProfileId" },
+        { status: 400 },
+      );
+    }
+    updates.defaultInferenceProfileId = body.defaultInferenceProfileId;
   }
 
   if (

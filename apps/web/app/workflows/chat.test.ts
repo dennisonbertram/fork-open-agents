@@ -109,6 +109,7 @@ const spies = {
 let testSessionRecord: {
   id: string;
   userId: string;
+  inferenceProfileId: string | null;
   autoCommitPushOverride: boolean | null;
   autoCreatePrOverride: boolean | null;
   repoOwner: string | null;
@@ -118,10 +119,12 @@ let testChatRecord: {
   id: string;
   sessionId: string;
   modelId: string | null;
+  inferenceProfileId: string | null;
 };
 let testPreferences: {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
+  defaultInferenceProfileId: string | null;
   defaultSandboxType: "vercel";
   defaultDiffMode: "unified";
   autoCommitPush: boolean;
@@ -355,7 +358,12 @@ mock.module("ai", () => ({
     }),
 }));
 
-mock.module("@open-agents/agent", () => ({}));
+mock.module("@open-agents/agent", () => ({
+  toAnthropicDirectModelId: (modelId: string) =>
+    modelId.startsWith("anthropic/")
+      ? modelId.slice("anthropic/".length).replaceAll(".", "-")
+      : null,
+}));
 
 mock.module("@/lib/db/sessions", () => ({
   getChatById: async () => testChatRecord,
@@ -364,6 +372,18 @@ mock.module("@/lib/db/sessions", () => ({
 
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => testPreferences,
+}));
+
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: async (
+    _userId: string,
+    profileId: string,
+  ) => ({
+    id: profileId,
+    name: "Personal Anthropic",
+    provider: "anthropic",
+    enabled: true,
+  }),
 }));
 
 mock.module("@/lib/observability/events", () => ({
@@ -445,6 +465,7 @@ beforeEach(() => {
   testSessionRecord = {
     id: "session-1",
     userId: "user-1",
+    inferenceProfileId: null,
     autoCommitPushOverride: null,
     autoCreatePrOverride: null,
     repoOwner: "acme",
@@ -454,10 +475,12 @@ beforeEach(() => {
     id: "chat-1",
     sessionId: "session-1",
     modelId: null,
+    inferenceProfileId: null,
   };
   testPreferences = {
     defaultModelId: "anthropic/claude-haiku-4.5",
     defaultSubagentModelId: null,
+    defaultInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,

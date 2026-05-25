@@ -9,6 +9,12 @@ import {
   type ModelVariant,
 } from "@/lib/model-variants";
 import {
+  USER_INFERENCE_OPTION_PREFIX,
+  createUserInferenceModelOptionId,
+  parseModelOptionSelection,
+} from "@/lib/inference/model-option-id";
+import type { SafeInferenceProfile } from "@/lib/inference/types";
+import {
   getProviderFromModelId,
   stripProviderPrefix,
 } from "@/components/provider-icons";
@@ -22,6 +28,11 @@ export interface ModelOption {
   contextWindow?: number;
   cost?: AvailableModelCost;
   provider: string;
+  source?: "catalog" | "user";
+  baseModelId?: string;
+  inferenceProfileId?: string;
+  secondaryLabel?: string;
+  searchText?: string;
 }
 
 function toBaseModelOption(model: AvailableModel): ModelOption {
@@ -36,6 +47,7 @@ function toBaseModelOption(model: AvailableModel): ModelOption {
     contextWindow: model.context_window,
     ...(model.cost ? { cost: model.cost } : {}),
     provider,
+    source: "catalog",
   };
 }
 
@@ -57,11 +69,44 @@ function toVariantOption(
     contextWindow: baseModel?.context_window,
     ...(baseModel?.cost ? { cost: baseModel.cost } : {}),
     provider,
+    source: "catalog",
+    baseModelId: variant.baseModelId,
+  };
+}
+
+function toUserInferenceOption(
+  profile: SafeInferenceProfile,
+  model: AvailableModel,
+): ModelOption {
+  const label = getModelDisplayName(model);
+  const provider = getProviderFromModelId(model.id);
+
+  return {
+    id: createUserInferenceModelOptionId(profile.id, model.id),
+    label,
+    shortLabel: stripProviderPrefix(label, provider),
+    description: `Direct Anthropic via ${profile.name}`,
+    isVariant: false,
+    contextWindow: model.context_window,
+    ...(model.cost ? { cost: model.cost } : {}),
+    provider: "user",
+    source: "user",
+    baseModelId: model.id,
+    inferenceProfileId: profile.id,
+    secondaryLabel: profile.name,
+    searchText: [
+      label,
+      model.id,
+      provider,
+      profile.name,
+      profile.provider,
+      profile.baseUrl ?? "",
+    ].join(" "),
   };
 }
 
 /** Providers pinned to the top of the list, in order. */
-const PRIORITY_PROVIDERS = ["anthropic", "openai"];
+const PRIORITY_PROVIDERS = ["user", "anthropic", "openai"];
 
 export interface ModelGroup {
   provider: string;
@@ -105,6 +150,7 @@ export function groupByProvider(options: ModelOption[]): ModelGroup[] {
 export function buildModelOptions(
   models: AvailableModel[],
   modelVariants: ModelVariant[],
+  inferenceProfiles: SafeInferenceProfile[] = [],
 ): ModelOption[] {
   const baseModelOptions = models.map(toBaseModelOption);
   const baseModelsById = new Map(models.map((model) => [model.id, model]));
@@ -113,14 +159,23 @@ export function buildModelOptions(
     toVariantOption(variant, baseModelsById.get(variant.baseModelId)),
   );
 
-  return [...baseModelOptions, ...variantOptions];
+  const userInferenceOptions = inferenceProfiles
+    .filter((profile) => profile.enabled && profile.provider === "anthropic")
+    .flatMap((profile) =>
+      models
+        .filter((model) => model.id.startsWith("anthropic/"))
+        .map((model) => toUserInferenceOption(profile, model)),
+    );
+
+  return [...userInferenceOptions, ...baseModelOptions, ...variantOptions];
 }
 
 export function buildSessionChatModelOptions(
   models: AvailableModel[],
   modelVariants: ModelVariant[],
+  inferenceProfiles: SafeInferenceProfile[] = [],
 ): ModelOption[] {
-  return buildModelOptions(models, modelVariants);
+  return buildModelOptions(models, modelVariants, inferenceProfiles);
 }
 
 export function withMissingModelOption(
@@ -129,6 +184,27 @@ export function withMissingModelOption(
 ): ModelOption[] {
   if (!modelId || modelOptions.some((option) => option.id === modelId)) {
     return modelOptions;
+  }
+
+  if (modelId.startsWith(USER_INFERENCE_OPTION_PREFIX)) {
+    const parsed = parseModelOptionSelection(modelId);
+    const label = `${parsed.modelId} (missing profile)`;
+
+    return [
+      ...modelOptions,
+      {
+        id: modelId,
+        label,
+        shortLabel: label,
+        description: "Inference profile no longer exists",
+        isVariant: false,
+        contextWindow: undefined,
+        provider: "user",
+        source: "user",
+        baseModelId: parsed.modelId,
+        inferenceProfileId: parsed.inferenceProfileId ?? undefined,
+      },
+    ];
   }
 
   if (!modelId.startsWith(MODEL_VARIANT_ID_PREFIX)) {

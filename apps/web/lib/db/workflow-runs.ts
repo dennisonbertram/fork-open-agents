@@ -19,6 +19,8 @@ export async function recordWorkflowRun(data: {
   sessionId: string;
   userId: string;
   modelId?: string;
+  inferenceRoute?: "gateway" | "user" | null;
+  inferenceProfileId?: string | null;
   requestId?: string | null;
   runtimeMode?: "classic" | "managed_runtime" | null;
   sandboxName?: string | null;
@@ -41,6 +43,8 @@ export async function recordWorkflowRun(data: {
         sessionId: data.sessionId,
         userId: data.userId,
         modelId: data.modelId ?? null,
+        inferenceRoute: data.inferenceRoute ?? null,
+        inferenceProfileId: data.inferenceProfileId ?? null,
         requestId: data.requestId ?? null,
         runtimeMode: data.runtimeMode ?? null,
         sandboxName: data.sandboxName ?? null,

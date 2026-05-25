@@ -17,7 +17,7 @@ type AuthResult =
 type OwnedSessionResult =
   | {
       ok: true;
-      sessionRecord: { id: string };
+      sessionRecord: { id: string; inferenceProfileId: string | null };
     }
   | {
       ok: false;
@@ -34,13 +34,14 @@ type ChatRecord = {
   sessionId: string;
   title: string;
   modelId: string;
+  inferenceProfileId: string | null;
   composioSelection: ChatComposioSelection;
 };
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 let ownedSessionResult: OwnedSessionResult = {
   ok: true,
-  sessionRecord: { id: "session-1" },
+  sessionRecord: { id: "session-1", inferenceProfileId: null },
 };
 let currentSession: {
   authProvider?: "vercel" | "github";
@@ -56,6 +57,7 @@ let createdChat: ChatRecord = {
   sessionId: "session-1",
   title: "New chat",
   modelId: "model-default",
+  inferenceProfileId: null,
   composioSelection: { mainProfileId: "profile-main" },
 };
 
@@ -65,6 +67,7 @@ const createChatCalls: Array<{
   sessionId: string;
   title: string;
   modelId: string;
+  inferenceProfileId: string | null;
   composioSelection: ChatComposioSelection;
 }> = [];
 
@@ -92,6 +95,7 @@ mock.module("@/lib/db/sessions", () => ({
     sessionId: string;
     title: string;
     modelId: string;
+    inferenceProfileId: string | null;
     composioSelection: ChatComposioSelection;
   }) => {
     createChatCalls.push(input);
@@ -103,6 +107,7 @@ mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => ({
     defaultModelId: "model-default",
     defaultSubagentModelId: null,
+    defaultInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,
@@ -144,7 +149,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
     authResult = { ok: true, userId: "user-1" };
     ownedSessionResult = {
       ok: true,
-      sessionRecord: { id: "session-1" },
+      sessionRecord: { id: "session-1", inferenceProfileId: null },
     };
     currentSession = { user: { id: "user-1" } };
     chatSummaries = [{ id: "chat-1", title: "Chat 1" }];
@@ -154,6 +159,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-1",
       title: "New chat",
       modelId: "model-default",
+      inferenceProfileId: null,
       composioSelection: { mainProfileId: "profile-main" },
     };
     getSummaryCalls.length = 0;
@@ -229,6 +235,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-1",
       title: "Existing",
       modelId: "model-existing",
+      inferenceProfileId: null,
       composioSelection: { mainProfileId: null },
     };
     const { POST } = await routeModulePromise;
@@ -250,6 +257,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       sessionId: "session-2",
       title: "Elsewhere",
       modelId: "model-existing",
+      inferenceProfileId: null,
       composioSelection: { mainProfileId: null },
     };
     const { POST } = await routeModulePromise;
@@ -281,6 +289,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
         sessionId: "session-abc",
         title: "New chat",
         modelId: "model-default",
+        inferenceProfileId: null,
         composioSelection: { mainProfileId: "profile-main" },
       },
     ]);

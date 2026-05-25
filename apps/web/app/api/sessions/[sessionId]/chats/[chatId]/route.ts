@@ -9,6 +9,7 @@ import {
   getChatsBySessionId,
   updateChat,
 } from "@/lib/db/sessions";
+import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
 import {
   chatComposioSelectionInputSchema,
   type ChatComposioSelection,
@@ -21,6 +22,7 @@ type RouteContext = {
 interface UpdateChatRequest {
   title?: string;
   modelId?: string;
+  inferenceProfileId?: string | null;
   composioSelection?: ChatComposioSelection;
 }
 
@@ -28,6 +30,7 @@ export interface ChatRefreshResponse {
   chat: {
     id: string;
     modelId: string | null;
+    inferenceProfileId: string | null;
     composioSelection: ChatComposioSelection;
     activeStreamId: string | null;
   };
@@ -59,6 +62,7 @@ export async function GET(_req: Request, context: RouteContext) {
     chat: {
       id: chatContext.chat.id,
       modelId,
+      inferenceProfileId: chatContext.chat.inferenceProfileId ?? null,
       composioSelection: chatContext.chat.composioSelection,
       activeStreamId: chatContext.chat.activeStreamId,
     },
@@ -93,12 +97,24 @@ export async function PATCH(req: Request, context: RouteContext) {
 
   const nextTitle = body.title?.trim();
   const nextModelId = body.modelId?.trim();
+  const hasInferenceProfileUpdate = "inferenceProfileId" in body;
+  const nextInferenceProfileId =
+    body.inferenceProfileId === null
+      ? null
+      : typeof body.inferenceProfileId === "string"
+        ? body.inferenceProfileId.trim()
+        : undefined;
   const nextComposioSelection =
     body.composioSelection === undefined
       ? undefined
       : chatComposioSelectionInputSchema.safeParse(body.composioSelection);
 
-  if (!nextTitle && !nextModelId && nextComposioSelection === undefined) {
+  if (
+    !nextTitle &&
+    !nextModelId &&
+    !hasInferenceProfileUpdate &&
+    nextComposioSelection === undefined
+  ) {
     return Response.json(
       { error: "At least one field is required" },
       { status: 400 },
@@ -110,10 +126,48 @@ export async function PATCH(req: Request, context: RouteContext) {
       { status: 400 },
     );
   }
+  if (hasInferenceProfileUpdate) {
+    if (
+      nextInferenceProfileId !== null &&
+      (typeof nextInferenceProfileId !== "string" ||
+        nextInferenceProfileId.length === 0)
+    ) {
+      return Response.json(
+        { error: "Invalid inferenceProfileId" },
+        { status: 400 },
+      );
+    }
+
+    if (nextInferenceProfileId !== null) {
+      const profile = await getInferenceProfileByIdForUser(
+        authResult.userId,
+        nextInferenceProfileId,
+      );
+      if (!profile || !profile.enabled) {
+        return Response.json(
+          { error: "Inference profile not found" },
+          { status: 404 },
+        );
+      }
+
+      const effectiveModelId =
+        nextModelId ?? chatContext.chat.modelId ?? undefined;
+      if (!effectiveModelId?.startsWith("anthropic/")) {
+        return Response.json(
+          {
+            error:
+              "User inference profiles currently support Anthropic models only",
+          },
+          { status: 400 },
+        );
+      }
+    }
+  }
 
   const updatePayload: {
     title?: string;
     modelId?: string;
+    inferenceProfileId?: string | null;
     composioSelection?: ChatComposioSelection;
   } = {};
   if (nextTitle) {
@@ -121,6 +175,9 @@ export async function PATCH(req: Request, context: RouteContext) {
   }
   if (nextModelId) {
     updatePayload.modelId = nextModelId;
+  }
+  if (hasInferenceProfileUpdate) {
+    updatePayload.inferenceProfileId = nextInferenceProfileId ?? null;
   }
   if (nextComposioSelection?.success) {
     updatePayload.composioSelection = nextComposioSelection.data;

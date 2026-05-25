@@ -87,6 +87,9 @@ export async function POST(req: Request, context: RouteContext) {
     sessionId,
     title: "New chat",
     modelId: preferences.defaultModelId,
+    inferenceProfileId:
+      sessionContext.sessionRecord.inferenceProfileId ??
+      preferences.defaultInferenceProfileId,
     composioSelection: {
       mainProfileId: preferences.composioAgentDefaults.main.defaultProfileId,
     },

@@ -1,11 +1,14 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 type AuthSession = { user: { id: string } } | null;
 type SessionRecord = {
   id: string;
   userId: string;
   status: "running" | "completed" | "failed" | "archived";
   managedRuntimeProfileId: string;
+  inferenceProfileId: string | null;
   sandboxState: null;
 };
 
@@ -15,6 +18,7 @@ let sessionRecord: SessionRecord | null = {
   userId: "user-1",
   status: "running",
   managedRuntimeProfileId: "web-bun-agent-browser",
+  inferenceProfileId: null,
   sandboxState: null,
 };
 const updateSessionCalls: Array<{
@@ -22,6 +26,10 @@ const updateSessionCalls: Array<{
   update: Record<string, unknown>;
 }> = [];
 let savedProfileExists = false;
+let inferenceProfile: {
+  id: string;
+  enabled: boolean;
+} | null = null;
 
 mock.module("next/server", () => ({
   after: (callback: () => void) => callback(),
@@ -38,6 +46,11 @@ mock.module("@/lib/db/sessions", () => ({
     updateSessionCalls.push({ sessionId, update });
     return sessionRecord ? { ...sessionRecord, ...update } : null;
   },
+}));
+
+mock.module("@/lib/db/inference-profiles", () => ({
+  getInferenceProfileByIdForUser: async (_userId: string, profileId: string) =>
+    inferenceProfile?.id === profileId ? inferenceProfile : null,
 }));
 
 mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
@@ -86,10 +99,12 @@ describe("/api/sessions/[sessionId]", () => {
       userId: "user-1",
       status: "running",
       managedRuntimeProfileId: "web-bun-agent-browser",
+      inferenceProfileId: null,
       sandboxState: null,
     };
     updateSessionCalls.length = 0;
     savedProfileExists = false;
+    inferenceProfile = null;
   });
 
   test("PATCH persists a valid runtime mode", async () => {
@@ -182,5 +197,59 @@ describe("/api/sessions/[sessionId]", () => {
     expect(
       (body.session as Record<string, unknown>).managedRuntimeProfileId,
     ).toBe("session-profile-draft-1");
+  });
+
+  test("PATCH persists a valid inference profile override", async () => {
+    inferenceProfile = { id: "inference-profile-1", enabled: true };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ inferenceProfileId: "inference-profile-1" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: { inferenceProfileId: "inference-profile-1" },
+      },
+    ]);
+    expect((body.session as Record<string, unknown>).inferenceProfileId).toBe(
+      "inference-profile-1",
+    );
+  });
+
+  test("PATCH clears an inference profile override", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ inferenceProfileId: null }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: { inferenceProfileId: null },
+      },
+    ]);
+  });
+
+  test("PATCH rejects unavailable inference profiles", async () => {
+    inferenceProfile = { id: "inference-profile-1", enabled: false };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      patchRequest({ inferenceProfileId: "inference-profile-1" }),
+      routeContext(),
+    );
+    const body = await getJson(response);
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid inference profile");
+    expect(updateSessionCalls).toEqual([]);
   });
 });

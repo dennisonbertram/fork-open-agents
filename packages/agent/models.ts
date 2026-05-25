@@ -6,8 +6,13 @@ import {
   type JSONValue,
   type LanguageModel,
 } from "ai";
-import type { AnthropicLanguageModelOptions } from "@ai-sdk/anthropic";
+import {
+  createAnthropic,
+  type AnthropicLanguageModelOptions,
+} from "@ai-sdk/anthropic";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+
+type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
   return modelId.includes("4.6") || modelId.includes("4.7");
@@ -92,8 +97,16 @@ export interface GatewayConfig {
   apiKey: string;
 }
 
+export interface DirectAnthropicConfig {
+  provider: "anthropic";
+  modelId: string;
+  apiKey: string;
+  baseURL?: string;
+}
+
 export interface GatewayOptions {
   config?: GatewayConfig;
+  directAnthropic?: DirectAnthropicConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
   appName?: string;
   appUrl?: string;
@@ -107,6 +120,50 @@ export function shouldApplyOpenAIReasoningDefaults(modelId: string): boolean {
 
 function shouldApplyOpenAITextVerbosityDefaults(modelId: string): boolean {
   return modelId.startsWith("openai/gpt-5.4");
+}
+
+const ANTHROPIC_DIRECT_MODEL_IDS: Record<string, string> = {
+  "anthropic/claude-haiku-4.5": "claude-haiku-4-5",
+  "anthropic/claude-opus-4": "claude-opus-4-0",
+  "anthropic/claude-opus-4.1": "claude-opus-4-1",
+  "anthropic/claude-opus-4.5": "claude-opus-4-5",
+  "anthropic/claude-opus-4.6": "claude-opus-4-6",
+  "anthropic/claude-opus-4.7": "claude-opus-4-7",
+  "anthropic/claude-sonnet-4": "claude-sonnet-4-0",
+  "anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
+  "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",
+};
+
+export function toAnthropicDirectModelId(modelId: string): string | null {
+  if (!modelId.startsWith("anthropic/")) {
+    return null;
+  }
+
+  const mappedModelId = ANTHROPIC_DIRECT_MODEL_IDS[modelId];
+  if (mappedModelId) {
+    return mappedModelId;
+  }
+
+  return modelId.slice("anthropic/".length).replaceAll(".", "-");
+}
+
+export function directAnthropicModel(
+  config: DirectAnthropicConfig,
+  options: Pick<GatewayOptions, "appName" | "appUrl"> = {},
+): WrappableLanguageModel {
+  const attributionHeaders = {
+    "http-referer": options.appUrl ?? "https://open-agents.dev",
+    "x-title": options.appName ?? "Open Agents",
+  };
+  const anthropicProvider = createAnthropic({
+    apiKey: config.apiKey,
+    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    headers: attributionHeaders,
+  });
+
+  return anthropicProvider(
+    config.modelId as Parameters<typeof anthropicProvider>[0],
+  ) as WrappableLanguageModel;
 }
 
 export function getProviderOptionsForModel(
@@ -173,22 +230,31 @@ export function gateway(
   modelId: GatewayModelId,
   options: GatewayOptions = {},
 ): LanguageModel {
-  const { config, providerOptionsOverrides, appName, appUrl } = options;
+  const { config, directAnthropic, providerOptionsOverrides, appName, appUrl } =
+    options;
 
   const attributionHeaders = {
     "http-referer": appUrl ?? "https://open-agents.dev",
     "x-title": appName ?? "Open Agents",
   };
 
-  const baseGateway = config
-    ? createGateway({
-        baseURL: config.baseURL,
-        apiKey: config.apiKey,
-        headers: attributionHeaders,
-      })
-    : createGateway({ headers: attributionHeaders });
+  let model: WrappableLanguageModel;
+  if (directAnthropic) {
+    model = directAnthropicModel(directAnthropic, {
+      appName,
+      appUrl,
+    });
+  } else {
+    const baseGateway = config
+      ? createGateway({
+          baseURL: config.baseURL,
+          apiKey: config.apiKey,
+          headers: attributionHeaders,
+        })
+      : createGateway({ headers: attributionHeaders });
 
-  let model: LanguageModel = baseGateway(modelId);
+    model = baseGateway(modelId);
+  }
 
   const providerOptions = getProviderOptionsForModel(
     modelId,

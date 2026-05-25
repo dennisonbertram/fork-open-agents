@@ -147,6 +147,41 @@ export const vercelProjectLinks = pgTable(
   ],
 );
 
+export const inferenceProfiles = pgTable(
+  "inference_profiles",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    provider: text("provider", {
+      enum: ["anthropic"],
+    }).notNull(),
+    baseUrl: text("base_url"),
+    encryptedApiKey: text("encrypted_api_key").notNull(),
+    keyLast4: text("key_last4").notNull(),
+    keyFingerprint: text("key_fingerprint").notNull(),
+    status: text("status", {
+      enum: ["untested", "verified", "failed"],
+    })
+      .notNull()
+      .default("untested"),
+    lastTestedAt: timestamp("last_tested_at"),
+    lastTestMessage: text("last_test_message"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("inference_profiles_user_idx").on(table.userId),
+    uniqueIndex("inference_profiles_user_name_idx").on(
+      table.userId,
+      table.name,
+    ),
+  ],
+);
+
 export const sessions = pgTable(
   "sessions",
   {
@@ -191,6 +226,10 @@ export const sessions = pgTable(
     managedRuntimeProfileId: text("managed_runtime_profile_id")
       .notNull()
       .default("web-bun-agent-browser"),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
     // Lifecycle orchestration state for sandbox management
     lifecycleState: text("lifecycle_state", {
       enum: [
@@ -240,6 +279,10 @@ export const chats = pgTable(
       .references(() => sessions.id, { onDelete: "cascade" }),
     title: text("title").notNull(),
     modelId: text("model_id").default("anthropic/claude-haiku-4.5"),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
     composioSelection: jsonb("composio_selection")
       .$type<ChatComposioSelection>()
       .notNull()
@@ -756,6 +799,13 @@ export const workflowRuns = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     modelId: text("model_id"),
+    inferenceRoute: text("inference_route", {
+      enum: ["gateway", "user"],
+    }),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
     requestId: text("request_id"),
     runtimeMode: text("runtime_mode", {
       enum: ["classic", "managed_runtime"],
@@ -813,6 +863,8 @@ export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
 export type NewVercelProjectLink = typeof vercelProjectLinks.$inferInsert;
+export type InferenceProfile = typeof inferenceProfiles.$inferSelect;
+export type NewInferenceProfile = typeof inferenceProfiles.$inferInsert;
 export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
 export type SandboxService = typeof sandboxServices.$inferSelect;
@@ -943,6 +995,10 @@ export const userPreferences = pgTable("user_preferences", {
   defaultManagedRuntimeProfileId: text("default_managed_runtime_profile_id")
     .notNull()
     .default("web-bun-agent-browser"),
+  defaultInferenceProfileId: text("default_inference_profile_id").references(
+    () => inferenceProfiles.id,
+    { onDelete: "set null" },
+  ),
   defaultDiffMode: text("default_diff_mode", {
     enum: ["unified", "split"],
   }).default("unified"),
@@ -988,6 +1044,13 @@ export const usageEvents = pgTable("usage_events", {
     .default("main"),
   provider: text("provider"),
   modelId: text("model_id"),
+  inferenceRoute: text("inference_route", {
+    enum: ["gateway", "user"],
+  }),
+  inferenceProfileId: text("inference_profile_id").references(
+    () => inferenceProfiles.id,
+    { onDelete: "set null" },
+  ),
   inputTokens: integer("input_tokens").notNull().default(0),
   cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
   outputTokens: integer("output_tokens").notNull().default(0),

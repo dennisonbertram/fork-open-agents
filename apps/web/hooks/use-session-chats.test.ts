@@ -18,6 +18,7 @@ function createChat(
     sessionId: "session-1",
     title: `Chat ${id}`,
     modelId: "anthropic/claude-haiku-4.5",
+    inferenceProfileId: null,
     composioSelection: defaultChatComposioSelection,
     activeStreamId: null,
     lastAssistantMessageAt: null,

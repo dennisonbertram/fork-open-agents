@@ -216,7 +216,19 @@ function DefaultProviderIcon(props: IconProps) {
   );
 }
 
+function UserInferenceIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" {...props}>
+      <path
+        fill="currentColor"
+        d="M6.75 9.25a4.25 4.25 0 1 1 3.03 1.29l-.03.03V12H8.31v1.44H6.88v1.43H4.5V12.5zm3-5.88a2.88 2.88 0 0 0-2 4.95l.47.45-2.28 2.3v2.36h.44V12h1.43v-1.44h1.43v-.72l.44-.02a2.88 2.88 0 0 0 .07-5.75m1.32 1.95a.88.88 0 1 1 0 1.76.88.88 0 0 1 0-1.76"
+      />
+    </svg>
+  );
+}
+
 export type ProviderId =
+  | "user"
   | "anthropic"
   | "openai"
   | "google"
@@ -234,6 +246,7 @@ export type ProviderId =
   | string;
 
 const providerIconMap: Record<string, React.FC<IconProps>> = {
+  user: UserInferenceIcon,
   anthropic: AnthropicIcon,
   openai: OpenAIIcon,
   google: GoogleIcon,
@@ -249,6 +262,7 @@ const providerIconMap: Record<string, React.FC<IconProps>> = {
 };
 
 const providerDisplayNames: Record<string, string> = {
+  user: "User",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",

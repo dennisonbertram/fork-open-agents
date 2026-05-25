@@ -4,12 +4,17 @@ This file provides guidance for AI coding agents working in this repository.
 
 **This is a living document.** When you make a mistake or learn something new about this codebase, add it to [Lessons Learned](docs/agents/lessons-learned.md).
 
+Keep this file as a routing document. Do not add long runbooks, design notes,
+or detailed procedures here; put that material in `docs/agents`,
+`docs/process`, or `docs/plans`, then link to it from this file.
+
 ## Quick Links
 
 - [Architecture & Workspace Structure](docs/agents/architecture.md)
 - [Code Style & Patterns](docs/agents/code-style.md)
 - [Lessons Learned](docs/agents/lessons-learned.md)
 - [Process Index](docs/process/index.md)
+- [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
 - [Observability Discipline](docs/process/observability-discipline.md)
@@ -35,6 +40,8 @@ workspace. Treat `vercel-labs/open-agents` as an upstream source only.
 
 Use the process docs for non-trivial work:
 
+- [Local Development Setup](docs/process/local-development.md) defines the
+  `./init.sh` bootstrap path for checkouts, worktrees, sandboxes, and VMs.
 - [Feature Ticket Format](docs/process/feature-ticket-format.md) defines the
   GitHub issue shape for PR-sized work.
 - [GitHub Build Process](docs/process/github-build-process.md) defines the
@@ -89,6 +96,7 @@ Neon database branching is enabled in the Vercel project settings. Every preview
 
 ```bash
 # Development
+./init.sh              # Set up local dependencies and env
 bun run web            # Run web app
 
 # Quality checks (REQUIRED after making any changes)

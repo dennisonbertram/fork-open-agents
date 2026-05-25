@@ -348,6 +348,8 @@ export async function recordWorkflowUsage(
     managedRuntimeProfileId?: string | null;
     managedRuntimeProfileVersion?: string | null;
     managedRuntimeProfileRunId?: string | null;
+    inferenceRoute?: "gateway" | "user" | null;
+    inferenceProfileId?: string | null;
     errorMessage?: string | null;
     status: WorkflowRunStatus;
     startedAt: string;
@@ -378,6 +380,8 @@ export async function recordWorkflowUsage(
             workflowRun.managedRuntimeProfileVersion ?? null,
           managedRuntimeProfileRunId:
             workflowRun.managedRuntimeProfileRunId ?? null,
+          inferenceRoute: workflowRun.inferenceRoute ?? null,
+          inferenceProfileId: workflowRun.inferenceProfileId ?? null,
           errorMessage: workflowRun.errorMessage ?? null,
           status: workflowRun.status,
           startedAt: workflowRun.startedAt,
@@ -396,6 +400,8 @@ export async function recordWorkflowUsage(
         source: "web",
         agentType: "main",
         model: modelId,
+        inferenceRoute: workflowRun?.inferenceRoute ?? null,
+        inferenceProfileId: workflowRun?.inferenceProfileId ?? null,
         messages: [responseMessage],
         usage: {
           inputTokens: totalUsage.inputTokens ?? 0,

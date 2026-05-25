@@ -35,6 +35,7 @@ import { useSessionSkills } from "@/hooks/use-session-skills";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { type ModelOption, withMissingModelOption } from "@/lib/model-options";
+import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import {
   clearSandboxResumeState,
   clearSandboxState,
@@ -119,7 +120,10 @@ type SessionChatContextValue = {
   archiveSession: () => Promise<void>;
   unarchiveSession: () => Promise<void>;
   updateSessionTitle: (title: string) => Promise<void>;
-  updateChatModel: (modelId: string) => Promise<void>;
+  updateChatModel: (
+    modelId: string,
+    inferenceProfileId?: string | null,
+  ) => Promise<void>;
   updateChatComposioSelection: (
     selection: ChatComposioSelection,
   ) => Promise<void>;
@@ -330,24 +334,37 @@ export function SessionChatProvider({
     });
   const { preferences: userPrefs } = useUserPreferences();
   const enabledModelIds = userPrefs?.enabledModelIds;
+  const selectedModelOptionId = getModelOptionSelectionId(
+    chatInfo.modelId,
+    chatInfo.inferenceProfileId,
+  );
   const baseModelOptions = useMemo(() => {
     if (!enabledModelIds || enabledModelIds.length === 0) {
       return allModelOptions;
     }
     const enabledSet = new Set(enabledModelIds);
     return allModelOptions.filter(
-      (option) => enabledSet.has(option.id) || option.id === chatInfo.modelId,
+      (option) =>
+        option.source === "user" ||
+        enabledSet.has(option.id) ||
+        option.id === selectedModelOptionId ||
+        option.id === chatInfo.modelId,
     );
-  }, [allModelOptions, enabledModelIds, chatInfo.modelId]);
+  }, [
+    allModelOptions,
+    enabledModelIds,
+    chatInfo.modelId,
+    selectedModelOptionId,
+  ]);
   const modelOptions = useMemo(
-    () => withMissingModelOption(baseModelOptions, chatInfo.modelId),
-    [baseModelOptions, chatInfo.modelId],
+    () => withMissingModelOption(baseModelOptions, selectedModelOptionId),
+    [baseModelOptions, selectedModelOptionId],
   );
   const modelOptionsLoading =
     modelOptions.length === 0 && modelOptionsLoadingFromApi;
   const contextLimit = useMemo(
-    () => resolveContextLimitForModel(modelOptions, chatInfo.modelId ?? null),
-    [modelOptions, chatInfo.modelId],
+    () => resolveContextLimitForModel(modelOptions, selectedModelOptionId),
+    [modelOptions, selectedModelOptionId],
   );
   const hadInitialMessages = initialMessages.length > 0;
   const {
@@ -1063,13 +1080,16 @@ export function SessionChatProvider({
   );
 
   const updateChatModel = useCallback(
-    async (modelId: string) => {
+    async (modelId: string, inferenceProfileId?: string | null) => {
       const res = await fetch(
         `/api/sessions/${sessionRecord.id}/chats/${chatInfo.id}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ modelId }),
+          body: JSON.stringify({
+            modelId,
+            inferenceProfileId: inferenceProfileId ?? null,
+          }),
         },
       );
 
