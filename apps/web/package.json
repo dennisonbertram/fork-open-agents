@@ -13,7 +13,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:check": "bun run scripts/check-migrations.ts",
-    "composio:smoke": "bun run scripts/composio-smoke.ts"
+    "composio:smoke": "bun run scripts/composio-smoke.ts",
+    "preview:smoke": "bun run scripts/preview-smoke.ts"
   },
   "dependencies": {
     "@ai-sdk/elevenlabs": "^2.0.29",

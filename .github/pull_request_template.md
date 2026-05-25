@@ -40,6 +40,18 @@ Out of scope:
 - [ ] `git diff --check`
 - [ ] `bun --bun run ci`
 
+## Preview / Release Safety
+
+- Risk tier: Low / Medium / High
+- Vercel Preview URL:
+- [ ] Preview smoke passed, or not applicable because:
+- [ ] Agent Browser Preview review completed, or not applicable because:
+- Agent Browser evidence:
+- [ ] Staging smoke required for this PR
+- Staging evidence, or reason deferred:
+- Production smoke plan:
+- Rollback plan:
+
 ## Docs
 
 - [ ] Docs updated, or not needed because:

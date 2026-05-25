@@ -1,0 +1,33 @@
+name: Preview Smoke
+
+on:
+  deployment_status:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.deployment_status.target_url }}
+  cancel-in-progress: true
+
+jobs:
+  preview-smoke:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.target_url != '' &&
+      github.event.deployment.environment != 'Production' &&
+      github.event.deployment.environment != 'production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.14"
+
+      - name: Run preview smoke
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run --cwd apps/web preview:smoke

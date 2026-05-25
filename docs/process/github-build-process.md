@@ -57,7 +57,7 @@ Bad issue sizes:
 6. Include test output, docs updated, and observability evidence.
 7. Include deploy notes for Vercel, Neon, Upstash, GitHub App, sandbox profile,
    OAuth, or workflow changes.
-8. Do not push directly to `main` once branch protection is enabled.
+8. Do not push directly to `main`; branch protection requires PR-based changes.
 
 Recommended flow:
 
@@ -106,13 +106,17 @@ No non-trivial PR should merge unless:
 5. CI passes,
 6. the work remains one clean PR-sized slice.
 
-## Branch Protection Target
+## Branch Protection
 
-Enable these protections on `main` when contributors are regularly working in
-parallel:
+`main` is protected with a low-friction solo-friendly gate:
 
 1. require PR before merge,
-2. require status checks,
-3. require linear history if it fits the deployment model,
-4. block force pushes and deletions,
-5. require one approval once there is a second reviewer.
+2. require the `lint-and-typecheck` status check,
+3. require branches to be up to date before merge,
+4. require conversation resolution,
+5. include administrators,
+6. block force pushes and deletions.
+
+Approvals are not required yet so the repo can keep moving quickly while a
+single maintainer is driving the work. Add a one-approval requirement once there
+is a second regular reviewer.
