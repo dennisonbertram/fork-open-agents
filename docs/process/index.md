@@ -11,6 +11,10 @@ Start here:
   PR-sized work.
 - [GitHub Build Process](github-build-process.md) - issue, branch, PR, CI, and
   deploy structure.
+- [Agent Browser Preview Review](agent-browser-preview-review.md) - how to
+  inspect Vercel Preview deployments before production.
+- [Production Release Runbook](production-release-runbook.md) - merge,
+  production smoke, and rollback procedure.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
   paths.
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
