@@ -603,7 +603,13 @@ export function ComposioSection() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <SectionHeader>Agent Defaults</SectionHeader>
+        <div className="space-y-1">
+          <SectionHeader>Global Agent Defaults</SectionHeader>
+          <FieldHelp>
+            These defaults apply across your account. Repository/workspace
+            access rules live beside each repo in the sessions sidebar.
+          </FieldHelp>
+        </div>
         {defaults ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {COMPOSIO_AGENT_KEYS.map((agentKey) => (

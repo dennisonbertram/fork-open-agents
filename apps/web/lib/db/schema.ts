@@ -1346,10 +1346,51 @@ export const composioAgentSessions = pgTable(
   ],
 );
 
+export const repositoryComposioSettings = pgTable(
+  "repository_composio_settings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    inheritGlobalDefaults: boolean("inherit_global_defaults")
+      .notNull()
+      .default(true),
+    allowedProfileIds: jsonb("allowed_profile_ids")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    blockedToolkitSlugs: jsonb("blocked_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    agentDefaults: jsonb("agent_defaults")
+      .$type<Partial<ComposioAgentDefaults>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("repository_composio_settings_user_idx").on(table.userId),
+    uniqueIndex("repository_composio_settings_repo_idx").on(
+      table.userId,
+      table.repoOwner,
+      table.repoName,
+    ),
+  ],
+);
+
 export type ComposioToolProfile = typeof composioToolProfiles.$inferSelect;
 export type NewComposioToolProfile = typeof composioToolProfiles.$inferInsert;
 export type ComposioAgentSession = typeof composioAgentSessions.$inferSelect;
 export type NewComposioAgentSession = typeof composioAgentSessions.$inferInsert;
+export type RepositoryComposioSettings =
+  typeof repositoryComposioSettings.$inferSelect;
+export type NewRepositoryComposioSettings =
+  typeof repositoryComposioSettings.$inferInsert;
 
 // User preferences for settings
 export const userPreferences = pgTable("user_preferences", {

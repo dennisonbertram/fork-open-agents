@@ -22,6 +22,13 @@ export type ChatComposioSelection = {
   agentProfileOverrides?: Partial<Record<ComposioAgentKey, string | null>>;
 };
 
+export type RepositoryComposioSettingsValues = {
+  inheritGlobalDefaults: boolean;
+  allowedProfileIds: string[];
+  blockedToolkitSlugs: string[];
+  agentDefaults: Partial<ComposioAgentDefaults>;
+};
+
 export type ComposioToolProfileValues = {
   name: string;
   toolkitSlugs: string[];
@@ -110,6 +117,15 @@ export const chatComposioSelectionInputSchema = z
   .object({
     mainProfileId: z.string().min(1).nullable().default(null),
     agentProfileOverrides: composioAgentProfileOverridesInputSchema.optional(),
+  })
+  .strict();
+
+export const repositoryComposioSettingsInputSchema = z
+  .object({
+    inheritGlobalDefaults: z.boolean().default(true),
+    allowedProfileIds: z.array(z.string().trim().min(1)).default([]),
+    blockedToolkitSlugs: z.array(z.string()).default([]),
+    agentDefaults: composioAgentDefaultsInputSchema.partial().default({}),
   })
   .strict();
 
@@ -283,6 +299,21 @@ export function normalizeChatComposioSelection(
   return {
     mainProfileId: parsed.data.mainProfileId ?? null,
     ...(overrides ? { agentProfileOverrides: overrides } : {}),
+  };
+}
+
+export function normalizeRepositoryComposioSettings(
+  value: unknown,
+): RepositoryComposioSettingsValues {
+  const parsed = repositoryComposioSettingsInputSchema.parse(value);
+
+  return {
+    inheritGlobalDefaults: parsed.inheritGlobalDefaults,
+    allowedProfileIds: Array.from(new Set(parsed.allowedProfileIds)),
+    blockedToolkitSlugs: normalizeComposioToolkitSlugs(
+      parsed.blockedToolkitSlugs,
+    ),
+    agentDefaults: parsed.agentDefaults,
   };
 }
 

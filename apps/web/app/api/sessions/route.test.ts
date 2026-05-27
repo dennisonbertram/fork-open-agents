@@ -24,6 +24,7 @@ let matchingProjectsError: Error | null = null;
 const createCalls: Array<Record<string, unknown>> = [];
 const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
+let composioPolicy = { allowed: true, reason: null as string | null };
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
@@ -76,6 +77,23 @@ mock.module("@/lib/db/vercel-project-links", () => ({
   },
 }));
 
+mock.module("@/lib/db/composio", () => ({
+  listComposioToolProfiles: async () => [],
+  listComposioProfileOptionsForRepository: async () => ({
+    profiles: [],
+    profileOptions: [],
+    repositorySettings: null,
+  }),
+  getComposioAgentDefaults: async () => ({}),
+  createComposioToolProfile: async () => ({}),
+  updateComposioAgentDefaults: async () => ({}),
+  updateComposioToolProfile: async () => ({}),
+  deleteComposioToolProfile: async () => true,
+  getRepositoryComposioSettings: async () => null,
+  upsertRepositoryComposioSettings: async () => ({}),
+  isComposioProfileAllowedForRepository: async () => composioPolicy,
+}));
+
 mock.module("@/lib/vercel/token", () => ({
   getUserVercelToken: async () => currentVercelToken,
 }));
@@ -92,6 +110,13 @@ mock.module("@/lib/vercel/projects", () => ({
 }));
 
 mock.module("@/lib/db/sessions", () => ({
+  updateChat: async () => null,
+  getChatMessages: async () => [],
+  getChatsBySessionId: async () => [],
+  deleteChat: async () => undefined,
+  getChatSummariesBySessionId: async () => [],
+  getChatById: async () => null,
+  createChat: async () => null,
   createSessionWithInitialChat: async (input: {
     session: Record<string, unknown>;
     initialChat: Record<string, unknown>;
@@ -153,6 +178,7 @@ describe("/api/sessions POST vercel project linking", () => {
     createCalls.length = 0;
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
+    composioPolicy = { allowed: true, reason: null };
   });
 
   test("explicit Vercel project is validated against live repo matches before it is persisted", async () => {
@@ -347,6 +373,31 @@ describe("/api/sessions POST vercel project linking", () => {
     expect(response.status).toBe(200);
     expect(body.chat.composioSelection).toEqual({
       mainProfileId: "profile-main",
+    });
+  });
+
+  test("new sessions turn Composio off when repo policy blocks the default", async () => {
+    composioPolicy = {
+      allowed: false,
+      reason: "Blocked by repository policy.",
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      chat: { composioSelection: unknown };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.chat.composioSelection).toEqual({
+      mainProfileId: null,
     });
   });
 

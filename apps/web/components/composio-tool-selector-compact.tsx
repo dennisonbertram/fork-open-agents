@@ -20,6 +20,8 @@ import {
 interface ComposioToolSelectorCompactProps {
   selection: ChatComposioSelection;
   disabled?: boolean;
+  repoOwner?: string | null;
+  repoName?: string | null;
   onChange: (selection: ChatComposioSelection) => void;
 }
 
@@ -34,12 +36,18 @@ async function fetchComposioSettings(url: string) {
 export function ComposioToolSelectorCompact({
   selection,
   disabled = false,
+  repoOwner,
+  repoName,
   onChange,
 }: ComposioToolSelectorCompactProps) {
-  const { data, isLoading } = useSWR(
-    "/api/settings/composio",
-    fetchComposioSettings,
-  );
+  const settingsUrl =
+    repoOwner && repoName
+      ? `/api/settings/composio?${new URLSearchParams({
+          repoOwner,
+          repoName,
+        }).toString()}`
+      : "/api/settings/composio";
+  const { data, isLoading } = useSWR(settingsUrl, fetchComposioSettings);
   const selectedProfile =
     data?.profiles.find((profile) => profile.id === selection.mainProfileId) ??
     null;
@@ -54,6 +62,14 @@ export function ComposioToolSelectorCompact({
       : "No Composio profiles configured";
   const isDisabled = disabled || isLoading;
   const label = selectedProfile?.name ?? "Off";
+  const profileOptions =
+    data?.profileOptions ??
+    data?.profiles.map((profile) => ({
+      ...profile,
+      available: true,
+      disabledReason: null,
+    })) ??
+    [];
 
   return (
     <DropdownMenu>
@@ -96,9 +112,19 @@ export function ComposioToolSelectorCompact({
           }}
         >
           <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
-          {data?.profiles.map((profile) => (
-            <DropdownMenuRadioItem key={profile.id} value={profile.id}>
+          {profileOptions.map((profile) => (
+            <DropdownMenuRadioItem
+              key={profile.id}
+              value={profile.id}
+              disabled={!profile.available}
+              title={profile.disabledReason ?? profile.name}
+            >
               <span className="min-w-0 truncate">{profile.name}</span>
+              {profile.disabledReason ? (
+                <span className="ml-auto max-w-[8rem] truncate text-[11px] text-muted-foreground">
+                  {profile.disabledReason}
+                </span>
+              ) : null}
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>

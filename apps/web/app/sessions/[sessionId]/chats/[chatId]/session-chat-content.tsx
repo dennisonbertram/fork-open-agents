@@ -176,6 +176,7 @@ import {
 } from "./sandbox-create";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";
+import { WorkspaceStartupStatus } from "./workspace-startup-status";
 import "streamdown/styles.css";
 
 /** Minimum interval between textarea-focus activity pings (5 minutes). */
@@ -3411,24 +3412,26 @@ export function SessionChatContent({
                         Open dev server
                       </TooltipContent>
                     </Tooltip>
+                    {devServer.showLogAction ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 rounded-sm"
+                            aria-label="Open dev server logs"
+                            onClick={() => void devServer.handleOpenLogs()}
+                          >
+                            <ScrollText className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          Open dev server logs
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
                     {devServer.showManagedActions ? (
                       <>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 rounded-sm"
-                              aria-label="Open dev server logs"
-                              onClick={() => void devServer.handleOpenLogs()}
-                            >
-                              <ScrollText className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            Open dev server logs
-                          </TooltipContent>
-                        </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -4187,16 +4190,7 @@ export function SessionChatContent({
                           },
                         )}
                         {showThinkingIndicator && (
-                          <div className="my-1.5 border border-transparent py-0.5">
-                            <div className="inline-flex items-center gap-2 rounded-md py-px text-sm text-muted-foreground">
-                              <span className="flex size-3.5 shrink-0 items-center justify-center">
-                                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted-foreground" />
-                              </span>
-                              <span className="leading-none">
-                                {workspaceStatus?.message ?? "Thinking…"}
-                              </span>
-                            </div>
-                          </div>
+                          <WorkspaceStartupStatus status={workspaceStatus} />
                         )}
                       </div>
                     </OpenFileProvider>
@@ -4649,6 +4643,8 @@ export function SessionChatContent({
                             )}
                             <ComposioToolSelectorCompact
                               selection={chatInfo.composioSelection}
+                              repoOwner={session.repoOwner}
+                              repoName={session.repoName}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }

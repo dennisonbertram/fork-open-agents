@@ -397,10 +397,10 @@ function buildLaunchCommand(params: {
     params.installRootAbs === params.packageDirAbs
       ? installCommand
       : `(cd ${shellQuote(params.installRootAbs)} && ${installCommand})`,
-    `exec ${runCommand} > ${shellQuote(params.logPath)} 2>&1`,
+    `exec ${runCommand}`,
   ];
 
-  return commandSteps.join(" && ");
+  return `(${commandSteps.join(" && ")}) > ${shellQuote(params.logPath)} 2>&1`;
 }
 
 async function findDevServerCandidates(

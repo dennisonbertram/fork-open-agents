@@ -67,6 +67,9 @@ export type WebAgentSnippetData = {
 export type WebAgentWorkspaceStatusData = {
   status: "setting-up";
   message: string;
+  title?: string;
+  logLines?: string[];
+  logUpdatedAt?: string;
 };
 
 export type WebAgentVerifiedBuildData = {
