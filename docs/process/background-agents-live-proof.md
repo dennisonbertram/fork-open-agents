@@ -88,6 +88,10 @@ cookie, confirm repo readiness from the authenticated Settings panel.
   `Inference gateway` as ready. On Vercel, the automatic deployment context can
   satisfy these without exposing a provider key; outside Vercel, configure the
   appropriate token or `AI_GATEWAY_API_KEY`.
+- The readiness panel should also report `GitHub App webhooks` as ready. That
+  check verifies the App subscribes to `pull_request`, `issues`, and
+  `deployment_status` events and has the repo permissions needed for clone,
+  branch, commit, PR, issue, deployment, status, and metadata evidence.
 - A disposable repository with the GitHub App installed and permissions for
   metadata, contents, pull requests, issues, deployments or statuses, and
   webhook delivery for the tested event types.

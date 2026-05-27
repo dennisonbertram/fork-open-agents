@@ -1,5 +1,7 @@
 import "server-only";
 
+import { getGitHubAppWebhookReadinessCheck } from "./github-app-webhooks";
+
 export type BackgroundAgentReadinessStatus = "ready" | "missing" | "disabled";
 
 export interface BackgroundAgentReadinessCheck {
@@ -9,6 +11,7 @@ export interface BackgroundAgentReadinessCheck {
     | "vercel_oauth"
     | "github_oauth"
     | "github_app"
+    | "github_app_webhooks"
     | "sandbox_runtime"
     | "inference_gateway"
     | "repo_allowlist"
@@ -145,6 +148,24 @@ export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
 
   return {
     enabled,
+    ready: checks.every((check) => check.status === "ready"),
+    missing,
+    checks,
+  };
+}
+
+export async function getBackgroundAgentReadinessWithGitHubAppMetadata(): Promise<BackgroundAgentReadiness> {
+  const readiness = getBackgroundAgentReadiness();
+  const checks = [
+    ...readiness.checks,
+    await getGitHubAppWebhookReadinessCheck(),
+  ];
+  const missing = Array.from(
+    new Set(checks.flatMap((check) => check.missing)),
+  ).sort();
+
+  return {
+    ...readiness,
     ready: checks.every((check) => check.status === "ready"),
     missing,
     checks,

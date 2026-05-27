@@ -170,6 +170,13 @@ describe("background-agent-live-proof-preflight", () => {
             return new Response(null, { status: 401 });
           }
           return Response.json({
+            checks: [
+              {
+                id: "github_app_webhooks",
+                status: "ready",
+                missing: [],
+              },
+            ],
             repoAccess: {
               ready: true,
               repoOwner: "acme",
@@ -196,6 +203,7 @@ describe("background-agent-live-proof-preflight", () => {
         missing: [],
         evidence: expect.arrayContaining([
           "repo=acme/widgets",
+          "githubAppWebhooks=ready",
           "installationId=123",
           "repositoryId=456",
           "defaultBranch=main",
@@ -204,6 +212,76 @@ describe("background-agent-live-proof-preflight", () => {
     );
     expect(requests[1]?.toString()).toBe(
       "https://open-agents.example.com/api/background-agents/readiness?repoOwner=acme&repoName=widgets&permission=write",
+    );
+    expect(JSON.stringify(result)).not.toContain("secret-value");
+  });
+
+  test("fails authenticated readiness when GitHub App webhooks are missing", async () => {
+    process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE = "session=secret-value";
+    const result = await runLiveProofPreflight(
+      options({
+        baseUrl: "https://open-agents.example.com",
+        repo: "acme/widgets",
+      }),
+      {
+        runCommand: (commandName) => {
+          if (commandName === "bun") {
+            return command(readyAudit);
+          }
+          return command({
+            nameWithOwner: "acme/widgets",
+            url: "https://github.com/acme/widgets",
+            isPrivate: true,
+            defaultBranchRef: { name: "main" },
+          });
+        },
+        fetch: async (input) => {
+          const url = input instanceof URL ? input : new URL(String(input));
+          if (!url.searchParams.has("repoOwner")) {
+            return new Response(null, { status: 401 });
+          }
+          return Response.json({
+            checks: [
+              {
+                id: "github_app_webhooks",
+                status: "missing",
+                missing: [
+                  "event:pull_request",
+                  "event:issues",
+                  "event:deployment_status",
+                ],
+              },
+            ],
+            repoAccess: {
+              ready: true,
+              repoOwner: "acme",
+              repoName: "widgets",
+              requiredUserPermission: "write",
+              reason: null,
+              message:
+                "GitHub user access and GitHub App installation cover this repo.",
+              installationId: 123,
+              repositoryId: 456,
+              defaultBranch: "main",
+            },
+          });
+        },
+      },
+    );
+
+    expect(result.ready).toBe(false);
+    expect(
+      result.checks.find((check) => check.id === "repo_readiness"),
+    ).toEqual(
+      expect.objectContaining({
+        status: "missing",
+        missing: [
+          "event:pull_request",
+          "event:issues",
+          "event:deployment_status",
+        ],
+        evidence: expect.arrayContaining(["githubAppWebhooks=missing"]),
+      }),
     );
     expect(JSON.stringify(result)).not.toContain("secret-value");
   });

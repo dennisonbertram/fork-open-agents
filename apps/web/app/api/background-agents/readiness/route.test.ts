@@ -27,7 +27,9 @@ const readiness = {
     },
   ],
 };
-const getBackgroundAgentReadiness = mock(() => readiness);
+const getBackgroundAgentReadinessWithGitHubAppMetadata = mock(
+  async () => readiness,
+);
 const getBackgroundAgentRepoReadiness = mock(async () => ({
   ready: true,
   repoOwner: "acme",
@@ -45,7 +47,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 }));
 
 mock.module("@/lib/background-agents/readiness", () => ({
-  getBackgroundAgentReadiness,
+  getBackgroundAgentReadinessWithGitHubAppMetadata,
 }));
 
 mock.module("@/lib/background-agents/repo-readiness", () => ({
@@ -57,7 +59,7 @@ const routeModulePromise = import("./route");
 describe("GET /api/background-agents/readiness", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
-    getBackgroundAgentReadiness.mockClear();
+    getBackgroundAgentReadinessWithGitHubAppMetadata.mockClear();
     getBackgroundAgentRepoReadiness.mockClear();
   });
 
@@ -71,7 +73,9 @@ describe("GET /api/background-agents/readiness", () => {
     const response = await GET();
 
     expect(response.status).toBe(401);
-    expect(getBackgroundAgentReadiness).not.toHaveBeenCalled();
+    expect(
+      getBackgroundAgentReadinessWithGitHubAppMetadata,
+    ).not.toHaveBeenCalled();
   });
 
   test("returns background agent readiness without secrets", async () => {
@@ -83,7 +87,9 @@ describe("GET /api/background-agents/readiness", () => {
     expect(response.status).toBe(200);
     expect(body).toEqual(readiness);
     expect(JSON.stringify(body)).not.toContain("secret-value");
-    expect(getBackgroundAgentReadiness).toHaveBeenCalledTimes(1);
+    expect(
+      getBackgroundAgentReadinessWithGitHubAppMetadata,
+    ).toHaveBeenCalledTimes(1);
     expect(getBackgroundAgentRepoReadiness).not.toHaveBeenCalled();
   });
 

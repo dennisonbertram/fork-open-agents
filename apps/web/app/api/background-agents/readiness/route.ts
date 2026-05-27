@@ -1,6 +1,6 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { getBackgroundAgentRepoReadiness } from "@/lib/background-agents/repo-readiness";
-import { getBackgroundAgentReadiness } from "@/lib/background-agents/readiness";
+import { getBackgroundAgentReadinessWithGitHubAppMetadata } from "@/lib/background-agents/readiness";
 import type { RequiredRepoUserPermission } from "@/lib/github/access";
 
 function parsePermission(value: string | null): RequiredRepoUserPermission {
@@ -42,7 +42,7 @@ export async function GET(request?: Request) {
     return authResult.response;
   }
 
-  const readiness = getBackgroundAgentReadiness();
+  const readiness = await getBackgroundAgentReadinessWithGitHubAppMetadata();
   const repoParams = parseRepoParams(request);
   if (!repoParams) {
     return Response.json(readiness);

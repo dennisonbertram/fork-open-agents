@@ -45,7 +45,14 @@ type RepoAccessReadiness = {
   defaultBranch?: string | null;
 };
 
+type HostedReadinessCheck = {
+  id?: string;
+  status?: string;
+  missing?: string[];
+};
+
 type ReadinessResponse = {
+  checks?: HostedReadinessCheck[];
   repoAccess?: RepoAccessReadiness;
 };
 
@@ -406,6 +413,9 @@ async function checkAuthenticatedRepoReadiness(params: {
 
     const body = (await response.json()) as ReadinessResponse;
     const repoAccess = body.repoAccess;
+    const appWebhookCheck = body.checks?.find(
+      (check) => check.id === "github_app_webhooks",
+    );
     if (!repoAccess) {
       return {
         id: "repo_readiness",
@@ -417,18 +427,29 @@ async function checkAuthenticatedRepoReadiness(params: {
       };
     }
 
+    const appWebhookReady =
+      !appWebhookCheck || appWebhookCheck.status === "ready";
+    const missing = [
+      ...(repoAccess.ready ? [] : [repoAccess.reason ?? "repo_readiness"]),
+      ...(appWebhookReady ? [] : (appWebhookCheck?.missing ?? [])),
+    ];
+
     return {
       id: "repo_readiness",
       label: "Authenticated repo readiness",
-      status: repoAccess.ready ? "ready" : "missing",
-      detail: repoAccess.ready
-        ? "Hosted app verified user write access and GitHub App repo coverage."
-        : (repoAccess.message ??
-          "Hosted app could not verify repo access and GitHub App coverage."),
-      missing: repoAccess.ready ? [] : [repoAccess.reason ?? "repo_readiness"],
+      status: repoAccess.ready && appWebhookReady ? "ready" : "missing",
+      detail:
+        repoAccess.ready && appWebhookReady
+          ? "Hosted app verified user write access, GitHub App repo coverage, and GitHub App webhook readiness."
+          : appWebhookReady
+            ? (repoAccess.message ??
+              "Hosted app could not verify repo access and GitHub App coverage.")
+            : "Hosted readiness reports missing GitHub App webhook subscriptions or permissions.",
+      missing,
       evidence: [
         `repo=${repoAccess.repoOwner ?? repo.owner}/${repoAccess.repoName ?? repo.name}`,
         `requiredUserPermission=${repoAccess.requiredUserPermission ?? "write"}`,
+        appWebhookCheck ? `githubAppWebhooks=${appWebhookCheck.status}` : "",
         repoAccess.installationId
           ? `installationId=${repoAccess.installationId}`
           : "",
