@@ -135,6 +135,22 @@ live webhooks are enabled:
   start so cron-triggered runs have the same first timeline breadcrumb as
   GitHub and webhook-triggered runs.
 
+## Settings Edit And Disable Slice
+
+Operators need to adjust standing instructions after creation without deleting
+and recreating agents:
+
+- Settings supports create and edit from the same bounded form;
+- existing agents can be loaded into the form, updated, disabled, and saved
+  through the authenticated PATCH route;
+- trigger conditions for actions, branches, labels, environments, and
+  severities are included in the Settings payload;
+- the Settings form shows the intended Trigger -> Conditions -> Instructions ->
+  Permissions -> Outputs -> Test flow while keeping Composio/tool providers
+  deferred to v1.5;
+- route tests cover authenticated PATCH and DELETE scoping for agent updates and
+  removal.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.

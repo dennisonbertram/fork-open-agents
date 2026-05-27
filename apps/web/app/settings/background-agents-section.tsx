@@ -1,6 +1,15 @@
 "use client";
 
-import { Bot, ExternalLink, Play, Plus, RefreshCw } from "lucide-react";
+import {
+  Bot,
+  ExternalLink,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Save,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -18,37 +27,17 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
-
-type TriggerKind =
-  | "github.pull_request"
-  | "github.deployment_status"
-  | "github.issue"
-  | "schedule.cron"
-  | "webhook.error";
-
-type OutputMode = "comment" | "ready_pr" | "issue" | "notification" | "none";
-
-type BackgroundAgentTrigger = {
-  id: string;
-  name: string;
-  kind: TriggerKind;
-  status: "enabled" | "disabled";
-  schedule: string | null;
-  webhookPublicId: string | null;
-};
-
-type BackgroundAgent = {
-  id: string;
-  name: string;
-  description: string | null;
-  status: "enabled" | "disabled";
-  repoOwner: string;
-  repoName: string;
-  instructions: string;
-  outputMode: OutputMode;
-  checkCommand: string | null;
-  triggers: BackgroundAgentTrigger[];
-};
+import {
+  buildAgentPayload,
+  buildFormFromAgent,
+  defaultForm,
+  flowSteps,
+  triggerLabels,
+  type BackgroundAgent,
+  type FormState,
+  type OutputMode,
+  type TriggerKind,
+} from "./background-agents-form";
 
 type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
@@ -61,38 +50,6 @@ type ManualTestResponse = {
   duplicates: number;
   runIds: string[];
   error?: string;
-};
-
-type FormState = {
-  name: string;
-  repoOwner: string;
-  repoName: string;
-  triggerKind: TriggerKind;
-  schedule: string;
-  instructions: string;
-  outputMode: OutputMode;
-  checkCommand: string;
-  enabled: boolean;
-};
-
-const defaultForm: FormState = {
-  name: "",
-  repoOwner: "",
-  repoName: "",
-  triggerKind: "github.pull_request",
-  schedule: "",
-  instructions: "",
-  outputMode: "none",
-  checkCommand: "",
-  enabled: false,
-};
-
-const triggerLabels: Record<TriggerKind, string> = {
-  "github.pull_request": "Pull request",
-  "github.deployment_status": "Deployment status",
-  "github.issue": "Issue",
-  "schedule.cron": "Schedule",
-  "webhook.error": "Error webhook",
 };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -118,37 +75,6 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function buildCreatePayload(form: FormState) {
-  return {
-    name: form.name,
-    repoOwner: form.repoOwner,
-    repoName: form.repoName,
-    status: form.enabled ? "enabled" : "disabled",
-    instructions: form.instructions,
-    outputMode: form.outputMode,
-    checkCommand: form.checkCommand || null,
-    permissions: {
-      github: {
-        contents: form.outputMode === "ready_pr" ? "write" : "read",
-        pullRequests: form.outputMode === "ready_pr" ? "write" : "read",
-        issues: "read",
-        deployments: "read",
-        statuses: "read",
-        checks: "read",
-      },
-    },
-    triggers: [
-      {
-        name: triggerLabels[form.triggerKind],
-        kind: form.triggerKind,
-        status: "enabled",
-        conditions: {},
-        schedule: form.triggerKind === "schedule.cron" ? form.schedule : null,
-      },
-    ],
-  };
-}
-
 export function BackgroundAgentsSection() {
   const router = useRouter();
   const { data, error, isLoading, mutate } = useSWR<BackgroundAgentsResponse>(
@@ -156,6 +82,7 @@ export function BackgroundAgentsSection() {
     fetchJson,
   );
   const [form, setForm] = useState<FormState>(defaultForm);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testingAgentId, setTestingAgentId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -170,29 +97,55 @@ export function BackgroundAgentsSection() {
     [form],
   );
 
-  async function createAgent() {
+  const isEditing = editingAgentId !== null;
+
+  function startEditing(agent: BackgroundAgent) {
+    setForm(buildFormFromAgent(agent));
+    setEditingAgentId(agent.id);
+    setMessage(null);
+  }
+
+  function cancelEditing() {
+    setForm(defaultForm);
+    setEditingAgentId(null);
+    setMessage(null);
+  }
+
+  async function saveAgent() {
     if (!canSubmit) {
       return;
     }
     setSaving(true);
     setMessage(null);
     try {
-      const response = await fetch("/api/background-agents", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildCreatePayload(form)),
-      });
+      const response = await fetch(
+        isEditing
+          ? `/api/background-agents/${editingAgentId}`
+          : "/api/background-agents",
+        {
+          method: isEditing ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildAgentPayload(form)),
+        },
+      );
       if (!response.ok) {
-        throw new Error("Failed to create background agent");
+        throw new Error(
+          isEditing
+            ? "Failed to update background agent"
+            : "Failed to create background agent",
+        );
       }
       setForm(defaultForm);
-      setMessage("Background agent created.");
-      await mutate();
-    } catch (createError) {
+      setEditingAgentId(null);
       setMessage(
-        createError instanceof Error
-          ? createError.message
-          : "Failed to create background agent",
+        isEditing ? "Background agent updated." : "Background agent created.",
+      );
+      await mutate();
+    } catch (saveError) {
+      setMessage(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save background agent",
       );
     } finally {
       setSaving(false);
@@ -231,8 +184,28 @@ export function BackgroundAgentsSection() {
   return (
     <div className="space-y-6">
       <section className="rounded-md border border-border">
-        <div className="border-b border-border px-4 py-3">
-          <h2 className="text-sm font-medium">Create agent</h2>
+        <div className="space-y-3 border-b border-border px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-sm font-medium">
+              {isEditing ? "Edit agent" : "Create agent"}
+            </h2>
+            {isEditing && (
+              <Button variant="ghost" size="sm" onClick={cancelEditing}>
+                <X className="h-4 w-4" />
+                Cancel
+              </Button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {flowSteps.map((step) => (
+              <span
+                key={step}
+                className="rounded border border-border bg-muted/30 px-2 py-1 text-[10px] text-muted-foreground"
+              >
+                {step}
+              </span>
+            ))}
+          </div>
         </div>
         <div className="grid gap-4 p-4 md:grid-cols-2">
           <div className="space-y-2">
@@ -321,6 +294,76 @@ export function BackgroundAgentsSection() {
               />
             </div>
           )}
+          <div className="space-y-2">
+            <Label htmlFor="agent-condition-actions">Actions</Label>
+            <Input
+              id="agent-condition-actions"
+              value={form.conditionActions}
+              placeholder="opened, reopened"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  conditionActions: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-condition-branches">Branches</Label>
+            <Input
+              id="agent-condition-branches"
+              value={form.conditionBranches}
+              placeholder="main, release/*"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  conditionBranches: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-condition-labels">Labels</Label>
+            <Input
+              id="agent-condition-labels"
+              value={form.conditionLabels}
+              placeholder="bug, regression"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  conditionLabels: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="agent-condition-environments">Environments</Label>
+            <Input
+              id="agent-condition-environments"
+              value={form.conditionEnvironments}
+              placeholder="production, preview"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  conditionEnvironments: event.target.value,
+                }))
+              }
+            />
+          </div>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="agent-condition-severities">Severities</Label>
+            <Input
+              id="agent-condition-severities"
+              value={form.conditionSeverities}
+              placeholder="critical, error"
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  conditionSeverities: event.target.value,
+                }))
+              }
+            />
+          </div>
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="agent-instructions">Instructions</Label>
             <Textarea
@@ -375,9 +418,13 @@ export function BackgroundAgentsSection() {
             <p className="text-xs text-muted-foreground">
               Tool providers coming later. Composio is planned for v1.5.
             </p>
-            <Button disabled={!canSubmit || saving} onClick={createAgent}>
-              <Plus className="h-4 w-4" />
-              Create
+            <Button disabled={!canSubmit || saving} onClick={saveAgent}>
+              {isEditing ? (
+                <Save className="h-4 w-4" />
+              ) : (
+                <Plus className="h-4 w-4" />
+              )}
+              {isEditing ? "Save" : "Create"}
             </Button>
           </div>
           {message && (
@@ -435,6 +482,14 @@ export function BackgroundAgentsSection() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startEditing(agent)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Edit
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"

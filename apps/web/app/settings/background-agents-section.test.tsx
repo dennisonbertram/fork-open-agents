@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import {
+  buildAgentPayload,
+  buildFormFromAgent,
+} from "./background-agents-form";
 
 type SwrState = {
   data?: {
@@ -23,6 +27,13 @@ type SwrState = {
           | "schedule.cron"
           | "webhook.error";
         status: "enabled" | "disabled";
+        conditions?: {
+          actions?: string[];
+          branches?: string[];
+          labels?: string[];
+          environments?: string[];
+          severities?: string[];
+        };
         schedule: string | null;
         webhookPublicId: string | null;
       }>;
@@ -67,6 +78,7 @@ describe("BackgroundAgentsSection", () => {
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
     expect(html).toContain("Create agent");
+    expect(html).toContain("Conditions");
     expect(html).toContain("Agents");
     expect(html).toContain("Loading background agents.");
     expect(html).not.toContain("No background agents yet.");
@@ -108,6 +120,10 @@ describe("BackgroundAgentsSection", () => {
                 name: "Pull request",
                 kind: "github.pull_request",
                 status: "enabled",
+                conditions: {
+                  actions: ["opened"],
+                  branches: ["main"],
+                },
                 schedule: null,
                 webhookPublicId: null,
               },
@@ -134,7 +150,72 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("Error webhook");
     expect(html).toContain("Tool providers coming later");
     expect(html).toContain("Composio is planned for v1.5");
+    expect(html).toContain("Edit");
     expect(html).toContain("Test");
     expect(html).toContain("/repos/acme/widgets/agents");
+  });
+
+  test("builds edit form state and update payloads for existing agents", async () => {
+    const form = buildFormFromAgent({
+      id: "agent-1",
+      name: "Deploy smoke",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Run deployment smoke checks.",
+      outputMode: "ready_pr",
+      checkCommand: "bun --bun run ci",
+      triggers: [
+        {
+          id: "trigger-1",
+          name: "Deployment",
+          kind: "github.deployment_status",
+          status: "enabled",
+          conditions: {
+            actions: ["success"],
+            branches: ["main", "release/*"],
+            labels: ["smoke"],
+            environments: ["production"],
+            severities: ["critical"],
+          },
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+    });
+
+    expect(form).toMatchObject({
+      name: "Deploy smoke",
+      enabled: false,
+      triggerKind: "github.deployment_status",
+      conditionActions: "success",
+      conditionBranches: "main, release/*",
+      conditionLabels: "smoke",
+      conditionEnvironments: "production",
+      conditionSeverities: "critical",
+      outputMode: "ready_pr",
+    });
+
+    const payload = buildAgentPayload({
+      ...form,
+      enabled: true,
+      conditionActions: "success, failure",
+      conditionLabels: "smoke, regression",
+    });
+
+    expect(payload.status).toBe("enabled");
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+    expect(payload.triggers[0]).toMatchObject({
+      kind: "github.deployment_status",
+      conditions: {
+        actions: ["success", "failure"],
+        branches: ["main", "release/*"],
+        labels: ["smoke", "regression"],
+        environments: ["production"],
+        severities: ["critical"],
+      },
+    });
   });
 });
