@@ -440,6 +440,34 @@ function makeOptions(overrides?: Record<string, unknown>) {
   } as Parameters<typeof runAgentWorkflow>[0];
 }
 
+function managedWorkerTaskPart(overrides: Record<string, unknown> = {}) {
+  return {
+    type: "tool-task",
+    toolCallId: "task-1",
+    state: "output-available",
+    preliminary: false,
+    input: {
+      subagentType: "executor",
+      task: "Implement a small UI change",
+    },
+    output: {
+      final: [],
+      toolCallCount: 3,
+      runtime: {
+        mode: "managed_runtime",
+        label: "Managed runtime worker",
+        workerType: "executor",
+        profileId: "web-bun-agent-browser",
+        profileVersion: "2026-05-23.1",
+        profileDisplayName: "Web app with Bun and browser checks",
+        profileRunId: "profile-run-1",
+        sandboxName: "session_session-1",
+      },
+    },
+    ...overrides,
+  };
+}
+
 // ── Tests ──────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -696,7 +724,7 @@ describe("runAgentWorkflow", () => {
     });
   });
 
-  test("emits managed runtime proof data when managed runtime completes", async () => {
+  test("marks managed runtime proof incomplete when no managed worker executed", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {
         writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -726,7 +754,7 @@ describe("runAgentWorkflow", () => {
         type: "data-runtime-proof",
         id: "gen-id-1:runtime-proof",
         data: {
-          status: "completed",
+          status: "incomplete",
           runtimeMode: "managed_runtime",
           workflowRunId: "wrun_test-123",
           sandboxName: "session_session-1",
@@ -735,6 +763,20 @@ describe("runAgentWorkflow", () => {
             version: "2026-05-23.1",
             displayName: "Web app with Bun and browser checks",
             profileRunId: "profile-run-1",
+          },
+          workerEvidence: {
+            total: 0,
+            completed: 0,
+            failed: 0,
+            running: 0,
+            latest: null,
+          },
+          coordinatorDirectToolUse: {
+            observed: false,
+            count: 0,
+            toolTypes: [],
+            toolLabels: [],
+            warning: null,
           },
           evidence: [
             "Managed runtime was selected for this workflow.",
@@ -754,6 +796,7 @@ describe("runAgentWorkflow", () => {
             latest: null,
           },
           limitations: [
+            "Managed runtime was selected, but no managed worker executed for this turn.",
             "Service/dev-server evidence is captured only when a managed service is started.",
             "Browser/screenshot evidence is captured only when a browser check is run.",
           ],
@@ -777,6 +820,10 @@ describe("runAgentWorkflow", () => {
   });
 
   test("includes managed service and browser evidence in runtime proof data", async () => {
+    agentAssistantParts = [
+      { type: "text", text: "Done." },
+      managedWorkerTaskPart(),
+    ];
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {
         writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -834,7 +881,36 @@ describe("runAgentWorkflow", () => {
     expect(proofPart).toMatchObject({
       type: "data-runtime-proof",
       data: {
+        status: "completed",
+        workerEvidence: {
+          total: 1,
+          completed: 1,
+          failed: 0,
+          running: 0,
+          latest: {
+            id: "task-1",
+            workerType: "executor",
+            status: "completed",
+            sandboxName: "session_session-1",
+            profileId: "web-bun-agent-browser",
+            profileVersion: "2026-05-23.1",
+            profileDisplayName: "Web app with Bun and browser checks",
+            profileRunId: "profile-run-1",
+            currentToolName: null,
+            currentToolSummary: null,
+            toolCallCount: 3,
+            summary: "Implement a small UI change",
+          },
+        },
+        coordinatorDirectToolUse: {
+          observed: false,
+          count: 0,
+          toolTypes: [],
+          toolLabels: [],
+          warning: null,
+        },
         evidence: expect.arrayContaining([
+          "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls.",
           "Managed dev-server evidence recorded: service-1 running on port 3000 (HTTP 200).",
           "Browser/screenshot evidence recorded: browser-1 passed with 1 artifact.",
         ]),
@@ -869,6 +945,60 @@ describe("runAgentWorkflow", () => {
           },
         },
         limitations: [],
+      },
+    });
+  });
+
+  test("marks managed runtime proof incomplete when coordinator used direct repo tools", async () => {
+    agentAssistantParts = [
+      { type: "text", text: "Done." },
+      managedWorkerTaskPart(),
+      {
+        type: "tool-bash",
+        state: "output-available",
+        input: { command: "bun --bun run ci" },
+        output: { success: true },
+      },
+    ];
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofPart = writtenChunks.find(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    expect(proofPart).toMatchObject({
+      type: "data-runtime-proof",
+      data: {
+        status: "incomplete",
+        coordinatorDirectToolUse: {
+          observed: true,
+          count: 1,
+          toolTypes: ["tool-bash"],
+          toolLabels: ["Bash"],
+          warning:
+            "Coordinator direct repo tool use observed: Bash. These actions did not run through a managed worker.",
+        },
+        limitations: expect.arrayContaining([
+          "Coordinator direct repo tool use observed: Bash. These actions did not run through a managed worker.",
+        ]),
       },
     });
   });

@@ -31,7 +31,10 @@ describe("AssistantMessageGroups", () => {
               mode: "managed_runtime",
               label: "Managed runtime worker",
               workerType: "executor",
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.2",
               profileDisplayName: "Web app with Bun and browser checks",
+              sandboxName: "sbx_runtime_123",
             },
           },
         },
@@ -49,6 +52,7 @@ describe("AssistantMessageGroups", () => {
       </AssistantMessageGroups>,
     );
 
-    expect(html).toContain("Managed runtime worker: Bash bun run test:quick");
+    expect(html).toContain("Managed worker: Bash bun run test:quick");
+    expect(html).toContain("sbx_runtime_123");
   });
 });
