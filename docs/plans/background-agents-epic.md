@@ -29,6 +29,8 @@ The v1 trust boundary is intentionally narrow:
   execution and ready PR output.
 - https://github.com/dennisonbertram/fork-open-agents/issues/22 - Composio tool
   grants for background agents.
+- https://github.com/dennisonbertram/fork-open-agents/issues/26 - hosted live
+  proof for real webhook delivery, sandbox execution, and ready PR creation.
 
 ## V1 Foundation Scope
 
@@ -165,6 +167,22 @@ evidence:
   output URL;
 - this gives operators and future agents a global debug surface before they
   know which repo dashboard or run detail to open.
+
+## Readiness Diagnostic Slice
+
+The hosted proof path needs a safe way to see missing prerequisites before a
+trigger is fired:
+
+- `GET /api/background-agents/readiness` is an authenticated route that returns
+  only safe readiness status, missing env var names, and setup categories; it
+  never returns secret values;
+- `/settings/background-agents` shows a compact readiness section with feature
+  flag, auth/database, Vercel sign-in, GitHub OAuth, GitHub App, cron secret,
+  and generic webhook secret status;
+- the diagnostic caught the current preview gap: preview has DB/auth basics but
+  lacks GitHub App/background-agent proof secrets, while production has GitHub
+  App credentials but still needs the background-agent flag and dispatch
+  secrets before #26 can run.
 
 ## Observability Vocabulary
 

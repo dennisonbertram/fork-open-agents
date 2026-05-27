@@ -62,6 +62,19 @@ type RunListData = {
   }>;
 };
 
+type ReadinessData = {
+  enabled: boolean;
+  ready: boolean;
+  missing: string[];
+  checks: Array<{
+    id: string;
+    label: string;
+    status: "ready" | "missing" | "disabled";
+    detail: string;
+    missing: string[];
+  }>;
+};
+
 type SwrState<T> = {
   data?: T;
   error?: Error | null;
@@ -70,6 +83,7 @@ type SwrState<T> = {
 
 let agentsSwrState: SwrState<AgentListData> = {};
 let runsSwrState: SwrState<RunListData> = {};
+let readinessSwrState: SwrState<ReadinessData> = {};
 const push = mock((_url: string) => undefined);
 const mutate = mock(async () => undefined);
 
@@ -79,9 +93,11 @@ mock.module("next/navigation", () => ({
 
 mock.module("swr", () => ({
   default: (key: string) => {
-    const state = key.startsWith("/api/background-agent-runs")
-      ? runsSwrState
-      : agentsSwrState;
+    const state = key.startsWith("/api/background-agents/readiness")
+      ? readinessSwrState
+      : key.startsWith("/api/background-agent-runs")
+        ? runsSwrState
+        : agentsSwrState;
     return {
       data: state.data,
       error: state.error ?? null,
@@ -97,6 +113,7 @@ describe("BackgroundAgentsSection", () => {
   beforeEach(() => {
     agentsSwrState = {};
     runsSwrState = {};
+    readinessSwrState = {};
     push.mockClear();
     mutate.mockClear();
   });
@@ -108,10 +125,15 @@ describe("BackgroundAgentsSection", () => {
     runsSwrState = {
       isLoading: true,
     };
+    readinessSwrState = {
+      isLoading: true,
+    };
     const { BackgroundAgentsSection } = await componentModulePromise;
 
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
+    expect(html).toContain("Readiness");
+    expect(html).toContain("Loading background agent readiness.");
     expect(html).toContain("Create agent");
     expect(html).toContain("Conditions");
     expect(html).toContain("Agents");
@@ -135,6 +157,66 @@ describe("BackgroundAgentsSection", () => {
     };
     const errorHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
     expect(errorHtml).toContain("Failed to load background agents.");
+  });
+
+  test("renders readiness diagnostics without secret values", async () => {
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    readinessSwrState = {
+      data: {
+        enabled: false,
+        ready: false,
+        missing: ["BACKGROUND_AGENTS_ENABLED", "GITHUB_APP_PRIVATE_KEY"],
+        checks: [
+          {
+            id: "feature_flag",
+            label: "Feature flag",
+            status: "disabled",
+            detail: "BACKGROUND_AGENTS_ENABLED gates trigger dispatch.",
+            missing: ["BACKGROUND_AGENTS_ENABLED"],
+          },
+          {
+            id: "github_app",
+            label: "GitHub App",
+            status: "missing",
+            detail:
+              "Required for webhook trust and repo-scoped installation access.",
+            missing: ["GITHUB_APP_PRIVATE_KEY"],
+          },
+        ],
+      },
+    };
+    const missingHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(missingHtml).toContain("Readiness");
+    expect(missingHtml).toContain("2 prerequisites need attention.");
+    expect(missingHtml).toContain("Feature flag");
+    expect(missingHtml).toContain("GITHUB_APP_PRIVATE_KEY");
+    expect(missingHtml).not.toContain("secret-value");
+
+    readinessSwrState = {
+      data: {
+        enabled: true,
+        ready: true,
+        missing: [],
+        checks: [
+          {
+            id: "feature_flag",
+            label: "Feature flag",
+            status: "ready",
+            detail: "BACKGROUND_AGENTS_ENABLED gates trigger dispatch.",
+            missing: [],
+          },
+        ],
+      },
+    };
+    const readyHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(readyHtml).toContain("Hosted prerequisites are configured.");
+
+    readinessSwrState = {
+      error: new Error("load failed"),
+    };
+    const errorHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(errorHtml).toContain("Failed to load background agent readiness.");
   });
 
   test("renders empty, error, and configured states for run history", async () => {
