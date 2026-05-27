@@ -63,9 +63,12 @@ bun run --cwd apps/web background-agents:live-proof-preflight -- \
   --repo <owner>/<repo>
 ```
 
-The preflight exits non-zero until automated prerequisites are ready. It still
-requires a manual GitHub App installation confirmation before live events are
-fired.
+The preflight exits non-zero until automated prerequisites are ready. It can
+also verify authenticated repo readiness before live events are fired. To let
+the CLI verify repo access through the hosted app, set
+`BACKGROUND_AGENT_PREFLIGHT_COOKIE` to a current browser session cookie in your
+local shell. The command sends that cookie but never prints it. Without the
+cookie, confirm repo readiness from the authenticated Settings panel.
 
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
@@ -110,6 +113,18 @@ curl -i https://<target-host>/api/background-agents/readiness
 Unauthenticated `401` proves the route is deployed and protected. Authenticated
 JSON should report missing variable names and setup categories, not secret
 values.
+
+Repo-specific readiness is also available for authenticated operators:
+
+```bash
+curl -i \
+  "https://<target-host>/api/background-agents/readiness?repoOwner=<owner>&repoName=<repo>&permission=write"
+```
+
+The `repoAccess` response verifies the same user-token plus GitHub App
+installation coverage used by background-agent execution. It reports typed
+reasons such as `no_user_token`, `user_no_access`, `user_no_write`,
+`no_installation`, or `app_no_access`; it does not return provider tokens.
 
 ## Configure Test Agent
 

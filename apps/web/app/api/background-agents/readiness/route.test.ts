@@ -28,6 +28,17 @@ const readiness = {
   ],
 };
 const getBackgroundAgentReadiness = mock(() => readiness);
+const getBackgroundAgentRepoReadiness = mock(async () => ({
+  ready: true,
+  repoOwner: "acme",
+  repoName: "widgets",
+  requiredUserPermission: "write",
+  reason: null,
+  message: "GitHub user access and GitHub App installation cover this repo.",
+  installationId: 123,
+  repositoryId: 456,
+  defaultBranch: "main",
+}));
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -37,12 +48,17 @@ mock.module("@/lib/background-agents/readiness", () => ({
   getBackgroundAgentReadiness,
 }));
 
+mock.module("@/lib/background-agents/repo-readiness", () => ({
+  getBackgroundAgentRepoReadiness,
+}));
+
 const routeModulePromise = import("./route");
 
 describe("GET /api/background-agents/readiness", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     getBackgroundAgentReadiness.mockClear();
+    getBackgroundAgentRepoReadiness.mockClear();
   });
 
   test("requires authentication", async () => {
@@ -68,5 +84,48 @@ describe("GET /api/background-agents/readiness", () => {
     expect(body).toEqual(readiness);
     expect(JSON.stringify(body)).not.toContain("secret-value");
     expect(getBackgroundAgentReadiness).toHaveBeenCalledTimes(1);
+    expect(getBackgroundAgentRepoReadiness).not.toHaveBeenCalled();
+  });
+
+  test("returns repo-specific GitHub App readiness when requested", async () => {
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/background-agents/readiness?repoOwner=acme&repoName=widgets&permission=write",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toMatchObject({
+      enabled: false,
+      repoAccess: {
+        ready: true,
+        repoOwner: "acme",
+        repoName: "widgets",
+        requiredUserPermission: "write",
+        installationId: 123,
+      },
+    });
+    expect(getBackgroundAgentRepoReadiness).toHaveBeenCalledWith({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+      requiredUserPermission: "write",
+    });
+  });
+
+  test("validates paired repo query params", async () => {
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/background-agents/readiness?repoOwner=acme",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(getBackgroundAgentRepoReadiness).not.toHaveBeenCalled();
   });
 });

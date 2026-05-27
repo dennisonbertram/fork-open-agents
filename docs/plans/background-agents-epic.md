@@ -184,11 +184,15 @@ trigger is fired:
   `vercel env pull` file to report only blank required variable names, then
   deletes the temp file before exit;
 - `background-agents:live-proof-preflight` combines env audit, hosted
-  readiness-route protection, and disposable repo accessibility into one
-  redacted preflight before live events are fired;
+  readiness-route protection, disposable repo accessibility, and optional
+  authenticated repo readiness into one redacted preflight before live events
+  are fired;
 - `GET /api/background-agents/readiness` is an authenticated route that returns
   only safe readiness status, missing env var names, and setup categories; it
   never returns secret values;
+- `GET /api/background-agents/readiness?repoOwner=<owner>&repoName=<repo>`
+  also verifies user-token plus GitHub App repo coverage with typed readiness
+  reasons when called by an authenticated operator;
 - `BACKGROUND_AGENTS_ALLOWED_REPOS` is optional but can limit dispatch to one
   or more `owner/repo` entries for production live proof and staged rollout;
 - `/settings/background-agents` shows a compact readiness section with feature

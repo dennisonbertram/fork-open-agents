@@ -33,6 +33,22 @@ type PreflightCheck = {
   evidence: string[];
 };
 
+type RepoAccessReadiness = {
+  ready?: boolean;
+  repoOwner?: string;
+  repoName?: string;
+  requiredUserPermission?: string;
+  reason?: string | null;
+  message?: string;
+  installationId?: number | null;
+  repositoryId?: number | null;
+  defaultBranch?: string | null;
+};
+
+type ReadinessResponse = {
+  repoAccess?: RepoAccessReadiness;
+};
+
 export type LiveProofPreflightResult = {
   ready: boolean;
   options: LiveProofPreflightOptions;
@@ -231,6 +247,17 @@ function buildEnvAuditCheck(
   };
 }
 
+function getPreflightCookie(): string | undefined {
+  return process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE?.trim() || undefined;
+}
+
+function setBypassHeaders(headers: Headers) {
+  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
+  if (bypassSecret) {
+    headers.set("x-vercel-protection-bypass", bypassSecret);
+  }
+}
+
 async function checkReadinessRoute(params: {
   baseUrl?: string;
   fetchImpl: (
@@ -256,10 +283,7 @@ async function checkReadinessRoute(params: {
   const headers = new Headers({
     "User-Agent": "open-agents-background-agent-preflight/1.0",
   });
-  const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();
-  if (bypassSecret) {
-    headers.set("x-vercel-protection-bypass", bypassSecret);
-  }
+  setBypassHeaders(headers);
 
   try {
     const response = await params.fetchImpl(url, {
@@ -286,6 +310,143 @@ async function checkReadinessRoute(params: {
       status: "missing",
       detail: "Could not reach the hosted readiness route.",
       missing: ["reachable target deployment"],
+      evidence: [
+        `url=${url.toString()}`,
+        `error=${error instanceof Error ? error.message : String(error)}`,
+      ],
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function parseRepoParts(repo: string | undefined) {
+  if (!repo) {
+    return null;
+  }
+  const [owner, name] = repo.split("/");
+  return owner && name ? { owner, name } : null;
+}
+
+async function checkAuthenticatedRepoReadiness(params: {
+  baseUrl?: string;
+  repo?: string;
+  fetchImpl: (
+    input: URL | Request | string,
+    init?: RequestInit,
+  ) => Promise<Response>;
+}): Promise<PreflightCheck> {
+  if (!params.baseUrl || !params.repo) {
+    return {
+      id: "repo_readiness",
+      label: "Authenticated repo readiness",
+      status: "manual",
+      detail:
+        "Pass --base-url, --repo, and BACKGROUND_AGENT_PREFLIGHT_COOKIE to verify user access plus GitHub App repo coverage through the hosted app.",
+      missing: [],
+      evidence: [],
+    };
+  }
+
+  const cookie = getPreflightCookie();
+  if (!cookie) {
+    return {
+      id: "repo_readiness",
+      label: "Authenticated repo readiness",
+      status: "manual",
+      detail:
+        "Set BACKGROUND_AGENT_PREFLIGHT_COOKIE to verify user access plus GitHub App repo coverage through the hosted app.",
+      missing: [],
+      evidence: [
+        "No cookie was sent or printed; confirm repo readiness from the authenticated Settings panel if you do not use the CLI cookie check.",
+      ],
+    };
+  }
+
+  const repo = parseRepoParts(params.repo);
+  if (!repo) {
+    return {
+      id: "repo_readiness",
+      label: "Authenticated repo readiness",
+      status: "missing",
+      detail: "Repo readiness requires owner/repo.",
+      missing: ["disposable owner/repo"],
+      evidence: [],
+    };
+  }
+
+  const url = new URL("/api/background-agents/readiness", params.baseUrl);
+  url.searchParams.set("repoOwner", repo.owner);
+  url.searchParams.set("repoName", repo.name);
+  url.searchParams.set("permission", "write");
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  const headers = new Headers({
+    Cookie: cookie,
+    "User-Agent": "open-agents-background-agent-preflight/1.0",
+  });
+  setBypassHeaders(headers);
+
+  try {
+    const response = await params.fetchImpl(url, {
+      headers,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      return {
+        id: "repo_readiness",
+        label: "Authenticated repo readiness",
+        status: "missing",
+        detail:
+          "Hosted repo readiness did not accept the provided authentication.",
+        missing: ["authenticated repo readiness"],
+        evidence: [`url=${url.toString()}`, `status=${response.status}`],
+      };
+    }
+
+    const body = (await response.json()) as ReadinessResponse;
+    const repoAccess = body.repoAccess;
+    if (!repoAccess) {
+      return {
+        id: "repo_readiness",
+        label: "Authenticated repo readiness",
+        status: "missing",
+        detail: "Hosted readiness response did not include repoAccess.",
+        missing: ["repoAccess readiness"],
+        evidence: [`url=${url.toString()}`],
+      };
+    }
+
+    return {
+      id: "repo_readiness",
+      label: "Authenticated repo readiness",
+      status: repoAccess.ready ? "ready" : "missing",
+      detail: repoAccess.ready
+        ? "Hosted app verified user write access and GitHub App repo coverage."
+        : (repoAccess.message ??
+          "Hosted app could not verify repo access and GitHub App coverage."),
+      missing: repoAccess.ready ? [] : [repoAccess.reason ?? "repo_readiness"],
+      evidence: [
+        `repo=${repoAccess.repoOwner ?? repo.owner}/${repoAccess.repoName ?? repo.name}`,
+        `requiredUserPermission=${repoAccess.requiredUserPermission ?? "write"}`,
+        repoAccess.installationId
+          ? `installationId=${repoAccess.installationId}`
+          : "",
+        repoAccess.repositoryId
+          ? `repositoryId=${repoAccess.repositoryId}`
+          : "",
+        repoAccess.defaultBranch
+          ? `defaultBranch=${repoAccess.defaultBranch}`
+          : "",
+      ].filter(Boolean),
+    };
+  } catch (error) {
+    return {
+      id: "repo_readiness",
+      label: "Authenticated repo readiness",
+      status: "missing",
+      detail: "Could not reach authenticated repo readiness.",
+      missing: ["authenticated repo readiness"],
       evidence: [
         `url=${url.toString()}`,
         `error=${error instanceof Error ? error.message : String(error)}`,
@@ -358,20 +519,6 @@ function checkRepo(params: {
   };
 }
 
-function manualCheck(): PreflightCheck {
-  return {
-    id: "github_app_installation",
-    label: "GitHub App installation",
-    status: "manual",
-    detail:
-      "Confirm the Open Agents GitHub App is installed on the disposable repo with contents, pull requests, issues, deployments/statuses, metadata, and webhook delivery.",
-    missing: [],
-    evidence: [
-      "GitHub's repository installation endpoint requires GitHub App auth, so this check is intentionally manual unless run from the hosted app.",
-    ],
-  };
-}
-
 function buildNextSteps(checks: PreflightCheck[]) {
   const nextSteps: string[] = [];
   const envCheck = checks.find((check) => check.id === "vercel_env");
@@ -398,9 +545,11 @@ function buildNextSteps(checks: PreflightCheck[]) {
       "Pass --repo <owner>/<repo> for a disposable repository owned by Dennison's workspace.",
     );
   }
-  nextSteps.push(
-    "Confirm the GitHub App installation and authenticated readiness panel before firing live events.",
-  );
+  if (checks.some((check) => check.id === "repo_readiness")) {
+    nextSteps.push(
+      "Confirm authenticated repo readiness from the Settings panel or rerun preflight with BACKGROUND_AGENT_PREFLIGHT_COOKIE.",
+    );
+  }
   return nextSteps;
 }
 
@@ -431,7 +580,11 @@ export async function runLiveProofPreflight(
     buildEnvAuditCheck(envAudit, envCommand),
     await checkReadinessRoute({ baseUrl: options.baseUrl, fetchImpl }),
     checkRepo({ repo: options.repo, run }),
-    manualCheck(),
+    await checkAuthenticatedRepoReadiness({
+      baseUrl: options.baseUrl,
+      repo: options.repo,
+      fetchImpl,
+    }),
   ];
 
   const blockingChecks = checks.filter((check) => check.status !== "manual");

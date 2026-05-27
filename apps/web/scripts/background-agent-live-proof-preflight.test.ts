@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "bun:test";
 import type { EnvAuditResult } from "./background-agent-vercel-env-audit";
 import {
   runLiveProofPreflight,
@@ -46,6 +46,16 @@ function options(
 }
 
 describe("background-agent-live-proof-preflight", () => {
+  const originalCookie = process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE;
+
+  afterEach(() => {
+    if (originalCookie === undefined) {
+      delete process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE;
+    } else {
+      process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE = originalCookie;
+    }
+  });
+
   test("reports missing hosted env, target URL, and disposable repo without secrets", async () => {
     const result = await runLiveProofPreflight(options(), {
       runCommand: () => command(missingAudit, 1),
@@ -75,6 +85,9 @@ describe("background-agent-live-proof-preflight", () => {
         missing: ["disposable owner/repo"],
       }),
     );
+    expect(
+      result.checks.find((check) => check.id === "repo_readiness"),
+    ).toEqual(expect.objectContaining({ status: "manual" }));
     expect(JSON.stringify(result)).not.toContain("secret-value");
   });
 
@@ -113,7 +126,7 @@ describe("background-agent-live-proof-preflight", () => {
       ["vercel_env", "ready"],
       ["readiness_route", "ready"],
       ["disposable_repo", "ready"],
-      ["github_app_installation", "manual"],
+      ["repo_readiness", "manual"],
     ]);
     expect(calls[0]).toEqual({
       command: "bun",
@@ -127,6 +140,72 @@ describe("background-agent-live-proof-preflight", () => {
         "--verify-values",
       ],
     });
+  });
+
+  test("can verify repo readiness with an authenticated cookie", async () => {
+    process.env.BACKGROUND_AGENT_PREFLIGHT_COOKIE = "session=secret-value";
+    const requests: URL[] = [];
+    const result = await runLiveProofPreflight(
+      options({
+        baseUrl: "https://open-agents.example.com",
+        repo: "acme/widgets",
+      }),
+      {
+        runCommand: (commandName) => {
+          if (commandName === "bun") {
+            return command(readyAudit);
+          }
+          return command({
+            nameWithOwner: "acme/widgets",
+            url: "https://github.com/acme/widgets",
+            isPrivate: true,
+            defaultBranchRef: { name: "main" },
+          });
+        },
+        fetch: async (input, init) => {
+          const url = input instanceof URL ? input : new URL(String(input));
+          requests.push(url);
+          expect(String(init?.headers)).not.toContain("secret-value");
+          if (!url.searchParams.has("repoOwner")) {
+            return new Response(null, { status: 401 });
+          }
+          return Response.json({
+            repoAccess: {
+              ready: true,
+              repoOwner: "acme",
+              repoName: "widgets",
+              requiredUserPermission: "write",
+              reason: null,
+              message:
+                "GitHub user access and GitHub App installation cover this repo.",
+              installationId: 123,
+              repositoryId: 456,
+              defaultBranch: "main",
+            },
+          });
+        },
+      },
+    );
+
+    expect(result.ready).toBe(true);
+    expect(
+      result.checks.find((check) => check.id === "repo_readiness"),
+    ).toEqual(
+      expect.objectContaining({
+        status: "ready",
+        missing: [],
+        evidence: expect.arrayContaining([
+          "repo=acme/widgets",
+          "installationId=123",
+          "repositoryId=456",
+          "defaultBranch=main",
+        ]),
+      }),
+    );
+    expect(requests[1]?.toString()).toBe(
+      "https://open-agents.example.com/api/background-agents/readiness?repoOwner=acme&repoName=widgets&permission=write",
+    );
+    expect(JSON.stringify(result)).not.toContain("secret-value");
   });
 
   test("does not accept a public readiness route as proof", async () => {
