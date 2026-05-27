@@ -12,6 +12,7 @@ import {
   INSTALL_COMMANDS,
   type JavaScriptPackageManager,
 } from "@/lib/sandbox/runtime/js-package-manager";
+import { readSandboxLogs } from "@/lib/sandbox/runtime/service-logs";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 
 type RouteContext = {
@@ -22,6 +23,7 @@ export type DevServerLaunchResponse = {
   packagePath: string;
   port: number;
   url: string;
+  logPath: string;
 };
 
 export type DevServerStopResponse = {
@@ -525,6 +527,13 @@ function getDevServerPidFilePath(packageDirAbs: string, port: number): string {
   );
 }
 
+function getDevServerLogFilePath(packageDirAbs: string, port: number): string {
+  return path.posix.join(
+    packageDirAbs,
+    `${DEV_SERVER_PIDFILE_PREFIX}-${port}.log`,
+  );
+}
+
 function buildLaunchCommand(params: {
   packageManager: JavaScriptPackageManager;
   framework: DevFramework;
@@ -533,6 +542,7 @@ function buildLaunchCommand(params: {
   packageDirAbs: string;
   installDependencies: boolean;
   pidFilePath: string;
+  logFilePath: string;
 }): string {
   const runCommand = buildRunCommand(
     params.packageManager,
@@ -552,7 +562,9 @@ function buildLaunchCommand(params: {
 
   commandSteps.push(`exec ${runCommand}`);
 
-  return commandSteps.join(" && ");
+  return `(${commandSteps.join(" && ")}) > ${shellQuote(
+    params.logFilePath,
+  )} 2>&1`;
 }
 
 function getDevServerStateFilePath(workingDirectory: string): string {
@@ -561,7 +573,10 @@ function getDevServerStateFilePath(workingDirectory: string): string {
 
 function buildDevServerResponse(
   sandbox: ConnectedSandbox,
-  target: Pick<ResolvedDevServerTarget, "packagePath" | "port">,
+  target: Pick<
+    ResolvedDevServerTarget,
+    "packagePath" | "packageDirAbs" | "port"
+  >,
 ): DevServerLaunchResponse {
   if (!sandbox.domain) {
     throw new Error("Sandbox does not expose preview URLs");
@@ -571,6 +586,7 @@ function buildDevServerResponse(
     packagePath: target.packagePath,
     port: target.port,
     url: sandbox.domain(target.port),
+    logPath: getDevServerLogFilePath(target.packageDirAbs, target.port),
   };
 }
 
@@ -857,6 +873,7 @@ export async function POST(_req: Request, context: RouteContext) {
       packageDirAbs,
       installDependencies,
       pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
+      logFilePath: getDevServerLogFilePath(packageDirAbs, port),
     });
 
     try {
@@ -878,6 +895,70 @@ export async function POST(_req: Request, context: RouteContext) {
           error instanceof Error
             ? error.message
             : "Failed to launch dev server",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+function getRequestedLines(req: Request): number | undefined {
+  const value = new URL(req.url).searchParams.get("lines");
+  if (!value) {
+    return undefined;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) ? parsed : undefined;
+}
+
+export async function GET(req: Request, context: RouteContext) {
+  const authResult = await requireAuthenticatedUser();
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  const { sessionId } = await context.params;
+
+  try {
+    const sandboxResult = await connectDevServerSandboxForSession(
+      sessionId,
+      authResult.userId,
+    );
+    if (!sandboxResult.ok) {
+      return sandboxResult.response;
+    }
+
+    const { sandbox } = sandboxResult;
+    const target = await readPersistedDevServerTarget(sandbox);
+    if (!target) {
+      return Response.json(
+        { error: "No dev server log is available" },
+        { status: 404 },
+      );
+    }
+
+    const logs = await readSandboxLogs({
+      sandbox,
+      logPath: getDevServerLogFilePath(target.packageDirAbs, target.port),
+      lines: getRequestedLines(req),
+    });
+
+    return new Response(logs.content, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-store",
+        "X-Open-Agents-Log-Lines": String(logs.lines),
+        "X-Open-Agents-Log-Truncated": String(logs.truncated),
+      },
+    });
+  } catch (error) {
+    console.error("Failed to read dev server logs:", error);
+    return Response.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Failed to read dev server logs",
       },
       { status: 500 },
     );

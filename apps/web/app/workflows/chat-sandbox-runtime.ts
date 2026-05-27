@@ -50,6 +50,7 @@ import {
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
+import { WorkspaceStartupReporter } from "./workspace-startup-log";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
@@ -251,6 +252,7 @@ async function ensureManagedRuntimeEnvironment(params: {
   sandbox: Sandbox;
   sandboxName?: string | null;
   profile: ManagedRuntimeProfile;
+  startupReporter: WorkspaceStartupReporter;
 }): Promise<{ notes: string[]; profileRunId?: string }> {
   const notes: string[] = [];
   const { profile } = params;
@@ -273,12 +275,16 @@ async function ensureManagedRuntimeEnvironment(params: {
     );
   }
 
-  await sendWorkspaceStatus({
-    status: "setting-up",
-    message: `Managed runtime selected: ${profile.displayName} (${profile.id}). This profile installs ${profile.expectedTools.join(
+  await params.startupReporter.send(
+    `Managed runtime selected: ${profile.displayName} (${profile.id}). This profile installs ${profile.expectedTools.join(
       " and ",
     )} so the agent can run web app commands and browser checks in the sandbox.`,
-  });
+    [
+      `Managed runtime profile: ${profile.displayName} (${profile.id}@${profile.version})`,
+      `Expected tools: ${profile.expectedTools.join(", ") || "none"}`,
+      `Optional tools: ${profile.optionalTools.join(", ") || "none"}`,
+    ],
+  );
   await emitSessionEvent({
     sessionId: params.session.id,
     chatId: params.chatId ?? null,
@@ -300,15 +306,15 @@ async function ensureManagedRuntimeEnvironment(params: {
   });
 
   for (const [index, setupCommand] of profile.setupCommands.entries()) {
-    await sendWorkspaceStatus({
-      status: "setting-up",
-      message: buildSetupStepMessage({
+    await params.startupReporter.send(
+      buildSetupStepMessage({
         profile,
         command: setupCommand,
         stepNumber: index + 1,
         totalSteps: profile.setupCommands.length,
       }),
-    });
+      [`$ ${setupCommand.command}`],
+    );
     await emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
@@ -353,6 +359,15 @@ async function ensureManagedRuntimeEnvironment(params: {
       startedAt: commandStartedAt,
       finishedAt: commandFinishedAt,
       result,
+    });
+    await params.startupReporter.appendCommandResult({
+      message: result.success
+        ? `Managed runtime setup passed: ${setupCommand.label}.`
+        : `Managed runtime setup failed: ${setupCommand.label}.`,
+      command: setupCommand.command,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
     });
 
     if (profileRunId) {
@@ -399,10 +414,9 @@ async function ensureManagedRuntimeEnvironment(params: {
       notes.push(
         `Profile setup failed: ${setupCommand.label}. Verify the runtime profile before relying on its tools.`,
       );
-      await sendWorkspaceStatus({
-        status: "setting-up",
-        message: `Managed runtime profile setup failed: ${setupCommand.label}. ${setupCommand.description}`,
-      });
+      await params.startupReporter.send(
+        `Managed runtime profile setup failed: ${setupCommand.label}. ${setupCommand.description}`,
+      );
       if (profileRunId) {
         try {
           await finishManagedRuntimeProfileRun({
@@ -451,15 +465,15 @@ async function ensureManagedRuntimeEnvironment(params: {
     index,
     verificationCommand,
   ] of profile.verificationCommands.entries()) {
-    await sendWorkspaceStatus({
-      status: "setting-up",
-      message: buildVerificationStepMessage({
+    await params.startupReporter.send(
+      buildVerificationStepMessage({
         profile,
         command: verificationCommand,
         stepNumber: index + 1,
         totalSteps: profile.verificationCommands.length,
       }),
-    });
+      [`$ ${verificationCommand.command}`],
+    );
     await emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
@@ -496,6 +510,15 @@ async function ensureManagedRuntimeEnvironment(params: {
       startedAt: commandStartedAt,
       finishedAt: commandFinishedAt,
       result,
+    });
+    await params.startupReporter.appendCommandResult({
+      message: result.success
+        ? `Managed runtime verification passed: ${verificationCommand.label}.`
+        : `Managed runtime verification finished: ${verificationCommand.label}.`,
+      command: verificationCommand.command,
+      exitCode: result.exitCode,
+      stdout: result.stdout,
+      stderr: result.stderr,
     });
 
     if (profileRunId) {
@@ -553,10 +576,9 @@ async function ensureManagedRuntimeEnvironment(params: {
     notes.push(
       `Required profile verification failed: ${verificationCommand.label}.`,
     );
-    await sendWorkspaceStatus({
-      status: "setting-up",
-      message: `Managed runtime is active, but verification failed: ${verificationCommand.label}.`,
-    });
+    await params.startupReporter.send(
+      `Managed runtime is active, but verification failed: ${verificationCommand.label}.`,
+    );
     if (profileRunId) {
       try {
         await finishManagedRuntimeProfileRun({
@@ -589,10 +611,10 @@ async function ensureManagedRuntimeEnvironment(params: {
     return { notes, profileRunId };
   }
 
-  await sendWorkspaceStatus({
-    status: "setting-up",
-    message: `Managed runtime profile is ready: ${profile.displayName}.`,
-  });
+  await params.startupReporter.send(
+    `Managed runtime profile is ready: ${profile.displayName}.`,
+    [`Managed runtime profile ready: ${profile.displayName}`],
+  );
   if (profileRunId) {
     try {
       await finishManagedRuntimeProfileRun({
@@ -652,11 +674,22 @@ export async function resolveChatSandboxRuntime(params: {
   }
 
   const didSetupWorkspace = !isSandboxActive(session.sandboxState);
+  const startupReporter = new WorkspaceStartupReporter(
+    session.runtimeMode === "managed_runtime"
+      ? "Preparing sandbox and managed runtime"
+      : "Preparing sandbox workspace",
+    sendWorkspaceStatus,
+  );
+  const sandboxInputState = buildSandboxState(session);
   if (didSetupWorkspace) {
-    await sendWorkspaceStatus({
-      status: "setting-up",
-      message: "Setting up the workspace...",
-    });
+    await startupReporter.send("Setting up the workspace...", [
+      `Session: ${session.id}`,
+      `Sandbox name: ${sandboxInputState.sandboxName ?? "ephemeral"}`,
+      session.repoOwner && session.repoName
+        ? `Repository: ${session.repoOwner}/${session.repoName}`
+        : "Repository: empty workspace",
+      session.branch ? `Branch: ${session.branch}` : "Branch: default",
+    ]);
   }
 
   const gitUser = await getGitUser(params.userId);
@@ -675,6 +708,12 @@ export async function resolveChatSandboxRuntime(params: {
     if (!access.ok) {
       throw new Error(getRepoAccessErrorMessage(access.reason));
     }
+    if (didSetupWorkspace) {
+      await startupReporter.send("Repository access verified.", [
+        `GitHub installation: ${access.installationId}`,
+        `Repository id: ${access.repositoryId}`,
+      ]);
+    }
 
     setupToken = await mintInstallationToken({
       installationId: access.installationId,
@@ -685,8 +724,17 @@ export async function resolveChatSandboxRuntime(params: {
 
   let sandbox: Sandbox;
   try {
+    if (didSetupWorkspace) {
+      await startupReporter.send("Starting the sandbox...", [
+        DEFAULT_SANDBOX_BASE_SNAPSHOT_ID
+          ? `Base snapshot: ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID}`
+          : "Base snapshot: default runtime",
+        `Ports: ${DEFAULT_SANDBOX_PORTS.join(", ")}`,
+        `vCPUs: ${DEFAULT_SANDBOX_VCPUS}`,
+      ]);
+    }
     sandbox = await connectSandbox({
-      state: buildSandboxState(session),
+      state: sandboxInputState,
       options: {
         githubToken: setupToken?.token,
         gitUser,
@@ -708,7 +756,21 @@ export async function resolveChatSandboxRuntime(params: {
   const rawSandboxState = sandbox.getState?.();
   const sandboxState = isSandboxState(rawSandboxState)
     ? rawSandboxState
-    : buildSandboxState(session);
+    : sandboxInputState;
+
+  if (didSetupWorkspace) {
+    await startupReporter.send("Sandbox is ready.", [
+      `Sandbox session: ${sandboxState.sandboxName ?? sandboxState.sandboxId ?? "unknown"}`,
+      `Working directory: ${sandbox.workingDirectory}`,
+      sandbox.currentBranch ? `Current branch: ${sandbox.currentBranch}` : "",
+    ]);
+    const globalSkillRefs = session.globalSkillRefs ?? [];
+    if (globalSkillRefs.length > 0) {
+      await startupReporter.send("Installing session skills...", [
+        `Global skills: ${globalSkillRefs.join(", ")}`,
+      ]);
+    }
+  }
 
   await Promise.all([
     updateSession(params.sessionId, {
@@ -724,6 +786,13 @@ export async function resolveChatSandboxRuntime(params: {
       didSetupWorkspace,
     }),
   ]);
+
+  if (didSetupWorkspace) {
+    await startupReporter.send("Workspace setup finished.", [
+      "Session sandbox state saved.",
+      "Workspace skills cache refreshed.",
+    ]);
+  }
 
   const managedRuntimeProfile =
     session.runtimeMode === "managed_runtime"
@@ -743,6 +812,7 @@ export async function resolveChatSandboxRuntime(params: {
           sandbox,
           sandboxName: sandboxState.sandboxName ?? null,
           profile: managedRuntimeProfile!,
+          startupReporter,
         })
       : { notes: [] };
   const managedRuntimeNotes = managedRuntimeEnvironment.notes;

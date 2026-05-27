@@ -20,6 +20,7 @@ import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
+import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -714,6 +715,11 @@ export function InboxSidebar({
     owner: string;
     repo: string;
   } | null>(null);
+  const [workspaceSettingsRepo, setWorkspaceSettingsRepo] = useState<{
+    owner: string;
+    repo: string;
+    label: string;
+  } | null>(null);
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
@@ -941,6 +947,13 @@ export function InboxSidebar({
     setBranchPickerRepo({ owner, repo });
   }, []);
 
+  const handleOpenWorkspaceSettings = useCallback(
+    (owner: string, repo: string, label: string) => {
+      setWorkspaceSettingsRepo({ owner, repo, label });
+    },
+    [],
+  );
+
   const handleBranchSelected = useCallback(
     async (branch: string) => {
       if (!branchPickerRepo) return;
@@ -1126,6 +1139,28 @@ export function InboxSidebar({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  handleOpenWorkspaceSettings(
+                                    groupRepoOwner,
+                                    groupRepoName,
+                                    group.label,
+                                  );
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                aria-label={`Open workspace settings for ${group.label}`}
+                              >
+                                <Settings className="h-3 w-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              Workspace settings
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleCreateForRepo(
                                     groupRepoOwner,
                                     groupRepoName,
@@ -1267,6 +1302,29 @@ export function InboxSidebar({
           onSelectBranch={handleBranchSelected}
         />
       ) : null}
+
+      <Dialog
+        open={workspaceSettingsRepo !== null}
+        onOpenChange={(open) => {
+          if (!open) setWorkspaceSettingsRepo(null);
+        }}
+      >
+        <DialogContent className="flex h-[85vh] max-w-2xl flex-col overflow-hidden p-0 sm:h-[42rem]">
+          <DialogHeader className="border-b border-border px-4 py-3">
+            <DialogTitle>Workspace Settings</DialogTitle>
+            <DialogDescription>
+              {workspaceSettingsRepo?.label ??
+                "Configure repository workspace access."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="min-h-0 flex-1">
+            <ComposioWorkspaceSettingsPanel
+              repoOwner={workspaceSettingsRepo?.owner ?? null}
+              repoName={workspaceSettingsRepo?.repo ?? null}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Archive confirmation dialog */}
       <Dialog

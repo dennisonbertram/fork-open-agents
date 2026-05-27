@@ -10,6 +10,7 @@ import {
   updateChat,
 } from "@/lib/db/sessions";
 import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
+import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import {
   chatComposioSelectionInputSchema,
   type ChatComposioSelection,
@@ -125,6 +126,27 @@ export async function PATCH(req: Request, context: RouteContext) {
       { error: "Invalid composioSelection" },
       { status: 400 },
     );
+  }
+  if (nextComposioSelection?.success) {
+    const profileId = nextComposioSelection.data.mainProfileId;
+    if (profileId) {
+      const policy = await isComposioProfileAllowedForRepository({
+        userId: authResult.userId,
+        profileId,
+        repoOwner: chatContext.sessionRecord.repoOwner,
+        repoName: chatContext.sessionRecord.repoName,
+      });
+      if (!policy.allowed) {
+        return Response.json(
+          {
+            error:
+              policy.reason ??
+              "Selected Composio profile is blocked by repository policy",
+          },
+          { status: 400 },
+        );
+      }
+    }
   }
   if (hasInferenceProfileUpdate) {
     if (

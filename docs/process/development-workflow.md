@@ -83,6 +83,63 @@ replace the protected path test.
 
 Use [Behavior TDD](behavior-tdd.md) for the template.
 
+## Authenticated Local UI Smoke
+
+For UI changes that touch authenticated paths, settings, sessions, repository
+groups, workspace controls, persisted preferences, or database-backed state,
+browser QA requires a runnable local database environment before the Agent
+Browser smoke starts.
+
+Before opening the browser:
+
+1. Make sure the worktree has local env:
+
+   ```bash
+   ./init.sh --force-env-pull --verify
+   ```
+
+   If another app owns `localhost:3000`, use an explicit app URL instead of
+   following the wrong server:
+
+   ```bash
+   LOCAL_URL=http://localhost:3001 ./init.sh --force-env-pull --verify
+   ```
+
+2. Confirm `apps/web/.env.local` contains non-empty `POSTGRES_URL` and
+   `BETTER_AUTH_SECRET` without printing secret values.
+
+3. Apply migrations to the local Development/Preview database, not production:
+
+   ```bash
+   bun run --cwd apps/web db:migrate:apply
+   ```
+
+4. Start the app on the URL you will test:
+
+   ```bash
+   PORT=3001 bun run web
+   ```
+
+5. Use `agent-browser` to exercise the actual authenticated path. In
+   development-only smoke runs, the test-auth cookie may be used when the path
+   does not require OAuth provider behavior:
+
+   ```bash
+   agent-browser --session local-ui cookies set open_agents_test_user_id dev-managed-runtime-user --url http://localhost:3001 --path / --sameSite Lax
+   ```
+
+After the smoke, check:
+
+```bash
+agent-browser --session local-ui errors
+agent-browser --session local-ui console
+```
+
+Inspect local server logs before handoff. If the authenticated path cannot load
+because `POSTGRES_URL`, migrations, or the target port are wrong, the browser
+smoke is blocked, not complete. Fix the local env or document an explicit,
+approved exception in the PR.
+
 ## Deterministic First
 
 Preferred proof order:

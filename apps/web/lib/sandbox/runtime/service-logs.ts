@@ -37,12 +37,24 @@ export async function readServiceLogs(params: {
     return { content: "", truncated: false, lines: 0 };
   }
 
+  return readSandboxLogs({
+    sandbox: params.sandbox,
+    logPath,
+    lines: params.lines,
+  });
+}
+
+export async function readSandboxLogs(params: {
+  sandbox: ConnectedSandbox;
+  logPath: string;
+  lines?: number;
+}): Promise<{ content: string; truncated: boolean; lines: number }> {
   const lines = Math.min(
     Math.max(Math.floor(params.lines ?? DEFAULT_LOG_LINES), 1),
     MAX_LOG_LINES,
   );
   const result = await params.sandbox.exec(
-    `tail -n ${lines} ${shellQuote(logPath)}`,
+    `tail -n ${lines} ${shellQuote(params.logPath)}`,
     params.sandbox.workingDirectory,
     10_000,
   );
