@@ -63,12 +63,32 @@ describe("background-agent-vercel-env-audit", () => {
     });
 
     expect(result.ready).toBe(false);
+    expect(result.requireAllowlist).toBe(false);
     expect(result.missing).toEqual([
       "BACKGROUND_AGENTS_CRON_SECRET",
       "BACKGROUND_AGENTS_ENABLED",
       "BACKGROUND_AGENTS_WEBHOOK_SECRET",
       "CRON_SECRET",
     ]);
+  });
+
+  test("can require the repo allowlist for controlled production proof", () => {
+    const result = auditVercelEnvNames({
+      entries: parseVercelEnvLs(envLsFixture),
+      environment: "production",
+      requireAllowlist: true,
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.requireAllowlist).toBe(true);
+    expect(result.missing).toContain("BACKGROUND_AGENTS_ALLOWED_REPOS");
+    expect(
+      result.checks.find((check) => check.id === "repo_allowlist"),
+    ).toMatchObject({
+      status: "missing",
+      missing: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
+      empty: [],
+    });
   });
 
   test("can verify required value presence without exposing values", () => {
@@ -121,6 +141,7 @@ QUOTED_EMPTY=""
       entries: parseVercelEnvLs(`
  name                                               value               environments (git branch)                   created
  BACKGROUND_AGENTS_ENABLED                         Encrypted           Preview                                     1m ago
+ BACKGROUND_AGENTS_ALLOWED_REPOS                   Encrypted           Preview                                     1m ago
  POSTGRES_URL                                      Encrypted           Preview                                     1m ago
  BETTER_AUTH_SECRET                                Encrypted           Preview                                     1m ago
  NEXT_PUBLIC_VERCEL_APP_CLIENT_ID                  Encrypted           Preview                                     1m ago
@@ -135,6 +156,7 @@ QUOTED_EMPTY=""
  BACKGROUND_AGENTS_WEBHOOK_SECRET                  Encrypted           Preview                                     1m ago
 `),
       environment: "preview",
+      requireAllowlist: true,
     });
 
     expect(result.ready).toBe(true);

@@ -38,6 +38,7 @@ export interface EnvAuditCheck {
 export interface EnvAuditResult {
   environment: VercelEnvironment;
   branch?: string;
+  requireAllowlist: boolean;
   ready: boolean;
   missing: string[];
   checks: EnvAuditCheck[];
@@ -255,8 +256,21 @@ export function auditVercelEnvNames(params: {
   environment: VercelEnvironment;
   branch?: string;
   presentValues?: Set<string>;
+  requireAllowlist?: boolean;
 }): EnvAuditResult {
-  const checks = requirements.map((requirement): EnvAuditCheck => {
+  const activeRequirements = params.requireAllowlist
+    ? [
+        ...requirements,
+        {
+          id: "repo_allowlist",
+          label: "Repo allowlist",
+          detail:
+            "Required for controlled production proof and staged rollout.",
+          all: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
+        },
+      ]
+    : requirements;
+  const checks = activeRequirements.map((requirement): EnvAuditCheck => {
     if (requirement.all) {
       const { missing, empty } = getMissingOrEmptyNames({
         names: requirement.all,
@@ -312,6 +326,7 @@ export function auditVercelEnvNames(params: {
   return {
     environment: params.environment,
     ...(params.branch ? { branch: params.branch } : {}),
+    requireAllowlist: params.requireAllowlist ?? false,
     ready: checks.every((check) => check.status === "ready"),
     missing,
     checks,
@@ -334,6 +349,7 @@ function parseArgs(argv: string[]) {
   let input: string | undefined;
   let json = false;
   let verifyValues = false;
+  let requireAllowlist = false;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -382,10 +398,15 @@ function parseArgs(argv: string[]) {
       continue;
     }
 
+    if (arg === "--require-allowlist") {
+      requireAllowlist = true;
+      continue;
+    }
+
     throw new EnvAuditError(`Unknown argument: ${arg}`);
   }
 
-  return { environment, branch, input, json, verifyValues };
+  return { environment, branch, input, json, verifyValues, requireAllowlist };
 }
 
 function readVercelEnvLs(input?: string): string {
@@ -485,6 +506,7 @@ export function runEnvAudit(argv = process.argv.slice(2)): number {
       environment: args.environment,
       branch: args.branch,
       presentValues,
+      requireAllowlist: args.requireAllowlist,
     });
 
     console.log(

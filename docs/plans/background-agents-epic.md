@@ -178,6 +178,8 @@ trigger is fired:
 - `bun run --cwd apps/web background-agents:env-audit -- --environment preview
   --branch <branch>` audits Vercel env names and branch scopes without reading
   or printing encrypted values;
+- `background-agents:env-audit -- --require-allowlist` treats
+  `BACKGROUND_AGENTS_ALLOWED_REPOS` as required for controlled live proof;
 - `background-agents:env-audit -- --verify-values` uses a temporary
   `vercel env pull` file to report only blank required variable names, then
   deletes the temp file before exit;

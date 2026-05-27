@@ -32,7 +32,8 @@ For Vercel project env names, run:
 ```bash
 bun run --cwd apps/web background-agents:env-audit -- \
   --environment preview \
-  --branch <proof-branch>
+  --branch <proof-branch> \
+  --require-allowlist
 ```
 
 The command runs `vercel env ls`, checks names and scopes only, and exits
@@ -47,7 +48,8 @@ temporary file before exit:
 ```bash
 bun run --cwd apps/web background-agents:env-audit -- \
   --environment production \
-  --verify-values
+  --verify-values \
+  --require-allowlist
 ```
 
 - Database and Better Auth session configuration.
