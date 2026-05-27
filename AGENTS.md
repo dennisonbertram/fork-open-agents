@@ -50,6 +50,19 @@ Use the process docs for non-trivial work:
   bug-to-regression workflow.
 - [Formatting Gate](docs/process/formatting-gate.md) defines completion checks.
 
+All GitHub issues created or materially edited by agents must follow
+[Feature Ticket Format](docs/process/feature-ticket-format.md). Do not open
+blank issues. Use the standard feature, bug regression, or research spike
+template; fill unknown fields explicitly; and include the required structured
+observability, regression harness plan, protected path, tests-first plan, deploy
+impact, and definition-of-done sections before implementation starts.
+
+Whenever an agent creates a non-trivial plan, roadmap, epic, or implementation
+breakdown, first create or identify the corresponding GitHub issue or epic and
+flesh it out according to the standard issue format. The issue/epic is the
+durable record of what is being built and why; planning docs can expand on it,
+but they must link back to the issue/epic instead of replacing it.
+
 For behavior-changing work, name the protected user/operator path, write or
 identify the failing test first, confirm the red state, implement the smallest
 green change, and then run the adjacent suite plus `git diff --check` and
