@@ -8,6 +8,8 @@ import {
   updateInstallationsByInstallationId,
   upsertInstallation,
 } from "@/lib/db/installations";
+import { dispatchBackgroundTriggerEvent } from "@/lib/background-agents/dispatcher";
+import { normalizeGitHubBackgroundEvent } from "@/lib/background-agents/github-events";
 import { updateSession } from "@/lib/db/sessions";
 import { db } from "@/lib/db/client";
 import { sessions } from "@/lib/db/schema";
@@ -192,7 +194,48 @@ export async function POST(req: Request): Promise<Response> {
       );
     }
 
-    return handlePullRequestWebhook(parsed.data);
+    const backgroundEvent = normalizeGitHubBackgroundEvent(
+      event,
+      parsedPayload,
+    );
+    const backgroundAgents = backgroundEvent
+      ? await dispatchBackgroundTriggerEvent({
+          event: backgroundEvent,
+          requestId: req.headers.get("x-request-id"),
+        })
+      : null;
+    const sessionResponse = await handlePullRequestWebhook(parsed.data);
+    const sessionPayload = (await sessionResponse.json()) as Record<
+      string,
+      unknown
+    >;
+    return Response.json({
+      ...sessionPayload,
+      ...(backgroundAgents ? { backgroundAgents } : {}),
+    });
+  }
+
+  if (event === "issues" || event === "deployment_status") {
+    const backgroundEvent = normalizeGitHubBackgroundEvent(
+      event,
+      parsedPayload,
+    );
+    if (!backgroundEvent) {
+      return Response.json(
+        { error: "Invalid webhook payload" },
+        { status: 400 },
+      );
+    }
+
+    const backgroundAgents = await dispatchBackgroundTriggerEvent({
+      event: backgroundEvent,
+      requestId: req.headers.get("x-request-id"),
+    });
+    return Response.json({
+      ok: true,
+      event,
+      backgroundAgents,
+    });
   }
 
   if (event !== "installation" && event !== "installation_repositories") {
