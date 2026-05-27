@@ -4649,6 +4649,8 @@ export function SessionChatContent({
                             )}
                             <ComposioToolSelectorCompact
                               selection={chatInfo.composioSelection}
+                              repoOwner={session.repoOwner}
+                              repoName={session.repoName}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }
