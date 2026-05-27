@@ -126,6 +126,7 @@ const githubEvent: NormalizedBackgroundTriggerEvent = {
 
 function resetDispatcherMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
+  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
   workflowRunId = "workflow-1";
   matchingRows = [];
   webhookRow = null;
@@ -208,6 +209,33 @@ describe("dispatchBackgroundTriggerEvent", () => {
       }),
     );
   });
+
+  test("does not dispatch GitHub events outside the configured repo allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-allowlist",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    });
+    expect(listMatchingTriggersForEvent).not.toHaveBeenCalled();
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchWebhookErrorEvent", () => {
@@ -253,6 +281,36 @@ describe("dispatchWebhookErrorEvent", () => {
         errorKind: "workflow_failed",
       }),
     );
+  });
+
+  test("does not dispatch signed webhooks outside the configured repo allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
+    webhookRow = {
+      agent,
+      trigger: webhookTrigger,
+    };
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_123",
+      event: {
+        externalId: "error-1",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-05-27T12:00:00.000Z",
+      },
+      requestId: "req-webhook",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 });
 
@@ -310,6 +368,32 @@ describe("dispatchScheduledBackgroundAgents", () => {
       }),
     );
   });
+
+  test("filters scheduled runs by the configured repo allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
+    scheduleRows = [
+      {
+        agent,
+        trigger: scheduleTrigger,
+      },
+    ];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-05-27T12:34:00.000Z"),
+      requestId: "req-cron",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchManualBackgroundAgentTest", () => {
@@ -365,6 +449,26 @@ describe("dispatchManualBackgroundAgentTest", () => {
 
     expect(result).toEqual({
       enabled: false,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  test("does not create a manual test run outside the configured repo allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent,
+      requestId: "req-1",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
       matched: 0,
       created: 0,
       duplicates: 0,

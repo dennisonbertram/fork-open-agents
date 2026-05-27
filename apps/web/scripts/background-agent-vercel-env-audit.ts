@@ -232,6 +232,7 @@ export function auditVercelEnvNames(params: {
     checks,
     notes: [
       "This audit checks Vercel env names only; it never reads or prints secret values.",
+      "Set BACKGROUND_AGENTS_ALLOWED_REPOS=owner/repo to limit production proof to a disposable repository.",
       "Sandbox runtime and AI Gateway OIDC readiness are verified by the hosted readiness route.",
     ],
   };

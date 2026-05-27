@@ -11,6 +11,7 @@ export interface BackgroundAgentReadinessCheck {
     | "github_app"
     | "sandbox_runtime"
     | "inference_gateway"
+    | "repo_allowlist"
     | "cron_secret"
     | "webhook_secret";
   label: string;
@@ -66,6 +67,7 @@ function checkAny(
 
 export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
   const enabled = process.env.BACKGROUND_AGENTS_ENABLED === "true";
+  const allowedRepos = process.env.BACKGROUND_AGENTS_ALLOWED_REPOS?.trim();
   const checks: BackgroundAgentReadinessCheck[] = [
     {
       id: "feature_flag",
@@ -115,6 +117,15 @@ export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
       ["VERCEL", "VERCEL_ENV", "AI_GATEWAY_API_KEY"],
       "Required so unattended background agents can call the default model.",
     ),
+    {
+      id: "repo_allowlist",
+      label: "Repo allowlist",
+      status: "ready",
+      detail: allowedRepos
+        ? "Dispatch is limited to BACKGROUND_AGENTS_ALLOWED_REPOS."
+        : "Unset allows all repos; set BACKGROUND_AGENTS_ALLOWED_REPOS for controlled proof.",
+      missing: [],
+    },
     checkAny(
       "cron_secret",
       "Cron dispatch secret",

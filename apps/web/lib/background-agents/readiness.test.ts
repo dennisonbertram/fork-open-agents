@@ -18,6 +18,7 @@ const managedEnvKeys = [
   "VERCEL_ENV",
   "VERCEL_TOKEN",
   "AI_GATEWAY_API_KEY",
+  "BACKGROUND_AGENTS_ALLOWED_REPOS",
   "BACKGROUND_AGENTS_CRON_SECRET",
   "CRON_SECRET",
   "BACKGROUND_AGENTS_WEBHOOK_SECRET",
@@ -92,6 +93,27 @@ describe("background agent readiness", () => {
     ).toMatchObject({
       status: "ready",
       missing: [],
+    });
+  });
+
+  test("reports the optional repo allowlist without making it required", async () => {
+    const { getBackgroundAgentReadiness } = await modulePromise;
+    for (const key of managedEnvKeys) {
+      process.env[key] = `${key.toLowerCase()}-value`;
+    }
+    process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/widgets";
+
+    const readiness = getBackgroundAgentReadiness();
+
+    expect(readiness.ready).toBe(true);
+    expect(readiness.missing).toEqual([]);
+    expect(
+      readiness.checks.find((check) => check.id === "repo_allowlist"),
+    ).toMatchObject({
+      status: "ready",
+      missing: [],
+      detail: "Dispatch is limited to BACKGROUND_AGENTS_ALLOWED_REPOS.",
     });
   });
 

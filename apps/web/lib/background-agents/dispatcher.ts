@@ -14,7 +14,10 @@ import {
   type BackgroundAgentRunSource,
   type NormalizedBackgroundTriggerEvent,
 } from "./types";
-import { isBackgroundAgentsEnabled } from "./config";
+import {
+  isBackgroundAgentRepoAllowed,
+  isBackgroundAgentsEnabled,
+} from "./config";
 import { scheduleMatchesNow } from "./schedule";
 
 export type BackgroundDispatchResult = {
@@ -63,6 +66,17 @@ export async function dispatchBackgroundTriggerEvent(params: {
   if (!isBackgroundAgentsEnabled()) {
     return {
       enabled: false,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    };
+  }
+  if (
+    !isBackgroundAgentRepoAllowed(params.event.repoOwner, params.event.repoName)
+  ) {
+    return {
+      enabled: true,
       matched: 0,
       created: 0,
       duplicates: 0,
@@ -166,6 +180,15 @@ export async function dispatchWebhookErrorEvent(params: {
     repoOwner: params.event.repoOwner ?? row.agent.repoOwner,
     repoName: params.event.repoName ?? row.agent.repoName,
   };
+  if (!isBackgroundAgentRepoAllowed(event.repoOwner, event.repoName)) {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    };
+  }
 
   const result = await createRunForTrigger({
     agent: row.agent,
@@ -235,6 +258,17 @@ export async function dispatchManualBackgroundAgentTest(params: {
     params.agent.triggers.find((item) => item.status === "enabled") ??
     params.agent.triggers[0];
   if (!trigger) {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    };
+  }
+  if (
+    !isBackgroundAgentRepoAllowed(params.agent.repoOwner, params.agent.repoName)
+  ) {
     return {
       enabled: true,
       matched: 0,
@@ -324,8 +358,10 @@ export async function dispatchScheduledBackgroundAgents(params?: {
   }
 
   const now = params?.now ?? new Date();
-  const rows = (await listEnabledScheduleTriggers()).filter(({ trigger }) =>
-    scheduleMatchesNow(trigger.schedule, now),
+  const rows = (await listEnabledScheduleTriggers()).filter(
+    ({ agent, trigger }) =>
+      scheduleMatchesNow(trigger.schedule, now) &&
+      isBackgroundAgentRepoAllowed(agent.repoOwner, agent.repoName),
   );
   let created = 0;
   let duplicates = 0;

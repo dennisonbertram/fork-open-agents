@@ -181,6 +181,8 @@ trigger is fired:
 - `GET /api/background-agents/readiness` is an authenticated route that returns
   only safe readiness status, missing env var names, and setup categories; it
   never returns secret values;
+- `BACKGROUND_AGENTS_ALLOWED_REPOS` is optional but can limit dispatch to one
+  or more `owner/repo` entries for production live proof and staged rollout;
 - `/settings/background-agents` shows a compact readiness section with feature
   flag, auth/database, Vercel sign-in, GitHub OAuth, GitHub App, cron secret,
   sandbox runtime, inference gateway, cron secret, and generic webhook secret
