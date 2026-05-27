@@ -16,6 +16,7 @@ import {
   type BackgroundAgentRun,
   type BackgroundAgentTrigger,
   type NewBackgroundAgentEvent,
+  type NewBackgroundAgentOutput,
   type NewBackgroundAgentRun,
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "./redaction";
@@ -48,6 +49,16 @@ type RecordEventInput = {
   workflowRunId?: string | null;
   sandboxName?: string | null;
   errorKind?: string | null;
+  payload?: unknown;
+};
+
+type RecordOutputInput = {
+  runId: string;
+  userId: string;
+  kind: NewBackgroundAgentOutput["kind"];
+  status: NewBackgroundAgentOutput["status"];
+  url?: string | null;
+  prNumber?: number | null;
   payload?: unknown;
 };
 
@@ -377,6 +388,30 @@ export async function recordBackgroundAgentEvent(
   return event;
 }
 
+export async function recordBackgroundAgentOutput(
+  input: RecordOutputInput,
+): Promise<BackgroundAgentOutput> {
+  const [output] = await db
+    .insert(backgroundAgentOutputs)
+    .values({
+      id: nanoid(),
+      runId: input.runId,
+      userId: input.userId,
+      kind: input.kind,
+      status: input.status,
+      url: input.url ?? null,
+      prNumber: input.prNumber ?? null,
+      payload: redactBackgroundAgentPayload(input.payload),
+    })
+    .returning();
+
+  if (!output) {
+    throw new Error("Failed to record background agent output");
+  }
+
+  return output;
+}
+
 export async function updateBackgroundAgentRunStatus(params: {
   runId: string;
   status: BackgroundAgentRunStatus;
@@ -384,6 +419,7 @@ export async function updateBackgroundAgentRunStatus(params: {
   sandboxName?: string | null;
   errorKind?: string | null;
   errorMessage?: string | null;
+  outputUrl?: string | null;
 }): Promise<BackgroundAgentRun | null> {
   const terminalStatuses = new Set<BackgroundAgentRunStatus>([
     "succeeded",
@@ -407,6 +443,9 @@ export async function updateBackgroundAgentRunStatus(params: {
         : {}),
       ...(params.errorMessage !== undefined
         ? { errorMessage: params.errorMessage }
+        : {}),
+      ...(params.outputUrl !== undefined
+        ? { outputUrl: params.outputUrl }
         : {}),
       ...(params.status === "running" ? { startedAt: now } : {}),
       ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),

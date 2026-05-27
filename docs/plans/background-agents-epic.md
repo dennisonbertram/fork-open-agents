@@ -62,6 +62,25 @@ turning on code mutation yet:
 - `ready_pr` runs still fail visibly after sandbox/check evidence because
   mutation and PR creation remain the next protected step.
 
+## Ready PR Slice
+
+The ready PR implementation slice turns the evidence path into an output path
+for `ready_pr` agents:
+
+- `ready_pr` runs prepare a deterministic run-scoped branch before mutation;
+- the existing Open Agent tool loop runs inside the background sandbox with an
+  unattended prompt and explicit "do not create a PR yourself" boundary;
+- each agent step records finish reason, tool-call count, duration, and token
+  usage into the run timeline;
+- configured checks still gate output after mutation and before commit/PR
+  creation;
+- successful runs bundle sandbox changes into a verified GitHub App commit;
+- successful runs open a user-token PR only after checks pass and persist a
+  `ready_pr` output record with URL, PR number, branch, base branch, and commit;
+- failed output creation records a typed `pr_creation_failed` failure and no
+  ready PR is created;
+- Composio and other external tool providers remain out of execution for v1.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
@@ -75,8 +94,17 @@ Initial events:
 - `background-agent.sandbox.started`
 - `background-agent.git.context.started`
 - `background-agent.git.context.completed`
+- `background-agent.git.branch.started`
+- `background-agent.git.branch.completed`
+- `background-agent.git.branch.resolved`
+- `background-agent.agent.started`
+- `background-agent.agent.step.completed`
+- `background-agent.agent.completed`
 - `background-agent.check.started`
 - `background-agent.check.completed`
+- `background-agent.commit.started`
+- `background-agent.commit.completed`
+- `background-agent.output.created`
 - `background-agent.workflow.start_failed`
 - `background-agent.run.completed`
 - `background-agent.run.failed`
