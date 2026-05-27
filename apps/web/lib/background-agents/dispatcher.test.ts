@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundAgentWithTriggers } from "./store";
+import type { NormalizedBackgroundTriggerEvent } from "./types";
 
 mock.module("server-only", () => ({}));
 
@@ -11,6 +12,21 @@ const createRunForTrigger = mock(async ({ event }: { event: unknown }) => ({
   event,
 }));
 const recordBackgroundAgentEvent = mock(async () => undefined);
+let matchingRows: Array<{
+  agent: BackgroundAgentWithTriggers;
+  trigger: BackgroundAgentWithTriggers["triggers"][number];
+}> = [];
+let webhookRow: {
+  agent: BackgroundAgentWithTriggers;
+  trigger: BackgroundAgentWithTriggers["triggers"][number];
+} | null = null;
+let scheduleRows: Array<{
+  agent: BackgroundAgentWithTriggers;
+  trigger: BackgroundAgentWithTriggers["triggers"][number];
+}> = [];
+const listMatchingTriggersForEvent = mock(async () => matchingRows);
+const getWebhookTriggerByPublicId = mock(async () => webhookRow);
+const listEnabledScheduleTriggers = mock(async () => scheduleRows);
 
 mock.module("workflow/api", () => ({ start }));
 
@@ -21,9 +37,9 @@ mock.module("@/app/workflows/background-agent", () => ({
 mock.module("./store", () => ({
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,
-  getWebhookTriggerByPublicId: async () => null,
-  listEnabledScheduleTriggers: async () => [],
-  listMatchingTriggersForEvent: async () => [],
+  getWebhookTriggerByPublicId,
+  listEnabledScheduleTriggers,
+  listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
 }));
 
@@ -75,13 +91,230 @@ const agent: BackgroundAgentWithTriggers = {
   updatedAt: new Date(),
 };
 
+const enabledTrigger = agent.triggers[1];
+if (!enabledTrigger) {
+  throw new Error("Expected enabled trigger test fixture");
+}
+
+const scheduleTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
+  ...enabledTrigger,
+  id: "trigger-schedule",
+  name: "Hourly",
+  kind: "schedule.cron",
+  schedule: "* * * * *",
+};
+
+const webhookTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
+  ...enabledTrigger,
+  id: "trigger-webhook",
+  name: "Error webhook",
+  kind: "webhook.error",
+  webhookPublicId: "wh_123",
+};
+
+const githubEvent: NormalizedBackgroundTriggerEvent = {
+  source: "github",
+  kind: "github.pull_request",
+  externalId: "delivery-123",
+  repoOwner: "acme",
+  repoName: "widgets",
+  action: "opened",
+  branch: "feature/widgets",
+  prNumber: 12,
+  title: "Improve widgets",
+};
+
+function resetDispatcherMocks() {
+  process.env.BACKGROUND_AGENTS_ENABLED = "true";
+  workflowRunId = "workflow-1";
+  matchingRows = [];
+  webhookRow = null;
+  scheduleRows = [];
+  start.mockClear();
+  createRunForTrigger.mockClear();
+  createRunForTrigger.mockImplementation(
+    async ({ event }: { event: unknown }) => ({
+      created: true,
+      run: { id: "run-1" },
+      event,
+    }),
+  );
+  recordBackgroundAgentEvent.mockClear();
+  listMatchingTriggersForEvent.mockClear();
+  getWebhookTriggerByPublicId.mockClear();
+  listEnabledScheduleTriggers.mockClear();
+}
+
+describe("dispatchBackgroundTriggerEvent", () => {
+  beforeEach(() => {
+    resetDispatcherMocks();
+  });
+
+  test("does not start duplicate event deliveries", async () => {
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    createRunForTrigger.mockImplementationOnce(async () => ({
+      created: false,
+      run: { id: "run-existing" },
+      event: githubEvent,
+    }));
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-duplicate",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 1,
+      created: 0,
+      duplicates: 1,
+      runIds: ["run-existing"],
+    });
+    expect(start).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
+  });
+
+  test("records typed workflow start failures for GitHub events", async () => {
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    workflowRunId = null;
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-start-failed",
+    });
+
+    expect(result.created).toBe(1);
+    expect(start).toHaveBeenCalledWith({}, [{ runId: "run-1" }]);
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        eventName: "background-agent.workflow.start_failed",
+        status: "failed",
+        level: "warn",
+        requestId: "req-start-failed",
+        errorKind: "workflow_failed",
+      }),
+    );
+  });
+});
+
+describe("dispatchWebhookErrorEvent", () => {
+  beforeEach(() => {
+    resetDispatcherMocks();
+  });
+
+  test("records typed workflow start failures for signed error webhooks", async () => {
+    webhookRow = {
+      agent,
+      trigger: webhookTrigger,
+    };
+    workflowRunId = null;
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_123",
+      event: {
+        externalId: "error-1",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-05-27T12:00:00.000Z",
+      },
+      requestId: "req-webhook",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 1,
+      created: 1,
+      duplicates: 0,
+      runIds: ["run-1"],
+    });
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        agentId: "agent-1",
+        userId: "user-1",
+        eventName: "background-agent.workflow.start_failed",
+        status: "failed",
+        level: "warn",
+        requestId: "req-webhook",
+        errorKind: "workflow_failed",
+      }),
+    );
+  });
+});
+
+describe("dispatchScheduledBackgroundAgents", () => {
+  beforeEach(() => {
+    resetDispatcherMocks();
+  });
+
+  test("records trigger and workflow-start evidence for scheduled runs", async () => {
+    scheduleRows = [
+      {
+        agent,
+        trigger: scheduleTrigger,
+      },
+    ];
+    workflowRunId = null;
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-05-27T12:34:00.000Z"),
+      requestId: "req-cron",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 1,
+      created: 1,
+      duplicates: 0,
+      runIds: ["run-1"],
+    });
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        agentId: "agent-1",
+        userId: "user-1",
+        eventName: "background-agent.trigger.received",
+        status: "info",
+        summary: "Received schedule.cron trigger.",
+        requestId: "req-cron",
+        payload: {
+          source: "schedule",
+          triggerKind: "schedule.cron",
+          externalId: "trigger-schedule:2026-05-27T12:34",
+        },
+      }),
+    );
+    expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-1",
+        eventName: "background-agent.workflow.start_failed",
+        status: "failed",
+        level: "warn",
+        requestId: "req-cron",
+        errorKind: "workflow_failed",
+      }),
+    );
+  });
+});
+
 describe("dispatchManualBackgroundAgentTest", () => {
   beforeEach(() => {
-    process.env.BACKGROUND_AGENTS_ENABLED = "true";
-    workflowRunId = "workflow-1";
-    start.mockClear();
-    createRunForTrigger.mockClear();
-    recordBackgroundAgentEvent.mockClear();
+    resetDispatcherMocks();
   });
 
   test("creates a manual test event without forcing a non-existent sandbox branch", async () => {

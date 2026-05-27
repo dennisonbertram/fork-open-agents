@@ -121,6 +121,20 @@ debug a live run without database access:
 - route tests protect the authenticated run-detail API contract so future
   agents can depend on this evidence while polling running workflows.
 
+## Dispatcher Harness Slice
+
+The trigger dispatcher should prove idempotency and failure observability before
+live webhooks are enabled:
+
+- duplicate GitHub deliveries return the existing run and never start a second
+  workflow;
+- GitHub, signed error webhook, manual, and scheduled runs record typed
+  `background-agent.workflow.start_failed` evidence when durable workflow start
+  fails;
+- scheduled runs now record `background-agent.trigger.received` before workflow
+  start so cron-triggered runs have the same first timeline breadcrumb as
+  GitHub and webhook-triggered runs.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.

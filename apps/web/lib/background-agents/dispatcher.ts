@@ -25,6 +25,13 @@ export type BackgroundDispatchResult = {
   runIds: string[];
 };
 
+type WorkflowStartFailureInput = {
+  runId: string;
+  agentId: string;
+  userId: string;
+  requestId?: string | null;
+};
+
 async function startRun(runId: string): Promise<string | null> {
   try {
     const run = await start(runBackgroundAgentWorkflow, [{ runId }]);
@@ -33,6 +40,20 @@ async function startRun(runId: string): Promise<string | null> {
     console.error("[background-agents] Failed to start workflow:", error);
     return null;
   }
+}
+
+async function recordWorkflowStartFailure(input: WorkflowStartFailureInput) {
+  await recordBackgroundAgentEvent({
+    runId: input.runId,
+    agentId: input.agentId,
+    userId: input.userId,
+    eventName: "background-agent.workflow.start_failed",
+    status: "failed",
+    level: "warn",
+    summary: "Failed to start background agent workflow.",
+    requestId: input.requestId ?? null,
+    errorKind: "workflow_failed",
+  });
 }
 
 export async function dispatchBackgroundTriggerEvent(params: {
@@ -84,16 +105,11 @@ export async function dispatchBackgroundTriggerEvent(params: {
     });
     const workflowRunId = await startRun(result.run.id);
     if (!workflowRunId) {
-      await recordBackgroundAgentEvent({
+      await recordWorkflowStartFailure({
         runId: result.run.id,
         agentId: match.agent.id,
         userId: match.agent.userId,
-        eventName: "background-agent.workflow.start_failed",
-        status: "failed",
-        level: "warn",
-        summary: "Failed to start background agent workflow.",
         requestId: params.requestId ?? null,
-        errorKind: "workflow_failed",
       });
     }
   }
@@ -182,7 +198,15 @@ export async function dispatchWebhookErrorEvent(params: {
       externalId: event.externalId,
     },
   });
-  await startRun(result.run.id);
+  const workflowRunId = await startRun(result.run.id);
+  if (!workflowRunId) {
+    await recordWorkflowStartFailure({
+      runId: result.run.id,
+      agentId: row.agent.id,
+      userId: row.agent.userId,
+      requestId: params.requestId ?? null,
+    });
+  }
 
   return {
     enabled: true,
@@ -263,16 +287,11 @@ export async function dispatchManualBackgroundAgentTest(params: {
 
   const workflowRunId = await startRun(result.run.id);
   if (!workflowRunId) {
-    await recordBackgroundAgentEvent({
+    await recordWorkflowStartFailure({
       runId: result.run.id,
       agentId: params.agent.id,
       userId: params.agent.userId,
-      eventName: "background-agent.workflow.start_failed",
-      status: "failed",
-      level: "warn",
-      summary: "Failed to start background agent workflow.",
       requestId: params.requestId ?? null,
-      errorKind: "workflow_failed",
     });
   }
 
@@ -336,7 +355,29 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     }
 
     created += 1;
-    await startRun(result.run.id);
+    await recordBackgroundAgentEvent({
+      runId: result.run.id,
+      agentId: row.agent.id,
+      userId: row.agent.userId,
+      eventName: "background-agent.trigger.received",
+      status: "info",
+      summary: "Received schedule.cron trigger.",
+      requestId: params?.requestId ?? null,
+      payload: {
+        source: event.source,
+        triggerKind: event.kind,
+        externalId: event.externalId,
+      },
+    });
+    const workflowRunId = await startRun(result.run.id);
+    if (!workflowRunId) {
+      await recordWorkflowStartFailure({
+        runId: result.run.id,
+        agentId: row.agent.id,
+        userId: row.agent.userId,
+        requestId: params?.requestId ?? null,
+      });
+    }
   }
 
   return {
