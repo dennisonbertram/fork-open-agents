@@ -139,6 +139,14 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 ## Git Commands
 
 - **Branch sync preference:** When bringing in `origin/main`, prefer a normal merge (`git fetch origin main` then `git merge origin/main`) instead of rebasing, unless explicitly requested otherwise.
+- **End-of-turn preservation:** At the end of every turn that creates or
+  modifies repository files, commit the agent's work before handing control
+  back to the user so work is not lost across worktrees or crashes. If the task
+  is complete, push the branch and open a pull request against the user's fork;
+  if a suitable PR already exists, update that PR instead of opening a
+  duplicate. For unfinished work, use a clear WIP commit message and report the
+  remaining work. Do not sweep unrelated user changes into the commit unless the
+  user explicitly asks.
 
 **Quote paths with special characters**: File paths containing brackets (like Next.js dynamic routes `[id]`, `[slug]`) are interpreted as glob patterns by zsh. Always quote these paths in git commands:
 

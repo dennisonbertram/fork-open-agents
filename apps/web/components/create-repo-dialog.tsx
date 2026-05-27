@@ -45,6 +45,8 @@ interface CreateRepoResult {
   repoUrl: string;
   owner: string;
   repoName: string;
+  appAccess?: "verified" | "needs_update";
+  appAccessMessage?: string;
 }
 
 interface Installation {
@@ -179,6 +181,8 @@ export function CreateRepoDialog({
         repoName: data.repoName as string,
         cloneUrl: data.cloneUrl as string,
         branch: data.branch as string,
+        appAccess: data.appAccess as "verified" | "needs_update" | undefined,
+        appAccessMessage: data.appAccessMessage as string | undefined,
       };
       setResult(createResult);
       onRepoCreated?.(createResult);
@@ -230,6 +234,12 @@ export function CreateRepoDialog({
                 View on GitHub
                 <ExternalLink className="h-3 w-3" />
               </a>
+              {result.appAccess === "needs_update" && (
+                <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">
+                  {result.appAccessMessage ??
+                    "Repository created and pushed. Update GitHub App access before using commit and PR automation."}
+                </p>
+              )}
             </div>
             <Button variant="outline" onClick={handleClose}>
               Close
