@@ -1,7 +1,8 @@
 "use client";
 
-import { Bot, ExternalLink, Plus, RefreshCw } from "lucide-react";
+import { Bot, ExternalLink, Play, Plus, RefreshCw } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,15 @@ type BackgroundAgent = {
 
 type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
+};
+
+type ManualTestResponse = {
+  enabled: boolean;
+  matched: number;
+  created: number;
+  duplicates: number;
+  runIds: string[];
+  error?: string;
 };
 
 type FormState = {
@@ -140,12 +150,14 @@ function buildCreatePayload(form: FormState) {
 }
 
 export function BackgroundAgentsSection() {
+  const router = useRouter();
   const { data, error, isLoading, mutate } = useSWR<BackgroundAgentsResponse>(
     "/api/background-agents",
     fetchJson,
   );
   const [form, setForm] = useState<FormState>(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [testingAgentId, setTestingAgentId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const agents = data?.agents ?? [];
@@ -184,6 +196,35 @@ export function BackgroundAgentsSection() {
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function testAgent(agentId: string) {
+    setTestingAgentId(agentId);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/background-agents/${agentId}/test`, {
+        method: "POST",
+      });
+      const body = (await response.json()) as ManualTestResponse;
+      if (!response.ok) {
+        throw new Error(body.error ?? "Failed to start background agent test");
+      }
+      const runId = body.runIds[0];
+      if (!runId) {
+        throw new Error("No background run was created for this test");
+      }
+      setMessage("Background agent test started.");
+      await mutate();
+      router.push(`/background-runs/${runId}`);
+    } catch (testError) {
+      setMessage(
+        testError instanceof Error
+          ? testError.message
+          : "Failed to start background agent test",
+      );
+    } finally {
+      setTestingAgentId(null);
     }
   }
 
@@ -390,6 +431,15 @@ export function BackgroundAgentsSection() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={testingAgentId === agent.id}
+                    onClick={() => void testAgent(agent.id)}
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    Test
+                  </Button>
                   <Button asChild variant="outline" size="sm">
                     <Link
                       href={`/repos/${agent.repoOwner}/${agent.repoName}/agents`}

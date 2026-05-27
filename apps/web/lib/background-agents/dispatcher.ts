@@ -8,6 +8,7 @@ import {
   listEnabledScheduleTriggers,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
+  type BackgroundAgentWithTriggers,
 } from "./store";
 import {
   type BackgroundAgentRunSource,
@@ -188,6 +189,99 @@ export async function dispatchWebhookErrorEvent(params: {
     matched: 1,
     created: 1,
     duplicates: 0,
+    runIds: [result.run.id],
+  };
+}
+
+export async function dispatchManualBackgroundAgentTest(params: {
+  agent: BackgroundAgentWithTriggers;
+  requestId?: string | null;
+}): Promise<BackgroundDispatchResult> {
+  if (!isBackgroundAgentsEnabled()) {
+    return {
+      enabled: false,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    };
+  }
+
+  const trigger =
+    params.agent.triggers.find((item) => item.status === "enabled") ??
+    params.agent.triggers[0];
+  if (!trigger) {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+    };
+  }
+
+  const now = new Date();
+  const event: NormalizedBackgroundTriggerEvent = {
+    source:
+      trigger.kind === "schedule.cron"
+        ? "schedule"
+        : trigger.kind === "webhook.error"
+          ? "webhook"
+          : "github",
+    kind: trigger.kind,
+    externalId: `manual-test:${params.agent.id}:${crypto.randomUUID()}`,
+    repoOwner: params.agent.repoOwner,
+    repoName: params.agent.repoName,
+    action: "manual_test",
+    branch: "manual-test",
+    title: `Manual test for ${params.agent.name}`,
+    message: "Manual background-agent test trigger.",
+    occurredAt: now.toISOString(),
+  };
+
+  const result = await createRunForTrigger({
+    agent: params.agent,
+    trigger,
+    event,
+    requestId: params.requestId ?? null,
+  });
+
+  await recordBackgroundAgentEvent({
+    runId: result.run.id,
+    agentId: params.agent.id,
+    userId: params.agent.userId,
+    eventName: "background-agent.trigger.received",
+    status: "info",
+    summary: "Received manual background-agent test trigger.",
+    requestId: params.requestId ?? null,
+    payload: {
+      source: event.source,
+      triggerKind: event.kind,
+      externalId: event.externalId,
+      manual: true,
+    },
+  });
+
+  const workflowRunId = await startRun(result.run.id);
+  if (!workflowRunId) {
+    await recordBackgroundAgentEvent({
+      runId: result.run.id,
+      agentId: params.agent.id,
+      userId: params.agent.userId,
+      eventName: "background-agent.workflow.start_failed",
+      status: "failed",
+      level: "warn",
+      summary: "Failed to start background agent workflow.",
+      requestId: params.requestId ?? null,
+      errorKind: "workflow_failed",
+    });
+  }
+
+  return {
+    enabled: true,
+    matched: 1,
+    created: result.created ? 1 : 0,
+    duplicates: result.created ? 0 : 1,
     runIds: [result.run.id],
   };
 }

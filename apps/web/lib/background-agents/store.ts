@@ -252,6 +252,28 @@ export async function listRepoBackgroundAgents(params: {
   );
 }
 
+export async function getOwnedBackgroundAgentWithTriggers(params: {
+  userId: string;
+  agentId: string;
+}): Promise<BackgroundAgentWithTriggers | null> {
+  const agent = await db.query.backgroundAgents.findFirst({
+    where: and(
+      eq(backgroundAgents.id, params.agentId),
+      eq(backgroundAgents.userId, params.userId),
+    ),
+  });
+  if (!agent) {
+    return null;
+  }
+
+  const triggers = await db.query.backgroundAgentTriggers.findMany({
+    where: eq(backgroundAgentTriggers.agentId, agent.id),
+    orderBy: [desc(backgroundAgentTriggers.createdAt)],
+  });
+
+  return { ...agent, triggers };
+}
+
 export async function listMatchingTriggersForEvent(
   event: NormalizedBackgroundTriggerEvent,
 ): Promise<Array<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger }>> {

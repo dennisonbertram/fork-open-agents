@@ -81,6 +81,20 @@ for `ready_pr` agents:
   ready PR is created;
 - Composio and other external tool providers remain out of execution for v1.
 
+## Manual Test Slice
+
+Operators and agents need a first-class way to prove wiring before waiting on a
+real webhook:
+
+- saved agents expose a Settings `Test` action;
+- `POST /api/background-agents/[agentId]/test` verifies ownership, picks an
+  enabled trigger, and creates a manual test event through the same durable run
+  machinery;
+- manual tests honor `BACKGROUND_AGENTS_ENABLED` and return an explicit disabled
+  response when rollout is off;
+- successful test dispatches navigate directly to `/background-runs/[runId]` so
+  the live timeline can be inspected while the workflow is running.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
