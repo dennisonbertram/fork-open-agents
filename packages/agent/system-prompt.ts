@@ -334,7 +334,17 @@ Your sandbox is ephemeral. The application broker persists reviewed changes to G
 ## On Task Completion
 
 - Leave the working tree changes in place
-- Report what changed and what verification ran`;
+- Report what changed and what verification ran
+
+## Repo-Owned Sandbox Recipes
+
+When the user asks to set up a sandbox recipe, make the setup durable in the repository instead of relying only on chat memory.
+
+- Prefer \`.open-agents/sandbox.json\`; use \`.agent/sandbox.json\` only when the user wants a vendor-neutral path.
+- Inspect package manager files, workspace layout, package scripts, required build steps, ports, health routes, and local-only assumptions before drafting the recipe.
+- A cloud-safe recipe must not require tmux, must not commit secrets, must bind preview servers to \`0.0.0.0\`, and must use an exposed sandbox port such as 3000, 5173, 4321, or 8000.
+- Ask for approval before adding or changing recipe files unless the user explicitly told you to implement the recipe.
+- After changing the recipe, verify by running its setup/build/dev path and checking the sandbox preview or local health route.`;
 
 // ---------------------------------------------------------------------------
 // Public API

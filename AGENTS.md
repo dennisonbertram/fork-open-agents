@@ -68,6 +68,12 @@ At the end of any implementation, include a concise summary of what was built,
 what changed for users, and what was verified so the next person can quickly
 understand the shipped work without reading the full transcript.
 
+When implementation work is complete, do not leave it only as local workspace
+changes. Create or switch to an appropriately named branch, commit the completed
+work, push it to the user's fork, and open a pull request unless the user
+explicitly asks not to. If a commit, push, or PR cannot be completed, report the
+blocking reason and the exact local state so the work is not lost.
+
 ## Authentication
 
 Authentication uses [Better Auth](https://www.better-auth.com/) with Vercel OAuth (sign-in) and GitHub OAuth (repo access). Config lives in `apps/web/lib/auth/config.ts`. Sessions are managed by better-auth's built-in session system — there is no manual JWE/encryption layer.

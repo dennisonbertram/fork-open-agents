@@ -327,6 +327,64 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });
 
+  test("uses a repo-owned sandbox recipe before package.json discovery", async () => {
+    const { POST } = await routeModulePromise;
+
+    setMockDirectory("/vercel/sandbox/.open-agents");
+    setMockFile(
+      "/vercel/sandbox/.open-agents/sandbox.json",
+      JSON.stringify({
+        install: "bun install --frozen-lockfile",
+        build: ["bun run --filter @example/db build"],
+        env: {
+          DATA_DIR: ".open-agents/data",
+        },
+        dev: {
+          command: "bun run dev:sandbox",
+          cwd: "apps/web",
+          port: 3000,
+          health: "/api/health",
+          env: {
+            NEXT_TELEMETRY_DISABLED: "1",
+          },
+        },
+      }),
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+    const body = (await response.json()) as {
+      packagePath: string;
+      port: number;
+      url: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      packagePath: ".open-agents/sandbox.json",
+      port: 3000,
+      url: "https://sb-3000.vercel.run",
+    });
+    expect(lastLaunchCwd).toBe("/vercel/sandbox/apps/web");
+
+    if (!lastLaunchCommand) {
+      throw new Error("Expected execDetached to receive a launch command");
+    }
+
+    expect(lastLaunchCommand).toContain("bun install --frozen-lockfile");
+    expect(lastLaunchCommand).toContain("bun run --filter @example/db build");
+    expect(lastLaunchCommand).toContain("DATA_DIR='.open-agents/data'");
+    expect(lastLaunchCommand).toContain("NEXT_TELEMETRY_DISABLED='1'");
+    expect(lastLaunchCommand).toContain("HOST='0.0.0.0'");
+    expect(lastLaunchCommand).toContain("PORT='3000'");
+    expect(lastLaunchCommand).toContain("bun run dev:sandbox");
+    expect(lastLaunchCommand).not.toContain("bun run dev --");
+  });
+
   test("keeps using the launched app when package discovery later prefers another app", async () => {
     const { POST } = await routeModulePromise;
 

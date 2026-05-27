@@ -114,4 +114,12 @@ describe("openAgent runtime tool policy", () => {
     expect(prompt).toContain("Do not directly edit files");
     expect(prompt).toContain("delegate implementation");
   });
+
+  test("teaches agents to create durable sandbox recipes", () => {
+    const prompt = buildSystemPrompt({ currentBranch: "main" });
+
+    expect(prompt).toContain("Repo-Owned Sandbox Recipes");
+    expect(prompt).toContain(".open-agents/sandbox.json");
+    expect(prompt).toContain("bind preview servers to `0.0.0.0`");
+  });
 });

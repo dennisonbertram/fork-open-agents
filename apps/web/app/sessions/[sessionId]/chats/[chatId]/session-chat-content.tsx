@@ -180,6 +180,19 @@ import "streamdown/styles.css";
 /** Minimum interval between textarea-focus activity pings (5 minutes). */
 const ACTIVITY_PING_THROTTLE_MS = 5 * 60 * 1000;
 
+function buildSandboxRecipePrompt(params: {
+  repoOwner: string;
+  repoName: string;
+}): string {
+  return `Set up a repo-owned sandbox recipe for ${params.repoOwner}/${params.repoName}.
+
+Inspect the repository's package manager, workspace layout, dev scripts, required build steps, ports, health route, and local-only assumptions. Create or update a durable recipe that cloud agents can reuse, preferably \`.open-agents/sandbox.json\` plus a small helper script only if the repo needs one.
+
+The recipe must be safe for cloud sandboxes: no tmux requirement, no committed secrets, bind web previews to \`0.0.0.0\`, use an exposed port such as 3000/5173/4321/8000, keep data/log paths inside the repo or sandbox, and include any workspace package build steps required before the dev server starts.
+
+Before changing files, summarize the proposed recipe and ask for approval. After approval, implement it and verify by running the setup and opening the sandbox preview.`;
+}
+
 const DiffViewer = dynamic(
   () => import("./diff-viewer").then((m) => m.DiffViewer),
   { ssr: false },
@@ -1240,7 +1253,6 @@ export function SessionChatContent({
       inputRef.current?.focus();
     }
   };
-
   const handleCopyAssistantMessage = useCallback(
     async (messageId: string, text: string) => {
       const trimmedText = text.trim();
@@ -1344,6 +1356,17 @@ export function SessionChatContent({
     modelOptions,
     modelOptionsLoading,
   } = useSessionChatMetadataContext();
+  const isArchived = session.status === "archived";
+  const sandboxRecipePrompt = useMemo(() => {
+    if (!session.repoOwner || !session.repoName) {
+      return null;
+    }
+
+    return buildSandboxRecipePrompt({
+      repoOwner: session.repoOwner,
+      repoName: session.repoName,
+    });
+  }, [session.repoName, session.repoOwner]);
   const { data: managedRuntimeProfilesData, mutate: mutateManagedProfiles } =
     useSWR<ManagedRuntimeProfilesResponse>(
       `/api/sessions/${session.id}/managed-runtime/profiles`,
@@ -2073,6 +2096,22 @@ export function SessionChatContent({
     hasPendingResponse ||
     deletingMessageId !== null ||
     resendingMessageId !== null;
+  const showSandboxRecipeSuggestion =
+    Boolean(sandboxRecipePrompt) &&
+    input.trim().length === 0 &&
+    !isArchived &&
+    !isChatInFlight &&
+    !hasPendingResponse;
+  const handleSandboxRecipeSuggestion = useCallback(() => {
+    if (!sandboxRecipePrompt) {
+      return;
+    }
+
+    setInput(sandboxRecipePrompt);
+    window.requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }, [sandboxRecipePrompt]);
 
   const sendMessageWithPendingState = useCallback(
     async (message: Parameters<typeof sendMessage>[0]) => {
@@ -2581,8 +2620,6 @@ export function SessionChatContent({
   ]);
 
   const shouldRefreshRestoredWorkspaceRef = useRef(false);
-
-  const isArchived = session.status === "archived";
 
   // After a snapshot restore, wait for the live workspace hooks to be active
   // again before forcing refreshes. Calling the pre-restore callbacks inside
@@ -4476,6 +4513,21 @@ export function SessionChatContent({
                             )}
                           </div>
                         )}
+
+                        {showSandboxRecipeSuggestion ? (
+                          <div className="px-3 pt-3">
+                            <button
+                              type="button"
+                              onClick={handleSandboxRecipeSuggestion}
+                              className="inline-flex max-w-full items-center gap-2 rounded-md border border-border/70 bg-muted/40 px-2.5 py-1.5 text-muted-foreground text-xs transition-colors hover:border-border hover:bg-muted hover:text-foreground"
+                            >
+                              <ScrollText className="h-3.5 w-3.5 shrink-0" />
+                              <span className="truncate">
+                                Set up sandbox recipe
+                              </span>
+                            </button>
+                          </div>
+                        ) : null}
 
                         {/* Inline question UI for mobile — rendered inside prompt box */}
                         {showInlineQuestion && inlineQuestion.questionHeaderUI}

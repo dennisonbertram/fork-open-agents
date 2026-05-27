@@ -12,6 +12,11 @@ import {
   INSTALL_COMMANDS,
   type JavaScriptPackageManager,
 } from "@/lib/sandbox/runtime/js-package-manager";
+import {
+  parseSandboxRecipe,
+  SANDBOX_RECIPE_PATHS,
+  type SandboxRecipe,
+} from "@/lib/sandbox/runtime/sandbox-recipe";
 import { isSandboxActive } from "@/lib/sandbox/utils";
 
 type RouteContext = {
@@ -66,7 +71,8 @@ interface ResolvedDevServerTarget {
 }
 
 interface LaunchableDevServerTarget extends ResolvedDevServerTarget {
-  candidate: DevServerCandidate;
+  candidate?: DevServerCandidate;
+  recipe?: SandboxRecipe;
 }
 
 interface PersistedDevServerTarget {
@@ -486,6 +492,21 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+function toShellEnvAssignment(key: string, value: string): string {
+  return `${key}=${shellQuote(value)}`;
+}
+
+function buildEnvPrefix(env: Record<string, string>): string {
+  const entries = Object.entries(env);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  return `env ${entries
+    .map(([key, value]) => toShellEnvAssignment(key, value))
+    .join(" ")} `;
+}
+
 function getFrameworkArgs(framework: DevFramework, port: number): string[] {
   switch (framework) {
     case "next":
@@ -526,31 +547,15 @@ function getDevServerPidFilePath(packageDirAbs: string, port: number): string {
 }
 
 function buildLaunchCommand(params: {
-  packageManager: JavaScriptPackageManager;
-  framework: DevFramework;
-  port: number;
-  installRootAbs: string;
-  packageDirAbs: string;
-  installDependencies: boolean;
+  setupCommands: string[];
+  runCommand: string;
   pidFilePath: string;
 }): string {
-  const runCommand = buildRunCommand(
-    params.packageManager,
-    params.framework,
-    params.port,
-  );
-  const commandSteps = [`printf '%s' "$$" > ${shellQuote(params.pidFilePath)}`];
-
-  if (params.installDependencies) {
-    const installCommand = INSTALL_COMMANDS[params.packageManager];
-    commandSteps.push(
-      params.installRootAbs === params.packageDirAbs
-        ? installCommand
-        : `(cd ${shellQuote(params.installRootAbs)} && ${installCommand})`,
-    );
-  }
-
-  commandSteps.push(`exec ${runCommand}`);
+  const commandSteps = [
+    `printf '%s' "$$" > ${shellQuote(params.pidFilePath)}`,
+    ...params.setupCommands,
+    `exec ${params.runCommand}`,
+  ];
 
   return commandSteps.join(" && ");
 }
@@ -732,9 +737,58 @@ async function findDevServerCandidates(
   );
 }
 
+async function findSandboxRecipe(
+  sandbox: ConnectedSandbox,
+): Promise<SandboxRecipe | null> {
+  for (const recipePath of SANDBOX_RECIPE_PATHS) {
+    const absolutePath = path.posix.join(sandbox.workingDirectory, recipePath);
+    try {
+      await sandbox.access(absolutePath);
+    } catch {
+      continue;
+    }
+
+    try {
+      return parseSandboxRecipe(
+        await sandbox.readFile(absolutePath, "utf-8"),
+        recipePath,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid sandbox recipe ${recipePath}: ${message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  return null;
+}
+
 async function resolveDevServerTarget(
   sandbox: ConnectedSandbox,
 ): Promise<LaunchableDevServerTarget | null> {
+  const recipe = await findSandboxRecipe(sandbox);
+  if (recipe) {
+    const supportedPort = toSupportedPort(recipe.dev.port);
+    if (supportedPort === null) {
+      throw new Error(
+        `${recipe.recipePath} dev.port must be one of the exposed sandbox ports: ${DEFAULT_SANDBOX_PORTS.join(
+          ", ",
+        )}.`,
+      );
+    }
+
+    return {
+      ...buildResolvedDevServerTarget({
+        workingDirectory: sandbox.workingDirectory,
+        packageDir: recipe.dev.cwd,
+        port: supportedPort,
+      }),
+      packagePath: recipe.recipePath,
+      recipe,
+    };
+  }
+
   const candidate = pickBestCandidate(await findDevServerCandidates(sandbox));
   if (!candidate) {
     return null;
@@ -826,7 +880,7 @@ export async function POST(_req: Request, context: RouteContext) {
       );
     }
 
-    const { candidate, packageDirAbs, port } = target;
+    const { packageDirAbs, port } = target;
     const existingPid = await getRunningDevServerPid({
       sandbox,
       packageDirAbs,
@@ -837,27 +891,54 @@ export async function POST(_req: Request, context: RouteContext) {
       return Response.json(buildDevServerResponse(sandbox, target));
     }
 
-    const { packageManager, installRootAbs } =
-      await detectJavaScriptPackageManager({
-        sandbox,
-        packageDirAbs,
-        packageManagerField: candidate.packageManagerField,
+    let launchCommand: string;
+    if (target.recipe) {
+      launchCommand = buildLaunchCommand({
+        setupCommands: [
+          ...target.recipe.installCommands,
+          ...target.recipe.buildCommands,
+        ],
+        runCommand: `${buildEnvPrefix({
+          BROWSER: "none",
+          HOST: "0.0.0.0",
+          PORT: String(port),
+          ...target.recipe.env,
+          ...target.recipe.dev.env,
+        })}${target.recipe.dev.command}`,
+        pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
       });
-    const installDependencies = await shouldInstallDependencies({
-      sandbox,
-      installRootAbs,
-      packageDirAbs,
-      packageManager,
-    });
-    const launchCommand = buildLaunchCommand({
-      packageManager,
-      framework: candidate.framework,
-      port,
-      installRootAbs,
-      packageDirAbs,
-      installDependencies,
-      pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
-    });
+    } else if (target.candidate) {
+      const { packageManager, installRootAbs } =
+        await detectJavaScriptPackageManager({
+          sandbox,
+          packageDirAbs,
+          packageManagerField: target.candidate.packageManagerField,
+        });
+      const installDependencies = await shouldInstallDependencies({
+        sandbox,
+        installRootAbs,
+        packageDirAbs,
+        packageManager,
+      });
+      const setupCommands = installDependencies
+        ? [
+            installRootAbs === packageDirAbs
+              ? INSTALL_COMMANDS[packageManager]
+              : `(cd ${shellQuote(installRootAbs)} && ${INSTALL_COMMANDS[packageManager]})`,
+          ]
+        : [];
+      launchCommand = buildLaunchCommand({
+        setupCommands,
+        runCommand: buildRunCommand(
+          packageManager,
+          target.candidate.framework,
+          port,
+        ),
+        pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
+      });
+    } else {
+      throw new Error("No launchable dev server target was resolved.");
+    }
 
     try {
       await sandbox.execDetached(launchCommand, packageDirAbs);

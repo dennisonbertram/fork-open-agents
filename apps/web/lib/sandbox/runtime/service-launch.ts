@@ -16,6 +16,11 @@ import {
   type JavaScriptPackageManager,
 } from "@/lib/sandbox/runtime/js-package-manager";
 import {
+  parseSandboxRecipe,
+  SANDBOX_RECIPE_PATHS,
+  type SandboxRecipe,
+} from "@/lib/sandbox/runtime/sandbox-recipe";
+import {
   getSandboxService,
   listSandboxServices,
   updateSandboxService,
@@ -67,7 +72,9 @@ interface LaunchableDevServerTarget {
   packageDir: string;
   packageDirAbs: string;
   port: number;
-  candidate: DevServerCandidate;
+  healthPath: string;
+  recipe?: SandboxRecipe;
+  candidate?: DevServerCandidate;
 }
 
 const SUPPORTED_PORTS = new Set(DEFAULT_SANDBOX_PORTS);
@@ -331,6 +338,21 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 
+function toShellEnvAssignment(key: string, value: string): string {
+  return `${key}=${shellQuote(value)}`;
+}
+
+function buildEnvPrefix(env: Record<string, string>): string {
+  const entries = Object.entries(env);
+  if (entries.length === 0) {
+    return "";
+  }
+
+  return `env ${entries
+    .map(([key, value]) => toShellEnvAssignment(key, value))
+    .join(" ")} `;
+}
+
 function getFrameworkArgs(framework: DevFramework, port: number): string[] {
   switch (framework) {
     case "next":
@@ -378,29 +400,46 @@ function getLogPath(packageDirAbs: string, port: number): string {
 }
 
 function buildLaunchCommand(params: {
-  packageManager: JavaScriptPackageManager;
-  framework: DevFramework;
-  port: number;
-  installRootAbs: string;
   packageDirAbs: string;
   pidPath: string;
   logPath: string;
+  setupCommands: string[];
+  runCommand: string;
 }): string {
-  const runCommand = buildRunCommand(
-    params.packageManager,
-    params.framework,
-    params.port,
-  );
-  const installCommand = INSTALL_COMMANDS[params.packageManager];
   const commandSteps = [
     `printf '%s' "$$" > ${shellQuote(params.pidPath)}`,
-    params.installRootAbs === params.packageDirAbs
-      ? installCommand
-      : `(cd ${shellQuote(params.installRootAbs)} && ${installCommand})`,
-    `exec ${runCommand} > ${shellQuote(params.logPath)} 2>&1`,
+    ...params.setupCommands,
+    `exec ${params.runCommand} > ${shellQuote(params.logPath)} 2>&1`,
   ];
 
   return commandSteps.join(" && ");
+}
+
+async function findSandboxRecipe(
+  sandbox: ConnectedSandbox,
+): Promise<SandboxRecipe | null> {
+  for (const recipePath of SANDBOX_RECIPE_PATHS) {
+    const absolutePath = path.posix.join(sandbox.workingDirectory, recipePath);
+    try {
+      await sandbox.access(absolutePath);
+    } catch {
+      continue;
+    }
+
+    try {
+      return parseSandboxRecipe(
+        await sandbox.readFile(absolutePath, "utf-8"),
+        recipePath,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Invalid sandbox recipe ${recipePath}: ${message}`, {
+        cause: error,
+      });
+    }
+  }
+
+  return null;
 }
 
 async function findDevServerCandidates(
@@ -448,6 +487,31 @@ async function findDevServerCandidates(
 async function resolveDevServerTarget(
   sandbox: ConnectedSandbox,
 ): Promise<LaunchableDevServerTarget | null> {
+  const recipe = await findSandboxRecipe(sandbox);
+  if (recipe) {
+    const supportedPort = toSupportedPort(recipe.dev.port);
+    if (supportedPort === null) {
+      throw new Error(
+        `${recipe.recipePath} dev.port must be one of the exposed sandbox ports: ${DEFAULT_SANDBOX_PORTS.join(
+          ", ",
+        )}.`,
+      );
+    }
+    const packageDirAbs = resolvePackageDirAbs(
+      sandbox.workingDirectory,
+      recipe.dev.cwd,
+    );
+
+    return {
+      packagePath: recipe.recipePath,
+      packageDir: recipe.dev.cwd,
+      packageDirAbs,
+      port: supportedPort,
+      healthPath: recipe.dev.healthPath,
+      recipe,
+    };
+  }
+
   const candidate = pickBestCandidate(await findDevServerCandidates(sandbox));
   if (!candidate) {
     return null;
@@ -461,6 +525,7 @@ async function resolveDevServerTarget(
       candidate.packageDir,
     ),
     port: candidate.port,
+    healthPath: "/",
     candidate,
   };
 }
@@ -491,10 +556,11 @@ async function checkLocalPortHealth(params: {
   sandbox: ConnectedSandbox;
   cwd: string;
   port: number;
+  healthPath: string;
 }): Promise<number | null> {
   const result = await params.sandbox.exec(
     `curl -fsS -o /dev/null -w '%{http_code}' ${shellQuote(
-      `http://127.0.0.1:${params.port}/`,
+      `http://127.0.0.1:${params.port}${params.healthPath}`,
     )}`,
     params.cwd,
     10_000,
@@ -511,6 +577,7 @@ async function waitForLocalPortHealth(params: {
   sandbox: ConnectedSandbox;
   cwd: string;
   port: number;
+  healthPath: string;
   timeoutMs: number;
 }): Promise<number | null> {
   const startedAt = Date.now();
@@ -593,6 +660,7 @@ export async function startManagedDevServer(params: {
           sandbox: params.sandbox,
           cwd: target.packageDirAbs,
           port: target.port,
+          healthPath: target.healthPath,
         })
       : null;
     if (pid && healthStatus !== null) {
@@ -625,48 +693,82 @@ export async function startManagedDevServer(params: {
   }
 
   const url = params.sandbox.domain(target.port);
-  let packageManagerDetection: Awaited<
-    ReturnType<typeof detectJavaScriptPackageManager>
-  >;
-  try {
-    packageManagerDetection = await detectJavaScriptPackageManager({
-      sandbox: params.sandbox,
-      packageDirAbs: target.packageDirAbs,
-      packageManagerField: target.candidate.packageManagerField,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await emitSessionEvent({
-      sessionId: params.session.id,
-      userId: params.session.userId,
-      source: "service",
-      actorType: "sandbox",
-      eventName: "managed_service.dev_server.blocked",
-      status: "blocked",
-      summary: `Managed dev server is blocked: ${message}`,
-      sandboxName: getSandboxName(params.sandbox),
-      payload: {
-        packagePath: target.packagePath,
-        packageManagerField: target.candidate.packageManagerField,
-        port: target.port,
-        url,
-      },
-    });
-    throw error;
-  }
-
-  const { packageManager, installRootAbs } = packageManagerDetection;
   const pidPath = getPidPath(target.packageDirAbs, target.port);
   const logPath = getLogPath(target.packageDirAbs, target.port);
-  const launchCommand = buildLaunchCommand({
-    packageManager,
-    framework: target.candidate.framework,
-    port: target.port,
-    installRootAbs,
-    packageDirAbs: target.packageDirAbs,
-    pidPath,
-    logPath,
-  });
+  let packageManagerPayload: Record<string, string> = {};
+  let framework = target.candidate?.framework ?? "custom";
+  let launchCommand: string;
+  if (target.recipe) {
+    const recipeEnv = {
+      BROWSER: "none",
+      HOST: "0.0.0.0",
+      PORT: String(target.port),
+      ...target.recipe.env,
+      ...target.recipe.dev.env,
+    };
+    launchCommand = buildLaunchCommand({
+      packageDirAbs: target.packageDirAbs,
+      pidPath,
+      logPath,
+      setupCommands: [
+        ...target.recipe.installCommands,
+        ...target.recipe.buildCommands,
+      ],
+      runCommand: `${buildEnvPrefix(recipeEnv)}${target.recipe.dev.command}`,
+    });
+    packageManagerPayload = { recipePath: target.recipe.recipePath };
+  } else if (target.candidate) {
+    let packageManagerDetection: Awaited<
+      ReturnType<typeof detectJavaScriptPackageManager>
+    >;
+    try {
+      packageManagerDetection = await detectJavaScriptPackageManager({
+        sandbox: params.sandbox,
+        packageDirAbs: target.packageDirAbs,
+        packageManagerField: target.candidate.packageManagerField,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await emitSessionEvent({
+        sessionId: params.session.id,
+        userId: params.session.userId,
+        source: "service",
+        actorType: "sandbox",
+        eventName: "managed_service.dev_server.blocked",
+        status: "blocked",
+        summary: `Managed dev server is blocked: ${message}`,
+        sandboxName: getSandboxName(params.sandbox),
+        payload: {
+          packagePath: target.packagePath,
+          packageManagerField: target.candidate.packageManagerField,
+          port: target.port,
+          url,
+        },
+      });
+      throw error;
+    }
+
+    const { packageManager, installRootAbs } = packageManagerDetection;
+    framework = target.candidate.framework;
+    launchCommand = buildLaunchCommand({
+      packageDirAbs: target.packageDirAbs,
+      pidPath,
+      logPath,
+      setupCommands: [
+        installRootAbs === target.packageDirAbs
+          ? INSTALL_COMMANDS[packageManager]
+          : `(cd ${shellQuote(installRootAbs)} && ${INSTALL_COMMANDS[packageManager]})`,
+      ],
+      runCommand: buildRunCommand(packageManager, framework, target.port),
+    });
+    packageManagerPayload = {
+      packageManager,
+      packageManagerSource: packageManagerDetection.source,
+      packageManagerReason: packageManagerDetection.reason,
+    };
+  } else {
+    throw new Error("No launchable dev server target was resolved.");
+  }
   const now = new Date();
   const initialService: NewSandboxService = {
     id: existing?.id ?? nanoid(),
@@ -681,7 +783,7 @@ export async function startManagedDevServer(params: {
     pid: null,
     commandId: null,
     logPath,
-    healthPath: "/",
+    healthPath: target.healthPath,
     lastHealthStatus: null,
     lastStartedAt: now,
     lastSeenAt: now,
@@ -702,13 +804,12 @@ export async function startManagedDevServer(params: {
     serviceId: service.id,
     payload: {
       packagePath: target.packagePath,
-      packageManager,
-      packageManagerSource: packageManagerDetection.source,
-      packageManagerReason: packageManagerDetection.reason,
-      framework: target.candidate.framework,
+      ...packageManagerPayload,
+      framework,
       port: target.port,
       url,
       logPath,
+      healthPath: target.healthPath,
     },
   });
 
@@ -721,6 +822,7 @@ export async function startManagedDevServer(params: {
       sandbox: params.sandbox,
       cwd: target.packageDirAbs,
       port: target.port,
+      healthPath: target.healthPath,
       timeoutMs: 120_000,
     });
     if (healthStatus === null) {
