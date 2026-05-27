@@ -31,6 +31,8 @@ The v1 trust boundary is intentionally narrow:
   grants for background agents.
 - https://github.com/dennisonbertram/fork-open-agents/issues/26 - hosted live
   proof for real webhook delivery, sandbox execution, and ready PR creation.
+- `docs/process/background-agents-live-proof.md` - operational runbook for the
+  #26 hosted proof checklist.
 
 ## V1 Foundation Scope
 
