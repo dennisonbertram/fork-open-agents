@@ -183,6 +183,9 @@ trigger is fired:
 - `background-agents:env-audit -- --verify-values` uses a temporary
   `vercel env pull` file to report only blank required variable names, then
   deletes the temp file before exit;
+- `background-agents:live-proof-preflight` combines env audit, hosted
+  readiness-route protection, and disposable repo accessibility into one
+  redacted preflight before live events are fired;
 - `GET /api/background-agents/readiness` is an authenticated route that returns
   only safe readiness status, missing env var names, and setup categories; it
   never returns secret values;

@@ -52,6 +52,21 @@ bun run --cwd apps/web background-agents:env-audit -- \
   --require-allowlist
 ```
 
+To combine the env audit with the hosted readiness route and disposable repo
+check, run the preflight command:
+
+```bash
+bun run --cwd apps/web background-agents:live-proof-preflight -- \
+  --environment production \
+  --verify-values \
+  --base-url https://<target-host> \
+  --repo <owner>/<repo>
+```
+
+The preflight exits non-zero until automated prerequisites are ready. It still
+requires a manual GitHub App installation confirmation before live events are
+fired.
+
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
 - GitHub App configuration:
