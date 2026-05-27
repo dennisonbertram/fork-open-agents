@@ -37,6 +37,18 @@ function detailData(
       startedAt: "2026-05-27T12:01:00.000Z",
       finishedAt: null,
     },
+    agent: {
+      id: "agent-1",
+      name: "Smoke fixer",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          checks: "read",
+        },
+      },
+      checkCommand: "bun --bun run ci",
+    },
     events: [
       {
         id: "event-1",
@@ -75,10 +87,19 @@ describe("BackgroundRunDetail", () => {
     );
 
     expect(html).toContain("Background run");
+    expect(html).toContain("Status");
     expect(html).toContain("github.pull_request");
     expect(html).toContain("acme/widgets");
     expect(html).toContain("abc123");
     expect(html).toContain("background_agent_run_123");
+    expect(html).toContain("Permissions");
+    expect(html).toContain("contents:write, pullRequests:write, checks:read");
+    expect(html).toContain("Checks");
+    expect(html).toContain("succeeded · bun --bun run ci");
+    expect(html).toContain("Output");
+    expect(html).toContain("ready_pr · created");
+    expect(html).toContain("Duration");
+    expect(html).toContain("Running");
     expect(html).toContain("Live timeline");
     expect(html).toContain("Refreshing");
     expect(html).toContain("Command passed: bun --bun run ci");
@@ -104,6 +125,7 @@ describe("BackgroundRunDetail", () => {
             outputUrl: null,
             errorKind: "checks_failed",
             errorMessage: "Required background-agent check failed.",
+            startedAt: "2026-05-27T12:01:00.000Z",
             finishedAt: "2026-05-27T12:03:00.000Z",
           },
           events: [
@@ -126,6 +148,7 @@ describe("BackgroundRunDetail", () => {
 
     expect(html).toContain("failed");
     expect(html).toContain("checks_failed");
+    expect(html).toContain("2m 0s");
     expect(html).toContain("Required background-agent check failed.");
     expect(html).toContain("background-agent.run.failed");
     expect(html).toContain("No outputs recorded.");

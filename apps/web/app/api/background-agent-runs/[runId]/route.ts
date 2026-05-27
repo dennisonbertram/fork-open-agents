@@ -1,5 +1,5 @@
 import {
-  getOwnedBackgroundAgentRun,
+  getOwnedBackgroundAgentRunWithAgent,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
 } from "@/lib/background-agents/store";
@@ -16,21 +16,34 @@ export async function GET(_req: Request, context: RouteContext) {
   }
 
   const { runId } = await context.params;
-  const run = await getOwnedBackgroundAgentRun({
+  const row = await getOwnedBackgroundAgentRunWithAgent({
     userId: authResult.userId,
     runId,
   });
-  if (!run) {
+  if (!row) {
     return Response.json(
       { error: "Background run not found" },
       { status: 404 },
     );
   }
+  const { run, agent } = row;
 
   const [events, outputs] = await Promise.all([
     listBackgroundAgentEvents(run.id),
     listBackgroundAgentOutputs(run.id),
   ]);
 
-  return Response.json({ run, events, outputs });
+  return Response.json({
+    run,
+    agent: agent
+      ? {
+          id: agent.id,
+          name: agent.name,
+          permissions: agent.permissions,
+          checkCommand: agent.checkCommand,
+        }
+      : null,
+    events,
+    outputs,
+  });
 }

@@ -95,6 +95,19 @@ real webhook:
 - successful test dispatches navigate directly to `/background-runs/[runId]` so
   the live timeline can be inspected while the workflow is running.
 
+## Run Detail Proof Strip Slice
+
+The run detail page should make the run auditable before the user opens the
+timeline:
+
+- the proof strip includes status, trigger, repo, ref or SHA, sandbox,
+  permissions, checks, output action, duration, and cost when available;
+- run detail data includes only the agent metadata needed for evidence
+  rendering: name, permissions, and check command;
+- the timeline remains the source of command evidence, but the proof strip
+  summarizes whether the run has enough evidence to trust the output;
+- typed failures stay visible even when no output was created.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.

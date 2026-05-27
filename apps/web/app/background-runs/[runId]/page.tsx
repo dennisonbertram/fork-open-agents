@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import {
-  getOwnedBackgroundAgentRun,
+  getOwnedBackgroundAgentRunWithAgent,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
 } from "@/lib/background-agents/store";
@@ -33,13 +33,14 @@ export default async function BackgroundRunPage({
   }
 
   const { runId } = await params;
-  const run = await getOwnedBackgroundAgentRun({
+  const row = await getOwnedBackgroundAgentRunWithAgent({
     userId: session.user.id,
     runId,
   });
-  if (!run) {
+  if (!row) {
     notFound();
   }
+  const { run, agent } = row;
 
   const [events, outputs] = await Promise.all([
     listBackgroundAgentEvents(run.id),
@@ -65,6 +66,14 @@ export default async function BackgroundRunPage({
       startedAt: serializeDate(run.startedAt),
       finishedAt: serializeDate(run.finishedAt),
     },
+    agent: agent
+      ? {
+          id: agent.id,
+          name: agent.name,
+          permissions: agent.permissions,
+          checkCommand: agent.checkCommand,
+        }
+      : null,
     events: events.map((event) => ({
       id: event.id,
       eventName: event.eventName,

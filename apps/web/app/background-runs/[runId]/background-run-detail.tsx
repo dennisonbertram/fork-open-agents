@@ -30,6 +30,13 @@ type SerializedBackgroundRun = {
   finishedAt: string | null;
 };
 
+type SerializedBackgroundAgent = {
+  id: string;
+  name: string;
+  permissions: unknown;
+  checkCommand: string | null;
+};
+
 type SerializedBackgroundEvent = {
   id: string;
   eventName: string;
@@ -51,6 +58,7 @@ type SerializedBackgroundOutput = {
 
 type BackgroundRunDetailData = {
   run: SerializedBackgroundRun;
+  agent: SerializedBackgroundAgent | null;
   events: SerializedBackgroundEvent[];
   outputs: SerializedBackgroundOutput[];
 };
@@ -106,12 +114,136 @@ function ProofItem({ label, value }: { label: string; value: string }) {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function stringifyPayloadValue(value: unknown): string | null {
   if (typeof value === "string") {
     return value.trim() || null;
   }
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
+  }
+  return null;
+}
+
+function formatDuration(startedAt: string | null, finishedAt: string | null) {
+  if (!startedAt) {
+    return "-";
+  }
+  if (!finishedAt) {
+    return "Running";
+  }
+
+  const durationMs = Math.max(
+    0,
+    new Date(finishedAt).getTime() - new Date(startedAt).getTime(),
+  );
+  const totalSeconds = Math.round(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  if (minutes <= 0) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
+}
+
+function formatPermissionSummary(
+  agent: SerializedBackgroundAgent | null,
+  run: SerializedBackgroundRun,
+) {
+  const permissions = isRecord(agent?.permissions) ? agent.permissions : null;
+  const github = isRecord(permissions?.github) ? permissions.github : null;
+  if (github) {
+    const entries: string[] = [];
+    for (const key of ["contents", "pullRequests", "issues", "checks"]) {
+      const value = stringifyPayloadValue(github[key]);
+      if (value) {
+        entries.push(`${key}:${value}`);
+      }
+    }
+    if (entries.length > 0) {
+      return entries.join(", ");
+    }
+  }
+
+  return run.outputKind === "ready_pr" ? "GitHub write" : "GitHub read";
+}
+
+function getLatestCheckEvent(events: SerializedBackgroundEvent[]) {
+  return events.find(
+    (event) => event.eventName === "background-agent.check.completed",
+  );
+}
+
+function formatCheckSummary(
+  events: SerializedBackgroundEvent[],
+  agent: SerializedBackgroundAgent | null,
+) {
+  const checkEvent = getLatestCheckEvent(events);
+  if (!checkEvent) {
+    return agent?.checkCommand?.trim() ? "Pending" : "Not configured";
+  }
+
+  const command = stringifyPayloadValue(checkEvent.payload.command);
+  return command ? `${checkEvent.status} · ${command}` : checkEvent.status;
+}
+
+function formatOutputSummary(
+  outputs: SerializedBackgroundOutput[],
+  run: SerializedBackgroundRun,
+) {
+  const output = outputs[0];
+  if (output) {
+    return `${output.kind} · ${output.status}`;
+  }
+  return run.outputKind && run.outputKind !== "none"
+    ? `${run.outputKind} pending`
+    : "none";
+}
+
+function findCostValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (key.toLowerCase().includes("cost")) {
+      const cost = findCostValue(child);
+      if (cost !== null) {
+        return cost;
+      }
+    }
+    if (isRecord(child)) {
+      const nested = findCostValue(child);
+      if (nested !== null) {
+        return nested;
+      }
+    }
+  }
+
+  return null;
+}
+
+function formatRunCost(events: SerializedBackgroundEvent[]) {
+  for (const event of events) {
+    const cost = findCostValue(event.payload);
+    if (cost !== null) {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: "USD",
+        maximumFractionDigits: 4,
+      }).format(cost);
+    }
   }
   return null;
 }
@@ -167,7 +299,8 @@ export function BackgroundRunDetail({
     },
   );
   const detail = data ?? initialData;
-  const { run, events, outputs } = detail;
+  const { run, agent, events, outputs } = detail;
+  const runCost = formatRunCost(events);
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -208,7 +341,8 @@ export function BackgroundRunDetail({
           )}
         </div>
 
-        <section className="grid gap-3 md:grid-cols-4">
+        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <ProofItem label="Status" value={run.status} />
           <ProofItem label="Trigger" value={run.triggerKind} />
           <ProofItem
             label="Repository"
@@ -219,6 +353,17 @@ export function BackgroundRunDetail({
             value={run.sha ?? run.ref ?? run.branch ?? "-"}
           />
           <ProofItem label="Sandbox" value={run.sandboxName ?? "-"} />
+          <ProofItem
+            label="Permissions"
+            value={formatPermissionSummary(agent, run)}
+          />
+          <ProofItem label="Checks" value={formatCheckSummary(events, agent)} />
+          <ProofItem label="Output" value={formatOutputSummary(outputs, run)} />
+          <ProofItem
+            label="Duration"
+            value={formatDuration(run.startedAt, run.finishedAt)}
+          />
+          {runCost && <ProofItem label="Cost" value={runCost} />}
         </section>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">

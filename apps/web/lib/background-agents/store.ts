@@ -522,6 +522,37 @@ export async function getOwnedBackgroundAgentRun(params: {
   });
 }
 
+export async function getOwnedBackgroundAgentRunWithAgent(params: {
+  userId: string;
+  runId: string;
+}): Promise<
+  | {
+      run: BackgroundAgentRun;
+      agent: BackgroundAgent | null;
+    }
+  | undefined
+> {
+  const [row] = await db
+    .select({
+      run: backgroundAgentRuns,
+      agent: backgroundAgents,
+    })
+    .from(backgroundAgentRuns)
+    .leftJoin(
+      backgroundAgents,
+      eq(backgroundAgents.id, backgroundAgentRuns.agentId),
+    )
+    .where(
+      and(
+        eq(backgroundAgentRuns.id, params.runId),
+        eq(backgroundAgentRuns.userId, params.userId),
+      ),
+    )
+    .limit(1);
+
+  return row;
+}
+
 export async function listBackgroundAgentRuns(params: {
   userId: string;
   repoOwner?: string;
