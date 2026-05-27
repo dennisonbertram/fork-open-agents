@@ -201,6 +201,22 @@ for the signed generic webhook path:
 - the script logs only dispatch counts and run IDs, never the webhook secret or
   computed signature.
 
+## GitHub Webhook Proof Harness Slice
+
+Real GitHub App delivery is still required for #26, but agents also need a
+repeatable signed fixture path that exercises the deployed webhook route:
+
+- `bun run --cwd apps/web background-agents:github-webhook-proof` signs a
+  GitHub-style `pull_request`, `issues`, or `deployment_status` payload with
+  `GITHUB_WEBHOOK_SECRET` and posts it to `/api/github/webhook`;
+- the harness uses the same `x-github-event` and `x-hub-signature-256` headers
+  as GitHub, plus optional Vercel bypass support for protected previews;
+- by default it posts the same GitHub payload twice and asserts the nested
+  `backgroundAgents` dispatch result reports duplicate delivery with the same
+  run ID;
+- the script logs only dispatch counts and run IDs, never the webhook secret,
+  computed signature, or full payload.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
