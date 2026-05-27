@@ -3,6 +3,7 @@ import {
   createComposioToolProfile,
   deleteComposioToolProfile,
   getComposioAgentDefaults,
+  listComposioProfileOptionsForRepository,
   listComposioToolProfiles,
   updateComposioAgentDefaults,
   updateComposioToolProfile,
@@ -35,8 +36,15 @@ const deleteComposioProfileSchema = z.object({
 export type ComposioSettingsResponse = {
   status:
     | ReturnType<typeof getComposioConfiguredStatus>
-    | ReturnType<typeof getComposioDisabledStatus>;
+    | ReturnType<typeof getComposioDisabledStatus>
+    | ReturnType<typeof getComposioUnavailableStatus>;
   profiles: Awaited<ReturnType<typeof listComposioToolProfiles>>;
+  profileOptions: Awaited<
+    ReturnType<typeof listComposioProfileOptionsForRepository>
+  >["profileOptions"];
+  repositorySettings: Awaited<
+    ReturnType<typeof listComposioProfileOptionsForRepository>
+  >["repositorySettings"];
   defaults: Awaited<ReturnType<typeof getComposioAgentDefaults>>;
 };
 
@@ -56,21 +64,31 @@ async function getLiveComposioStatus(userId: string) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
   }
 
-  const [profiles, defaults, status] = await Promise.all([
-    listComposioToolProfiles(authResult.userId),
+  const searchParams = new URL(req.url).searchParams;
+  const repoOwner = searchParams.get("repoOwner");
+  const repoName = searchParams.get("repoName");
+
+  const [profilePolicy, defaults, status] = await Promise.all([
+    listComposioProfileOptionsForRepository({
+      userId: authResult.userId,
+      repoOwner,
+      repoName,
+    }),
     getComposioAgentDefaults(authResult.userId),
     getLiveComposioStatus(authResult.userId),
   ]);
 
   return Response.json({
     status,
-    profiles,
+    profiles: profilePolicy.profiles,
+    profileOptions: profilePolicy.profileOptions,
+    repositorySettings: profilePolicy.repositorySettings,
     defaults,
   } satisfies ComposioSettingsResponse);
 }

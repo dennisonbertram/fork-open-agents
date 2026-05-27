@@ -17,7 +17,11 @@ type AuthResult =
 type OwnedSessionChatResult =
   | {
       ok: true;
-      sessionRecord: { id: string };
+      sessionRecord: {
+        id: string;
+        repoOwner: string | null;
+        repoName: string | null;
+      };
       chat: {
         id: string;
         sessionId: string;
@@ -49,7 +53,7 @@ type ChatRecord = {
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 let ownedSessionChatResult: OwnedSessionChatResult = {
   ok: true,
-  sessionRecord: { id: "session-1" },
+  sessionRecord: { id: "session-1", repoOwner: null, repoName: null },
   chat: {
     id: "chat-1",
     sessionId: "session-1",
@@ -95,6 +99,7 @@ let chatsInSession: Array<{ id: string }> = [
   { id: "chat-1" },
   { id: "chat-2" },
 ];
+let composioPolicy = { allowed: true, reason: null as string | null };
 
 const updateChatCalls: Array<{
   chatId: string;
@@ -109,10 +114,23 @@ const deleteChatCalls: string[] = [];
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
+  requireOwnedSession: async () => ({
+    ok: false,
+    response: Response.json({ error: "Not found" }, { status: 404 }),
+  }),
   requireOwnedSessionChat: async () => ownedSessionChatResult,
 }));
 
 mock.module("@/lib/db/sessions", () => ({
+  getChatSummariesBySessionId: async () => [],
+  getChatById: async () => null,
+  createChat: async () => null,
+  createSessionWithInitialChat: async () => null,
+  getArchivedSessionCountByUserId: async () => 0,
+  getSessionById: async () => null,
+  getSessionsWithUnreadByUserId: async () => [],
+  getUsedSessionTitles: async () => new Set<string>(),
+  updateSession: async () => null,
   updateChat: async (
     chatId: string,
     patch: {
@@ -135,6 +153,23 @@ mock.module("@/lib/db/sessions", () => ({
 mock.module("@/lib/db/inference-profiles", () => ({
   getInferenceProfileByIdForUser: async (_userId: string, _profileId: string) =>
     inferenceProfile,
+}));
+
+mock.module("@/lib/db/composio", () => ({
+  listComposioToolProfiles: async () => [],
+  listComposioProfileOptionsForRepository: async () => ({
+    profiles: [],
+    profileOptions: [],
+    repositorySettings: null,
+  }),
+  getComposioAgentDefaults: async () => ({}),
+  createComposioToolProfile: async () => ({}),
+  updateComposioAgentDefaults: async () => ({}),
+  updateComposioToolProfile: async () => ({}),
+  deleteComposioToolProfile: async () => true,
+  getRepositoryComposioSettings: async () => null,
+  upsertRepositoryComposioSettings: async () => ({}),
+  isComposioProfileAllowedForRepository: async () => composioPolicy,
 }));
 
 mock.module("@/lib/db/user-preferences", () => ({
@@ -183,7 +218,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     authResult = { ok: true, userId: "user-1" };
     ownedSessionChatResult = {
       ok: true,
-      sessionRecord: { id: "session-1" },
+      sessionRecord: { id: "session-1", repoOwner: null, repoName: null },
       chat: {
         id: "chat-1",
         sessionId: "session-1",
@@ -215,6 +250,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       provider: "anthropic",
     };
     chatsInSession = [{ id: "chat-1" }, { id: "chat-2" }];
+    composioPolicy = { allowed: true, reason: null };
     updateChatCalls.length = 0;
     deleteChatCalls.length = 0;
   });
@@ -234,7 +270,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
   test("GET returns the latest chat snapshot", async () => {
     ownedSessionChatResult = {
       ok: true,
-      sessionRecord: { id: "session-1" },
+      sessionRecord: { id: "session-1", repoOwner: null, repoName: null },
       chat: {
         id: "chat-1",
         sessionId: "session-1",
@@ -432,6 +468,28 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         },
       },
     ]);
+  });
+
+  test("PATCH rejects Composio profiles blocked by repo policy", async () => {
+    composioPolicy = {
+      allowed: false,
+      reason: "Blocked by repository policy.",
+    };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        composioSelection: {
+          mainProfileId: "profile-1",
+        },
+      }),
+      createContext(),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Blocked by repository policy.");
+    expect(updateChatCalls).toHaveLength(0);
   });
 
   test("PATCH returns 404 when updateChat returns null", async () => {

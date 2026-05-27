@@ -31,6 +31,23 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 
 type Profile = ComposioSettingsResponse["profiles"][number];
+type RepositoryComposioPolicyResponse = {
+  repoOwner: string;
+  repoName: string;
+  profiles: Profile[];
+  profileOptions: Array<
+    Profile & {
+      available: boolean;
+      disabledReason: string | null;
+    }
+  >;
+  repositorySettings: {
+    inheritGlobalDefaults: boolean;
+    allowedProfileIds: string[];
+    blockedToolkitSlugs: string[];
+    agentDefaults: Partial<ComposioAgentDefaults>;
+  } | null;
+};
 
 const AGENT_LABELS: Record<ComposioAgentKey, string> = {
   main: "Main",
@@ -52,6 +69,12 @@ function splitList(value: string): string[] {
     .split(/[\s,]+/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function isRepositoryComposioPolicyResponse(
+  value: RepositoryComposioPolicyResponse | { error?: string } | null,
+): value is RepositoryComposioPolicyResponse {
+  return Boolean(value && !("error" in value));
 }
 
 function formatAuthConfigMap(value: Record<string, string | null>): string {
@@ -361,6 +384,19 @@ export function ComposioSection() {
   const [authConfigId, setAuthConfigId] = useState("");
   const [connectionAlias, setConnectionAlias] = useState("");
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
+  const [repoOwner, setRepoOwner] = useState("");
+  const [repoName, setRepoName] = useState("");
+  const [repoPolicy, setRepoPolicy] =
+    useState<RepositoryComposioPolicyResponse | null>(null);
+  const [repoInheritsGlobal, setRepoInheritsGlobal] = useState(true);
+  const [repoRestrictsProfiles, setRepoRestrictsProfiles] = useState(false);
+  const [repoAllowedProfileIds, setRepoAllowedProfileIds] = useState<string[]>(
+    [],
+  );
+  const [repoBlockedToolkits, setRepoBlockedToolkits] = useState("");
+  const [isRepoSubmitting, setIsRepoSubmitting] = useState(false);
+  const [repoActionStatus, setRepoActionStatus] = useState<string | null>(null);
+  const [repoActionError, setRepoActionError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -480,6 +516,113 @@ export function ComposioSection() {
     } finally {
       setIsSubmitting(false);
     }
+  }
+
+  async function loadRepositoryPolicy() {
+    const owner = repoOwner.trim();
+    const name = repoName.trim();
+    if (!owner || !name) {
+      setRepoActionError("Enter a repository owner and name.");
+      return;
+    }
+
+    setIsRepoSubmitting(true);
+    setRepoActionError(null);
+    setRepoActionStatus(null);
+    try {
+      const response = await fetch(
+        `/api/settings/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/composio`,
+      );
+      const body = (await response.json().catch(() => null)) as
+        | RepositoryComposioPolicyResponse
+        | { error?: string }
+        | null;
+      if (!response.ok || !isRepositoryComposioPolicyResponse(body)) {
+        throw new Error(
+          body && "error" in body && body.error
+            ? body.error
+            : "Failed to load repository policy",
+        );
+      }
+      const settings = body.repositorySettings;
+      setRepoPolicy(body);
+      setRepoInheritsGlobal(settings?.inheritGlobalDefaults ?? true);
+      setRepoAllowedProfileIds(settings?.allowedProfileIds ?? []);
+      setRepoRestrictsProfiles((settings?.allowedProfileIds.length ?? 0) > 0);
+      setRepoBlockedToolkits((settings?.blockedToolkitSlugs ?? []).join(", "));
+      setRepoActionStatus(
+        settings
+          ? "Repository policy loaded."
+          : "No repository override yet. Saving will create one.",
+      );
+    } catch (loadError) {
+      setRepoActionError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Failed to load repository policy",
+      );
+    } finally {
+      setIsRepoSubmitting(false);
+    }
+  }
+
+  async function saveRepositoryPolicy() {
+    const owner = repoOwner.trim();
+    const name = repoName.trim();
+    if (!owner || !name) {
+      setRepoActionError("Enter a repository owner and name.");
+      return;
+    }
+
+    setIsRepoSubmitting(true);
+    setRepoActionError(null);
+    setRepoActionStatus(null);
+    try {
+      const response = await fetch(
+        `/api/settings/repositories/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/composio`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            inheritGlobalDefaults: repoInheritsGlobal,
+            allowedProfileIds: repoRestrictsProfiles
+              ? repoAllowedProfileIds
+              : [],
+            blockedToolkitSlugs: splitList(repoBlockedToolkits),
+            agentDefaults: repoPolicy?.repositorySettings?.agentDefaults ?? {},
+          }),
+        },
+      );
+      const body = (await response.json().catch(() => null)) as
+        | RepositoryComposioPolicyResponse
+        | { error?: string }
+        | null;
+      if (!response.ok || !isRepositoryComposioPolicyResponse(body)) {
+        throw new Error(
+          body && "error" in body && body.error
+            ? body.error
+            : "Failed to save repository policy",
+        );
+      }
+      setRepoPolicy(body);
+      setRepoActionStatus("Repository policy saved.");
+    } catch (saveError) {
+      setRepoActionError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Failed to save repository policy",
+      );
+    } finally {
+      setIsRepoSubmitting(false);
+    }
+  }
+
+  function toggleRepoAllowedProfile(profileId: string, checked: boolean) {
+    setRepoAllowedProfileIds((current) =>
+      checked
+        ? Array.from(new Set([...current, profileId]))
+        : current.filter((id) => id !== profileId),
+    );
   }
 
   if (isLoading) {
@@ -660,6 +803,190 @@ export function ComposioSection() {
             ))}
           </div>
         ) : null}
+      </div>
+
+      <div className="border-t border-border/50" />
+
+      <div className="space-y-4">
+        <SectionHeader>Repository Policy</SectionHeader>
+        <div className="grid gap-4 rounded-lg border border-border/70 p-3">
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <div className="grid gap-1.5">
+              <Label htmlFor="composio-repo-owner">Repository owner</Label>
+              <Input
+                id="composio-repo-owner"
+                value={repoOwner}
+                onChange={(event) => setRepoOwner(event.currentTarget.value)}
+                placeholder="dennisonbertram"
+                disabled={isRepoSubmitting}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="composio-repo-name">Repository name</Label>
+              <Input
+                id="composio-repo-name"
+                value={repoName}
+                onChange={(event) => setRepoName(event.currentTarget.value)}
+                placeholder="fork-open-agents"
+                disabled={isRepoSubmitting}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={loadRepositoryPolicy}
+              disabled={isRepoSubmitting}
+            >
+              {isRepoSubmitting ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <RefreshCw />
+              )}
+              Load
+            </Button>
+          </div>
+
+          {repoPolicy ? (
+            <div className="grid gap-4 border-t border-border/50 pt-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <Label htmlFor="composio-repo-inherit">
+                    Inherit global defaults
+                  </Label>
+                  <FieldHelp>
+                    Chat selections win first, then this repository policy, then
+                    global defaults.
+                  </FieldHelp>
+                </div>
+                <Switch
+                  id="composio-repo-inherit"
+                  checked={repoInheritsGlobal}
+                  disabled={isRepoSubmitting}
+                  onCheckedChange={setRepoInheritsGlobal}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <Label htmlFor="composio-repo-restrict">
+                    Allow only selected profiles
+                  </Label>
+                  <FieldHelp>
+                    Leave this off to make every global profile available for
+                    this repository.
+                  </FieldHelp>
+                </div>
+                <Switch
+                  id="composio-repo-restrict"
+                  checked={repoRestrictsProfiles}
+                  disabled={isRepoSubmitting || profiles.length === 0}
+                  onCheckedChange={setRepoRestrictsProfiles}
+                />
+              </div>
+
+              {repoRestrictsProfiles ? (
+                <div className="grid gap-2">
+                  {profiles.length > 0 ? (
+                    profiles.map((profile) => (
+                      <div
+                        key={profile.id}
+                        className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-2"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {profile.name}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {profile.toolkitSlugs.join(", ")}
+                          </p>
+                        </div>
+                        <Switch
+                          checked={repoAllowedProfileIds.includes(profile.id)}
+                          disabled={isRepoSubmitting}
+                          onCheckedChange={(checked) =>
+                            toggleRepoAllowedProfile(profile.id, checked)
+                          }
+                          aria-label={`Allow ${profile.name} for this repository`}
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <p className="rounded-md border border-border/60 p-3 text-sm text-muted-foreground">
+                      Create a global profile before scoping repository access.
+                    </p>
+                  )}
+                </div>
+              ) : null}
+
+              <div className="grid gap-1.5">
+                <Label htmlFor="composio-repo-blocked-toolkits">
+                  Blocked toolkit slugs
+                </Label>
+                <Input
+                  id="composio-repo-blocked-toolkits"
+                  value={repoBlockedToolkits}
+                  onChange={(event) =>
+                    setRepoBlockedToolkits(event.currentTarget.value)
+                  }
+                  placeholder="gmail, slack"
+                  disabled={isRepoSubmitting}
+                />
+                <FieldHelp>
+                  These toolkits stay unavailable in this repository even when a
+                  selected profile includes them.
+                </FieldHelp>
+              </div>
+
+              {repoPolicy.profileOptions.length > 0 ? (
+                <div className="rounded-md border border-border/60 p-3">
+                  <p className="mb-2 text-sm font-medium">Chat menu preview</p>
+                  <div className="grid gap-1 text-sm">
+                    {repoPolicy.profileOptions.map((profile) => (
+                      <div
+                        key={profile.id}
+                        className="flex min-w-0 items-center justify-between gap-3"
+                      >
+                        <span className="truncate">{profile.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {profile.available
+                            ? "Available"
+                            : profile.disabledReason}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  onClick={saveRepositoryPolicy}
+                  disabled={isRepoSubmitting}
+                >
+                  {isRepoSubmitting ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Save />
+                  )}
+                  Save policy
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Load a repository to inherit global Composio profiles or create a
+              repo-specific allow/block policy.
+            </p>
+          )}
+
+          {repoActionError ? (
+            <p className="text-sm text-destructive">{repoActionError}</p>
+          ) : null}
+          {repoActionStatus ? (
+            <p className="text-sm text-muted-foreground">{repoActionStatus}</p>
+          ) : null}
+        </div>
       </div>
 
       <div className="border-t border-border/50" />

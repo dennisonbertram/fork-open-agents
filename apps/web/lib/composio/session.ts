@@ -7,8 +7,9 @@ import {
   getChatComposioSelection,
   touchComposioAgentSession,
   upsertComposioAgentSession,
+  isComposioProfileAllowedForRepository,
 } from "@/lib/db/composio";
-import { getChatById } from "@/lib/db/sessions";
+import { getChatById, getSessionById } from "@/lib/db/sessions";
 import type { ComposioToolProfile } from "@/lib/db/schema";
 import { type ComposioAgentKey } from "./types";
 import { getComposioConfig } from "./config";
@@ -73,6 +74,20 @@ export async function resolveComposioToolsForChat(params: {
 
   if (!profileId) {
     return { status: "off" };
+  }
+
+  const sessionRecord = await getSessionById(chat.sessionId);
+  const policy = await isComposioProfileAllowedForRepository({
+    userId: params.userId,
+    profileId,
+    repoOwner: sessionRecord?.repoOwner,
+    repoName: sessionRecord?.repoName,
+  });
+  if (!policy.allowed) {
+    throw new ComposioSetupError(
+      policy.reason ??
+        "Selected Composio profile is blocked by repository policy.",
+    );
   }
 
   if ((params.runtimeMode ?? "classic") !== "classic") {

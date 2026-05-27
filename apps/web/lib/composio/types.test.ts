@@ -5,6 +5,7 @@ import {
   normalizeChatComposioSelection,
   normalizeComposioAgentDefaults,
   normalizeComposioToolProfileValues,
+  normalizeRepositoryComposioSettings,
 } from "./types";
 
 describe("Composio profile normalization", () => {
@@ -78,5 +79,33 @@ describe("Composio agent and chat selection normalization", () => {
     expect(normalizeChatComposioSelection({ unknown: "profile-1" })).toEqual(
       defaultChatComposioSelection,
     );
+  });
+});
+
+describe("Repository Composio settings normalization", () => {
+  test("normalizes allowed profiles and blocked toolkits", () => {
+    expect(
+      normalizeRepositoryComposioSettings({
+        inheritGlobalDefaults: false,
+        allowedProfileIds: ["profile-1", "profile-1", "profile-2"],
+        blockedToolkitSlugs: [" Gmail ", "bad slug!", "github"],
+        agentDefaults: {
+          main: {
+            defaultProfileId: "profile-1",
+            allowChatOverride: true,
+          },
+        },
+      }),
+    ).toEqual({
+      inheritGlobalDefaults: false,
+      allowedProfileIds: ["profile-1", "profile-2"],
+      blockedToolkitSlugs: ["gmail", "github"],
+      agentDefaults: {
+        main: {
+          defaultProfileId: "profile-1",
+          allowChatOverride: true,
+        },
+      },
+    });
   });
 });

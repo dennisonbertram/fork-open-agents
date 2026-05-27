@@ -8,6 +8,7 @@ import {
   getChatById,
   getChatSummariesBySessionId,
 } from "@/lib/db/sessions";
+import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 
 type RouteContext = {
@@ -82,6 +83,16 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   const preferences = await getUserPreferences(authResult.userId);
+  const defaultComposioProfileId =
+    preferences.composioAgentDefaults.main.defaultProfileId;
+  const composioPolicy = defaultComposioProfileId
+    ? await isComposioProfileAllowedForRepository({
+        userId: authResult.userId,
+        profileId: defaultComposioProfileId,
+        repoOwner: sessionContext.sessionRecord.repoOwner,
+        repoName: sessionContext.sessionRecord.repoName,
+      })
+    : { allowed: true };
   const chat = await createChat({
     id: requestedChatId ?? nanoid(),
     sessionId,
@@ -91,7 +102,10 @@ export async function POST(req: Request, context: RouteContext) {
       sessionContext.sessionRecord.inferenceProfileId ??
       preferences.defaultInferenceProfileId,
     composioSelection: {
-      mainProfileId: preferences.composioAgentDefaults.main.defaultProfileId,
+      mainProfileId:
+        defaultComposioProfileId && composioPolicy.allowed
+          ? defaultComposioProfileId
+          : null,
     },
   });
 

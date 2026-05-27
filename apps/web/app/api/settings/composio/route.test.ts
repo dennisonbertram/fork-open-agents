@@ -36,6 +36,10 @@ const profile = {
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
+  requireOwnedSession: async () => ({
+    ok: false,
+    response: Response.json({ error: "Not found" }, { status: 404 }),
+  }),
   requireOwnedSessionChat: async () => ({
     ok: false,
     response: Response.json({ error: "Not found" }, { status: 404 }),
@@ -44,6 +48,17 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 
 mock.module("@/lib/db/composio", () => ({
   listComposioToolProfiles: async (_userId: string) => [profile],
+  listComposioProfileOptionsForRepository: async () => ({
+    profiles: [profile],
+    profileOptions: [{ ...profile, available: true, disabledReason: null }],
+    repositorySettings: null,
+  }),
+  getRepositoryComposioSettings: async () => null,
+  upsertRepositoryComposioSettings: async () => ({}),
+  isComposioProfileAllowedForRepository: async () => ({
+    allowed: true,
+    reason: null,
+  }),
   getComposioAgentDefaults: async (_userId: string) =>
     defaultComposioAgentDefaults,
   createComposioToolProfile: async (_userId: string, input: unknown) => {
@@ -97,6 +112,14 @@ function request(method: string, body?: unknown): Request {
   });
 }
 
+function getRequest(params?: Record<string, string>): Request {
+  const url = new URL("http://localhost/api/settings/composio");
+  for (const [key, value] of Object.entries(params ?? {})) {
+    url.searchParams.set(key, value);
+  }
+  return new Request(url);
+}
+
 describe("/api/settings/composio", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
@@ -112,16 +135,18 @@ describe("/api/settings/composio", () => {
   test("GET returns profiles, defaults, and disabled status", async () => {
     const { GET } = await routeModulePromise;
 
-    const response = await GET();
+    const response = await GET(getRequest());
     const body = (await response.json()) as {
       status: { configured: boolean };
       profiles: unknown[];
+      profileOptions: unknown[];
       defaults: unknown;
     };
 
     expect(response.status).toBe(200);
     expect(body.status.configured).toBe(false);
     expect(body.profiles).toHaveLength(1);
+    expect(body.profileOptions).toHaveLength(1);
     expect(body.defaults).toEqual(defaultComposioAgentDefaults);
   });
 
@@ -132,7 +157,7 @@ describe("/api/settings/composio", () => {
     );
     const { GET } = await routeModulePromise;
 
-    const response = await GET();
+    const response = await GET(getRequest());
     const body = (await response.json()) as {
       status: { configured: boolean; available: boolean; message: string };
     };
