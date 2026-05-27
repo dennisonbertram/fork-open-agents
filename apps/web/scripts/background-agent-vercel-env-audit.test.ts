@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   auditVercelEnvNames,
+  parseDotenvValuePresence,
   parseVercelEnvLs,
 } from "./background-agent-vercel-env-audit";
 
@@ -68,6 +69,51 @@ describe("background-agent-vercel-env-audit", () => {
       "BACKGROUND_AGENTS_WEBHOOK_SECRET",
       "CRON_SECRET",
     ]);
+  });
+
+  test("can verify required value presence without exposing values", () => {
+    const result = auditVercelEnvNames({
+      entries: parseVercelEnvLs(envLsFixture),
+      environment: "production",
+      presentValues: parseDotenvValuePresence(`
+POSTGRES_URL=postgres://redacted
+BETTER_AUTH_SECRET=auth-secret
+NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=client-id
+VERCEL_APP_CLIENT_SECRET=client-secret
+NEXT_PUBLIC_GITHUB_CLIENT_ID=github-client-id
+GITHUB_CLIENT_SECRET=github-client-secret
+GITHUB_APP_ID=""
+GITHUB_APP_PRIVATE_KEY=
+GITHUB_WEBHOOK_SECRET="webhook-secret"
+NEXT_PUBLIC_GITHUB_APP_SLUG=open-agents
+`),
+    });
+
+    expect(result.ready).toBe(false);
+    expect(result.missing).toContain("GITHUB_APP_ID");
+    expect(result.missing).toContain("GITHUB_APP_PRIVATE_KEY");
+    expect(result.checks.find((check) => check.id === "github_app")).toEqual({
+      id: "github_app",
+      label: "GitHub App",
+      status: "missing",
+      detail: "Required for webhook trust and installation repo access.",
+      missing: [],
+      empty: ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"],
+    });
+    expect(JSON.stringify(result)).not.toContain("auth-secret");
+    expect(JSON.stringify(result)).not.toContain("webhook-secret");
+  });
+
+  test("parses dotenv value presence without keeping blank values", () => {
+    expect(
+      parseDotenvValuePresence(`
+# Created by Vercel CLI
+PRESENT=hello
+QUOTED="hello"
+EMPTY=
+QUOTED_EMPTY=""
+`),
+    ).toEqual(new Set(["PRESENT", "QUOTED"]));
   });
 
   test("accepts either cron secret name", () => {

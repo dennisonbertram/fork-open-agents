@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const repoRoot = join(import.meta.dirname, "../../..");
@@ -31,6 +32,7 @@ export interface EnvAuditCheck {
   status: ReadinessStatus;
   detail: string;
   missing: string[];
+  empty: string[];
 }
 
 export interface EnvAuditResult {
@@ -187,41 +189,124 @@ function hasEnvName(
   );
 }
 
+function unquoteDotenvValue(value: string): string {
+  const trimmed = value.trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1);
+  }
+  return trimmed;
+}
+
+export function parseDotenvValuePresence(input: string): Set<string> {
+  const present = new Set<string>();
+
+  for (const line of input.split(/\r?\n/)) {
+    if (!line || line.trimStart().startsWith("#")) {
+      continue;
+    }
+    const index = line.indexOf("=");
+    if (index === -1) {
+      continue;
+    }
+    const name = line.slice(0, index).trim();
+    const value = unquoteDotenvValue(line.slice(index + 1));
+    if (name && value.trim()) {
+      present.add(name);
+    }
+  }
+
+  return present;
+}
+
+function getMissingOrEmptyNames(params: {
+  names: string[];
+  entries: VercelEnvEntry[];
+  environment: VercelEnvironment;
+  branch?: string;
+  presentValues?: Set<string>;
+}) {
+  const missing: string[] = [];
+  const empty: string[] = [];
+
+  for (const name of params.names) {
+    const hasName = hasEnvName(
+      params.entries,
+      name,
+      params.environment,
+      params.branch,
+    );
+    if (!hasName) {
+      missing.push(name);
+      continue;
+    }
+    if (params.presentValues && !params.presentValues.has(name)) {
+      empty.push(name);
+    }
+  }
+
+  return { missing, empty };
+}
+
 export function auditVercelEnvNames(params: {
   entries: VercelEnvEntry[];
   environment: VercelEnvironment;
   branch?: string;
+  presentValues?: Set<string>;
 }): EnvAuditResult {
   const checks = requirements.map((requirement): EnvAuditCheck => {
     if (requirement.all) {
-      const missing = requirement.all.filter(
-        (name) =>
-          !hasEnvName(params.entries, name, params.environment, params.branch),
-      );
+      const { missing, empty } = getMissingOrEmptyNames({
+        names: requirement.all,
+        entries: params.entries,
+        environment: params.environment,
+        branch: params.branch,
+        presentValues: params.presentValues,
+      });
       return {
         id: requirement.id,
         label: requirement.label,
-        status: missing.length === 0 ? "ready" : "missing",
+        status:
+          missing.length === 0 && empty.length === 0 ? "ready" : "missing",
         detail: requirement.detail,
         missing,
+        empty,
       };
     }
 
     const anyNames = requirement.any ?? [];
-    const configured = anyNames.some((name) =>
-      hasEnvName(params.entries, name, params.environment, params.branch),
-    );
+    const configured = anyNames.some((name) => {
+      const hasName = hasEnvName(
+        params.entries,
+        name,
+        params.environment,
+        params.branch,
+      );
+      return (
+        hasName && (!params.presentValues || params.presentValues.has(name))
+      );
+    });
+    const { missing, empty } = getMissingOrEmptyNames({
+      names: anyNames,
+      entries: params.entries,
+      environment: params.environment,
+      branch: params.branch,
+      presentValues: params.presentValues,
+    });
 
     return {
       id: requirement.id,
       label: requirement.label,
       status: configured ? "ready" : "missing",
       detail: requirement.detail,
-      missing: configured ? [] : anyNames,
+      missing: configured ? [] : missing,
+      empty: configured ? [] : empty,
     };
   });
   const missing = Array.from(
-    new Set(checks.flatMap((check) => check.missing)),
+    new Set(checks.flatMap((check) => [...check.missing, ...check.empty])),
   ).sort();
 
   return {
@@ -231,7 +316,12 @@ export function auditVercelEnvNames(params: {
     missing,
     checks,
     notes: [
-      "This audit checks Vercel env names only; it never reads or prints secret values.",
+      params.presentValues
+        ? "Value presence was checked with a temporary Vercel env pull; values were not printed and the temp file was deleted."
+        : "This audit checks Vercel env names only; it never reads or prints secret values.",
+      params.presentValues
+        ? "Empty means Vercel env pull returned a blank value; confirm in Vercel UI or the hosted readiness route before live proof."
+        : "Use --verify-values to check for blank pulled values without printing them.",
       "Set BACKGROUND_AGENTS_ALLOWED_REPOS=owner/repo to limit production proof to a disposable repository.",
       "Sandbox runtime and AI Gateway OIDC readiness are verified by the hosted readiness route.",
     ],
@@ -243,6 +333,7 @@ function parseArgs(argv: string[]) {
   let branch: string | undefined;
   let input: string | undefined;
   let json = false;
+  let verifyValues = false;
 
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -286,10 +377,15 @@ function parseArgs(argv: string[]) {
       continue;
     }
 
+    if (arg === "--verify-values") {
+      verifyValues = true;
+      continue;
+    }
+
     throw new EnvAuditError(`Unknown argument: ${arg}`);
   }
 
-  return { environment, branch, input, json };
+  return { environment, branch, input, json, verifyValues };
 }
 
 function readVercelEnvLs(input?: string): string {
@@ -310,6 +406,43 @@ function readVercelEnvLs(input?: string): string {
   return output;
 }
 
+function readPulledEnvValuePresence(params: {
+  environment: VercelEnvironment;
+  branch?: string;
+}): Set<string> {
+  const tempDir = mkdtempSync(join(tmpdir(), "open-agents-env-audit-"));
+  const tempFile = join(tempDir, ".env.audit");
+  const args = [
+    "env",
+    "pull",
+    tempFile,
+    "--environment",
+    params.environment,
+    "--yes",
+  ];
+  if (params.branch) {
+    args.push("--git-branch", params.branch);
+  }
+
+  try {
+    const result = spawnSync("vercel", args, {
+      cwd: repoRoot,
+      encoding: "utf8",
+    });
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+
+    if (result.status !== 0) {
+      throw new EnvAuditError(
+        output.trim() || "Failed to run `vercel env pull`.",
+      );
+    }
+
+    return parseDotenvValuePresence(readFileSync(tempFile, "utf8"));
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function formatAudit(result: EnvAuditResult): string {
   const lines = [
     "Background agents Vercel env audit",
@@ -323,6 +456,9 @@ function formatAudit(result: EnvAuditResult): string {
     lines.push(`  ${check.detail}`);
     if (check.missing.length > 0) {
       lines.push(`  Missing: ${check.missing.join(", ")}`);
+    }
+    if (check.empty.length > 0) {
+      lines.push(`  Empty: ${check.empty.join(", ")}`);
     }
   }
 
@@ -338,10 +474,17 @@ export function runEnvAudit(argv = process.argv.slice(2)): number {
   try {
     const args = parseArgs(argv);
     const output = readVercelEnvLs(args.input);
+    const presentValues = args.verifyValues
+      ? readPulledEnvValuePresence({
+          environment: args.environment,
+          branch: args.branch,
+        })
+      : undefined;
     const result = auditVercelEnvNames({
       entries: parseVercelEnvLs(output),
       environment: args.environment,
       branch: args.branch,
+      presentValues,
     });
 
     console.log(

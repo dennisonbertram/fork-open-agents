@@ -178,6 +178,9 @@ trigger is fired:
 - `bun run --cwd apps/web background-agents:env-audit -- --environment preview
   --branch <branch>` audits Vercel env names and branch scopes without reading
   or printing encrypted values;
+- `background-agents:env-audit -- --verify-values` uses a temporary
+  `vercel env pull` file to report only blank required variable names, then
+  deletes the temp file before exit;
 - `GET /api/background-agents/readiness` is an authenticated route that returns
   only safe readiness status, missing env var names, and setup categories; it
   never returns secret values;

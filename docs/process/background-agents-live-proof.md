@@ -39,6 +39,17 @@ The command runs `vercel env ls`, checks names and scopes only, and exits
 non-zero when required names are missing. It never reads or prints encrypted
 values.
 
+To also confirm required values are non-empty without printing them, add
+`--verify-values`. This creates a temporary env file through
+`vercel env pull`, reports only blank/missing variable names, and deletes the
+temporary file before exit:
+
+```bash
+bun run --cwd apps/web background-agents:env-audit -- \
+  --environment production \
+  --verify-values
+```
+
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
 - GitHub App configuration:
