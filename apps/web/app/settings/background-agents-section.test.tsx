@@ -5,45 +5,71 @@ import {
   buildFormFromAgent,
 } from "./background-agents-form";
 
-type SwrState = {
-  data?: {
-    agents: Array<{
+type AgentListData = {
+  agents: Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    status: "enabled" | "disabled";
+    repoOwner: string;
+    repoName: string;
+    instructions: string;
+    outputMode: "comment" | "ready_pr" | "issue" | "notification" | "none";
+    checkCommand: string | null;
+    triggers: Array<{
       id: string;
       name: string;
-      description: string | null;
+      kind:
+        | "github.pull_request"
+        | "github.deployment_status"
+        | "github.issue"
+        | "schedule.cron"
+        | "webhook.error";
       status: "enabled" | "disabled";
-      repoOwner: string;
-      repoName: string;
-      instructions: string;
-      outputMode: "comment" | "ready_pr" | "issue" | "notification" | "none";
-      checkCommand: string | null;
-      triggers: Array<{
-        id: string;
-        name: string;
-        kind:
-          | "github.pull_request"
-          | "github.deployment_status"
-          | "github.issue"
-          | "schedule.cron"
-          | "webhook.error";
-        status: "enabled" | "disabled";
-        conditions?: {
-          actions?: string[];
-          branches?: string[];
-          labels?: string[];
-          environments?: string[];
-          severities?: string[];
-        };
-        schedule: string | null;
-        webhookPublicId: string | null;
-      }>;
+      conditions?: {
+        actions?: string[];
+        branches?: string[];
+        labels?: string[];
+        environments?: string[];
+        severities?: string[];
+      };
+      schedule: string | null;
+      webhookPublicId: string | null;
     }>;
-  };
+  }>;
+};
+
+type RunListData = {
+  runs: Array<{
+    id: string;
+    status: string;
+    source: string;
+    triggerKind: string;
+    externalId: string;
+    repoOwner: string;
+    repoName: string;
+    ref: string | null;
+    sha: string | null;
+    branch: string | null;
+    prNumber: number | null;
+    issueNumber: number | null;
+    outputKind: string | null;
+    outputUrl: string | null;
+    errorKind: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    finishedAt: string | null;
+  }>;
+};
+
+type SwrState<T> = {
+  data?: T;
   error?: Error | null;
   isLoading?: boolean;
 };
 
-let swrState: SwrState = {};
+let agentsSwrState: SwrState<AgentListData> = {};
+let runsSwrState: SwrState<RunListData> = {};
 const push = mock((_url: string) => undefined);
 const mutate = mock(async () => undefined);
 
@@ -52,25 +78,34 @@ mock.module("next/navigation", () => ({
 }));
 
 mock.module("swr", () => ({
-  default: () => ({
-    data: swrState.data,
-    error: swrState.error ?? null,
-    isLoading: swrState.isLoading ?? false,
-    mutate,
-  }),
+  default: (key: string) => {
+    const state = key.startsWith("/api/background-agent-runs")
+      ? runsSwrState
+      : agentsSwrState;
+    return {
+      data: state.data,
+      error: state.error ?? null,
+      isLoading: state.isLoading ?? false,
+      mutate,
+    };
+  },
 }));
 
 const componentModulePromise = import("./background-agents-section");
 
 describe("BackgroundAgentsSection", () => {
   beforeEach(() => {
-    swrState = {};
+    agentsSwrState = {};
+    runsSwrState = {};
     push.mockClear();
     mutate.mockClear();
   });
 
   test("renders a loading state instead of an empty state while agents load", async () => {
-    swrState = {
+    agentsSwrState = {
+      isLoading: true,
+    };
+    runsSwrState = {
       isLoading: true,
     };
     const { BackgroundAgentsSection } = await componentModulePromise;
@@ -81,27 +116,81 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("Conditions");
     expect(html).toContain("Agents");
     expect(html).toContain("Loading background agents.");
+    expect(html).toContain("Run history");
+    expect(html).toContain("Loading background runs.");
     expect(html).not.toContain("No background agents yet.");
   });
 
   test("renders empty and error states for the agent list", async () => {
     const { BackgroundAgentsSection } = await componentModulePromise;
 
-    swrState = {
+    agentsSwrState = {
       data: { agents: [] },
     };
     const emptyHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
     expect(emptyHtml).toContain("No background agents yet.");
 
-    swrState = {
+    agentsSwrState = {
       error: new Error("load failed"),
     };
     const errorHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
     expect(errorHtml).toContain("Failed to load background agents.");
   });
 
+  test("renders empty, error, and configured states for run history", async () => {
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    agentsSwrState = {
+      data: { agents: [] },
+    };
+    runsSwrState = {
+      data: { runs: [] },
+    };
+    const emptyHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(emptyHtml).toContain("No background runs yet.");
+
+    runsSwrState = {
+      error: new Error("load failed"),
+    };
+    const errorHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(errorHtml).toContain("Failed to load background runs.");
+
+    runsSwrState = {
+      data: {
+        runs: [
+          {
+            id: "run-1",
+            status: "succeeded",
+            source: "manual",
+            triggerKind: "github.pull_request",
+            externalId: "manual-test",
+            repoOwner: "acme",
+            repoName: "widgets",
+            ref: "refs/heads/main",
+            sha: null,
+            branch: "main",
+            prNumber: 42,
+            issueNumber: null,
+            outputKind: "ready_pr",
+            outputUrl: "https://github.com/acme/widgets/pull/42",
+            errorKind: null,
+            createdAt: "2026-05-27T12:00:00.000Z",
+            startedAt: "2026-05-27T12:00:01.000Z",
+            finishedAt: "2026-05-27T12:00:10.000Z",
+          },
+        ],
+      },
+    };
+    const configuredHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(configuredHtml).toContain("github.pull_request");
+    expect(configuredHtml).toContain("acme/widgets");
+    expect(configuredHtml).toContain("PR #42");
+    expect(configuredHtml).toContain("/background-runs/run-1");
+    expect(configuredHtml).toContain("https://github.com/acme/widgets/pull/42");
+  });
+
   test("renders configure, future tools, test, and repo inspection paths", async () => {
-    swrState = {
+    agentsSwrState = {
       data: {
         agents: [
           {

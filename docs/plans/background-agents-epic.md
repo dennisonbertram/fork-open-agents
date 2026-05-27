@@ -151,6 +151,21 @@ and recreating agents:
 - route tests cover authenticated PATCH and DELETE scoping for agent updates and
   removal.
 
+## Settings Run History Slice
+
+The global Settings entry point must show both configuration and recent run
+evidence:
+
+- `GET /api/background-agent-runs` is covered as an authenticated, owner-scoped
+  list contract with optional repo filters and bounded limits;
+- `/settings/background-agents` now fetches recent background runs alongside the
+  agent list;
+- Settings renders loading, empty, error, and populated run-history states;
+- recent runs link to `/background-runs/[runId]` and, when available, the
+  output URL;
+- this gives operators and future agents a global debug surface before they
+  know which repo dashboard or run detail to open.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.

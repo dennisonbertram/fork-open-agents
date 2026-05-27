@@ -43,6 +43,31 @@ type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
 };
 
+type BackgroundRun = {
+  id: string;
+  status: string;
+  source: string;
+  triggerKind: string;
+  externalId: string;
+  repoOwner: string;
+  repoName: string;
+  ref: string | null;
+  sha: string | null;
+  branch: string | null;
+  prNumber: number | null;
+  issueNumber: number | null;
+  outputKind: string | null;
+  outputUrl: string | null;
+  errorKind: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+};
+
+type BackgroundRunsResponse = {
+  runs: BackgroundRun[];
+};
+
 type ManualTestResponse = {
   enabled: boolean;
   matched: number;
@@ -60,17 +85,46 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
+function formatRunDate(value: string | null) {
+  if (!value) {
+    return "-";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function formatRunTarget(run: BackgroundRun) {
+  if (run.prNumber !== null) {
+    return `PR #${run.prNumber}`;
+  }
+  if (run.issueNumber !== null) {
+    return `Issue #${run.issueNumber}`;
+  }
+  return run.sha ?? run.ref ?? run.branch ?? run.externalId;
+}
+
 function StatusPill({ status }: { status: string }) {
+  const normalizedStatus = status.toLowerCase();
   return (
     <span
       className={cn(
         "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium capitalize",
-        status === "enabled"
+        normalizedStatus === "enabled" ||
+          normalizedStatus === "succeeded" ||
+          normalizedStatus === "created"
           ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : "border-border bg-muted/40 text-muted-foreground",
+          : normalizedStatus === "failed"
+            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
+            : normalizedStatus === "queued" || normalizedStatus === "running"
+              ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+              : "border-border bg-muted/40 text-muted-foreground",
       )}
     >
-      {status}
+      {status.replaceAll("_", " ")}
     </span>
   );
 }
@@ -81,6 +135,15 @@ export function BackgroundAgentsSection() {
     "/api/background-agents",
     fetchJson,
   );
+  const {
+    data: runsData,
+    error: runsError,
+    isLoading: runsLoading,
+    mutate: mutateRuns,
+  } = useSWR<BackgroundRunsResponse>(
+    "/api/background-agent-runs?limit=8",
+    fetchJson,
+  );
   const [form, setForm] = useState<FormState>(defaultForm);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -88,6 +151,7 @@ export function BackgroundAgentsSection() {
   const [message, setMessage] = useState<string | null>(null);
 
   const agents = data?.agents ?? [];
+  const runs = runsData?.runs ?? [];
   const canSubmit = useMemo(
     () =>
       form.name.trim() &&
@@ -140,7 +204,7 @@ export function BackgroundAgentsSection() {
       setMessage(
         isEditing ? "Background agent updated." : "Background agent created.",
       );
-      await mutate();
+      await Promise.all([mutate(), mutateRuns()]);
     } catch (saveError) {
       setMessage(
         saveError instanceof Error
@@ -168,7 +232,7 @@ export function BackgroundAgentsSection() {
         throw new Error("No background run was created for this test");
       }
       setMessage("Background agent test started.");
-      await mutate();
+      await Promise.all([mutate(), mutateRuns()]);
       router.push(`/background-runs/${runId}`);
     } catch (testError) {
       setMessage(
@@ -505,6 +569,75 @@ export function BackgroundAgentsSection() {
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Repo
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-md border border-border">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+          <h2 className="text-sm font-medium">Run history</h2>
+          <Button variant="ghost" size="icon" onClick={() => void mutateRuns()}>
+            <RefreshCw
+              className={cn("h-4 w-4", runsLoading && "animate-spin")}
+            />
+          </Button>
+        </div>
+        {runsError ? (
+          <div className="p-4 text-sm text-destructive">
+            Failed to load background runs.
+          </div>
+        ) : runsLoading && !runsData ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Loading background runs.
+          </div>
+        ) : runs.length === 0 ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            No background runs yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {runs.map((run) => (
+              <div
+                key={run.id}
+                className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto]"
+              >
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-medium">
+                      {run.triggerKind}
+                    </p>
+                    <StatusPill status={run.status} />
+                    {run.errorKind && (
+                      <span className="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] text-red-700 dark:text-red-300">
+                        {run.errorKind}
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+                    {run.repoOwner}/{run.repoName} · {formatRunTarget(run)}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {run.source} · {formatRunDate(run.createdAt)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {run.outputUrl && (
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={run.outputUrl}>
+                        <ExternalLink className="h-3.5 w-3.5" />
+                        Output
+                      </Link>
+                    </Button>
+                  )}
+                  <Button asChild variant="outline" size="sm">
+                    <Link href={`/background-runs/${run.id}`}>
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      Details
                     </Link>
                   </Button>
                 </div>
