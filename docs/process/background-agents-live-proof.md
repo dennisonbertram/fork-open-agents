@@ -76,6 +76,22 @@ values rather than printing or failing on their contents. Confirm the actual
 runtime values through the authenticated readiness route before firing live
 events.
 
+Check GitHub App installation, event subscriptions, and repo permissions without
+printing secrets:
+
+```bash
+tmpfile=$(mktemp)
+vercel env pull "$tmpfile" --environment=development --yes >/dev/null
+bun run --cwd apps/web background-agents:github-app-readiness -- \
+  --env-file "$tmpfile" \
+  --repo <owner>/<repo>
+rm -f "$tmpfile"
+```
+
+This check must report `OK Event subscriptions` before real GitHub delivery can
+be proven. If GitHub asks for sudo/passkey, update the GitHub App settings in
+the browser, then rerun the command.
+
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
 - GitHub App configuration:
