@@ -79,7 +79,7 @@ export type WebAgentVerifiedBuildData = {
 };
 
 export type WebAgentRuntimeProofData = {
-  status: "completed" | "failed" | "blocked";
+  status: "completed" | "failed" | "blocked" | "incomplete";
   runtimeMode: "managed_runtime";
   workflowRunId: string;
   sandboxName: string | null;
@@ -88,6 +88,33 @@ export type WebAgentRuntimeProofData = {
     version: string;
     displayName: string;
     profileRunId: string | null;
+  };
+  workerEvidence: {
+    total: number;
+    completed: number;
+    failed: number;
+    running: number;
+    latest: {
+      id: string;
+      workerType: string;
+      status: string;
+      sandboxName: string | null;
+      profileId: string | null;
+      profileVersion: string | null;
+      profileDisplayName: string | null;
+      profileRunId: string | null;
+      currentToolName: string | null;
+      currentToolSummary: string | null;
+      toolCallCount: number;
+      summary: string | null;
+    } | null;
+  };
+  coordinatorDirectToolUse: {
+    observed: boolean;
+    count: number;
+    toolTypes: string[];
+    toolLabels: string[];
+    warning: string | null;
   };
   evidence: string[];
   serviceEvidence: {

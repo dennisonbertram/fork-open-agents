@@ -60,6 +60,11 @@ import type {
   WorkflowRunStatus,
   WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
+import {
+  extractManagedRuntimeWorkersFromParts,
+  summarizeManagedRuntimeDirectToolUse,
+  type ManagedRuntimeWorkerSnapshot,
+} from "@/lib/observability/managed-runtime-workers";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
 import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
 
@@ -668,8 +673,14 @@ function buildRuntimeProofData(params: {
   managedRuntime: NonNullable<
     Awaited<ReturnType<typeof resolveChatSandboxRuntime>>["managedRuntime"]
   >;
+  assistantParts: WebAgentUIMessage["parts"];
   artifacts: RuntimeProofArtifacts;
 }): WebAgentRuntimeProofData {
+  const workers = extractManagedRuntimeWorkersFromParts(params.assistantParts);
+  const workerEvidence = summarizeRuntimeWorkerEvidence(workers);
+  const coordinatorDirectToolUse = summarizeManagedRuntimeDirectToolUse(
+    params.assistantParts,
+  );
   const serviceEvidence = summarizeRuntimeServiceEvidence(
     params.artifacts.services,
   );
@@ -682,6 +693,24 @@ function buildRuntimeProofData(params: {
     "Profile setup/probe details are available in Runtime Inspector.",
   ];
   const limitations: string[] = [];
+
+  if (workerEvidence.latest === null) {
+    limitations.push(
+      "Managed runtime was selected, but no managed worker executed for this turn.",
+    );
+  } else {
+    evidence.push(formatWorkerEvidenceSummary(workerEvidence.latest));
+    if (workerEvidence.failed > 0) {
+      limitations.push("One or more managed workers failed.");
+    }
+    if (workerEvidence.completed === 0) {
+      limitations.push("No completed managed worker evidence was captured.");
+    }
+  }
+
+  if (coordinatorDirectToolUse.warning) {
+    limitations.push(coordinatorDirectToolUse.warning);
+  }
 
   if (serviceEvidence.latest === null) {
     limitations.push(
@@ -721,8 +750,14 @@ function buildRuntimeProofData(params: {
     limitations.push("No managed runtime profile run id was recorded.");
   }
 
+  const proofStatus = getRuntimeProofStatus({
+    workflowStatus: params.workflowStatus,
+    workerEvidence,
+    coordinatorDirectToolUseObserved: coordinatorDirectToolUse.observed,
+  });
+
   return {
-    status: params.workflowStatus === "completed" ? "completed" : "failed",
+    status: proofStatus,
     runtimeMode: "managed_runtime",
     workflowRunId: params.workflowRunId,
     sandboxName: params.sandboxName,
@@ -733,6 +768,8 @@ function buildRuntimeProofData(params: {
         params.managedRuntime.profileDisplayName ?? "Unknown managed profile",
       profileRunId: params.managedRuntime.profileRunId ?? null,
     },
+    workerEvidence,
+    coordinatorDirectToolUse,
     evidence,
     serviceEvidence,
     browserEvidence,
@@ -751,6 +788,59 @@ const EMPTY_RUNTIME_PROOF_ARTIFACTS: RuntimeProofArtifacts = {
   browserRuns: [],
   errorMessage: null,
 };
+
+function getRuntimeProofStatus(params: {
+  workflowStatus: WorkflowRunStatus;
+  workerEvidence: WebAgentRuntimeProofData["workerEvidence"];
+  coordinatorDirectToolUseObserved: boolean;
+}): WebAgentRuntimeProofData["status"] {
+  if (params.workflowStatus === "failed") {
+    return "failed";
+  }
+
+  if (params.workflowStatus === "aborted") {
+    return "blocked";
+  }
+
+  if (
+    params.workerEvidence.completed === 0 ||
+    params.workerEvidence.failed > 0 ||
+    params.coordinatorDirectToolUseObserved
+  ) {
+    return "incomplete";
+  }
+
+  return "completed";
+}
+
+function summarizeRuntimeWorkerEvidence(
+  workers: ManagedRuntimeWorkerSnapshot[],
+): WebAgentRuntimeProofData["workerEvidence"] {
+  const latest = workers[0] ?? null;
+
+  return {
+    total: workers.length,
+    completed: workers.filter((worker) => worker.status === "completed").length,
+    failed: workers.filter((worker) => worker.status === "failed").length,
+    running: workers.filter((worker) => worker.status === "running").length,
+    latest: latest
+      ? {
+          id: latest.id,
+          workerType: latest.workerType,
+          status: latest.status,
+          sandboxName: latest.sandboxName,
+          profileId: latest.profileId,
+          profileVersion: latest.profileVersion,
+          profileDisplayName: latest.profileDisplayName,
+          profileRunId: latest.profileRunId,
+          currentToolName: latest.currentToolName,
+          currentToolSummary: latest.currentToolSummary,
+          toolCallCount: latest.toolCallCount,
+          summary: latest.summary,
+        }
+      : null,
+  };
+}
 
 function getArtifactCount(artifactRefs: unknown): number {
   return Array.isArray(artifactRefs) ? artifactRefs.length : 0;
@@ -811,6 +901,22 @@ function formatServiceEvidenceSummary(
       ? ` (HTTP ${service.lastHealthStatus})`
       : "";
   return `Managed dev-server evidence recorded: ${service.id} ${service.status} on port ${service.port}${healthSuffix}.`;
+}
+
+function formatWorkerEvidenceSummary(
+  worker: NonNullable<WebAgentRuntimeProofData["workerEvidence"]["latest"]>,
+): string {
+  const sandboxSuffix = worker.sandboxName
+    ? ` in sandbox ${worker.sandboxName}`
+    : "";
+  const toolSuffix =
+    worker.toolCallCount > 0
+      ? ` with ${worker.toolCallCount} tool call${
+          worker.toolCallCount === 1 ? "" : "s"
+        }`
+      : "";
+
+  return `Managed worker evidence recorded: ${worker.workerType} ${worker.status}${sandboxSuffix}${toolSuffix}.`;
 }
 
 function formatBrowserEvidenceSummary(
@@ -1457,6 +1563,7 @@ export async function runAgentWorkflow(options: Options) {
           workflowStatus,
           sandboxName: runtimeSandboxName,
           managedRuntime: runtime.managedRuntime,
+          assistantParts: pendingAssistantResponse.parts,
           artifacts: runtimeProofArtifacts,
         }),
       };

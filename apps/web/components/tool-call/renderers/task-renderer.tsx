@@ -25,6 +25,7 @@ import {
 } from "@/app/lib/render-tool";
 import type { WebAgentUIToolPart } from "@/app/types";
 import { DEFAULT_WORKING_DIRECTORY } from "@/lib/sandbox/config";
+import { cn } from "@/lib/utils";
 import { ToolLayout } from "../tool-layout";
 import { BashRenderer } from "./bash-renderer";
 import { ReadRenderer } from "./read-renderer";
@@ -254,6 +255,33 @@ function getSubagentLabel(subagentType: string | undefined): string {
   }
 }
 
+function getSubagentShortLabel(subagentType: string | undefined): string {
+  switch (subagentType) {
+    case "executor":
+      return "Executor";
+    case "design":
+      return "Design";
+    case "explorer":
+      return "Explorer";
+    default:
+      return subagentType
+        ? subagentType.charAt(0).toUpperCase() + subagentType.slice(1)
+        : "Subagent";
+  }
+}
+
+function getProfileLabel(runtime: {
+  profileId?: string;
+  profileVersion?: string;
+  profileDisplayName?: string;
+}) {
+  if (runtime.profileId && runtime.profileVersion) {
+    return `${runtime.profileId}@${runtime.profileVersion}`;
+  }
+
+  return runtime.profileDisplayName ?? runtime.profileId ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Pending tool call (streaming only — no output yet)
 // ---------------------------------------------------------------------------
@@ -359,18 +387,14 @@ export function TaskRenderer({
   const toolCount =
     output?.toolCallCount ?? (isComplete ? countToolCalls(output?.final) : 0);
   const tokenCount = output?.usage?.inputTokens ?? null;
-  const runtimeLabel =
-    output?.runtime?.mode === "managed_runtime"
-      ? output.runtime.profileDisplayName
-        ? `Managed runtime worker · ${output.runtime.profileDisplayName}`
-        : "Managed runtime worker"
-      : null;
+  const managedRuntime =
+    output?.runtime?.mode === "managed_runtime" ? output.runtime : null;
+  const profileLabel = managedRuntime ? getProfileLabel(managedRuntime) : null;
+  const workerType = managedRuntime?.workerType ?? subagentType;
+  const workerLabel = getSubagentShortLabel(workerType);
 
   // Build mono stats for right-aligned meta
   const statParts: string[] = [];
-  if (runtimeLabel) {
-    statParts.push(runtimeLabel);
-  }
   if (toolCount > 0) {
     statParts.push(`${toolCount} tool${toolCount !== 1 ? "s" : ""}`);
   }
@@ -394,7 +418,21 @@ export function TaskRenderer({
     pendingToolCall !== null || completedParts.length > 0;
 
   const expandedContent = hasExpandableContent ? (
-    <div className="space-y-0.5 pl-6">
+    <div
+      className={cn(
+        "space-y-0.5 pl-6",
+        managedRuntime && "border-cyan-500/30 border-l pl-3",
+      )}
+    >
+      {managedRuntime && (
+        <div className="mb-1 flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+          <span className="font-medium text-cyan-600 dark:text-cyan-300">
+            Managed worker tool calls
+          </span>
+          <span className="text-muted-foreground/40">·</span>
+          <span>{workerLabel}</span>
+        </div>
+      )}
       {/* Live: show current pending tool call with slide-up animation */}
       {pendingToolCall && !isComplete && (
         <div
@@ -415,6 +453,38 @@ export function TaskRenderer({
     </div>
   ) : undefined;
 
+  const runtimeDetails = managedRuntime ? (
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 pl-6 text-[11px] text-muted-foreground">
+      <span className="font-medium text-cyan-600 dark:text-cyan-300">
+        Coordinator delegated
+      </span>
+      <span className="text-muted-foreground/40">·</span>
+      <span>{workerLabel}</span>
+      {managedRuntime.sandboxName && (
+        <>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="min-w-0 truncate">
+            Sandbox {managedRuntime.sandboxName}
+          </span>
+        </>
+      )}
+      {profileLabel && (
+        <>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="min-w-0 truncate">Profile {profileLabel}</span>
+        </>
+      )}
+      {managedRuntime.profileRunId && (
+        <>
+          <span className="text-muted-foreground/40">·</span>
+          <span className="min-w-0 truncate">
+            Profile run {managedRuntime.profileRunId}
+          </span>
+        </>
+      )}
+    </div>
+  ) : null;
+
   const approvalWarning =
     taskApprovalRequested && subagentType === "executor" ? (
       <div className="mt-2 pl-5 text-sm text-yellow-500">
@@ -425,7 +495,7 @@ export function TaskRenderer({
 
   return (
     <ToolLayout
-      name={getSubagentLabel(subagentType)}
+      name={managedRuntime ? "Managed worker" : getSubagentLabel(subagentType)}
       summary={desc}
       summaryClassName="font-sans"
       meta={meta}
@@ -438,6 +508,7 @@ export function TaskRenderer({
       onDeny={onDeny}
       defaultExpanded={!isComplete}
     >
+      {runtimeDetails}
       {approvalWarning}
     </ToolLayout>
   );
