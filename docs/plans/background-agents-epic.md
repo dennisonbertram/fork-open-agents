@@ -184,6 +184,23 @@ trigger is fired:
   App credentials but still needs the background-agent flag and dispatch
   secrets before #26 can run.
 
+## Signed Webhook Proof Harness Slice
+
+Once #26's hosted environment is configured, agents need a repeatable command
+for the signed generic webhook path:
+
+- `bun run --cwd apps/web background-agents:webhook-proof` signs a
+  `webhook.error` fixture with `BACKGROUND_AGENTS_WEBHOOK_SECRET` and posts it
+  to `/api/background-agents/webhook/[publicId]`;
+- the harness requires `BACKGROUND_AGENT_PROOF_BASE_URL` and
+  `BACKGROUND_AGENT_PROOF_WEBHOOK_PUBLIC_ID`, with optional repo, external ID,
+  actor, URL, severity, title, message, and Vercel bypass env vars;
+- by default it sends the same payload twice and asserts the second delivery is
+  reported as a duplicate with the same run ID, giving #26 a direct hosted
+  check for signed delivery plus idempotency;
+- the script logs only dispatch counts and run IDs, never the webhook secret or
+  computed signature.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
