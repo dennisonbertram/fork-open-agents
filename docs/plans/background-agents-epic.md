@@ -45,6 +45,23 @@ The first slice does not claim to perform real sandbox mutation or ready PR
 creation. Those behaviors are tracked in issue 21 and should build on the run,
 event, and output records introduced here.
 
+## Runtime Evidence Slice
+
+The next implementation slice adds inspectable sandbox execution without
+turning on code mutation yet:
+
+- each run resolves repo-scoped GitHub App access before sandbox work starts;
+- each run creates or resumes a named sandbox using `background_agent_<runId>`;
+- each run records sandbox attribution, working directory, branch, and host when
+  available;
+- each run records git context before checks run;
+- configured check commands emit `started` and `completed` events with status,
+  exit code, duration, compact stdout/stderr, and truncation status;
+- active run detail pages poll the run API so humans and agents can watch the
+  timeline update while a workflow is running;
+- `ready_pr` runs still fail visibly after sandbox/check evidence because
+  mutation and PR creation remain the next protected step.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
@@ -54,9 +71,15 @@ Initial events:
 - `background-agent.trigger.received`
 - `background-agent.run.created`
 - `background-agent.workflow.started`
-- `background-agent.executor.pending`
+- `background-agent.github.installation.resolved`
+- `background-agent.sandbox.started`
+- `background-agent.git.context.started`
+- `background-agent.git.context.completed`
+- `background-agent.check.started`
+- `background-agent.check.completed`
 - `background-agent.workflow.start_failed`
 - `background-agent.run.completed`
+- `background-agent.run.failed`
 
 Important correlation fields:
 
