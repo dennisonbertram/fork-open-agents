@@ -4,7 +4,10 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { DevServerLaunchResponse } from "@/app/api/sessions/[sessionId]/dev-server/route";
 
-type RuntimeDevServerLaunchResponse = DevServerLaunchResponse & {
+type RuntimeDevServerLaunchResponse = Omit<
+  DevServerLaunchResponse,
+  "logPath"
+> & {
   id?: string;
   logPath?: string | null;
 };
@@ -27,6 +30,7 @@ export interface DevServerControls {
   menuLabel: string;
   menuDetail: string | null;
   showStopAction: boolean;
+  showLogAction: boolean;
   showManagedActions: boolean;
   browserCheckState: BrowserCheckState;
   handlePrimaryAction: () => Promise<void>;
@@ -328,16 +332,18 @@ export function useDevServer({
       "id" in state.info && typeof state.info.id === "string"
         ? state.info.id
         : null;
-    if (!serviceId) {
+    if (runtimeMode === "managed_runtime" && !serviceId) {
       return;
     }
 
     window.open(
-      `/api/sessions/${sessionId}/sandbox-services/${serviceId}/logs`,
+      runtimeMode === "managed_runtime" && serviceId
+        ? `/api/sessions/${sessionId}/sandbox-services/${serviceId}/logs`
+        : `/api/sessions/${sessionId}/dev-server`,
       "_blank",
       "noopener,noreferrer",
     );
-  }, [sessionId, state]);
+  }, [runtimeMode, sessionId, state]);
 
   const menuLabel =
     state.status === "ready"
@@ -359,6 +365,12 @@ export function useDevServer({
         : null;
   const showStopAction =
     canRun && (state.status === "ready" || state.status === "stopping");
+  const showLogAction =
+    canRun &&
+    state.status === "ready" &&
+    (runtimeMode === "managed_runtime"
+      ? "id" in state.info && typeof state.info.id === "string"
+      : "logPath" in state.info && typeof state.info.logPath === "string");
   const showManagedActions = canRun && runtimeMode === "managed_runtime";
 
   return {
@@ -366,6 +378,7 @@ export function useDevServer({
     menuLabel,
     menuDetail,
     showStopAction,
+    showLogAction,
     showManagedActions,
     browserCheckState,
     handlePrimaryAction,
