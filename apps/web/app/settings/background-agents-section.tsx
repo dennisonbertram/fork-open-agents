@@ -399,6 +399,10 @@ export function BackgroundAgentsSection() {
           <div className="p-4 text-sm text-destructive">
             Failed to load background agents.
           </div>
+        ) : isLoading && !data ? (
+          <div className="p-8 text-center text-sm text-muted-foreground">
+            Loading background agents.
+          </div>
         ) : agents.length === 0 ? (
           <div className="p-8 text-center text-sm text-muted-foreground">
             No background agents yet.
