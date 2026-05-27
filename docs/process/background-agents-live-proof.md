@@ -25,6 +25,18 @@ checks -> ready PR or typed failure -> inspectable run detail.
 Confirm the target deployment has these categories configured. Check only env
 names or the product readiness route; do not expose values.
 
+For Vercel project env names, run:
+
+```bash
+bun run --cwd apps/web background-agents:env-audit -- \
+  --environment preview \
+  --branch <proof-branch>
+```
+
+The command runs `vercel env ls`, checks names and scopes only, and exits
+non-zero when required names are missing. It never reads or prints encrypted
+values.
+
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
 - GitHub App configuration:

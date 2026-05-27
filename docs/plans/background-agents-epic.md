@@ -175,6 +175,9 @@ evidence:
 The hosted proof path needs a safe way to see missing prerequisites before a
 trigger is fired:
 
+- `bun run --cwd apps/web background-agents:env-audit -- --environment preview
+  --branch <branch>` audits Vercel env names and branch scopes without reading
+  or printing encrypted values;
 - `GET /api/background-agents/readiness` is an authenticated route that returns
   only safe readiness status, missing env var names, and setup categories; it
   never returns secret values;
