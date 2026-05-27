@@ -233,7 +233,6 @@ export async function dispatchManualBackgroundAgentTest(params: {
     repoOwner: params.agent.repoOwner,
     repoName: params.agent.repoName,
     action: "manual_test",
-    branch: "manual-test",
     title: `Manual test for ${params.agent.name}`,
     message: "Manual background-agent test trigger.",
     occurredAt: now.toISOString(),
