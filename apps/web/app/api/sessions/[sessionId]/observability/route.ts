@@ -4,7 +4,11 @@ import {
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { db } from "@/lib/db/client";
-import { workflowRuns } from "@/lib/db/schema";
+import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
+import {
+  extractManagedRuntimeWorkersFromMessages,
+  summarizeManagedRuntimeDirectToolUseFromMessages,
+} from "@/lib/observability/managed-runtime-workers";
 import {
   listManagedRuntimeProfileRuns,
   toManagedRuntimeProfileRunSnapshot,
@@ -52,22 +56,47 @@ export async function GET(req: Request, context: RouteContext) {
         eq(workflowRuns.chatId, chatId),
       )
     : eq(workflowRuns.sessionId, sessionId);
-  const [events, profileRuns, workflows, services, browserRuns] =
-    await Promise.all([
-      listSessionEvents({ sessionId, chatId, limit: eventLimit }),
-      listManagedRuntimeProfileRuns({ sessionId, chatId, limit: 20 }),
-      db.query.workflowRuns.findMany({
-        where: workflowWhere,
-        orderBy: [desc(workflowRuns.createdAt)],
-        limit: 20,
-      }),
-      sessionContext.sessionRecord.runtimeMode === "managed_runtime"
-        ? listManagedServices({ sessionId })
-        : Promise.resolve([]),
-      sessionContext.sessionRecord.runtimeMode === "managed_runtime"
-        ? listManagedBrowserRuns({ sessionId, chatId, limit: 20 })
-        : Promise.resolve([]),
-    ]);
+  const [
+    events,
+    profileRuns,
+    workflows,
+    services,
+    browserRuns,
+    workerMessages,
+  ] = await Promise.all([
+    listSessionEvents({ sessionId, chatId, limit: eventLimit }),
+    listManagedRuntimeProfileRuns({ sessionId, chatId, limit: 20 }),
+    db.query.workflowRuns.findMany({
+      where: workflowWhere,
+      orderBy: [desc(workflowRuns.createdAt)],
+      limit: 20,
+    }),
+    sessionContext.sessionRecord.runtimeMode === "managed_runtime"
+      ? listManagedServices({ sessionId })
+      : Promise.resolve([]),
+    sessionContext.sessionRecord.runtimeMode === "managed_runtime"
+      ? listManagedBrowserRuns({ sessionId, chatId, limit: 20 })
+      : Promise.resolve([]),
+    sessionContext.sessionRecord.runtimeMode === "managed_runtime" && chatId
+      ? db
+          .select({
+            id: chatMessages.id,
+            parts: chatMessages.parts,
+            createdAt: chatMessages.createdAt,
+          })
+          .from(chatMessages)
+          .innerJoin(chats, eq(chats.id, chatMessages.chatId))
+          .where(
+            and(
+              eq(chats.sessionId, sessionId),
+              eq(chatMessages.chatId, chatId),
+              eq(chatMessages.role, "assistant"),
+            ),
+          )
+          .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
+          .limit(20)
+      : Promise.resolve([]),
+  ]);
 
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
@@ -79,6 +108,9 @@ export async function GET(req: Request, context: RouteContext) {
       finishedAt: workflow.finishedAt.toISOString(),
       createdAt: workflow.createdAt.toISOString(),
     })),
+    workers: extractManagedRuntimeWorkersFromMessages(workerMessages),
+    directToolUse:
+      summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
     services,
     browserRuns,
   });
