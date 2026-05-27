@@ -185,7 +185,7 @@ describe("VercelSandbox.environmentDetails", () => {
     const details = sandbox.environmentDetails;
 
     expect(details).toContain(
-      "Bun, jq, and agent-browser availability depends on the base snapshot",
+      "Runtime tool availability depends on the base snapshot and active profile",
     );
     expect(details).toContain("command -v <tool>");
     expect(details).toContain("Dev server URLs for locally running servers");

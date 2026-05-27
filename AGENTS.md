@@ -68,6 +68,12 @@ At the end of any implementation, include a concise summary of what was built,
 what changed for users, and what was verified so the next person can quickly
 understand the shipped work without reading the full transcript.
 
+At the end of implementation work, always preserve the work in Git: create an
+intentional commit, push it to the user's fork/workspace, and open a pull
+request before calling the task complete. Stage only the files that belong to
+the implementation, keep unrelated dirty files out of the commit, and report any
+blocker that prevents committing, pushing, or opening the PR.
+
 ## Authentication
 
 Authentication uses [Better Auth](https://www.better-auth.com/) with Vercel OAuth (sign-in) and GitHub OAuth (repo access). Config lives in `apps/web/lib/auth/config.ts`. Sessions are managed by better-auth's built-in session system — there is no manual JWE/encryption layer.

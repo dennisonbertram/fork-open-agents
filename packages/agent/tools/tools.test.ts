@@ -841,6 +841,15 @@ describe("tools execute behavior", () => {
           },
         },
       });
+      const options = args.options as { instructions?: unknown };
+      expect(options.instructions).toContain("Managed Runtime Worker Context");
+      expect(options.instructions).toContain(
+        "Active profile: Web app with Bun and browser checks (web-bun-agent-browser)",
+      );
+      expect(options.instructions).toContain(
+        "Prefer `bun install`, `bun run ...`, and `bun --bun run ...`",
+      );
+      expect(options.instructions).toContain("node unavailable");
 
       return {
         fullStream: (async function* () {
@@ -869,6 +878,8 @@ describe("tools execute behavior", () => {
       executionOptions({
         sandbox: {
           workingDirectory: "/repo",
+          environmentDetails:
+            "# Managed Runtime\n\n- Optional tool unavailable: Observe Node.js availability.\n- node unavailable",
         },
         model: { modelId: "test-model" },
         runtimeMode: "managed_runtime",

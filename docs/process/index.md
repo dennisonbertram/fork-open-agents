@@ -22,6 +22,8 @@ Start here:
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
+- [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
+  exports for debugging runs without production shell access.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
