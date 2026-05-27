@@ -15,6 +15,7 @@ interface VercelEnvScope {
 
 export interface VercelEnvEntry {
   name: string;
+  type?: string;
   scopes: VercelEnvScope[];
 }
 
@@ -33,6 +34,7 @@ export interface EnvAuditCheck {
   detail: string;
   missing: string[];
   empty: string[];
+  unverified: string[];
 }
 
 export interface EnvAuditResult {
@@ -139,22 +141,92 @@ function parseScopes(value: string): VercelEnvScope[] {
 }
 
 export function parseVercelEnvLs(output: string): VercelEnvEntry[] {
+  try {
+    const jsonStart = output.indexOf("{");
+    const jsonEnd = output.lastIndexOf("}");
+    const payload = JSON.parse(
+      jsonStart === -1 || jsonEnd === -1
+        ? output
+        : output.slice(jsonStart, jsonEnd + 1),
+    ) as unknown;
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "envs" in payload &&
+      Array.isArray(payload.envs)
+    ) {
+      const envs = payload.envs as Array<Record<string, unknown>>;
+      return envs
+        .map((entry): VercelEnvEntry | null => {
+          if (
+            !entry ||
+            typeof entry !== "object" ||
+            !("key" in entry) ||
+            typeof entry.key !== "string" ||
+            !("target" in entry) ||
+            !Array.isArray(entry.target)
+          ) {
+            return null;
+          }
+          const targets = entry.target as unknown[];
+          const scopes = targets
+            .map((target: unknown): VercelEnvScope | null => {
+              if (typeof target !== "string") {
+                return null;
+              }
+              const environment = normalizeEnvironment(target);
+              if (!environment) {
+                return null;
+              }
+              return {
+                environment,
+                ...(environment === "preview" &&
+                "gitBranch" in entry &&
+                typeof entry.gitBranch === "string"
+                  ? { branch: entry.gitBranch }
+                  : {}),
+              };
+            })
+            .filter(
+              (scope: VercelEnvScope | null): scope is VercelEnvScope =>
+                scope !== null,
+            );
+          if (scopes.length === 0) {
+            return null;
+          }
+          return {
+            name: entry.key,
+            ...("type" in entry && typeof entry.type === "string"
+              ? { type: entry.type.toLowerCase() }
+              : {}),
+            scopes,
+          };
+        })
+        .filter((entry): entry is VercelEnvEntry => entry !== null);
+    }
+  } catch {
+    // Fall back to the table output used by older Vercel CLI versions.
+  }
+
   const entries: VercelEnvEntry[] = [];
 
   for (const line of output.split(/\r?\n/)) {
     const match =
-      /^\s*([A-Z][A-Z0-9_]*)\s+\S+\s+(.+?)\s+\d+[smhdwy]?\s+ago\s*$/.exec(line);
+      /^\s*([A-Z][A-Z0-9_]*)\s+(\S+)\s+(.+?)\s+\d+[smhdwy]?\s+ago\s*$/.exec(
+        line,
+      );
     if (!match) {
       continue;
     }
 
-    const scopes = parseScopes(match[2] ?? "");
+    const scopes = parseScopes(match[3] ?? "");
     if (scopes.length === 0) {
       continue;
     }
 
     entries.push({
       name: match[1] ?? "",
+      type: match[2]?.toLowerCase(),
       scopes,
     });
   }
@@ -178,16 +250,34 @@ function entryAppliesToTarget(
   });
 }
 
-function hasEnvName(
+function getTargetEnvEntry(
   entries: VercelEnvEntry[],
   name: string,
   environment: VercelEnvironment,
   branch?: string,
-): boolean {
-  return entries.some(
-    (entry) =>
-      entry.name === name && entryAppliesToTarget(entry, environment, branch),
+): VercelEnvEntry | null {
+  return (
+    entries.find(
+      (entry) =>
+        entry.name === name &&
+        entry.scopes.some(
+          (scope) =>
+            scope.environment === environment &&
+            environment === "preview" &&
+            branch &&
+            scope.branch === branch,
+        ),
+    ) ??
+    entries.find(
+      (entry) =>
+        entry.name === name && entryAppliesToTarget(entry, environment, branch),
+    ) ??
+    null
   );
+}
+
+function isUnreadableSensitiveEntry(entry: VercelEnvEntry | null): boolean {
+  return entry?.type === "sensitive";
 }
 
 function unquoteDotenvValue(value: string): string {
@@ -231,24 +321,29 @@ function getMissingOrEmptyNames(params: {
 }) {
   const missing: string[] = [];
   const empty: string[] = [];
+  const unverified: string[] = [];
 
   for (const name of params.names) {
-    const hasName = hasEnvName(
+    const entry = getTargetEnvEntry(
       params.entries,
       name,
       params.environment,
       params.branch,
     );
-    if (!hasName) {
+    if (!entry) {
       missing.push(name);
       continue;
     }
     if (params.presentValues && !params.presentValues.has(name)) {
+      if (isUnreadableSensitiveEntry(entry)) {
+        unverified.push(name);
+        continue;
+      }
       empty.push(name);
     }
   }
 
-  return { missing, empty };
+  return { missing, empty, unverified };
 }
 
 export function auditVercelEnvNames(params: {
@@ -272,7 +367,7 @@ export function auditVercelEnvNames(params: {
     : requirements;
   const checks = activeRequirements.map((requirement): EnvAuditCheck => {
     if (requirement.all) {
-      const { missing, empty } = getMissingOrEmptyNames({
+      const { missing, empty, unverified } = getMissingOrEmptyNames({
         names: requirement.all,
         entries: params.entries,
         environment: params.environment,
@@ -287,22 +382,26 @@ export function auditVercelEnvNames(params: {
         detail: requirement.detail,
         missing,
         empty,
+        unverified,
       };
     }
 
     const anyNames = requirement.any ?? [];
     const configured = anyNames.some((name) => {
-      const hasName = hasEnvName(
+      const entry = getTargetEnvEntry(
         params.entries,
         name,
         params.environment,
         params.branch,
       );
       return (
-        hasName && (!params.presentValues || params.presentValues.has(name))
+        entry &&
+        (!params.presentValues ||
+          params.presentValues.has(name) ||
+          isUnreadableSensitiveEntry(entry))
       );
     });
-    const { missing, empty } = getMissingOrEmptyNames({
+    const { missing, empty, unverified } = getMissingOrEmptyNames({
       names: anyNames,
       entries: params.entries,
       environment: params.environment,
@@ -317,6 +416,7 @@ export function auditVercelEnvNames(params: {
       detail: requirement.detail,
       missing: configured ? [] : missing,
       empty: configured ? [] : empty,
+      unverified: configured ? [] : unverified,
     };
   });
   const missing = Array.from(
@@ -335,7 +435,7 @@ export function auditVercelEnvNames(params: {
         ? "Value presence was checked with a temporary Vercel env pull; values were not printed and the temp file was deleted."
         : "This audit checks Vercel env names only; it never reads or prints secret values.",
       params.presentValues
-        ? "Empty means Vercel env pull returned a blank value; confirm in Vercel UI or the hosted readiness route before live proof."
+        ? "Empty means Vercel env pull returned a blank readable value. Sensitive values may be listed as unverified because Vercel does not return them to env pull; confirm them through the hosted readiness route."
         : "Use --verify-values to check for blank pulled values without printing them.",
       "Set BACKGROUND_AGENTS_ALLOWED_REPOS=owner/repo to limit production proof to a disposable repository.",
       "Sandbox runtime and AI Gateway OIDC readiness are verified by the hosted readiness route.",
@@ -414,7 +514,7 @@ function readVercelEnvLs(input?: string): string {
     return readFileSync(input, "utf8");
   }
 
-  const result = spawnSync("vercel", ["env", "ls"], {
+  const result = spawnSync("vercel", ["env", "ls", "--format", "json"], {
     cwd: repoRoot,
     encoding: "utf8",
   });
@@ -480,6 +580,9 @@ function formatAudit(result: EnvAuditResult): string {
     }
     if (check.empty.length > 0) {
       lines.push(`  Empty: ${check.empty.join(", ")}`);
+    }
+    if (check.unverified.length > 0) {
+      lines.push(`  Unverified sensitive: ${check.unverified.join(", ")}`);
     }
   }
 

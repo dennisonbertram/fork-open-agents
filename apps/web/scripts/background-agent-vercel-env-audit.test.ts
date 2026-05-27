@@ -30,6 +30,7 @@ describe("background-agent-vercel-env-audit", () => {
 
     expect(entries).toContainEqual({
       name: "POSTGRES_URL",
+      type: "encrypted",
       scopes: [
         { environment: "production" },
         { environment: "preview" },
@@ -38,8 +39,51 @@ describe("background-agent-vercel-env-audit", () => {
     });
     expect(entries).toContainEqual({
       name: "VERCEL_APP_CLIENT_SECRET",
+      type: "encrypted",
       scopes: [{ environment: "preview", branch: "user-inference-profiles" }],
     });
+  });
+
+  test("parses Vercel env JSON output with sensitive branch-scoped values", () => {
+    const entries = parseVercelEnvLs(
+      `Retrieving project...\n${JSON.stringify({
+        envs: [
+          {
+            key: "BACKGROUND_AGENTS_ENABLED",
+            type: "sensitive",
+            target: ["preview"],
+            gitBranch: "codex/background-agents-foundation",
+          },
+          {
+            key: "POSTGRES_URL",
+            type: "encrypted",
+            target: ["production", "preview", "development"],
+          },
+        ],
+      })}\nRetrieving project...`,
+    );
+
+    expect(entries).toEqual([
+      {
+        name: "BACKGROUND_AGENTS_ENABLED",
+        type: "sensitive",
+        scopes: [
+          {
+            environment: "preview",
+            branch: "codex/background-agents-foundation",
+          },
+        ],
+      },
+      {
+        name: "POSTGRES_URL",
+        type: "encrypted",
+        scopes: [
+          { environment: "production" },
+          { environment: "preview" },
+          { environment: "development" },
+        ],
+      },
+    ]);
   });
 
   test("reports the current preview proof branch gaps without secret values", () => {
@@ -119,6 +163,7 @@ NEXT_PUBLIC_GITHUB_APP_SLUG=open-agents
       detail: "Required for webhook trust and installation repo access.",
       missing: [],
       empty: ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"],
+      unverified: [],
     });
     expect(JSON.stringify(result)).not.toContain("auth-secret");
     expect(JSON.stringify(result)).not.toContain("webhook-secret");
@@ -161,5 +206,55 @@ QUOTED_EMPTY=""
 
     expect(result.ready).toBe(true);
     expect(result.missing).toEqual([]);
+  });
+
+  test("does not fail value verification for unreadable sensitive preview vars", () => {
+    const result = auditVercelEnvNames({
+      entries: parseVercelEnvLs(`
+ name                                               value               environments (git branch)                   created
+ BACKGROUND_AGENTS_ENABLED                         Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ BACKGROUND_AGENTS_ALLOWED_REPOS                   Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ POSTGRES_URL                                      Encrypted           Preview                                     1m ago
+ BETTER_AUTH_SECRET                                Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ NEXT_PUBLIC_VERCEL_APP_CLIENT_ID                  Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ VERCEL_APP_CLIENT_SECRET                          Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ NEXT_PUBLIC_GITHUB_CLIENT_ID                      Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ GITHUB_CLIENT_SECRET                              Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ GITHUB_APP_ID                                     Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ GITHUB_APP_PRIVATE_KEY                            Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ GITHUB_WEBHOOK_SECRET                             Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ NEXT_PUBLIC_GITHUB_APP_SLUG                       Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ BACKGROUND_AGENTS_CRON_SECRET                     Sensitive           Preview (codex/background-agents-foundation) 1m ago
+ BACKGROUND_AGENTS_WEBHOOK_SECRET                  Sensitive           Preview (codex/background-agents-foundation) 1m ago
+`),
+      environment: "preview",
+      branch: "codex/background-agents-foundation",
+      requireAllowlist: true,
+      presentValues: parseDotenvValuePresence(
+        "POSTGRES_URL=postgres://redacted",
+      ),
+    });
+
+    expect(result.ready).toBe(true);
+    expect(result.missing).toEqual([]);
+    expect(
+      result.checks.find((check) => check.id === "feature_flag"),
+    ).toMatchObject({
+      status: "ready",
+      empty: [],
+      unverified: ["BACKGROUND_AGENTS_ENABLED"],
+    });
+    expect(
+      result.checks.find((check) => check.id === "github_app"),
+    ).toMatchObject({
+      status: "ready",
+      empty: [],
+      unverified: [
+        "GITHUB_APP_ID",
+        "GITHUB_APP_PRIVATE_KEY",
+        "GITHUB_WEBHOOK_SECRET",
+        "NEXT_PUBLIC_GITHUB_APP_SLUG",
+      ],
+    });
   });
 });

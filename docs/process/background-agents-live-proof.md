@@ -70,6 +70,12 @@ the CLI verify repo access through the hosted app, set
 local shell. The command sends that cookie but never prints it. Without the
 cookie, confirm repo readiness from the authenticated Settings panel.
 
+When `--verify-values` is enabled, Vercel may report branch-scoped sensitive
+values as unreadable. The audit should list those names as unverified sensitive
+values rather than printing or failing on their contents. Confirm the actual
+runtime values through the authenticated readiness route before firing live
+events.
+
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
 - GitHub App configuration:
