@@ -180,7 +180,8 @@ trigger is fired:
   never returns secret values;
 - `/settings/background-agents` shows a compact readiness section with feature
   flag, auth/database, Vercel sign-in, GitHub OAuth, GitHub App, cron secret,
-  and generic webhook secret status;
+  sandbox runtime, inference gateway, cron secret, and generic webhook secret
+  status;
 - the diagnostic caught the current preview gap: preview has DB/auth basics but
   lacks GitHub App/background-agent proof secrets, while production has GitHub
   App credentials but still needs the background-agent flag and dispatch

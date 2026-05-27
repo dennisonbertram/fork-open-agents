@@ -14,6 +14,10 @@ const managedEnvKeys = [
   "GITHUB_APP_PRIVATE_KEY",
   "GITHUB_WEBHOOK_SECRET",
   "NEXT_PUBLIC_GITHUB_APP_SLUG",
+  "VERCEL",
+  "VERCEL_ENV",
+  "VERCEL_TOKEN",
+  "AI_GATEWAY_API_KEY",
   "BACKGROUND_AGENTS_CRON_SECRET",
   "CRON_SECRET",
   "BACKGROUND_AGENTS_WEBHOOK_SECRET",
@@ -57,7 +61,38 @@ describe("background agent readiness", () => {
       missing: ["BACKGROUND_AGENTS_ENABLED"],
     });
     expect(readiness.missing).toContain("GITHUB_APP_PRIVATE_KEY");
+    expect(readiness.missing).toContain("AI_GATEWAY_API_KEY");
+    expect(readiness.missing).toContain("VERCEL_TOKEN");
     expect(JSON.stringify(readiness)).not.toContain("secret-value");
+  });
+
+  test("accepts Vercel hosted runtime for sandbox and gateway readiness", async () => {
+    const { getBackgroundAgentReadiness } = await modulePromise;
+    for (const key of managedEnvKeys) {
+      process.env[key] = `${key.toLowerCase()}-value`;
+    }
+    delete process.env.VERCEL_TOKEN;
+    delete process.env.AI_GATEWAY_API_KEY;
+    process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.VERCEL = "1";
+    process.env.VERCEL_ENV = "preview";
+
+    const readiness = getBackgroundAgentReadiness();
+
+    expect(readiness.ready).toBe(true);
+    expect(readiness.missing).toEqual([]);
+    expect(
+      readiness.checks.find((check) => check.id === "sandbox_runtime"),
+    ).toMatchObject({
+      status: "ready",
+      missing: [],
+    });
+    expect(
+      readiness.checks.find((check) => check.id === "inference_gateway"),
+    ).toMatchObject({
+      status: "ready",
+      missing: [],
+    });
   });
 
   test("accepts CRON_SECRET as the scheduled dispatch secret", async () => {

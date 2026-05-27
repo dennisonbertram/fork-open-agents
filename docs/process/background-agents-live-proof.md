@@ -38,6 +38,10 @@ names or the product readiness route; do not expose values.
   - `BACKGROUND_AGENTS_WEBHOOK_SECRET`
 - Sandbox/runtime and inference provider configuration used by ordinary chat
   runs.
+- The readiness panel should report both `Sandbox runtime` and
+  `Inference gateway` as ready. On Vercel, the automatic deployment context can
+  satisfy these without exposing a provider key; outside Vercel, configure the
+  appropriate token or `AI_GATEWAY_API_KEY`.
 - A disposable repository with the GitHub App installed and permissions for
   metadata, contents, pull requests, issues, deployments or statuses, and
   webhook delivery for the tested event types.

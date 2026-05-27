@@ -9,6 +9,8 @@ export interface BackgroundAgentReadinessCheck {
     | "vercel_oauth"
     | "github_oauth"
     | "github_app"
+    | "sandbox_runtime"
+    | "inference_gateway"
     | "cron_secret"
     | "webhook_secret";
   label: string;
@@ -100,6 +102,18 @@ export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
         "NEXT_PUBLIC_GITHUB_APP_SLUG",
       ],
       "Required for webhook trust and repo-scoped installation access.",
+    ),
+    checkAny(
+      "sandbox_runtime",
+      "Sandbox runtime",
+      ["VERCEL", "VERCEL_ENV", "VERCEL_TOKEN"],
+      "Required so background runs can create run-scoped Vercel Sandboxes.",
+    ),
+    checkAny(
+      "inference_gateway",
+      "Inference gateway",
+      ["VERCEL", "VERCEL_ENV", "AI_GATEWAY_API_KEY"],
+      "Required so unattended background agents can call the default model.",
     ),
     checkAny(
       "cron_secret",
