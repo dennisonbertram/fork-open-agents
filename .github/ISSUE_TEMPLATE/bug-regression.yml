@@ -18,6 +18,17 @@ body:
     validations:
       required: true
   - type: textarea
+    id: forbidden
+    attributes:
+      label: Forbidden behavior
+      description: Which repo rule, protected path, provider contract, or unacceptable behavior does this violate?
+      placeholder: |
+        - AGENTS.md / docs/process/...
+        - User/operator path that must not regress:
+        - Provider/runtime/security contract:
+    validations:
+      required: true
+  - type: textarea
     id: repro
     attributes:
       label: Reproduction
@@ -56,10 +67,33 @@ body:
     id: observability
     attributes:
       label: Observability evidence
-      description: What user-visible, operator-visible, or log/event evidence should prove the bug is fixed?
+      description: |
+        What user-visible, operator-visible, or log/event evidence should prove the bug is fixed?
+        List the structured events the fix should add or tighten, typed error kinds,
+        correlation IDs, redaction rules, and grep-able debug recipes for the next incident.
       placeholder: |
-        - User-facing status/evidence:
-        - Logs/events/metadata:
+        ### User-facing evidence
+        - ...
+
+        ### Structured events
+        Service name: `<service-name>`
+        - `<action-detected>` (warn) - emit on [condition]; fields: `{ userId, sessionId, chatId, requestId, errorKind }`
+        - `<action-fixed-path>` (info) - emit on [condition]; fields: `{ userId, sessionId, chatId, requestId, outcome }`
+
+        ### Error taxonomy
+        - `<ErrorKind>` - [when/why]
+
+        ### Correlation
+        - Request/session/chat/workflow/run IDs:
+
+        ### Redaction
+        - Never log:
+        - Redaction helper or boundary:
+
+        ### Debug recipes
+        - "Find recent <kind> failures" -> `...`
+
+        ### Proof
         - Screenshots/browser/service proof:
         - Failure mode now surfaced:
     validations:
@@ -85,6 +119,7 @@ body:
         - [ ] Reproduce or explain why the bug cannot be reproduced locally.
         - [ ] Add the failing regression test named above.
         - [ ] Add or identify the behavior/integration proof for the affected path.
+        - [ ] Add or update the structured observability evidence named above.
         - [ ] Confirm the expected red state before implementation.
         - [ ] Commit the failing test-only change on the work branch, or document why a separate red commit is not practical.
         - [ ] Implement the smallest fix that turns the regression test green.
@@ -120,6 +155,8 @@ body:
         - [ ] Red test commit exists on the work branch, or exception is documented
         - [ ] Green fix commit exists after the red test commit, or exception is documented
         - [ ] Fix implemented with the regression test
+        - [ ] Forbidden behavior is covered by regression assertions
+        - [ ] Observability evidence added or tightened
         - [ ] Targeted tests pass
         - [ ] Adjacent suite passes
         - [ ] Known issue updated if applicable

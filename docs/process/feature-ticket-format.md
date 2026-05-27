@@ -15,8 +15,9 @@ Use these issue templates:
 - `.github/ISSUE_TEMPLATE/research-spike.yml` for time-boxed research before
   adopting a package, API, architecture, provider, or process.
 
-Blank issues are allowed for quick triage, but implementation issues should be
-converted into one of the standard shapes before coding.
+Blank issues are disabled so product, bug, and research work starts with a
+complete handoff shape. For quick triage, use the closest standard template and
+mark unknown fields explicitly instead of opening an unstructured issue.
 
 ## Required Feature Ticket Shape
 
@@ -39,12 +40,72 @@ Every feature issue should include:
 10. `Tests to add first` - tests that should be observed failing before
     implementation.
 11. `Observability and user feedback` - the status, evidence, logs, screenshots,
-    or runtime attribution users/operators need.
-12. `TDD audit trail` - red test commit and green implementation commit, or an
+    or runtime attribution users/operators need. This must name structured
+    events, service/action vocabulary, typed error kinds, correlation IDs,
+    redaction rules, and debug recipes when the issue touches production,
+    runtime, sandbox, workflow, browser, deploy, auth, or GitHub App behavior.
+12. `Regression harness plan` - existing or new test, smoke, browser path, or
+    scenario coverage that should continuously catch the behavior after merge,
+    with fail-before/pass-after expectations when practical.
+13. `TDD audit trail` - red test commit and green implementation commit, or an
     exception.
-13. `Regression risks and concerns`.
-14. `Deploy or migration impact`.
-15. `Definition of done`.
+14. `Regression risks and concerns`.
+15. `Deploy or migration impact`.
+16. `Definition of done`.
+
+## Observability Section Rules
+
+Follow the sharper issue shape used in `dennisonbertram/partyline`: every
+non-trivial issue should make debugging expectations concrete before
+implementation starts.
+
+Include:
+
+- the user-visible status or evidence the feature/fix exposes,
+- one named service or module responsible for structured events,
+- every important action/event with level and data fields,
+- typed error kinds using a stable `kind` or `errorKind` value,
+- correlation IDs such as `requestId`, `sessionId`, `chatId`, `workflowRunId`,
+  `sandboxName`, `profileId`, or `runId` as applicable,
+- redaction rules for secrets, provider tokens, logs, artifacts, PII, and
+  prompt/session content,
+- grep-able or query-able debug recipes an operator could run during an
+  incident,
+- screenshots, browser evidence, service evidence, or runtime attribution when
+  relevant.
+
+Weak observability sections:
+
+- "Add logs."
+- "Show errors."
+- "Use existing observability."
+
+Good observability sections:
+
+- `managed-runtime` emits `worker-started` at info with `{ sessionId, chatId,
+  workflowRunId, profileId, sandboxName }`.
+- `debug-bundle` emits `bundle-token-created` at info with `{ userId,
+  sessionId, chatId, expiresAt }` and never logs the token value.
+- `sandbox-lifecycle` emits `resume-failed` at warn with `{ sessionId,
+  sandboxName, errorKind, providerStatus }`.
+- Debug recipe: `grep '"chatId":"<id>"' logs | grep '"service":"debug-bundle"'`.
+
+## Regression Harness Plan Rules
+
+Each implementation issue should identify the smallest durable signal that
+would fail if the protected path regressed.
+
+Use one or more of:
+
+- a unit, contract, or route test,
+- a workflow or agent test,
+- an Agent Browser or Playwright smoke for local UI behavior,
+- a preview/prod smoke check,
+- a managed-runtime proof artifact,
+- a future harness/catalog scenario when the behavior spans multiple systems.
+
+If no continuous harness is practical for the slice, the issue must say why and
+name the manual proof that will be captured in the PR.
 
 ## Agent Todo Checklist Rules
 
