@@ -89,8 +89,20 @@ rm -f "$tmpfile"
 ```
 
 This check must report `OK Event subscriptions` before real GitHub delivery can
-be proven. If GitHub asks for sudo/passkey, update the GitHub App settings in
-the browser, then rerun the command.
+be proven. If it reports missing `event:pull_request`, `event:issues`, or
+`event:deployment_status`, an app owner must update the GitHub App in the
+browser:
+
+1. Open `https://github.com/settings/apps/<github-app-slug>`.
+2. Complete GitHub sudo/passkey if prompted.
+3. Open the App's permissions and events settings.
+4. Subscribe to `Pull request`, `Issues`, and `Deployment status` events.
+5. Save the App settings and rerun `background-agents:github-app-readiness`.
+
+GitHub's REST API can update App webhook delivery configuration such as URL,
+content type, secret, and SSL verification, but the live proof depends on the
+App event subscriptions above. Treat missing subscriptions as an owner UI step,
+not a secret or env-var problem.
 
 - Database and Better Auth session configuration.
 - Vercel sign-in and GitHub OAuth configuration.
