@@ -108,6 +108,19 @@ timeline:
   summarizes whether the run has enough evidence to trust the output;
 - typed failures stay visible even when no output was created.
 
+## Live Debug Correlation Slice
+
+The run detail view and run API should expose the correlation fields needed to
+debug a live run without database access:
+
+- run detail includes request ID, workflow run ID, idempotency key, external
+  event ID, source, trigger target, sandbox, and output PR number when present;
+- timeline events include request ID and redaction status alongside workflow,
+  sandbox, and error metadata;
+- output records expose PR numbers in addition to URLs;
+- route tests protect the authenticated run-detail API contract so future
+  agents can depend on this evidence while polling running workflows.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.

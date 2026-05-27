@@ -14,15 +14,23 @@ import { cn } from "@/lib/utils";
 type SerializedBackgroundRun = {
   id: string;
   status: string;
+  source: string;
   triggerKind: string;
+  externalId: string;
+  idempotencyKey: string;
   repoOwner: string;
   repoName: string;
   ref: string | null;
   sha: string | null;
   branch: string | null;
+  prNumber: number | null;
+  issueNumber: number | null;
+  deploymentUrl: string | null;
   outputKind: string | null;
   outputUrl: string | null;
   sandboxName: string | null;
+  requestId: string | null;
+  workflowRunId: string | null;
   errorKind: string | null;
   errorMessage: string | null;
   createdAt: string;
@@ -44,7 +52,9 @@ type SerializedBackgroundEvent = {
   summary: string | null;
   workflowRunId: string | null;
   sandboxName: string | null;
+  requestId: string | null;
   errorKind: string | null;
+  redactionStatus: string;
   payload: Record<string, unknown>;
   createdAt: string;
 };
@@ -54,6 +64,7 @@ type SerializedBackgroundOutput = {
   kind: string;
   status: string;
   url: string | null;
+  prNumber: number | null;
 };
 
 type BackgroundRunDetailData = {
@@ -110,6 +121,15 @@ function ProofItem({ label, value }: { label: string; value: string }) {
         {label}
       </p>
       <p className="mt-1 truncate font-mono text-xs">{value}</p>
+    </div>
+  );
+}
+
+function DebugRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="grid gap-1 px-4 py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="break-all font-mono text-xs">{value ?? "-"}</span>
     </div>
   );
 }
@@ -246,6 +266,19 @@ function formatRunCost(events: SerializedBackgroundEvent[]) {
     }
   }
   return null;
+}
+
+function formatRunTarget(run: SerializedBackgroundRun) {
+  if (run.prNumber !== null) {
+    return `PR #${run.prNumber}`;
+  }
+  if (run.issueNumber !== null) {
+    return `Issue #${run.issueNumber}`;
+  }
+  if (run.deploymentUrl) {
+    return run.deploymentUrl;
+  }
+  return run.externalId;
 }
 
 function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
@@ -404,11 +437,19 @@ export function BackgroundRunDetail({
                           workflow {event.workflowRunId}
                         </span>
                       )}
+                      {event.requestId && (
+                        <span className="font-mono">
+                          request {event.requestId}
+                        </span>
+                      )}
                       {event.sandboxName && (
                         <span className="font-mono">
                           sandbox {event.sandboxName}
                         </span>
                       )}
+                      <span className="font-mono">
+                        redaction {event.redactionStatus}
+                      </span>
                       {event.errorKind && (
                         <span className="font-mono">{event.errorKind}</span>
                       )}
@@ -457,6 +498,21 @@ export function BackgroundRunDetail({
 
             <section className="rounded-md border border-border">
               <div className="border-b border-border px-4 py-3">
+                <h2 className="text-sm font-medium">Debug</h2>
+              </div>
+              <div className="divide-y divide-border text-sm">
+                <DebugRow label="Run ID" value={run.id} />
+                <DebugRow label="Request ID" value={run.requestId} />
+                <DebugRow label="Workflow Run" value={run.workflowRunId} />
+                <DebugRow label="Idempotency Key" value={run.idempotencyKey} />
+                <DebugRow label="Source" value={run.source} />
+                <DebugRow label="External Event" value={run.externalId} />
+                <DebugRow label="Trigger Target" value={formatRunTarget(run)} />
+              </div>
+            </section>
+
+            <section className="rounded-md border border-border">
+              <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Outputs</h2>
               </div>
               {outputs.length === 0 ? (
@@ -482,6 +538,11 @@ export function BackgroundRunDetail({
                           Open
                           <ExternalLink className="h-3 w-3" />
                         </Link>
+                      )}
+                      {output.prNumber !== null && (
+                        <p className="mt-1 font-mono text-xs text-muted-foreground">
+                          #{output.prNumber}
+                        </p>
                       )}
                     </div>
                   ))}
