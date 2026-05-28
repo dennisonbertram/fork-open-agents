@@ -58,6 +58,7 @@ Bad issue sizes:
 7. Include deploy notes for Vercel, Neon, Upstash, GitHub App, sandbox profile,
    OAuth, or workflow changes.
 8. Do not push directly to `main`; branch protection requires PR-based changes.
+9. Do not let agents merge their own PRs without an explicit human command.
 
 Recommended flow:
 
@@ -73,6 +74,12 @@ git push origin <branch-name>
 gh pr create --base main --title "<title>" --body "<description>"
 ```
 
+Use predictable branch names:
+
+1. `agent/<issue-number>-<short-slug>` for implementation work,
+2. `fix/<issue-number>-<short-slug>` for bug regressions,
+3. `research/<short-slug>` for docs or research-only work.
+
 For parallel work:
 
 ```bash
@@ -81,6 +88,11 @@ git worktree add -b <branch-name> .worktrees/<branch-name> origin/main
 cd .worktrees/<branch-name>
 bun install --frozen-lockfile
 ```
+
+Use one active agent per issue by default. The issue or PR should record the
+active agent/session, branch, worktree path, intended touched surfaces, current
+status, and any handoff notes needed by the next agent. Durable handoff belongs
+in the issue or PR, not only in chat history.
 
 ## PR Expectations
 

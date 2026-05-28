@@ -23,6 +23,20 @@ Required for high-risk PRs:
 High-risk surfaces include auth, ownership, secrets, billing, inference,
 GitHub App, sandbox, workflows, and migrations.
 
+## Staging Lane
+
+Do not make staging mandatory for every PR. Use staging for high-risk changes
+where Vercel Preview cannot prove the real path, such as OAuth callbacks,
+GitHub App installation, provider credentials, workflow/sandbox startup,
+billing/cost paths, migrations, or external tool credentials.
+
+The staging target is still an explicit product decision. Use either a Vercel
+custom environment named `staging` or a separate Vercel project, whichever gives
+cleaner OAuth, GitHub App, provider, and database isolation.
+
+Staging evidence should name the source SHA, deployment URL or id, smoke result,
+and rollback or fix-forward expectation.
+
 ## Current Release Path
 
 The repo uses a speed-first path:
