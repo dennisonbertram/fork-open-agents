@@ -15,6 +15,8 @@ Start here:
   deploy structure.
 - [Agent Browser Preview Review](agent-browser-preview-review.md) - how to
   inspect Vercel Preview deployments before production.
+- [Background Agents Live Proof](background-agents-live-proof.md) - hosted
+  proof steps for triggered sandbox automation before rollout.
 - [Production Release Runbook](production-release-runbook.md) - merge,
   production smoke, and rollback procedure.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator

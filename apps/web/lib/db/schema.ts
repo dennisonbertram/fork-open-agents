@@ -37,6 +37,35 @@ export type ManagedRuntimeCommandObservation = {
 export type ManagedRuntimeProfileDraftData =
   SetupManagedRuntimeProfileInput["draft"];
 
+export type BackgroundAgentTriggerConditions = {
+  actions?: string[];
+  branches?: string[];
+  labels?: string[];
+  environments?: string[];
+  severities?: string[];
+};
+
+export type BackgroundAgentPermissions = {
+  github?: {
+    contents?: "read" | "write";
+    pullRequests?: "read" | "write";
+    issues?: "read" | "write";
+    deployments?: "read";
+    statuses?: "read";
+    checks?: "read";
+  };
+};
+
+export type BackgroundAgentPayloadSummary = {
+  title?: string;
+  url?: string;
+  actor?: string;
+  action?: string;
+  environment?: string;
+  severity?: string;
+  message?: string;
+};
+
 // users
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -785,6 +814,329 @@ export const verifiedBuildEvents = pgTable(
   ],
 );
 
+export const backgroundAgents = pgTable(
+  "background_agents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    status: text("status", {
+      enum: ["enabled", "disabled"],
+    })
+      .notNull()
+      .default("disabled"),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    instructions: text("instructions").notNull(),
+    permissions: jsonb("permissions")
+      .$type<BackgroundAgentPermissions>()
+      .notNull()
+      .default({}),
+    outputMode: text("output_mode", {
+      enum: ["comment", "ready_pr", "issue", "notification", "none"],
+    })
+      .notNull()
+      .default("none"),
+    checkCommand: text("check_command"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agents_user_idx").on(table.userId),
+    index("background_agents_repo_idx").on(table.repoOwner, table.repoName),
+    index("background_agents_status_idx").on(table.status),
+  ],
+);
+
+export const backgroundAgentTriggers = pgTable(
+  "background_agent_triggers",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    kind: text("kind", {
+      enum: [
+        "github.pull_request",
+        "github.deployment_status",
+        "github.issue",
+        "schedule.cron",
+        "webhook.error",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: ["enabled", "disabled"],
+    })
+      .notNull()
+      .default("enabled"),
+    conditions: jsonb("conditions")
+      .$type<BackgroundAgentTriggerConditions>()
+      .notNull()
+      .default({}),
+    schedule: text("schedule"),
+    webhookPublicId: text("webhook_public_id"),
+    webhookSecretHash: text("webhook_secret_hash"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_triggers_agent_idx").on(table.agentId),
+    index("background_agent_triggers_user_kind_idx").on(
+      table.userId,
+      table.kind,
+    ),
+    uniqueIndex("background_agent_triggers_webhook_public_idx").on(
+      table.webhookPublicId,
+    ),
+  ],
+);
+
+export const backgroundAgentToolGrants = pgTable(
+  "background_agent_tool_grants",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["composio"],
+    }).notNull(),
+    profileId: text("profile_id"),
+    agentRole: text("agent_role", {
+      enum: ["main", "explorer", "executor", "design"],
+    }).notNull(),
+    phase: text("phase", {
+      enum: ["investigate", "mutate", "notify", "always"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["enabled", "disabled"],
+    })
+      .notNull()
+      .default("disabled"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_tool_grants_agent_idx").on(table.agentId),
+    index("background_agent_tool_grants_user_idx").on(table.userId),
+  ],
+);
+
+export const backgroundAgentRuns = pgTable(
+  "background_agent_runs",
+  {
+    id: text("id").primaryKey(),
+    agentId: text("agent_id").references(() => backgroundAgents.id, {
+      onDelete: "set null",
+    }),
+    triggerId: text("trigger_id").references(() => backgroundAgentTriggers.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "skipped",
+        "cancelled",
+      ],
+    }).notNull(),
+    source: text("source", {
+      enum: ["github", "schedule", "webhook"],
+    }).notNull(),
+    triggerKind: text("trigger_kind", {
+      enum: [
+        "github.pull_request",
+        "github.deployment_status",
+        "github.issue",
+        "schedule.cron",
+        "webhook.error",
+      ],
+    }).notNull(),
+    externalId: text("external_id").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    ref: text("ref"),
+    sha: text("sha"),
+    branch: text("branch"),
+    prNumber: integer("pr_number"),
+    issueNumber: integer("issue_number"),
+    deploymentUrl: text("deployment_url"),
+    sandboxName: text("sandbox_name"),
+    outputKind: text("output_kind", {
+      enum: ["comment", "ready_pr", "issue", "notification", "none"],
+    }),
+    outputUrl: text("output_url"),
+    errorKind: text("error_kind"),
+    errorMessage: text("error_message"),
+    payloadSummary: jsonb("payload_summary")
+      .$type<BackgroundAgentPayloadSummary>()
+      .notNull()
+      .default({}),
+    requestId: text("request_id"),
+    workflowRunId: text("workflow_run_id"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_runs_agent_created_idx").on(
+      table.agentId,
+      table.createdAt,
+    ),
+    index("background_agent_runs_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+    index("background_agent_runs_repo_created_idx").on(
+      table.repoOwner,
+      table.repoName,
+      table.createdAt,
+    ),
+    uniqueIndex("background_agent_runs_idempotency_idx").on(
+      table.idempotencyKey,
+    ),
+  ],
+);
+
+export const backgroundAgentEvents = pgTable(
+  "background_agent_events",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => backgroundAgentRuns.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").references(() => backgroundAgents.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventName: text("event_name").notNull(),
+    status: text("status", {
+      enum: [
+        "started",
+        "running",
+        "succeeded",
+        "failed",
+        "blocked",
+        "skipped",
+        "info",
+      ],
+    }).notNull(),
+    level: text("level", {
+      enum: ["info", "warn", "error"],
+    })
+      .notNull()
+      .default("info"),
+    summary: text("summary"),
+    requestId: text("request_id"),
+    workflowRunId: text("workflow_run_id"),
+    sandboxName: text("sandbox_name"),
+    errorKind: text("error_kind"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    redactionStatus: text("redaction_status", {
+      enum: ["not_required", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("passed"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_events_run_created_idx").on(
+      table.runId,
+      table.createdAt,
+    ),
+    index("background_agent_events_request_idx").on(table.requestId),
+  ],
+);
+
+export const backgroundAgentOutputs = pgTable(
+  "background_agent_outputs",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => backgroundAgentRuns.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["comment", "ready_pr", "issue", "notification", "none"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["pending", "created", "failed", "skipped"],
+    }).notNull(),
+    url: text("url"),
+    prNumber: integer("pr_number"),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_outputs_run_idx").on(table.runId),
+    index("background_agent_outputs_user_idx").on(table.userId),
+  ],
+);
+
+export const backgroundAgentToolSessions = pgTable(
+  "background_agent_tool_sessions",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => backgroundAgentRuns.id, { onDelete: "cascade" }),
+    agentId: text("agent_id").references(() => backgroundAgents.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    provider: text("provider", {
+      enum: ["composio"],
+    }).notNull(),
+    profileId: text("profile_id"),
+    agentRole: text("agent_role", {
+      enum: ["main", "explorer", "executor", "design"],
+    }).notNull(),
+    phase: text("phase", {
+      enum: ["investigate", "mutate", "notify", "always"],
+    }).notNull(),
+    providerSessionId: text("provider_session_id"),
+    configHash: text("config_hash"),
+    status: text("status", {
+      enum: ["planned", "ready", "failed", "skipped"],
+    }).notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    lastUsedAt: timestamp("last_used_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("background_agent_tool_sessions_run_idx").on(table.runId),
+    index("background_agent_tool_sessions_user_idx").on(table.userId),
+  ],
+);
+
 export const workflowRuns = pgTable(
   "workflow_runs",
   {
@@ -895,6 +1247,27 @@ export type VerifiedBuildRun = typeof verifiedBuildRuns.$inferSelect;
 export type NewVerifiedBuildRun = typeof verifiedBuildRuns.$inferInsert;
 export type VerifiedBuildEvent = typeof verifiedBuildEvents.$inferSelect;
 export type NewVerifiedBuildEvent = typeof verifiedBuildEvents.$inferInsert;
+export type BackgroundAgent = typeof backgroundAgents.$inferSelect;
+export type NewBackgroundAgent = typeof backgroundAgents.$inferInsert;
+export type BackgroundAgentTrigger =
+  typeof backgroundAgentTriggers.$inferSelect;
+export type NewBackgroundAgentTrigger =
+  typeof backgroundAgentTriggers.$inferInsert;
+export type BackgroundAgentToolGrant =
+  typeof backgroundAgentToolGrants.$inferSelect;
+export type NewBackgroundAgentToolGrant =
+  typeof backgroundAgentToolGrants.$inferInsert;
+export type BackgroundAgentRun = typeof backgroundAgentRuns.$inferSelect;
+export type NewBackgroundAgentRun = typeof backgroundAgentRuns.$inferInsert;
+export type BackgroundAgentEvent = typeof backgroundAgentEvents.$inferSelect;
+export type NewBackgroundAgentEvent = typeof backgroundAgentEvents.$inferInsert;
+export type BackgroundAgentOutput = typeof backgroundAgentOutputs.$inferSelect;
+export type NewBackgroundAgentOutput =
+  typeof backgroundAgentOutputs.$inferInsert;
+export type BackgroundAgentToolSession =
+  typeof backgroundAgentToolSessions.$inferSelect;
+export type NewBackgroundAgentToolSession =
+  typeof backgroundAgentToolSessions.$inferInsert;
 export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;
