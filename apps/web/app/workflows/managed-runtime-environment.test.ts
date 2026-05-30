@@ -63,7 +63,10 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     status: params.status,
     required: params.command.required ?? true,
     exitCode: params.result?.exitCode ?? null,
-    summary: params.result?.stderr ?? params.result?.stdout ?? "",
+    // Simulate redaction: the real summarizeManagedRuntimeCommandOutput applies
+    // redactHarnessValue/redactSandboxLog; in tests we return a sentinel that is
+    // clearly distinct from any raw secret value fed by the test.
+    summary: `[mock-redacted:${params.command.id}]`,
     startedAt: params.startedAt.toISOString(),
     finishedAt: params.finishedAt?.toISOString(),
   }),
@@ -342,5 +345,68 @@ describe("ensureManagedRuntimeEnvironment", () => {
 
     // The setupScript command must have been executed
     expect(executedCommands).toContain("bash /tmp/test/setup.sh");
+  });
+
+  // BT-SEC-001: setupScript failure path uses redacted observation summary, not raw output
+  test("setupScript failure persists redacted failureMessage and emits redacted payload.summary — never raw secret output", async () => {
+    const { ensureManagedRuntimeEnvironment } = await modulePromise;
+
+    const SECRET_TOKEN = "ghp_SUPERSECRETTOKEN1234567890abcdef";
+
+    const profile = makeProfile({
+      setupScript: {
+        repoPath: "profiles/test/setup.sh",
+        sandboxPath: "/tmp/test/setup.sh",
+        command: "bash /tmp/test/setup.sh",
+        timeoutMs: 60_000,
+      },
+      setupCommands: [],
+    });
+
+    // Script fails and its output contains a secret token
+    sandboxCommandResponses.set("bash /tmp/test/setup.sh", {
+      success: false,
+      exitCode: 1,
+      stdout: "",
+      stderr: `fatal: token=${SECRET_TOKEN} is invalid`,
+    });
+
+    try {
+      await ensureManagedRuntimeEnvironment({
+        session: createMockSession(),
+        chatId: null,
+        userId: "user-test-1",
+        workflowRunId: null,
+        sandbox: createMockSandbox() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["sandbox"],
+        sandboxName: null,
+        profile,
+        startupReporter: createMockStartupReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
+      });
+    } catch {
+      // WorkspaceSetupError is expected; we only care about what was persisted/emitted
+    }
+
+    // The persisted failureMessage must NOT contain the raw secret token
+    const [run] = [...profileRunRecords.values()];
+    expect(run).toBeDefined();
+    expect(run.failureMessage).not.toContain(SECRET_TOKEN);
+
+    // The persisted failureMessage must be the redacted observation summary from
+    // buildManagedRuntimeCommandObservation (our mock returns "[mock-redacted:setup-script]")
+    expect(run.failureMessage).toBe("[mock-redacted:setup-script]");
+
+    // The emitted managed_runtime.profile.failed event payload must also use the redacted summary
+    const failedEvent = emittedEvents.find(
+      (e) => e["eventName"] === "managed_runtime.profile.failed",
+    );
+    expect(failedEvent).toBeDefined();
+    const payload = failedEvent?.["payload"] as Record<string, unknown>;
+    expect(payload).toBeDefined();
+    expect(String(payload["summary"] ?? "")).not.toContain(SECRET_TOKEN);
+    expect(String(payload["summary"] ?? "")).toBe("[mock-redacted:setup-script]");
   });
 });
