@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { detectJavaScriptPackageManager } from "./js-package-manager";
+import {
+  detectJavaScriptPackageManager,
+  NO_PACKAGE_MANAGER_ERROR_PREFIX,
+} from "./js-package-manager";
 
 function createProbe(params: {
   files?: Record<string, string>;
@@ -75,5 +78,29 @@ describe("detectJavaScriptPackageManager", () => {
     ).rejects.toThrow(
       "Detected bun from /workspace/bun.lock, but bun is not available",
     );
+  });
+
+  // Test 3: no-available-manager path throws an identifiable error
+  test("throws a recognizable no-package-manager error when no package manager is available", async () => {
+    const sandbox = createProbe({
+      files: {
+        "/workspace/app/package.json": JSON.stringify({
+          scripts: { dev: "vite" },
+        }),
+      },
+      availableCommands: [], // none available
+    });
+
+    const error = await detectJavaScriptPackageManager({
+      sandbox,
+      packageDirAbs: "/workspace/app",
+      packageManagerField: undefined,
+    }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(NO_PACKAGE_MANAGER_ERROR_PREFIX);
+    // The error message must mention all checked managers so callers know what to do
+    expect((error as Error).message).toContain("bun");
+    expect((error as Error).message).toContain("npm");
   });
 });

@@ -2,8 +2,46 @@ import { describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
+// Decision A1: snapshotId is persisted on the run record
+// Capture DB insert values for assertions
+const insertedValues: Array<Record<string, unknown>> = [];
+const updatedValues: Array<Record<string, unknown>> = [];
+
+mock.module("@/lib/db/client", () => ({
+  db: {
+    insert: () => ({
+      values: (vals: Record<string, unknown>) => {
+        insertedValues.push(vals);
+        return {
+          returning: async () => [{ ...vals, id: vals["id"] ?? "run-1" }],
+        };
+      },
+    }),
+    update: () => ({
+      set: (vals: Record<string, unknown>) => {
+        updatedValues.push(vals);
+        return {
+          where: () => ({
+            returning: async () => [{ id: "run-1", ...vals }],
+          }),
+        };
+      },
+    }),
+    query: {
+      managedRuntimeProfileRuns: {
+        findFirst: async () => ({
+          id: "run-1",
+          setupResults: [],
+          verificationResults: [],
+        }),
+      },
+    },
+  },
+}));
+
 const {
   buildManagedRuntimeCommandObservation,
+  startManagedRuntimeProfileRun,
   summarizeManagedRuntimeCommandOutput,
 } = await import("./managed-runtime-profile-runs");
 
@@ -17,6 +55,60 @@ describe("managed runtime profile run observability", () => {
         stderr: "Bearer secret-token",
       }),
     ).toBe("[REDACTED]\nOPENAI_API_KEY=[REDACTED]");
+  });
+
+  // Decision A1: snapshotId is persisted on the run record
+  test("persists snapshotId on the run record when provided", async () => {
+    insertedValues.length = 0;
+
+    await startManagedRuntimeProfileRun({
+      sessionId: "session-1",
+      chatId: null,
+      userId: "user-1",
+      workflowRunId: null,
+      sandboxName: "sandbox-abc",
+      profile: {
+        id: "web-bun-agent-browser",
+        version: "1.0.0",
+        displayName: "Test Profile",
+        description: "Test",
+        setupCommands: [],
+        verificationCommands: [],
+        expectedTools: [],
+        optionalTools: [],
+        defaultPorts: [3000],
+      },
+      snapshotId: "snap_abc123",
+    });
+
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).toMatchObject({ snapshotId: "snap_abc123" });
+  });
+
+  test("persists null snapshotId when no snapshot is provided", async () => {
+    insertedValues.length = 0;
+
+    await startManagedRuntimeProfileRun({
+      sessionId: "session-1",
+      chatId: null,
+      userId: "user-1",
+      workflowRunId: null,
+      sandboxName: null,
+      profile: {
+        id: "web-bun-agent-browser",
+        version: "1.0.0",
+        displayName: "Test Profile",
+        description: "Test",
+        setupCommands: [],
+        verificationCommands: [],
+        expectedTools: [],
+        optionalTools: [],
+        defaultPorts: [3000],
+      },
+    });
+
+    expect(insertedValues).toHaveLength(1);
+    expect(insertedValues[0]).toMatchObject({ snapshotId: null });
   });
 
   test("builds bounded command observations", () => {

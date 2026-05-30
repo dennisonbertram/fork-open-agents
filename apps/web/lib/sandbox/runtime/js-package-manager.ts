@@ -49,6 +49,9 @@ const PACKAGE_MANAGER_FALLBACK_ORDER: JavaScriptPackageManager[] = [
   "npm",
 ];
 
+export const NO_PACKAGE_MANAGER_ERROR_PREFIX =
+  "No supported JavaScript package manager is available in this sandbox";
+
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
@@ -188,7 +191,7 @@ async function chooseAvailablePackageManager(params: {
   }
 
   throw new Error(
-    "No supported JavaScript package manager is available in this sandbox (checked bun, pnpm, yarn, npm). Configure a managed runtime profile setup command before starting a package.json dev server.",
+    `${NO_PACKAGE_MANAGER_ERROR_PREFIX} (checked bun, pnpm, yarn, npm). Configure a managed runtime profile setup command before starting a package.json dev server.`,
   );
 }
 
