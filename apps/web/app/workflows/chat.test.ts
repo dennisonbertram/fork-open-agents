@@ -1003,6 +1003,79 @@ describe("runAgentWorkflow", () => {
     });
   });
 
+  test("completed managed-runtime run emits evidence and limitations arrays with real verification content", async () => {
+    // BT-004: When a managed run completes (worker executed, no services or browser),
+    // the data-runtime-proof part must carry a non-empty evidence[] with real worker
+    // verification content AND a limitations[] listing what was not exercised
+    // (service and browser paths). Neither array should be empty or contain only
+    // placeholder strings.
+    agentAssistantParts = [
+      { type: "text", text: "Done." },
+      managedWorkerTaskPart(),
+    ];
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+    // No services or browser runs — default mocks return []
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofPart = writtenChunks.find(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    expect(proofPart).toBeDefined();
+
+    const proofData = (
+      proofPart as { type: string; data: Record<string, unknown> }
+    ).data;
+
+    // evidence[] must be non-empty and contain real worker verification content
+    expect(Array.isArray(proofData.evidence)).toBe(true);
+    const evidence = proofData.evidence as string[];
+    expect(evidence.length).toBeGreaterThan(0);
+    // Must include the worker attribution string (not just placeholder baseline entries)
+    expect(evidence).toContain(
+      "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls.",
+    );
+    // Must include the baseline attribution entries
+    expect(evidence).toContain(
+      "Managed runtime was selected for this workflow.",
+    );
+    expect(evidence).toContain(
+      "Workflow, sandbox, and profile run attribution were recorded.",
+    );
+
+    // limitations[] must be non-empty: the un-exercised service and browser paths
+    // are always recorded as limitations so the proof is honest about what was not verified
+    expect(Array.isArray(proofData.limitations)).toBe(true);
+    const limitations = proofData.limitations as string[];
+    expect(limitations.length).toBeGreaterThan(0);
+    expect(limitations).toContain(
+      "Service/dev-server evidence is captured only when a managed service is started.",
+    );
+    expect(limitations).toContain(
+      "Browser/screenshot evidence is captured only when a browser check is run.",
+    );
+
+    // status must reflect a completed run (worker finished, coordinator did not bypass)
+    expect(proofData.status).toBe("completed");
+  });
+
   test("streams transient workspace setup status from runtime prep", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
       writtenChunks.push({ type: "start", messageId: params.assistantId });
