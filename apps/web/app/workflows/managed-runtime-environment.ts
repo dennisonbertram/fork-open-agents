@@ -331,6 +331,32 @@ export async function ensureManagedRuntimeEnvironment(params: {
     }
     const commandFinishedAt = new Date();
 
+    // Build a redacted observation the same way the setupCommands path does.
+    // summarizeManagedRuntimeCommandOutput (called inside) applies
+    // redactHarnessValue/redactSandboxLog so tokens and secrets in the raw
+    // stdout/stderr are never persisted or emitted.
+    const scriptObservation = buildManagedRuntimeCommandObservation({
+      command: { id: "setup-script", label: "Setup script", required: true },
+      status: scriptResult.success ? "passed" : "failed",
+      startedAt: commandStartedAt,
+      finishedAt: commandFinishedAt,
+      result: scriptResult,
+    });
+
+    if (profileRunId) {
+      try {
+        await appendManagedRuntimeSetupResult({
+          profileRunId,
+          observation: scriptObservation,
+        });
+      } catch (error) {
+        console.error(
+          "[managed-runtime] Failed to append setup observation:",
+          error,
+        );
+      }
+    }
+
     await params.startupReporter.appendCommandResult({
       message: scriptResult.success
         ? `Managed runtime setup script passed.`
@@ -357,23 +383,10 @@ export async function ensureManagedRuntimeEnvironment(params: {
       workflowRunId: params.workflowRunId ?? null,
       sandboxName: params.sandboxName ?? null,
       managedRuntimeProfileRunId: profileRunId ?? null,
-      payload: {
-        commandId: "setup-script",
-        label: "Setup script",
-        status: scriptResult.success ? "passed" : "failed",
-        exitCode: scriptResult.exitCode,
-        durationMs: commandFinishedAt.getTime() - commandStartedAt.getTime(),
-        startedAt: commandStartedAt.toISOString(),
-        finishedAt: commandFinishedAt.toISOString(),
-      },
+      payload: scriptObservation,
     });
 
     if (!scriptResult.success) {
-      const summary = [scriptResult.stderr, scriptResult.stdout]
-        .map((value) => value.trim())
-        .filter((value) => value.length > 0)
-        .join("\n");
-      const compactSummary = compactCommandOutput(summary);
       notes.push(
         `Profile setup script failed. Verify the runtime profile before relying on its tools.`,
       );
@@ -383,7 +396,7 @@ export async function ensureManagedRuntimeEnvironment(params: {
             profileRunId,
             status: "failed",
             summary: `Profile setup script failed`,
-            failureMessage: compactSummary || undefined,
+            failureMessage: scriptObservation.summary,
           });
         } catch (error) {
           console.error(
@@ -406,16 +419,11 @@ export async function ensureManagedRuntimeEnvironment(params: {
         managedRuntimeProfileRunId: profileRunId ?? null,
         payload: {
           commandId: "setup-script",
-          summary: compactSummary,
+          summary: scriptObservation.summary,
         },
       });
       throw new WorkspaceSetupError(
-        [
-          `Managed runtime profile setup script failed for ${profile.displayName} (${profile.id}).`,
-          compactSummary ? `Command output: ${compactSummary}` : "",
-        ]
-          .filter((part) => part.length > 0)
-          .join(" "),
+        `Managed runtime profile setup script failed for ${profile.displayName} (${profile.id}).`,
       );
     }
   }
