@@ -9,6 +9,8 @@
  * R-003: optional probe skipped → run does NOT become blocked
  * R-004: setupScript fallback is ONLY used when setupCommands is empty
  * R-005: when setupCommands are present, setupScript is NOT executed per-session
+ * R-006: setupScript failure → failureMessage is the REDACTED observation summary, not raw output
+ * R-007: setupScript failure → managed_runtime.profile.failed payload.summary is redacted, not raw output
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -36,6 +38,7 @@ type ProfileRunRecord = {
   id: string;
   status: string;
   snapshotId: string | null;
+  failureMessage: string | null;
 };
 const profileRunRecords = new Map<string, ProfileRunRecord>();
 let profileRunIdCounter = 0;
@@ -59,7 +62,10 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     status: params.status,
     required: params.command.required ?? true,
     exitCode: params.result?.exitCode ?? null,
-    summary: params.result?.stderr ?? params.result?.stdout ?? "",
+    // Simulate redaction sentinel: the real impl applies redactHarnessValue/redactSandboxLog.
+    // Using a sentinel lets regression tests verify the code uses the observation summary
+    // rather than raw output.
+    summary: `[mock-redacted:${params.command.id}]`,
     startedAt: params.startedAt.toISOString(),
     finishedAt: params.finishedAt?.toISOString(),
   }),
@@ -70,6 +76,7 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
       id,
       status: "running",
       snapshotId: (params["snapshotId"] as string | null | undefined) ?? null,
+      failureMessage: null,
     };
     profileRunRecords.set(id, record);
     return record;
@@ -93,6 +100,7 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     const record = profileRunRecords.get(params.profileRunId);
     if (record) {
       record.status = params.status;
+      record.failureMessage = params.failureMessage ?? null;
     }
     return record ?? { id: params.profileRunId };
   },
@@ -342,5 +350,106 @@ describe("managed-runtime-environment regression", () => {
 
     // If regression: this would NOT be in executedCommands
     expect(executedCommands).toContain("bash /tmp/test/setup.sh");
+  });
+
+  // R-006: setupScript failure persists redacted failureMessage, not raw stderr
+  test("R-006: setupScript failure failureMessage is the redacted observation summary, not raw output", async () => {
+    const { ensureManagedRuntimeEnvironment } = await modulePromise;
+
+    const RAW_SECRET = "sk_live_REGRESSIONSECRET999";
+
+    sandboxCommandResponses.set("bash /tmp/regression/setup.sh", {
+      success: false,
+      exitCode: 1,
+      stdout: "",
+      stderr: `error: credential=${RAW_SECRET}`,
+    });
+
+    try {
+      await ensureManagedRuntimeEnvironment({
+        session: createMockSession(),
+        chatId: null,
+        userId: "regression-user-1",
+        workflowRunId: null,
+        sandbox: createMockSandbox() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["sandbox"],
+        sandboxName: null,
+        profile: makeProfile({
+          setupScript: {
+            repoPath: "profiles/regression/setup.sh",
+            sandboxPath: "/tmp/regression/setup.sh",
+            command: "bash /tmp/regression/setup.sh",
+            timeoutMs: 60_000,
+          },
+          setupCommands: [],
+        }),
+        startupReporter: createMockStartupReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
+      });
+    } catch {
+      // WorkspaceSetupError expected; we only care about what was persisted
+    }
+
+    const [run] = [...profileRunRecords.values()];
+    expect(run).toBeDefined();
+    // If regression (reverted to raw compactSummary): this would contain the secret
+    expect(run.failureMessage).not.toContain(RAW_SECRET);
+    // The value must be the redacted sentinel from buildManagedRuntimeCommandObservation
+    expect(run.failureMessage).toBe("[mock-redacted:setup-script]");
+  });
+
+  // R-007: setupScript failure emits redacted payload.summary in the profile.failed event
+  test("R-007: managed_runtime.profile.failed payload.summary is redacted observation summary, not raw output", async () => {
+    const { ensureManagedRuntimeEnvironment } = await modulePromise;
+
+    const RAW_SECRET = "tok_REGRESSIONSECRET_PAYLOAD_777";
+
+    sandboxCommandResponses.set("bash /tmp/regression2/setup.sh", {
+      success: false,
+      exitCode: 1,
+      stdout: `token: ${RAW_SECRET}`,
+      stderr: "",
+    });
+
+    try {
+      await ensureManagedRuntimeEnvironment({
+        session: createMockSession(),
+        chatId: null,
+        userId: "regression-user-1",
+        workflowRunId: null,
+        sandbox: createMockSandbox() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["sandbox"],
+        sandboxName: null,
+        profile: makeProfile({
+          setupScript: {
+            repoPath: "profiles/regression2/setup.sh",
+            sandboxPath: "/tmp/regression2/setup.sh",
+            command: "bash /tmp/regression2/setup.sh",
+            timeoutMs: 60_000,
+          },
+          setupCommands: [],
+        }),
+        startupReporter: createMockStartupReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
+      });
+    } catch {
+      // WorkspaceSetupError expected; we only care about what was emitted
+    }
+
+    const failedEvent = emittedEvents.find(
+      (e) => e["eventName"] === "managed_runtime.profile.failed",
+    );
+    expect(failedEvent).toBeDefined();
+    const payload = failedEvent?.["payload"] as Record<string, unknown>;
+    // If regression (reverted to raw compactSummary): this would contain the secret
+    expect(String(payload["summary"] ?? "")).not.toContain(RAW_SECRET);
+    // Must be the redacted sentinel from buildManagedRuntimeCommandObservation
+    expect(String(payload["summary"] ?? "")).toBe(
+      "[mock-redacted:setup-script]",
+    );
   });
 });

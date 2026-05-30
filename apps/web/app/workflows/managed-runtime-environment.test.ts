@@ -407,6 +407,8 @@ describe("ensureManagedRuntimeEnvironment", () => {
     const payload = failedEvent?.["payload"] as Record<string, unknown>;
     expect(payload).toBeDefined();
     expect(String(payload["summary"] ?? "")).not.toContain(SECRET_TOKEN);
-    expect(String(payload["summary"] ?? "")).toBe("[mock-redacted:setup-script]");
+    expect(String(payload["summary"] ?? "")).toBe(
+      "[mock-redacted:setup-script]",
+    );
   });
 });

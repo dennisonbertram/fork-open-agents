@@ -336,7 +336,13 @@ export async function ensureManagedRuntimeEnvironment(params: {
     // redactHarnessValue/redactSandboxLog so tokens and secrets in the raw
     // stdout/stderr are never persisted or emitted.
     const scriptObservation = buildManagedRuntimeCommandObservation({
-      command: { id: "setup-script", label: "Setup script", required: true },
+      command: {
+        id: "setup-script",
+        label: "Setup script",
+        description: "Profile setup script",
+        command: setupScript.command,
+        required: true,
+      },
       status: scriptResult.success ? "passed" : "failed",
       startedAt: commandStartedAt,
       finishedAt: commandFinishedAt,
