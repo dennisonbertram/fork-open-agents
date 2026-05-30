@@ -94,9 +94,7 @@ describe("managed runtime profiles", () => {
       // When setupScript is present it replaces individual setupCommands in the snapshot list
       expect(commands).toContain("bash /tmp/test/setup.sh");
       // Individual setup commands must NOT be included when setupScript is present
-      expect(commands).not.toContain(
-        "curl -fsSL https://example.com | bash",
-      );
+      expect(commands).not.toContain("curl -fsSL https://example.com | bash");
       // Verification commands are always included
       expect(commands).toContain("foo --version");
     });
@@ -131,9 +129,7 @@ describe("managed runtime profiles", () => {
 
       const commands = getManagedRuntimeSnapshotCommands(profile);
 
-      expect(commands).toContain(
-        "curl -fsSL https://example.com/bar | bash",
-      );
+      expect(commands).toContain("curl -fsSL https://example.com/bar | bash");
       expect(commands).toContain("bar --version");
     });
 

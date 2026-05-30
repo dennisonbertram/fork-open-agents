@@ -44,9 +44,7 @@ function buildSetupStepMessage(params: {
   ].join(" ");
 }
 
-function buildSetupScriptMessage(params: {
-  profile: ManagedRuntimeProfile;
-}) {
+function buildSetupScriptMessage(params: { profile: ManagedRuntimeProfile }) {
   return [
     `Managed runtime profile setup (1/1): Running setup script.`,
     `Profile: ${params.profile.displayName} (${params.profile.id}).`,
@@ -291,10 +289,9 @@ export async function ensureManagedRuntimeEnvironment(params: {
   } else if (profile.setupScript) {
     // Decision B1: fall back to setupScript when setupCommands is empty
     const { setupScript } = profile;
-    await params.startupReporter.send(
-      buildSetupScriptMessage({ profile }),
-      [`$ ${setupScript.command}`],
-    );
+    await params.startupReporter.send(buildSetupScriptMessage({ profile }), [
+      `$ ${setupScript.command}`,
+    ]);
     await emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
@@ -365,8 +362,7 @@ export async function ensureManagedRuntimeEnvironment(params: {
         label: "Setup script",
         status: scriptResult.success ? "passed" : "failed",
         exitCode: scriptResult.exitCode,
-        durationMs:
-          commandFinishedAt.getTime() - commandStartedAt.getTime(),
+        durationMs: commandFinishedAt.getTime() - commandStartedAt.getTime(),
         startedAt: commandStartedAt.toISOString(),
         finishedAt: commandFinishedAt.toISOString(),
       },

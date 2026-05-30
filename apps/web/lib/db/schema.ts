@@ -450,6 +450,7 @@ export const managedRuntimeProfileRuns = pgTable(
       .default([]),
     summary: text("summary"),
     failureMessage: text("failure_message"),
+    snapshotId: text("snapshot_id"),
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),

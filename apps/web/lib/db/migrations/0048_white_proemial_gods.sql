@@ -1,0 +1,1 @@
+ALTER TABLE "managed_runtime_profile_runs" ADD COLUMN "snapshot_id" text;

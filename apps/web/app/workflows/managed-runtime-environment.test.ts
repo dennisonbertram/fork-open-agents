@@ -51,7 +51,12 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     status: string;
     startedAt: Date;
     finishedAt?: Date;
-    result?: { success: boolean; exitCode?: number | null; stdout?: string; stderr?: string };
+    result?: {
+      success: boolean;
+      exitCode?: number | null;
+      stdout?: string;
+      stderr?: string;
+    };
   }) => ({
     commandId: params.command.id,
     label: params.command.label,
@@ -62,7 +67,10 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     startedAt: params.startedAt.toISOString(),
     finishedAt: params.finishedAt?.toISOString(),
   }),
-  startManagedRuntimeProfileRun: async (params: { profile: ManagedRuntimeProfile; snapshotId?: string | null }) => {
+  startManagedRuntimeProfileRun: async (params: {
+    profile: ManagedRuntimeProfile;
+    snapshotId?: string | null;
+  }) => {
     const id = `run-${++profileRunIdCounter}`;
     const record: ProfileRunRecord = {
       id,
@@ -76,14 +84,20 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
     profileRunRecords.set(id, record);
     return record;
   },
-  appendManagedRuntimeSetupResult: async (params: { profileRunId: string; observation: unknown }) => {
+  appendManagedRuntimeSetupResult: async (params: {
+    profileRunId: string;
+    observation: unknown;
+  }) => {
     const record = profileRunRecords.get(params.profileRunId);
     if (record) {
       record.setupResults.push(params.observation);
     }
     return record ?? { id: params.profileRunId };
   },
-  appendManagedRuntimeVerificationResult: async (params: { profileRunId: string; observation: unknown }) => {
+  appendManagedRuntimeVerificationResult: async (params: {
+    profileRunId: string;
+    observation: unknown;
+  }) => {
     const record = profileRunRecords.get(params.profileRunId);
     if (record) {
       record.verificationResults.push(params.observation);
@@ -108,7 +122,12 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
 
 // ── Sandbox stub ───────────────────────────────────────────────────────────────
 
-type CommandResponse = { success: boolean; exitCode: number; stdout: string; stderr: string };
+type CommandResponse = {
+  success: boolean;
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+};
 const sandboxCommandResponses = new Map<string, CommandResponse>();
 const executedCommands: string[] = [];
 
@@ -117,14 +136,23 @@ function createMockSandbox() {
     workingDirectory: "/vercel/sandbox",
     async exec(command: string): Promise<CommandResponse> {
       executedCommands.push(command);
-      return sandboxCommandResponses.get(command) ?? { success: true, exitCode: 0, stdout: "", stderr: "" };
+      return (
+        sandboxCommandResponses.get(command) ?? {
+          success: true,
+          exitCode: 0,
+          stdout: "",
+          stderr: "",
+        }
+      );
     },
   };
 }
 
 // ── Session stub ───────────────────────────────────────────────────────────────
 
-function createMockSession(overrides: Partial<{ id: string; userId: string }> = {}) {
+function createMockSession(
+  overrides: Partial<{ id: string; userId: string }> = {},
+) {
   return {
     id: overrides.id ?? "session-test-1",
     userId: overrides.userId ?? "user-test-1",
@@ -144,7 +172,9 @@ const modulePromise = import("./managed-runtime-environment");
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function makeProfile(overrides: Partial<ManagedRuntimeProfile> = {}): ManagedRuntimeProfile {
+function makeProfile(
+  overrides: Partial<ManagedRuntimeProfile> = {},
+): ManagedRuntimeProfile {
   return {
     id: "test-profile",
     version: "1.0.0",
@@ -198,10 +228,14 @@ describe("ensureManagedRuntimeEnvironment", () => {
       chatId: null,
       userId: "user-test-1",
       workflowRunId: null,
-      sandbox: createMockSandbox() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["sandbox"],
+      sandbox: createMockSandbox() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["sandbox"],
       sandboxName: null,
       profile,
-      startupReporter: createMockStartupReporter() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["startupReporter"],
+      startupReporter: createMockStartupReporter() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["startupReporter"],
     });
 
     // The profile run record should be blocked
@@ -246,10 +280,14 @@ describe("ensureManagedRuntimeEnvironment", () => {
       chatId: null,
       userId: "user-test-1",
       workflowRunId: null,
-      sandbox: createMockSandbox() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["sandbox"],
+      sandbox: createMockSandbox() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["sandbox"],
       sandboxName: null,
       profile,
-      startupReporter: createMockStartupReporter() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["startupReporter"],
+      startupReporter: createMockStartupReporter() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["startupReporter"],
     });
 
     // Run must NOT be blocked — it should have finished as passed
@@ -264,7 +302,8 @@ describe("ensureManagedRuntimeEnvironment", () => {
     expect(blockedEvent).toBeUndefined();
 
     const skippedEvent = emittedEvents.find(
-      (e) => e["eventName"] === "managed_runtime.profile.verify.command.skipped",
+      (e) =>
+        e["eventName"] === "managed_runtime.profile.verify.command.skipped",
     );
     expect(skippedEvent).toBeDefined();
 
@@ -291,10 +330,14 @@ describe("ensureManagedRuntimeEnvironment", () => {
       chatId: null,
       userId: "user-test-1",
       workflowRunId: null,
-      sandbox: createMockSandbox() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["sandbox"],
+      sandbox: createMockSandbox() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["sandbox"],
       sandboxName: null,
       profile,
-      startupReporter: createMockStartupReporter() as Parameters<typeof ensureManagedRuntimeEnvironment>[0]["startupReporter"],
+      startupReporter: createMockStartupReporter() as unknown as Parameters<
+        typeof ensureManagedRuntimeEnvironment
+      >[0]["startupReporter"],
     });
 
     // The setupScript command must have been executed

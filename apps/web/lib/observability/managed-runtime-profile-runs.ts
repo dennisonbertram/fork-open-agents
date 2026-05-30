@@ -94,6 +94,7 @@ export async function startManagedRuntimeProfileRun(params: {
   userId: string;
   workflowRunId?: string | null;
   sandboxName?: string | null;
+  snapshotId?: string | null;
   profile: ManagedRuntimeProfile;
 }): Promise<ManagedRuntimeProfileRun> {
   const now = new Date();
@@ -106,6 +107,7 @@ export async function startManagedRuntimeProfileRun(params: {
       userId: params.userId,
       workflowRunId: params.workflowRunId ?? null,
       sandboxName: params.sandboxName ?? null,
+      snapshotId: params.snapshotId ?? null,
       profileId: params.profile.id,
       profileVersion: params.profile.version,
       profileDisplayName: params.profile.displayName,
