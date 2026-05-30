@@ -8,6 +8,7 @@ import {
   listEnabledScheduleTriggers,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
+  updateBackgroundAgentRunStatus,
   type BackgroundAgentWithTriggers,
 } from "./store";
 import {
@@ -46,6 +47,13 @@ async function startRun(runId: string): Promise<string | null> {
 }
 
 async function recordWorkflowStartFailure(input: WorkflowStartFailureInput) {
+  await updateBackgroundAgentRunStatus({
+    runId: input.runId,
+    status: "failed",
+    workflowRunId: null,
+    errorKind: "workflow_failed",
+    errorMessage: "Failed to start background agent workflow.",
+  });
   await recordBackgroundAgentEvent({
     runId: input.runId,
     agentId: input.agentId,

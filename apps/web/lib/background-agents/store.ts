@@ -28,6 +28,10 @@ import {
   type NormalizedBackgroundTriggerEvent,
   type UpdateBackgroundAgentInput,
 } from "./types";
+import {
+  getExistingWebhookPublicIds,
+  getWebhookPublicIdForUpdatedTrigger,
+} from "./trigger-public-ids";
 
 export type BackgroundAgentWithTriggers = BackgroundAgent & {
   triggers: BackgroundAgentTrigger[];
@@ -169,6 +173,13 @@ export async function updateBackgroundAgent(
     }
 
     if (input.triggers !== undefined) {
+      const existingTriggers = await tx.query.backgroundAgentTriggers.findMany({
+        where: eq(backgroundAgentTriggers.agentId, agent.id),
+        orderBy: [desc(backgroundAgentTriggers.createdAt)],
+      });
+      const existingWebhookPublicIds =
+        getExistingWebhookPublicIds(existingTriggers);
+
       await tx
         .delete(backgroundAgentTriggers)
         .where(eq(backgroundAgentTriggers.agentId, agent.id));
@@ -182,7 +193,10 @@ export async function updateBackgroundAgent(
           status: trigger.status,
           conditions: trigger.conditions,
           schedule: normalizeOptionalText(trigger.schedule),
-          webhookPublicId: trigger.kind === "webhook.error" ? nanoid(16) : null,
+          webhookPublicId: getWebhookPublicIdForUpdatedTrigger({
+            trigger,
+            existingWebhookPublicIds,
+          }),
         })),
       );
     }

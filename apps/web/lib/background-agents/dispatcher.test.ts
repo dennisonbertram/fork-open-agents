@@ -27,6 +27,7 @@ let scheduleRows: Array<{
 const listMatchingTriggersForEvent = mock(async () => matchingRows);
 const getWebhookTriggerByPublicId = mock(async () => webhookRow);
 const listEnabledScheduleTriggers = mock(async () => scheduleRows);
+const updateBackgroundAgentRunStatus = mock(async () => undefined);
 
 mock.module("workflow/api", () => ({ start }));
 
@@ -41,6 +42,7 @@ mock.module("./store", () => ({
   listEnabledScheduleTriggers,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
+  updateBackgroundAgentRunStatus,
 }));
 
 const dispatcherModulePromise = import("./dispatcher");
@@ -141,6 +143,7 @@ function resetDispatcherMocks() {
     }),
   );
   recordBackgroundAgentEvent.mockClear();
+  updateBackgroundAgentRunStatus.mockClear();
   listMatchingTriggersForEvent.mockClear();
   getWebhookTriggerByPublicId.mockClear();
   listEnabledScheduleTriggers.mockClear();
@@ -198,6 +201,13 @@ describe("dispatchBackgroundTriggerEvent", () => {
 
     expect(result.created).toBe(1);
     expect(start).toHaveBeenCalledWith({}, [{ runId: "run-1" }]);
+    expect(updateBackgroundAgentRunStatus).toHaveBeenCalledWith({
+      runId: "run-1",
+      status: "failed",
+      workflowRunId: null,
+      errorKind: "workflow_failed",
+      errorMessage: "Failed to start background agent workflow.",
+    });
     expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         runId: "run-1",
@@ -281,6 +291,13 @@ describe("dispatchWebhookErrorEvent", () => {
         errorKind: "workflow_failed",
       }),
     );
+    expect(updateBackgroundAgentRunStatus).toHaveBeenCalledWith({
+      runId: "run-1",
+      status: "failed",
+      workflowRunId: null,
+      errorKind: "workflow_failed",
+      errorMessage: "Failed to start background agent workflow.",
+    });
   });
 
   test("does not dispatch signed webhooks outside the configured repo allowlist", async () => {
@@ -367,6 +384,13 @@ describe("dispatchScheduledBackgroundAgents", () => {
         errorKind: "workflow_failed",
       }),
     );
+    expect(updateBackgroundAgentRunStatus).toHaveBeenCalledWith({
+      runId: "run-1",
+      status: "failed",
+      workflowRunId: null,
+      errorKind: "workflow_failed",
+      errorMessage: "Failed to start background agent workflow.",
+    });
   });
 
   test("filters scheduled runs by the configured repo allowlist", async () => {

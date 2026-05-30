@@ -33,6 +33,7 @@ import {
   buildFormFromAgent,
   defaultForm,
   flowSteps,
+  supportedOutputModes,
   triggerLabels,
   type BackgroundAgent,
   type FormState,
@@ -92,6 +93,8 @@ type ManualTestResponse = {
   runIds: string[];
   error?: string;
 };
+
+const supportedOutputModeSet = new Set<OutputMode>(supportedOutputModes);
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -182,7 +185,8 @@ export function BackgroundAgentsSection() {
       form.name.trim() &&
       form.repoOwner.trim() &&
       form.repoName.trim() &&
-      form.instructions.trim(),
+      form.instructions.trim() &&
+      supportedOutputModeSet.has(form.outputMode),
     [form],
   );
 
@@ -572,11 +576,11 @@ export function BackgroundAgentsSection() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">None</SelectItem>
-                <SelectItem value="comment">Comment</SelectItem>
-                <SelectItem value="ready_pr">Ready PR</SelectItem>
-                <SelectItem value="issue">Issue</SelectItem>
-                <SelectItem value="notification">Notification</SelectItem>
+                {supportedOutputModes.map((mode) => (
+                  <SelectItem key={mode} value={mode}>
+                    {mode === "ready_pr" ? "Ready PR" : "None"}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

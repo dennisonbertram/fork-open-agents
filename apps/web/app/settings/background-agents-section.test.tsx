@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  supportedOutputModes,
 } from "./background-agents-form";
 
 type AgentListData = {
@@ -321,6 +322,7 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("Error webhook");
     expect(html).toContain("Tool providers coming later");
     expect(html).toContain("Composio is planned for v1.5");
+    expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
     expect(html).toContain("Edit");
     expect(html).toContain("Test");
     expect(html).toContain("/repos/acme/widgets/agents");

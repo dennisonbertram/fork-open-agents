@@ -89,6 +89,11 @@ const flowSteps = [
   "Test",
 ];
 
+const supportedOutputModes = [
+  "none",
+  "ready_pr",
+] as const satisfies readonly OutputMode[];
+
 function splitConditionList(value: string) {
   const items = value
     .split(",")
@@ -169,7 +174,7 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
   };
 }
 
-export { defaultForm, flowSteps, triggerLabels };
+export { defaultForm, flowSteps, supportedOutputModes, triggerLabels };
 export type {
   BackgroundAgent,
   BackgroundAgentTrigger,
