@@ -84,6 +84,7 @@ type Options = {
   maxSteps?: number;
   autoCommitEnabled?: boolean;
   autoCreatePrEnabled?: boolean;
+  agentApiRunId?: string;
 };
 
 type ChatModelRuntime = {
@@ -283,6 +284,26 @@ async function emitWorkflowSessionEvent(
 
   const { emitSessionEvent } = await import("@/lib/observability/events");
   await emitSessionEvent(input);
+}
+
+async function finalizeAgentApiRunStep(params: {
+  runId: string;
+  workflowRunId: string;
+  status: WorkflowRunStatus;
+  errorMessage: string | null;
+  sandboxName: string | null;
+  modelId: string;
+  inferenceRoute: InferenceRoute;
+  inferenceProfileId: string | null;
+  managedRuntimeProfileId: string | null;
+  resultMessageId: string;
+  finishedAt: Date;
+}): Promise<void> {
+  "use step";
+
+  const { finalizeAgentApiRunFromWorkflow } =
+    await import("@/lib/agent-api-runs/runs");
+  await finalizeAgentApiRunFromWorkflow(params);
 }
 
 async function persistInputMessages(
@@ -1634,6 +1655,21 @@ export async function runAgentWorkflow(options: Options) {
           stepTimings,
         },
       );
+      if (options.agentApiRunId) {
+        await finalizeAgentApiRunStep({
+          runId: options.agentApiRunId,
+          workflowRunId,
+          status: workflowStatus,
+          errorMessage: caughtError ? getErrorMessage(caughtError) : null,
+          sandboxName: runtimeSandboxName,
+          modelId,
+          inferenceRoute,
+          inferenceProfileId,
+          managedRuntimeProfileId,
+          resultMessageId: pendingAssistantResponse.id,
+          finishedAt: runFinishedAt,
+        });
+      }
       await emitSessionEvent({
         sessionId: options.sessionId,
         chatId: options.chatId,

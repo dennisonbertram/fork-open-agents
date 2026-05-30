@@ -206,7 +206,7 @@ const checks: SmokeCheck[] = [
   },
 ];
 
-async function main(): Promise<void> {
+async function runPreviewSmoke(): Promise<void> {
   const deploymentUrl = getDeploymentUrl();
   const headers = createHeaders();
   const summaries: string[] = [];
@@ -223,7 +223,7 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((error: unknown) => {
+runPreviewSmoke().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`Preview smoke failed: ${message}`);
   process.exit(1);

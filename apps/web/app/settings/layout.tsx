@@ -7,6 +7,7 @@ import {
   Bot,
   LogOut,
   Menu,
+  KeyRound,
   Settings as SettingsIcon,
   ShieldAlert,
   SlidersHorizontal,
@@ -98,6 +99,12 @@ const baseSidebarItems = [
     label: "Background agents",
     href: "/settings/background-agents",
     icon: Bot,
+  },
+  {
+    id: "api-keys",
+    label: "API keys",
+    href: "/settings/api-keys",
+    icon: KeyRound,
   },
   {
     id: "models",

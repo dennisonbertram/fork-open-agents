@@ -66,6 +66,25 @@ export type BackgroundAgentPayloadSummary = {
   message?: string;
 };
 
+export type ApiTokenRepositoryPolicy = {
+  allowedRepositories: string[] | null;
+};
+
+export type ApiTokenClientMetadata = {
+  label?: string;
+  userAgent?: string;
+};
+
+export type AgentApiRunRepository = {
+  owner: string;
+  name: string;
+  branch: string | null;
+  cloneUrl: string | null;
+  newBranch: boolean;
+} | null;
+
+export type AgentApiRunMetadata = Record<string, unknown>;
+
 // users
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -122,6 +141,45 @@ export const verification = pgTable("verification", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+export const apiTokens = pgTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    tokenHash: text("token_hash").notNull().unique(),
+    prefix: text("prefix").notNull().default("oa_"),
+    start: text("start").notNull(),
+    last4: text("last4").notNull(),
+    scopes: jsonb("scopes").$type<string[]>().notNull().default([]),
+    repositoryPolicy: jsonb("repository_policy")
+      .$type<ApiTokenRepositoryPolicy>()
+      .notNull()
+      .default({ allowedRepositories: null }),
+    expiresAt: timestamp("expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    lastUsedAt: timestamp("last_used_at"),
+    lastUsedUserAgent: text("last_used_user_agent"),
+    rateLimitEnabled: boolean("rate_limit_enabled").notNull().default(true),
+    rateLimitWindowMs: integer("rate_limit_window_ms")
+      .notNull()
+      .default(60_000),
+    rateLimitMax: integer("rate_limit_max").notNull().default(60),
+    metadata: jsonb("metadata")
+      .$type<ApiTokenClientMetadata>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("api_tokens_user_idx").on(table.userId),
+    index("api_tokens_start_idx").on(table.start),
+  ],
+);
 
 export const githubInstallations = pgTable(
   "github_installations",
@@ -814,6 +872,84 @@ export const verifiedBuildEvents = pgTable(
   ],
 );
 
+export const agentApiRuns = pgTable(
+  "agent_api_runs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    tokenId: text("token_id").references(() => apiTokens.id, {
+      onDelete: "set null",
+    }),
+    status: text("status", {
+      enum: [
+        "accepted",
+        "starting",
+        "running",
+        "completed",
+        "failed",
+        "cancelled",
+      ],
+    })
+      .notNull()
+      .default("accepted"),
+    idempotencyKeyHash: text("idempotency_key_hash"),
+    requestId: text("request_id"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    workflowRunId: text("workflow_run_id"),
+    promptMessageId: text("prompt_message_id"),
+    resultMessageId: text("result_message_id"),
+    title: text("title"),
+    repository: jsonb("repository").$type<AgentApiRunRepository>(),
+    runtimeMode: text("runtime_mode", {
+      enum: ["classic", "managed_runtime"],
+    }).notNull(),
+    managedRuntimeProfileId: text("managed_runtime_profile_id"),
+    modelId: text("model_id"),
+    inferenceRoute: text("inference_route", {
+      enum: ["gateway", "user"],
+    }),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
+    sandboxName: text("sandbox_name"),
+    failureKind: text("failure_kind"),
+    failureMessage: text("failure_message"),
+    failureRetryable: boolean("failure_retryable"),
+    metadata: jsonb("metadata")
+      .$type<AgentApiRunMetadata>()
+      .notNull()
+      .default({}),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_api_runs_user_created_idx").on(table.userId, table.createdAt),
+    index("agent_api_runs_token_created_idx").on(
+      table.tokenId,
+      table.createdAt,
+    ),
+    index("agent_api_runs_status_idx").on(table.status),
+    index("agent_api_runs_session_chat_idx").on(table.sessionId, table.chatId),
+    index("agent_api_runs_workflow_idx").on(table.workflowRunId),
+    index("agent_api_runs_request_idx").on(table.requestId),
+    uniqueIndex("agent_api_runs_idempotency_idx").on(
+      table.userId,
+      table.tokenId,
+      table.idempotencyKeyHash,
+    ),
+  ],
+);
+
 export const backgroundAgents = pgTable(
   "background_agents",
   {
@@ -1247,6 +1383,10 @@ export type VerifiedBuildRun = typeof verifiedBuildRuns.$inferSelect;
 export type NewVerifiedBuildRun = typeof verifiedBuildRuns.$inferInsert;
 export type VerifiedBuildEvent = typeof verifiedBuildEvents.$inferSelect;
 export type NewVerifiedBuildEvent = typeof verifiedBuildEvents.$inferInsert;
+export type ApiToken = typeof apiTokens.$inferSelect;
+export type NewApiToken = typeof apiTokens.$inferInsert;
+export type AgentApiRun = typeof agentApiRuns.$inferSelect;
+export type NewAgentApiRun = typeof agentApiRuns.$inferInsert;
 export type BackgroundAgent = typeof backgroundAgents.$inferSelect;
 export type NewBackgroundAgent = typeof backgroundAgents.$inferInsert;
 export type BackgroundAgentTrigger =

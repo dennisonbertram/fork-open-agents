@@ -26,6 +26,8 @@ Start here:
   happened to users and operators.
 - [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
   exports for debugging runs without production shell access.
+- [Cloud Agent Runs API](../api/cloud-agent-runs.md) - bearer-token API for
+  starting, polling, cancelling, and proving cloud sandbox agent runs.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
