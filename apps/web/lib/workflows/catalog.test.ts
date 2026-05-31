@@ -187,25 +187,73 @@ describe("SUPPORTED_PROOF_LEVELS", () => {
   });
 });
 
-// ── Stub catalog entry ───────────────────────────────────────────────────────
+// ── ISSUE-33: Seeded catalog entries ─────────────────────────────────────────
+// Updated from "AT MOST ONE stub" to four real seeded entries.
 
-describe("DEFAULT_CATALOG (stub entry)", () => {
-  test("the stub catalog exports at least one entry and it is valid", async () => {
-    const { DEFAULT_CATALOG } = await import("./catalog");
-    expect(Array.isArray(DEFAULT_CATALOG)).toBe(true);
-    // At least one stub entry is seeded per spec (AT MOST ONE)
-    expect(DEFAULT_CATALOG.length).toBeGreaterThanOrEqual(1);
-    expect(DEFAULT_CATALOG.length).toBeLessThanOrEqual(1);
-    const entry = DEFAULT_CATALOG[0];
-    expect(entry).toBeDefined();
-    expect(typeof entry?.id).toBe("string");
-    expect(entry?.id.length).toBeGreaterThan(0);
+const EXPECTED_CATALOG_IDS = new Set([
+  "verified-build",
+  "deep-research",
+  "runtime-profile-validation",
+  "release-smoke",
+]);
+
+describe("DEFAULT_CATALOG (seeded entries)", () => {
+  // BT-ISSUE33-001: Seeded set present — catalog contains exactly the four ids
+  test("BT-ISSUE33-001: DEFAULT_CATALOG contains exactly 4 entries with the correct ids", () => {
+    expect(DEFAULT_CATALOG.length).toBe(4);
+    const ids = new Set(DEFAULT_CATALOG.map((d) => d.id));
+    for (const expectedId of EXPECTED_CATALOG_IDS) {
+      expect(ids.has(expectedId)).toBe(true);
+    }
+    // No extra ids beyond the four expected
+    expect(ids.size).toBe(4);
   });
 
-  test("the stub catalog entry is valid (buildRegistry does not throw)", async () => {
-    // This is the integration check: the default catalog can be built successfully
-    const { DEFAULT_CATALOG } = await import("./catalog");
+  // BT-ISSUE33-002: All ids are unique (no duplicates in DEFAULT_CATALOG)
+  test("BT-ISSUE33-002: all DEFAULT_CATALOG ids are unique", () => {
+    const ids = DEFAULT_CATALOG.map((d) => d.id);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(ids.length);
+  });
+
+  // BT-ISSUE33-003: All entries are valid (buildRegistry does not throw)
+  test("BT-ISSUE33-003: buildRegistry(DEFAULT_CATALOG) succeeds without throwing", () => {
     expect(() => buildRegistry(DEFAULT_CATALOG)).not.toThrow();
+  });
+
+  // BT-ISSUE33-004: Every entry has all required fields with correct types
+  test("BT-ISSUE33-004: every entry has correct field types and proofLevel in SUPPORTED_PROOF_LEVELS", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      expect(typeof entry.id).toBe("string");
+      expect(entry.id.length).toBeGreaterThan(0);
+      expect(typeof entry.version).toBe("string");
+      expect(entry.version.length).toBeGreaterThan(0);
+      expect(typeof entry.name).toBe("string");
+      expect(entry.name.length).toBeGreaterThan(0);
+      expect(typeof entry.description).toBe("string");
+      expect(Array.isArray(entry.capabilities)).toBe(true);
+      expect(typeof entry.enabled).toBe("boolean");
+      expect(SUPPORTED_PROOF_LEVELS).toContain(entry.proofLevel);
+    }
+  });
+
+  // BT-ISSUE33-005: All initial entries are disabled with a non-empty description explaining why
+  test("BT-ISSUE33-005: every initial catalog entry is disabled and has a description of at least 20 chars", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.enabled).toBe(false);
+      // Description must carry the disabled reason — minimum meaningful length
+      expect(entry.description.length).toBeGreaterThan(20);
+    }
+  });
+
+  // BT-ISSUE33-006: Each specific expected id is present and lookupWorkflow finds it
+  test("BT-ISSUE33-006: lookupWorkflow finds each of the four expected catalog entries", () => {
+    const registry = buildRegistry(DEFAULT_CATALOG);
+    for (const id of EXPECTED_CATALOG_IDS) {
+      const entry = lookupWorkflow(registry, id);
+      expect(entry).toBeDefined();
+      expect(entry?.id).toBe(id);
+    }
   });
 });
 
