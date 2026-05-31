@@ -832,4 +832,66 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
       "invalid_input",
     );
   });
+
+  test("REG-007: closeGoal not_found message includes the goalId for debuggability", async () => {
+    // If the not_found throw is reverted or the message is blanked, a caller
+    // receiving a 500 will have no idea which goal was missing. This test pins
+    // the message contract.
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeUpdateReturn = null;
+
+    const err = await closeGoal("ghost-goal-id", "complete").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "not_found",
+    );
+    expect((err as Error).message).toContain("ghost-goal-id");
+  });
+
+  test("REG-008: appendGoalEvent not_found message includes the goalId for debuggability", async () => {
+    // If the parent-goal existence check is reverted, calling appendGoalEvent
+    // with a missing goalId would silently insert an orphan event row (violating
+    // FK in production or returning undefined in tests). This test catches that.
+    const { appendGoalEvent, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = []; // no parent goal
+
+    const err = await appendGoalEvent({
+      goalId: "orphan-goal-id",
+      userId: "user-1",
+      eventType: "note",
+      summary: "Should be rejected",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "not_found",
+    );
+    expect((err as Error).message).toContain("orphan-goal-id");
+  });
+
+  test("REG-009: createGoal persist_failed is thrown, not swallowed, on empty insert return", async () => {
+    // If the undefined-return guard in createGoal is removed, the returned
+    // WorkflowGoal will be undefined at runtime — dereferencing it causes a 500.
+    // This test verifies the guard throws before returning.
+    const { createGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeInsertReturn = null;
+
+    const err = await createGoal({
+      userId: "user-x",
+      objective: "guard test",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "persist_failed",
+    );
+    // Must not resolve to undefined
+    expect(err).not.toBeUndefined();
+  });
 });
