@@ -1044,33 +1044,52 @@ describe("runAgentWorkflow", () => {
       proofPart as { type: string; data: Record<string, unknown> }
     ).data;
 
-    // evidence[] must be non-empty and contain real worker verification content
+    // evidence[] must contain exactly the expected real verification strings —
+    // no more, no less. toEqual catches both missing entries and additive/spurious ones.
     expect(Array.isArray(proofData.evidence)).toBe(true);
     const evidence = proofData.evidence as string[];
-    expect(evidence.length).toBeGreaterThan(0);
-    // Must include the worker attribution string (not just placeholder baseline entries)
-    expect(evidence).toContain(
-      "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls.",
-    );
-    // Must include the baseline attribution entries
-    expect(evidence).toContain(
+    expect(evidence).toEqual([
       "Managed runtime was selected for this workflow.",
-    );
-    expect(evidence).toContain(
       "Workflow, sandbox, and profile run attribution were recorded.",
-    );
+      "Profile setup/probe details are available in Runtime Inspector.",
+      "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls.",
+    ]);
+    // Belt-and-suspenders: exact length assertion in case toEqual ordering semantics change
+    expect(evidence).toHaveLength(4);
+    // Negative: no entry may be a placeholder or stub value
+    for (const entry of evidence) {
+      expect(entry).not.toMatch(/\b(TBD|placeholder|TODO|No evidence)\b/i);
+    }
 
-    // limitations[] must be non-empty: the un-exercised service and browser paths
-    // are always recorded as limitations so the proof is honest about what was not verified
+    // limitations[] must contain exactly the two un-exercised-path limitations —
+    // no more, no less (additive spurious entries would indicate a logic regression)
     expect(Array.isArray(proofData.limitations)).toBe(true);
     const limitations = proofData.limitations as string[];
-    expect(limitations.length).toBeGreaterThan(0);
-    expect(limitations).toContain(
+    expect(limitations).toEqual([
       "Service/dev-server evidence is captured only when a managed service is started.",
-    );
-    expect(limitations).toContain(
       "Browser/screenshot evidence is captured only when a browser check is run.",
-    );
+    ]);
+    expect(limitations).toHaveLength(2);
+    // Negative: no limitation entry may be a placeholder or stub value
+    for (const entry of limitations) {
+      expect(entry).not.toMatch(/\b(TBD|placeholder|TODO|No evidence)\b/i);
+    }
+
+    // serviceEvidence and browserEvidence must reflect zero artifacts
+    // (no services or browser ran in this scenario)
+    const serviceEvidence = proofData.serviceEvidence as {
+      total: number;
+      latest: unknown;
+    };
+    expect(serviceEvidence.total).toBe(0);
+    expect(serviceEvidence.latest).toBeNull();
+
+    const browserEvidence = proofData.browserEvidence as {
+      total: number;
+      latest: unknown;
+    };
+    expect(browserEvidence.total).toBe(0);
+    expect(browserEvidence.latest).toBeNull();
 
     // status must reflect a completed run (worker finished, coordinator did not bypass)
     expect(proofData.status).toBe("completed");
