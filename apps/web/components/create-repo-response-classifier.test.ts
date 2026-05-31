@@ -197,3 +197,95 @@ describe("classifyCreateRepoResponse — other error statuses", () => {
     expect(result.kind).toBe("httpError");
   });
 });
+
+// REGRESSION TESTS
+// These would FAIL if the classifier implementation were reverted to a naive
+// `if (!res.ok)` guard, because 207 has res.ok === true.
+
+describe("regression: 207 must never yield success kind (the original bug)", () => {
+  test("a 207 body that looks like a success shape is still classified as pushFailed, not success", () => {
+    // Simulate a hypothetical body that has most success fields but also
+    // has status:"pushFailed" — the classifier must not promote it to success.
+    const body = {
+      status: "pushFailed",
+      repoUrl: "https://github.com/alice/my-repo",
+      owner: "alice",
+      repoName: "my-repo",
+      // cloneUrl and branch are intentionally absent (as the server sends them)
+      error: "push failed",
+    };
+
+    const result = classifyCreateRepoResponse(207, body);
+
+    // The original bug: this would have been treated as success because res.ok
+    // is true for 207 and the old guard was `if (!res.ok)`.
+    expect(result.kind).not.toBe("success");
+    expect(result.kind).toBe("pushFailed");
+  });
+
+  test("only httpStatus 200 with both cloneUrl AND branch can yield success", () => {
+    // Verify that a 201 (unlikely but guard) does not produce success
+    const body = {
+      repoUrl: "https://github.com/alice/my-repo",
+      owner: "alice",
+      repoName: "my-repo",
+      cloneUrl: "https://github.com/alice/my-repo.git",
+      branch: "main",
+    };
+
+    const resultFor201 = classifyCreateRepoResponse(201, body);
+    expect(resultFor201.kind).not.toBe("success");
+
+    // But 200 with all fields does yield success
+    const resultFor200 = classifyCreateRepoResponse(200, body);
+    expect(resultFor200.kind).toBe("success");
+  });
+});
+
+describe("regression: pushFailed result must never carry cloneUrl or branch", () => {
+  test("207 result shape has no cloneUrl key", () => {
+    const body = {
+      status: "pushFailed",
+      repoUrl: "https://github.com/alice/my-repo",
+      owner: "alice",
+      repoName: "my-repo",
+      error: "push error",
+    };
+
+    const result = classifyCreateRepoResponse(207, body);
+    expect(result).not.toHaveProperty("cloneUrl");
+    expect(result).not.toHaveProperty("branch");
+  });
+
+  test("403 pushFailed result shape has no cloneUrl key", () => {
+    const body = {
+      error: "GitHub App access is required",
+      repoUrl: "https://github.com/alice/my-repo",
+      owner: "alice",
+      repoName: "my-repo",
+      status: "pushFailed",
+    };
+
+    const result = classifyCreateRepoResponse(403, body);
+    expect(result).not.toHaveProperty("cloneUrl");
+    expect(result).not.toHaveProperty("branch");
+  });
+});
+
+describe("regression: classifyCreateRepoResponse handles malformed/unexpected bodies gracefully", () => {
+  test("null body returns httpError", () => {
+    const result = classifyCreateRepoResponse(200, null);
+    expect(result.kind).toBe("httpError");
+  });
+
+  test("empty object body for 200 returns httpError (not success)", () => {
+    const result = classifyCreateRepoResponse(200, {});
+    expect(result.kind).toBe("httpError");
+  });
+
+  test("207 with missing repoUrl in body returns httpError (not pushFailed)", () => {
+    const body = { status: "pushFailed", owner: "alice", repoName: "my-repo", error: "push error" };
+    const result = classifyCreateRepoResponse(207, body);
+    expect(result.kind).toBe("httpError");
+  });
+});
