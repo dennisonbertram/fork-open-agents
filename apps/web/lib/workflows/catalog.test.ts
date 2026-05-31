@@ -207,3 +207,95 @@ describe("DEFAULT_CATALOG (stub entry)", () => {
     expect(() => buildRegistry(DEFAULT_CATALOG)).not.toThrow();
   });
 });
+
+// ── REGRESSION tests ─────────────────────────────────────────────────────────
+// These tests catch regressions if the green implementation is reverted or
+// broken. They cover angles not already exercised by the behavioral tests.
+
+describe("regression: registry is immutable after construction", () => {
+  test("REG-001: mutating the source array after buildRegistry does not affect the registry", () => {
+    const defs = [VALID_DEFINITION];
+    const registry = buildRegistry(defs);
+    // Clear the source array — registry must remain intact
+    defs.length = 0;
+    const result = lookupWorkflow(registry, "test-workflow");
+    expect(result?.id).toBe("test-workflow");
+  });
+});
+
+describe("regression: error kinds are exact string literals", () => {
+  test("REG-002: WorkflowCatalogError for empty id carries kind === 'definition_invalid'", () => {
+    let err: WorkflowCatalogError | undefined;
+    try {
+      buildRegistry([{ ...VALID_DEFINITION, id: "" }]);
+    } catch (e) {
+      if (e instanceof WorkflowCatalogError) err = e;
+    }
+    // If this regresses (e.g. kind renamed), the strict equality fails
+    expect(err?.kind).toBe("definition_invalid");
+  });
+
+  test("REG-003: duplicate id error kind is exactly 'duplicate_workflow_id'", () => {
+    let err: WorkflowCatalogError | undefined;
+    try {
+      buildRegistry([VALID_DEFINITION, { ...VALID_DEFINITION }]);
+    } catch (e) {
+      if (e instanceof WorkflowCatalogError) err = e;
+    }
+    expect(err?.kind).toBe("duplicate_workflow_id");
+  });
+
+  test("REG-004: unsupported proof level kind is exactly 'unsupported_proof_level'", () => {
+    let err: WorkflowCatalogError | undefined;
+    try {
+      buildRegistry([
+        {
+          ...VALID_DEFINITION,
+          proofLevel: "level-0" as (typeof SUPPORTED_PROOF_LEVELS)[number],
+        } as WorkflowDefinition,
+      ]);
+    } catch (e) {
+      if (e instanceof WorkflowCatalogError) err = e;
+    }
+    expect(err?.kind).toBe("unsupported_proof_level");
+  });
+});
+
+describe("regression: all three proof levels can be registered successfully", () => {
+  test("REG-005: level-1, level-2, and level-3 are all accepted without error", () => {
+    for (const level of SUPPORTED_PROOF_LEVELS) {
+      const def = {
+        ...VALID_DEFINITION,
+        id: `workflow-${level}`,
+        proofLevel: level,
+      };
+      expect(() => buildRegistry([def])).not.toThrow();
+    }
+  });
+});
+
+describe("regression: listWorkflows without options returns all entries", () => {
+  test("REG-006: calling listWorkflows with no options does NOT silently filter disabled entries", () => {
+    const disabled = {
+      ...VALID_DEFINITION,
+      id: "disabled-one",
+      enabled: false,
+    };
+    const registry = buildRegistry([VALID_DEFINITION, disabled]);
+    const all = listWorkflows(registry);
+    // Both the enabled and disabled workflow must appear
+    const ids = all.map((d) => d.id);
+    expect(ids).toContain("test-workflow");
+    expect(ids).toContain("disabled-one");
+    expect(all).toHaveLength(2);
+  });
+});
+
+describe("regression: empty capabilities array is valid", () => {
+  test("REG-007: a workflow definition with an empty capabilities array is accepted", () => {
+    const def = { ...VALID_DEFINITION, capabilities: [] };
+    const registry = buildRegistry([def]);
+    const result = lookupWorkflow(registry, "test-workflow");
+    expect(result?.capabilities).toHaveLength(0);
+  });
+});
