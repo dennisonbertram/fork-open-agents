@@ -1,0 +1,29 @@
+{
+  "id": "uev_d3adb33f",
+  "type": "deployment.error",
+  "createdAt": 1748685600000,
+  "region": "iad1",
+  "payload": {
+    "team": { "id": "team_acme" },
+    "user": { "id": "user_42" },
+    "deployment": {
+      "id": "dpl_8xKq2",
+      "name": "widget",
+      "url": "widget-git-fix-safari-login-acme.vercel.app",
+      "meta": {
+        "githubCommitOrg": "acme",
+        "githubCommitRepo": "widget",
+        "githubCommitRef": "fix/safari-login",
+        "githubCommitSha": "abc123def456"
+      }
+    },
+    "links": {
+      "deployment": "https://vercel.com/acme/widget/dpl_8xKq2",
+      "project": "https://vercel.com/acme/widget"
+    },
+    "target": "production",
+    "project": { "id": "prj_widget" },
+    "plan": "pro",
+    "regions": ["iad1"]
+  }
+}

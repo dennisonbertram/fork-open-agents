@@ -1,0 +1,16 @@
+{
+  "action": "opened",
+  "issue": {
+    "id": 2147483001,
+    "number": 412,
+    "title": "Login button does nothing on Safari",
+    "body": "Steps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+    "html_url": "https://github.com/acme/widget/issues/412",
+    "labels": [{ "name": "bug" }, { "name": "needs-triage" }]
+  },
+  "repository": {
+    "name": "widget",
+    "owner": { "login": "acme" }
+  },
+  "sender": { "login": "octocat" }
+}
