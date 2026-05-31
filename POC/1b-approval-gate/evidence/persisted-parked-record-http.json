@@ -1,0 +1,26 @@
+{
+  "appr_call_http_4": {
+    "approvalId": "appr_call_http_4",
+    "toolName": "http_request",
+    "toolCallId": "call_http",
+    "input": {
+      "method": "POST",
+      "url": "https://api.stripe.com/v1/charges"
+    },
+    "category": "external-api-write",
+    "reason": "POST to an external endpoint mutates third-party state.",
+    "part": {
+      "type": "tool-http_request",
+      "toolCallId": "call_http",
+      "state": "approval-requested",
+      "input": {
+        "method": "POST",
+        "url": "https://api.stripe.com/v1/charges"
+      },
+      "approval": {
+        "id": "appr_call_http_4",
+        "reason": "POST to an external endpoint mutates third-party state."
+      }
+    }
+  }
+}

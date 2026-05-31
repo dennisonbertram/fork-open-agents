@@ -1,0 +1,4 @@
+node_modules/
+# Transient per-run store files (the *persisted-parked-record-*.json* copies
+# under evidence/ are the durable, committed samples).
+evidence/.store-*.json

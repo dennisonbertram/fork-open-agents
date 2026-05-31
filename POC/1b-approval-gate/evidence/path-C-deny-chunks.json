@@ -1,0 +1,8 @@
+[
+  {
+    "type": "tool-output-denied",
+    "toolCallId": "call_002",
+    "approvalId": "appr_call_002_2",
+    "reason": "Operator rejected: would wipe the disk"
+  }
+]

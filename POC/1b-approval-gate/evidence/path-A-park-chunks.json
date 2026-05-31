@@ -1,0 +1,12 @@
+[
+  {
+    "type": "tool-approval-request",
+    "toolCallId": "call_001",
+    "toolName": "bash",
+    "approvalId": "appr_call_001_1",
+    "input": {
+      "command": "rm -rf ./build"
+    },
+    "isAutomatic": false
+  }
+]
