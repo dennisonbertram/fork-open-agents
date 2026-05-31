@@ -117,8 +117,7 @@ function buildFakeDb(isInTx = false): FakeDb {
             return Object.assign(basePromise, {
               for: (_strength: unknown) =>
                 Promise.resolve([{ maxSeq: fakeMaxSequence }] as unknown[]),
-              orderBy: (..._args: unknown[]) =>
-                Promise.resolve(fakeSelectRows),
+              orderBy: (..._args: unknown[]) => Promise.resolve(fakeSelectRows),
             });
           }
 

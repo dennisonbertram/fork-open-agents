@@ -36,13 +36,29 @@ export type TerminalGoalStatus = (typeof TERMINAL_GOAL_STATUSES)[number];
 // ---------------------------------------------------------------------------
 
 /**
- * Thrown by `closeGoal` when given a non-terminal status, and by
- * `createGoal` when the objective is empty.
+ * Thrown by goal-ledger helpers for all typed error conditions.
+ *
+ * Codes:
+ *   - "invalid_input"      — caller provided invalid arguments (e.g. empty objective, no filter)
+ *   - "non_terminal_status" — closeGoal received a status that is not in TERMINAL_GOAL_STATUSES
+ *   - "not_found"           — the target row did not exist (e.g. closeGoal on missing id, appendGoalEvent on missing goal)
+ *   - "persist_failed"      — an insert/update returned no row unexpectedly (DB-level failure)
  */
 export class GoalLedgerError extends Error {
-  readonly code: "non_terminal_status" | "invalid_input";
+  readonly code:
+    | "non_terminal_status"
+    | "invalid_input"
+    | "not_found"
+    | "persist_failed";
 
-  constructor(code: "non_terminal_status" | "invalid_input", message: string) {
+  constructor(
+    code:
+      | "non_terminal_status"
+      | "invalid_input"
+      | "not_found"
+      | "persist_failed",
+    message: string,
+  ) {
     super(message);
     this.name = "GoalLedgerError";
     this.code = code;
@@ -77,6 +93,7 @@ export type CreateGoalInput = {
  * - Defaults status to "draft" if not provided.
  * - Defaults evidenceRefs to [] if not provided.
  * - Throws GoalLedgerError (code: "invalid_input") when objective is empty.
+ * - Throws GoalLedgerError (code: "persist_failed") when the insert returns no row.
  */
 export async function createGoal(
   input: CreateGoalInput,
@@ -105,6 +122,14 @@ export async function createGoal(
   };
 
   const [row] = await db.insert(workflowGoals).values(values).returning();
+
+  if (row === undefined) {
+    throw new GoalLedgerError(
+      "persist_failed",
+      "createGoal: insert returned no row — unexpected persistence failure.",
+    );
+  }
+
   return row;
 }
 
@@ -123,15 +148,39 @@ export type AppendGoalEventInput = {
 /**
  * Append a new ledger entry to a goal.
  *
- * The sequence number is computed as max(sequence)+1 for the goal (starting
- * at 1 for the first event). The select + insert are wrapped in a transaction
- * to avoid races.
+ * Locking strategy: the parent goal row is locked with SELECT ... FOR UPDATE
+ * before computing max(sequence)+1. This serializes concurrent appends per
+ * goal — two concurrent calls will queue behind the lock rather than racing
+ * to compute the same sequence number. The unique (goalId, sequence) index on
+ * workflow_goal_events is the final backstop: if the lock is somehow bypassed
+ * (e.g. non-Postgres driver, test environment), a duplicate sequence insert
+ * will throw a unique-violation that callers should treat as a retriable error.
+ *
+ * - Throws GoalLedgerError (code: "not_found") when the parent goal does not exist.
+ * - Throws GoalLedgerError (code: "persist_failed") when the insert returns no row.
  */
 export async function appendGoalEvent(
   input: AppendGoalEventInput,
 ): Promise<WorkflowGoalEvent> {
   return db.transaction(async (tx) => {
-    // Compute next sequence: max(sequence) for this goal, defaulting to 0
+    // Acquire a row lock on the parent goal to serialize concurrent appends.
+    // This prevents two transactions from computing the same max(sequence)+1.
+    const [goalRow] = await tx
+      .select()
+      .from(workflowGoals)
+      .where(eq(workflowGoals.id, input.goalId))
+      .for("update");
+
+    if (goalRow === undefined) {
+      throw new GoalLedgerError(
+        "not_found",
+        `appendGoalEvent: goal "${input.goalId}" not found.`,
+      );
+    }
+
+    // Compute next sequence: max(sequence) for this goal, defaulting to 0.
+    // The FOR UPDATE lock above ensures no other transaction can insert a
+    // competing event row between here and our insert below.
     const [maxRow] = await tx
       .select({ maxSeq: max(workflowGoalEvents.sequence) })
       .from(workflowGoalEvents)
@@ -153,6 +202,14 @@ export async function appendGoalEvent(
       .insert(workflowGoalEvents)
       .values(values)
       .returning();
+
+    if (row === undefined) {
+      throw new GoalLedgerError(
+        "persist_failed",
+        "appendGoalEvent: insert returned no row — unexpected persistence failure.",
+      );
+    }
+
     return row;
   });
 }
@@ -171,6 +228,10 @@ export type ListGoalsFilter = {
 /**
  * List workflow_goals filtered by one or more dimensions, ordered by
  * createdAt ascending.
+ *
+ * At least one filter condition must be provided. Calling listGoals({}) with
+ * no filters is rejected to prevent unbounded multi-tenant scans.
+ * Throws GoalLedgerError (code: "invalid_input") when no filter is provided.
  */
 export async function listGoals(
   filter: ListGoalsFilter,
@@ -191,10 +252,10 @@ export async function listGoals(
   }
 
   if (conditions.length === 0) {
-    return db
-      .select()
-      .from(workflowGoals)
-      .orderBy(asc(workflowGoals.createdAt));
+    throw new GoalLedgerError(
+      "invalid_input",
+      "listGoals requires at least one filter (e.g. userId). Unfiltered queries are rejected to prevent multi-tenant data exposure.",
+    );
   }
 
   return db
@@ -228,9 +289,13 @@ export async function listGoalEvents(
 /**
  * Transition a goal to a terminal status and bump updatedAt.
  *
- * Throws GoalLedgerError (code: "non_terminal_status") if the provided status
- * is not in TERMINAL_GOAL_STATUSES. Transition-validity enforcement
- * (preventing movement out of an already-terminal state) is deferred to #38.
+ * - Throws GoalLedgerError (code: "non_terminal_status") if the provided
+ *   status is not in TERMINAL_GOAL_STATUSES.
+ * - Throws GoalLedgerError (code: "not_found") if no row was updated
+ *   (i.e. the goal id does not exist or was already deleted).
+ *
+ * Transition-validity enforcement (preventing movement out of an already-
+ * terminal state) is deferred to #38.
  */
 export async function closeGoal(
   goalId: string,
@@ -248,6 +313,13 @@ export async function closeGoal(
     .set({ status: terminalStatus, updatedAt: new Date() })
     .where(eq(workflowGoals.id, goalId))
     .returning();
+
+  if (row === undefined) {
+    throw new GoalLedgerError(
+      "not_found",
+      `closeGoal: goal "${goalId}" not found.`,
+    );
+  }
 
   return row;
 }
