@@ -1,0 +1,18 @@
+{
+  "name": "poc-2c-event-driven",
+  "private": true,
+  "type": "module",
+  "description": "POC 2c: Event-driven agents beyond GitHub webhooks. Source-agnostic AgentEvent + per-source verifier/normalizer registry + trigger rule engine + ingest pipeline. Self-contained; does not touch repo root deps.",
+  "scripts": {
+    "eval": "tsx eval.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

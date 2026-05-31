@@ -1,0 +1,93 @@
+{
+  "generatedAt": "2026-05-31T15:39:02.506Z",
+  "note": "Final consolidated results across all four profiles (rust & docker reflect the fixed profiles).",
+  "baseImages": {
+    "python": "buildpack-deps:bookworm-curl",
+    "go": "buildpack-deps:bookworm-curl",
+    "rust": "buildpack-deps:bookworm-curl",
+    "docker": "debian:bookworm (privileged)"
+  },
+  "outcomes": [
+    {
+      "profileId": "python-uv",
+      "status": "passed",
+      "setupMs": 40120,
+      "verifyMs": 501,
+      "expectedTools": [
+        "uv:ok",
+        "python:ok"
+      ],
+      "verify": [
+        "verify-uv=passed",
+        "verify-python=passed",
+        "verify-pip-resolver=passed"
+      ],
+      "programProof": {
+        "passed": true,
+        "marker": "PYTHON_OK",
+        "output": "PYTHON_OK 3 12"
+      }
+    },
+    {
+      "profileId": "go-toolchain",
+      "status": "passed",
+      "setupMs": 27426,
+      "verifyMs": 104,
+      "expectedTools": [
+        "go:ok",
+        "gofmt:ok"
+      ],
+      "verify": [
+        "verify-go=passed",
+        "verify-gofmt=passed",
+        "verify-go-env=passed"
+      ],
+      "programProof": {
+        "passed": true,
+        "marker": "GO_OK",
+        "output": "GO_OK"
+      }
+    },
+    {
+      "profileId": "rust-cargo",
+      "status": "passed",
+      "setupMs": 359173,
+      "verifyMs": 146,
+      "expectedTools": [
+        "rustc:ok",
+        "cargo:ok",
+        "cc:ok"
+      ],
+      "verify": [
+        "verify-rustc=passed",
+        "verify-cargo=passed",
+        "verify-rustup=passed",
+        "verify-linker=passed"
+      ],
+      "programProof": {
+        "passed": true,
+        "marker": "RUST_OK",
+        "output": "RUST_OK"
+      }
+    },
+    {
+      "profileId": "docker-in-sandbox",
+      "status": "passed",
+      "setupMs": 335348,
+      "verifyMs": 2751,
+      "expectedTools": [
+        "docker:ok"
+      ],
+      "verify": [
+        "verify-docker-cli=passed",
+        "verify-docker-daemon=passed",
+        "verify-docker-run=passed"
+      ],
+      "programProof": {
+        "passed": true,
+        "marker": "DOCKER_OK",
+        "output": "DOCKER_OK"
+      }
+    }
+  ]
+}

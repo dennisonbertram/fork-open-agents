@@ -1,0 +1,18 @@
+{
+  "name": "poc-5a-memory",
+  "private": true,
+  "type": "module",
+  "description": "POC 5a: cross-session / project memory. Retrieval-backed memory of decisions, conventions, and fixes, scoped per-user + per-repo, with embeddings + cosine retrieval and dedup. Self-contained; does not touch repo root deps.",
+  "scripts": {
+    "eval": "bun run eval.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "0.44.6"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "bun-types": "^1.3.14",
+    "typescript": "5.7.3"
+  }
+}

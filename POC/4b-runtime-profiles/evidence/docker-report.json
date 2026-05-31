@@ -1,0 +1,85 @@
+{
+  "profileId": "docker-in-sandbox",
+  "profileVersion": "2026-05-31.1",
+  "profileDisplayName": "Docker in sandbox (dind)",
+  "status": "passed",
+  "setupResults": [
+    {
+      "commandId": "install-docker",
+      "label": "Install Docker Engine and CLI",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 335348,
+      "summary": "+ sh -c apt-get -qq update >/dev/null\n+ sh -c DEBIAN_FRONTEND=noninteractive apt-get -y -qq install ca-certificates curl >/dev/null\n+ sh -c install -m 0755 -d /etc/apt/keyrings\n+ sh -c curl -fsSL \"https://download.docker.com/linux/debian/gpg\" -o /etc/apt/keyrings/docker.asc\n+ sh -c chmod a+r /etc/apt/keyrings/docker.asc\n+ sh -c echo \"deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable\" > /etc/apt/sources.list.d/docker.list\n+ sh -c apt-get -qq update >/dev/null\n+ sh -c DEBIAN_FRONTEND=noninteractive apt-get -y -qq install docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-ce-rootless-extras docker-buildx-plugin docker-model-plugin >/dev/null\ndebconf: delaying package configuration, since apt-utils is not installed\nUsing systemd to manage Docker service\n+ sh -c systemctl enable --now docker.service 2>/dev/null\nWARNING: unable to enable the docker service\n# Executing docker install script, commit: 2687d91ddeb3bd6aeae37a90947761efdee87030\n\n================================================================================\n\nTo run Docker as a non-privileged user, consider setting up the\nDocker daemon in rootless mode for your user:\n\n    dockerd-rootless-setuptool.sh install\n\nVisit https://docs.docker.com/go/rootless/ to learn about rootless mode.\n\n\nTo run the Docker daemon as a fully privileged service, but granting non-root\nusers access, refer to https://docs.docker.com/go/daemon-access/\n\nWARNING: Access to the remote API on a privileged Docker daemon is equivalent\n         to root access on the host. Refer to the 'Docker daemon attack surface'\n         documentation for details: https://docs.docker.com/go/attack-surface/\n\n================================================================================\n\n/root/.open-agents/bin/docker\nDocker version 29.5.2, build 79eb04c",
+      "startedAt": "2026-05-31T15:32:53.857Z",
+      "finishedAt": "2026-05-31T15:38:29.205Z"
+    }
+  ],
+  "verificationResults": [
+    {
+      "commandId": "verify-docker-cli",
+      "label": "Verify docker CLI",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 38,
+      "summary": "/root/.open-agents/bin/docker\nDocker version 29.5.2, build 79eb04c",
+      "startedAt": "2026-05-31T15:38:29.205Z",
+      "finishedAt": "2026-05-31T15:38:29.243Z"
+    },
+    {
+      "commandId": "verify-docker-daemon",
+      "label": "Verify the Docker daemon is reachable",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 54,
+      "summary": "Client: Docker Engine - Community\n Version:    29.5.2\n Context:    default\n Debug Mode: false\n Plugins:\n  buildx: Docker Buildx (Docker Inc.)\n    Version:  v0.34.1\n    Path:     /usr/libexec/docker/cli-plugins/docker-buildx\n  compose: Docker Compose (Docker Inc.)\n    Version:  v5.1.4\n    Path:     /usr/libexec/docker/cli-plugins/docker-compose\n  model: Docker Model Runner (Docker Inc.)\n    Version:  v1.2.1\n    Path:     /usr/libexec/docker/cli-plugins/docker-model\n\nServer:\n Containers: 0\n  Running: 0\n  Paused: 0\n  Stopped: 0\n Images: 0\n Server Version: 29.5.2\n Storage Driver: vfs\n Logging Driver: json-file\n Cgroup Driver: cgroupfs\n Cgroup Version: 2\n Plugins:\n  Volume: local\n  Network: bridge host ipvlan macvlan null overlay\n  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog\n CDI spec directories:\n  /etc/cdi\n  /var/run/cdi\n Swarm: inactive\n Runtimes: io.containerd.runc.v2 runc\n Default Runtime: runc\n Init Binary: docker-init\n containerd version: 193637f7ee8ae5f5aa5248f49e7baa3e6164966e\n runc version: v1.3.5-0-g488fc13e\n init version: de40ad0\n Security Options:\n  seccomp\n   Profile: builtin\n  cgroupns\n Kernel Version: 7.0.5-orbstack-00330-ge3df4e19b0a0-dirty\n Operating System: Debian GNU/Linux 12 (bookworm)\n OSType: linux\n Architecture: aarch64\n CPUs: 16\n Total Memory: 15.65GiB\n Name: bce8590749fa\n ID: 8f7c979f-1672-4f08-a387-c0780b688270\n Docker Root Dir: /var/lib/docker\n Debug Mode: false\n Experimental: false\n Insecure Registries:\n  ::1/128\n  127.0.0.0/8\n Live Restore Enabled: false\n Firewall Backend: iptables\n  EnableUserlandProxy: true\n  UserlandProxyPath: /usr/bin/docker-proxy",
+      "startedAt": "2026-05-31T15:38:29.243Z",
+      "finishedAt": "2026-05-31T15:38:29.297Z"
+    },
+    {
+      "commandId": "verify-docker-run",
+      "label": "Verify a container can run",
+      "status": "passed",
+      "required": false,
+      "exitCode": 0,
+      "durationMs": 2659,
+      "summary": "Unable to find image 'hello-world:latest' locally\nlatest: Pulling from library/hello-world\n58dee6a49ef1: Pulling fs layer\n58dee6a49ef1: Verifying Checksum\n58dee6a49ef1: Download complete\n58dee6a49ef1: Pull complete\nDigest: sha256:0e760fdfbc48ba8041e7c6db999bb40bfca508b4be580ac75d32c4e29d202ce1\nStatus: Downloaded newer image for hello-world:latest\nHello from Docker!\nThis message shows that your installation appears to be working correctly.\n\nTo generate this message, Docker took the following steps:\n 1. The Docker client contacted the Docker daemon.\n 2. The Docker daemon pulled the \"hello-world\" image from the Docker Hub.\n    (arm64v8)\n 3. The Docker daemon created a new container from that image which runs the\n    executable that produces the output you are currently reading.\n 4. The Docker daemon streamed that output to the Docker client, which sent it\n    to your terminal.\n\nTo try something more ambitious, you can run an Ubuntu container with:\n $ docker run -it ubuntu bash\n\nShare images, automate workflows, and more with a free Docker ID:\n https://hub.docker.com/\n\nFor more examples and ideas, visit:\n https://docs.docker.com/get-started/",
+      "startedAt": "2026-05-31T15:38:29.297Z",
+      "finishedAt": "2026-05-31T15:38:31.956Z"
+    }
+  ],
+  "expectedTools": [
+    {
+      "tool": "docker",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/docker"
+    }
+  ],
+  "optionalTools": [
+    {
+      "tool": "dockerd",
+      "resolved": true,
+      "path": "/usr/bin/dockerd"
+    },
+    {
+      "tool": "containerd",
+      "resolved": true,
+      "path": "/usr/bin/containerd"
+    }
+  ],
+  "setupDurationMs": 335348,
+  "verificationDurationMs": 2751,
+  "totalDurationMs": 338099,
+  "summary": "PASSED — setup 1/1 ok, verify 3/3 ok, tools 1/1 present",
+  "failureMessage": null,
+  "programProof": {
+    "ran": true,
+    "passed": true,
+    "marker": "DOCKER_OK",
+    "exitCode": 0,
+    "output": "DOCKER_OK"
+  }
+}

@@ -1,0 +1,470 @@
+{
+  "github-issues-opened": {
+    "normalized": {
+      "source": "github",
+      "type": "github.issues.opened",
+      "externalId": "issue:2147483001:opened",
+      "repo": {
+        "owner": "acme",
+        "name": "widget"
+      },
+      "actor": "octocat",
+      "subject": "Login button does nothing on Safari",
+      "body": "Steps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+      "metadata": {
+        "action": "opened",
+        "issueNumber": 412,
+        "labels": "bug,needs-triage",
+        "url": "https://github.com/acme/widget/issues/412"
+      }
+    },
+    "dispatch": {
+      "matched": 1,
+      "dispatched": 1,
+      "duplicates": 0,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "github-issue-triage",
+            "agentId": "issue-triage-agent",
+            "repo": {
+              "owner": "acme",
+              "name": "widget"
+            },
+            "prompt": "Triage new issue #412 in acme/widget: \"Login button does nothing on Safari\" opened by octocat.\n\nSteps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+            "idempotencyKey": "github-issue-triage:github:github.issues.opened:issue:2147483001:opened",
+            "event": {
+              "source": "github",
+              "type": "github.issues.opened",
+              "externalId": "issue:2147483001:opened",
+              "repo": {
+                "owner": "acme",
+                "name": "widget"
+              },
+              "actor": "octocat",
+              "subject": "Login button does nothing on Safari",
+              "body": "Steps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+              "metadata": {
+                "action": "opened",
+                "issueNumber": 412,
+                "labels": "bug,needs-triage",
+                "url": "https://github.com/acme/widget/issues/412"
+              }
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_1"
+        }
+      ]
+    }
+  },
+  "agentmail-message-received": {
+    "normalized": {
+      "source": "agentmail",
+      "type": "email.message.received",
+      "externalId": "agentmail:evt_7f3a9c12:msg_001abc",
+      "actor": "jane@example.com",
+      "subject": "Bug: cannot reset my password",
+      "body": "Hi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?",
+      "metadata": {
+        "inboxId": "inbox_support01",
+        "threadId": "thd_55ab",
+        "messageId": "msg_001abc",
+        "from": "jane@example.com",
+        "to": "support@acme.agentmail.to",
+        "labels": "received"
+      },
+      "occurredAt": "2026-05-31T10:00:00Z"
+    },
+    "dispatch": {
+      "matched": 2,
+      "dispatched": 2,
+      "duplicates": 0,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "email-support-triage",
+            "agentId": "email-support-agent",
+            "prompt": "New email from jane@example.com to support@acme.agentmail.to, subject \"Bug: cannot reset my password\".\n\nHi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?\n\nReply via thread thd_55ab.",
+            "idempotencyKey": "email-support-triage:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc",
+            "event": {
+              "source": "agentmail",
+              "type": "email.message.received",
+              "externalId": "agentmail:evt_7f3a9c12:msg_001abc",
+              "actor": "jane@example.com",
+              "subject": "Bug: cannot reset my password",
+              "body": "Hi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?",
+              "metadata": {
+                "inboxId": "inbox_support01",
+                "threadId": "thd_55ab",
+                "messageId": "msg_001abc",
+                "from": "jane@example.com",
+                "to": "support@acme.agentmail.to",
+                "labels": "received"
+              },
+              "occurredAt": "2026-05-31T10:00:00Z"
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_2"
+        },
+        {
+          "intent": {
+            "ruleId": "email-bug-report",
+            "agentId": "bug-intake-agent",
+            "prompt": "Possible bug report from jane@example.com: \"Bug: cannot reset my password\". Open a tracking issue.\n\nHi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?",
+            "idempotencyKey": "email-bug-report:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc",
+            "event": {
+              "source": "agentmail",
+              "type": "email.message.received",
+              "externalId": "agentmail:evt_7f3a9c12:msg_001abc",
+              "actor": "jane@example.com",
+              "subject": "Bug: cannot reset my password",
+              "body": "Hi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?",
+              "metadata": {
+                "inboxId": "inbox_support01",
+                "threadId": "thd_55ab",
+                "messageId": "msg_001abc",
+                "from": "jane@example.com",
+                "to": "support@acme.agentmail.to",
+                "labels": "received"
+              },
+              "occurredAt": "2026-05-31T10:00:00Z"
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_3"
+        }
+      ]
+    }
+  },
+  "vercel-deployment-error": {
+    "normalized": {
+      "source": "vercel-deploy",
+      "type": "deploy.failed",
+      "externalId": "vercel:uev_d3adb33f:dpl_8xKq2",
+      "repo": {
+        "owner": "acme",
+        "name": "widget"
+      },
+      "actor": "vercel",
+      "subject": "Deployment failed: widget",
+      "body": "Failed deployment URL: widget-git-fix-safari-login-acme.vercel.app",
+      "metadata": {
+        "deploymentId": "dpl_8xKq2",
+        "deploymentUrl": "widget-git-fix-safari-login-acme.vercel.app",
+        "projectName": "widget",
+        "target": "production",
+        "inspectorUrl": "https://vercel.com/acme/widget/dpl_8xKq2",
+        "branch": "fix/safari-login",
+        "sha": "abc123def456"
+      },
+      "occurredAt": "2025-05-31T10:00:00.000Z"
+    },
+    "dispatch": {
+      "matched": 1,
+      "dispatched": 1,
+      "duplicates": 0,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "deploy-failure-investigate",
+            "agentId": "deploy-doctor-agent",
+            "repo": {
+              "owner": "acme",
+              "name": "widget"
+            },
+            "prompt": "Deployment dpl_8xKq2 for project widget (target=production, branch=fix/safari-login) failed. Inspect https://vercel.com/acme/widget/dpl_8xKq2 and propose a fix.",
+            "idempotencyKey": "deploy-failure-investigate:vercel-deploy:deploy.failed:vercel:uev_d3adb33f:dpl_8xKq2",
+            "event": {
+              "source": "vercel-deploy",
+              "type": "deploy.failed",
+              "externalId": "vercel:uev_d3adb33f:dpl_8xKq2",
+              "repo": {
+                "owner": "acme",
+                "name": "widget"
+              },
+              "actor": "vercel",
+              "subject": "Deployment failed: widget",
+              "body": "Failed deployment URL: widget-git-fix-safari-login-acme.vercel.app",
+              "metadata": {
+                "deploymentId": "dpl_8xKq2",
+                "deploymentUrl": "widget-git-fix-safari-login-acme.vercel.app",
+                "projectName": "widget",
+                "target": "production",
+                "inspectorUrl": "https://vercel.com/acme/widget/dpl_8xKq2",
+                "branch": "fix/safari-login",
+                "sha": "abc123def456"
+              },
+              "occurredAt": "2025-05-31T10:00:00.000Z"
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_4"
+        }
+      ]
+    }
+  },
+  "sentry-issue-alert": {
+    "normalized": {
+      "source": "sentry",
+      "type": "sentry.issue.alert",
+      "externalId": "sentry:f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+      "actor": "sentry",
+      "subject": "ReferenceError: heck is not defined",
+      "body": "Culprit: app/routes/login.tsx in handleSubmit",
+      "metadata": {
+        "eventId": "f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+        "level": "error",
+        "webUrl": "https://acme.sentry.io/issues/55512/events/f9e2d7c4a1b3/",
+        "project": 55512,
+        "environment": "production",
+        "release": "widget@1.4.2",
+        "triggeredRule": "High error volume on production",
+        "action": "triggered"
+      }
+    },
+    "dispatch": {
+      "matched": 1,
+      "dispatched": 1,
+      "duplicates": 0,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "sentry-alert-investigate",
+            "agentId": "error-triage-agent",
+            "prompt": "Sentry error alert: \"ReferenceError: heck is not defined\" (rule: High error volume on production, env: production). Investigate https://acme.sentry.io/issues/55512/events/f9e2d7c4a1b3/.",
+            "idempotencyKey": "sentry-alert-investigate:sentry:sentry.issue.alert:sentry:f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+            "event": {
+              "source": "sentry",
+              "type": "sentry.issue.alert",
+              "externalId": "sentry:f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+              "actor": "sentry",
+              "subject": "ReferenceError: heck is not defined",
+              "body": "Culprit: app/routes/login.tsx in handleSubmit",
+              "metadata": {
+                "eventId": "f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+                "level": "error",
+                "webUrl": "https://acme.sentry.io/issues/55512/events/f9e2d7c4a1b3/",
+                "project": 55512,
+                "environment": "production",
+                "release": "widget@1.4.2",
+                "triggeredRule": "High error volume on production",
+                "action": "triggered"
+              }
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_5"
+        }
+      ]
+    }
+  },
+  "github-pr-closed-regression": {
+    "normalized": {
+      "source": "github",
+      "type": "github.pull_request.closed",
+      "externalId": "pull_request:9001:closed:abc123def456",
+      "repo": {
+        "owner": "acme",
+        "name": "widget"
+      },
+      "actor": "octocat",
+      "subject": "Fix Safari login handler",
+      "body": "Closes #412.",
+      "metadata": {
+        "action": "closed",
+        "prNumber": 128,
+        "prStatus": "merged",
+        "merged": true,
+        "branch": "main",
+        "headRef": "fix/safari-login",
+        "url": "https://github.com/acme/widget/pull/128"
+      }
+    },
+    "dispatch": {
+      "matched": 1,
+      "dispatched": 1,
+      "duplicates": 0,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "github-pr-close-archive",
+            "agentId": "pr-lifecycle-agent",
+            "repo": {
+              "owner": "acme",
+              "name": "widget"
+            },
+            "prompt": "PR #128 in acme/widget is now merged (action=closed). Reconcile and archive linked sessions.",
+            "idempotencyKey": "github-pr-close-archive:github:github.pull_request.closed:pull_request:9001:closed:abc123def456",
+            "event": {
+              "source": "github",
+              "type": "github.pull_request.closed",
+              "externalId": "pull_request:9001:closed:abc123def456",
+              "repo": {
+                "owner": "acme",
+                "name": "widget"
+              },
+              "actor": "octocat",
+              "subject": "Fix Safari login handler",
+              "body": "Closes #412.",
+              "metadata": {
+                "action": "closed",
+                "prNumber": 128,
+                "prStatus": "merged",
+                "merged": true,
+                "branch": "main",
+                "headRef": "fix/safari-login",
+                "url": "https://github.com/acme/widget/pull/128"
+              }
+            }
+          },
+          "dispatched": true,
+          "duplicate": false,
+          "runId": "run_6"
+        }
+      ]
+    }
+  },
+  "negative-bad-signature": {
+    "status": 401,
+    "body": {
+      "error": "invalid signature: signature mismatch"
+    },
+    "dispatchesUnchanged": true
+  },
+  "negative-no-rule": {
+    "normalized": {
+      "source": "github",
+      "type": "github.issues.closed",
+      "externalId": "issue:999111:closed",
+      "repo": {
+        "owner": "acme",
+        "name": "widget"
+      },
+      "actor": "octocat",
+      "subject": "Login button does nothing on Safari",
+      "body": "Steps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+      "metadata": {
+        "action": "closed",
+        "issueNumber": 412,
+        "labels": "bug,needs-triage",
+        "url": "https://github.com/acme/widget/issues/412"
+      }
+    },
+    "dispatch": {
+      "matched": 0,
+      "dispatched": 0,
+      "duplicates": 0,
+      "decisions": []
+    }
+  },
+  "negative-redelivery-dedup": {
+    "dispatch": {
+      "matched": 1,
+      "dispatched": 0,
+      "duplicates": 1,
+      "decisions": [
+        {
+          "intent": {
+            "ruleId": "github-issue-triage",
+            "agentId": "issue-triage-agent",
+            "repo": {
+              "owner": "acme",
+              "name": "widget"
+            },
+            "prompt": "Triage new issue #412 in acme/widget: \"Login button does nothing on Safari\" opened by octocat.\n\nSteps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+            "idempotencyKey": "github-issue-triage:github:github.issues.opened:issue:2147483001:opened",
+            "event": {
+              "source": "github",
+              "type": "github.issues.opened",
+              "externalId": "issue:2147483001:opened",
+              "repo": {
+                "owner": "acme",
+                "name": "widget"
+              },
+              "actor": "octocat",
+              "subject": "Login button does nothing on Safari",
+              "body": "Steps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires.",
+              "metadata": {
+                "action": "opened",
+                "issueNumber": 412,
+                "labels": "bug,needs-triage",
+                "url": "https://github.com/acme/widget/issues/412"
+              }
+            }
+          },
+          "dispatched": false,
+          "duplicate": true
+        }
+      ]
+    },
+    "runsBefore": 6,
+    "runsAfter": 6
+  },
+  "_summary": {
+    "totalRunsDispatched": 6,
+    "runs": [
+      {
+        "runId": "run_1",
+        "ruleId": "github-issue-triage",
+        "agentId": "issue-triage-agent",
+        "repo": {
+          "owner": "acme",
+          "name": "widget"
+        },
+        "idempotencyKey": "github-issue-triage:github:github.issues.opened:issue:2147483001:opened",
+        "prompt": "Triage new issue #412 in acme/widget: \"Login button does nothing on Safari\" opened by octocat.\n\nSteps to reproduce:\n1. Open the app in Safari 17\n2. Click Login\n3. Nothing happens, no network request fires."
+      },
+      {
+        "runId": "run_2",
+        "ruleId": "email-support-triage",
+        "agentId": "email-support-agent",
+        "idempotencyKey": "email-support-triage:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc",
+        "prompt": "New email from jane@example.com to support@acme.agentmail.to, subject \"Bug: cannot reset my password\".\n\nHi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?\n\nReply via thread thd_55ab."
+      },
+      {
+        "runId": "run_3",
+        "ruleId": "email-bug-report",
+        "agentId": "bug-intake-agent",
+        "idempotencyKey": "email-bug-report:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc",
+        "prompt": "Possible bug report from jane@example.com: \"Bug: cannot reset my password\". Open a tracking issue.\n\nHi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?"
+      },
+      {
+        "runId": "run_4",
+        "ruleId": "deploy-failure-investigate",
+        "agentId": "deploy-doctor-agent",
+        "repo": {
+          "owner": "acme",
+          "name": "widget"
+        },
+        "idempotencyKey": "deploy-failure-investigate:vercel-deploy:deploy.failed:vercel:uev_d3adb33f:dpl_8xKq2",
+        "prompt": "Deployment dpl_8xKq2 for project widget (target=production, branch=fix/safari-login) failed. Inspect https://vercel.com/acme/widget/dpl_8xKq2 and propose a fix."
+      },
+      {
+        "runId": "run_5",
+        "ruleId": "sentry-alert-investigate",
+        "agentId": "error-triage-agent",
+        "idempotencyKey": "sentry-alert-investigate:sentry:sentry.issue.alert:sentry:f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+        "prompt": "Sentry error alert: \"ReferenceError: heck is not defined\" (rule: High error volume on production, env: production). Investigate https://acme.sentry.io/issues/55512/events/f9e2d7c4a1b3/."
+      },
+      {
+        "runId": "run_6",
+        "ruleId": "github-pr-close-archive",
+        "agentId": "pr-lifecycle-agent",
+        "repo": {
+          "owner": "acme",
+          "name": "widget"
+        },
+        "idempotencyKey": "github-pr-close-archive:github:github.pull_request.closed:pull_request:9001:closed:abc123def456",
+        "prompt": "PR #128 in acme/widget is now merged (action=closed). Reconcile and archive linked sessions."
+      }
+    ],
+    "assertionFailures": 0
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "capturedAt": "2026-05-31T14:46:49.986Z",
+  "controlledNow": "2026-05-31T09:05:00.000Z",
+  "scheduled_jobs": [
+    {
+      "id": "j-5min",
+      "ownerUserId": "user-1",
+      "repoOwner": "acme",
+      "repoName": "web",
+      "branch": "main",
+      "cronExpression": "*/5 * * * *",
+      "prompt": "Audit dependencies for CVEs and summarize.",
+      "enabled": true,
+      "lastRunAt": "2026-05-31T09:05:00.000Z",
+      "nextRunAt": "2026-05-31T09:10:00.000Z",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "j-9am",
+      "ownerUserId": "user-1",
+      "repoOwner": "acme",
+      "repoName": "reports",
+      "branch": null,
+      "cronExpression": "0 9 * * *",
+      "prompt": "Generate the daily standup report.",
+      "enabled": true,
+      "lastRunAt": "2026-05-31T09:05:00.000Z",
+      "nextRunAt": "2026-06-01T09:00:00.000Z",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "j-pr",
+      "ownerUserId": "user-2",
+      "repoOwner": "acme",
+      "repoName": "ci-bot",
+      "branch": "main",
+      "cronExpression": "*/5 * * * *",
+      "prompt": "Open a PR bumping the lockfile.",
+      "enabled": true,
+      "lastRunAt": "2026-05-31T09:05:00.000Z",
+      "nextRunAt": "2026-05-31T09:10:00.000Z",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "j-disabled",
+      "ownerUserId": "user-1",
+      "repoOwner": "acme",
+      "repoName": "infra",
+      "branch": "main",
+      "cronExpression": "*/5 * * * *",
+      "prompt": "Should never run.",
+      "enabled": false,
+      "lastRunAt": null,
+      "nextRunAt": null,
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    }
+  ],
+  "scheduled_job_runs": [
+    {
+      "id": "run_mptw812y_1",
+      "jobId": "j-5min",
+      "status": "succeeded",
+      "scheduledFor": "2026-05-31T09:05:00.000Z",
+      "startedAt": "2026-05-31T14:46:49.978Z",
+      "finishedAt": "2026-05-31T14:46:49.978Z",
+      "resultChatId": "chat_mptw812y_3",
+      "prUrl": null,
+      "error": null
+    },
+    {
+      "id": "run_mptw8131_4",
+      "jobId": "j-pr",
+      "status": "succeeded",
+      "scheduledFor": "2026-05-31T09:05:00.000Z",
+      "startedAt": "2026-05-31T14:46:49.981Z",
+      "finishedAt": "2026-05-31T14:46:49.981Z",
+      "resultChatId": "chat_mptw8131_6",
+      "prUrl": "https://github.com/acme/ci-bot/pull/42",
+      "error": null
+    },
+    {
+      "id": "run_mptw8134_7",
+      "jobId": "j-9am",
+      "status": "succeeded",
+      "scheduledFor": "2026-05-31T09:00:00.000Z",
+      "startedAt": "2026-05-31T14:46:49.984Z",
+      "finishedAt": "2026-05-31T14:46:49.985Z",
+      "resultChatId": "chat_mptw8134_9",
+      "prUrl": null,
+      "error": null
+    }
+  ],
+  "chats": [
+    {
+      "id": "chat_mptw812y_3",
+      "sessionId": "ses_mptw812y_2",
+      "title": "Scheduled run",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "chat_mptw8131_6",
+      "sessionId": "ses_mptw8131_5",
+      "title": "Scheduled run",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "chat_mptw8134_9",
+      "sessionId": "ses_mptw8134_8",
+      "title": "Scheduled run",
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    }
+  ],
+  "chat_messages": [
+    {
+      "id": "msg_mptw812y_1",
+      "chatId": "chat_mptw812y_3",
+      "role": "assistant",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Standing agent ran on acme/web@main for prompt: \"Audit dependencies for CVEs and summarize.\". Completed at tick."
+        }
+      ],
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "msg_mptw8131_2",
+      "chatId": "chat_mptw8131_6",
+      "role": "assistant",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Standing agent ran on acme/ci-bot@main for prompt: \"Open a PR bumping the lockfile.\". Completed at tick."
+        }
+      ],
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    },
+    {
+      "id": "msg_mptw8134_3",
+      "chatId": "chat_mptw8134_9",
+      "role": "assistant",
+      "parts": [
+        {
+          "type": "text",
+          "text": "Standing agent ran on acme/reports for prompt: \"Generate the daily standup report.\". Completed at tick."
+        }
+      ],
+      "createdAt": "2026-05-31T14:46:49.000Z"
+    }
+  ]
+}

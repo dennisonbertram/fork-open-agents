@@ -1,0 +1,118 @@
+[
+  {
+    "ts": "2026-05-31T15:02:02.639Z",
+    "diffId": "diff-1",
+    "decision": "diff-confirmed"
+  },
+  {
+    "ts": "2026-05-31T15:02:02.757Z",
+    "diffId": "diff-2",
+    "decision": "diff-rejected-preview",
+    "reason": "error: patch failed: hello.txt:1\nerror: hello.txt: patch does not apply"
+  },
+  {
+    "ts": "2026-05-31T15:02:02.796Z",
+    "diffId": "diff-3",
+    "decision": "diff-rejected-preview",
+    "reason": "path escapes jail in patch: ../../etc/evil"
+  },
+  {
+    "ts": "2026-05-31T15:02:02.797Z",
+    "toolCallId": "call-echo",
+    "decision": "parked-for-approval",
+    "argv": [
+      "echo",
+      "hello-from-local-machine"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.799Z",
+    "toolCallId": "call-echo",
+    "decision": "approved-and-ran",
+    "argv": [
+      "echo",
+      "hello-from-local-machine"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.800Z",
+    "toolCallId": "call-marker",
+    "decision": "parked-for-approval",
+    "argv": [
+      "touch",
+      "did-run.marker"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.802Z",
+    "toolCallId": "call-marker",
+    "decision": "approved-and-ran",
+    "argv": [
+      "touch",
+      "did-run.marker"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.802Z",
+    "toolCallId": "call-passwd",
+    "decision": "blocked-by-policy",
+    "layer": "path-argument-jail",
+    "reason": "argument escapes jail: /etc/passwd (absolute path not allowed: /etc/passwd)",
+    "argv": [
+      "cat",
+      "/etc/passwd"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.802Z",
+    "toolCallId": "call-trav",
+    "decision": "blocked-by-policy",
+    "layer": "path-argument-jail",
+    "reason": "argument escapes jail: ../../etc/passwd (path escapes jail: ../../etc/passwd -> /private/tmp (jail /private/tmp/claude-501/bridge-jail-9hTHUX))",
+    "argv": [
+      "cat",
+      "../../etc/passwd"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.802Z",
+    "toolCallId": "call-rm",
+    "decision": "blocked-by-policy",
+    "layer": "command-denylist",
+    "reason": "command is denied by policy: rm",
+    "argv": [
+      "rm",
+      "-rf",
+      "."
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.802Z",
+    "toolCallId": "call-meta",
+    "decision": "blocked-by-policy",
+    "layer": "shape",
+    "reason": "argv token contains shell metacharacters: \"a; rm -rf b\"",
+    "argv": [
+      "echo",
+      "a; rm -rf b"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.803Z",
+    "toolCallId": "call-deny",
+    "decision": "parked-for-approval",
+    "argv": [
+      "touch",
+      "denied.marker"
+    ]
+  },
+  {
+    "ts": "2026-05-31T15:02:02.803Z",
+    "toolCallId": "call-deny",
+    "decision": "denied-by-operator",
+    "argv": [
+      "touch",
+      "denied.marker"
+    ]
+  }
+]

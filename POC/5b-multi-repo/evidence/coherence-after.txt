@@ -1,0 +1,4 @@
+exit=0
+stdout=coherent: api.fetchUser exported and consumer calls it
+
+stderr=

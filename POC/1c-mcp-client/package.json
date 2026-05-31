@@ -1,0 +1,21 @@
+{
+  "name": "poc-1c-mcp-client",
+  "private": true,
+  "type": "module",
+  "description": "POC 1c: generic MCP client that mounts arbitrary MCP servers per-session and exposes their tools to the agent tool loop.",
+  "scripts": {
+    "eval": "node --experimental-strip-types src/eval.ts",
+    "server": "node --experimental-strip-types src/test-server.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/mcp": "1.0.45",
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "@modelcontextprotocol/server-filesystem": "2026.1.14",
+    "ai": "6.0.193",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "typescript": "^6.0.3"
+  }
+}

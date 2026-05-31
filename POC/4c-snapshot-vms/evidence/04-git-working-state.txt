@@ -1,0 +1,11 @@
+# git status --porcelain BEFORE hibernate:
+M  src/app.ts
+ M tracked.txt
+?? day1-progress.txt
+?? scratch.notes
+
+# git status --porcelain AFTER resume:
+M  src/app.ts
+ M tracked.txt
+?? day1-progress.txt
+?? scratch.notes

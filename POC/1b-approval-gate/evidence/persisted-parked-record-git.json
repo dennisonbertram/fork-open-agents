@@ -1,0 +1,24 @@
+{
+  "appr_call_git_3": {
+    "approvalId": "appr_call_git_3",
+    "toolName": "git",
+    "toolCallId": "call_git",
+    "input": {
+      "args": "push --force origin main"
+    },
+    "category": "git-force-push",
+    "reason": "Force-pushing rewrites remote history.",
+    "part": {
+      "type": "tool-git",
+      "toolCallId": "call_git",
+      "state": "approval-requested",
+      "input": {
+        "args": "push --force origin main"
+      },
+      "approval": {
+        "id": "appr_call_git_3",
+        "reason": "Force-pushing rewrites remote history."
+      }
+    }
+  }
+}

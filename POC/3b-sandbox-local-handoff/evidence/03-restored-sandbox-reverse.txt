@@ -1,0 +1,71 @@
+# 03-restored-sandbox-reverse
+branch: feature
+head:   22a846c114b376ebbe338cc7c6705e132069e247
+
+## git status -uall --porcelain=v2 (sorted)
+1 .D N... 100644 100644 000000 233f5c66952af061a3fbe0370a1c794815722a07 233f5c66952af061a3fbe0370a1c794815722a07 to-delete.txt
+1 .M N... 100644 100644 100644 3d2aa5e9dc416ceba5dbe46f0ac2b904e10f7151 3d2aa5e9dc416ceba5dbe46f0ac2b904e10f7151 logo.bin
+1 .M N... 100755 100755 100755 4163036efa65bd4a469e752267498f01ea36a55c 4163036efa65bd4a469e752267498f01ea36a55c run.sh
+1 A. N... 000000 100644 100644 0000000000000000000000000000000000000000 71af947165225f55f6a2b6bcf11aeaa8d4a2bba3 staged-new.txt
+1 MM N... 100644 100644 100644 7aceaf462567ca0532e2a955ed5ef61b4f59957c 07a58b95aac665bca9318a6d1f3a689afa3b0971 tracked.txt
+? scratch-notes.txt
+
+## git diff --cached (staged)
+diff --git a/staged-new.txt b/staged-new.txt
+new file mode 100644
+index 0000000..71af947
+--- /dev/null
++++ b/staged-new.txt
+@@ -0,0 +1 @@
++freshly staged new file
+diff --git a/tracked.txt b/tracked.txt
+index 7aceaf4..07a58b9 100644
+--- a/tracked.txt
++++ b/tracked.txt
+@@ -1 +1 @@
+-original tracked line
++STAGED edit
+
+
+## git diff (unstaged)
+diff --git a/logo.bin b/logo.bin
+index 3d2aa5e..b6da9ba 100644
+Binary files a/logo.bin and b/logo.bin differ
+diff --git a/run.sh b/run.sh
+index 4163036..5fa4f67 100755
+--- a/run.sh
++++ b/run.sh
+@@ -1,2 +1,3 @@
+ #!/bin/sh
+ echo hi
++echo more
+diff --git a/to-delete.txt b/to-delete.txt
+deleted file mode 100644
+index 233f5c6..0000000
+--- a/to-delete.txt
++++ /dev/null
+@@ -1 +0,0 @@
+-this file will be deleted
+diff --git a/tracked.txt b/tracked.txt
+index 07a58b9..d5b06ef 100644
+--- a/tracked.txt
++++ b/tracked.txt
+@@ -1 +1,2 @@
+ STAGED edit
++then UNSTAGED edit
+
+
+## file manifest (mode sha256 path, sorted)
+644 04a1b7cb23bd9160daa17939708af212d278071e6d64d86ce764afcd16d31732 feature-b.txt
+644 11425dbbba9b6f94762b5ef5e92730aae88b90453c554ad06762355272c7f634 tracked.txt
+644 191647fe7e0588f9c90c3a70ff178b7188c2d5cbfbbae76f7ddc1af2d332ab71 README.md
+644 7c19ccf506746f1309bda370f5a978b00e786649702409509182ede6161c300c staged-new.txt
+644 d00227ff1f06e0e01c7414dc81c87c2a9493bd3f7e561e91bbc004a1bc6a3ab6 logo.bin
+644 de5c742c5177c3b517cf0e53796b68b37eb52fc0a8249ebe7c410f1627bfd932 feature-a.txt
+644 fe470f75157491bfdacb8ea9b05f0c6e5224b5f6a168f1d21cd81ca4d3a5c15c scratch-notes.txt
+755 60b79fe727262adcc7a5337cdb8d26756f3344bce2247963d3a6a58bfc77c370 run.sh
+
+## commit graph (sha parents)
+22a846c114b376ebbe338cc7c6705e132069e247 4a27891b4a3ff7df791e7bcf532f3483651badbd
+4a27891b4a3ff7df791e7bcf532f3483651badbd 5c1fe5dd098eb2984d3c40e63ad2b779aca69a74
+5c1fe5dd098eb2984d3c40e63ad2b779aca69a74

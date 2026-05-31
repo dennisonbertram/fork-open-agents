@@ -1,0 +1,2 @@
+[img] /home/sandbox/poc/evidence/desktop.png: 1280x800, 4794 bytes, distinct_colors=173
+[img] PASS: non-blank framebuffer with 173+ distinct colors

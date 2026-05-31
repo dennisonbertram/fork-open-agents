@@ -1,0 +1,64 @@
+===================================================================
+POC 4a virtual-desktop eval — 2026-05-31T15:52:40Z
+===================================================================
+
+### A. start-desktop.sh
+[start-desktop] DISPLAY=:99 geometry=1280x800x24 vnc=5900 novnc=6080
+[start-desktop] starting Xvfb
+[start-desktop] starting window manager: metacity
+[start-desktop] starting x0vncserver on 127.0.0.1:5900
+[start-desktop] starting websockify (websockify) on 0.0.0.0:6080 -> 127.0.0.1:5900
+[start-desktop] serving noVNC client from /usr/share/novnc
+[start-desktop] desktop stack is up
+[start-desktop]   noVNC viewer: http://<sandbox-domain-for-6080>/vnc.html
+[start-desktop]   status file:  /tmp/open-agents/desktop/status.json
+{
+  "kind": "desktop",
+  "status": "running",
+  "display": ":99",
+  "geometry": "1280x800x24",
+  "windowManager": "metacity",
+  "vncServer": "x0vncserver",
+  "vncPort": 5900,
+  "novncPort": 6080,
+  "novncRoot": "/usr/share/novnc",
+  "healthPath": "/vnc.html",
+  "pids": {
+    "xvfb": "12",
+    "windowManager": "19",
+    "x0vncserver": "30",
+    "websockify": "42"
+  },
+  "logDir": "/tmp/open-agents/desktop/logs"
+}
+start-desktop.sh exit=0
+
+### B. launch xterm + capture framebuffer
+xterm pid=59
+screenshot captured via ImageMagick import
+[img] /home/sandbox/poc/evidence/desktop.png: 1280x800, 4794 bytes, distinct_colors=173
+[img] PASS: non-blank framebuffer with 173+ distinct colors
+
+### C. noVNC WebSocket RFB handshake
+[ws] connecting ws://127.0.0.1:6080/websockify
+[ws] handshake OK (101 Switching Protocols), accept verified
+[rfb] ProtocolVersion banner: 'RFB 003.008'
+[rfb] PASS: live VNC bridge confirmed (browser WS -> websockify -> VNC server -> Xvfb)
+noVNC vnc.html served over HTTP: OK
+
+### D. profile verificationCommands
+## verify-xserver
+PASS: X server responds on :99
+## verify-window-manager
+PASS: a window manager owns the root window
+## verify-vncserver
+PASS: x0vncserver RFB port 5900 open
+## verify-novnc-websocket
+PASS: noVNC websocket port 6080 open
+
+### timings
+SETUP_SECONDS=0 (native pkg install; see AL2023 image for emulated timing)
+
+===================================================================
+RESULT: PASS — live virtual desktop proven end-to-end
+===================================================================

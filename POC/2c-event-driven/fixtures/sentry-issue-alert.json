@@ -1,0 +1,19 @@
+{
+  "action": "triggered",
+  "actor": { "id": "1", "name": "Sentry", "type": "application" },
+  "installation": { "uuid": "a1b2c3d4-0000-0000-0000-000000000000" },
+  "data": {
+    "event": {
+      "event_id": "f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d",
+      "title": "ReferenceError: heck is not defined",
+      "web_url": "https://acme.sentry.io/issues/55512/events/f9e2d7c4a1b3/",
+      "url": "https://sentry.io/api/0/projects/acme/widget/events/f9e2d7c4a1b3/",
+      "level": "error",
+      "culprit": "app/routes/login.tsx in handleSubmit",
+      "project": 55512,
+      "environment": "production",
+      "release": "widget@1.4.2"
+    },
+    "triggered_rule": "High error volume on production"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "sessionId": "sess_poc5b",
+  "changeSetId": "cs_poc5b_rename_user",
+  "prs": [
+    {
+      "repoOwner": "acme",
+      "repoName": "api",
+      "role": "primary",
+      "head": "feat/rename-get-user",
+      "base": "main",
+      "title": "Rename getUserV1 to fetchUser",
+      "prNumber": null,
+      "url": null,
+      "commitSha": "9f4aea3925c0b725fe818bc0498599d9471bd15a"
+    },
+    {
+      "repoOwner": "acme",
+      "repoName": "consumer",
+      "role": "secondary",
+      "head": "feat/adopt-fetch-user",
+      "base": "main",
+      "title": "Adopt api.fetchUser",
+      "prNumber": null,
+      "url": null,
+      "commitSha": "5a9cd413ed8a203ca642d003217b5ca90925ee71"
+    }
+  ],
+  "crossReferences": {
+    "acme/api": "Part of coordinated change set `cs_poc5b_rename_user`.\n\nThis PR must merge together with:\n- secondary repo `acme/consumer` -> branch `feat/adopt-fetch-user`",
+    "acme/consumer": "Part of coordinated change set `cs_poc5b_rename_user`.\n\nThis PR must merge together with:\n- primary repo `acme/api` -> branch `feat/rename-get-user`"
+  }
+}

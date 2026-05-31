@@ -1,0 +1,88 @@
+==============================================================================
+POC 5a — cross-session / project memory eval
+embedder: local-topic+hashing-v2-265d  (offline, deterministic)
+run at:   2026-05-31T16:00:42.427Z
+==============================================================================
+
+Seeded 9 memories total:
+  user_alice / alice-org/checkout-service: 6
+  user_bob / bob-org/marketing-site: 3
+
+------------------------------------------------------------------------------
+RELEVANCE — query -> ranked results, assert expected top result
+------------------------------------------------------------------------------
+
+  QUERY: "how does our auth work?"  (top 3, scope=user_alice/checkout-service)
+    #1  score=0.7559  [decision]  We decided to use Better Auth for authentication, not NextAuth. Migration off NextAuth was completed in the auth refactor.
+    #2  score=0.1881  [fix]  Fixed a null pointer in session hydration: the TTL was read before the session cache was populated, crashing on cold start.
+    #3  score=0.0566  [convention]  The rate limiter returns HTTP 429 with a Retry-After header indicating seconds until the next allowed request.
+  PASS  top result for "how does our auth work?" contains "Better Auth"
+  PASS  unrelated "2-space indentation" absent from top-3 for "how does our auth work?"
+
+  QUERY: "why am I getting rate limited?"  (top 3, scope=user_alice/checkout-service)
+    #1  score=0.8561  [convention]  The rate limiter returns HTTP 429 with a Retry-After header indicating seconds until the next allowed request.
+    #2  score=0.0281  [decision]  We decided to use Better Auth for authentication, not NextAuth. Migration off NextAuth was completed in the auth refactor.
+    #3  score=0.0257  [convention]  Use 2-space indentation and double quotes. Formatting is enforced by the linter on commit.
+  PASS  top result for "why am I getting rate limited?" contains "429"
+  PASS  unrelated "Stripe" absent from top-3 for "why am I getting rate limited?"
+  PASS  distractor "Better Auth" scores <=25% of #1 for "why am I getting rate limited?" (ratio=0.0328)
+
+  QUERY: "the app crashes on cold start loading a user session"  (top 3, scope=user_alice/checkout-service)
+    #1  score=0.8848  [fix]  Fixed a null pointer in session hydration: the TTL was read before the session cache was populated, crashing on cold start.
+    #2  score=0.3958  [decision]  We decided to use Better Auth for authentication, not NextAuth. Migration off NextAuth was completed in the auth refactor.
+    #3  score=0.0906  [convention]  The rate limiter returns HTTP 429 with a Retry-After header indicating seconds until the next allowed request.
+  PASS  top result for "the app crashes on cold start loading a user session" contains "null pointer in session hydration"
+  PASS  unrelated "Stripe" absent from top-3 for "the app crashes on cold start loading a user session"
+
+  QUERY: "how are database schema changes applied?"  (top 3, scope=user_alice/checkout-service)
+    #1  score=0.8294  [convention]  Database migrations are generated with Drizzle Kit and run automatically during the build step.
+    #2  score=0.1429  [decision]  We decided to use Better Auth for authentication, not NextAuth. Migration off NextAuth was completed in the auth refactor.
+    #3  score=0.0453  [fact]  Payments are processed through Stripe; webhook signatures are verified with the Stripe-Signature header.
+  PASS  top result for "how are database schema changes applied?" contains "Drizzle"
+  PASS  unrelated "2-space indentation" absent from top-3 for "how are database schema changes applied?"
+  PASS  distractor "Better Auth" scores <=25% of #1 for "how are database schema changes applied?" (ratio=0.1723)
+
+------------------------------------------------------------------------------
+SCOPING — strict per-user + per-repo isolation (no cross-tenant leak)
+------------------------------------------------------------------------------
+
+  QUERY as user_alice/checkout-service: "how does our auth work?" (top 10)
+    #1  score=0.7559  [decision]  We decided to use Better Auth for authentication, not NextAuth. Migration off NextAuth was completed in the auth refactor.
+    #2  score=0.1881  [fix]  Fixed a null pointer in session hydration: the TTL was read before the session cache was populated, crashing on cold start.
+    #3  score=0.0566  [convention]  The rate limiter returns HTTP 429 with a Retry-After header indicating seconds until the next allowed request.
+    #4  score=0.0374  [convention]  Use 2-space indentation and double quotes. Formatting is enforced by the linter on commit.
+    #5  score=0.0154  [convention]  Database migrations are generated with Drizzle Kit and run automatically during the build step.
+    #6  score=0.0089  [fact]  Payments are processed through Stripe; webhook signatures are verified with the Stripe-Signature header.
+  PASS  userA/repoX results never include userB/repoY 'Clerk' memory
+  PASS  userA/repoX results never include any userB/repoY memory
+
+  QUERY as user_bob/marketing-site: "how does our auth work?" (top 10)
+    #1  score=0.4665  [decision]  We decided to use Clerk for authentication on the marketing site because of its drop-in React components.
+    #2  score=0.0225  [convention]  Marketing copy lives in Contentful; never hardcode hero headlines in the components.
+    #3  score=0.0131  [fix]  Fixed layout shift on the pricing page by reserving image dimensions to stop cumulative layout shift.
+  PASS  userB/repoY results never include userA/repoX 'Better Auth' memory
+  PASS  userB/repoY correctly surfaces its OWN 'Clerk' auth memory on top
+
+  QUERY as user_alice but scoped to bob-org/marketing-site (userA has no memories there):
+    -> 0 results
+  PASS  userA scoped to repoY (no memories) returns EMPTY — no cross-repo leak of userB or own repoX
+
+------------------------------------------------------------------------------
+DEDUP — near-duplicate merges/reinforces instead of inserting a row
+------------------------------------------------------------------------------
+
+  Before: 6 memories in user_alice/checkout-service
+  Wrote near-duplicate of the Better Auth decision -> action="merged" (score=0.9717)
+  After:  6 memories (count unchanged means it merged)
+  PASS  near-duplicate write returns action=merged
+  PASS  near-duplicate did NOT create a second row
+  Wrote a genuinely distinct decision -> action="inserted", count now 7
+  PASS  distinct write returns action=inserted
+  PASS  distinct write DID create a new row
+  Reinforced memory now: useCount=1 content="We chose Better Auth for authentication instead of NextAuth; the NextAuth migration is done."
+  PASS  merged memory useCount was reinforced (>=1)
+  PASS  merged memory content refreshed to the newer phrasing
+
+==============================================================================
+RESULT: 21 passed, 0 failed
+==============================================================================

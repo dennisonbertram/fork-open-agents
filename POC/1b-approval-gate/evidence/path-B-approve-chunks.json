@@ -1,0 +1,10 @@
+[
+  {
+    "type": "tool-output-available",
+    "toolCallId": "call_001",
+    "output": {
+      "ok": true,
+      "ranAt": "2026-05-31T14:29:26.276Z"
+    }
+  }
+]

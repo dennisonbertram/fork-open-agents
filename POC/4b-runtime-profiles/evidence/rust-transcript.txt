@@ -1,0 +1,70 @@
+
+========== PROFILE: rust-cargo (Rust with cargo) ==========
+base image: buildpack-deps:bookworm-curl  privileged: false
+container: 904639e04247d2c752a15ea069bfbdd602d74bee0373ccc99e765f995b4b4f91
+
+--- SETUP RESULTS ---
+[passed] install-rust (exit 0, 359173ms)
+info: downloading installer
+warn: It looks like you have an existing rustup settings file at:
+warn: /root/.rustup/settings.toml
+warn: Rustup will install the default toolchain as specified in the settings file,
+warn: instead of the one inferred from the default host triple.
+info: profile set to minimal
+info: default host triple is aarch64-unknown-linux-gnu
+info: syncing channel updates for stable-aarch64-unknown-linux-gnu
+info: latest update on 2026-05-28 for version 1.96.0 (ac68faa20 2026-05-25)
+info: downloading 3 components
+info: default toolchain set to stable-aarch64-unknown-linux-gnu
+stable-aarch64-unknown-linux-gnu installed - rustc 1.96.0 (ac68faa20 2026-05-25)
+
+
+Rust is installed now. Great!
+
+To get started you need Cargo's bin directory ($HOME/.cargo/bin) in your PATH
+environment variable. This has not been done automatically.
+
+To configure your current shell, you need to source
+the corresponding env file under $HOME/.cargo.
+
+This is usually done by running one of the following (note the leading DOT):
+. "$HOME/.cargo/env"            # For sh/bash/zsh/ash/dash/pdksh
+source "$HOME/.cargo/env.fish"  # For fish
+source "~/.cargo/env.nu"  # For nushell
+source "$HOME/.cargo/env.tcsh"  # For tcsh
+. "$HOME/.cargo/env.ps1"        # For pwsh
+source "$HOME/.cargo/env.xsh"   # For xonsh
+/root/.cargo/bin/rustc
+rustc 1.96.0 (ac68faa20 2026-05-25)
+/root/.cargo/bin/cargo
+cargo 1.96.0 (30a34c682 2026-05-25)
+
+--- VERIFICATION RESULTS ---
+[passed] verify-rustc (required=true, exit 0, 41ms)
+/root/.open-agents/bin/rustc
+rustc 1.96.0 (ac68faa20 2026-05-25)
+[passed] verify-cargo (required=true, exit 0, 37ms)
+/root/.open-agents/bin/cargo
+cargo 1.96.0 (30a34c682 2026-05-25)
+[passed] verify-rustup (required=false, exit 0, 36ms)
+stable-aarch64-unknown-linux-gnu (default)
+[passed] verify-linker (required=true, exit 0, 32ms)
+/usr/bin/cc
+
+--- EXPECTED TOOLS ON PATH ---
+OK  rustc -> /root/.open-agents/bin/rustc
+OK  cargo -> /root/.open-agents/bin/cargo
+OK  cc -> /usr/bin/cc
+
+--- OPTIONAL TOOLS ON PATH ---
+OK  rustup -> /root/.open-agents/bin/rustup
+
+--- PROGRAM PROOF (expect marker: RUST_OK) ---
+exit 0 passed=true
+RUST_OK
+
+--- REPORT SUMMARY ---
+PASSED — setup 1/1 ok, verify 4/4 ok, tools 3/3 present
+setup: 359173ms  verify: 146ms  total: 359319ms
+
+container 904639e04247d2c752a15ea069bfbdd602d74bee0373ccc99e765f995b4b4f91 removed

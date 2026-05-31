@@ -1,0 +1,83 @@
+{
+  "atSuspend": {
+    "run": {
+      "runId": "run-sleep-demo",
+      "workflowName": "sleep-demo",
+      "status": "suspended_sleep",
+      "inputJson": "{}",
+      "resultJson": null,
+      "errorMessage": null,
+      "createdAt": "2026-05-31T14:51:18.291Z",
+      "updatedAt": "2026-05-31T14:51:18.292Z"
+    },
+    "steps": [
+      {
+        "runId": "run-sleep-demo",
+        "stepKey": "schedule-setup",
+        "ordinal": 0,
+        "status": "completed",
+        "resultJson": "{\"scheduledAt\":1780239078291}",
+        "errorMessage": null,
+        "attempts": 1,
+        "startedAt": "2026-05-31T14:51:18.291Z",
+        "finishedAt": "2026-05-31T14:51:18.291Z"
+      }
+    ],
+    "sleeps": [
+      {
+        "runId": "run-sleep-demo",
+        "stepKey": "cron-delay",
+        "wakeAt": "2026-05-31T14:51:19.791Z",
+        "createdAt": "2026-05-31T14:51:18.291Z",
+        "firedAt": null
+      }
+    ],
+    "waiters": []
+  },
+  "afterWake": {
+    "run": {
+      "runId": "run-sleep-demo",
+      "workflowName": "sleep-demo",
+      "status": "completed",
+      "inputJson": "{}",
+      "resultJson": "{\"wokeAt\":1780239079845}",
+      "errorMessage": null,
+      "createdAt": "2026-05-31T14:51:18.291Z",
+      "updatedAt": "2026-05-31T14:51:19.845Z"
+    },
+    "steps": [
+      {
+        "runId": "run-sleep-demo",
+        "stepKey": "schedule-setup",
+        "ordinal": 0,
+        "status": "completed",
+        "resultJson": "{\"scheduledAt\":1780239078291}",
+        "errorMessage": null,
+        "attempts": 1,
+        "startedAt": "2026-05-31T14:51:18.291Z",
+        "finishedAt": "2026-05-31T14:51:18.291Z"
+      },
+      {
+        "runId": "run-sleep-demo",
+        "stepKey": "on-wake",
+        "ordinal": 2,
+        "status": "completed",
+        "resultJson": "{\"wokeAt\":1780239079845}",
+        "errorMessage": null,
+        "attempts": 1,
+        "startedAt": "2026-05-31T14:51:19.845Z",
+        "finishedAt": "2026-05-31T14:51:19.845Z"
+      }
+    ],
+    "sleeps": [
+      {
+        "runId": "run-sleep-demo",
+        "stepKey": "cron-delay",
+        "wakeAt": "2026-05-31T14:51:19.791Z",
+        "createdAt": "2026-05-31T14:51:18.291Z",
+        "firedAt": "2026-05-31T14:51:19.844Z"
+      }
+    ],
+    "waiters": []
+  }
+}

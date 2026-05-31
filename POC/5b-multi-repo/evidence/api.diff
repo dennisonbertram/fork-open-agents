@@ -1,0 +1,19 @@
+diff --git a/src/extra.js b/src/extra.js
+new file mode 100644
+index 0000000..f053ebf
+--- /dev/null
++++ b/src/extra.js
+@@ -0,0 +1 @@
++module.exports = {};
+diff --git a/src/users.js b/src/users.js
+index cec4c9e..03a7112 100644
+--- a/src/users.js
++++ b/src/users.js
+@@ -1,5 +1,5 @@
+ // api repo: exposes the user lookup function.
+-function getUserV1(id) {
++function fetchUser(id) {
+   return { id, name: "user-" + id };
+ }
+-module.exports = { getUserV1 };
++module.exports = { fetchUser };

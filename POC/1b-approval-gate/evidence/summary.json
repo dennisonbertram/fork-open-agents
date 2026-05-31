@@ -1,0 +1,12 @@
+{
+  "assertions": 22,
+  "failures": [],
+  "paths": {
+    "A_park": "approval-requested chunk + no side effect",
+    "B_approve": "output-available chunk + side effect ran",
+    "C_deny": "output-denied chunk + no side effect",
+    "D_safe": "passthrough, output-available, no approval",
+    "E_generalization": "git force-push + external POST parked; GET passed",
+    "F_durability": "resume from persisted store after simulated restart"
+  }
+}

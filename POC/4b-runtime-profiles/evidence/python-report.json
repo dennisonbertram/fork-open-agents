@@ -1,0 +1,90 @@
+{
+  "profileId": "python-uv",
+  "profileVersion": "2026-05-31.1",
+  "profileDisplayName": "Python with uv",
+  "status": "passed",
+  "setupResults": [
+    {
+      "commandId": "install-uv-python",
+      "label": "Install uv and a managed CPython 3.12",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 40120,
+      "summary": "downloading uv 0.11.17 aarch64-unknown-linux-gnu\nDownloading cpython-3.12.13-linux-aarch64-gnu (download) (27.8MiB)\n Downloaded cpython-3.12.13-linux-aarch64-gnu (download)\nInstalled Python 3.12.13 in 21.53s\n + cpython-3.12.13-linux-aarch64-gnu (python3.12)\ninstalling to /root/.local/bin\n  uv\n  uvx\neverything's installed!\n/root/.local/bin/uv\nuv 0.11.17 (aarch64-unknown-linux-gnu)\n/root/.open-agents/bin/python\nPython 3.12.13",
+      "startedAt": "2026-05-31T15:17:05.021Z",
+      "finishedAt": "2026-05-31T15:17:45.141Z"
+    }
+  ],
+  "verificationResults": [
+    {
+      "commandId": "verify-uv",
+      "label": "Verify uv",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 35,
+      "summary": "/root/.open-agents/bin/uv\nuv 0.11.17 (aarch64-unknown-linux-gnu)",
+      "startedAt": "2026-05-31T15:17:45.141Z",
+      "finishedAt": "2026-05-31T15:17:45.176Z"
+    },
+    {
+      "commandId": "verify-python",
+      "label": "Verify Python",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 33,
+      "summary": "/root/.open-agents/bin/python\nPython 3.12.13",
+      "startedAt": "2026-05-31T15:17:45.176Z",
+      "finishedAt": "2026-05-31T15:17:45.209Z"
+    },
+    {
+      "commandId": "verify-pip-resolver",
+      "label": "Verify dependency resolution works",
+      "status": "passed",
+      "required": false,
+      "exitCode": 0,
+      "durationMs": 433,
+      "summary": "Using CPython 3.12.13\nCreating virtual environment at: /tmp/oa-verify-venv\nActivate with: source tmp/oa-verify-venv/bin/activate",
+      "startedAt": "2026-05-31T15:17:45.209Z",
+      "finishedAt": "2026-05-31T15:17:45.642Z"
+    }
+  ],
+  "expectedTools": [
+    {
+      "tool": "uv",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/uv"
+    },
+    {
+      "tool": "python",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/python"
+    }
+  ],
+  "optionalTools": [
+    {
+      "tool": "python3",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/python3"
+    },
+    {
+      "tool": "pip",
+      "resolved": false,
+      "path": ""
+    }
+  ],
+  "setupDurationMs": 40120,
+  "verificationDurationMs": 501,
+  "totalDurationMs": 40621,
+  "summary": "PASSED — setup 1/1 ok, verify 3/3 ok, tools 2/2 present",
+  "failureMessage": null,
+  "programProof": {
+    "ran": true,
+    "passed": true,
+    "marker": "PYTHON_OK",
+    "exitCode": 0,
+    "output": "PYTHON_OK 3 12"
+  }
+}

@@ -1,0 +1,50 @@
+
+========== PROFILE: python-uv (Python with uv) ==========
+base image: buildpack-deps:bookworm-curl  privileged: false
+container: b0643860f03ff80f2b102781574f4042d69bc35c961f726f924bf41e2e80de77
+
+--- SETUP RESULTS ---
+[passed] install-uv-python (exit 0, 40120ms)
+downloading uv 0.11.17 aarch64-unknown-linux-gnu
+Downloading cpython-3.12.13-linux-aarch64-gnu (download) (27.8MiB)
+ Downloaded cpython-3.12.13-linux-aarch64-gnu (download)
+Installed Python 3.12.13 in 21.53s
+ + cpython-3.12.13-linux-aarch64-gnu (python3.12)
+installing to /root/.local/bin
+  uv
+  uvx
+everything's installed!
+/root/.local/bin/uv
+uv 0.11.17 (aarch64-unknown-linux-gnu)
+/root/.open-agents/bin/python
+Python 3.12.13
+
+--- VERIFICATION RESULTS ---
+[passed] verify-uv (required=true, exit 0, 35ms)
+/root/.open-agents/bin/uv
+uv 0.11.17 (aarch64-unknown-linux-gnu)
+[passed] verify-python (required=true, exit 0, 33ms)
+/root/.open-agents/bin/python
+Python 3.12.13
+[passed] verify-pip-resolver (required=false, exit 0, 433ms)
+Using CPython 3.12.13
+Creating virtual environment at: /tmp/oa-verify-venv
+Activate with: source tmp/oa-verify-venv/bin/activate
+
+--- EXPECTED TOOLS ON PATH ---
+OK  uv -> /root/.open-agents/bin/uv
+OK  python -> /root/.open-agents/bin/python
+
+--- OPTIONAL TOOLS ON PATH ---
+OK  python3 -> /root/.open-agents/bin/python3
+absent  pip -> (not found)
+
+--- PROGRAM PROOF (expect marker: PYTHON_OK) ---
+exit 0 passed=true
+PYTHON_OK 3 12
+
+--- REPORT SUMMARY ---
+PASSED — setup 1/1 ok, verify 3/3 ok, tools 2/2 present
+setup: 40120ms  verify: 501ms  total: 40621ms
+
+container b0643860f03ff80f2b102781574f4042d69bc35c961f726f924bf41e2e80de77 removed

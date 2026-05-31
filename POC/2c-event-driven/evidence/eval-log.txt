@@ -1,0 +1,73 @@
+2026-05-31T14:47:41.814Z === Source A: GitHub issues.opened ===
+2026-05-31T14:47:41.816Z PASS  github issue: verified + processed
+2026-05-31T14:47:41.816Z PASS  github issue: source=github
+2026-05-31T14:47:41.816Z PASS  github issue: canonical type
+2026-05-31T14:47:41.816Z PASS  github issue: subject
+2026-05-31T14:47:41.816Z PASS  github issue: repo
+2026-05-31T14:47:41.816Z PASS  github issue: issueNumber metadata
+2026-05-31T14:47:41.816Z PASS  github issue: exactly 1 dispatch
+2026-05-31T14:47:41.816Z PASS  github issue: matched triage rule
+2026-05-31T14:47:41.817Z PASS  github issue: prompt rendered from event fields
+2026-05-31T14:47:41.817Z === Source B: AgentMail message.received ===
+2026-05-31T14:47:41.817Z PASS  email: verified + processed
+2026-05-31T14:47:41.817Z PASS  email: source=agentmail
+2026-05-31T14:47:41.817Z PASS  email: canonical type
+2026-05-31T14:47:41.817Z PASS  email: actor is parsed sender address
+2026-05-31T14:47:41.817Z PASS  email: to address normalized
+2026-05-31T14:47:41.817Z PASS  email: threadId metadata
+2026-05-31T14:47:41.817Z PASS  email: multi-rule fan-out -> 2 dispatches
+2026-05-31T14:47:41.817Z PASS  email: matched the right rule set
+2026-05-31T14:47:41.817Z PASS  email: support prompt rendered from event fields
+2026-05-31T14:47:41.817Z === Source C: Vercel deployment.error ===
+2026-05-31T14:47:41.817Z PASS  deploy: verified + processed
+2026-05-31T14:47:41.817Z PASS  deploy: source=vercel-deploy
+2026-05-31T14:47:41.817Z PASS  deploy: canonical type
+2026-05-31T14:47:41.817Z PASS  deploy: repo derived from commit meta
+2026-05-31T14:47:41.817Z PASS  deploy: deploymentId metadata
+2026-05-31T14:47:41.817Z PASS  deploy: target metadata
+2026-05-31T14:47:41.817Z PASS  deploy: exactly 1 dispatch
+2026-05-31T14:47:41.817Z PASS  deploy: matched investigate rule
+2026-05-31T14:47:41.817Z PASS  deploy: prompt rendered from event fields
+2026-05-31T14:47:41.817Z === Source D: Sentry issue.alert ===
+2026-05-31T14:47:41.818Z PASS  sentry: verified + processed
+2026-05-31T14:47:41.818Z PASS  sentry: canonical type
+2026-05-31T14:47:41.818Z PASS  sentry: level metadata
+2026-05-31T14:47:41.818Z PASS  sentry: exactly 1 dispatch (level matches)
+2026-05-31T14:47:41.818Z PASS  sentry: prompt rendered from event fields
+2026-05-31T14:47:41.818Z === Regression: GitHub pull_request.closed subsumed as a rule ===
+2026-05-31T14:47:41.818Z PASS  pr-close: verified + processed
+2026-05-31T14:47:41.818Z PASS  pr-close: canonical type
+2026-05-31T14:47:41.818Z PASS  pr-close: prStatus matches original handler logic
+2026-05-31T14:47:41.818Z PASS  pr-close: exactly 1 dispatch
+2026-05-31T14:47:41.818Z PASS  pr-close: matched archive rule
+2026-05-31T14:47:41.818Z PASS  pr-close: prompt carries PR number + status
+2026-05-31T14:47:41.818Z === Negative 1: bad signature rejected ===
+2026-05-31T14:47:41.818Z PASS  bad-sig: rejected with 401
+2026-05-31T14:47:41.818Z PASS  bad-sig: NO new dispatch occurred
+2026-05-31T14:47:41.818Z === Negative 2: event matches no rule ===
+2026-05-31T14:47:41.818Z PASS  no-rule: verified + normalized
+2026-05-31T14:47:41.818Z PASS  no-rule: canonical type closed
+2026-05-31T14:47:41.818Z PASS  no-rule: 0 rules matched
+2026-05-31T14:47:41.818Z PASS  no-rule: 0 dispatches
+2026-05-31T14:47:41.818Z === Negative 3: redelivered webhook deduped ===
+2026-05-31T14:47:41.818Z PASS  redeliver: still verifies
+2026-05-31T14:47:41.818Z PASS  redeliver: rule still matches
+2026-05-31T14:47:41.818Z PASS  redeliver: 0 NEW dispatches (deduped)
+2026-05-31T14:47:41.818Z PASS  redeliver: counted as duplicate
+2026-05-31T14:47:41.818Z PASS  redeliver: runAgent NOT called again
+2026-05-31T14:47:41.818Z === Negative 4: unrecognized source ===
+2026-05-31T14:47:41.818Z PASS  unknown-source: 400
+2026-05-31T14:47:41.818Z === Source E: generic bearer source ===
+2026-05-31T14:47:41.818Z PASS  generic: bearer verified + normalized
+2026-05-31T14:47:41.818Z PASS  generic: canonical type passthrough
+2026-05-31T14:47:41.818Z PASS  generic: 0 dispatch (no rule defined for it)
+2026-05-31T14:47:41.818Z PASS  generic: wrong bearer rejected
+2026-05-31T14:47:41.818Z Total agent-run intents dispatched: 6
+2026-05-31T14:47:41.818Z   run=run_1 rule=github-issue-triage agent=issue-triage-agent key=github-issue-triage:github:github.issues.opened:issue:2147483001:opened
+2026-05-31T14:47:41.818Z   run=run_2 rule=email-support-triage agent=email-support-agent key=email-support-triage:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc
+2026-05-31T14:47:41.818Z   run=run_3 rule=email-bug-report agent=bug-intake-agent key=email-bug-report:agentmail:email.message.received:agentmail:evt_7f3a9c12:msg_001abc
+2026-05-31T14:47:41.818Z   run=run_4 rule=deploy-failure-investigate agent=deploy-doctor-agent key=deploy-failure-investigate:vercel-deploy:deploy.failed:vercel:uev_d3adb33f:dpl_8xKq2
+2026-05-31T14:47:41.818Z   run=run_5 rule=sentry-alert-investigate agent=error-triage-agent key=sentry-alert-investigate:sentry:sentry.issue.alert:sentry:f9e2d7c4a1b34e8f9c0d1e2f3a4b5c6d
+2026-05-31T14:47:41.818Z   run=run_6 rule=github-pr-close-archive agent=pr-lifecycle-agent key=github-pr-close-archive:github:github.pull_request.closed:pull_request:9001:closed:abc123def456
+2026-05-31T14:47:41.819Z Saved evidence/dispatch-decisions.json
+2026-05-31T14:47:41.819Z ALL ASSERTIONS PASSED

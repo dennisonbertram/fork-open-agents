@@ -1,0 +1,10 @@
+branch: feat/adopt-fetch-user
+commit: 5a9cd413ed8a203ca642d003217b5ca90925ee71
+files: src/app.js
+
+git log --oneline:
+5a9cd41 consumer: adopt api.fetchUser
+ac93213 initial
+
+git status --porcelain (clean expected):
+<clean>

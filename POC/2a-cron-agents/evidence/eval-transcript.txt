@@ -1,0 +1,72 @@
+# POC 2a eval
+Controlled now = 2026-05-31T09:05:00.000Z
+
+## Seeding jobs
+  - j-5min: acme/web "*/5 * * * *" enabled=true
+  - j-9am: acme/reports "0 9 * * *" enabled=true
+  - j-pr: acme/ci-bot "*/5 * * * *" enabled=true
+  - j-disabled: acme/infra "*/5 * * * *" enabled=false
+
+## Test: unauthenticated request
+  PASS  missing Authorization -> 401
+  PASS  wrong bearer secret -> 401
+
+## Invoke cron endpoint (authed, now=09:05)
+  PASS  authed request -> 200
+  response: {
+  "ok": true,
+  "now": "2026-05-31T09:05:00.000Z",
+  "scanned": 3,
+  "dispatched": 2,
+  "outcomes": [
+    {
+      "jobId": "j-5min",
+      "status": "succeeded",
+      "runId": "run_mptw812y_1",
+      "chatId": "chat_mptw812y_3"
+    },
+    {
+      "jobId": "j-pr",
+      "status": "succeeded",
+      "runId": "run_mptw8131_4",
+      "chatId": "chat_mptw8131_6",
+      "prUrl": "https://github.com/acme/ci-bot/pull/42"
+    }
+  ]
+}
+
+## Test: due selection + cron matching
+  PASS  */5 job is due at 09:05 -> ran
+  PASS  */5 PR job is due at 09:05 -> ran
+  PASS  0 9 * * * job NOT due at 09:05 -> skipped
+  PASS  disabled job -> never ran
+  PASS  exactly 2 jobs dispatched
+
+## Test: run rows + lastRunAt/nextRunAt advance
+  PASS  2 scheduled_job_runs rows created
+  PASS  all run rows have status=succeeded
+  PASS  all run rows have finishedAt set
+  PASS  j-5min lastRunAt = now
+  PASS  j-5min nextRunAt advanced to 2026-05-31T09:10:00.000Z
+  PASS  j-9am (not due) lastRunAt untouched (null)
+
+## Test: result landed as chat message linked to job
+  PASS  j-5min run produced exactly 1 chat message
+  PASS  landed message role = assistant
+  PASS  chat row exists for landed message
+  landed message: {"type":"text","text":"Standing agent ran on acme/web@main for prompt: \"Audit dependencies for CVEs and summarize.\". Completed at tick."}
+  PASS  j-pr reported a PR url that was recorded
+  PASS  scheduled_job_runs.prUrl persisted
+
+## Test: idempotency — second invocation in same tick
+  second response outcomes: []
+  PASS  no job double-dispatched in the same tick
+  PASS  still exactly 2 run rows after second invocation
+
+## Test: idempotency — concurrent claims for a forced-due job tick
+  PASS  concurrent invocations created exactly 1 run row for j-9am
+  concurrent dispatched counts: [1, 0] (sum should be 1)
+  PASS  exactly one invocation dispatched j-9am
+
+## Summary
+  23 passed, 0 failed

@@ -1,0 +1,38 @@
+=== Scenario 1: hard $ budget halts loop BEFORE over-budget step ===
+model=anthropic/claude-sonnet-4  per-step≈$0.0105  session limit=$0.025  soft=80%
+  step 0 PRE  decision=ALLOW projected=$0.0105 util=42% 
+  step 0 POST actual=$0.0105 drift=$0.0000
+  step 1 PRE  decision=WARN  projected=$0.0105 util=84% 
+  step 1 POST actual=$0.0105 drift=$0.0000
+  step 2 PRE  decision=BLOCK projected=$0.0105 util=126% <<< HALT (step not run)
+  => stopReason=budget_exceeded  stepsRun=2  haltedBy=session/usd
+  => observable work counter (expensive step ran N times) = 2
+
+=== Scenario 2: most-restrictive-scope wins (user vs session) ===
+  2a user@$0.018/limit$0.02, session limit$100 -> BLOCK via user
+  2b user limit$100, session@$0.018/limit$0.02 -> BLOCK via session
+  2c both limit$100 -> ALLOW
+
+=== Scenario 3: wall-clock duration budget halts a slow agent ===
+session limitDurationMs=1000, per-step=400ms
+  step 0 PRE  decision=ALLOW projectedDur=400ms 
+  step 1 PRE  decision=WARN  projectedDur=400ms 
+  step 2 PRE  decision=BLOCK projectedDur=400ms <<< HALT
+  => stopReason=budget_exceeded stepsRun=2 haltedBy dimension=durationMs
+
+=== Scenario 4: daily period reset at UTC day boundary ===
+  May31 23:00Z spent=$0.90/limit$1 + $0.20 step -> BLOCK
+  Jun01 01:00Z window reset -> spent=$0.00 + $0.20 step -> ALLOW
+
+=== Scenario 5: reconciliation — under-projected steps account real actuals ===
+projection claims step(500,200); real actual is 3x: step(1500,600)
+  step 0 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 1 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 2 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 3 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 4 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 5 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 6 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 7 actual=$0.0135 drift=$0.0090 (real cost exceeded estimate)
+  step 8 PRE decision=BLOCK <<< HALT (real total crossed limit)
+  => meter sees REAL total=$0.1080 stopReason=budget_exceeded stepsRun=8

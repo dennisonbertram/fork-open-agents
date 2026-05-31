@@ -1,0 +1,26 @@
+AL2023 package availability for the desktop profile setup.sh
+OS: "Amazon Linux 2023.11.20260526"
+arch: x86_64
+---
+AVAILABLE : xorg-x11-server-Xvfb
+AVAILABLE : tigervnc-server
+AVAILABLE : xterm
+AVAILABLE : xorg-x11-utils
+AVAILABLE : ImageMagick
+AVAILABLE : procps-ng
+AVAILABLE : python3
+AVAILABLE : python3-pip
+AVAILABLE : metacity
+AVAILABLE : mutter
+NOT_IN_REPO: x11vnc
+NOT_IN_REPO: fluxbox
+NOT_IN_REPO: openbox
+NOT_IN_REPO: novnc
+NOT_IN_REPO: python3-websockify
+---
+x0vncserver ships in tigervnc-server:
+/usr/bin/x0vncserver
+/usr/bin/x0vncserver
+/usr/bin/x0vncserver
+/usr/bin/x0vncserver
+/usr/bin/x0vncserver

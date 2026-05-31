@@ -1,0 +1,13 @@
+diff --git a/src/app.js b/src/app.js
+index 7aeebb1..755deb0 100644
+--- a/src/app.js
++++ b/src/app.js
+@@ -1,7 +1,7 @@
+ // consumer repo: calls the api function by name.
+ const api = require("../../api/src/users.js");
+ function describe(id) {
+-  const u = api.getUserV1(id);
++  const u = api.fetchUser(id);
+   return "describe:" + u.name;
+ }
+ module.exports = { describe };

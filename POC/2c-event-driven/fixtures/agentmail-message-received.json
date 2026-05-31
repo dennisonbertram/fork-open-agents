@@ -1,0 +1,18 @@
+{
+  "type": "event",
+  "event_type": "message.received",
+  "event_id": "evt_7f3a9c12",
+  "message": {
+    "inbox_id": "inbox_support01",
+    "thread_id": "thd_55ab",
+    "message_id": "msg_001abc",
+    "from": "Jane Doe <jane@example.com>",
+    "to": ["Support Agent <support@acme.agentmail.to>"],
+    "subject": "Bug: cannot reset my password",
+    "text": "Hi, every time I click 'reset password' I get a 500 error. This has been happening since this morning. Can you help?",
+    "html": "<p>Hi, every time I click 'reset password' I get a 500 error.</p>",
+    "labels": ["received"],
+    "created_at": "2026-05-31T10:00:00Z"
+  },
+  "thread": {}
+}

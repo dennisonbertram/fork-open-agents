@@ -1,0 +1,108 @@
+{
+  "total": 20,
+  "passed": 20,
+  "failed": 0,
+  "workspace": "/tmp/claude-501/poc5b-0Ino5n/workspace",
+  "results": [
+    {
+      "name": "both repos cloned into distinct workspace paths",
+      "pass": true,
+      "detail": "/tmp/claude-501/poc5b-0Ino5n/workspace/api | /tmp/claude-501/poc5b-0Ino5n/workspace/consumer"
+    },
+    {
+      "name": "each repo on its own feature branch after clone",
+      "pass": true,
+      "detail": "feat/rename-get-user / feat/adopt-fetch-user"
+    },
+    {
+      "name": "cross-checkout coherence check FAILS before the coordinated change",
+      "pass": true,
+      "detail": "exit=1 api does not export fetchUser"
+    },
+    {
+      "name": "path router maps api file -> api repo",
+      "pass": true,
+      "detail": "acme/api:src/users.js"
+    },
+    {
+      "name": "path router maps consumer file -> consumer repo",
+      "pass": true,
+      "detail": "acme/consumer:src/app.js"
+    },
+    {
+      "name": "edit to a path outside all repos is REJECTED",
+      "pass": true,
+      "detail": "Path is outside all session repos: /tmp/claude-501/poc5b-0Ino5n/outside/secret.txt"
+    },
+    {
+      "name": "router returns null for path outside all repos",
+      "pass": true,
+      "detail": "null"
+    },
+    {
+      "name": "api edit routed and recorded against api repo only",
+      "pass": true,
+      "detail": "src/users.js"
+    },
+    {
+      "name": "consumer edit routed and recorded against consumer repo only",
+      "pass": true,
+      "detail": "src/app.js"
+    },
+    {
+      "name": "dirty file sets are repo-scoped and disjoint",
+      "pass": true,
+      "detail": "api=[src/users.js] consumer=[src/app.js]"
+    },
+    {
+      "name": "api commit contains ONLY api files (no consumer contamination)",
+      "pass": true,
+      "detail": "files=[src/users.js] sha=9d974267"
+    },
+    {
+      "name": "consumer commit contains ONLY consumer files (no api contamination)",
+      "pass": true,
+      "detail": "files=[src/app.js] sha=5a9cd413"
+    },
+    {
+      "name": "per-repo commit shas differ (independent histories)",
+      "pass": true,
+      "detail": "9d974267 != 5a9cd413"
+    },
+    {
+      "name": "api log does NOT mention consumer commit and vice versa",
+      "pass": true,
+      "detail": "logs are independent"
+    },
+    {
+      "name": "both repos have clean working trees after their own commit",
+      "pass": true,
+      "detail": "no stray changes"
+    },
+    {
+      "name": "second commit in api leaves consumer HEAD + index untouched",
+      "pass": true,
+      "detail": "consumer HEAD stable: 5a9cd413"
+    },
+    {
+      "name": "cross-checkout coherence check PASSES after both repos changed",
+      "pass": true,
+      "detail": "exit=0 coherent: api.fetchUser exported and consumer calls it"
+    },
+    {
+      "name": "coherence check FAILS again if only one repo is changed (partial state)",
+      "pass": true,
+      "detail": "exit=1 consumer does not call api.fetchUser"
+    },
+    {
+      "name": "linked-PR plan has one PR per repo with correct head/base",
+      "pass": true,
+      "detail": "api feat/rename-get-user->main, consumer feat/adopt-fetch-user->main"
+    },
+    {
+      "name": "PR cross-references point at the OTHER repo + share changeSetId",
+      "pass": true,
+      "detail": "cross-reference present in both bodies"
+    }
+  ]
+}

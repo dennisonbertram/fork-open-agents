@@ -1,0 +1,18 @@
+{
+  "action": "closed",
+  "repository": {
+    "name": "widget",
+    "owner": { "login": "acme" }
+  },
+  "sender": { "login": "octocat" },
+  "pull_request": {
+    "id": 9001,
+    "number": 128,
+    "title": "Fix Safari login handler",
+    "body": "Closes #412.",
+    "merged": true,
+    "html_url": "https://github.com/acme/widget/pull/128",
+    "head": { "ref": "fix/safari-login", "sha": "abc123def456" },
+    "base": { "ref": "main" }
+  }
+}
