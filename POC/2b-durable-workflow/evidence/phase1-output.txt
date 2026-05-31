@@ -1,0 +1,3 @@
+{"phase":1,"event":"step-A-completed","inProcessStepAExecutions":1}
+{"phase":1,"outcome":{"status":"suspended_event","stepKey":"wait-for-approval","token":"approval:run-crash-demo:tool-call-1"},"inProcessStepAExecutions":1}
+{"phase":1,"event":"SIMULATED_CRASH","code":137}

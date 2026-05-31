@@ -1,0 +1,18 @@
+{
+  "name": "poc-2b-durable-workflow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "POC 2b: durable workflow engine (persisted step log, replay-not-rerun, durable sleep, waitForEvent suspend, retry-with-backoff) for open-agents",
+  "scripts": {
+    "eval": "bun run src/eval.ts",
+    "eval:sleep": "bun run src/sleep-eval.ts",
+    "crash:phase1": "bun run src/crash-phase1.ts",
+    "crash:phase2": "bun run src/crash-phase2.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^5.6.0"
+  }
+}

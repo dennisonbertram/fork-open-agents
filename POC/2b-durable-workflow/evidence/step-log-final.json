@@ -1,0 +1,47 @@
+{
+  "run": {
+    "runId": "run-crash-demo",
+    "workflowName": "demo-crash",
+    "status": "completed",
+    "inputJson": "{\"sideEffectFile\":\"/Users/dennison/develop/open-agents/POC/2b-durable-workflow/evidence/.store-side-effect.log\",\"approvalToken\":\"approval:run-crash-demo:tool-call-1\"}",
+    "resultJson": "{\"counter\":1,\"approval\":{\"approved\":true,\"approver\":\"operator@example.com\"},\"finalizeAttempts\":3,\"done\":true}",
+    "errorMessage": null,
+    "createdAt": "2026-05-31T14:51:18.202Z",
+    "updatedAt": "2026-05-31T14:51:18.261Z"
+  },
+  "steps": [
+    {
+      "runId": "run-crash-demo",
+      "stepKey": "increment-counter",
+      "ordinal": 0,
+      "status": "completed",
+      "resultJson": "1",
+      "errorMessage": null,
+      "attempts": 1,
+      "startedAt": "2026-05-31T14:51:18.202Z",
+      "finishedAt": "2026-05-31T14:51:18.202Z"
+    },
+    {
+      "runId": "run-crash-demo",
+      "stepKey": "flaky-finalize",
+      "ordinal": 2,
+      "status": "completed",
+      "resultJson": "3",
+      "errorMessage": null,
+      "attempts": 3,
+      "startedAt": "2026-05-31T14:51:18.227Z",
+      "finishedAt": "2026-05-31T14:51:18.261Z"
+    }
+  ],
+  "sleeps": [],
+  "waiters": [
+    {
+      "runId": "run-crash-demo",
+      "stepKey": "wait-for-approval",
+      "token": "approval:run-crash-demo:tool-call-1",
+      "payloadJson": "{\"approved\":true,\"approver\":\"operator@example.com\"}",
+      "createdAt": "2026-05-31T14:51:18.203Z",
+      "deliveredAt": "2026-05-31T14:51:18.227Z"
+    }
+  ]
+}

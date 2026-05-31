@@ -1,0 +1,3 @@
+{"phase":2,"event":"first-resume-from-disk","outcome":{"status":"suspended_event","stepKey":"wait-for-approval","token":"approval:run-crash-demo:tool-call-1"},"inProcessStepAExecutions":0,"sideEffectLinesBefore":1}
+{"phase":2,"event":"event-delivered","notifiedRuns":["run-crash-demo"]}
+{"phase":2,"event":"final-resume","outcome":{"status":"completed","result":{"counter":1,"approval":{"approved":true,"approver":"operator@example.com"},"finalizeAttempts":3,"done":true}},"inProcessStepAExecutions":0,"sideEffectLinesAfter":1}

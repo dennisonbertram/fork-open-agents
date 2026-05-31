@@ -1,0 +1,33 @@
+{
+  "poc": "2b-durable-workflow",
+  "ranAt": "2026-05-31T14:51:18.265Z",
+  "phase1ExitCode": 137,
+  "crashSimulated": true,
+  "assertions": {
+    "total": 19,
+    "passed": 19,
+    "failed": 0
+  },
+  "durabilityProperties": {
+    "stepReplayNotRerun": true,
+    "durableEventSuspend": true,
+    "retryWithBackoff": true,
+    "crashSurvived": true
+  },
+  "finalResult": {
+    "counter": 1,
+    "approval": {
+      "approved": true,
+      "approver": "operator@example.com"
+    },
+    "finalizeAttempts": 3,
+    "done": true
+  },
+  "evidenceFiles": [
+    "step-log-at-crash.json",
+    "step-log-final.json",
+    "side-effect.log",
+    "phase1-output.txt",
+    "phase2-output.txt"
+  ]
+}

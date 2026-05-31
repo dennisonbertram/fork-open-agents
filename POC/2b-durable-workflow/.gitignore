@@ -1,0 +1,8 @@
+node_modules/
+# Transient per-run engine artifacts. The committed evidence/*.json snapshots
+# and evidence/side-effect.log (exported across the crash boundary) are the
+# durable, inspectable samples.
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+evidence/.store-*
