@@ -536,4 +536,67 @@ describe("/api/github/create-repo", () => {
     const body = (await response.json()) as Record<string, unknown>;
     expect(typeof body.error).toBe("string");
   });
+
+  // Regression: successful push + revoke-failure must never touch error path
+  test("regression: revoke failure after successful push does not set error field in response", async () => {
+    revokeInstallationTokenImpl = async () => {
+      throw new Error("revocation: network timeout");
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createRequest({
+        sessionId: "session-1",
+        owner: "octocat",
+        repoName: "repo-1",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as Record<string, unknown>;
+    // Success response must not carry an error key
+    expect(body.error).toBeUndefined();
+    // Session must have been updated
+    expect(updatedSession?.sessionId).toBe("session-1");
+  });
+
+  // Regression: push failure must never silently hide the orphaned repo
+  test("regression: push failure response always includes repoUrl so client can identify the orphan", async () => {
+    pushShouldThrow = true;
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createRequest({
+        sessionId: "session-1",
+        owner: "octocat",
+        repoName: "repo-1",
+      }),
+    );
+
+    const body = (await response.json()) as Record<string, unknown>;
+    // repoUrl must be present so the user/client can identify the created repo
+    expect(typeof body.repoUrl).toBe("string");
+    expect(body.repoUrl).toContain("github.com");
+    // Session must NOT have been linked (push failed)
+    expect(updatedSession).toBeUndefined();
+  });
+
+  // Regression: valid clone_url passes validation and sandbox push is not blocked
+  test("regression: valid github.com clone_url is accepted and push proceeds normally", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createRequest({
+        sessionId: "session-1",
+        owner: "octocat",
+        repoName: "repo-1",
+      }),
+    );
+
+    // Standard success — clone_url validation must not block valid URLs
+    expect(response.status).toBe(200);
+    expect(execCommands).toContain(
+      "git remote add origin https://github.com/octocat/repo-1.git",
+    );
+  });
 });
