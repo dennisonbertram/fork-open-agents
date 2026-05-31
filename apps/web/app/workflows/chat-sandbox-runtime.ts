@@ -38,12 +38,9 @@ import {
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
-import {
-  ensureManagedRuntimeEnvironment,
-  WorkspaceSetupError,
-} from "./managed-runtime-environment";
+import { ensureManagedRuntimeEnvironment } from "./managed-runtime-environment";
 import { WorkspaceStartupReporter } from "./workspace-startup-log";
-export { WorkspaceSetupError } from "./managed-runtime-environment";
+export { WorkspaceSetupError } from "./workspace-setup-error";
 
 type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;

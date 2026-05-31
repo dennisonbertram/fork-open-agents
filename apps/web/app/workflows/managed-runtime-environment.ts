@@ -8,19 +8,15 @@ import {
   finishManagedRuntimeProfileRun,
   startManagedRuntimeProfileRun,
 } from "@/lib/observability/managed-runtime-profile-runs";
+import { WorkspaceSetupError } from "./workspace-setup-error";
 import type { WorkspaceStartupReporter } from "./workspace-startup-log";
+
+export { WorkspaceSetupError };
 
 type SessionRecord = {
   id: string;
   userId: string;
 };
-
-export class WorkspaceSetupError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "WorkspaceSetupError";
-  }
-}
 
 function buildSetupStepMessage(params: {
   profile: ManagedRuntimeProfile;
