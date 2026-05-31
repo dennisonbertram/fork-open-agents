@@ -22,7 +22,6 @@ export class WorkspaceSetupError extends Error {
   }
 }
 
-
 function buildSetupStepMessage(params: {
   profile: ManagedRuntimeProfile;
   command: ManagedRuntimeProfile["setupCommands"][number];

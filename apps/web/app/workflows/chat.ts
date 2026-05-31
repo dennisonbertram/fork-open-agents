@@ -364,10 +364,7 @@ function getSetupErrorMessage(error: unknown): string {
   }
 
   if (name === "WorkspaceSetupError") {
-    // Return a generic safe message — do not pass `message` verbatim since it
-    // may embed command output (stdout/stderr) from the failing setup command,
-    // which could contain secrets that would then be persisted to the DB.
-    return "Managed runtime setup failed. Check the profile configuration and try again.";
+    return message;
   }
 
   if (name === "InferenceProfileResolutionError") {

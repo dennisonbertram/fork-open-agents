@@ -73,16 +73,15 @@ mock.module("@/lib/db/client", () => ({
 }));
 
 // Use a dynamic import that resolves at test-collection time
-const realObservationModule = await import(
-  "@/lib/observability/managed-runtime-profile-runs"
-);
+const realObservationModule =
+  await import("@/lib/observability/managed-runtime-profile-runs");
 const realBuildObservation =
   realObservationModule.buildManagedRuntimeCommandObservation;
 
 mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
   // Forward REAL observation builder so redactHarnessValue/redactSandboxLog is exercised
   buildManagedRuntimeCommandObservation: realBuildObservation,
-  startManagedRuntimeProfileRun: async (params: {
+  startManagedRuntimeProfileRun: async (_params: {
     profile: { id: string };
   }) => {
     const id = `run-real-${++profileRunIdCounter}`;
@@ -253,10 +252,9 @@ describe("real-redaction integration — secrets must not leak", () => {
             },
           ],
         }),
-        startupReporter:
-          createCapturingReporter() as unknown as Parameters<
-            typeof ensureManagedRuntimeEnvironment
-          >[0]["startupReporter"],
+        startupReporter: createCapturingReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
       });
     } catch (err) {
       if (err instanceof Error) thrownError = err;
@@ -301,10 +299,9 @@ describe("real-redaction integration — secrets must not leak", () => {
             },
           ],
         }),
-        startupReporter:
-          createCapturingReporter() as unknown as Parameters<
-            typeof ensureManagedRuntimeEnvironment
-          >[0]["startupReporter"],
+        startupReporter: createCapturingReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
       });
     } catch {
       // WorkspaceSetupError expected
@@ -349,10 +346,9 @@ describe("real-redaction integration — secrets must not leak", () => {
             },
           ],
         }),
-        startupReporter:
-          createCapturingReporter() as unknown as Parameters<
-            typeof ensureManagedRuntimeEnvironment
-          >[0]["startupReporter"],
+        startupReporter: createCapturingReporter() as unknown as Parameters<
+          typeof ensureManagedRuntimeEnvironment
+        >[0]["startupReporter"],
       });
     } catch {
       // WorkspaceSetupError expected
@@ -387,17 +383,16 @@ describe("real-redaction integration — secrets must not leak", () => {
 
   // BT-REDACT-005: workspace-startup-log normalizeLogLine must redact bare ghp_/sk- tokens
   test("BT-REDACT-005: appendWorkspaceStartupLogLines redacts bare ghp_ and sk- token shapes", async () => {
-    const { appendWorkspaceStartupLogLines } = await import(
-      "./workspace-startup-log"
-    );
+    const { appendWorkspaceStartupLogLines } =
+      await import("./workspace-startup-log");
 
     const GHP_TOKEN = "ghp_FFFF1234567890abcdefghijklmnopqr";
     const SK_TOKEN = "sk-GGGG1234567890abcdefghijklmnopqr";
 
-    const lines = appendWorkspaceStartupLogLines([], [
-      `fetching with token ${GHP_TOKEN}`,
-      `api call ${SK_TOKEN} failed`,
-    ]);
+    const lines = appendWorkspaceStartupLogLines(
+      [],
+      [`fetching with token ${GHP_TOKEN}`, `api call ${SK_TOKEN} failed`],
+    );
 
     const joined = lines.join("\n");
     expect(joined).not.toContain(GHP_TOKEN);

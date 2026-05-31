@@ -17,7 +17,7 @@
  *   This is the shared redaction path for both DB failureMessage and event payload.
  */
 
-import { describe, expect, mock, test } from "bun:test";
+import { expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 mock.module("@/lib/db/client", () => ({
@@ -47,9 +47,8 @@ test("R-REDACT-001: WorkspaceSetupError constructor does not embed its arguments
 // ── Regression R-REDACT-002: SECRET_PATTERNS covers gh[pousr]_ and sk- ──────
 
 test("R-REDACT-002: appendWorkspaceStartupLogLines redacts bare ghp_ token in a line", async () => {
-  const { appendWorkspaceStartupLogLines } = await import(
-    "./workspace-startup-log"
-  );
+  const { appendWorkspaceStartupLogLines } =
+    await import("./workspace-startup-log");
 
   const GHP = "ghp_REGR1234567890abcdefghijklmnopqr";
   const lines = appendWorkspaceStartupLogLines([], [`token: ${GHP}`]);
@@ -58,9 +57,8 @@ test("R-REDACT-002: appendWorkspaceStartupLogLines redacts bare ghp_ token in a 
 });
 
 test("R-REDACT-002b: appendWorkspaceStartupLogLines redacts bare sk- token in a line", async () => {
-  const { appendWorkspaceStartupLogLines } = await import(
-    "./workspace-startup-log"
-  );
+  const { appendWorkspaceStartupLogLines } =
+    await import("./workspace-startup-log");
 
   const SK = "sk-REGR1234567890abcdefghijklmnopqr";
   const lines = appendWorkspaceStartupLogLines([], [`key: ${SK}`]);
@@ -71,9 +69,8 @@ test("R-REDACT-002b: appendWorkspaceStartupLogLines redacts bare sk- token in a 
 // ── Regression R-REDACT-003: summarizeManagedRuntimeCommandOutput redacts ───
 
 test("R-REDACT-004: summarizeManagedRuntimeCommandOutput redacts ghp_ and sk- tokens from raw command output", async () => {
-  const { summarizeManagedRuntimeCommandOutput } = await import(
-    "@/lib/observability/managed-runtime-profile-runs"
-  );
+  const { summarizeManagedRuntimeCommandOutput } =
+    await import("@/lib/observability/managed-runtime-profile-runs");
 
   const GHP = "ghp_SUMMARY1234567890abcdefghijklmn";
   const SK = "sk-SUMMARY1234567890abcdefghijklmnop";
