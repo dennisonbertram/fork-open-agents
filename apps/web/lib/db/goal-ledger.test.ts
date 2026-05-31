@@ -36,6 +36,34 @@ let fakeUpdateReturn: unknown = null;
 // ---------------------------------------------------------------------------
 
 /**
+ * Explicit shape of the fake DB so TypeScript can resolve the recursive
+ * reference in `transaction` without needing `ReturnType<typeof buildFakeDb>`.
+ */
+type FakeDb = {
+  select: (_columns?: unknown) => {
+    from: (_table: unknown) => {
+      where: (_cond: unknown) => Promise<unknown[]> & {
+        orderBy: (..._args: unknown[]) => Promise<unknown[]>;
+      };
+      orderBy: (..._args: unknown[]) => Promise<unknown[]>;
+    };
+  };
+  insert: (_table: unknown) => {
+    values: (input: unknown) => {
+      returning: () => Promise<unknown[]>;
+    };
+  };
+  update: (_table: unknown) => {
+    set: (vals: unknown) => {
+      where: (_cond: unknown) => {
+        returning: () => Promise<unknown[]>;
+      };
+    };
+  };
+  transaction: <T>(callback: (tx: FakeDb) => Promise<T>) => Promise<T>;
+};
+
+/**
  * Build a fake-db object whose every fluent chain captures arguments and
  * returns deterministic test data. The shape mirrors the Drizzle query-builder
  * API used by goal-ledger.ts.
@@ -49,7 +77,7 @@ let fakeUpdateReturn: unknown = null;
  * is called next and its result is directly awaited (no .orderBy()), that is
  * the max-sequence path; if .orderBy() follows, that is the list path.
  */
-function buildFakeDb() {
+function buildFakeDb(): FakeDb {
   return {
     // ---- select() chain -------------------------------------------------
     select: (_columns?: unknown) => ({
@@ -57,10 +85,8 @@ function buildFakeDb() {
         // .where() → returned value is immediately awaited (max-sequence path)
         // OR chained with .orderBy() (list path after .where())
         where: (_cond: unknown) => {
-          // Return a Promise-like object that supports being directly awaited
-          // AND supports an optional .orderBy() chain.
-          // We use an object that is itself a Promise so there is no
-          // custom-thenable lint trigger — the object wraps a real Promise.
+          // Return a real Promise extended with an .orderBy() method so the
+          // linter does not flag it as a custom thenable.
           const basePromise = Promise.resolve([
             { maxSeq: fakeMaxSequence },
           ] as unknown[]);
@@ -103,9 +129,8 @@ function buildFakeDb() {
     }),
 
     // ---- transaction() --------------------------------------------------
-    transaction: async <T>(
-      callback: (tx: ReturnType<typeof buildFakeDb>) => Promise<T>,
-    ) => callback(buildFakeDb()),
+    transaction: async <T>(callback: (tx: FakeDb) => Promise<T>) =>
+      callback(buildFakeDb()),
   };
 }
 
@@ -524,5 +549,117 @@ describe("closeGoal", () => {
       const result = await closeGoal("goal-x", status);
       expect(result.status).toBe(status);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — catch future breakage from different angles
+// ---------------------------------------------------------------------------
+
+describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
+  test("REG-001: TERMINAL_GOAL_STATUSES contains exactly complete, failed, canceled, archived", async () => {
+    // If the terminal set is changed (e.g. accidentally widened or narrowed),
+    // this test catches it. The set is the source of truth for closeGoal's guard.
+    const { TERMINAL_GOAL_STATUSES } = await goalLedgerPromise;
+
+    expect(TERMINAL_GOAL_STATUSES).toContain("complete");
+    expect(TERMINAL_GOAL_STATUSES).toContain("failed");
+    expect(TERMINAL_GOAL_STATUSES).toContain("canceled");
+    expect(TERMINAL_GOAL_STATUSES).toContain("archived");
+    // Non-terminal statuses must NOT be in the set
+    const nonTerminal = [
+      "draft",
+      "planned",
+      "running",
+      "awaiting_input",
+      "blocked",
+      "validating",
+    ];
+    for (const s of nonTerminal) {
+      expect((TERMINAL_GOAL_STATUSES as readonly string[]).includes(s)).toBe(
+        false,
+      );
+    }
+  });
+
+  test("REG-002: appendGoalEvent sequence starts at 1, not 0, when no prior events exist", async () => {
+    // If the +1 offset is accidentally removed, sequence would be 0 for the
+    // first event, breaking the event-ordering contract.
+    const { appendGoalEvent } = await goalLedgerPromise;
+
+    fakeMaxSequence = null;
+    const now = new Date();
+    fakeInsertReturn = {
+      id: "ev-reg",
+      goalId: "g-reg",
+      userId: "u-reg",
+      sequence: 1,
+      eventType: "note",
+      summary: "regression check",
+      payload: {},
+      createdAt: now,
+    };
+
+    await appendGoalEvent({
+      goalId: "g-reg",
+      userId: "u-reg",
+      eventType: "note",
+      summary: "regression check",
+    });
+
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.sequence).toBe(1);
+    expect(inserted.sequence).not.toBe(0);
+  });
+
+  test("REG-003: createGoal inserts a nanoid-length id (not empty, not a fixed stub)", async () => {
+    // Catches any regression that replaces nanoid() with a constant or empty string.
+    const { createGoal } = await goalLedgerPromise;
+
+    const now = new Date();
+    fakeInsertReturn = {
+      id: "irrelevant",
+      userId: "u-reg",
+      objective: "regression check goal",
+      status: "draft",
+      evidenceRefs: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await createGoal({ userId: "u-reg", objective: "regression check goal" });
+
+    const inserted = lastInsertValues as Record<string, unknown>;
+    const id = inserted.id as string;
+    // nanoid() default length is 21 characters
+    expect(id.length).toBeGreaterThanOrEqual(10);
+    expect(id).not.toBe("irrelevant"); // must be freshly generated, not the fakeReturn value
+  });
+
+  test("REG-004: closeGoal passes updatedAt as a fresh Date to the update chain", async () => {
+    // If updatedAt is accidentally dropped from the update set, downstream
+    // consumers can no longer detect that a goal was closed.
+    const { closeGoal } = await goalLedgerPromise;
+
+    const beforeCall = new Date();
+    const now = new Date();
+    fakeUpdateReturn = {
+      id: "g-reg",
+      userId: "u-reg",
+      objective: "done",
+      status: "failed",
+      evidenceRefs: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await closeGoal("g-reg", "failed");
+
+    const updated = lastUpdateValues as Record<string, unknown>;
+    expect(updated.updatedAt).toBeInstanceOf(Date);
+    // The Date must be at or after the time the call was made
+    expect((updated.updatedAt as Date).getTime()).toBeGreaterThanOrEqual(
+      beforeCall.getTime(),
+    );
   });
 });
