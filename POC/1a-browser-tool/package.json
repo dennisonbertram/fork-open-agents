@@ -1,0 +1,22 @@
+{
+  "name": "poc-1a-browser-tool",
+  "private": true,
+  "type": "module",
+  "description": "POC 1a: Playwright/CDP-driven headless browser toolset emitting AI SDK image parts. Self-contained; does not touch repo root deps.",
+  "scripts": {
+    "install:chromium": "playwright install chromium",
+    "install:chromium:deps": "playwright install --with-deps chromium",
+    "eval": "tsx eval.ts",
+    "image-part": "tsx image-part-demo.ts"
+  },
+  "dependencies": {
+    "ai": "6.0.168",
+    "playwright": "1.58.2",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

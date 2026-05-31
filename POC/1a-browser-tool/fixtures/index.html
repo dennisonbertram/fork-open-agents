@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>POC 1a Browser Tool Fixture</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 40px; background: #0b1020; color: #e6edf3; }
+      h1 { color: #6ee7b7; }
+      #reveal { display: none; margin-top: 16px; padding: 12px; background: #16204a; border-radius: 8px; }
+      input { padding: 8px; font-size: 16px; }
+      .badge { display: inline-block; padding: 4px 10px; background: #2563eb; border-radius: 999px; }
+    </style>
+  </head>
+  <body>
+    <h1 id="heading">Headless Browser POC</h1>
+    <p id="intro">This page exists to exercise navigate, click, type, extract, and screenshot.</p>
+
+    <a href="#" id="more" onclick="document.getElementById('reveal').style.display='block'; return false;">
+      Show secret
+    </a>
+    <div id="reveal">
+      <span class="badge" id="secret">the-secret-token-42</span>
+    </div>
+
+    <form onsubmit="return false;" style="margin-top: 24px;">
+      <label for="name">Name</label>
+      <input id="name" name="name" type="text" placeholder="type here" />
+    </form>
+  </body>
+</html>

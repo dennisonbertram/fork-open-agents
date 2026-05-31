@@ -1,0 +1,30 @@
+2026-05-31T14:38:34.242Z Fixture served at http://127.0.0.1:58833/
+2026-05-31T14:38:34.644Z Chromium cold start: 401 ms
+2026-05-31T14:38:34.644Z PASS  cold start within 30s
+2026-05-31T14:38:34.655Z navigate -> {"success":true,"url":"http://127.0.0.1:58833/","status":200,"title":"POC 1a Browser Tool Fixture"}
+2026-05-31T14:38:34.655Z PASS  navigate succeeded
+2026-05-31T14:38:34.655Z PASS  navigate HTTP 200
+2026-05-31T14:38:34.655Z PASS  page title matches
+2026-05-31T14:38:34.664Z extract #heading -> {"success":true,"selector":"#heading","text":"Headless Browser POC"}
+2026-05-31T14:38:34.664Z PASS  extracted heading text
+2026-05-31T14:38:34.713Z click #more -> {"success":true,"selector":"#more","url":"http://127.0.0.1:58833/","title":"POC 1a Browser Tool Fixture"}
+2026-05-31T14:38:34.714Z PASS  click succeeded
+2026-05-31T14:38:34.714Z extract #secret -> {"success":true,"selector":"#secret","text":"the-secret-token-42"}
+2026-05-31T14:38:34.714Z PASS  extracted revealed secret
+2026-05-31T14:38:34.715Z PASS  extracted attribute
+2026-05-31T14:38:34.719Z type #name -> {"success":true,"selector":"#name","value":"Ada Lovelace","submitted":false}
+2026-05-31T14:38:34.719Z PASS  typed value round-trips
+2026-05-31T14:38:34.735Z screenshot -> success=true bytes=27773 streamed=true mediaType=image/png
+2026-05-31T14:38:34.735Z PASS  screenshot succeeded
+2026-05-31T14:38:34.735Z PASS  screenshot non-trivial size (>1KB)
+2026-05-31T14:38:34.735Z PASS  screenshot streamed via writer
+2026-05-31T14:38:34.735Z PASS  image part type=file
+2026-05-31T14:38:34.735Z PASS  image part mediaType image/png
+2026-05-31T14:38:34.735Z PASS  image part url is png data URL
+2026-05-31T14:38:34.735Z PASS  data URL decodes to valid PNG header
+2026-05-31T14:38:34.735Z PASS  decoded bytes match reported byteLength
+2026-05-31T14:38:34.735Z PASS  exactly one chunk streamed
+2026-05-31T14:38:34.735Z PASS  streamed chunk has file shape
+2026-05-31T14:38:34.736Z Saved evidence/screenshot.png (27773 bytes)
+2026-05-31T14:38:34.736Z PASS  saved screenshot size matches decoded bytes
+2026-05-31T14:38:34.751Z ALL ASSERTIONS PASSED
