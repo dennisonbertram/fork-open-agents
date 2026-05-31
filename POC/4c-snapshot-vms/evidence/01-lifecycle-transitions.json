@@ -1,0 +1,59 @@
+{
+  "trail": "provisioning -> active -> hibernating -> hibernated -> restoring -> active -> hibernating -> hibernated -> restoring -> active",
+  "transitions": [
+    {
+      "from": "provisioning",
+      "to": "active",
+      "reason": "sandbox-created",
+      "at": 1780240399201
+    },
+    {
+      "from": "active",
+      "to": "hibernating",
+      "reason": "idle-timeout",
+      "at": 1780240399216
+    },
+    {
+      "from": "hibernating",
+      "to": "hibernated",
+      "reason": "idle-timeout",
+      "at": 1780240399245
+    },
+    {
+      "from": "hibernated",
+      "to": "restoring",
+      "reason": "resume-requested",
+      "at": 1780240399245
+    },
+    {
+      "from": "restoring",
+      "to": "active",
+      "reason": "snapshot-restored",
+      "at": 1780240399268
+    },
+    {
+      "from": "active",
+      "to": "hibernating",
+      "reason": "idle-timeout",
+      "at": 1780240399316
+    },
+    {
+      "from": "hibernating",
+      "to": "hibernated",
+      "reason": "idle-timeout",
+      "at": 1780240399345
+    },
+    {
+      "from": "hibernated",
+      "to": "restoring",
+      "reason": "resume-requested",
+      "at": 1780240399345
+    },
+    {
+      "from": "restoring",
+      "to": "active",
+      "reason": "snapshot-restored",
+      "at": 1780240399367
+    }
+  ]
+}

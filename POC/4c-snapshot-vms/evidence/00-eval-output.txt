@@ -1,0 +1,54 @@
+=== POC 4c: persistent / snapshottable VMs — hibernate/resume eval ===
+
+--- Phase 1: provision sandbox + build day-1 working state ---
+  PASS lifecycle reaches active after provisioning
+  git status (pre-snapshot):
+    M  src/app.ts
+     M tracked.txt
+    ?? day1-progress.txt
+    ?? scratch.notes
+  filesystem: 38 files, 25527 bytes, rootHash=e98ced73ff822cec…
+
+--- Phase 2: HIBERNATE (snapshot + tear down live instance) ---
+  PASS lifecycle reaches hibernated
+  PASS live instance handle dropped after hibernate
+  PASS live workdir physically torn down (discarded)
+  PASS snapshot has nonzero size (15239 B)
+
+--- Phase 3: RESUME into a NEW session ---
+  PASS lifecycle returns to active after resume
+  PASS resume created a NEW session id (sess_69cb296b -> sess_1791db38)
+  PASS durable sandbox name survives across sessions
+  PASS filesystem byte-restored (rootHash match: true)
+  PASS git porcelain status identical after resume
+  PASS STAGED edit survived (index intact)
+  PASS UNSTAGED edit survived (worktree intact)
+  PASS UNTRACKED file survived (POC 3b blind spot)
+  PASS git commit history intact
+  PASS relaunchOnResume=true dev_server WAS relaunched
+  PASS relaunchOnResume=false code_editor was NOT relaunched
+  PASS relaunched dev_server is running with a pid
+  PASS dev_server got a NEW pid (process recreated, not restored): pid_dc85d3
+  PASS non-relaunch code_editor is stopped with null pid (process did not survive)
+  PASS session env survived hibernation
+
+--- Phase 4: day-2 work, then a SECOND hibernate/resume cycle ---
+  PASS second hibernate reaches hibernated
+  PASS second resume reaches active
+  PASS day-2 filesystem byte-restored across the SECOND cycle
+  PASS BOTH day-1 and day-2 artifacts present (multi-day task survived 2 cycles)
+
+--- Phase 5: survival contract assertions ---
+  PASS contract: filesystem survives
+  PASS contract: git working tree survives
+  PASS contract: service records survive (DB-backed)
+  PASS contract: running processes do NOT survive (must relaunch)
+  PASS contract: in-memory state does NOT survive
+
+--- Lifecycle transition trail ---
+  provisioning -> active -> hibernating -> hibernated -> restoring -> active -> hibernating -> hibernated -> restoring -> active
+  PASS transition trail matches expected hibernate/resume path (x2)
+
+--- Snapshot cost characterization (fake mechanism) ---
+  snap_0df28749-712: size=15239 B, snapshot=26.2ms, resume=22.8ms
+  snap_a636be07-ee5: size=15566 B, snapshot=26.1ms, resume=22.2ms
