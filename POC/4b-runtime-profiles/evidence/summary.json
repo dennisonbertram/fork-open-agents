@@ -1,0 +1,22 @@
+{
+  "generatedAt": "2026-05-31T15:38:32.488Z",
+  "outcomes": [
+    {
+      "profileId": "docker-in-sandbox",
+      "baseImage": "debian:bookworm",
+      "status": "passed",
+      "setupDurationMs": 335348,
+      "verificationDurationMs": 2751,
+      "totalDurationMs": 338099,
+      "expectedToolsResolved": "1/1",
+      "programProof": {
+        "ran": true,
+        "passed": true,
+        "marker": "DOCKER_OK",
+        "exitCode": 0,
+        "output": "DOCKER_OK"
+      },
+      "failureMessage": null
+    }
+  ]
+}

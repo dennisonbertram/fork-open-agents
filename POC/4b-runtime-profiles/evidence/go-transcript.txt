@@ -1,0 +1,37 @@
+
+========== PROFILE: go-toolchain (Go toolchain) ==========
+base image: buildpack-deps:bookworm-curl  privileged: false
+container: 63bcc0a807b81363b04910ea983e6d4e227bd4f6856c32549bc7359d5ce54b9c
+
+--- SETUP RESULTS ---
+[passed] install-go (exit 0, 27426ms)
+/root/.open-agents/bin/go
+go version go1.26.3 linux/arm64
+
+--- VERIFICATION RESULTS ---
+[passed] verify-go (required=true, exit 0, 34ms)
+/root/.open-agents/bin/go
+go version go1.26.3 linux/arm64
+[passed] verify-gofmt (required=false, exit 0, 37ms)
+/root/.open-agents/bin/gofmt
+[passed] verify-go-env (required=true, exit 0, 33ms)
+/usr/local/go
+/root/go
+linux
+arm64
+
+--- EXPECTED TOOLS ON PATH ---
+OK  go -> /root/.open-agents/bin/go
+OK  gofmt -> /root/.open-agents/bin/gofmt
+
+--- OPTIONAL TOOLS ON PATH ---
+
+--- PROGRAM PROOF (expect marker: GO_OK) ---
+exit 0 passed=true
+GO_OK
+
+--- REPORT SUMMARY ---
+PASSED — setup 1/1 ok, verify 3/3 ok, tools 2/2 present
+setup: 27426ms  verify: 104ms  total: 27530ms
+
+container 63bcc0a807b81363b04910ea983e6d4e227bd4f6856c32549bc7359d5ce54b9c removed

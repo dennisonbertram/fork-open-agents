@@ -1,0 +1,101 @@
+{
+  "profileId": "rust-cargo",
+  "profileVersion": "2026-05-31.1",
+  "profileDisplayName": "Rust with cargo",
+  "status": "passed",
+  "setupResults": [
+    {
+      "commandId": "install-rust",
+      "label": "Install the Rust toolchain via rustup",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 359173,
+      "summary": "info: downloading installer\nwarn: It looks like you have an existing rustup settings file at:\nwarn: /root/.rustup/settings.toml\nwarn: Rustup will install the default toolchain as specified in the settings file,\nwarn: instead of the one inferred from the default host triple.\ninfo: profile set to minimal\ninfo: default host triple is aarch64-unknown-linux-gnu\ninfo: syncing channel updates for stable-aarch64-unknown-linux-gnu\ninfo: latest update on 2026-05-28 for version 1.96.0 (ac68faa20 2026-05-25)\ninfo: downloading 3 components\ninfo: default toolchain set to stable-aarch64-unknown-linux-gnu\nstable-aarch64-unknown-linux-gnu installed - rustc 1.96.0 (ac68faa20 2026-05-25)\n\n\nRust is installed now. Great!\n\nTo get started you need Cargo's bin directory ($HOME/.cargo/bin) in your PATH\nenvironment variable. This has not been done automatically.\n\nTo configure your current shell, you need to source\nthe corresponding env file under $HOME/.cargo.\n\nThis is usually done by running one of the following (note the leading DOT):\n. \"$HOME/.cargo/env\"            # For sh/bash/zsh/ash/dash/pdksh\nsource \"$HOME/.cargo/env.fish\"  # For fish\nsource \"~/.cargo/env.nu\"  # For nushell\nsource \"$HOME/.cargo/env.tcsh\"  # For tcsh\n. \"$HOME/.cargo/env.ps1\"        # For pwsh\nsource \"$HOME/.cargo/env.xsh\"   # For xonsh\n/root/.cargo/bin/rustc\nrustc 1.96.0 (ac68faa20 2026-05-25)\n/root/.cargo/bin/cargo\ncargo 1.96.0 (30a34c682 2026-05-25)",
+      "startedAt": "2026-05-31T15:26:14.051Z",
+      "finishedAt": "2026-05-31T15:32:13.224Z"
+    }
+  ],
+  "verificationResults": [
+    {
+      "commandId": "verify-rustc",
+      "label": "Verify rustc",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 41,
+      "summary": "/root/.open-agents/bin/rustc\nrustc 1.96.0 (ac68faa20 2026-05-25)",
+      "startedAt": "2026-05-31T15:32:13.224Z",
+      "finishedAt": "2026-05-31T15:32:13.265Z"
+    },
+    {
+      "commandId": "verify-cargo",
+      "label": "Verify cargo",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 37,
+      "summary": "/root/.open-agents/bin/cargo\ncargo 1.96.0 (30a34c682 2026-05-25)",
+      "startedAt": "2026-05-31T15:32:13.265Z",
+      "finishedAt": "2026-05-31T15:32:13.302Z"
+    },
+    {
+      "commandId": "verify-rustup",
+      "label": "Verify rustup toolchain management",
+      "status": "passed",
+      "required": false,
+      "exitCode": 0,
+      "durationMs": 36,
+      "summary": "stable-aarch64-unknown-linux-gnu (default)",
+      "startedAt": "2026-05-31T15:32:13.302Z",
+      "finishedAt": "2026-05-31T15:32:13.338Z"
+    },
+    {
+      "commandId": "verify-linker",
+      "label": "Verify a C linker is available",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 32,
+      "summary": "/usr/bin/cc",
+      "startedAt": "2026-05-31T15:32:13.338Z",
+      "finishedAt": "2026-05-31T15:32:13.370Z"
+    }
+  ],
+  "expectedTools": [
+    {
+      "tool": "rustc",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/rustc"
+    },
+    {
+      "tool": "cargo",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/cargo"
+    },
+    {
+      "tool": "cc",
+      "resolved": true,
+      "path": "/usr/bin/cc"
+    }
+  ],
+  "optionalTools": [
+    {
+      "tool": "rustup",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/rustup"
+    }
+  ],
+  "setupDurationMs": 359173,
+  "verificationDurationMs": 146,
+  "totalDurationMs": 359319,
+  "summary": "PASSED — setup 1/1 ok, verify 4/4 ok, tools 3/3 present",
+  "failureMessage": null,
+  "programProof": {
+    "ran": true,
+    "passed": true,
+    "marker": "RUST_OK",
+    "exitCode": 0,
+    "output": "RUST_OK"
+  }
+}

@@ -1,0 +1,79 @@
+{
+  "profileId": "go-toolchain",
+  "profileVersion": "2026-05-31.1",
+  "profileDisplayName": "Go toolchain",
+  "status": "passed",
+  "setupResults": [
+    {
+      "commandId": "install-go",
+      "label": "Install the Go toolchain",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 27426,
+      "summary": "/root/.open-agents/bin/go\ngo version go1.26.3 linux/arm64",
+      "startedAt": "2026-05-31T15:17:46.887Z",
+      "finishedAt": "2026-05-31T15:18:14.313Z"
+    }
+  ],
+  "verificationResults": [
+    {
+      "commandId": "verify-go",
+      "label": "Verify Go",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 34,
+      "summary": "/root/.open-agents/bin/go\ngo version go1.26.3 linux/arm64",
+      "startedAt": "2026-05-31T15:18:14.313Z",
+      "finishedAt": "2026-05-31T15:18:14.347Z"
+    },
+    {
+      "commandId": "verify-gofmt",
+      "label": "Verify gofmt",
+      "status": "passed",
+      "required": false,
+      "exitCode": 0,
+      "durationMs": 37,
+      "summary": "/root/.open-agents/bin/gofmt",
+      "startedAt": "2026-05-31T15:18:14.347Z",
+      "finishedAt": "2026-05-31T15:18:14.384Z"
+    },
+    {
+      "commandId": "verify-go-env",
+      "label": "Verify Go build environment",
+      "status": "passed",
+      "required": true,
+      "exitCode": 0,
+      "durationMs": 33,
+      "summary": "/usr/local/go\n/root/go\nlinux\narm64",
+      "startedAt": "2026-05-31T15:18:14.384Z",
+      "finishedAt": "2026-05-31T15:18:14.417Z"
+    }
+  ],
+  "expectedTools": [
+    {
+      "tool": "go",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/go"
+    },
+    {
+      "tool": "gofmt",
+      "resolved": true,
+      "path": "/root/.open-agents/bin/gofmt"
+    }
+  ],
+  "optionalTools": [],
+  "setupDurationMs": 27426,
+  "verificationDurationMs": 104,
+  "totalDurationMs": 27530,
+  "summary": "PASSED — setup 1/1 ok, verify 3/3 ok, tools 2/2 present",
+  "failureMessage": null,
+  "programProof": {
+    "ran": true,
+    "passed": true,
+    "marker": "GO_OK",
+    "exitCode": 0,
+    "output": "GO_OK"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "poc-4b-runtime-profiles",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "eval": "bun run eval/run-eval.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}

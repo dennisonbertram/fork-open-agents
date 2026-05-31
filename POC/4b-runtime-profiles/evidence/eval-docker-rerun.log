@@ -1,0 +1,160 @@
+
+========== PROFILE: docker-in-sandbox (Docker in sandbox (dind)) ==========
+base image: debian:bookworm  privileged: true
+container: bce8590749fa66b4c0041374e776ed9c526955d20ba476c12fcf6902197afa0e
+
+--- SETUP RESULTS ---
+[passed] install-docker (exit 0, 335348ms)
++ sh -c apt-get -qq update >/dev/null
++ sh -c DEBIAN_FRONTEND=noninteractive apt-get -y -qq install ca-certificates curl >/dev/null
++ sh -c install -m 0755 -d /etc/apt/keyrings
++ sh -c curl -fsSL "https://download.docker.com/linux/debian/gpg" -o /etc/apt/keyrings/docker.asc
++ sh -c chmod a+r /etc/apt/keyrings/docker.asc
++ sh -c echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian bookworm stable" > /etc/apt/sources.list.d/docker.list
++ sh -c apt-get -qq update >/dev/null
++ sh -c DEBIAN_FRONTEND=noninteractive apt-get -y -qq install docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-ce-rootless-extras docker-buildx-plugin docker-model-plugin >/dev/null
+debconf: delaying package configuration, since apt-utils is not installed
+Using systemd to manage Docker service
++ sh -c systemctl enable --now docker.service 2>/dev/null
+WARNING: unable to enable the docker service
+# Executing docker install script, commit: 2687d91ddeb3bd6aeae37a90947761efdee87030
+
+================================================================================
+
+To run Docker as a non-privileged user, consider setting up the
+Docker daemon in rootless mode for your user:
+
+    dockerd-rootless-setuptool.sh install
+
+Visit https://docs.docker.com/go/rootless/ to learn about rootless mode.
+
+
+To run the Docker daemon as a fully privileged service, but granting non-root
+users access, refer to https://docs.docker.com/go/daemon-access/
+
+WARNING: Access to the remote API on a privileged Docker daemon is equivalent
+         to root access on the host. Refer to the 'Docker daemon attack surface'
+         documentation for details: https://docs.docker.com/go/attack-surface/
+
+================================================================================
+
+/root/.open-agents/bin/docker
+Docker version 29.5.2, build 79eb04c
+
+--- VERIFICATION RESULTS ---
+[passed] verify-docker-cli (required=true, exit 0, 38ms)
+/root/.open-agents/bin/docker
+Docker version 29.5.2, build 79eb04c
+[passed] verify-docker-daemon (required=true, exit 0, 54ms)
+Client: Docker Engine - Community
+ Version:    29.5.2
+ Context:    default
+ Debug Mode: false
+ Plugins:
+  buildx: Docker Buildx (Docker Inc.)
+    Version:  v0.34.1
+    Path:     /usr/libexec/docker/cli-plugins/docker-buildx
+  compose: Docker Compose (Docker Inc.)
+    Version:  v5.1.4
+    Path:     /usr/libexec/docker/cli-plugins/docker-compose
+  model: Docker Model Runner (Docker Inc.)
+    Version:  v1.2.1
+    Path:     /usr/libexec/docker/cli-plugins/docker-model
+
+Server:
+ Containers: 0
+  Running: 0
+  Paused: 0
+  Stopped: 0
+ Images: 0
+ Server Version: 29.5.2
+ Storage Driver: vfs
+ Logging Driver: json-file
+ Cgroup Driver: cgroupfs
+ Cgroup Version: 2
+ Plugins:
+  Volume: local
+  Network: bridge host ipvlan macvlan null overlay
+  Log: awslogs fluentd gcplogs gelf journald json-file local splunk syslog
+ CDI spec directories:
+  /etc/cdi
+  /var/run/cdi
+ Swarm: inactive
+ Runtimes: io.containerd.runc.v2 runc
+ Default Runtime: runc
+ Init Binary: docker-init
+ containerd version: 193637f7ee8ae5f5aa5248f49e7baa3e6164966e
+ runc version: v1.3.5-0-g488fc13e
+ init version: de40ad0
+ Security Options:
+  seccomp
+   Profile: builtin
+  cgroupns
+ Kernel Version: 7.0.5-orbstack-00330-ge3df4e19b0a0-dirty
+ Operating System: Debian GNU/Linux 12 (bookworm)
+ OSType: linux
+ Architecture: aarch64
+ CPUs: 16
+ Total Memory: 15.65GiB
+ Name: bce8590749fa
+ ID: 8f7c979f-1672-4f08-a387-c0780b688270
+ Docker Root Dir: /var/lib/docker
+ Debug Mode: false
+ Experimental: false
+ Insecure Registries:
+  ::1/128
+  127.0.0.0/8
+ Live Restore Enabled: false
+ Firewall Backend: iptables
+  EnableUserlandProxy: true
+  UserlandProxyPath: /usr/bin/docker-proxy
+[passed] verify-docker-run (required=false, exit 0, 2659ms)
+Unable to find image 'hello-world:latest' locally
+latest: Pulling from library/hello-world
+58dee6a49ef1: Pulling fs layer
+58dee6a49ef1: Verifying Checksum
+58dee6a49ef1: Download complete
+58dee6a49ef1: Pull complete
+Digest: sha256:0e760fdfbc48ba8041e7c6db999bb40bfca508b4be580ac75d32c4e29d202ce1
+Status: Downloaded newer image for hello-world:latest
+Hello from Docker!
+This message shows that your installation appears to be working correctly.
+
+To generate this message, Docker took the following steps:
+ 1. The Docker client contacted the Docker daemon.
+ 2. The Docker daemon pulled the "hello-world" image from the Docker Hub.
+    (arm64v8)
+ 3. The Docker daemon created a new container from that image which runs the
+    executable that produces the output you are currently reading.
+ 4. The Docker daemon streamed that output to the Docker client, which sent it
+    to your terminal.
+
+To try something more ambitious, you can run an Ubuntu container with:
+ $ docker run -it ubuntu bash
+
+Share images, automate workflows, and more with a free Docker ID:
+ https://hub.docker.com/
+
+For more examples and ideas, visit:
+ https://docs.docker.com/get-started/
+
+--- EXPECTED TOOLS ON PATH ---
+OK  docker -> /root/.open-agents/bin/docker
+
+--- OPTIONAL TOOLS ON PATH ---
+OK  dockerd -> /usr/bin/dockerd
+OK  containerd -> /usr/bin/containerd
+
+--- PROGRAM PROOF (expect marker: DOCKER_OK) ---
+exit 0 passed=true
+DOCKER_OK
+
+--- REPORT SUMMARY ---
+PASSED — setup 1/1 ok, verify 3/3 ok, tools 1/1 present
+setup: 335348ms  verify: 2751ms  total: 338099ms
+
+container bce8590749fa66b4c0041374e776ed9c526955d20ba476c12fcf6902197afa0e removed
+
+
+================ EVAL SUMMARY ================
+docker-in-sandbox: passed | tools 1/1 | program RAN OK | setup 335348ms total 338099ms
