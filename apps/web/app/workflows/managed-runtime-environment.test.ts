@@ -10,7 +10,7 @@
  *  workflow that converts it to a blocked structured event)
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 
 // ── Module stubs ───────────────────────────────────────────────────────────────
@@ -172,6 +172,10 @@ function createMockStartupReporter() {
 // ── Module under test (lazy import after mocks) ────────────────────────────────
 
 const modulePromise = import("./managed-runtime-environment");
+
+afterAll(() => {
+  mock.restore();
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 

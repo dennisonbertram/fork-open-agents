@@ -8,6 +8,10 @@ const SECRET_PATTERNS: RegExp[] = [
   /\bBasic\s+[A-Za-z0-9._~+/=-]+/gi,
   /\b(?:api[_-]?key|token|secret|password)=([^\s&]+)/gi,
   /\b[A-Za-z0-9_]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g,
+  // Harness-aligned token shapes (matches redactHarnessValue TOKEN_SHAPED_PATTERN)
+  /\bsk-[A-Za-z0-9_-]{12,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+  /\bxox[baprs]-[A-Za-z0-9-]{20,}\b/g,
 ];
 
 function redactWorkspaceLogLine(value: string): string {

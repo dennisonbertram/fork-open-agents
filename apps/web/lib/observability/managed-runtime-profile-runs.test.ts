@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterAll, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -38,6 +38,10 @@ mock.module("@/lib/db/client", () => ({
     },
   },
 }));
+
+afterAll(() => {
+  mock.restore();
+});
 
 const {
   buildManagedRuntimeCommandObservation,

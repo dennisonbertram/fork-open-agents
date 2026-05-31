@@ -13,7 +13,7 @@
  * R-007: setupScript failure → managed_runtime.profile.failed payload.summary is redacted, not raw output
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 
 // ── Module stubs ───────────────────────────────────────────────────────────────
@@ -140,6 +140,10 @@ function createMockStartupReporter() {
 }
 
 const modulePromise = import("./managed-runtime-environment");
+
+afterAll(() => {
+  mock.restore();
+});
 
 function makeProfile(
   overrides: Partial<ManagedRuntimeProfile> = {},

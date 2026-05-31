@@ -22,14 +22,6 @@ export class WorkspaceSetupError extends Error {
   }
 }
 
-function compactCommandOutput(output: string): string {
-  return output
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .slice(-4)
-    .join("\n");
-}
 
 function buildSetupStepMessage(params: {
   profile: ManagedRuntimeProfile;
@@ -229,13 +221,8 @@ export async function ensureManagedRuntimeEnvironment(params: {
       });
 
       if (!result.success) {
-        const summary = [result.stderr, result.stdout]
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0)
-          .join("\n");
-        const compactSummary = compactCommandOutput(summary);
         console.warn(
-          `Managed runtime profile setup failed (${setupCommand.id}): ${summary}`,
+          `Managed runtime profile setup failed (${setupCommand.id}): ${observation.summary ?? "no output"}`,
         );
         notes.push(
           `Profile setup failed: ${setupCommand.label}. Verify the runtime profile before relying on its tools.`,
@@ -274,13 +261,7 @@ export async function ensureManagedRuntimeEnvironment(params: {
         });
         if (setupCommand.required ?? true) {
           throw new WorkspaceSetupError(
-            [
-              `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
-              setupCommand.description,
-              compactSummary ? `Command output: ${compactSummary}` : "",
-            ]
-              .filter((part) => part.length > 0)
-              .join(" "),
+            `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
           );
         }
         return { notes, profileRunId };
@@ -467,11 +448,46 @@ export async function ensureManagedRuntimeEnvironment(params: {
       },
     });
     const commandStartedAt = new Date();
-    const result = await params.sandbox.exec(
-      verificationCommand.command,
-      params.sandbox.workingDirectory,
-      verificationCommand.timeoutMs ?? 30_000,
-    );
+    let result: Awaited<ReturnType<typeof params.sandbox.exec>>;
+    try {
+      result = await params.sandbox.exec(
+        verificationCommand.command,
+        params.sandbox.workingDirectory,
+        verificationCommand.timeoutMs ?? 30_000,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Unknown error: ${String(error)}`;
+      if (profileRunId) {
+        try {
+          await finishManagedRuntimeProfileRun({
+            profileRunId,
+            status: "failed",
+            summary: `Verification command threw: ${verificationCommand.label}`,
+            failureMessage: `Verification exec threw an error: ${message}`,
+          });
+        } catch {
+          // best-effort
+        }
+      }
+      await emitSessionEvent({
+        sessionId: params.session.id,
+        chatId: params.chatId ?? null,
+        userId: params.userId,
+        source: "managed_runtime",
+        actorType: "sandbox",
+        eventName: "managed_runtime.profile.verify.command.failed",
+        status: "failed",
+        summary: `Verification command threw: ${verificationCommand.label}`,
+        workflowRunId: params.workflowRunId ?? null,
+        sandboxName: params.sandboxName ?? null,
+        managedRuntimeProfileRunId: profileRunId ?? null,
+        payload: { commandId: verificationCommand.id, error: message },
+      });
+      return { notes, profileRunId };
+    }
     const commandFinishedAt = new Date();
     const observation = buildManagedRuntimeCommandObservation({
       command: verificationCommand,
