@@ -15,6 +15,8 @@ Start here:
   deploy structure.
 - [Agent Browser Preview Review](agent-browser-preview-review.md) - how to
   inspect Vercel Preview deployments before production.
+- [Background Agents Live Proof](background-agents-live-proof.md) - hosted
+  proof steps for triggered sandbox automation before rollout.
 - [Production Release Runbook](production-release-runbook.md) - merge,
   production smoke, and rollback procedure.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
@@ -22,6 +24,8 @@ Start here:
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
+- [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
+  exports for debugging runs without production shell access.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before

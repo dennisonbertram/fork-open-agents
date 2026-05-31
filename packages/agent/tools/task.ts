@@ -100,6 +100,56 @@ function getManagedRuntimeOutput(
   };
 }
 
+function buildManagedRuntimeWorkerInstructions(params: {
+  experimentalContext: unknown;
+  environmentDetails?: string;
+}): string | undefined {
+  if (!isRecord(params.experimentalContext)) {
+    return undefined;
+  }
+
+  if (params.experimentalContext.runtimeMode !== "managed_runtime") {
+    return undefined;
+  }
+
+  const managedRuntime = isRecord(params.experimentalContext.managedRuntime)
+    ? params.experimentalContext.managedRuntime
+    : {};
+  const profileId = getString(managedRuntime.profileId);
+  const profileVersion = getString(managedRuntime.profileVersion);
+  const profileDisplayName = getString(managedRuntime.profileDisplayName);
+  const profileRunId = getString(managedRuntime.profileRunId);
+  const sandboxName = getString(managedRuntime.sandboxName);
+  const profileLabel =
+    profileDisplayName && profileId
+      ? `${profileDisplayName} (${profileId})`
+      : profileDisplayName || profileId || "unknown profile";
+  const lines = [
+    "## Managed Runtime Worker Context",
+    "",
+    "- Runtime mode: managed runtime.",
+    `- Active profile: ${profileLabel}.`,
+    profileVersion ? `- Profile version: ${profileVersion}.` : undefined,
+    profileRunId ? `- Profile run id: ${profileRunId}.` : undefined,
+    sandboxName ? `- Sandbox name: ${sandboxName}.` : undefined,
+    "- Use only tools verified by the active profile; do not assume Node, npm, Bun, Python, or any other tool exists unless the profile setup/verification notes say it is available.",
+    profileId === "web-bun-agent-browser"
+      ? "- This profile verifies Bun and agent-browser. Prefer `bun install`, `bun run ...`, and `bun --bun run ...` for JavaScript/TypeScript work. Treat Node/npm as optional observations; if they are unavailable, report that as non-blocking unless the task explicitly requires Node/npm."
+      : "- Follow the active profile's setup and verification notes when choosing install, build, lint, test, and browser-check commands.",
+  ].filter((line): line is string => typeof line === "string");
+
+  if (params.environmentDetails?.trim()) {
+    lines.push(
+      "",
+      "Environment details from the parent runtime. Managed-runtime-specific notes override generic base-sandbox notes:",
+      "",
+      params.environmentDetails.trim(),
+    );
+  }
+
+  return lines.join("\n");
+}
+
 export const taskTool = tool({
   needsApproval: false,
   description: `Launch a specialized subagent to handle complex tasks autonomously.
@@ -142,6 +192,13 @@ IMPORTANT:
     const model = getSubagentModel(experimental_context, "task");
     const subagentModelId = typeof model === "string" ? model : model.modelId;
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
+    const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
+      experimentalContext: experimental_context,
+      environmentDetails: sandboxContext.sandbox.environmentDetails,
+    });
+    const delegatedInstructions = managedRuntimeInstructions
+      ? `${instructions}\n\n${managedRuntimeInstructions}`
+      : instructions;
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
     const startedAt = Date.now();
@@ -158,7 +215,7 @@ IMPORTANT:
         "Complete this task and provide a summary of what you accomplished.",
       options: {
         task,
-        instructions,
+        instructions: delegatedInstructions,
         sandbox: sandboxContext.sandbox,
         model,
       },

@@ -17,7 +17,12 @@ type AuthResult =
 type OwnedSessionResult =
   | {
       ok: true;
-      sessionRecord: { id: string; inferenceProfileId: string | null };
+      sessionRecord: {
+        id: string;
+        inferenceProfileId: string | null;
+        repoOwner: string | null;
+        repoName: string | null;
+      };
     }
   | {
       ok: false;
@@ -41,7 +46,12 @@ type ChatRecord = {
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 let ownedSessionResult: OwnedSessionResult = {
   ok: true,
-  sessionRecord: { id: "session-1", inferenceProfileId: null },
+  sessionRecord: {
+    id: "session-1",
+    inferenceProfileId: null,
+    repoOwner: null,
+    repoName: null,
+  },
 };
 let currentSession: {
   authProvider?: "vercel" | "github";
@@ -70,10 +80,15 @@ const createChatCalls: Array<{
   inferenceProfileId: string | null;
   composioSelection: ChatComposioSelection;
 }> = [];
+let composioPolicy = { allowed: true, reason: null as string | null };
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
   requireOwnedSession: async () => ownedSessionResult,
+  requireOwnedSessionChat: async () => ({
+    ok: false,
+    response: Response.json({ error: "Not found" }, { status: 404 }),
+  }),
 }));
 
 mock.module("nanoid", () => ({
@@ -85,6 +100,10 @@ mock.module("@/lib/session/get-server-session", () => ({
 }));
 
 mock.module("@/lib/db/sessions", () => ({
+  updateChat: async () => null,
+  getChatMessages: async () => [],
+  getChatsBySessionId: async () => [],
+  deleteChat: async () => undefined,
   getChatSummariesBySessionId: async (sessionId: string, userId: string) => {
     getSummaryCalls.push({ sessionId, userId });
     return chatSummaries;
@@ -128,6 +147,23 @@ mock.module("@/lib/db/user-preferences", () => ({
   }),
 }));
 
+mock.module("@/lib/db/composio", () => ({
+  listComposioToolProfiles: async () => [],
+  listComposioProfileOptionsForRepository: async () => ({
+    profiles: [],
+    profileOptions: [],
+    repositorySettings: null,
+  }),
+  getComposioAgentDefaults: async () => ({}),
+  createComposioToolProfile: async () => ({}),
+  updateComposioAgentDefaults: async () => ({}),
+  updateComposioToolProfile: async () => ({}),
+  deleteComposioToolProfile: async () => true,
+  getRepositoryComposioSettings: async () => null,
+  upsertRepositoryComposioSettings: async () => ({}),
+  isComposioProfileAllowedForRepository: async () => composioPolicy,
+}));
+
 const routeModulePromise = import("./route");
 
 function createContext(sessionId = "session-1") {
@@ -149,7 +185,12 @@ describe("/api/sessions/[sessionId]/chats", () => {
     authResult = { ok: true, userId: "user-1" };
     ownedSessionResult = {
       ok: true,
-      sessionRecord: { id: "session-1", inferenceProfileId: null },
+      sessionRecord: {
+        id: "session-1",
+        inferenceProfileId: null,
+        repoOwner: null,
+        repoName: null,
+      },
     };
     currentSession = { user: { id: "user-1" } };
     chatSummaries = [{ id: "chat-1", title: "Chat 1" }];
@@ -162,6 +203,7 @@ describe("/api/sessions/[sessionId]/chats", () => {
       inferenceProfileId: null,
       composioSelection: { mainProfileId: "profile-main" },
     };
+    composioPolicy = { allowed: true, reason: null };
     getSummaryCalls.length = 0;
     createChatCalls.length = 0;
   });
@@ -294,5 +336,20 @@ describe("/api/sessions/[sessionId]/chats", () => {
       },
     ]);
     expect(body.chat.id).toBe("generated-chat-id");
+  });
+
+  test("POST turns Composio off when the default profile is blocked by repo policy", async () => {
+    composioPolicy = {
+      allowed: false,
+      reason: "Blocked by repository policy.",
+    };
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}), createContext());
+
+    expect(response.status).toBe(200);
+    expect(createChatCalls[0]?.composioSelection).toEqual({
+      mainProfileId: null,
+    });
   });
 });

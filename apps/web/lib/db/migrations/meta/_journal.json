@@ -323,6 +323,20 @@
       "when": 1779729591507,
       "tag": "0045_flowery_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1779899939821,
+      "tag": "0046_naive_shiva",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1779912424326,
+      "tag": "0047_cheerful_thunderbolt_ross",
+      "breakpoints": true
     }
   ]
 }

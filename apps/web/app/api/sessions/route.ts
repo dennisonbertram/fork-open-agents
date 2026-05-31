@@ -11,6 +11,7 @@ import {
   getVercelProjectLinkByRepo,
   upsertVercelProjectLink,
 } from "@/lib/db/vercel-project-links";
+import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import {
   isValidGitHubRepoName,
@@ -355,6 +356,16 @@ export async function POST(req: Request) {
     const effectiveAutoCommitPush =
       autoCommitPush ?? preferences.autoCommitPush;
     const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
+    const defaultComposioProfileId =
+      preferences.composioAgentDefaults.main.defaultProfileId;
+    const composioPolicy = defaultComposioProfileId
+      ? await isComposioProfileAllowedForRepository({
+          userId: session.user.id,
+          profileId: defaultComposioProfileId,
+          repoOwner,
+          repoName,
+        })
+      : { allowed: true };
     const result = await createSessionWithInitialChat({
       session: {
         id: nanoid(),
@@ -389,7 +400,9 @@ export async function POST(req: Request) {
         inferenceProfileId: preferences.defaultInferenceProfileId,
         composioSelection: {
           mainProfileId:
-            preferences.composioAgentDefaults.main.defaultProfileId,
+            defaultComposioProfileId && composioPolicy.allowed
+              ? defaultComposioProfileId
+              : null,
         },
       },
     });

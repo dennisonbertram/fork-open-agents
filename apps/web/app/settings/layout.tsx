@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Cable,
   Blocks,
+  Bot,
   LogOut,
   Menu,
   Settings as SettingsIcon,
@@ -91,6 +92,12 @@ const baseSidebarItems = [
     label: "Composio",
     href: "/settings/composio",
     icon: Blocks,
+  },
+  {
+    id: "background-agents",
+    label: "Background agents",
+    href: "/settings/background-agents",
+    icon: Bot,
   },
   {
     id: "models",

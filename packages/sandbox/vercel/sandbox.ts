@@ -425,8 +425,7 @@ export class VercelSandbox implements Sandbox {
 - Git is available for local inspection only; do not configure remotes or credentials
 - GitHub CLI (gh) is NOT available; do not call GitHub write APIs from this sandbox
 - GitHub writes are handled by the broker outside this sandbox. Do not configure credentials, commit, or push from inside the sandbox.
-- Node.js runtime with npm/pnpm available
-- Bun, jq, and agent-browser availability depends on the base snapshot. Verify with \`command -v <tool>\` before relying on them.
+- Runtime tool availability depends on the base snapshot and active profile. Verify with \`command -v <tool>\` before relying on Node.js, npm, pnpm, Bun, jq, agent-browser, or other CLIs.
 - Dependencies may not be installed. Before running project scripts (build, typecheck, lint, test), check if \`node_modules\` exists and run the package manager install command if needed (e.g. \`bun install\`, \`npm install\`)
 - When validating UI or end-to-end behavior, start the dev server and use agent-browser against the local dev server URL if agent-browser is available; otherwise report that browser automation is unavailable in the sandbox
 - This sandbox already runs on Vercel; do not suggest deploying to Vercel just to obtain a shareable preview link

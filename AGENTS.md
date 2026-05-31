@@ -17,6 +17,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Local Development Setup](docs/process/local-development.md)
 - [Development Workflow](docs/process/development-workflow.md)
 - [Behavior-First TDD](docs/process/behavior-tdd.md)
+- [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
 - [Observability Discipline](docs/process/observability-discipline.md)
 - [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
 
@@ -49,6 +50,22 @@ Use the process docs for non-trivial work:
 - [Regression Discipline](docs/process/regression-discipline.md) defines the
   bug-to-regression workflow.
 - [Formatting Gate](docs/process/formatting-gate.md) defines completion checks.
+- [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
+  defines the database-backed local browser QA gate for settings, sessions,
+  repositories, and other persisted UI paths.
+
+All GitHub issues created or materially edited by agents must follow
+[Feature Ticket Format](docs/process/feature-ticket-format.md). Do not open
+blank issues. Use the standard feature, bug regression, or research spike
+template; fill unknown fields explicitly; and include the required structured
+observability, regression harness plan, protected path, tests-first plan, deploy
+impact, and definition-of-done sections before implementation starts.
+
+Whenever an agent creates a non-trivial plan, roadmap, epic, or implementation
+breakdown, first create or identify the corresponding GitHub issue or epic and
+flesh it out according to the standard issue format. The issue/epic is the
+durable record of what is being built and why; planning docs can expand on it,
+but they must link back to the issue/epic instead of replacing it.
 
 For behavior-changing work, name the protected user/operator path, write or
 identify the failing test first, confirm the red state, implement the smallest
@@ -67,6 +84,12 @@ unless the evidence satisfies
 At the end of any implementation, include a concise summary of what was built,
 what changed for users, and what was verified so the next person can quickly
 understand the shipped work without reading the full transcript.
+
+At the end of implementation work, always preserve the work in Git: create an
+intentional commit, push it to the user's fork/workspace, and open a pull
+request before calling the task complete. Stage only the files that belong to
+the implementation, keep unrelated dirty files out of the commit, and report any
+blocker that prevents committing, pushing, or opening the PR.
 
 ## Authentication
 
@@ -132,6 +155,12 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 - Repair dependencies from the repo root with `bun install --frozen-lockfile`.
 - Start the local web app with `bun run web`; it serves `http://localhost:3000` and loads `apps/web/.env.local` / `apps/web/.env`.
 - Verify local health with `curl -I http://localhost:3000` and `curl http://localhost:3000/api/auth/info`.
+- For authenticated UI smoke, first confirm `POSTGRES_URL` and
+  `BETTER_AUTH_SECRET` are present in `apps/web/.env.local`, run
+  `bun run --cwd apps/web db:migrate:apply`, and use an explicit `PORT` /
+  `LOCAL_URL` if `3000` is occupied by another app. Do not mark authenticated
+  browser QA complete when the sessions/settings path cannot load due to a
+  missing database env.
 - Local Vercel sign-in requires the Vercel OAuth app to include `http://localhost:3000/api/auth/callback/vercel` alongside the production callback.
 - Railway CLI auth and install state are separate from project linking. Use `railway whoami --json` to verify auth; `railway status --json` only works after this repo is linked to the correct Railway project.
 - Do not link or deploy to Railway based on a guessed project name. Confirm the project URL or project ID first, then use `railway link <project-id>` or explicit `--project`/`--environment` flags.
