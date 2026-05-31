@@ -1,0 +1,47 @@
+
+[AUTH] websocket upgrade is gated on the session token
+  (connect threw: WebSocket connection to 'ws://127.0.0.1:60090/session' failed: Expected 101 status code)
+  PASS: connection with WRONG token is rejected (no socket)
+  PASS: connection with VALID token succeeds
+
+[DIFF] valid patch (modify hello.txt + add new.txt) applies to tree
+  PASS: valid patch reported as applied
+  PASS: hello.txt content matches the proposed patch (real apply)
+  PASS: new.txt was created by the patch
+
+[DIFF] conflicting/invalid patch is rejected and the tree is rolled back
+  PASS: conflicting patch reported as rejected
+  PASS: working tree status is unchanged after rejected patch
+  PASS: hello.txt content unchanged after rejected patch
+
+[DIFF] patch whose target escapes the jail is rejected before touching disk
+  PASS: jail-escaping patch rejected
+  PASS: no file was written outside the jail
+
+[EXEC] local_exec echo within jail -> PARKS -> APPROVE -> real stdout, exit 0
+  PASS: echo call PARKED with a stable approvalId
+  PASS: real stdout streamed back
+  PASS: exit code 0 reported
+
+[EXEC] APPROVE a command with an observable side effect (marker file)
+  PASS: approved command actually ran (marker file present)
+
+[EXEC] cat /etc/passwd -> BLOCKED by policy, never runs (operator set to APPROVE)
+  PASS: absolute-path read blocked by policy
+  PASS: blocked command was NEVER parked for approval (fails before the operator)
+
+[EXEC] cat ../../etc/passwd traversal -> BLOCKED, never runs
+  PASS: path traversal blocked by policy
+
+[EXEC] rm -rf . (denylist) -> BLOCKED, never runs (operator set to APPROVE)
+  PASS: rm blocked by command denylist
+  PASS: jail files still intact (rm never ran)
+
+[EXEC] echo a; rm b (shell metachar in argv) -> BLOCKED by shape layer
+  PASS: shell metachar argv blocked by shape layer
+
+[EXEC] allowlisted echo but operator DENIES -> never runs
+  PASS: denied call parked then returned output-denied
+  PASS: DENIED command never ran (no marker)
+
+Assertions: 22, Failures: 0
