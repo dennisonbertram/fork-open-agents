@@ -27,6 +27,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 // This avoids a top-level require() of the real module which hangs in bun:test.
 
 // The stub entry mirrors DEFAULT_CATALOG from catalog.ts (enabled: false).
+// inputSchemaRef is an internal field that must never appear in API responses.
 const STUB_ENTRY = Object.freeze({
   id: "stub-workflow",
   version: "0.1.0",
@@ -36,6 +37,7 @@ const STUB_ENTRY = Object.freeze({
   capabilities: [] as string[],
   proofLevel: "level-1" as const,
   enabled: false,
+  inputSchemaRef: "internal://secret-schema-ref",
 });
 
 // An enabled entry used by regression tests to verify availability flip.
@@ -60,6 +62,8 @@ class StubWorkflowCatalogError extends Error {
 
 // Controls whether buildRegistry throws in BT-004.
 let catalogShouldThrow = false;
+// Controls whether buildRegistry throws a non-Error primitive (FIX C coverage).
+let catalogShouldThrowNonError = false;
 // Controls whether to include the enabled entry (regression tests).
 let includeEnabledEntry = false;
 
@@ -81,6 +85,10 @@ mock.module("@/lib/workflows/catalog", () => ({
   buildRegistry: (_defs: unknown) => {
     if (catalogShouldThrow) {
       throw new StubWorkflowCatalogError("simulated catalog failure");
+    }
+    if (catalogShouldThrowNonError) {
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw "boom";
     }
     return makeStubRegistry();
   },
@@ -110,6 +118,7 @@ describe("/api/workflows/catalog GET", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     catalogShouldThrow = false;
+    catalogShouldThrowNonError = false;
     includeEnabledEntry = false;
   });
 
@@ -197,15 +206,26 @@ describe("/api/workflows/catalog GET", () => {
   });
 
   // BT-005: response contains ONLY documented projected fields (no internal leakage)
+  // The STUB_ENTRY fixture intentionally carries inputSchemaRef and enabled so
+  // that this test is non-vacuous: if toEntry were changed to spread the whole
+  // definition, these assertions would fail.
   test("BT-005: response workflow entries contain only the projected stable fields", async () => {
     const { GET } = await routeModulePromise;
 
     const response = await GET();
 
     expect(response.status).toBe(200);
+
+    // Clone the response so we can read the body as both text and JSON.
+    const rawText = await response.clone().text();
     const body = (await response.json()) as {
       workflows: Array<Record<string, unknown>>;
     };
+
+    // Sentinel must not appear anywhere in the serialized response body.
+    // This catches leakage even in nested or stringified values.
+    expect(rawText).not.toContain("internal://secret-schema-ref");
+
     expect(body.workflows.length).toBeGreaterThan(0);
     const entry = body.workflows[0]!;
     const allowedKeys = new Set([
@@ -223,6 +243,7 @@ describe("/api/workflows/catalog GET", () => {
       expect(allowedKeys.has(key)).toBe(true);
     }
     // The internal `enabled` and `inputSchemaRef` fields must NOT be present
+    // as keys on any entry object.
     expect(actualKeys).not.toContain("enabled");
     expect(actualKeys).not.toContain("inputSchemaRef");
   });
@@ -272,5 +293,26 @@ describe("/api/workflows/catalog GET", () => {
     // Must also carry a human-readable message for client debugging.
     expect(typeof body["message"]).toBe("string");
     expect((body["message"] as string).length).toBeGreaterThan(0);
+  });
+
+  // FIX-C: non-Error throw — the catch block's second branch (unknown non-Error
+  // throws) must still return a safe 503 and must NOT leak the thrown value.
+  test("FIX-C: returns 503 with catalog_unavailable when catalog throws a non-Error primitive", async () => {
+    catalogShouldThrowNonError = true;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(503);
+    const rawText = await response.clone().text();
+    const body = (await response.json()) as Record<string, unknown>;
+
+    // Must still return the correct errorKind taxonomy.
+    expect(body["errorKind"]).toBe("catalog_unavailable");
+    // Must carry a non-empty human-readable message.
+    expect(typeof body["message"]).toBe("string");
+    expect((body["message"] as string).length).toBeGreaterThan(0);
+    // The thrown primitive "boom" must NOT appear in the response body.
+    expect(rawText).not.toContain("boom");
   });
 });
