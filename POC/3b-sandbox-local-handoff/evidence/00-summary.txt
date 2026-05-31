@@ -1,0 +1,8 @@
+POC 3b fidelity summary
+
+direction 1 (sandbox -> local) status match: (identical)
+direction 2 (local -> sandbox) status match: (identical)
+
+overall: PASS — byte-exact both directions
+
+See 01/02/03 dumps for full status, staged/unstaged diffs, and sha256 manifests.
