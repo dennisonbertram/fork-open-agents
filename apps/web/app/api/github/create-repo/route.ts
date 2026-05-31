@@ -15,6 +15,7 @@ import { getUserGitHubToken } from "@/lib/github/token";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
+  parseGitHubHttpsUrl,
 } from "@/lib/github/urls";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
 import { isSandboxActive } from "@/lib/sandbox/utils";
@@ -363,6 +364,19 @@ export async function POST(req: Request) {
       });
     }
 
+    // FIX BT-004: Validate clone_url before interpolating into shell command.
+    // Assert hostname === github.com, no embedded credentials, owner/repo match.
+    const parsedCloneUrl = parseGitHubHttpsUrl(createdRepo.clone_url);
+    if (
+      !parsedCloneUrl ||
+      parsedCloneUrl.owner !== createdRepo.owner.login ||
+      parsedCloneUrl.repo !== createdRepo.name
+    ) {
+      throw new Error(
+        "GitHub returned an invalid or untrusted clone_url for the created repository.",
+      );
+    }
+
     const sandbox = await connectSandbox(
       ownedSession.sessionRecord.sandboxState,
     );
@@ -379,31 +393,67 @@ export async function POST(req: Request) {
       requiredUserPermission: "write",
     });
 
-    if (access.ok) {
-      const pushToken = await mintInstallationToken({
-        installationId: access.installationId,
-        repositoryIds: [access.repositoryId],
-        permissions: { contents: "write" },
-      });
-      try {
-        await pushSandboxRepository({
-          sandbox,
-          token: pushToken.token,
-          branch,
-        });
-      } finally {
-        await revokeInstallationToken(pushToken.token);
-      }
-    } else {
-      console.warn(
-        `GitHub App access unavailable after creating ${createdRepo.full_name}: ${access.reason}`,
+    // FIX BT-002: Fail closed when GitHub App installation token is unavailable.
+    // Do NOT broker the broad user OAuth token into the sandbox as a fallback.
+    if (!access.ok) {
+      return Response.json(
+        {
+          error:
+            "GitHub App access is required to push to the repository. Install or grant the GitHub App on this account and try again.",
+          repoUrl: createdRepo.html_url,
+          owner: createdRepo.owner.login,
+          repoName: createdRepo.name,
+          status: "pushFailed",
+        },
+        { status: 403 },
       );
+    }
+
+    const pushToken = await mintInstallationToken({
+      installationId: access.installationId,
+      repositoryIds: [access.repositoryId],
+      permissions: { contents: "write" },
+    });
+
+    // FIX BT-001 + BT-003: Separate try/finally blocks so:
+    // - revocation failure does NOT bubble as 500 (BT-003)
+    // - push failure surfaces the created repo identity for retry (BT-001)
+    try {
       await pushSandboxRepository({
         sandbox,
-        token: userToken,
+        token: pushToken.token,
         branch,
       });
+    } catch (pushError) {
+      // Push failed after the repo was already created — surface the orphan identity
+      // so the client can resume without re-creating.
+      console.error(
+        `Push failed for ${createdRepo.full_name}; repo exists but session not linked:`,
+        pushError,
+      );
+      // Always attempt token revocation even on push failure, but don't let it mask the push error.
+      await revokeInstallationToken(pushToken.token).catch((revokeErr) => {
+        console.warn("Failed to revoke installation token after push error:", revokeErr);
+      });
+      return Response.json(
+        {
+          status: "pushFailed",
+          repoUrl: createdRepo.html_url,
+          owner: createdRepo.owner.login,
+          repoName: createdRepo.name,
+          error:
+            pushError instanceof Error
+              ? pushError.message
+              : "Push to repository failed. The repository was created but code was not pushed.",
+        },
+        { status: 207 },
+      );
     }
+
+    // FIX BT-003: Revocation failure must not turn a successful push into a 500.
+    await revokeInstallationToken(pushToken.token).catch((revokeErr) => {
+      console.warn("Failed to revoke installation token after push:", revokeErr);
+    });
 
     await updateSession(body.sessionId, {
       repoOwner: createdRepo.owner.login,
@@ -419,10 +469,7 @@ export async function POST(req: Request) {
       repoName: createdRepo.name,
       cloneUrl: createdRepo.clone_url,
       branch,
-      appAccess: access.ok ? "verified" : "needs_update",
-      ...(access.ok
-        ? {}
-        : { appAccessMessage: getRepoAccessErrorMessage(access.reason) }),
+      appAccess: "verified",
     });
   } catch (error) {
     console.error("Failed to create GitHub repository:", error);

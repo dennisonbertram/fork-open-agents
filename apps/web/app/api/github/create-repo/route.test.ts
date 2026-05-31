@@ -314,7 +314,7 @@ describe("/api/github/create-repo", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(2);
   });
 
-  test("falls back to the user token when app access is not available yet", async () => {
+  test("fails closed with 403 when GitHub App access is not available (no user-token fallback)", async () => {
     accessResult = { ok: false, reason: "app_no_access" };
     const { POST } = await routeModulePromise;
 
@@ -326,12 +326,16 @@ describe("/api/github/create-repo", () => {
       }),
     );
 
-    expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({
-      appAccess: "needs_update",
-      appAccessMessage: "access error: app_no_access",
-    });
-    expect(temporaryAuthTokens).toEqual(["user-token"]);
+    // BT-002: must fail closed; must NOT fall back to user token
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(typeof body.error).toBe("string");
+    // Repo identity must be surfaced so user knows what was created
+    expect(body.repoUrl).toBe("https://github.com/octocat/repo-1");
+    expect(body.owner).toBe("octocat");
+    expect(body.repoName).toBe("repo-1");
+    // User token must NOT have been passed to the sandbox
+    expect(temporaryAuthTokens).not.toContain("user-token");
   });
 
   test("requires a GitHub token with repository permissions", async () => {
