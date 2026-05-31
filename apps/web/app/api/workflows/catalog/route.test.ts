@@ -43,7 +43,7 @@ class StubWorkflowCatalogError extends Error {
   readonly kind = "definition_invalid";
   constructor(message: string) {
     super(message);
-    this.name = "WorkflowCatalogError";
+    this.name = "StubWorkflowCatalogError";
   }
 }
 
