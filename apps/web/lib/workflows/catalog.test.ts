@@ -473,4 +473,4 @@ describe("FIX-2: registry values and DEFAULT_CATALOG are immutable after constru
     // capabilities length must be unchanged
     expect(entry.capabilities.length).toBe(originalCapabilities.length);
   });
-})
+});

@@ -55,32 +55,91 @@ export type WorkflowRegistry = {
   readonly definitions: ReadonlyMap<string, WorkflowDefinition>;
 };
 
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+/**
+ * Deep-freezes a WorkflowDefinition so callers cannot mutate the shared object
+ * or its nested arrays.
+ */
+function freezeDefinition(
+  def: WorkflowDefinition,
+): Readonly<WorkflowDefinition> {
+  Object.freeze(def.capabilities);
+  return Object.freeze(def);
+}
+
+/**
+ * Wraps a Map so that write operations (.set / .delete / .clear) throw, making
+ * the exported registry.definitions truly read-only at runtime.
+ */
+function readOnlyMap<K, V>(source: Map<K, V>): ReadonlyMap<K, V> {
+  return new Proxy(source, {
+    get(target, prop, receiver) {
+      if (prop === "set" || prop === "delete" || prop === "clear") {
+        return () => {
+          throw new TypeError(
+            `Cannot mutate a read-only registry map (attempted: ${String(prop)})`,
+          );
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as unknown as ReadonlyMap<K, V>;
+}
+
 // ── Registry builder ──────────────────────────────────────────────────────────
 
 /**
  * Validates and builds an immutable workflow registry from an array of
  * workflow definitions. Throws WorkflowCatalogError on any violation.
+ *
+ * Error kinds:
+ * - definition_invalid      — entry is null, undefined, a non-object, or fails
+ *                             structural validation (missing/malformed fields).
+ * - unsupported_proof_level — entry is otherwise valid but has a proofLevel
+ *                             value not in SUPPORTED_PROOF_LEVELS.
+ * - duplicate_workflow_id   — two entries share the same id.
  */
 export function buildRegistry(
-  definitions: WorkflowDefinition[],
+  definitions: ReadonlyArray<unknown>,
 ): WorkflowRegistry {
   const map = new Map<string, WorkflowDefinition>();
 
   for (const raw of definitions) {
-    // Validate proof level first — gives the more specific error kind
-    if (!SUPPORTED_PROOF_LEVELS.includes(raw.proofLevel)) {
-      throw new WorkflowCatalogError(
-        "unsupported_proof_level",
-        `proofLevel "${raw.proofLevel}" is not supported. Supported levels: ${SUPPORTED_PROOF_LEVELS.join(", ")}`,
-      );
-    }
-
-    // Validate full shape with Zod
+    // Run Zod validation first so null/undefined/non-objects/missing fields are
+    // uniformly caught here as definition_invalid rather than throwing a raw
+    // TypeError when we later try to access properties.
     const parsed = WorkflowDefinitionSchema.safeParse(raw);
+
     if (!parsed.success) {
+      // Check whether the ONLY failure is an invalid proofLevel enum value.
+      // If so, the entry is otherwise structurally valid and deserves the more
+      // specific unsupported_proof_level kind.
+      const issues = parsed.error.issues;
+      const onlyProofLevelFailed =
+        issues.length === 1 &&
+        issues[0]?.path.length === 1 &&
+        issues[0].path[0] === "proofLevel";
+
+      if (
+        onlyProofLevelFailed &&
+        raw !== null &&
+        raw !== undefined &&
+        typeof raw === "object"
+      ) {
+        // The raw value is an object with all required fields, but proofLevel
+        // is not a recognised enum member.
+        const rawProofLevel = (raw as Record<string, unknown>)["proofLevel"];
+        throw new WorkflowCatalogError(
+          "unsupported_proof_level",
+          `proofLevel "${String(rawProofLevel)}" is not supported. Supported levels: ${SUPPORTED_PROOF_LEVELS.join(", ")}`,
+        );
+      }
+
       throw new WorkflowCatalogError(
         "definition_invalid",
-        `Invalid workflow definition: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+        `Invalid workflow definition: ${issues.map((i) => i.message).join("; ")}`,
       );
     }
 
@@ -94,10 +153,10 @@ export function buildRegistry(
       );
     }
 
-    map.set(definition.id, definition);
+    map.set(definition.id, freezeDefinition(definition));
   }
 
-  return { definitions: map };
+  return { definitions: readOnlyMap(map) };
 }
 
 // ── Lookup API ────────────────────────────────────────────────────────────────
@@ -136,15 +195,17 @@ export function listWorkflows(
 
 // ── Default stub catalog (AT MOST ONE entry — full seeding deferred to #33) ──
 
-export const DEFAULT_CATALOG: WorkflowDefinition[] = [
-  {
-    id: "stub-workflow",
-    version: "0.1.0",
-    name: "Stub Workflow",
-    description:
-      "Placeholder workflow definition. Real catalog entries will be added in issue #33.",
-    capabilities: [],
-    proofLevel: "level-1",
-    enabled: false,
-  },
-];
+const _stubEntry = Object.freeze({
+  id: "stub-workflow",
+  version: "0.1.0",
+  name: "Stub Workflow",
+  description:
+    "Placeholder workflow definition. Real catalog entries will be added in issue #33.",
+  capabilities: Object.freeze([]) as unknown as string[],
+  proofLevel: "level-1" as const,
+  enabled: false,
+});
+
+export const DEFAULT_CATALOG: ReadonlyArray<WorkflowDefinition> = Object.freeze(
+  [_stubEntry] as WorkflowDefinition[],
+);
