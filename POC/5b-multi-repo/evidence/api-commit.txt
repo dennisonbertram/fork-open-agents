@@ -1,0 +1,11 @@
+branch: feat/rename-get-user
+commit: 9d974267e5bbcef8f6322ff103db47888bc4a904
+files: src/users.js
+
+git log --oneline:
+9f4aea3 api: add extra
+9d97426 api: rename getUserV1 -> fetchUser
+42c8c46 initial
+
+git status --porcelain (clean expected):
+<clean>

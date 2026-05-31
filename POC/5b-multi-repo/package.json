@@ -1,0 +1,9 @@
+{
+  "name": "poc-5b-multi-repo",
+  "private": true,
+  "type": "module",
+  "description": "POC 5b: multi-repo / monorepo sessions for open-agents. Self-contained, no external deps.",
+  "scripts": {
+    "eval": "bun run eval/run.ts"
+  }
+}
