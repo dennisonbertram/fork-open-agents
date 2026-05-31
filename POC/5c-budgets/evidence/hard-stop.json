@@ -1,0 +1,149 @@
+{
+  "scenario": "hard-stop",
+  "result": {
+    "stopReason": "budget_exceeded",
+    "stepsExecuted": 2,
+    "workDone": 2,
+    "warnings": [
+      {
+        "budgetId": "b",
+        "scope": "session",
+        "scopeId": "session-1",
+        "period": "per_session",
+        "decision": "WARN",
+        "drivingDimension": "usd",
+        "utilization": 0.84,
+        "reason": "session budget soft threshold crossed: usd at 84% of limit"
+      }
+    ],
+    "trace": [
+      {
+        "step": 0,
+        "phase": "pre-step",
+        "decision": "ALLOW",
+        "projected": {
+          "tokens": 1500,
+          "usd": 0.0105,
+          "durationMs": 10
+        },
+        "evaluations": [
+          {
+            "budgetId": "b",
+            "scope": "session",
+            "scopeId": "session-1",
+            "period": "per_session",
+            "decision": "ALLOW",
+            "drivingDimension": "usd",
+            "utilization": 0.42,
+            "reason": "within session budget (42% projected)"
+          }
+        ],
+        "halted": false
+      },
+      {
+        "step": 0,
+        "phase": "post-step",
+        "usage": {
+          "inputTokens": 1000,
+          "outputTokens": 500,
+          "cachedInputTokens": 0,
+          "totalTokens": 1500
+        },
+        "actual": {
+          "tokens": 1500,
+          "usd": 0.0105,
+          "durationMs": 10
+        },
+        "drift": {
+          "tokens": 0,
+          "usd": 0,
+          "durationMs": 0
+        }
+      },
+      {
+        "step": 1,
+        "phase": "pre-step",
+        "decision": "WARN",
+        "projected": {
+          "tokens": 1500,
+          "usd": 0.0105,
+          "durationMs": 10
+        },
+        "evaluations": [
+          {
+            "budgetId": "b",
+            "scope": "session",
+            "scopeId": "session-1",
+            "period": "per_session",
+            "decision": "WARN",
+            "drivingDimension": "usd",
+            "utilization": 0.84,
+            "reason": "session budget soft threshold crossed: usd at 84% of limit"
+          }
+        ],
+        "halted": false
+      },
+      {
+        "step": 1,
+        "phase": "post-step",
+        "usage": {
+          "inputTokens": 1000,
+          "outputTokens": 500,
+          "cachedInputTokens": 0,
+          "totalTokens": 1500
+        },
+        "actual": {
+          "tokens": 1500,
+          "usd": 0.0105,
+          "durationMs": 10
+        },
+        "drift": {
+          "tokens": 0,
+          "usd": 0,
+          "durationMs": 0
+        }
+      },
+      {
+        "step": 2,
+        "phase": "pre-step",
+        "decision": "BLOCK",
+        "projected": {
+          "tokens": 1500,
+          "usd": 0.0105,
+          "durationMs": 10
+        },
+        "evaluations": [
+          {
+            "budgetId": "b",
+            "scope": "session",
+            "scopeId": "session-1",
+            "period": "per_session",
+            "decision": "BLOCK",
+            "drivingDimension": "usd",
+            "utilization": 1.26,
+            "reason": "session budget hard limit would be exceeded: usd at 126% of limit"
+          }
+        ],
+        "halted": true
+      }
+    ],
+    "haltedBy": {
+      "budgetId": "b",
+      "scope": "session",
+      "scopeId": "session-1",
+      "period": "per_session",
+      "decision": "BLOCK",
+      "drivingDimension": "usd",
+      "utilization": 1.26,
+      "reason": "session budget hard limit would be exceeded: usd at 126% of limit"
+    }
+  },
+  "meter": {
+    "session:session-1:per_session": {
+      "tokens": 3000,
+      "usd": 0.021,
+      "durationMs": 20,
+      "periodStart": 0
+    }
+  }
+}

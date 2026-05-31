@@ -1,0 +1,60 @@
+{
+  "before": {
+    "decision": "BLOCK",
+    "decidingScope": {
+      "budgetId": "b",
+      "scope": "user",
+      "scopeId": "user-1",
+      "period": "daily",
+      "decision": "BLOCK",
+      "drivingDimension": "usd",
+      "utilization": 1.1,
+      "reason": "user budget hard limit would be exceeded: usd at 110% of limit"
+    },
+    "evaluations": [
+      {
+        "budgetId": "b",
+        "scope": "user",
+        "scopeId": "user-1",
+        "period": "daily",
+        "decision": "BLOCK",
+        "drivingDimension": "usd",
+        "utilization": 1.1,
+        "reason": "user budget hard limit would be exceeded: usd at 110% of limit"
+      }
+    ]
+  },
+  "afterReset": {
+    "decision": "ALLOW",
+    "decidingScope": {
+      "budgetId": "b",
+      "scope": "user",
+      "scopeId": "user-1",
+      "period": "daily",
+      "decision": "ALLOW",
+      "drivingDimension": "usd",
+      "utilization": 0.2,
+      "reason": "within user budget (20% projected)"
+    },
+    "evaluations": [
+      {
+        "budgetId": "b",
+        "scope": "user",
+        "scopeId": "user-1",
+        "period": "daily",
+        "decision": "ALLOW",
+        "drivingDimension": "usd",
+        "utilization": 0.2,
+        "reason": "within user budget (20% projected)"
+      }
+    ]
+  },
+  "meterAfter": {
+    "user:user-1:daily": {
+      "tokens": 0,
+      "usd": 0,
+      "durationMs": 0,
+      "periodStart": 1780272000000
+    }
+  }
+}

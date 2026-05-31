@@ -1,0 +1,16 @@
+{
+  "name": "poc-5c-budgets",
+  "private": true,
+  "type": "module",
+  "description": "POC 5c: Cost/quota + budgets per user/session. Usage-shaped token accounting -> price table -> per-scope budget meter -> ALLOW/WARN/BLOCK enforcement gate that halts an agent loop before the over-budget step runs. Self-contained; does not touch repo root deps.",
+  "scripts": {
+    "eval": "bun test eval.test.ts",
+    "eval:trace": "bun run trace.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "bun-types": "^1.3.14",
+    "typescript": "5.7.3"
+  }
+}
