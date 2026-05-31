@@ -7,6 +7,7 @@ import {
   lookupWorkflow,
   listWorkflows,
   SUPPORTED_PROOF_LEVELS,
+  DEFAULT_CATALOG,
 } from "./catalog";
 
 // ── Shared fixtures ──────────────────────────────────────────────────────────
@@ -299,3 +300,177 @@ describe("regression: empty capabilities array is valid", () => {
     expect(result?.capabilities).toHaveLength(0);
   });
 });
+
+// ── FIX-1: typed-error contract — null/undefined/non-object → definition_invalid ──
+// These tests were RED before the fix: null and undefined threw raw TypeError,
+// and 42 / {} threw unsupported_proof_level instead of definition_invalid.
+
+describe("FIX-1: buildRegistry rejects non-object entries with definition_invalid", () => {
+  test("FIX1-001: null entry throws WorkflowCatalogError with kind definition_invalid", () => {
+    let thrown: unknown;
+    try {
+      buildRegistry([null as unknown as WorkflowDefinition]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("definition_invalid");
+  });
+
+  test("FIX1-002: undefined entry throws WorkflowCatalogError with kind definition_invalid", () => {
+    let thrown: unknown;
+    try {
+      buildRegistry([undefined as unknown as WorkflowDefinition]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("definition_invalid");
+  });
+
+  test("FIX1-003: primitive (number 42) entry throws WorkflowCatalogError with kind definition_invalid", () => {
+    let thrown: unknown;
+    try {
+      buildRegistry([42 as unknown as WorkflowDefinition]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("definition_invalid");
+  });
+
+  test("FIX1-004: empty object {} entry throws WorkflowCatalogError with kind definition_invalid", () => {
+    let thrown: unknown;
+    try {
+      buildRegistry([{} as unknown as WorkflowDefinition]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("definition_invalid");
+  });
+
+  test("FIX1-005: valid object with unrecognized proofLevel still yields unsupported_proof_level", () => {
+    // An otherwise structurally complete definition but with an invalid proofLevel
+    // should yield unsupported_proof_level (not definition_invalid)
+    const bad = {
+      ...VALID_DEFINITION,
+      proofLevel: "level-99" as (typeof SUPPORTED_PROOF_LEVELS)[number],
+    };
+    let thrown: unknown;
+    try {
+      buildRegistry([bad as unknown as WorkflowDefinition]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("unsupported_proof_level");
+  });
+});
+
+// ── FIX-2: true immutability — frozen definitions and protected map ────────────
+// These tests were RED before the fix: callers could mutate capabilities arrays,
+// fields, DEFAULT_CATALOG, and the registry Map.
+
+describe("FIX-2: registry values and DEFAULT_CATALOG are immutable after construction", () => {
+  test("FIX2-001: pushing to a definition's capabilities array does not affect the registry", () => {
+    const def = {
+      ...VALID_DEFINITION,
+      capabilities: ["initial-cap"],
+    };
+    const registry = buildRegistry([def]);
+    const result = lookupWorkflow(registry, "test-workflow");
+
+    // Attempt to mutate — either throws (frozen) or silently fails
+    if (result) {
+      try {
+        result.capabilities.push("injected");
+      } catch {
+        // expected when frozen — test will pass either way
+      }
+    }
+
+    // The registry must return the original value unchanged
+    const result2 = lookupWorkflow(registry, "test-workflow");
+    expect(result2?.capabilities).toHaveLength(1);
+    expect(result2?.capabilities[0]).toBe("initial-cap");
+    expect(result2?.capabilities).not.toContain("injected");
+  });
+
+  test("FIX2-002: reassigning a field on a returned definition does not affect subsequent lookups", () => {
+    const registry = buildRegistry([VALID_DEFINITION]);
+    const result = lookupWorkflow(registry, "test-workflow");
+
+    // Attempt field mutation — either throws (frozen) or silently fails
+    if (result) {
+      try {
+        (result as { id: string }).id = "mutated-id";
+      } catch {
+        // expected when frozen
+      }
+    }
+
+    // The registry must still return the original id
+    const result2 = lookupWorkflow(registry, "test-workflow");
+    expect(result2?.id).toBe("test-workflow");
+  });
+
+  test("FIX2-003: calling .set on registry.definitions does not add entries visible to lookupWorkflow", () => {
+    const registry = buildRegistry([VALID_DEFINITION]);
+    const extraDef = { ...VALID_DEFINITION, id: "injected-workflow" };
+
+    // Attempt to mutate the exposed map
+    try {
+      (registry.definitions as Map<string, WorkflowDefinition>).set(
+        "injected-workflow",
+        extraDef,
+      );
+    } catch {
+      // expected if the map is protected
+    }
+
+    // Whether set throws or is a no-op, the injected id must not be discoverable
+    const injected = lookupWorkflow(registry, "injected-workflow");
+    expect(injected).toBeUndefined();
+  });
+
+  test("FIX2-004: DEFAULT_CATALOG cannot be mutated by pushing a new entry", () => {
+    const originalLength = DEFAULT_CATALOG.length;
+
+    // Attempt to push into the exported catalog array
+    try {
+      (DEFAULT_CATALOG as WorkflowDefinition[]).push({
+        ...VALID_DEFINITION,
+        id: "injected-catalog-entry",
+      });
+    } catch {
+      // expected when frozen
+    }
+
+    // The exported DEFAULT_CATALOG must be the same length
+    expect(DEFAULT_CATALOG.length).toBe(originalLength);
+    const ids = DEFAULT_CATALOG.map((d) => d.id);
+    expect(ids).not.toContain("injected-catalog-entry");
+  });
+
+  test("FIX2-005: DEFAULT_CATALOG entry capabilities array cannot be mutated", () => {
+    const entry = DEFAULT_CATALOG[0];
+    if (!entry) return; // guard for type narrowing
+
+    const originalCapabilities = [...entry.capabilities];
+
+    try {
+      (entry.capabilities as string[]).push("injected-cap");
+    } catch {
+      // expected when frozen
+    }
+
+    // capabilities length must be unchanged
+    expect(entry.capabilities.length).toBe(originalCapabilities.length);
+  });
+})
