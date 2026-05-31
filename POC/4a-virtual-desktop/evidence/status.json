@@ -1,0 +1,19 @@
+{
+  "kind": "desktop",
+  "status": "running",
+  "display": ":99",
+  "geometry": "1280x800x24",
+  "windowManager": "metacity",
+  "vncServer": "x0vncserver",
+  "vncPort": 5900,
+  "novncPort": 6080,
+  "novncRoot": "/usr/share/novnc",
+  "healthPath": "/vnc.html",
+  "pids": {
+    "xvfb": "12",
+    "windowManager": "19",
+    "x0vncserver": "30",
+    "websockify": "42"
+  },
+  "logDir": "/tmp/open-agents/desktop/logs"
+}

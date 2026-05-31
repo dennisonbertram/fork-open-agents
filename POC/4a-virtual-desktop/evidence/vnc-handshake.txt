@@ -1,0 +1,5 @@
+[ws] connecting ws://127.0.0.1:6080/websockify
+[ws] handshake OK (101 Switching Protocols), accept verified
+[rfb] ProtocolVersion banner: 'RFB 003.008'
+[rfb] PASS: live VNC bridge confirmed (browser WS -> websockify -> VNC server -> Xvfb)
+noVNC vnc.html served over HTTP: OK

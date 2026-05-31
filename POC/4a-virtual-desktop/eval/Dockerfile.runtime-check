@@ -1,0 +1,45 @@
+# RUNTIME LOGIC CHECK (fast, native-arch). This is NOT the integration target.
+#
+# The authoritative eval is eval/Dockerfile (amazonlinux:2023, linux/amd64) which
+# proves the exact package names and setup commands the Vercel Sandbox will run.
+# That image installs under slow x86 emulation on an Apple-silicon host.
+#
+# This Debian image installs the SAME stack (Xvfb + metacity + TigerVNC's
+# x0vncserver + websockify + noVNC) from native packages so it builds in
+# seconds, and runs the IDENTICAL scripts/start-desktop.sh + eval/run-eval.sh.
+# Passing here proves the runtime orchestration (start order, ports, RFB bridge,
+# screenshot) is correct; the AL2023 image proves the install layer is correct.
+FROM debian:bookworm-slim
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+      xvfb \
+      metacity \
+      tigervnc-scraping-server \
+      tigervnc-common \
+      novnc \
+      websockify \
+      xterm \
+      x11-utils \
+      x11-apps \
+      imagemagick \
+      python3 \
+      procps \
+      curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
+# Debian ships x0vncserver in tigervnc-scraping-server; noVNC client lives in
+# /usr/share/novnc. Mirror the layout start-desktop.sh expects.
+RUN useradd -m -s /bin/bash sandbox
+
+USER sandbox
+WORKDIR /home/sandbox/poc
+COPY --chown=sandbox:sandbox scripts/start-desktop.sh ./scripts/start-desktop.sh
+COPY --chown=sandbox:sandbox eval/ ./eval/
+RUN chmod +x ./scripts/start-desktop.sh ./eval/*.sh 2>/dev/null || true \
+  && echo "SETUP_SECONDS=0 (native pkg install; see AL2023 image for emulated timing)" \
+       > /home/sandbox/poc/setup-timing.txt
+
+ENV DISPLAY=:99 NOVNC_PORT=6080 VNC_PORT=5900 SCREEN_GEOMETRY=1280x800x24 \
+    NOVNC_WEB_ROOT=/usr/share/novnc
+EXPOSE 6080
+CMD ["bash", "./eval/run-eval.sh"]

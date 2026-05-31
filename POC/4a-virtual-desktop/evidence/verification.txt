@@ -1,0 +1,8 @@
+## verify-xserver
+PASS: X server responds on :99
+## verify-window-manager
+PASS: a window manager owns the root window
+## verify-vncserver
+PASS: x0vncserver RFB port 5900 open
+## verify-novnc-websocket
+PASS: noVNC websocket port 6080 open

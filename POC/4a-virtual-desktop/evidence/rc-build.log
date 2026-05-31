@@ -1,0 +1,49 @@
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile.runtime-check
+#1 transferring dockerfile: 1.88kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/debian:bookworm-slim
+#2 DONE 1.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [1/7] FROM docker.io/library/debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb
+#4 resolve docker.io/library/debian:bookworm-slim@sha256:0104b334637a5f19aa9c983a91b54c89887c0984081f2068983107a6f6c21eeb 0.0s done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 12.88kB done
+#5 DONE 0.0s
+
+#6 [2/7] RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends       xvfb       metacity       tigervnc-scraping-server       tigervnc-common       novnc       websockify       xterm       x11-utils       x11-apps       imagemagick       python3       procps       curl ca-certificates   && rm -rf /var/lib/apt/lists/*
+#6 CACHED
+
+#7 [3/7] RUN useradd -m -s /bin/bash sandbox
+#7 CACHED
+
+#8 [4/7] WORKDIR /home/sandbox/poc
+#8 CACHED
+
+#9 [5/7] COPY --chown=sandbox:sandbox scripts/start-desktop.sh ./scripts/start-desktop.sh
+#9 DONE 0.3s
+
+#10 [6/7] COPY --chown=sandbox:sandbox eval/ ./eval/
+#10 DONE 0.0s
+
+#11 [7/7] RUN chmod +x ./scripts/start-desktop.sh ./eval/*.sh 2>/dev/null || true   && echo "SETUP_SECONDS=0 (native pkg install; see AL2023 image for emulated timing)"        > /home/sandbox/poc/setup-timing.txt
+#11 DONE 0.1s
+
+#12 exporting to image
+#12 exporting layers 0.1s done
+#12 exporting manifest sha256:033e3cbbeda5a0357bd544509d6811c2260c25975a84315b9afaafca4e6e7dbe 0.0s done
+#12 exporting config sha256:e6dbeb87d6580027255192bd56cbaf3c25ed0871fbb39abdeed5f1d4b14fe217 0.0s done
+#12 exporting attestation manifest sha256:62786b0e9862cf7c19c1e8d7156b1c0e5b120de0693b1941aa7a04964785d4de 0.0s done
+#12 exporting manifest list sha256:9ccd09636051efff342c0e9d4893758d8fff416cd3a8abff13bc8ede1c1aad76 0.0s done
+#12 naming to docker.io/library/poc4a-runtime-check:latest
+#12 naming to docker.io/library/poc4a-runtime-check:latest done
+#12 unpacking to docker.io/library/poc4a-runtime-check:latest 0.1s done
+#12 DONE 0.3s
