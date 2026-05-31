@@ -1,0 +1,5 @@
+=== full typecheck (tsconfig.json) ===
+PASS exit=0
+
+=== conformance typecheck (imports REAL packages/sandbox/interface.ts) ===
+PASS exit=0

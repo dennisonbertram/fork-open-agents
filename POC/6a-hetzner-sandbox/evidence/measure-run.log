@@ -1,0 +1,8 @@
+[create] container create: 361 ms
+[create] create -> exec-ready: 437 ms
+[proxy] GET http://measure-3000.lvh.me:8088/index.html -> OK (body: MEASURE-PROOF-OK)
+[snapshot] snapshot(): 1338 ms (id=poc-snap-sbx-measure-1780260040687)
+[restore] restore(): 466 ms
+[snapshot] hash before: cbc3eda1073eb6e5...
+[snapshot] hash after : cbc3eda1073eb6e5...
+[snapshot] HASH MATCH: true

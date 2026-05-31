@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="6" assertions="41" failures="0" skipped="0" time="21.497737">
+  <testsuite name="test/eval.test.ts" file="test/eval.test.ts" tests="6" assertions="41" failures="0" skipped="0" time="0" hostname="Dennisons-MacBook-Pro.local">
+    <testsuite name="(a) core exec + filesystem" file="test/eval.test.ts" line="67" tests="1" assertions="15" failures="0" skipped="0" time="2.293" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="exec echo/uname, cwd, write+read, mkdir/readdir/stat" classname="(a) core exec + filesystem" time="2.293626" file="test/eval.test.ts" line="68" assertions="15" />
+    </testsuite>
+    <testsuite name="(b) port exposure -&gt; public URL via Caddy wildcard proxy" file="test/eval.test.ts" line="113" tests="1" assertions="2" failures="0" skipped="0" time="3.218" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="execDetached HTTP server + GET through wildcard URL" classname="(b) port exposure -&amp;gt; public URL via Caddy wildcard proxy" time="3.218648" file="test/eval.test.ts" line="114" assertions="2" />
+    </testsuite>
+    <testsuite name="(c) isolation between two sandboxes" file="test/eval.test.ts" line="136" tests="1" assertions="6" failures="0" skipped="0" time="5.08" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="B cannot read A&apos;s secret, sees neither A&apos;s port nor process; distinct URLs" classname="(c) isolation between two sandboxes" time="5.080791" file="test/eval.test.ts" line="137" assertions="6" />
+    </testsuite>
+    <testsuite name="(d) snapshot/resume survives filesystem + lifecycle states" file="test/eval.test.ts" line="173" tests="1" assertions="13" failures="0" skipped="0" time="4.785" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="hash-match across snapshot-&gt;destroy-&gt;restore; route removed on stop" classname="(d) snapshot/resume survives filesystem + lifecycle states" time="4.785654" file="test/eval.test.ts" line="174" assertions="13" />
+    </testsuite>
+    <testsuite name="(e) truncation + timeout parity with Vercel" file="test/eval.test.ts" line="219" tests="2" assertions="5" failures="0" skipped="0" time="2.05" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="stdout truncates at 50_000 chars" classname="(e) truncation + timeout parity with Vercel" time="0.435217" file="test/eval.test.ts" line="220" assertions="2" />
+      <testcase name="timeout returns success:false with null exitCode (no throw)" classname="(e) truncation + timeout parity with Vercel" time="1.615632" file="test/eval.test.ts" line="232" assertions="3" />
+    </testsuite>
+  </testsuite>
+</testsuites>

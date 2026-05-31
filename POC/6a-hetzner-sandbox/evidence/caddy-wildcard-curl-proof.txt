@@ -1,0 +1,13 @@
+$ curl -sS -D - http://curlproof-3000.lvh.me:8088/index.html
+HTTP/1.1 200 OK
+Content-Length: 24
+Content-Type: text/html
+Date: Sun, 31 May 2026 20:40:49 GMT
+Last-Modified: Sun, 31 May 2026 20:40:45 GMT
+Server: SimpleHTTP/0.6 Python/3.12.13
+Via: 1.0 Caddy
+
+CURL-PROOF-1780260045290
+expected marker present: true
+caddy routes: ["curlproof-3000.lvh.me"]
+caddy routes after stop(): []

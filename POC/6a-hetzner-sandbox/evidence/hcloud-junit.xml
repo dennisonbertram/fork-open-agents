@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" tests="5" assertions="25" failures="0" skipped="0" time="0.083026">
+  <testsuite name="test/hcloud-driver.test.ts" file="test/hcloud-driver.test.ts" tests="5" assertions="25" failures="0" skipped="0" time="0" hostname="Dennisons-MacBook-Pro.local">
+    <testsuite name="HcloudDriver against mock hcloud API" file="test/hcloud-driver.test.ts" line="129" tests="5" assertions="25" failures="0" skipped="0" time="0.039" hostname="Dennisons-MacBook-Pro.local">
+      <testcase name="create issues correct payload and polls until running" classname="HcloudDriver against mock hcloud API" time="0.014891" file="test/hcloud-driver.test.ts" line="130" assertions="15" />
+      <testcase name="snapshot creates an image and polls the action" classname="HcloudDriver against mock hcloud API" time="0.011899" file="test/hcloud-driver.test.ts" line="184" assertions="3" />
+      <testcase name="destroy DELETEs the server (ends billing)" classname="HcloudDriver against mock hcloud API" time="0.014328" file="test/hcloud-driver.test.ts" line="211" assertions="2" />
+      <testcase name="rejects when no token provided" classname="HcloudDriver against mock hcloud API" time="0.000124" file="test/hcloud-driver.test.ts" line="236" assertions="1" />
+      <testcase name="buildCloudInit emits valid cloud-config with key + marker" classname="HcloudDriver against mock hcloud API" time="0.000049" file="test/hcloud-driver.test.ts" line="240" assertions="4" />
+    </testsuite>
+  </testsuite>
+</testsuites>

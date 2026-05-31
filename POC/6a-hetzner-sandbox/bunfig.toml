@@ -1,0 +1,5 @@
+# POC test config. The Docker-backed eval (snapshot/restore, container boots)
+# routinely exceeds bun's default 5s per-test timeout, so raise it here so
+# `bun test` (no flags) passes the full suite.
+[test]
+timeout = 120000

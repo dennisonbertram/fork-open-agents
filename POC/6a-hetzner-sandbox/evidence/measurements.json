@@ -1,0 +1,24 @@
+{
+  "timestamp": "2026-05-31T20:40:43.030Z",
+  "driver": "local-docker",
+  "image": "python:3.12-slim",
+  "wildcard_url_proof": {
+    "url": "http://measure-3000.lvh.me:8088",
+    "ok": true,
+    "body": "MEASURE-PROOF-OK"
+  },
+  "snapshot_hash_match": true,
+  "hash_before": "cbc3eda1073eb6e5dc2a1006cca219da0dba81dc0a864f42fefe7b9f1e960850",
+  "hash_after": "cbc3eda1073eb6e5dc2a1006cca219da0dba81dc0a864f42fefe7b9f1e960850",
+  "metrics_ms": {
+    "create_ms": 361,
+    "create_to_exec_ready_ms": 437,
+    "snapshot_ms": 1338,
+    "restore_ms": 466
+  },
+  "production_targets_firecracker": {
+    "boot_ms": "<=125",
+    "snapshot_restore_ms": "3-28",
+    "note": "Docker numbers above are the local eval stand-in; Firecracker is the production target (RESEARCH.md §1B/§4)."
+  }
+}
