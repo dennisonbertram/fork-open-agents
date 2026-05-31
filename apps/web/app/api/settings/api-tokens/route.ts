@@ -45,7 +45,17 @@ export async function POST(req: Request) {
     expiresAt: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
   });
 
-  return Response.json({ token: result.token, rawToken: result.rawToken });
+  // The raw token is a one-time secret. Prevent proxies/CDNs from caching
+  // this response to avoid the token being served from a shared cache.
+  return Response.json(
+    { token: result.token, rawToken: result.rawToken },
+    {
+      headers: {
+        "Cache-Control": "private, no-store",
+        Pragma: "no-cache",
+      },
+    },
+  );
 }
 
 export async function DELETE(req: Request) {

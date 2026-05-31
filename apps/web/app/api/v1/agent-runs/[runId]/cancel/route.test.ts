@@ -12,6 +12,8 @@ let requireResult:
         chatId: string | null;
         workflowRunId: string | null;
         requestId: string | null;
+        status: string;
+        finishedAt: Date | null;
       };
     }
   | { ok: false; response: Response };
@@ -92,6 +94,8 @@ describe("POST /api/v1/agent-runs/[runId]/cancel", () => {
         chatId: "chat_test",
         workflowRunId: "workflow_test",
         requestId: "req-test",
+        status: "running",
+        finishedAt: null,
       },
     };
     cancelCalls = 0;
@@ -150,6 +154,8 @@ describe("POST /api/v1/agent-runs/[runId]/cancel", () => {
         chatId: "chat_test",
         workflowRunId: null,
         requestId: "req-test",
+        status: "running",
+        finishedAt: null,
       },
     };
     const { POST } = await routeModulePromise;

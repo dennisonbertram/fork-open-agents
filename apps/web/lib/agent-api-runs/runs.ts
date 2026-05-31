@@ -175,6 +175,17 @@ export async function finalizeAgentApiRunFromWorkflow(params: {
     .where(eq(agentApiRuns.id, params.runId));
 }
 
+// Workflow statuses that indicate the workflow has fully stopped.
+// Only these states should trigger a self-heal transition on the agent API run.
+const TERMINAL_WORKFLOW_STATUSES = ["completed", "failed", "aborted"] as const;
+type TerminalWorkflowStatus = (typeof TERMINAL_WORKFLOW_STATUSES)[number];
+
+function isTerminalWorkflowStatus(
+  status: string,
+): status is TerminalWorkflowStatus {
+  return (TERMINAL_WORKFLOW_STATUSES as readonly string[]).includes(status);
+}
+
 export async function selfHealAgentApiRunStatus(
   run: AgentApiRun,
 ): Promise<AgentApiRun> {
@@ -186,6 +197,13 @@ export async function selfHealAgentApiRunStatus(
     where: eq(workflowRuns.id, run.workflowRunId),
   });
   if (!workflowRun) {
+    return run;
+  }
+
+  // Only transition when the workflow is in a terminal state.
+  // Non-terminal states (running, queued, starting, etc.) must be ignored
+  // to avoid incorrectly marking a running workflow as failed.
+  if (!isTerminalWorkflowStatus(workflowRun.status)) {
     return run;
   }
 

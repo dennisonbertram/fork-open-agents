@@ -36,6 +36,18 @@ export function normalizeRepository(
   policy: TokenRepositoryPolicy,
 ): RepositoryValidation {
   if (!input) {
+    // When the token has an explicit repository allowlist, a no-repo (empty-
+    // workspace) run is denied. An allowlisted token is scoped to specific
+    // repositories; running without one would bypass that restriction entirely.
+    if (policy.allowedRepositories) {
+      return {
+        ok: false,
+        status: 403,
+        code: "repository_required",
+        message:
+          "This API token is restricted to specific repositories. A repository must be provided.",
+      };
+    }
     return {
       ok: true,
       repository: null,

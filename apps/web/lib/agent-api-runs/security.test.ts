@@ -59,30 +59,18 @@ function makeEvent(overrides: Partial<SessionEventRow> = {}): SessionEventRow {
 
 // Session events store: mutable so each test can configure it
 let eventStore: SessionEventRow[] = [];
-let agentApiRunStore: Record<
-  string,
-  {
-    id: string;
-    userId: string;
-    tokenId: string;
-    status: string;
-    sessionId: string | null;
-    chatId: string | null;
-    workflowRunId: string | null;
-    requestId: string | null;
-    finishedAt: Date | null;
-    failureKind: string | null;
-    failureMessage: string | null;
-    failureRetryable: boolean | null;
-  }
-> = {};
+
+// Track the WHERE clause passed to findMany so tests can inspect it
+let lastFindManyWhere: unknown = undefined;
+let lastFindFirstWhere: unknown = undefined;
 
 mock.module("@/lib/db/client", () => ({
   db: {
     query: {
       sessionEvents: {
         findFirst: mock(async (opts: { where: unknown }) => {
-          // Simple: return the first event matching by id (for "after" cursor)
+          lastFindFirstWhere = opts.where;
+          // Return the first event in the store (simulates cursor lookup)
           return eventStore[0] ?? null;
         }),
         findMany: mock(async (opts: {
@@ -90,8 +78,8 @@ mock.module("@/lib/db/client", () => ({
           orderBy: unknown;
           limit: number;
         }) => {
-          // We intentionally return ALL events to prove the scope bug is real
-          // (before fix) or filtered (after fix)
+          lastFindManyWhere = opts.where;
+          // Return all events; the test verifies the WHERE clause structure
           return [...eventStore];
         }),
       },
@@ -113,85 +101,105 @@ describe("HIGH-1: listAgentRunEvents must scope to the run's own sessionId", () 
    * (belonging to user 1), the query matches on `requestId` and returns
    * user 1's events.
    *
-   * After fix: query should be scoped by sessionId only (AND-narrowed by
+   * After fix: query must be scoped by sessionId ONLY (AND-narrowed by
    * chatId/workflowRunId within that session). The client-supplied requestId
    * must NOT be used as an OR branch for authorization.
+   *
+   * We verify this by inspecting the drizzle SQL expression passed to the
+   * mock — the WHERE clause must NOT contain the spoofed requestId as a
+   * top-level OR branch.
    */
-  test("BT-001: user-2 cannot read user-1 events by spoofing user-1 x-request-id", async () => {
-    // user-1's event with request-id "req_a"
-    const user1Event = makeEvent({
-      id: "evt_user1",
-      sessionId: "session_user1",
-      chatId: "chat_user1",
-      workflowRunId: "wf_user1",
-      requestId: "req_a", // <-- this is user-1's requestId
-    });
-    // user-2's event in a different session
-    const user2Event = makeEvent({
-      id: "evt_user2",
-      sessionId: "session_user2",
-      chatId: "chat_user2",
-      workflowRunId: "wf_user2",
-      requestId: "req_b",
-    });
-    eventStore = [user1Event, user2Event];
+  /**
+   * Extract string values from drizzle SQL queryChunks.
+   * Drizzle queryChunks is an array of SQL fragments; param objects have
+   * a `value` property. We iterate shallowly to avoid circular reference issues.
+   */
+  function extractQueryChunkStrings(chunks: unknown[]): string[] {
+    const results: string[] = [];
+    for (const chunk of chunks) {
+      if (typeof chunk === "string") {
+        results.push(chunk);
+      } else if (
+        chunk !== null &&
+        typeof chunk === "object" &&
+        "value" in (chunk as Record<string, unknown>)
+      ) {
+        const v = (chunk as Record<string, unknown>)["value"];
+        if (typeof v === "string") results.push(v);
+      } else if (
+        chunk !== null &&
+        typeof chunk === "object" &&
+        "queryChunks" in (chunk as Record<string, unknown>)
+      ) {
+        const inner = (chunk as Record<string, unknown>)[
+          "queryChunks"
+        ] as unknown[];
+        if (Array.isArray(inner)) {
+          results.push(...extractQueryChunkStrings(inner));
+        }
+      }
+    }
+    return results;
+  }
+
+  test("BT-001: WHERE clause must not OR-branch on client-supplied requestId", async () => {
+    lastFindManyWhere = undefined;
+    eventStore = [];
 
     const { listAgentRunEvents } = await import("./snapshots");
 
-    // user-2 calls listAgentRunEvents for their own run (session_user2),
-    // but passes req_a as the requestId from x-request-id header.
-    const events = await listAgentRunEvents({
-      sessionId: "session_user2", // user-2's session
+    await listAgentRunEvents({
+      sessionId: "session_user2",
       chatId: "chat_user2",
       workflowRunId: "wf_user2",
-      requestId: "req_a", // <-- attacker-controlled: user-1's requestId
+      requestId: "req_a", // attacker-controlled: user-1's requestId
       limit: 100,
     });
 
-    const returnedIds = events.map((e) => e.id);
+    // Inspect the WHERE expression's bound string values.
+    // Before fix: "req_a" appears as a value in the OR clause.
+    // After fix: "req_a" must NOT appear — requestId is no longer an auth selector.
+    const where = lastFindManyWhere as {
+      queryChunks: unknown[];
+    };
+    const values = extractQueryChunkStrings(where.queryChunks);
 
-    // MUST NOT return user-1's event
-    expect(returnedIds).not.toContain("evt_user1");
-    // MAY return user-2's event (within scope)
-    // (exact inclusion depends on mock; what matters is no cross-tenant leak)
+    // The spoofed requestId must not appear in the WHERE clause values
+    expect(values).not.toContain("req_a");
+
+    // The correct sessionId MUST appear in the WHERE clause values
+    expect(values).toContain("session_user2");
   });
 
-  test("BT-001b: after cursor must belong to the same session before use", async () => {
-    // Event in session_user1 - used as cursor by attacker in session_user2
-    const cursorEvent = makeEvent({
-      id: "cursor_evt",
-      sessionId: "session_user1",
-      chatId: "chat_user1",
-      workflowRunId: "wf_user1",
-      requestId: "req_a",
-      createdAt: new Date("2026-05-30T11:00:00.000Z"),
-    });
-    const user2Event = makeEvent({
-      id: "evt_user2",
-      sessionId: "session_user2",
-      chatId: "chat_user2",
-      workflowRunId: "wf_user2",
-      requestId: "req_b",
-      createdAt: new Date("2026-05-30T12:00:00.000Z"),
-    });
-    eventStore = [cursorEvent, user2Event];
+  test("BT-001b: cursor-validation findFirst must AND with the correct sessionId", async () => {
+    lastFindFirstWhere = undefined;
+    eventStore = [
+      makeEvent({
+        id: "cursor_evt",
+        sessionId: "session_user1", // different session from requester
+        createdAt: new Date("2026-05-30T11:00:00.000Z"),
+      }),
+    ];
 
     const { listAgentRunEvents } = await import("./snapshots");
 
-    // Supply after=cursor_evt (owned by user1) while scoping to user2's session
-    // The fix should reject/ignore the cursor because it belongs to a different session
-    const events = await listAgentRunEvents({
+    await listAgentRunEvents({
       sessionId: "session_user2",
       chatId: "chat_user2",
       workflowRunId: "wf_user2",
       requestId: "req_b",
-      after: "cursor_evt", // cursor from different session/user
+      after: "cursor_evt", // cursor from different session
       limit: 100,
     });
 
-    // Must not contain user-1's cursor event in results
-    const returnedIds = events.map((e) => e.id);
-    expect(returnedIds).not.toContain("cursor_evt");
+    // The findFirst for the cursor must include the requester's sessionId.
+    const where = lastFindFirstWhere as { queryChunks: unknown[] };
+    const values = extractQueryChunkStrings(where.queryChunks);
+
+    // After fix: the cursor lookup is scoped to session_user2
+    expect(values).toContain("session_user2");
+    // The cursor event id must also appear
+    expect(values).toContain("cursor_evt");
   });
 });
 

@@ -159,6 +159,17 @@ export async function POST(req: Request) {
     parts: [{ type: "text", text: parsed.data.prompt }],
   };
 
+  // Resolve all config values once so that DB writes and workflow args
+  // are always consistent (MEDIUM-7: stored config vs workflow args diverge).
+  const resolvedModelId = parsed.data.modelId ?? preferences.defaultModelId;
+  const resolvedAutoCommitPush =
+    parsed.data.autoCommitPush ?? preferences.autoCommitPush;
+  const resolvedAutoCreatePr =
+    parsed.data.autoCreatePr ?? preferences.autoCreatePr;
+  const resolvedManagedRuntimeProfileId =
+    parsed.data.managedRuntimeProfileId ??
+    preferences.defaultManagedRuntimeProfileId;
+
   const { run, replayed } = await createAgentApiRun({
     id: await createApiRunId(),
     userId: auth.userId,
@@ -180,10 +191,8 @@ export async function POST(req: Request) {
         }
       : null,
     runtimeMode: parsed.data.runtimeMode,
-    managedRuntimeProfileId:
-      parsed.data.managedRuntimeProfileId ??
-      preferences.defaultManagedRuntimeProfileId,
-    modelId: parsed.data.modelId ?? preferences.defaultModelId,
+    managedRuntimeProfileId: resolvedManagedRuntimeProfileId,
+    modelId: resolvedModelId,
     metadata: parsed.data.metadata,
   });
 
@@ -207,14 +216,10 @@ export async function POST(req: Request) {
         branch: branch ?? null,
         cloneUrl: repo?.cloneUrl ?? null,
         isNewBranch: repo?.newBranch ?? false,
-        autoCommitPushOverride:
-          parsed.data.autoCommitPush ?? preferences.autoCommitPush,
-        autoCreatePrOverride:
-          parsed.data.autoCreatePr ?? preferences.autoCreatePr,
+        autoCommitPushOverride: resolvedAutoCommitPush,
+        autoCreatePrOverride: resolvedAutoCreatePr,
         runtimeMode: parsed.data.runtimeMode,
-        managedRuntimeProfileId:
-          parsed.data.managedRuntimeProfileId ??
-          preferences.defaultManagedRuntimeProfileId,
+        managedRuntimeProfileId: resolvedManagedRuntimeProfileId,
         inferenceProfileId: preferences.defaultInferenceProfileId,
         globalSkillRefs: preferences.globalSkillRefs,
         sandboxState: { type: preferences.defaultSandboxType },
@@ -225,7 +230,7 @@ export async function POST(req: Request) {
         id: chatId,
         sessionId,
         title: "API run",
-        modelId: parsed.data.modelId ?? preferences.defaultModelId,
+        modelId: resolvedModelId,
         inferenceProfileId: preferences.defaultInferenceProfileId,
         composioSelection: {
           mainProfileId:
@@ -251,11 +256,11 @@ export async function POST(req: Request) {
         requestUrl: req.url,
         requestId,
         authSession: null,
-        selectedModelId: parsed.data.modelId,
-        modelId: parsed.data.modelId,
+        selectedModelId: resolvedModelId,
+        modelId: resolvedModelId,
         maxSteps: 500,
-        autoCommitEnabled: parsed.data.autoCommitPush,
-        autoCreatePrEnabled: parsed.data.autoCreatePr,
+        autoCommitEnabled: resolvedAutoCommitPush,
+        autoCreatePrEnabled: resolvedAutoCreatePr,
         agentApiRunId: run.id,
       },
     ]);
@@ -285,12 +290,17 @@ export async function POST(req: Request) {
     const snapshot = await getAgentRunSnapshot(attachedRun);
     return Response.json({ agentRun: snapshot }, { status: 202 });
   } catch (error) {
+    // Store only a stable operator-visible error code/kind as failureMessage.
+    // The raw error.message may contain secrets or internal paths and must
+    // not be surfaced verbatim to callers (MEDIUM-10).
     await markAgentApiRunFailed({
       runId: run.id,
       kind: "startup_failed",
-      message: error instanceof Error ? error.message : String(error),
+      message: "startup_failed",
       retryable: true,
     });
+    // Log the raw error for internal observability without exposing it to callers.
+    console.error("[agent-api] startup failure for run", run.id, error);
     return Response.json(
       { error: "Failed to start agent run", code: "startup_failed" },
       { status: 500 },

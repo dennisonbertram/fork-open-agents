@@ -182,6 +182,13 @@ export async function listAgentRunMessages(params: {
 }
 
 export function toApiEventSnapshot(event: SessionEvent) {
+  // Suppress raw payload unless redaction has been confirmed as passed.
+  // This prevents unredacted secrets/prompts from leaking at the API boundary.
+  const safePayload =
+    event.redactionStatus === "passed" || event.redactionStatus === "not_required"
+      ? event.payload
+      : null;
+
   return {
     id: event.id,
     eventName: event.eventName,
@@ -193,7 +200,7 @@ export function toApiEventSnapshot(event: SessionEvent) {
     workflowRunId: event.workflowRunId,
     sandboxName: event.sandboxName,
     managedRuntimeProfileRunId: event.managedRuntimeProfileRunId,
-    payload: event.payload,
+    payload: safePayload,
     redactionStatus: event.redactionStatus,
     createdAt: event.createdAt.toISOString(),
   };
@@ -207,25 +214,41 @@ export async function listAgentRunEvents(params: {
   after?: string;
   limit: number;
 }) {
+  // Validate the after-cursor belongs to the same session before use.
+  // A cross-session cursor must be ignored (not rejected with an error) to
+  // avoid leaking information about events in other sessions.
   const afterEvent = params.after
     ? await db.query.sessionEvents.findFirst({
-        where: eq(sessionEvents.id, params.after),
+        where: and(
+          eq(sessionEvents.id, params.after),
+          eq(sessionEvents.sessionId, params.sessionId),
+        ),
       })
     : null;
   const afterFilter = afterEvent
     ? gt(sessionEvents.createdAt, afterEvent.createdAt)
     : undefined;
 
-  const scope = or(
-    eq(sessionEvents.sessionId, params.sessionId),
-    params.chatId ? eq(sessionEvents.chatId, params.chatId) : undefined,
-    params.workflowRunId
-      ? eq(sessionEvents.workflowRunId, params.workflowRunId)
-      : undefined,
-    params.requestId
-      ? eq(sessionEvents.requestId, params.requestId)
-      : undefined,
-  );
+  // Scope ONLY to the run's own server-generated sessionId. chatId and
+  // workflowRunId are AND-narrowed within that session, NOT OR-branched,
+  // so a client-supplied requestId can never widen the tenant boundary.
+  const sessionScope = eq(sessionEvents.sessionId, params.sessionId);
+  const chatScope = params.chatId
+    ? and(
+        sessionScope,
+        eq(sessionEvents.chatId, params.chatId),
+      )
+    : undefined;
+  const workflowScope = params.workflowRunId
+    ? and(
+        sessionScope,
+        eq(sessionEvents.workflowRunId, params.workflowRunId),
+      )
+    : undefined;
+
+  // Prefer the most-specific scope available (workflow > chat > session).
+  // Never branch on the client-supplied requestId as an authorization selector.
+  const scope = workflowScope ?? chatScope ?? sessionScope;
   const where = afterFilter ? and(scope, afterFilter) : scope;
 
   const rows = await db.query.sessionEvents.findMany({

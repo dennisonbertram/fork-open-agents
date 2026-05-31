@@ -12,11 +12,28 @@ export type AgentRunRouteContext = {
   params: Promise<{ runId: string }>;
 };
 
+function isApiEnabled() {
+  return process.env.AGENT_API_ENABLED !== "false";
+}
+
 export async function requireAgentApiRun(
   req: Request,
   context: AgentRunRouteContext,
   scopes: AgentApiScope[],
 ) {
+  // Gate the ENTIRE per-run surface with the feature flag so that
+  // /events, /messages, /proof, /cancel, and [runId] GET are all
+  // unreachable when AGENT_API_ENABLED=false.
+  if (!isApiEnabled()) {
+    return {
+      ok: false as const,
+      response: Response.json(
+        { error: "Agent API is disabled" },
+        { status: 404 },
+      ),
+    };
+  }
+
   const auth = await verifyBearerApiToken({
     authorization: req.headers.get("authorization"),
     requiredScopes: scopes,
