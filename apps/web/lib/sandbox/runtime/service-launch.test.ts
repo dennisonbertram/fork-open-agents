@@ -460,3 +460,92 @@ describe("BT-002: Malformed recipe falls back to package.json discovery", () => 
     expect(sandbox._launchedCommands.length).toBeGreaterThan(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION TESTS
+// Catch future regressions in the three HIGH findings fixed in this PR.
+// ---------------------------------------------------------------------------
+describe("regression: env precedence — reverting spread order breaks these", () => {
+  test("REGRESSION: launcher HOST appears after recipe env in the command string", async () => {
+    // If the spread order is reverted to {HOST, PORT, BROWSER, ...recipe.env}
+    // then recipe env comes LAST and wins. This test catches that regression
+    // by asserting that DATA_DIR (from recipe) comes before HOST (from launcher).
+    const recipeContent = JSON.stringify({
+      dev: {
+        command: "bun run dev:sandbox",
+        port: 3000,
+        env: { DATA_DIR: "/data" },
+      },
+    });
+    const sandbox = makeSandbox({ recipeContent, recipeAccessible: true });
+
+    await startManagedDevServer({ session: SESSION, sandbox: sandbox as never });
+
+    const cmd = sandbox._launchedCommands[0].command;
+    const hostIdx = cmd.indexOf("HOST='0.0.0.0'");
+    const dataDirIdx = cmd.indexOf("DATA_DIR='/data'");
+
+    // DATA_DIR (recipe-owned) must appear BEFORE HOST (launcher-owned)
+    // so that when shell reads L→R, HOST='0.0.0.0' overwrites any earlier HOST
+    expect(dataDirIdx).toBeGreaterThan(-1);
+    expect(hostIdx).toBeGreaterThan(-1);
+    expect(dataDirIdx).toBeLessThan(hostIdx);
+  });
+
+  test("REGRESSION: reserved key rejection is not silently bypassed", async () => {
+    // If parseSandboxRecipe stops checking LAUNCHER_RESERVED_ENV_KEYS,
+    // this test fails because the parse would succeed where it must fail.
+    const { parseSandboxRecipe } = await import(
+      "@/lib/sandbox/runtime/sandbox-recipe"
+    );
+
+    const reservedKeys = ["PORT", "HOST", "BROWSER"];
+    for (const key of reservedKeys) {
+      expect(() =>
+        parseSandboxRecipe(
+          JSON.stringify({
+            dev: { command: "bun run dev", port: 3000, env: { [key]: "bad" } },
+          }),
+          ".open-agents/sandbox.json",
+        ),
+      ).toThrow(/reserved/i);
+    }
+  });
+});
+
+describe("regression: malformed-recipe fallback — reverting throw restores the 500", () => {
+  test("REGRESSION: schema-invalid recipe (missing dev.port) falls back to package.json, not a 500", async () => {
+    // If findSandboxRecipe reverts to throwing instead of warn+continue,
+    // this test fails because startManagedDevServer would throw the parse error.
+    const sandbox = makeSandbox({
+      recipeContent: JSON.stringify({
+        dev: { command: "bun run dev" },
+        // missing required dev.port — parseSandboxRecipe will throw
+      }),
+      recipeAccessible: true,
+      findOutput: "./package.json\n",
+      packageJsonContent: {
+        "/sandbox/package.json": JSON.stringify({
+          scripts: { dev: "next dev" },
+          dependencies: { next: "15.0.0" },
+        }),
+      },
+    });
+
+    let thrownError: unknown = null;
+    try {
+      await startManagedDevServer({ session: SESSION, sandbox: sandbox as never });
+    } catch (err) {
+      thrownError = err;
+    }
+
+    // Error must NOT be a recipe parse error
+    if (thrownError !== null) {
+      const msg = thrownError instanceof Error ? thrownError.message : String(thrownError);
+      expect(msg).not.toMatch(/dev\.port/i);
+    }
+
+    // The fallback launch must have occurred
+    expect(sandbox._launchedCommands.length).toBeGreaterThan(0);
+  });
+});

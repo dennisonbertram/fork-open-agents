@@ -375,6 +375,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: string;
       port: number;
       url: string;
+      logPath: string;
     };
 
     expect(response.status).toBe(200);
