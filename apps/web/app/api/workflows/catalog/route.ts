@@ -105,6 +105,7 @@ export async function GET(): Promise<Response> {
     // Defensively catch any WorkflowCatalogError (should not occur with the
     // valid static DEFAULT_CATALOG, but must be handled per the error taxonomy).
     if (error instanceof WorkflowCatalogError || error instanceof Error) {
+      console.error("[workflow-catalog] Catalog build or list failed:", error);
       return Response.json(
         {
           errorKind: "catalog_unavailable",
@@ -115,6 +116,7 @@ export async function GET(): Promise<Response> {
     }
 
     // Unknown non-Error throws — still return a safe typed response.
+    console.error("[workflow-catalog] Unexpected non-Error thrown:", error);
     return Response.json(
       {
         errorKind: "catalog_unavailable",
