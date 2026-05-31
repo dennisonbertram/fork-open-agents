@@ -30,6 +30,14 @@ let fakeSelectRows: unknown[] = [];
 let fakeInsertReturn: unknown = null;
 /** Row returned by update().set().where().returning() */
 let fakeUpdateReturn: unknown = null;
+/**
+ * When set to a non-null value, the first .select().from().where() call inside a
+ * transaction returns this value (used for the parent-goal FOR UPDATE lock).
+ * Subsequent .select() calls in the same tx return the max-sequence result.
+ */
+let fakeGoalLockReturn: unknown[] | null = null;
+/** Track how many select calls have happened inside the current transaction */
+let txSelectCallCount = 0;
 
 // ---------------------------------------------------------------------------
 // Fluent fake-db builder
@@ -43,6 +51,7 @@ type FakeDb = {
   select: (_columns?: unknown) => {
     from: (_table: unknown) => {
       where: (_cond: unknown) => Promise<unknown[]> & {
+        for: (_strength: unknown) => Promise<unknown[]>;
         orderBy: (..._args: unknown[]) => Promise<unknown[]>;
       };
       orderBy: (..._args: unknown[]) => Promise<unknown[]>;
@@ -69,29 +78,57 @@ type FakeDb = {
  * API used by goal-ledger.ts.
  *
  * Design note on the select chain:
- *   appendGoalEvent does:  await db.select({maxSeq:max(...)}).from(t).where(c)
- *   listGoal* do:          await db.select().from(t).where(c).orderBy(asc(...))
- *                      or  await db.select().from(t).orderBy(asc(...))
+ *   appendGoalEvent now does:
+ *     1. tx.select().from(workflowGoals).where(eq(...)).for("update") — parent goal lock
+ *     2. tx.select({maxSeq:max(...)}).from(workflowGoalEvents).where(eq(...))  — max sequence
+ *   listGoal* do:  await db.select().from(t).where(c).orderBy(asc(...))
+ *                  or  await db.select().from(t).orderBy(asc(...))
  *
- * We distinguish the two uses by what follows the .from() call: if .where()
- * is called next and its result is directly awaited (no .orderBy()), that is
- * the max-sequence path; if .orderBy() follows, that is the list path.
+ * We track txSelectCallCount inside transactions: first select = goal lock,
+ * second select = max-sequence. Outside transactions, selects return fakeSelectRows.
  */
-function buildFakeDb(): FakeDb {
+function buildFakeDb(isInTx = false): FakeDb {
   return {
     // ---- select() chain -------------------------------------------------
     select: (_columns?: unknown) => ({
       from: (_table: unknown) => ({
-        // .where() → returned value is immediately awaited (max-sequence path)
-        // OR chained with .orderBy() (list path after .where())
+        // .where() → returned value is immediately awaited (max-sequence or goal-lock path)
+        // OR chained with .orderBy() / .for() (list path or FOR UPDATE path)
         where: (_cond: unknown) => {
-          // Return a real Promise extended with an .orderBy() method so the
-          // linter does not flag it as a custom thenable.
+          if (isInTx) {
+            txSelectCallCount += 1;
+            const callIndex = txSelectCallCount;
+
+            if (callIndex === 1 && fakeGoalLockReturn !== null) {
+              // First tx select = parent goal FOR UPDATE lookup
+              const lockResult = fakeGoalLockReturn;
+              const basePromise = Promise.resolve(lockResult);
+              return Object.assign(basePromise, {
+                for: (_strength: unknown) => Promise.resolve(lockResult),
+                orderBy: (..._args: unknown[]) =>
+                  Promise.resolve(fakeSelectRows),
+              });
+            }
+
+            // Second tx select (or first when fakeGoalLockReturn is null) = max-sequence
+            const basePromise = Promise.resolve([
+              { maxSeq: fakeMaxSequence },
+            ] as unknown[]);
+            return Object.assign(basePromise, {
+              for: (_strength: unknown) =>
+                Promise.resolve([{ maxSeq: fakeMaxSequence }] as unknown[]),
+              orderBy: (..._args: unknown[]) =>
+                Promise.resolve(fakeSelectRows),
+            });
+          }
+
+          // Outside transaction: list query path
           const basePromise = Promise.resolve([
             { maxSeq: fakeMaxSequence },
           ] as unknown[]);
-
           return Object.assign(basePromise, {
+            for: (_strength: unknown) =>
+              Promise.resolve([{ maxSeq: fakeMaxSequence }] as unknown[]),
             orderBy: (..._args: unknown[]) => Promise.resolve(fakeSelectRows),
           });
         },
@@ -129,8 +166,10 @@ function buildFakeDb(): FakeDb {
     }),
 
     // ---- transaction() --------------------------------------------------
-    transaction: async <T>(callback: (tx: FakeDb) => Promise<T>) =>
-      callback(buildFakeDb()),
+    transaction: async <T>(callback: (tx: FakeDb) => Promise<T>) => {
+      txSelectCallCount = 0;
+      return callback(buildFakeDb(true));
+    },
   };
 }
 
@@ -169,6 +208,8 @@ beforeEach(() => {
   fakeSelectRows = [];
   fakeInsertReturn = null;
   fakeUpdateReturn = null;
+  fakeGoalLockReturn = null;
+  txSelectCallCount = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -259,16 +300,36 @@ describe("createGoal", () => {
     expect(inserted.status).toBe("planned");
   });
 
-  test("BT-001d: throws InvalidGoalInputError when objective is missing or empty", async () => {
-    const { createGoal, InvalidGoalInputError } = await goalLedgerPromise;
+  test("BT-001d: throws GoalLedgerError with code 'invalid_input' when objective is missing or empty", async () => {
+    const { createGoal, GoalLedgerError } = await goalLedgerPromise;
 
     const err = await createGoal({
       userId: "user-1",
       objective: "",
     }).catch((e: unknown) => e);
 
-    expect(err).toBeInstanceOf(InvalidGoalInputError);
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_input",
+    );
     expect((err as Error).message).toContain("objective");
+  });
+
+  test("BT-001e: throws GoalLedgerError with code 'persist_failed' when .returning() yields no row", async () => {
+    const { createGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    // fakeInsertReturn stays null → returning() returns []
+    fakeInsertReturn = null;
+
+    const err = await createGoal({
+      userId: "user-1",
+      objective: "should fail to persist",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "persist_failed",
+    );
   });
 });
 
@@ -279,6 +340,7 @@ describe("appendGoalEvent", () => {
   test("BT-002a: uses sequence 1 when no prior events exist (max returns null)", async () => {
     const { appendGoalEvent } = await goalLedgerPromise;
 
+    fakeGoalLockReturn = [{ id: "goal-1" }]; // parent goal exists
     fakeMaxSequence = null; // NULL aggregate = no prior rows
     const now = new Date();
     fakeInsertReturn = {
@@ -307,6 +369,7 @@ describe("appendGoalEvent", () => {
   test("BT-002b: increments sequence by 1 when prior events exist (max=3 → next=4)", async () => {
     const { appendGoalEvent } = await goalLedgerPromise;
 
+    fakeGoalLockReturn = [{ id: "goal-1" }]; // parent goal exists
     fakeMaxSequence = 3;
     const now = new Date();
     fakeInsertReturn = {
@@ -335,6 +398,7 @@ describe("appendGoalEvent", () => {
   test("BT-002c: persists all required fields on the event row", async () => {
     const { appendGoalEvent } = await goalLedgerPromise;
 
+    fakeGoalLockReturn = [{ id: "goal-xyz" }]; // parent goal exists
     fakeMaxSequence = 0;
     const now = new Date();
     fakeInsertReturn = {
@@ -362,6 +426,45 @@ describe("appendGoalEvent", () => {
     expect(result.summary).toBe("Attached proof.png");
     expect((result.payload as Record<string, unknown>).fileRef).toBe(
       "proof.png",
+    );
+  });
+
+  test("BT-002d: throws GoalLedgerError with code 'not_found' when parent goal does not exist", async () => {
+    const { appendGoalEvent, GoalLedgerError } = await goalLedgerPromise;
+
+    // No parent goal row returned from the FOR UPDATE lock query
+    fakeGoalLockReturn = [];
+
+    const err = await appendGoalEvent({
+      goalId: "missing-goal",
+      userId: "user-1",
+      eventType: "note",
+      summary: "Should fail",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "not_found",
+    );
+  });
+
+  test("BT-002e: throws GoalLedgerError with code 'persist_failed' when event insert returns no row", async () => {
+    const { appendGoalEvent, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = [{ id: "goal-1" }]; // parent goal exists
+    fakeMaxSequence = 0;
+    fakeInsertReturn = null; // insert returns []
+
+    const err = await appendGoalEvent({
+      goalId: "goal-1",
+      userId: "user-1",
+      eventType: "note",
+      summary: "Should fail",
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "persist_failed",
     );
   });
 });
@@ -493,6 +596,17 @@ describe("listGoals", () => {
     expect(results).toHaveLength(1);
     expect((results[0] as { sessionId?: string }).sessionId).toBe("session-7");
   });
+
+  test("BT-004d: throws GoalLedgerError with code 'invalid_input' when no filter is provided", async () => {
+    const { listGoals, GoalLedgerError } = await goalLedgerPromise;
+
+    const err = await listGoals({}).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_input",
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -521,14 +635,17 @@ describe("closeGoal", () => {
     expect(updated.updatedAt).toBeInstanceOf(Date);
   });
 
-  test("BT-005b: throws GoalLedgerError with 'terminal' in message for non-terminal status", async () => {
-    const { closeGoal, NonTerminalStatusError } = await goalLedgerPromise;
+  test("BT-005b: throws GoalLedgerError with code 'non_terminal_status' for non-terminal status", async () => {
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
     const err = await closeGoal("goal-1", "running" as never).catch(
       (e: unknown) => e,
     );
 
-    expect(err).toBeInstanceOf(NonTerminalStatusError);
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "non_terminal_status",
+    );
     expect((err as Error).message).toContain("terminal");
   });
 
@@ -549,6 +666,22 @@ describe("closeGoal", () => {
       const result = await closeGoal("goal-x", status);
       expect(result.status).toBe(status);
     }
+  });
+
+  test("BT-005d: throws GoalLedgerError with code 'not_found' when no row is updated (goal does not exist)", async () => {
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    // fakeUpdateReturn stays null → returning() returns []
+    fakeUpdateReturn = null;
+
+    const err = await closeGoal("missing-goal", "complete").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "not_found",
+    );
   });
 });
 
@@ -587,6 +720,7 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     // first event, breaking the event-ordering contract.
     const { appendGoalEvent } = await goalLedgerPromise;
 
+    fakeGoalLockReturn = [{ id: "g-reg" }];
     fakeMaxSequence = null;
     const now = new Date();
     fakeInsertReturn = {
@@ -660,6 +794,43 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     // The Date must be at or after the time the call was made
     expect((updated.updatedAt as Date).getTime()).toBeGreaterThanOrEqual(
       beforeCall.getTime(),
+    );
+  });
+
+  test("REG-005: GoalLedgerError code union includes not_found and persist_failed", async () => {
+    // If the code union is narrowed back (removing not_found or persist_failed),
+    // constructing errors with those codes would fail TypeScript — this test
+    // provides a runtime backstop.
+    const { GoalLedgerError } = await goalLedgerPromise;
+
+    const notFound = new GoalLedgerError("not_found", "test not found");
+    expect(notFound.code).toBe("not_found");
+    expect(notFound.name).toBe("GoalLedgerError");
+
+    const persistFailed = new GoalLedgerError(
+      "persist_failed",
+      "test persist failed",
+    );
+    expect(persistFailed.code).toBe("persist_failed");
+    expect(persistFailed.name).toBe("GoalLedgerError");
+  });
+
+  test("REG-006: listGoals({}) always throws invalid_input — never returns all rows", async () => {
+    // Regression guard for the multi-tenant exposure fix. Even if future
+    // refactoring accidentally removes the filter guard, this test will catch it.
+    const { listGoals, GoalLedgerError } = await goalLedgerPromise;
+
+    // Set up fake rows so a "return all" bug would succeed silently
+    fakeSelectRows = [
+      { id: "g1", userId: "user-A" },
+      { id: "g2", userId: "user-B" },
+    ];
+
+    const err = await listGoals({}).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_input",
     );
   });
 });
