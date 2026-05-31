@@ -201,9 +201,9 @@ describe("DEFAULT_CATALOG (stub entry)", () => {
     expect(entry?.id.length).toBeGreaterThan(0);
   });
 
-  test("the stub catalog entry is valid (buildRegistry does not throw)", () => {
+  test("the stub catalog entry is valid (buildRegistry does not throw)", async () => {
     // This is the integration check: the default catalog can be built successfully
-    const { DEFAULT_CATALOG } = require("./catalog");
+    const { DEFAULT_CATALOG } = await import("./catalog");
     expect(() => buildRegistry(DEFAULT_CATALOG)).not.toThrow();
   });
 });
