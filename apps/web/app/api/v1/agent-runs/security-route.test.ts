@@ -85,7 +85,7 @@ let requireResult:
 let dbUpdateCalls: { patch: unknown }[] = [];
 let cancelUpdateReturning: RunStub[] = [];
 
-const verifyBearerApiToken = mock(async () => authResult);
+const verifyBearerApiToken = mock(async (): Promise<AuthResult> => authResult);
 const selfHealAgentApiRunStatus = mock(async (run: RunStub) => run);
 const getAgentApiRunForToken = mock(async () => runStub as RunStub | null);
 const requireAgentApiRunMock = mock(async () => requireResult);
