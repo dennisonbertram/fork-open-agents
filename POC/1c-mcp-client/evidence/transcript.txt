@@ -1,0 +1,61 @@
+========================================================================
+POC 1c — MCP client end-to-end eval
+2026-05-31T14:30:34.298Z
+========================================================================
+
+Scratch dir for filesystem server: /private/tmp/claude-501/mcp-poc-qP0933
+Created sample file: /private/tmp/claude-501/mcp-poc-qP0933/hello.txt
+
+Mounting MCP servers from session selection:
+  - math (stdio): /Users/dennison/.nvm/versions/node/v24.15.0/bin/node
+  - fs (stdio): /Users/dennison/.nvm/versions/node/v24.15.0/bin/node
+
+[1] CONNECT — server handshake info
+  connected: math -> poc-test-server v0.1.0
+  connected: fs -> secure-filesystem-server v0.2.0
+
+[2] LIST — discovered + namespaced tools
+  mcp__fs__create_directory
+  mcp__fs__directory_tree
+  mcp__fs__edit_file
+  mcp__fs__get_file_info
+  mcp__fs__list_allowed_directories
+  mcp__fs__list_directory
+  mcp__fs__list_directory_with_sizes
+  mcp__fs__move_file
+  mcp__fs__read_file
+  mcp__fs__read_media_file
+  mcp__fs__read_multiple_files
+  mcp__fs__read_text_file
+  mcp__fs__search_files
+  mcp__fs__write_file
+  mcp__math__add
+  mcp__math__echo
+  total raw tools across servers: 16
+  PASS: math server exposes mcp__math__add
+  PASS: math server exposes mcp__math__echo
+  PASS: filesystem server exposes a read_* tool (namespaced)
+  PASS: parseNamespacedToolName('mcp__math__add') -> {math, add}
+
+[3] CALL — direct round trips
+  add(2,3) raw -> {"content":[{"type":"text","text":"5"}],"isError":false}
+  PASS: add(2,3) returns 5
+  echo("hello") raw -> {"content":[{"type":"text","text":"echo: hello"}],"isError":false}
+  PASS: echo("hello") returns "echo: hello"
+
+[4] CALL — official filesystem server read round trip
+  PASS: found a filesystem read tool to invoke
+  invoking mcp__fs__read_text_file on /private/tmp/claude-501/mcp-poc-qP0933/hello.txt
+  read result -> "Hello from POC 1c MCP filesystem round trip!"
+  PASS: filesystem read returns the contents we wrote
+
+[5] GUARD — invalid args rejected by the MCP server (round trip)
+  add({a:'not-a-number'}) -> {"content":[{"type":"text","text":"MCP error -32602: Input validation error: Invalid arguments for tool add: [\n  {\n    \"expected\": \"number\",\n    \"code\": \"invalid_type\",\n    \"path\": [\n      \"a\"\n    ],\n    \"message\": \"Invalid input: expected number, received string\"\n  }\n]"}],"isError":true}
+  PASS: server rejects add({a:'not-a-number'}) with an error result
+
+[6] CLOSE — tearing down transports
+  all transports closed
+
+========================================================================
+RESULT: ALL CHECKS PASSED
+========================================================================
