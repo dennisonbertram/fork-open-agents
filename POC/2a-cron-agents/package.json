@@ -1,0 +1,19 @@
+{
+  "name": "poc-2a-cron-agents",
+  "private": true,
+  "type": "module",
+  "description": "POC 2a: Vercel Cron -> due saved jobs -> materialize session+chat -> run saved prompt -> result lands as a chat message (or PR). Self-contained; does not touch repo root deps.",
+  "scripts": {
+    "eval": "bun run eval.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cron-parser": "4.9.0",
+    "drizzle-orm": "0.44.6"
+  },
+  "devDependencies": {
+    "@types/node": "22",
+    "bun-types": "^1.3.14",
+    "typescript": "5.7.3"
+  }
+}
