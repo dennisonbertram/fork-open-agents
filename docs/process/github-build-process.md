@@ -78,7 +78,9 @@ Use predictable branch names:
 
 1. `agent/<issue-number>-<short-slug>` for implementation work,
 2. `fix/<issue-number>-<short-slug>` for bug regressions,
-3. `research/<short-slug>` for docs or research-only work.
+3. `research/<short-slug>` for docs or research-only work with no backing issue;
+   if there IS a backing issue, use `research/<issue-number>-<short-slug>`.
+   Docs/research-only branches intentionally omit issue numbers when no issue exists.
 
 For parallel work:
 

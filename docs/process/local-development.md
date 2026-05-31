@@ -320,3 +320,8 @@ instead of editing shared config:
 ```bash
 REDIS_URL= KV_URL= bun --bun run ci
 ```
+
+> **Caveat:** Only use this when the failure is caused by an unreachable local
+> external service. Do not use it for changes that intentionally touch Redis/KV
+> behavior — blanking these variables will mask integration coverage for those
+> changes.
