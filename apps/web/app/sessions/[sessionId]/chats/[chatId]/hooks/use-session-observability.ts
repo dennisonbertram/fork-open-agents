@@ -83,6 +83,32 @@ export type WorkflowRunJson = {
   createdAt: string;
 };
 
+export type ManagedRuntimeWorkerJson = {
+  id: string;
+  source: "message";
+  taskToolCallId: string;
+  workerType: string;
+  status: string;
+  sandboxName: string | null;
+  profileId: string | null;
+  profileVersion: string | null;
+  profileDisplayName: string | null;
+  profileRunId: string | null;
+  currentToolName: string | null;
+  currentToolSummary: string | null;
+  toolCallCount: number;
+  summary: string | null;
+  updatedAt: string | null;
+};
+
+export type ManagedRuntimeDirectToolUseJson = {
+  observed: boolean;
+  count: number;
+  toolTypes: string[];
+  toolLabels: string[];
+  warning: string | null;
+};
+
 export type RuntimeServiceJson = {
   id: string;
   kind: string;
@@ -112,6 +138,8 @@ export type SessionObservabilityResponse = {
   events: SessionEventJson[];
   profileRuns: ManagedRuntimeProfileRunJson[];
   workflowRuns: WorkflowRunJson[];
+  workers: ManagedRuntimeWorkerJson[];
+  directToolUse: ManagedRuntimeDirectToolUseJson;
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
 };

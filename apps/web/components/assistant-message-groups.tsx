@@ -130,16 +130,23 @@ function getTaskActivityLabel(
 
     const output = part.state === "output-available" ? part.output : undefined;
     const runtime = isRecord(output) ? output.runtime : undefined;
-    const runtimeLabel =
-      isRecord(runtime) && runtime.mode === "managed_runtime"
-        ? "Managed runtime worker"
-        : `${formatSubagentType(part.input?.subagentType)} worker`;
+    const isManagedWorker =
+      isRecord(runtime) && runtime.mode === "managed_runtime";
+    const runtimeLabel = isManagedWorker
+      ? "Managed worker"
+      : `${formatSubagentType(part.input?.subagentType)} worker`;
+    const sandboxName =
+      isManagedWorker && typeof runtime.sandboxName === "string"
+        ? runtime.sandboxName
+        : null;
     const pending = isRecord(output)
       ? formatPendingTaskTool(output.pending)
       : null;
 
     if (pending) {
-      return `${runtimeLabel}: ${pending}`;
+      return sandboxName
+        ? `${runtimeLabel}: ${pending} · ${sandboxName}`
+        : `${runtimeLabel}: ${pending}`;
     }
 
     const task =
@@ -147,7 +154,9 @@ function getTaskActivityLabel(
         ? truncateStatus(part.input.task)
         : "starting";
 
-    return `${runtimeLabel}: ${task}`;
+    return sandboxName
+      ? `${runtimeLabel}: ${task} · ${sandboxName}`
+      : `${runtimeLabel}: ${task}`;
   }
 
   return null;

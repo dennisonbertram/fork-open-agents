@@ -1,5 +1,8 @@
-blank_issues_enabled: true
+blank_issues_enabled: false
 contact_links:
   - name: Feature and ticket format
     url: https://github.com/dennisonbertram/fork-open-agents/blob/main/docs/process/feature-ticket-format.md
     about: Use this when turning product ideas into GitHub issues.
+  - name: GitHub build process
+    url: https://github.com/dennisonbertram/fork-open-agents/blob/main/docs/process/github-build-process.md
+    about: Use the required issue, branch, PR, CI, and deployment workflow.

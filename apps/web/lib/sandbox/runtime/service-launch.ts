@@ -412,7 +412,7 @@ function buildLaunchCommand(params: {
     `exec ${params.runCommand} > ${shellQuote(params.logPath)} 2>&1`,
   ];
 
-  return commandSteps.join(" && ");
+  return `(${commandSteps.join(" && ")}) > ${shellQuote(params.logPath)} 2>&1`;
 }
 
 async function findSandboxRecipe(

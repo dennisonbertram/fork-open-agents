@@ -4,6 +4,8 @@ const DEV_SERVER_PID_FILE =
   "/vercel/sandbox/apps/web/.open-agents-dev-server-3000.pid";
 const DEV_SERVER_STATE_FILE =
   "/vercel/sandbox/.open-agents-dev-server-state.json";
+const DEV_SERVER_LOG_FILE =
+  "/vercel/sandbox/apps/web/.open-agents-dev-server-3000.log";
 const RUNNING_PID = "4242";
 
 const currentSessionRecord = {
@@ -154,6 +156,11 @@ const execMock = mock(async (command: string) => {
     return successResult();
   }
 
+  if (command.startsWith("tail -n ")) {
+    const filePath = command.match(/'([^']+)'$/)?.[1];
+    return successResult(filePath ? (fileContents.get(filePath) ?? "") : "");
+  }
+
   throw new Error(`Unexpected exec command: ${command}`);
 });
 const readFileMock = mock(async (filePath: string) => {
@@ -219,6 +226,8 @@ mock.module("@open-agents/sandbox", () => ({
   connectSandbox: connectSandboxMock,
 }));
 
+mock.module("server-only", () => ({}));
+
 const routeModulePromise = import("./route");
 
 function createRouteContext(sessionId = "session-1") {
@@ -264,6 +273,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: string;
       port: number;
       url: string;
+      logPath: string;
     };
 
     expect(response.status).toBe(200);
@@ -271,6 +281,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: "apps/web",
       port: 3000,
       url: "https://sb-3000.vercel.run",
+      logPath: DEV_SERVER_LOG_FILE,
     });
     expect(connectSandboxMock).toHaveBeenCalledWith(
       currentSessionRecord.sandboxState,
@@ -294,6 +305,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(lastLaunchCommand).toContain("bun install");
     expect(lastLaunchCommand).toContain("bun run dev");
     expect(lastLaunchCommand).toContain("--hostname 0.0.0.0 --port 3000");
+    expect(lastLaunchCommand).toContain(`> '${DEV_SERVER_LOG_FILE}' 2>&1`);
   });
 
   test("returns the existing preview URL without relaunching when the dev server is already running", async () => {
@@ -316,6 +328,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: string;
       port: number;
       url: string;
+      logPath: string;
     };
 
     expect(response.status).toBe(200);
@@ -323,6 +336,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: "apps/web",
       port: 3000,
       url: "https://sb-3000.vercel.run",
+      logPath: DEV_SERVER_LOG_FILE,
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(0);
   });
@@ -368,6 +382,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: ".open-agents/sandbox.json",
       port: 3000,
       url: "https://sb-3000.vercel.run",
+      logPath: "/vercel/sandbox/apps/web/.open-agents-dev-server-3000.log",
     });
     expect(lastLaunchCwd).toBe("/vercel/sandbox/apps/web");
 
@@ -421,6 +436,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: string;
       port: number;
       url: string;
+      logPath: string;
     };
 
     expect(response.status).toBe(200);
@@ -428,6 +444,7 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
       packagePath: "apps/web",
       port: 3000,
       url: "https://sb-3000.vercel.run",
+      logPath: DEV_SERVER_LOG_FILE,
     });
     expect(execDetachedMock).toHaveBeenCalledTimes(1);
   });
@@ -479,6 +496,30 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(runningPids.has(RUNNING_PID)).toBe(false);
     expect(existingPaths.has(DEV_SERVER_PID_FILE)).toBe(false);
     expect(existingPaths.has(DEV_SERVER_STATE_FILE)).toBe(false);
+  });
+
+  test("returns logs for the persisted dev server target", async () => {
+    const { GET, POST } = await routeModulePromise;
+
+    const launchResponse = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+    expect(launchResponse.status).toBe(200);
+    setMockFile(DEV_SERVER_LOG_FILE, "installing\nready\n");
+
+    const response = await GET(
+      new Request("http://localhost/api/sessions/session-1/dev-server"),
+      createRouteContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe(
+      "text/plain; charset=utf-8",
+    );
+    expect(await response.text()).toBe("installing\nready\n");
   });
 
   test("uses an available package manager when package metadata does not declare one", async () => {

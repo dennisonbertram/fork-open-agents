@@ -130,13 +130,62 @@ body:
     id: observability
     attributes:
       label: Observability and user feedback
-      description: What evidence will prove the system did the work and make failures understandable?
+      description: |
+        What evidence will prove the system did the work and make failures understandable?
+        Name every user-visible status and structured event needed for debugging.
+        Use one named service/action vocabulary where possible, include correlation IDs,
+        define typed error kinds, state redaction rules, and provide grep-able recipes.
       placeholder: |
-        - User-visible status:
-        - Logs/events/metadata:
+        ### User-visible status
+        - ...
+
+        ### Structured events
+        Service name: `<service-name>`
+        - `<action-success>` (info) - emit on [condition]; fields: `{ userId, sessionId, chatId, requestId, outcome, latencyMs }`
+        - `<action-failed>` (warn) - emit on [condition]; fields: `{ userId, sessionId, chatId, requestId, errorKind }`
+
+        ### Error taxonomy
+        - `<ErrorKindA>` - [when/why]
+        - `<ErrorKindB>` - [when/why]
+
+        ### Correlation
+        - Request/session/chat/workflow/run IDs:
         - Runtime/sandbox/profile attribution:
+
+        ### Redaction
+        - Never log:
+        - Redaction helper or boundary:
+
+        ### Debug recipes
+        - "Why did this fail for chat X?" -> `...`
+        - "Find recent <kind> failures" -> `...`
+
+        ### Evidence
         - Screenshots/browser/service evidence:
         - Failure modes surfaced:
+    validations:
+      required: true
+  - type: textarea
+    id: regression_harness
+    attributes:
+      label: Regression harness plan
+      description: |
+        How will this behavior be continuously exercised after merge?
+        Name existing coverage or the new scenario/test/smoke that should catch a regression.
+      placeholder: |
+        ### Existing coverage
+        - Test/smoke/story:
+
+        ### New coverage to add
+        - Test/smoke/story:
+        - Fixture/setup:
+
+        ### Verify fail-before / pass-after
+        - Before implementation:
+        - After implementation:
+
+        ### Limits
+        - What this harness will not catch:
     validations:
       required: true
   - type: textarea
@@ -187,6 +236,7 @@ body:
         - [ ] Adjacent suite passes
         - [ ] `git diff --check` passes
         - [ ] `bun --bun run ci` passes or approved/pre-existing failures are documented
+        - [ ] Regression harness plan implemented or explicitly deferred with rationale
         - [ ] Docs updated
         - [ ] Observability evidence is available to users/operators
         - [ ] Deploy notes included

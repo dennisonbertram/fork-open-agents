@@ -162,12 +162,13 @@ import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
 import { useGitPanel } from "./git-panel-context";
-import {
-  ManagedRuntimeProfileEvidenceBadge,
-  getManagedRuntimeProfileEvidenceSummary,
-} from "./managed-runtime-profile-evidence-badge";
+import { ManagedRuntimeProfileEvidenceBadge } from "./managed-runtime-profile-evidence-badge";
 import { syncApprovedManagedRuntimeProfile } from "./managed-runtime-profile-approval-sync";
 import { ManagedRuntimeProfileManager } from "./managed-runtime-profile-manager";
+import {
+  RuntimeModeSelectorCompact,
+  getRuntimeModeSummary,
+} from "./runtime-mode-selector-compact";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -175,6 +176,7 @@ import {
 } from "./sandbox-create";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";
+import { WorkspaceStartupStatus } from "./workspace-startup-status";
 import "streamdown/styles.css";
 
 /** Minimum interval between textarea-focus activity pings (5 minutes). */
@@ -495,35 +497,57 @@ function RuntimeProofDataPartCard({
   onOpenPanel: () => void;
 }) {
   const limitationCount = part.data.limitations.length;
-  const proofPassed = part.data.status === "completed";
+  const workerCount = part.data.workerEvidence?.total ?? 0;
+  const proofStatus =
+    part.data.status === "completed" && workerCount === 0
+      ? "incomplete"
+      : part.data.status;
+  const proofPassed = proofStatus === "completed";
+  const proofIncomplete = proofStatus === "incomplete";
   const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
   const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
+  const directToolUseObserved =
+    part.data.coordinatorDirectToolUse?.observed ?? false;
+  const statusClassName = proofPassed
+    ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+    : proofIncomplete
+      ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+      : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
 
   return (
     <div className="flex items-center gap-3 py-1">
       <div className="h-px flex-1 bg-border/60" />
       <button
+        aria-label={`Open managed runtime proof. Status: ${proofStatus}.`}
         type="button"
         onClick={onOpenPanel}
         className="group/runtime-proof flex max-w-[86%] items-center gap-1.5 rounded-md px-1 py-0.5 transition-colors hover:bg-accent"
       >
         <ScanEye className="h-3.5 w-3.5 shrink-0 text-cyan-500" />
         <span className="truncate text-xs font-medium text-muted-foreground group-hover/runtime-proof:text-foreground">
-          Managed runtime proof
+          {proofIncomplete
+            ? "Managed runtime proof incomplete"
+            : "Managed runtime proof"}
         </span>
         <span
           className={cn(
             "rounded-full border px-1.5 py-px text-[10px] font-medium",
-            proofPassed
-              ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300",
+            statusClassName,
           )}
         >
-          {part.data.status}
+          {proofStatus}
+        </span>
+        <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
+          {workerCount} worker{workerCount === 1 ? "" : "s"}
         </span>
         <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
           {part.data.profile.id}
         </span>
+        {directToolUseObserved && (
+          <span className="hidden shrink-0 text-[10px] text-amber-700 dark:text-amber-300 md:inline">
+            direct tool warning
+          </span>
+        )}
         {latestServiceStatus && (
           <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
             service {latestServiceStatus}
@@ -3288,14 +3312,10 @@ export function SessionChatContent({
                 </span>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-72 text-pretty">
-                {session.runtimeMode === "managed_runtime"
-                  ? `Managed runtime is selected with ${
-                      selectedManagedRuntimeProfile?.displayName ??
-                      "the selected profile"
-                    }. ${getManagedRuntimeProfileEvidenceSummary(
-                      selectedManagedRuntimeProfile,
-                    )} The agent gets managed-runtime context, and dev server logs/browser checks use managed runtime services.`
-                  : "Classic runtime is selected. Switch runtime mode before starting work to use managed runtime services."}
+                {getRuntimeModeSummary({
+                  runtimeMode: session.runtimeMode,
+                  profile: selectedManagedRuntimeProfile,
+                })}
               </TooltipContent>
             </Tooltip>
             <>
@@ -3429,24 +3449,26 @@ export function SessionChatContent({
                         Open dev server
                       </TooltipContent>
                     </Tooltip>
+                    {devServer.showLogAction ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-5 w-5 rounded-sm"
+                            aria-label="Open dev server logs"
+                            onClick={() => void devServer.handleOpenLogs()}
+                          >
+                            <ScrollText className="h-3 w-3" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">
+                          Open dev server logs
+                        </TooltipContent>
+                      </Tooltip>
+                    ) : null}
                     {devServer.showManagedActions ? (
                       <>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-5 w-5 rounded-sm"
-                              aria-label="Open dev server logs"
-                              onClick={() => void devServer.handleOpenLogs()}
-                            >
-                              <ScrollText className="h-3 w-3" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">
-                            Open dev server logs
-                          </TooltipContent>
-                        </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
                             <Button
@@ -4205,16 +4227,7 @@ export function SessionChatContent({
                           },
                         )}
                         {showThinkingIndicator && (
-                          <div className="my-1.5 border border-transparent py-0.5">
-                            <div className="inline-flex items-center gap-2 rounded-md py-px text-sm text-muted-foreground">
-                              <span className="flex size-3.5 shrink-0 items-center justify-center">
-                                <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-muted-foreground" />
-                              </span>
-                              <span className="leading-none">
-                                {workspaceStatus?.message ?? "Thinking…"}
-                              </span>
-                            </div>
-                          </div>
+                          <WorkspaceStartupStatus status={workspaceStatus} />
                         )}
                       </div>
                     </OpenFileProvider>
@@ -4682,10 +4695,39 @@ export function SessionChatContent({
                             )}
                             <ComposioToolSelectorCompact
                               selection={chatInfo.composioSelection}
+                              repoOwner={session.repoOwner}
+                              repoName={session.repoName}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }
                               onChange={handleComposioSelectionChange}
+                            />
+                            <RuntimeModeSelectorCompact
+                              disabled={isArchived || isChatInFlight}
+                              managedRuntimeProfileId={
+                                session.managedRuntimeProfileId
+                              }
+                              onManagedRuntimeProfileChange={(value) => {
+                                void updateManagedRuntimeProfile(value).catch(
+                                  (error) => {
+                                    console.error(
+                                      "Failed to update managed runtime profile:",
+                                      error,
+                                    );
+                                  },
+                                );
+                              }}
+                              onRuntimeModeChange={(value) => {
+                                void updateRuntimeMode(value).catch((error) => {
+                                  console.error(
+                                    "Failed to update runtime mode:",
+                                    error,
+                                  );
+                                });
+                              }}
+                              profiles={managedRuntimeProfiles}
+                              runtimeMode={session.runtimeMode}
+                              selectedProfile={selectedManagedRuntimeProfile}
                             />
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}

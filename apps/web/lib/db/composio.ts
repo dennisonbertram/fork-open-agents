@@ -7,10 +7,13 @@ import {
   type ComposioAgentDefaults,
   type ComposioAgentKey,
   type ComposioToolProfileValues,
+  type RepositoryComposioSettingsValues,
+  normalizeComposioToolkitSlug,
   normalizeChatComposioSelection,
   normalizeComposioAgentDefaults,
   normalizeComposioToolProfilePatch,
   normalizeComposioToolProfileValues,
+  normalizeRepositoryComposioSettings,
 } from "@/lib/composio/types";
 import { db } from "./client";
 import {
@@ -19,11 +22,23 @@ import {
   type ComposioAgentSession,
   type ComposioToolProfile,
   type NewComposioAgentSession,
+  type RepositoryComposioSettings,
+  repositoryComposioSettings,
   userPreferences,
 } from "./schema";
 import { getUserPreferences, updateUserPreferences } from "./user-preferences";
 
 export type ComposioToolProfileRecord = ComposioToolProfile;
+export type RepositoryComposioSettingsRecord = RepositoryComposioSettings;
+
+export type ComposioProfileOption = ComposioToolProfileRecord & {
+  available: boolean;
+  disabledReason: string | null;
+};
+
+function normalizeRepositoryPart(value: string): string {
+  return value.trim().toLowerCase();
+}
 
 export async function listComposioToolProfiles(
   userId: string,
@@ -127,6 +142,187 @@ export async function deleteComposioToolProfile(
     .returning({ id: composioToolProfiles.id });
 
   return deleted.length > 0;
+}
+
+export async function getRepositoryComposioSettings(params: {
+  userId: string;
+  repoOwner: string;
+  repoName: string;
+}): Promise<RepositoryComposioSettingsRecord | undefined> {
+  return db.query.repositoryComposioSettings.findFirst({
+    where: and(
+      eq(repositoryComposioSettings.userId, params.userId),
+      eq(
+        repositoryComposioSettings.repoOwner,
+        normalizeRepositoryPart(params.repoOwner),
+      ),
+      eq(
+        repositoryComposioSettings.repoName,
+        normalizeRepositoryPart(params.repoName),
+      ),
+    ),
+  });
+}
+
+export async function upsertRepositoryComposioSettings(params: {
+  userId: string;
+  repoOwner: string;
+  repoName: string;
+  settings: unknown;
+}): Promise<RepositoryComposioSettingsRecord> {
+  const settings = normalizeRepositoryComposioSettings(params.settings);
+  const now = new Date();
+  const repoOwner = normalizeRepositoryPart(params.repoOwner);
+  const repoName = normalizeRepositoryPart(params.repoName);
+
+  const [record] = await db
+    .insert(repositoryComposioSettings)
+    .values({
+      id: nanoid(),
+      userId: params.userId,
+      repoOwner,
+      repoName,
+      ...settings,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        repositoryComposioSettings.userId,
+        repositoryComposioSettings.repoOwner,
+        repositoryComposioSettings.repoName,
+      ],
+      set: {
+        ...settings,
+        updatedAt: now,
+      },
+    })
+    .returning();
+
+  if (!record) {
+    throw new Error("Failed to save repository Composio settings");
+  }
+
+  return record;
+}
+
+export function getRepositoryComposioSettingsValues(
+  settings: RepositoryComposioSettingsRecord | undefined,
+): RepositoryComposioSettingsValues | null {
+  if (!settings) {
+    return null;
+  }
+
+  return normalizeRepositoryComposioSettings({
+    inheritGlobalDefaults: settings.inheritGlobalDefaults,
+    allowedProfileIds: settings.allowedProfileIds,
+    blockedToolkitSlugs: settings.blockedToolkitSlugs,
+    agentDefaults: settings.agentDefaults,
+  });
+}
+
+function getProfileDisabledReason(
+  profile: ComposioToolProfileRecord,
+  settings: RepositoryComposioSettingsValues | null,
+): string | null {
+  if (!settings) {
+    return null;
+  }
+
+  if (
+    settings.allowedProfileIds.length > 0 &&
+    !settings.allowedProfileIds.includes(profile.id)
+  ) {
+    return "Blocked by repository policy.";
+  }
+
+  const blockedToolkits = new Set(settings.blockedToolkitSlugs);
+  const blockedToolkit = profile.toolkitSlugs.find((toolkit) =>
+    blockedToolkits.has(normalizeComposioToolkitSlug(toolkit) ?? toolkit),
+  );
+
+  return blockedToolkit
+    ? `Blocked toolkit for this repository: ${blockedToolkit}.`
+    : null;
+}
+
+export function applyRepositoryComposioPolicy(params: {
+  profiles: ComposioToolProfileRecord[];
+  settings: RepositoryComposioSettingsRecord | undefined;
+}): ComposioProfileOption[] {
+  const settings = getRepositoryComposioSettingsValues(params.settings);
+
+  return params.profiles.map((profile) => {
+    const disabledReason = getProfileDisabledReason(profile, settings);
+    return {
+      ...profile,
+      available: disabledReason === null,
+      disabledReason,
+    };
+  });
+}
+
+export async function listComposioProfileOptionsForRepository(params: {
+  userId: string;
+  repoOwner?: string | null;
+  repoName?: string | null;
+}): Promise<{
+  profiles: ComposioToolProfileRecord[];
+  profileOptions: ComposioProfileOption[];
+  repositorySettings: RepositoryComposioSettingsRecord | null;
+}> {
+  const profiles = await listComposioToolProfiles(params.userId);
+  const repositorySettings =
+    params.repoOwner && params.repoName
+      ? ((await getRepositoryComposioSettings({
+          userId: params.userId,
+          repoOwner: params.repoOwner,
+          repoName: params.repoName,
+        })) ?? null)
+      : null;
+
+  return {
+    profiles,
+    profileOptions: applyRepositoryComposioPolicy({
+      profiles,
+      settings: repositorySettings ?? undefined,
+    }),
+    repositorySettings,
+  };
+}
+
+export async function isComposioProfileAllowedForRepository(params: {
+  userId: string;
+  profileId: string;
+  repoOwner?: string | null;
+  repoName?: string | null;
+}): Promise<{ allowed: boolean; reason: string | null }> {
+  const profile = await getComposioToolProfile(params.userId, params.profileId);
+  if (!profile) {
+    return {
+      allowed: false,
+      reason: "The selected Composio profile no longer exists.",
+    };
+  }
+
+  if (!params.repoOwner || !params.repoName) {
+    return { allowed: true, reason: null };
+  }
+
+  const settings = await getRepositoryComposioSettings({
+    userId: params.userId,
+    repoOwner: params.repoOwner,
+    repoName: params.repoName,
+  });
+  const [option] = applyRepositoryComposioPolicy({
+    profiles: [profile],
+    settings,
+  });
+
+  return {
+    allowed: option?.available ?? true,
+    reason: option?.disabledReason ?? null,
+  };
 }
 
 export async function getComposioAgentDefaults(

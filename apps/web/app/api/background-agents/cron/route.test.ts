@@ -1,0 +1,88 @@
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+const dispatchScheduledBackgroundAgents = mock(async () => ({
+  enabled: true,
+  matched: 1,
+  created: 1,
+  duplicates: 0,
+  runIds: ["run-1"],
+}));
+
+mock.module("@/lib/background-agents/dispatcher", () => ({
+  dispatchBackgroundTriggerEvent: async () => ({
+    enabled: true,
+    matched: 0,
+    created: 0,
+    duplicates: 0,
+    runIds: [],
+  }),
+  dispatchScheduledBackgroundAgents,
+  dispatchWebhookErrorEvent: async () => ({
+    enabled: true,
+    matched: 0,
+    created: 0,
+    duplicates: 0,
+    runIds: [],
+  }),
+}));
+
+const routeModulePromise = import("./route");
+
+describe("POST /api/background-agents/cron", () => {
+  beforeEach(() => {
+    process.env.BACKGROUND_AGENTS_CRON_SECRET = "cron-secret";
+    dispatchScheduledBackgroundAgents.mockClear();
+  });
+
+  test("requires cron secret configuration", async () => {
+    delete process.env.BACKGROUND_AGENTS_CRON_SECRET;
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/cron"),
+    );
+
+    expect(response.status).toBe(500);
+    expect(dispatchScheduledBackgroundAgents).not.toHaveBeenCalled();
+  });
+
+  test("requires matching authorization", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/cron"),
+    );
+
+    expect(response.status).toBe(401);
+    expect(dispatchScheduledBackgroundAgents).not.toHaveBeenCalled();
+  });
+
+  test("dispatches scheduled agents when authorized", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/cron", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer cron-secret",
+          "x-request-id": "req-1",
+        },
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      enabled: true,
+      matched: 1,
+      created: 1,
+      duplicates: 0,
+      runIds: ["run-1"],
+    });
+    expect(dispatchScheduledBackgroundAgents).toHaveBeenCalledWith({
+      requestId: "req-1",
+    });
+  });
+});

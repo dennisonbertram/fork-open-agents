@@ -3,11 +3,14 @@
 import {
   Activity,
   AlertTriangle,
+  Bot,
   CheckCircle2,
   Clock3,
   Globe,
+  Hammer,
   RefreshCw,
   Server,
+  ShieldCheck,
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -19,9 +22,14 @@ import {
 } from "@/lib/composio/errors";
 import { cn } from "@/lib/utils";
 import {
+  type ManagedRuntimeDirectToolUseJson,
   type ManagedRuntimeCommandObservationJson,
+  type ManagedRuntimeProfileRunJson,
+  type ManagedRuntimeWorkerJson,
+  type RuntimeMode,
   type SessionEventJson,
   useSessionObservability,
+  type WorkflowRunJson,
 } from "./hooks/use-session-observability";
 
 const statusClassName: Record<string, string> = {
@@ -105,6 +113,49 @@ function EmptyState({ children }: { children: ReactNode }) {
   );
 }
 
+export function getManagedRuntimeToolReason(tool: string): string {
+  switch (tool.toLowerCase()) {
+    case "agent-browser":
+      return "Browser QA tool for opening previews, capturing screenshots, and surfacing console or network errors.";
+    case "bun":
+      return "JavaScript runtime and package manager used for installs, tests, and local web app commands.";
+    case "node":
+      return "JavaScript runtime used by many build tools and scripts.";
+    case "npm":
+    case "pnpm":
+    case "yarn":
+      return "Package manager support for repositories that do not use Bun.";
+    case "git":
+      return "Version control tool used for repo status, patches, and branch context.";
+    default:
+      return "Profile-declared tool required by this sandbox setup.";
+  }
+}
+
+function ToolReasonList({ label, tools }: { label: string; tools: string[] }) {
+  if (tools.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-t border-border/60 px-3 py-2">
+      <p className="mb-1 text-[10px] font-medium uppercase text-muted-foreground">
+        {label}
+      </p>
+      <div className="space-y-1.5">
+        {tools.map((tool) => (
+          <div className="min-w-0 text-xs" key={tool}>
+            <p className="truncate font-mono text-foreground">{tool}</p>
+            <p className="line-clamp-2 text-[10px] text-muted-foreground">
+              {getManagedRuntimeToolReason(tool)}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EventRow({ event }: { event: SessionEventJson }) {
   const summary = event.summary
     ? redactComposioErrorMessage(event.summary)
@@ -157,6 +208,296 @@ function collapseDuplicateEvents(events: SessionEventJson[]): Array<{
   }
 
   return rows;
+}
+
+type WorkerActor = {
+  key: string;
+  workerType: string;
+  status: string;
+  sandboxName: string | null;
+  profileLabel: string | null;
+  currentToolName: string | null;
+  currentToolSummary: string | null;
+  summary: string;
+};
+
+function getPayloadString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function formatWorkerType(value: string | null | undefined): string {
+  if (!value) {
+    return "Worker";
+  }
+
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function getProfileLabelFromEvent(
+  event: SessionEventJson,
+  latestProfileRun: ManagedRuntimeProfileRunJson | null,
+  latestWorkflow: WorkflowRunJson | null,
+): string | null {
+  const profileId =
+    getPayloadString(event.payload, "profileId") ??
+    latestProfileRun?.profileId ??
+    latestWorkflow?.managedRuntimeProfileId ??
+    null;
+  const profileVersion =
+    getPayloadString(event.payload, "profileVersion") ??
+    latestProfileRun?.profileVersion ??
+    latestWorkflow?.managedRuntimeProfileVersion ??
+    null;
+
+  if (profileId && profileVersion) {
+    return `${profileId}@${profileVersion}`;
+  }
+
+  return profileId ?? latestProfileRun?.profileDisplayName ?? null;
+}
+
+function getCurrentTool(payload: Record<string, unknown>): {
+  name: string | null;
+  summary: string | null;
+} {
+  const currentTool = payload.currentTool;
+  if (
+    typeof currentTool !== "object" ||
+    currentTool === null ||
+    Array.isArray(currentTool)
+  ) {
+    return { name: null, summary: null };
+  }
+
+  const record = currentTool as Record<string, unknown>;
+  return {
+    name:
+      typeof record.name === "string" && record.name.length > 0
+        ? record.name.charAt(0).toUpperCase() + record.name.slice(1)
+        : null,
+    summary:
+      typeof record.safeSummary === "string" && record.safeSummary.length > 0
+        ? record.safeSummary
+        : null,
+  };
+}
+
+function getWorkerActors(params: {
+  workers: ManagedRuntimeWorkerJson[];
+  events: SessionEventJson[];
+  latestProfileRun: ManagedRuntimeProfileRunJson | null;
+  latestWorkflow: WorkflowRunJson | null;
+}): WorkerActor[] {
+  const workers = new Map<string, WorkerActor>();
+
+  for (const worker of params.workers) {
+    workers.set(worker.id, {
+      key: worker.id,
+      workerType: worker.workerType,
+      status: worker.status,
+      sandboxName:
+        worker.sandboxName ??
+        params.latestProfileRun?.sandboxName ??
+        params.latestWorkflow?.sandboxName ??
+        null,
+      profileLabel:
+        worker.profileId && worker.profileVersion
+          ? `${worker.profileId}@${worker.profileVersion}`
+          : (worker.profileDisplayName ??
+            worker.profileId ??
+            params.latestProfileRun?.profileDisplayName ??
+            null),
+      currentToolName: worker.currentToolName,
+      currentToolSummary: worker.currentToolSummary,
+      summary: worker.summary ?? "Managed worker evidence captured.",
+    });
+  }
+
+  for (const event of params.events) {
+    const isWorkerEvent =
+      event.actorType === "worker" ||
+      event.eventName.startsWith("managed_runtime.worker.");
+    if (!isWorkerEvent) {
+      continue;
+    }
+
+    const workerType =
+      getPayloadString(event.payload, "workerType") ??
+      event.actorId ??
+      "worker";
+    const key =
+      event.actorId ??
+      getPayloadString(event.payload, "taskToolCallId") ??
+      `${event.eventName}:${workerType}`;
+    if (workers.has(key)) {
+      continue;
+    }
+
+    const currentTool = getCurrentTool(event.payload);
+    workers.set(key, {
+      key,
+      workerType,
+      status: event.status,
+      sandboxName:
+        event.sandboxName ??
+        params.latestProfileRun?.sandboxName ??
+        params.latestWorkflow?.sandboxName ??
+        null,
+      profileLabel: getProfileLabelFromEvent(
+        event,
+        params.latestProfileRun,
+        params.latestWorkflow,
+      ),
+      currentToolName: currentTool.name,
+      currentToolSummary: currentTool.summary,
+      summary: normalizeEventSummary(event),
+    });
+  }
+
+  return Array.from(workers.values());
+}
+
+function ActorRow({
+  icon,
+  title,
+  status,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  status: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-b border-border/60 px-3 py-2 last:border-b-0">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 gap-2">
+          <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-cyan-600 dark:text-cyan-300">
+            {icon}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium">{title}</p>
+            <div className="mt-0.5 space-y-0.5 text-[10px] text-muted-foreground">
+              {children}
+            </div>
+          </div>
+        </div>
+        <StatusPill status={status} />
+      </div>
+    </div>
+  );
+}
+
+export function RuntimeActorsSection({
+  runtimeMode,
+  latestWorkflow,
+  latestProfileRun,
+  workers,
+  directToolUse,
+  events,
+}: {
+  runtimeMode: RuntimeMode | null | undefined;
+  latestWorkflow: WorkflowRunJson | null;
+  latestProfileRun: ManagedRuntimeProfileRunJson | null;
+  workers: ManagedRuntimeWorkerJson[];
+  directToolUse?: ManagedRuntimeDirectToolUseJson | null;
+  events: SessionEventJson[];
+}) {
+  const isManagedRuntime = runtimeMode === "managed_runtime";
+  const workerActors = isManagedRuntime
+    ? getWorkerActors({ workers, events, latestProfileRun, latestWorkflow })
+    : [];
+  const coordinatorStatus = latestWorkflow?.status ?? "info";
+
+  return (
+    <Section title="Actors">
+      <ActorRow
+        icon={<ShieldCheck className="h-3.5 w-3.5" />}
+        status={coordinatorStatus}
+        title={isManagedRuntime ? "Coordinator" : "Direct agent"}
+      >
+        <p>
+          {isManagedRuntime
+            ? "Managed runtime: plans, delegates, and summarizes evidence."
+            : "Classic runtime: the top-level agent can work directly."}
+        </p>
+        {latestWorkflow?.id && (
+          <p className="truncate font-mono">workflow {latestWorkflow.id}</p>
+        )}
+      </ActorRow>
+
+      {isManagedRuntime && directToolUse?.observed ? (
+        <ActorRow
+          icon={<AlertTriangle className="h-3.5 w-3.5" />}
+          status="blocked"
+          title="Coordinator direct tool use"
+        >
+          <p className="line-clamp-2">
+            {directToolUse.warning ??
+              "A coordinator repo tool ran outside a managed worker."}
+          </p>
+          <p className="truncate">
+            {directToolUse.count} direct tool call
+            {directToolUse.count === 1 ? "" : "s"} ·{" "}
+            {directToolUse.toolLabels.join(", ")}
+          </p>
+        </ActorRow>
+      ) : null}
+
+      {isManagedRuntime ? (
+        workerActors.length > 0 ? (
+          workerActors.map((worker) => (
+            <ActorRow
+              icon={<Hammer className="h-3.5 w-3.5" />}
+              key={worker.key}
+              status={worker.status}
+              title={`Managed worker · ${formatWorkerType(worker.workerType)}`}
+            >
+              {worker.sandboxName && (
+                <p className="truncate font-mono">
+                  sandbox {worker.sandboxName}
+                </p>
+              )}
+              {worker.profileLabel && (
+                <p className="truncate font-mono">
+                  profile {worker.profileLabel}
+                </p>
+              )}
+              {worker.currentToolName ? (
+                <p className="truncate">
+                  {worker.currentToolName}
+                  {worker.currentToolSummary
+                    ? ` ${worker.currentToolSummary}`
+                    : ""}
+                </p>
+              ) : (
+                <p className="line-clamp-2">{worker.summary}</p>
+              )}
+            </ActorRow>
+          ))
+        ) : (
+          <div className="border-b border-border/60 px-3 py-3 last:border-b-0">
+            <div className="flex items-start gap-2">
+              <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 space-y-1 text-xs">
+                <p className="font-medium text-foreground">
+                  No managed worker has executed yet.
+                </p>
+                <p className="text-muted-foreground">
+                  Proof incomplete until the coordinator delegates repo work to
+                  a managed worker and worker evidence is captured.
+                </p>
+              </div>
+            </div>
+          </div>
+        )
+      ) : null}
+    </Section>
+  );
 }
 
 function LikelyIssue({ events }: { events: SessionEventJson[] }) {
@@ -294,6 +635,15 @@ export function RuntimeObservabilityPanel({
         <EmptyState>Runtime observability is unavailable.</EmptyState>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
+          <RuntimeActorsSection
+            events={data?.events ?? []}
+            latestProfileRun={latestProfileRun}
+            latestWorkflow={latestWorkflow}
+            directToolUse={data?.directToolUse}
+            runtimeMode={data?.runtimeMode}
+            workers={data?.workers ?? []}
+          />
+
           <Section title="Session Runtime">
             <InfoRow
               label="Mode"
@@ -363,6 +713,14 @@ export function RuntimeObservabilityPanel({
                 <InfoRow
                   label="Optional"
                   value={latestProfileRun.optionalTools.join(", ") || "-"}
+                />
+                <ToolReasonList
+                  label="Required tool reasons"
+                  tools={latestProfileRun.expectedTools}
+                />
+                <ToolReasonList
+                  label="Optional tool reasons"
+                  tools={latestProfileRun.optionalTools}
                 />
                 {profileCommands.length > 0 ? (
                   <div className="border-t border-border/70">
