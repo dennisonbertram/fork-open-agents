@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import useSWR from "swr";
-import { Check, ExternalLink, FolderGit2, Loader2 } from "lucide-react";
+import {
+  AlertCircle,
+  Check,
+  ExternalLink,
+  FolderGit2,
+  Loader2,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import type { Session } from "@/lib/db/schema";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
+import { classifyCreateRepoResponse } from "./create-repo-response-classifier";
 
 interface CreateRepoDialogProps {
   open: boolean;
@@ -45,8 +52,17 @@ interface CreateRepoResult {
   repoUrl: string;
   owner: string;
   repoName: string;
+  cloneUrl: string;
+  branch: string;
   appAccess?: "verified" | "needs_update";
   appAccessMessage?: string;
+}
+
+interface PushFailedResult {
+  repoUrl: string;
+  owner: string;
+  repoName: string;
+  error: string;
 }
 
 interface Installation {
@@ -89,6 +105,7 @@ export function CreateRepoDialog({
   const [isPrivate, setIsPrivate] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState<CreateRepoResult | null>(null);
+  const [pushFailed, setPushFailed] = useState<PushFailedResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedOwner, setSelectedOwner] = useState<string>("");
   const { reconnectRequired } = useGitHubConnectionStatus({ enabled: open });
@@ -113,6 +130,7 @@ export function CreateRepoDialog({
       setDescription("");
       setIsPrivate(false);
       setResult(null);
+      setPushFailed(null);
       setError(null);
     }
   }, [open, session.title]);
@@ -170,22 +188,32 @@ export function CreateRepoDialog({
       });
 
       const data = await res.json();
+      const classification = classifyCreateRepoResponse(res.status, data);
 
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to create repository");
+      if (classification.kind === "success") {
+        const createResult: CreateRepoResult = {
+          repoUrl: classification.repoUrl,
+          owner: classification.owner,
+          repoName: classification.repoName,
+          cloneUrl: classification.cloneUrl,
+          branch: classification.branch,
+          appAccess: classification.appAccess,
+        };
+        setResult(createResult);
+        onRepoCreated?.(createResult);
+      } else if (classification.kind === "pushFailed") {
+        // Repo was created on GitHub but code was NOT pushed.
+        // Show remediation state — do NOT call onRepoCreated (cloneUrl/branch absent).
+        setPushFailed({
+          repoUrl: classification.repoUrl,
+          owner: classification.owner,
+          repoName: classification.repoName,
+          error: classification.error,
+        });
+      } else {
+        // httpError
+        setError(classification.error);
       }
-
-      const createResult = {
-        repoUrl: data.repoUrl as string,
-        owner: data.owner as string,
-        repoName: data.repoName as string,
-        cloneUrl: data.cloneUrl as string,
-        branch: data.branch as string,
-        appAccess: data.appAccess as "verified" | "needs_update" | undefined,
-        appAccessMessage: data.appAccessMessage as string | undefined,
-      };
-      setResult(createResult);
-      onRepoCreated?.(createResult);
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Failed to create repository",
@@ -244,6 +272,43 @@ export function CreateRepoDialog({
             <Button variant="outline" onClick={handleClose}>
               Close
             </Button>
+          </div>
+        ) : pushFailed ? (
+          // Push-failed remediation state — repo exists on GitHub but code was NOT pushed
+          <div className="flex flex-col gap-4 py-4">
+            <div className="flex items-start gap-3 rounded-md border border-amber-500/20 bg-amber-500/5 p-4">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+              <div className="flex flex-col gap-1">
+                <p className="font-medium text-amber-700 dark:text-amber-400">
+                  Repository created but push failed
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  The repository{" "}
+                  <span className="font-mono text-xs">
+                    {pushFailed.owner}/{pushFailed.repoName}
+                  </span>{" "}
+                  was created on GitHub, but your code was not pushed. The
+                  session is not linked to this repository.
+                </p>
+                <p className="mt-1 text-xs text-destructive">{pushFailed.error}</p>
+                {/* External link to GitHub - not internal navigation */}
+                {/* oxlint-disable-next-line nextjs/no-html-link-for-pages */}
+                <a
+                  href={pushFailed.repoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 inline-flex items-center gap-1 text-sm text-blue-500 hover:underline"
+                >
+                  View orphaned repository on GitHub
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={handleClose}>
+                Close
+              </Button>
+            </DialogFooter>
           </div>
         ) : (
           // Form
