@@ -522,3 +522,62 @@ describe("FIX-2: registry values and DEFAULT_CATALOG are immutable after constru
     expect(entry.capabilities.length).toBe(originalCapabilities.length);
   });
 });
+
+// ── ISSUE-33 REGRESSION tests ─────────────────────────────────────────────────
+// These tests catch regressions if the seeded catalog from issue #33 is
+// reverted, partially reverted, or silently broken.
+
+describe("regression(ISSUE-33): seeded catalog integrity", () => {
+  test("REG-I33-001: stub-workflow id is NOT present in DEFAULT_CATALOG (old placeholder removed)", () => {
+    // If catalog.ts reverts to the stub, this test catches it.
+    const ids = DEFAULT_CATALOG.map((d) => d.id);
+    expect(ids).not.toContain("stub-workflow");
+  });
+
+  test("REG-I33-002: no initial catalog entry is enabled — none should be prematurely activated", () => {
+    // If someone flips enabled=true on an unshipped workflow, this test fails.
+    const enabled = DEFAULT_CATALOG.filter((d) => d.enabled === true);
+    expect(enabled).toHaveLength(0);
+  });
+
+  test("REG-I33-003: every initial catalog entry description contains 'Not yet available'", () => {
+    // If the disabled-reason convention is dropped from a description, this catches it.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.description).toContain("Not yet available");
+    }
+  });
+
+  test("REG-I33-004: verified-build and release-smoke use level-3 proof", () => {
+    // These workflows require production proof. If the level is downgraded, this fails.
+    const verifiedBuild = DEFAULT_CATALOG.find(
+      (d) => d.id === "verified-build",
+    );
+    const releaseSmoke = DEFAULT_CATALOG.find((d) => d.id === "release-smoke");
+    expect(verifiedBuild?.proofLevel).toBe("level-3");
+    expect(releaseSmoke?.proofLevel).toBe("level-3");
+  });
+
+  test("REG-I33-005: deep-research uses level-1 and runtime-profile-validation uses level-2", () => {
+    // Proof level assignments are documented in workflow-catalog-conventions.md.
+    const deepResearch = DEFAULT_CATALOG.find((d) => d.id === "deep-research");
+    const runtimeProfileValidation = DEFAULT_CATALOG.find(
+      (d) => d.id === "runtime-profile-validation",
+    );
+    expect(deepResearch?.proofLevel).toBe("level-1");
+    expect(runtimeProfileValidation?.proofLevel).toBe("level-2");
+  });
+
+  test("REG-I33-006: every entry has at least one capability tag", () => {
+    // Empty capabilities on a real workflow would silently reduce API value.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.capabilities.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("REG-I33-007: all four entries use version 0.1.0", () => {
+    // Version drift from the initial catalog would indicate an unintentional change.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.version).toBe("0.1.0");
+    }
+  });
+});
