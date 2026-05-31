@@ -33,9 +33,20 @@ const STUB_ENTRY = Object.freeze({
   name: "Stub Workflow",
   description:
     "Placeholder workflow definition. Real catalog entries will be added in issue #33.",
-  capabilities: Object.freeze([]) as string[],
+  capabilities: [] as string[],
   proofLevel: "level-1" as const,
   enabled: false,
+});
+
+// An enabled entry used by regression tests to verify availability flip.
+const ENABLED_ENTRY = Object.freeze({
+  id: "enabled-workflow",
+  version: "1.0.0",
+  name: "Enabled Workflow",
+  description: "A workflow that is enabled.",
+  capabilities: ["run-code"] as string[],
+  proofLevel: "level-2" as const,
+  enabled: true,
 });
 
 // Small stub WorkflowCatalogError that the mock can throw.
@@ -49,14 +60,21 @@ class StubWorkflowCatalogError extends Error {
 
 // Controls whether buildRegistry throws in BT-004.
 let catalogShouldThrow = false;
+// Controls whether to include the enabled entry (regression tests).
+let includeEnabledEntry = false;
 
 /**
  * A minimal stand-in registry that behaves like the real one for list/lookup.
  * Returned by the mocked buildRegistry when catalogShouldThrow === false.
  */
 function makeStubRegistry() {
-  const map = new Map([["stub-workflow", STUB_ENTRY]]);
-  return { definitions: map };
+  const entries: Array<[string, typeof STUB_ENTRY | typeof ENABLED_ENTRY]> = [
+    ["stub-workflow", STUB_ENTRY],
+  ];
+  if (includeEnabledEntry) {
+    entries.push(["enabled-workflow", ENABLED_ENTRY]);
+  }
+  return { definitions: new Map(entries) };
 }
 
 mock.module("@/lib/workflows/catalog", () => ({
@@ -92,6 +110,7 @@ describe("/api/workflows/catalog GET", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     catalogShouldThrow = false;
+    includeEnabledEntry = false;
   });
 
   // BT-001: unauthenticated request returns 401
@@ -206,5 +225,52 @@ describe("/api/workflows/catalog GET", () => {
     // The internal `enabled` and `inputSchemaRef` fields must NOT be present
     expect(actualKeys).not.toContain("enabled");
     expect(actualKeys).not.toContain("inputSchemaRef");
+  });
+
+  // ── Regression tests ────────────────────────────────────────────────────────
+  // These would fail if the implementation in feat(workflows): (#31) were reverted.
+
+  // REG-001: availability flips correctly — enabled workflow has available=true,
+  //          disabledReason=null. If computeAvailability ignores the `enabled`
+  //          field, this test fails.
+  test("REG-001: enabled workflow has available=true and disabledReason=null", async () => {
+    includeEnabledEntry = true;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      workflows: Array<{
+        id: string;
+        available: boolean;
+        disabledReason: string | null;
+      }>;
+    };
+    const enabledEntry = body.workflows.find(
+      (w) => w.id === "enabled-workflow",
+    );
+    expect(enabledEntry).toBeDefined();
+    expect(enabledEntry!.available).toBe(true);
+    expect(enabledEntry!.disabledReason).toBeNull();
+  });
+
+  // REG-002: the exact errorKind literal "catalog_unavailable" is returned (not a
+  //          generic "error" string or an HTTP status code as text). If the route's
+  //          error taxonomy changes the literal, API clients relying on this exact
+  //          string break.
+  test("REG-002: catalog error response contains errorKind literal exactly equal to catalog_unavailable", async () => {
+    catalogShouldThrow = true;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    const body = (await response.json()) as Record<string, unknown>;
+    // Must be the exact string "catalog_unavailable", not a variant like
+    // "CATALOG_UNAVAILABLE", "catalog-unavailable", or a generic "error".
+    expect(body["errorKind"]).toBe("catalog_unavailable");
+    // Must also carry a human-readable message for client debugging.
+    expect(typeof body["message"]).toBe("string");
+    expect((body["message"] as string).length).toBeGreaterThan(0);
   });
 });
