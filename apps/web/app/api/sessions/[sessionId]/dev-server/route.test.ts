@@ -611,6 +611,32 @@ describe("/api/sessions/[sessionId]/dev-server", () => {
     expect(lastLaunchCommand).not.toContain("bun install");
   });
 
+  test("falls back to package.json discovery when sandbox recipe is malformed and does not 500", async () => {
+    const { POST } = await routeModulePromise;
+
+    // Set up a malformed recipe file (invalid JSON)
+    setMockDirectory("/vercel/sandbox/.open-agents");
+    setMockFile(
+      "/vercel/sandbox/.open-agents/sandbox.json",
+      "this is not valid json {{{",
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/dev-server", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+
+    // Should succeed by falling back to the valid package.json candidate (apps/web)
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { packagePath: string; port: number };
+    expect(body.packagePath).toBe("apps/web");
+    expect(body.port).toBe(3000);
+    // The dev server must have been launched — not hard-blocked by the recipe error
+    expect(execDetachedMock).toHaveBeenCalledTimes(1);
+  });
+
   test("returns 404 when no supported dev script is found", async () => {
     const { POST } = await routeModulePromise;
 

@@ -770,10 +770,14 @@ async function findSandboxRecipe(
         recipePath,
       );
     } catch (error) {
+      // Log a warning and continue scanning remaining recipe paths rather than
+      // propagating a hard 500. This ensures a malformed recipe does not
+      // permanently block fallback to package.json discovery.
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid sandbox recipe ${recipePath}: ${message}`, {
-        cause: error,
-      });
+      console.warn(
+        `Invalid sandbox recipe at ${recipePath}: ${message} — falling back to package.json discovery.`,
+      );
+      continue;
     }
   }
 
@@ -914,12 +918,13 @@ export async function POST(_req: Request, context: RouteContext) {
           ...target.recipe.installCommands,
           ...target.recipe.buildCommands,
         ],
+        // Recipe env spreads first so launcher-owned HOST/PORT/BROWSER always win.
         runCommand: `${buildEnvPrefix({
+          ...target.recipe.env,
+          ...target.recipe.dev.env,
           BROWSER: "none",
           HOST: "0.0.0.0",
           PORT: String(port),
-          ...target.recipe.env,
-          ...target.recipe.dev.env,
         })}${target.recipe.dev.command}`,
         pidFilePath: getDevServerPidFilePath(packageDirAbs, port),
         logFilePath: getDevServerLogFilePath(packageDirAbs, port),

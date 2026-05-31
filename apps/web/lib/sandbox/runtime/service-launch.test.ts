@@ -16,6 +16,16 @@ mock.module("@/lib/observability/events", () => ({
 }));
 mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_PORTS: [3000, 5173, 4321, 8000],
+  DEFAULT_SANDBOX_TIMEOUT_MS: 5 * 60 * 60 * 1000,
+  DEFAULT_SANDBOX_VCPUS: 4,
+  EXTEND_TIMEOUT_DURATION_MS: 20 * 60 * 1000,
+  SANDBOX_INACTIVITY_TIMEOUT_MS: 30 * 60 * 1000,
+  SANDBOX_EXPIRES_BUFFER_MS: 10 * 1000,
+  SANDBOX_LIFECYCLE_STALE_RUN_GRACE_MS: 2 * 60 * 1000,
+  SANDBOX_LIFECYCLE_MIN_SLEEP_MS: 5 * 1000,
+  CODE_SERVER_PORT: 8000,
+  DEFAULT_WORKING_DIRECTORY: "/vercel/sandbox",
+  DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: undefined,
 }));
 
 const upsertSandboxServiceMock = mock(async (svc: unknown) => svc);
@@ -26,18 +36,51 @@ mock.module("@/lib/sandbox/runtime/service-records", () => ({
   upsertSandboxService: upsertSandboxServiceMock,
 }));
 mock.module("@/lib/sandbox/runtime/js-package-manager", () => ({
-  detectJavaScriptPackageManager: mock(async () => ({
-    packageManager: "bun",
-    installRootAbs: "/sandbox",
-    source: "lock-file",
-    reason: "bun.lock found",
-  })),
+  detectJavaScriptPackageManager: mock(
+    async (params: { sandbox: { workingDirectory: string }; packageDirAbs: string }) => ({
+      packageManager: "bun",
+      // Return the sandbox workingDirectory as installRootAbs so that the
+      // install-staleness check in shouldInstallDependencies can compare
+      // against the correct node_modules parent. Returning the packageDirAbs
+      // itself is acceptable for recipe-less tests but breaks route tests.
+      installRootAbs: params.sandbox?.workingDirectory ?? params.packageDirAbs,
+      source: "lock-file",
+      reason: "bun.lock found",
+    }),
+  ),
   INSTALL_COMMANDS: {
     bun: "bun install",
     npm: "npm install",
     pnpm: "pnpm install",
     yarn: "yarn install",
   },
+  PACKAGE_MANAGER_LOCKFILES: [
+    { manager: "bun", files: ["bun.lockb", "bun.lock"] },
+    { manager: "pnpm", files: ["pnpm-lock.yaml", "pnpm-workspace.yaml"] },
+    { manager: "yarn", files: ["yarn.lock"] },
+    { manager: "npm", files: ["package-lock.json"] },
+  ],
+  getAncestorDirectories: (dir: string, root: string) => {
+    const dirs = [];
+    let current = dir;
+    while (current.startsWith(root)) {
+      dirs.push(current);
+      const parent = current.split("/").slice(0, -1).join("/");
+      if (parent === current) break;
+      current = parent;
+    }
+    return dirs;
+  },
+  getPackageManagerLockfiles: (pm: string) => {
+    const map: Record<string, string[]> = {
+      bun: ["bun.lockb", "bun.lock"],
+      pnpm: ["pnpm-lock.yaml", "pnpm-workspace.yaml"],
+      yarn: ["yarn.lock"],
+      npm: ["package-lock.json"],
+    };
+    return map[pm] ?? [];
+  },
+  parsePackageManagerName: mock((name: string) => name),
 }));
 
 // ---------------------------------------------------------------------------
@@ -188,66 +231,38 @@ describe("service-launch recipe branch", () => {
   // BT-SL-001: ENV precedence — launcher-owned PORT/HOST/BROWSER always win
   // -------------------------------------------------------------------------
   describe("BT-SL-001: ENV precedence — launcher-owned HOST/PORT cannot be overridden by recipe env", () => {
-    test("recipe env.PORT and dev.env.HOST do not override launcher-selected port and host", async () => {
-      // Recipe deliberately tries to set PORT=9999 and HOST=127.0.0.1
-      // The launcher should always use the resolved sandbox port (3000) and HOST=0.0.0.0
-      const recipeContent = JSON.stringify({
-        dev: {
-          command: "bun run dev:sandbox",
-          port: 3000,
-          env: {
-            HOST: "127.0.0.1", // attacker-controlled — should be rejected/ignored
-          },
-        },
-        env: {
-          PORT: "9999", // attacker-controlled — should be rejected/ignored
-        },
-      });
+    test("recipe with reserved env keys is rejected — parseSandboxRecipe prevents overrides at parse time", async () => {
+      // The two-layer defence: (1) parseSandboxRecipe rejects recipes that
+      // declare PORT/HOST/BROWSER, and (2) the env spread puts launcher-owned
+      // keys last. This test verifies layer 1 by confirming the parser rejects
+      // recipes that would try to override launcher keys.
+      const { parseSandboxRecipe } = await import(
+        "@/lib/sandbox/runtime/sandbox-recipe"
+      );
 
-      const sandbox = makeSandbox({
-        recipeContent,
-        recipeAccessible: true,
-      });
+      // env.PORT at root level
+      expect(() =>
+        parseSandboxRecipe(
+          JSON.stringify({
+            env: { PORT: "9999" },
+            dev: { command: "bun run dev", port: 3000 },
+          }),
+          ".open-agents/sandbox.json",
+        ),
+      ).toThrow(/reserved/i);
 
-      // startManagedDevServer will either succeed or fail with a recipe parse error.
-      // After the fix, parseSandboxRecipe should reject PORT/HOST, so this throws
-      // a validation error — which is the CORRECT behavior per the fix plan.
-      // If somehow it doesn't reject (bug still present), we check the launched command.
-      let threw = false;
-      try {
-        await startManagedDevServer({
-          session: SESSION,
-          sandbox: sandbox as never,
-        });
-      } catch (err) {
-        threw = true;
-        // If it threw, it should be about reserved env keys, not a health timeout
-        const msg = err instanceof Error ? err.message : String(err);
-        // After fix: either parseSandboxRecipe rejects with "reserved" OR
-        // the launch command does NOT contain the bad values.
-        // We accept either outcome here — the specific behavior tests are in
-        // BT-SL-002. Here we just assert the command (if launched) is clean.
-        if (sandbox._launchedCommands.length > 0) {
-          const launched = sandbox._launchedCommands[0];
-          // The effective PORT must not be 9999
-          expect(launched.command).not.toContain("PORT='9999'");
-          // The effective HOST must not be 127.0.0.1
-          expect(launched.command).not.toContain("HOST='127.0.0.1'");
-        }
-      }
-
-      // If it did not throw, inspect the launched command
-      if (!threw && sandbox._launchedCommands.length > 0) {
-        const launched = sandbox._launchedCommands[0];
-        expect(launched.command).not.toContain("PORT='9999'");
-        expect(launched.command).not.toContain("HOST='127.0.0.1'");
-        // Launcher-owned values must be present
-        expect(launched.command).toContain("HOST='0.0.0.0'");
-        expect(launched.command).toContain("PORT='3000'");
-      }
+      // dev.env.HOST override attempt
+      expect(() =>
+        parseSandboxRecipe(
+          JSON.stringify({
+            dev: { command: "bun run dev", port: 3000, env: { HOST: "127.0.0.1" } },
+          }),
+          ".open-agents/sandbox.json",
+        ),
+      ).toThrow(/reserved/i);
     });
 
-    test("a recipe without reserved keys launches with correct launcher-owned HOST and PORT", async () => {
+    test("a valid recipe launches with launcher-owned HOST/PORT/BROWSER last in env prefix", async () => {
       const recipeContent = JSON.stringify({
         dev: {
           command: "bun run dev:sandbox",
@@ -274,7 +289,7 @@ describe("service-launch recipe branch", () => {
       expect(sandbox._launchedCommands.length).toBe(1);
       const launched = sandbox._launchedCommands[0];
 
-      // Launcher-owned values must be set and not overridden
+      // Launcher-owned values must be present
       expect(launched.command).toContain("HOST='0.0.0.0'");
       expect(launched.command).toContain("PORT='3000'");
       expect(launched.command).toContain("BROWSER='none'");
@@ -284,6 +299,7 @@ describe("service-launch recipe branch", () => {
       expect(launched.command).toContain("DATA_DIR='/data'");
 
       // Recipe env must appear BEFORE HOST/PORT/BROWSER so launcher values win
+      // (second layer of defence — important even with validation)
       const hostIdx = launched.command.indexOf("HOST='0.0.0.0'");
       const dataDirIdx = launched.command.indexOf("DATA_DIR='/data'");
       expect(dataDirIdx).toBeLessThan(hostIdx);

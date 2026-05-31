@@ -1,5 +1,13 @@
 import path from "node:path";
 
+/**
+ * Env vars that the launcher always owns. Recipes must not declare these —
+ * if they do, parseSandboxRecipe rejects the recipe with a clear error so
+ * misconfigurations fail loudly instead of silently rebinding the server to
+ * an unreachable address or port.
+ */
+const LAUNCHER_RESERVED_ENV_KEYS = new Set(["PORT", "HOST", "BROWSER"]);
+
 export const SANDBOX_RECIPE_PATHS = [
   ".open-agents/sandbox.json",
   ".agent/sandbox.json",
@@ -64,6 +72,11 @@ function toStringRecord(value: unknown, field: string): Record<string, string> {
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
       throw new Error(`${field}.${key} is not a valid environment variable.`);
     }
+    if (LAUNCHER_RESERVED_ENV_KEYS.has(key)) {
+      throw new Error(
+        `${field}.${key} is a reserved launcher env key (${[...LAUNCHER_RESERVED_ENV_KEYS].join(", ")}). Remove it from the recipe — the launcher always sets these.`,
+      );
+    }
     if (typeof entry !== "string") {
       throw new Error(`${field}.${key} must be a string.`);
     }
@@ -122,6 +135,15 @@ export function parseSandboxRecipe(
 
   if (!isRecord(parsed)) {
     throw new Error(`${recipePath} must contain a JSON object.`);
+  }
+
+  // Version gating: only version 1 is supported. Unknown versions fail loudly
+  // so authors discover version mismatches immediately rather than getting
+  // silently ignored fields.
+  if (parsed.version !== undefined && parsed.version !== 1) {
+    throw new Error(
+      `${recipePath} declares version ${String(parsed.version)}, but only version 1 is supported.`,
+    );
   }
 
   const rootEnv = toStringRecord(parsed.env, "env");

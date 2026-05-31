@@ -102,4 +102,68 @@ describe("parseSandboxRecipe", () => {
       ),
     ).toThrow("not a valid environment variable");
   });
+
+  test("rejects reserved launcher env keys in env and dev.env", () => {
+    // PORT in dev.env
+    expect(() =>
+      parseSandboxRecipe(
+        JSON.stringify({
+          dev: { command: "bun run dev", port: 3000, env: { PORT: "9999" } },
+        }),
+        ".open-agents/sandbox.json",
+      ),
+    ).toThrow(/reserved/i);
+
+    // HOST at root env
+    expect(() =>
+      parseSandboxRecipe(
+        JSON.stringify({
+          env: { HOST: "127.0.0.1" },
+          dev: { command: "bun run dev", port: 3000 },
+        }),
+        ".open-agents/sandbox.json",
+      ),
+    ).toThrow(/reserved/i);
+
+    // BROWSER in dev.env
+    expect(() =>
+      parseSandboxRecipe(
+        JSON.stringify({
+          dev: { command: "bun run dev", port: 3000, env: { BROWSER: "chromium" } },
+        }),
+        ".open-agents/sandbox.json",
+      ),
+    ).toThrow(/reserved/i);
+  });
+
+  test("rejects unknown version numbers", () => {
+    expect(() =>
+      parseSandboxRecipe(
+        JSON.stringify({
+          version: 2,
+          dev: { command: "bun run dev", port: 3000 },
+        }),
+        ".open-agents/sandbox.json",
+      ),
+    ).toThrow(/version 2.*only version 1/i);
+  });
+
+  test("accepts version 1 and recipes without a version field", () => {
+    // Explicit version: 1 is fine
+    const recipeWithVersion = parseSandboxRecipe(
+      JSON.stringify({
+        version: 1,
+        dev: { command: "bun run dev", port: 3000 },
+      }),
+      ".open-agents/sandbox.json",
+    );
+    expect(recipeWithVersion.dev.port).toBe(3000);
+
+    // No version field is also fine (backward compat)
+    const recipeWithoutVersion = parseSandboxRecipe(
+      JSON.stringify({ dev: { command: "bun run dev", port: 3000 } }),
+      ".open-agents/sandbox.json",
+    );
+    expect(recipeWithoutVersion.dev.port).toBe(3000);
+  });
 });

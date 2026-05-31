@@ -432,10 +432,12 @@ async function findSandboxRecipe(
         recipePath,
       );
     } catch (error) {
+      // Log a warning and continue scanning remaining recipe paths rather than
+      // propagating a hard 500. This ensures a malformed recipe does not
+      // permanently block fallback to package.json discovery.
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid sandbox recipe ${recipePath}: ${message}`, {
-        cause: error,
-      });
+      console.warn(`Invalid sandbox recipe at ${recipePath}: ${message} — falling back to package.json discovery.`);
+      continue;
     }
   }
 
@@ -699,12 +701,15 @@ export async function startManagedDevServer(params: {
   let framework = target.candidate?.framework ?? "custom";
   let launchCommand: string;
   if (target.recipe) {
+    // Recipe env spreads first so that launcher-owned keys (HOST, PORT, BROWSER)
+    // always overwrite any recipe values. parseSandboxRecipe already rejects
+    // recipes that declare these keys, but the spread order provides defence-in-depth.
     const recipeEnv = {
+      ...target.recipe.env,
+      ...target.recipe.dev.env,
       BROWSER: "none",
       HOST: "0.0.0.0",
       PORT: String(target.port),
-      ...target.recipe.env,
-      ...target.recipe.dev.env,
     };
     launchCommand = buildLaunchCommand({
       packageDirAbs: target.packageDirAbs,
