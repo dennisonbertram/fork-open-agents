@@ -406,6 +406,12 @@ mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
   listManagedBrowserRuns: spies.listManagedBrowserRuns,
 }));
 
+// Mock the new server-only managed-runtime-worker-runs module so chat.test.ts
+// does not hit the "server-only" guard when chat.ts is imported in tests.
+mock.module("@/lib/observability/managed-runtime-worker-runs", () => ({
+  persistWorkerRunBestEffort: mock(() => Promise.resolve()),
+}));
+
 const { runAgentWorkflow } = await import("./chat");
 
 // ── Helpers ────────────────────────────────────────────────────────

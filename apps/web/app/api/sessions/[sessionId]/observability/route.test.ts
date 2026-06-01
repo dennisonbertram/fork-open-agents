@@ -81,8 +81,29 @@ mock.module("@/lib/observability/managed-runtime-workers", () => ({
 }));
 
 // Durable worker run helpers
-const listManagedRuntimeWorkerRunsForSessionMock = mock(() =>
-  Promise.resolve([]),
+type DurableWorkerRow = {
+  id: string;
+  sessionId: string;
+  chatId: string | null;
+  userId: string;
+  workflowRunId: string | null;
+  taskToolCallId: string;
+  workerType: string;
+  status: string;
+  sandboxName: string | null;
+  profileId: string | null;
+  profileVersion: string | null;
+  profileDisplayName: string | null;
+  profileRunId: string | null;
+  toolCallCount: number;
+  summary: string | null;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+const listManagedRuntimeWorkerRunsForSessionMock = mock(
+  (): Promise<DurableWorkerRow[]> => Promise.resolve([]),
 );
 const toManagedRuntimeWorkerSnapshotMock = mock(
   (row: { taskToolCallId: string; workerType: string; status: string }) => ({
