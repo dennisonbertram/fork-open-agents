@@ -1212,6 +1212,10 @@ export async function runAgentWorkflow(options: Options) {
         environmentDetails: runtime.environmentDetails,
       },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
+      // Thread the chat id as the browser session key so each chat gets its own
+      // isolated Playwright browser context (separate cookies, storage, page state).
+      // Without this, all calls in the process share the "_default" singleton page.
+      sessionId: options.chatId,
     };
     sandboxState = runtime.sandboxState;
 
@@ -1746,6 +1750,23 @@ const runAgentStep = async (
         : agentOptions;
 
     // Thread the stream writer so browser tools can stream inline screenshots.
+    // All writes (from the main stream pump AND from tool writers) are serialized
+    // through a shared promise queue so they never race on the WritableStream lock.
+    // The WHATWG WritableStream throws synchronously from getWriter() if another
+    // writer is already active; the queue prevents that race.
+    let writeQueue: Promise<void> = Promise.resolve();
+    const enqueueWrite = (chunk: UIMessageChunk): Promise<void> => {
+      writeQueue = writeQueue.then(async () => {
+        const w = writable.getWriter();
+        try {
+          await w.write(chunk);
+        } finally {
+          w.releaseLock();
+        }
+      });
+      return writeQueue;
+    };
+
     const stepAgentOptions = {
       ...baseStepAgentOptions,
       writer: {
@@ -1754,12 +1775,7 @@ const runAgentStep = async (
           url: string;
           mediaType: string;
         }) => {
-          const w = writable.getWriter();
-          try {
-            await w.write(chunk as UIMessageChunk);
-          } finally {
-            w.releaseLock();
-          }
+          await enqueueWrite(chunk as UIMessageChunk);
         },
       },
     };
@@ -1945,9 +1961,7 @@ const runAgentStep = async (
         responseMessage = finishedResponseMessage;
       },
     })) {
-      const writer = writable.getWriter();
-      await writer.write(part);
-      writer.releaseLock();
+      await enqueueWrite(part);
     }
 
     if (responseMessage == null) {

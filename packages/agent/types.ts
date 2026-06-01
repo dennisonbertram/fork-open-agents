@@ -20,9 +20,16 @@ export type TodoItem = z.infer<typeof todoItemSchema>;
  * Writer for streaming inline UI chunks (e.g. screenshot images) from tool executes.
  * The chunk shape matches the UIMessageChunk "file" variant used by the chat renderer
  * at shared-chat-content.tsx: p.type === "file" && p.mediaType?.startsWith("image/").
+ *
+ * write() may return Promise<void> — the screenshot tool always awaits it so
+ * a rejection does not escape as an unhandled rejection.
  */
 export type AgentContextWriter = {
-  write: (chunk: { type: "file"; url: string; mediaType: string }) => void;
+  write: (chunk: {
+    type: "file";
+    url: string;
+    mediaType: string;
+  }) => Promise<void> | void;
 };
 
 export interface AgentContext {

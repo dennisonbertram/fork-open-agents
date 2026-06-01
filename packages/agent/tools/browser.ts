@@ -25,11 +25,13 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { classifyToolApproval } from "./approval-policy";
-import {
-  buildScreenshotPart,
-  buildScreenshotStreamChunk,
-} from "./browser-image-part";
+import { buildScreenshotStreamChunk } from "./browser-image-part";
 import { getBrowserSession } from "./browser-session";
+import {
+  capBrowserText,
+  redactBrowserText,
+  SCREENSHOT_BYTE_CAP,
+} from "./redact";
 
 // ---------------------------------------------------------------------------
 // Context helpers
@@ -37,7 +39,13 @@ import { getBrowserSession } from "./browser-session";
 
 type BrowserToolContext = {
   writer?: {
-    write: (chunk: { type: "file"; url: string; mediaType: string }) => void;
+    // Returns Promise<void> | void — always awaited inside the tool so a
+    // rejection is caught and does NOT escape as an unhandled rejection.
+    write: (chunk: {
+      type: "file";
+      url: string;
+      mediaType: string;
+    }) => Promise<void> | void;
   };
   sessionId?: string;
 };
@@ -227,10 +235,15 @@ USAGE:
           return { success: true, selector: target, attribute, value };
         }
         const rawText = await page.locator(target).first().textContent();
+        // Redact credentials and cap length to guard against secret leakage
+        // and oversized dumps from full-page body extractions.
+        const trimmed = (rawText ?? "").trim();
+        const redacted = redactBrowserText(trimmed);
+        const capped = capBrowserText(redacted);
         return {
           success: true,
           selector: target,
-          text: (rawText ?? "").trim(),
+          text: capped,
         };
       } catch (error) {
         return { success: false, error: messageOf(error) };
@@ -288,13 +301,25 @@ USAGE:
 
         let streamed = false;
         if (ctx.writer) {
-          ctx.writer.write(buildScreenshotStreamChunk({ bytes, mediaType }));
-          streamed = true;
+          // Enforce a byte cap — do not stream screenshots that are too large.
+          // Oversized screenshots are not written to logs and not streamed inline;
+          // the tool still returns success:true with streamed:false and the byteLength
+          // so the model knows the capture succeeded but streaming was skipped.
+          if (bytes.byteLength <= SCREENSHOT_BYTE_CAP) {
+            try {
+              // Always await — writer.write may be async (e.g. WHATWG WritableStream
+              // injected by chat.ts). Unawaited async writes escape the try/catch
+              // and produce floating unhandled rejections.
+              await ctx.writer.write(
+                buildScreenshotStreamChunk({ bytes, mediaType }),
+              );
+              streamed = true;
+            } catch {
+              // Writer failure (e.g. stream already locked) must NOT propagate.
+              // streamed stays false; the tool returns success:true, streamed:false.
+            }
+          }
         }
-
-        // Build the persisted FileUIPart (not returned in the tool result itself,
-        // but the stream chunk carries the data URL for inline rendering).
-        buildScreenshotPart({ bytes, mediaType, filename: "screenshot.png" });
 
         return {
           success: true,

@@ -82,10 +82,25 @@ const callOptionsSchema = z.object({
    * Optional stream writer for inline image/file chunks (e.g. browser screenshots).
    * When provided, browser screenshot tool calls writer.write({ type: "file", ... })
    * so screenshots render inline in chat.
+   * writer.write may return Promise<void> — it is always awaited inside the tool.
    */
   writer: z
-    .custom<{ write: (chunk: { type: "file"; url: string; mediaType: string }) => void }>()
+    .custom<{
+      write: (chunk: {
+        type: "file";
+        url: string;
+        mediaType: string;
+      }) => Promise<void> | void;
+    }>()
     .optional(),
+  /**
+   * Session-scoped id used to key the browser session cache.
+   * When provided, each distinct sessionId gets its own isolated Playwright
+   * browser context (separate cookies, storage, page state).
+   * Typically set to the chat/run id by the caller so different workflows
+   * do not share a browser page.
+   */
+  sessionId: z.string().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -220,6 +235,7 @@ export const openAgent = new ToolLoopAgent({
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
     const writer = options.writer;
+    const sessionId = options.sessionId;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -250,6 +266,10 @@ export const openAgent = new ToolLoopAgent({
         runtimeMode,
         managedRuntime,
         ...(writer ? { writer } : {}),
+        // Thread the session-scoped id into context so each browser tool call
+        // uses an isolated Playwright browser context per chat/run instead of
+        // the process-wide "_default" singleton.
+        ...(sessionId ? { sessionId } : {}),
       },
     };
   },

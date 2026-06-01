@@ -7,8 +7,17 @@
  * In production the real Playwright launch is behind a dynamic `import("playwright")`
  * so typecheck and unit tests (which mock this module) never require the Chromium binary.
  *
- * Session caching: one browser+page per (sessionId if provided, else process singleton),
- * so navigate/click/type/extract/screenshot all share one live page coherently.
+ * Session caching: one browser+page per sessionId (or a shared "_default" key when
+ * no session id is provided), so navigate/click/type/extract/screenshot all share
+ * one live page coherently within the same chat turn.
+ *
+ * Sandbox isolation:
+ * - By default, Chromium runs with the sandbox ENABLED (no --no-sandbox).
+ *   Sandbox-disabled mode is opt-in via the OPEN_AGENTS_BROWSER_NO_SANDBOX=1 env var,
+ *   or the injectable `launch.args` override for tests and constrained environments.
+ * - Do NOT hardcode --no-sandbox as a default — it disables the OS-level sandbox
+ *   that prevents compromised renderer processes from escaping to the host, which
+ *   matters especially when browsing arbitrary model-directed URLs.
  */
 
 export type BrowserContext = {
@@ -47,51 +56,107 @@ export type BrowserSession = {
   };
 };
 
+// Internal cache entry holds both the promise and the live handles so
+// closeBrowserSession can actually close the Chromium process and context.
+type CacheEntry = {
+  promise: Promise<BrowserSession>;
+  // Resolved handles — populated once the launch promise resolves.
+  browser?: { close: () => Promise<void> };
+};
+
 // Process-level cache keyed by session id (or a shared "_default" key).
-const sessionCache = new Map<string, Promise<BrowserSession>>();
+const sessionCache = new Map<string, CacheEntry>();
 
 /**
  * Get or create a browser session for the given context.
  *
  * The real Playwright is imported dynamically so this module can be imported
  * without Chromium available (tests mock this module entirely).
+ *
+ * On launch failure, the cache entry is evicted so the next call re-attempts
+ * rather than returning a sticky rejected promise.
  */
 export async function getBrowserSession(
   context: BrowserContext = {},
 ): Promise<BrowserSession> {
   const cacheKey = context.sessionId ?? "_default";
 
-  if (sessionCache.has(cacheKey)) {
-    return sessionCache.get(cacheKey) as Promise<BrowserSession>;
+  const existing = sessionCache.get(cacheKey);
+  if (existing) {
+    return existing.promise;
   }
 
-  const promise = (async () => {
+  // Declare the entry separately so the async IIFE can close over it and
+  // store the browser handle (needed by closeBrowserSession to actually close).
+  // TypeScript requires the definite assignment assertion (!) because the async
+  // IIFE closes over `entry` before the outer assignment completes.
+  let entry!: CacheEntry;
+
+  const launchPromise = (async () => {
     // Dynamic import keeps real Playwright out of the module graph until needed.
     const playwright = await import("playwright");
+
+    // Sandbox policy:
+    //   Default: sandbox ENABLED — omit --no-sandbox.
+    //   Opt-out: set OPEN_AGENTS_BROWSER_NO_SANDBOX=1 for environments that
+    //   require it (e.g. rootless containers without user namespaces).
+    //   Injectable override: context.launch?.args fully replaces the default.
+    const defaultArgs: string[] =
+      process.env["OPEN_AGENTS_BROWSER_NO_SANDBOX"] === "1"
+        ? ["--no-sandbox"]
+        : [];
+
     const browser = await playwright.chromium.launch({
       headless: context.launch?.headless ?? true,
-      args: context.launch?.args ?? ["--no-sandbox"],
+      args: context.launch?.args ?? defaultArgs,
     });
+
+    // Store the browser handle for closeBrowserSession to use.
+    // entry is guaranteed to be assigned by the time this line runs because
+    // the async IIFE cannot reach this point until after the outer
+    // `entry = { promise: launchPromise, ... }` assignment below completes
+    // (awaiting playwright.chromium.launch is an async boundary that yields
+    // control back to the caller, who assigns entry before resuming).
+    entry.browser = browser;
+
     const browserCtx = await browser.newContext();
     const page = await browserCtx.newPage();
     return { page } as BrowserSession;
-  })();
+  })().catch((err: unknown) => {
+    // Self-heal: evict the failed entry so the next getBrowserSession call
+    // re-attempts rather than returning the same rejected promise.
+    sessionCache.delete(cacheKey);
+    throw err;
+  });
 
-  sessionCache.set(cacheKey, promise);
-  return promise;
+  entry = { promise: launchPromise };
+  sessionCache.set(cacheKey, entry);
+  return entry.promise;
 }
 
+/**
+ * Close the browser for the given session and remove it from the cache.
+ *
+ * Calling this after a workflow finishes prevents Chromium processes from
+ * leaking across runs. Swallows close errors (best-effort cleanup).
+ */
 export async function closeBrowserSession(
   context: BrowserContext = {},
 ): Promise<void> {
   const cacheKey = context.sessionId ?? "_default";
-  const promise = sessionCache.get(cacheKey);
-  if (!promise) return;
+  const entry = sessionCache.get(cacheKey);
+  if (!entry) return;
+
+  // Evict from cache first so a concurrent getBrowserSession call can start fresh.
+  sessionCache.delete(cacheKey);
 
   try {
-    // We don't have a typed browser reference; just clear the cache.
-    sessionCache.delete(cacheKey);
+    // Wait for the session to be ready (or already rejected) before closing.
+    await entry.promise;
+    if (entry.browser) {
+      await entry.browser.close();
+    }
   } catch {
-    // Swallow close errors
+    // Swallow — either the session never launched (failed entry) or close errored.
   }
 }

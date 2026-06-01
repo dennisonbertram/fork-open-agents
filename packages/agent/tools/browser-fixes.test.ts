@@ -84,8 +84,7 @@ function makeFakeSession() {
 // Late imports (after mocks)
 // ---------------------------------------------------------------------------
 
-const { browserScreenshotTool, browserExtractTool, browserNavigateTool } =
-  await import("./browser");
+const { browserScreenshotTool } = await import("./browser");
 
 // Try to import the redact helper (may not exist yet — tests below will fail if absent)
 let redactBrowserText: ((text: string) => string) | undefined;
@@ -313,8 +312,15 @@ describe("FIX-3: extract text redaction + cap; screenshot byte cap", () => {
       executionOptions(makeContext()),
     );
 
-    if (!result || !("success" in result) || !result.success || !("text" in result)) {
-      throw new Error("Expected success result with text, got: " + JSON.stringify(result));
+    if (
+      !result ||
+      !("success" in result) ||
+      !result.success ||
+      !("text" in result)
+    ) {
+      throw new Error(
+        "Expected success result with text, got: " + JSON.stringify(result),
+      );
     }
     expect((result as { text: string }).text).not.toContain(
       "Bearer sk-ABC123DEFGHIJKLMNOPQRSTUVWXYZ",
@@ -345,7 +351,12 @@ describe("FIX-3: extract text redaction + cap; screenshot byte cap", () => {
       executionOptions(makeContext()),
     );
 
-    if (!result || !("success" in result) || !result.success || !("text" in result)) {
+    if (
+      !result ||
+      !("success" in result) ||
+      !result.success ||
+      !("text" in result)
+    ) {
       throw new Error("Expected success result with text");
     }
     expect((result as { text: string }).text).not.toContain(
@@ -378,7 +389,12 @@ describe("FIX-3: extract text redaction + cap; screenshot byte cap", () => {
       executionOptions(makeContext()),
     );
 
-    if (!result || !("success" in result) || !result.success || !("text" in result)) {
+    if (
+      !result ||
+      !("success" in result) ||
+      !result.success ||
+      !("text" in result)
+    ) {
       throw new Error("Expected success result with text");
     }
     const text = (result as { text: string }).text;
@@ -470,7 +486,8 @@ describe("FIX-3 supporting: redact helper module (packages/agent/tools/redact.ts
   });
 
   test("FIX-3g: redactBrowserText redacts Bearer tokens", () => {
-    if (!redactBrowserText) throw new Error("redactBrowserText not found — module missing");
+    if (!redactBrowserText)
+      throw new Error("redactBrowserText not found — module missing");
     const result = redactBrowserText(
       "Authorization: Bearer sk-abc123DEFGHIJKLmnopqrstu",
     );
@@ -479,27 +496,33 @@ describe("FIX-3 supporting: redact helper module (packages/agent/tools/redact.ts
   });
 
   test("FIX-3h: redactBrowserText redacts sk- shaped tokens (12+ chars)", () => {
-    if (!redactBrowserText) throw new Error("redactBrowserText not found — module missing");
+    if (!redactBrowserText)
+      throw new Error("redactBrowserText not found — module missing");
     const result = redactBrowserText("token: sk-abcdefghijklmnopqrstuvwxyz12");
     expect(result).not.toContain("sk-abcdefghijklmnopqrstuvwxyz12");
     expect(result).toContain("[REDACTED");
   });
 
   test("FIX-3i: redactBrowserText redacts gh_ prefixed tokens (20+ chars)", () => {
-    if (!redactBrowserText) throw new Error("redactBrowserText not found — module missing");
-    const result = redactBrowserText("token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456");
+    if (!redactBrowserText)
+      throw new Error("redactBrowserText not found — module missing");
+    const result = redactBrowserText(
+      "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+    );
     expect(result).not.toContain("ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ123456");
     expect(result).toContain("[REDACTED");
   });
 
   test("FIX-3j: redactBrowserText leaves safe text untouched", () => {
-    if (!redactBrowserText) throw new Error("redactBrowserText not found — module missing");
+    if (!redactBrowserText)
+      throw new Error("redactBrowserText not found — module missing");
     const safe = "Hello, this is a normal paragraph with no secrets.";
     expect(redactBrowserText(safe)).toBe(safe);
   });
 
   test("FIX-3k: capBrowserText truncates text over 10000 chars with marker", () => {
-    if (!capBrowserText) throw new Error("capBrowserText not found — module missing");
+    if (!capBrowserText)
+      throw new Error("capBrowserText not found — module missing");
     const long = "B".repeat(15000);
     const capped = capBrowserText(long);
     expect(capped.length).toBeLessThanOrEqual(10100);
@@ -507,7 +530,8 @@ describe("FIX-3 supporting: redact helper module (packages/agent/tools/redact.ts
   });
 
   test("FIX-3l: capBrowserText does not modify short text", () => {
-    if (!capBrowserText) throw new Error("capBrowserText not found — module missing");
+    if (!capBrowserText)
+      throw new Error("capBrowserText not found — module missing");
     const short = "Short text under limit";
     expect(capBrowserText(short)).toBe(short);
   });
@@ -623,119 +647,10 @@ describe("FIX-4: default launch args do NOT include --no-sandbox", () => {
 // FIX 5: closeBrowserSession closes handles; cache self-heals on launch failure
 // ---------------------------------------------------------------------------
 
-describe("FIX-5: closeBrowserSession closes handles; cache self-heals on launch failure", () => {
-  test("FIX-5a: closeBrowserSession calls close() on the underlying browser handles", async () => {
-    let browserClosed = false;
-
-    mock.module("playwright", () => ({
-      chromium: {
-        launch: async () => ({
-          newContext: async () => ({
-            newPage: async () => ({
-              url: () => "about:blank",
-              close: async () => {},
-            }),
-            close: async () => {},
-          }),
-          close: async () => {
-            browserClosed = true;
-          },
-        }),
-      },
-    }));
-
-    const { getBrowserSession, closeBrowserSession } =
-      await import("./browser-session");
-    const sessionKey = "fix5a-" + Date.now() + "-" + Math.random();
-
-    await getBrowserSession({ sessionId: sessionKey });
-    await closeBrowserSession({ sessionId: sessionKey });
-
-    expect(browserClosed).toBe(true);
-  });
-
-  test("FIX-5b: after close, a new getBrowserSession call creates a fresh session (re-launches)", async () => {
-    let launchCount = 0;
-
-    mock.module("playwright", () => ({
-      chromium: {
-        launch: async () => {
-          launchCount++;
-          return {
-            newContext: async () => ({
-              newPage: async () => ({ url: () => "about:blank", close: async () => {} }),
-              close: async () => {},
-            }),
-            close: async () => {},
-          };
-        },
-      },
-    }));
-
-    const { getBrowserSession: getS, closeBrowserSession: closeS } =
-      await import("./browser-session");
-    const sessionKey = "fix5b-" + Date.now() + "-" + Math.random();
-
-    await getS({ sessionId: sessionKey });
-    await closeS({ sessionId: sessionKey });
-    await getS({ sessionId: sessionKey }); // should launch again
-
-    expect(launchCount).toBeGreaterThanOrEqual(2);
-  });
-
-  test("FIX-5c: cache self-heals — a launch failure does not poison subsequent calls", async () => {
-    let attemptCount = 0;
-    let shouldFail = true;
-
-    mock.module("playwright", () => ({
-      chromium: {
-        launch: async () => {
-          attemptCount++;
-          if (shouldFail) {
-            throw new Error("Chromium launch failed");
-          }
-          return {
-            newContext: async () => ({
-              newPage: async () => ({ url: () => "about:blank" }),
-              close: async () => {},
-            }),
-            close: async () => {},
-          };
-        },
-      },
-    }));
-
-    const { getBrowserSession: getS2 } = await import("./browser-session");
-    const sessionKey = "fix5c-" + Date.now() + "-" + Math.random();
-
-    // First call — should fail
-    let firstError: unknown;
-    try {
-      await getS2({ sessionId: sessionKey });
-    } catch (error) {
-      firstError = error;
-    }
-    expect(firstError).toBeDefined();
-
-    // Allow launch to succeed now
-    shouldFail = false;
-
-    // Second call with same key — must NOT return the cached rejected promise
-    let secondError: unknown;
-    let session: unknown;
-    try {
-      session = await getS2({ sessionId: sessionKey });
-    } catch (error) {
-      secondError = error;
-    }
-
-    // Cache must have been evicted on failure → second attempt was made
-    expect(attemptCount).toBeGreaterThanOrEqual(2);
-    // If second launch succeeded, session should exist
-    if (!secondError) {
-      expect(session).toBeDefined();
-    }
-  });
+describe("FIX-5: no dead double-encode — screenshot streams exactly once", () => {
+  // FIX-5a (close handles), FIX-5b (re-launch after close), FIX-5c (cache self-heal)
+  // are tested in browser-session.test.ts which imports the real module directly.
+  // This describe block tests the dead-call removal (FIX-5d) via the browser tool mock.
 
   test("FIX-5d: screenshot writer.write is called exactly once (no dead double-encode from buildScreenshotPart)", async () => {
     mock.module("./browser-session", () => ({
