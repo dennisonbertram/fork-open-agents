@@ -31,6 +31,7 @@ import {
   useSessionObservability,
   type WorkflowRunJson,
 } from "./hooks/use-session-observability";
+import { WorkflowArtifactsSection } from "./workflow-artifact-panel";
 
 const statusClassName: Record<string, string> = {
   started: "border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-300",
@@ -694,6 +695,8 @@ export function RuntimeObservabilityPanel({
           </Section>
 
           <LikelyIssue events={data?.events ?? []} />
+
+          <WorkflowArtifactsSection artifacts={data?.workflowArtifacts ?? []} />
 
           <Section title="Managed Profile">
             {latestProfileRun ? (

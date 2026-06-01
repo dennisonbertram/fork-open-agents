@@ -4,6 +4,7 @@ import {
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { db } from "@/lib/db/client";
+import { listArtifacts } from "@/lib/db/workflow-artifacts";
 import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
 import {
   extractManagedRuntimeWorkersFromMessages,
@@ -98,6 +99,48 @@ export async function GET(req: Request, context: RouteContext) {
       : Promise.resolve([]),
   ]);
 
+  // Defensive: fetch artifacts for the session/chat, degrading to [] on failure
+  // so a DB error does not break the entire observability response.
+  let workflowArtifacts: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    redactionStatus: string;
+    createdByActor: string | null;
+    createdAt: string;
+    workflowRunId: string | null;
+    // summary and sourceLocation are null unless redactionStatus === "passed" —
+    // this is the server-side redaction gate. Raw content MUST NOT reach the
+    // client payload for non-passed artifacts to prevent information leaks.
+    summary: string | null;
+    sourceLocation: string | null;
+  }> = [];
+
+  try {
+    const artifactRows = await listArtifacts({
+      sessionId,
+      chatId: chatId ?? undefined,
+    });
+    workflowArtifacts = artifactRows.map((row) => {
+      const isPassed = row.redactionStatus === "passed";
+      return {
+        id: row.id,
+        kind: row.kind,
+        status: row.status,
+        redactionStatus: row.redactionStatus,
+        createdByActor: row.createdByActor ?? null,
+        createdAt: row.createdAt.toISOString(),
+        workflowRunId: row.workflowRunId ?? null,
+        // Server-side gate: only "passed" artifacts carry content in the response
+        summary: isPassed ? (row.summary ?? null) : null,
+        sourceLocation: isPassed ? (row.sourceLocation ?? null) : null,
+      };
+    });
+  } catch {
+    // Degrade gracefully — observability data is non-critical
+    workflowArtifacts = [];
+  }
+
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
     events: events.map(toSessionEventSnapshot),
@@ -113,5 +156,6 @@ export async function GET(req: Request, context: RouteContext) {
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
     services,
     browserRuns,
+    workflowArtifacts,
   });
 }

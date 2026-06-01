@@ -133,6 +133,21 @@ export type RuntimeBrowserRunJson = {
   redactionStatus: string;
 };
 
+// summary and sourceLocation are null unless redactionStatus === "passed" —
+// the server-side gate strips raw content for non-passed artifacts before
+// sending the payload to the client.
+export type WorkflowArtifactJson = {
+  id: string;
+  kind: string;
+  status: string;
+  redactionStatus: string;
+  createdByActor: string | null;
+  createdAt: string;
+  workflowRunId: string | null;
+  summary: string | null;
+  sourceLocation: string | null;
+};
+
 export type SessionObservabilityResponse = {
   runtimeMode: RuntimeMode;
   events: SessionEventJson[];
@@ -142,6 +157,7 @@ export type SessionObservabilityResponse = {
   directToolUse: ManagedRuntimeDirectToolUseJson;
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
+  workflowArtifacts: WorkflowArtifactJson[];
 };
 
 export function useSessionObservability(params: {
