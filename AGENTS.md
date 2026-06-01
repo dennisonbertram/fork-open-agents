@@ -167,7 +167,12 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 
 ## Git Commands
 
-- **Branch sync preference:** When bringing in `origin/main`, prefer a normal merge (`git fetch origin main` then `git merge origin/main`) instead of rebasing, unless explicitly requested otherwise.
+- **Feature branch base:** Branch feature work from `origin/develop` and open
+  feature PRs into `develop`. Promote tested changes to production with a
+  release PR from `develop` to `main`.
+- **Branch sync preference:** When bringing in `origin/develop`, prefer a
+  normal merge (`git fetch origin develop` then `git merge origin/develop`)
+  instead of rebasing, unless explicitly requested otherwise.
 
 **Quote paths with special characters**: File paths containing brackets (like Next.js dynamic routes `[id]`, `[slug]`) are interpreted as glob patterns by zsh. Always quote these paths in git commands:
 

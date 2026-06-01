@@ -121,7 +121,7 @@ Do not enforce this immediately. Treat it as the target once the trust primitive
 
 ```text
 feature/* -> PR
-dev       -> integration branch
+develop   -> integration branch
 staging   -> release-candidate branch
 main      -> production branch
 ```
@@ -129,8 +129,8 @@ main      -> production branch
 Alternative if the team wants fewer long-lived branches:
 
 ```text
-feature/* -> PR into main
-main      -> dev auto-deploy
+feature/* -> PR into develop
+develop   -> dev auto-deploy
 tag/release/* or promoted deployment -> staging/production
 ```
 
@@ -648,7 +648,7 @@ Build later:
 
 Exit gate:
 
-- production deploy requires approved SHA, green CI, staging evidence, env inventory, and rollback pointer.
+- production deploy requires approved SHA, green CI, dev/staging evidence, env inventory, and rollback pointer.
 
 ### Phase 7: Enforcement
 
@@ -698,7 +698,7 @@ Each issue should include:
 ## Open Decisions
 
 - Separate Vercel projects or custom environments?
-- Is `main` production, staging, or just the default integration branch?
+- `main` is the production branch; `develop` is the integration/dev branch.
 - Should production promotion use Vercel promote, `vercel deploy --prod`, or Git-backed production deploy?
 - Should the long-term secret store be Vercel env vars, a separate secret manager, or a hybrid?
 - How does user approval work for project secrets?
