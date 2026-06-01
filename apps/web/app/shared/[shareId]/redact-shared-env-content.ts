@@ -285,15 +285,31 @@ function sanitizeMessagePart(
         ...part,
         output: sanitizeTaskOutput(part.output) as typeof part.output,
       } as WebAgentUIMessagePart;
-    case "tool-bash":
+    case "tool-bash": {
+      const sanitizedInput =
+        part.input !== undefined && isRecord(part.input)
+          ? {
+              ...part.input,
+              command:
+                typeof part.input.command === "string"
+                  ? (redactHarnessValue(part.input.command) as string)
+                  : part.input.command,
+            }
+          : part.input;
+
       if (part.state !== "output-available") {
-        return part;
+        return {
+          ...part,
+          input: sanitizedInput as typeof part.input,
+        } as WebAgentUIMessagePart;
       }
 
       return {
         ...part,
+        input: sanitizedInput as typeof part.input,
         output: sanitizeBashOutput(part.output) as typeof part.output,
       } as WebAgentUIMessagePart;
+    }
     case "data-runtime-proof":
       return {
         ...part,
@@ -333,6 +349,8 @@ function sanitizeRuntimeProofData(
   data: WebAgentRuntimeProofData,
 ): WebAgentRuntimeProofData {
   const latest = data.workerEvidence.latest;
+  const svcLatest = data.serviceEvidence.latest;
+  const browserLatest = data.browserEvidence.latest;
 
   return {
     ...data,
@@ -340,6 +358,9 @@ function sanitizeRuntimeProofData(
       typeof redactHarnessValue(entry) === "string"
         ? (redactHarnessValue(entry) as string)
         : entry,
+    ),
+    limitations: data.limitations.map(
+      (entry) => redactHarnessValue(entry) as string,
     ),
     workerEvidence: {
       ...data.workerEvidence,
@@ -371,6 +392,41 @@ function sanitizeRuntimeProofData(
           : (redactHarnessValue(
               data.coordinatorDirectToolUse.warning,
             ) as string),
+    },
+    serviceEvidence: {
+      ...data.serviceEvidence,
+      latest:
+        svcLatest === null
+          ? null
+          : {
+              ...svcLatest,
+              url:
+                svcLatest.url === null
+                  ? null
+                  : (redactHarnessValue(svcLatest.url) as string),
+              logPath:
+                svcLatest.logPath === null
+                  ? null
+                  : (redactHarnessValue(svcLatest.logPath) as string),
+              failureMessage:
+                svcLatest.failureMessage === null
+                  ? null
+                  : (redactHarnessValue(svcLatest.failureMessage) as string),
+            },
+    },
+    browserEvidence: {
+      ...data.browserEvidence,
+      latest:
+        browserLatest === null
+          ? null
+          : {
+              ...browserLatest,
+              targetUrl: redactHarnessValue(browserLatest.targetUrl) as string,
+              summary:
+                browserLatest.summary === null
+                  ? null
+                  : (redactHarnessValue(browserLatest.summary) as string),
+            },
     },
   };
 }
