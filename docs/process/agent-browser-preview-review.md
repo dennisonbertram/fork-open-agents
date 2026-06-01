@@ -24,7 +24,7 @@ Optional for:
 2. internal tests,
 3. server-only refactors with no browser-visible behavior.
 
-Use staging instead of Preview for:
+Use the shared dev environment instead of Preview for:
 
 1. real Vercel or GitHub OAuth,
 2. GitHub App installation callbacks,
@@ -80,7 +80,7 @@ Record:
 4. console/page errors summary,
 5. network failures summary when behavior changed,
 6. screenshot path or short visual note when relevant,
-7. anything deferred to staging.
+7. anything deferred to dev.
 
 Example:
 
@@ -91,7 +91,7 @@ Preview Agent Browser:
 - Result: picker opened, search filtered results, selection persisted
 - Console/errors: no page errors, no console errors
 - Network: `/api/models` 200, preferences PATCH 200
-- Deferred to staging: real Anthropic profile test
+- Deferred to dev: real Anthropic profile test
 ```
 
 ## Risk Tiers
@@ -103,5 +103,5 @@ Preview Agent Browser:
     browser-visible.
 - High risk: auth, ownership, secrets, billing, inference, GitHub App, sandbox,
   workflows, migrations, destructive data changes.
-  - Required proof: CI, Preview smoke, targeted tests, staging smoke, rollback
+  - Required proof: CI, Preview smoke, targeted tests, dev smoke, rollback
     notes.
