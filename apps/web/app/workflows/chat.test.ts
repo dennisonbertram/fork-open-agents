@@ -2639,6 +2639,313 @@ describe("runAgentWorkflow", () => {
     expect((receiptCall![0] as { status: string }).status).toBe("available");
   });
 
+  // ── FIX 1: evidence gate requires BOTH research_packet AND spec (BT-AND-001..004) ──
+
+  // BT-AND-001: only research_packet present → final_build_report must NOT be "available"
+  test("creates final_build_report with status NOT 'available' when only research_packet artifact exists (no spec)", async () => {
+    spies.listArtifacts.mockImplementationOnce(async () => [
+      {
+        id: "artifact-research-only",
+        kind: "research_packet",
+        status: "available",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    // With OR logic this currently passes (research_packet alone satisfies it),
+    // so this test MUST FAIL red. With AND logic it will return "missing".
+    expect(input.status).not.toBe("available");
+  });
+
+  // BT-AND-002: only spec present → final_build_report must NOT be "available"
+  test("creates final_build_report with status NOT 'available' when only spec artifact exists (no research_packet)", async () => {
+    spies.listArtifacts.mockImplementationOnce(async () => [
+      {
+        id: "artifact-spec-only",
+        kind: "spec",
+        status: "available",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    // With OR logic this currently passes (spec alone satisfies it),
+    // so this test MUST FAIL red. With AND logic it will return "missing".
+    expect(input.status).not.toBe("available");
+  });
+
+  // BT-AND-003: both present but status is NOT "available" → NOT "available"
+  test("creates final_build_report with status NOT 'available' when research_packet+spec exist but their status is not 'available'", async () => {
+    spies.listArtifacts.mockImplementationOnce(async () => [
+      {
+        id: "artifact-research-generating",
+        kind: "research_packet",
+        status: "generating",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: "artifact-spec-failed",
+        kind: "spec",
+        status: "failed",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]);
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    // Both kinds are present but their statuses are not "available",
+    // so the evidence gate should treat them as absent.
+    expect(input.status).not.toBe("available");
+  });
+
+  // BT-AND-004: BOTH present with status "available" → "available" (verify AND+status logic works)
+  test("creates final_build_report with status 'available' when both research_packet and spec are available", async () => {
+    // Default listArtifacts spy already returns both with status "available",
+    // so this test verifies the happy path still works after the AND fix.
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    expect(input.status).toBe("available");
+  });
+
+  // ── FIX 2: outer guard — thrown recording step must NOT flip workflowStatus to "failed" ──
+
+  // BT-GUARD-001: if buildReceiptInputs/buildFinalReportInputs throws, workflow still completes
+  test("records workflowStatus 'completed' even when buildReceiptInputs throws inside the recorder", async () => {
+    // Make buildReceiptInputs throw to simulate a failure inside recordReceiptAndFinalReportArtifacts.
+    // The outer try/catch guard in recordReceiptAndFinalReportArtifacts must swallow this.
+    mock.module("@/lib/workflows/final-report", () => ({
+      buildReceiptInputs: () => {
+        throw new Error(
+          "Simulated buildReceiptInputs failure for FIX-2 outer-guard test",
+        );
+      },
+      buildFinalReportInputs: () => {
+        throw new Error(
+          "Simulated buildFinalReportInputs failure for FIX-2 outer-guard test",
+        );
+      },
+    }));
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    // Must NOT throw — the outer guard must swallow the recorder failure
+    await runAgentWorkflow(makeOptions());
+
+    // Workflow still emits start + finish (run completed normally)
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[0]).toBe("start");
+    expect(types[types.length - 1]).toBe("finish");
+
+    // recordWorkflowUsage must be called with status "completed", NOT "failed"
+    const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+    expect(rwCalls.length).toBeGreaterThan(0);
+    const workflowRun = rwCalls[0]![5] as { status: string };
+    expect(workflowRun.status).toBe("completed");
+  });
+
+  // BT-GUARD-002: if buildArtifactInputs throws inside recordResearchAndSpecArtifacts,
+  // the workflow still records status "completed"
+  test("records workflowStatus 'completed' even when buildArtifactInputs throws inside the recorder", async () => {
+    // Make buildArtifactInputs throw to simulate a failure inside recordResearchAndSpecArtifacts.
+    // The outer try/catch guard in recordResearchAndSpecArtifacts must swallow this.
+    mock.module("@/lib/workflows/artifact-generator", () => ({
+      recordWorkflowArtifactBestEffort: async () => null,
+      buildArtifactInputs: () => {
+        throw new Error(
+          "Simulated buildArtifactInputs failure for FIX-2 outer-guard test",
+        );
+      },
+    }));
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    // Must NOT throw
+    await runAgentWorkflow(makeOptions());
+
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[0]).toBe("start");
+    expect(types[types.length - 1]).toBe("finish");
+
+    const rwCalls = spies.recordWorkflowUsage.mock.calls as unknown[][];
+    expect(rwCalls.length).toBeGreaterThan(0);
+    const workflowRun = rwCalls[0]![5] as { status: string };
+    expect(workflowRun.status).toBe("completed");
+  });
+
+  // This test MUST be last in the suite: it permanently re-mocks @/app/config
+  // to a throwing version, which would corrupt any subsequent test that uses
+  // the normal agent stream.
   test("still clears stream and sends finish even on step error", async () => {
     // Mock the agent to throw
     mock.module("@/app/config", () => ({

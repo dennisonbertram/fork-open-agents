@@ -23,11 +23,8 @@ mock.module("@/lib/db/workflow-artifacts", () => ({
   createArtifact: createArtifactSpy,
 }));
 
-const {
-  buildReceiptInputs,
-  buildFinalReportInputs,
-  decideFinalReportStatus,
-} = await import("./final-report");
+const { buildReceiptInputs, buildFinalReportInputs, decideFinalReportStatus } =
+  await import("./final-report");
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
 
@@ -192,13 +189,17 @@ describe("buildFinalReportInputs", () => {
 
   // BT-FR-016: final_build_report kind
   test("returns an artifact insert with kind 'final_build_report'", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.kind).toBe("final_build_report");
   });
 
   // BT-FR-017: evidence-gated — completed + evidence → available
   test("sets status 'available' when completed and hasRequiredEvidence is true", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.status).toBe("available");
   });
 
@@ -221,7 +222,9 @@ describe("buildFinalReportInputs", () => {
 
   // BT-FR-020: sourceLocation pattern
   test("sets sourceLocation to workflow-run/<id>/final-build-report", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.sourceLocation).toBe(
       `workflow-run/${baseCtx.workflowRunId}/final-build-report`,
     );
@@ -229,7 +232,9 @@ describe("buildFinalReportInputs", () => {
 
   // BT-FR-021: context fields
   test("sets workflowRunId, sessionId, chatId on the final report input", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.workflowRunId).toBe(baseCtx.workflowRunId);
     expect(input.sessionId).toBe(baseCtx.sessionId);
     expect(input.chatId).toBe(baseCtx.chatId);
@@ -237,13 +242,17 @@ describe("buildFinalReportInputs", () => {
 
   // BT-FR-022: redactionStatus pending
   test("sets redactionStatus to 'pending'", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.redactionStatus).toBe("pending");
   });
 
   // BT-FR-023: goalId and gateId null
   test("sets goalId and gateId to null", () => {
-    const input = buildFinalReportInputs(baseCtx, { hasRequiredEvidence: true });
+    const input = buildFinalReportInputs(baseCtx, {
+      hasRequiredEvidence: true,
+    });
     expect(input.goalId).toBeNull();
     expect(input.gateId).toBeNull();
   });
@@ -262,8 +271,7 @@ describe("buildFinalReportInputs", () => {
   test("redacts bearer tokens from final report summary", () => {
     const ctx = {
       ...baseCtx,
-      objectiveText:
-        "Use Bearer ghp_secrettoken12345678901234567890 to push",
+      objectiveText: "Use Bearer ghp_secrettoken12345678901234567890 to push",
     };
     const input = buildFinalReportInputs(ctx, { hasRequiredEvidence: true });
     expect(input.summary ?? "").not.toContain(
@@ -329,8 +337,6 @@ describe("regression: buildFinalReportInputs sourceLocation format is stable", (
       },
       { hasRequiredEvidence: true },
     );
-    expect(input.sourceLocation).toBe(
-      `workflow-run/${id}/final-build-report`,
-    );
+    expect(input.sourceLocation).toBe(`workflow-run/${id}/final-build-report`);
   });
 });
