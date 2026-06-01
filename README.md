@@ -6,6 +6,31 @@ Open Agents is an open-source reference app for building and running background 
 
 The repo is meant to be forked and adapted, not treated as a black box.
 
+## Branch And Deployment Flow
+
+This fork uses a standard dev-before-production branch model:
+
+```text
+feature branch -> PR into develop -> Vercel dev
+develop        -> release PR into main
+main           -> Vercel Production
+```
+
+Use `develop` for integration/dev testing and `main` for production releases.
+The stable dev deployment is:
+
+```text
+https://open-agents-env-dev-dennisons-projects.vercel.app
+```
+
+Backlogged feature PRs should be retargeted to `develop`. Production releases
+should be batched through release PRs from `develop` to `main` after dev smoke
+passes.
+
+See [Backlog PR Operator Prompt](docs/process/github-build-process.md#backlog-pr-operator-prompt)
+for a reusable prompt that can guide an agent through retargeting, updating,
+testing, merging, and batching the existing PR backlog.
+
 ## What it is
 
 Open Agents is a three-layer system:
