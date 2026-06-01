@@ -2,6 +2,9 @@
 
 import useSWR from "swr";
 import { fetcherNoStore } from "@/lib/swr";
+import type { OperatorTimelineEntry } from "@/lib/observability/operator-timeline";
+
+export type { OperatorTimelineEntry };
 
 export type RuntimeMode = "classic" | "managed_runtime";
 
@@ -142,6 +145,8 @@ export type SessionObservabilityResponse = {
   directToolUse: ManagedRuntimeDirectToolUseJson;
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
+  // Additive field — optional so existing consumers are unaffected until #66 reads it
+  operatorTimeline?: OperatorTimelineEntry[];
 };
 
 export function useSessionObservability(params: {

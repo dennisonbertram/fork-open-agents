@@ -1,17 +1,42 @@
-import { describe, expect, mock, spyOn, test } from "bun:test";
-
-// TC-008 route-level spy type defs (used in describe block below)
-type BuildTimelineFn = (
-  events: unknown[],
-  workflowRuns: unknown[],
-  workflowRunSteps: unknown[],
-  workers: unknown[],
-  options?: { limit?: number; windowMs?: number },
-) => unknown[];
+import { describe, expect, spyOn, test } from "bun:test";
+import type { SessionEventSnapshot } from "./events";
 
 // ---------------------------------------------------------------------------
 // Module-level helpers
 // ---------------------------------------------------------------------------
+
+type EventStatus =
+  | "started"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked"
+  | "skipped"
+  | "info";
+
+type EventSource =
+  | "chat"
+  | "workflow"
+  | "managed_runtime"
+  | "sandbox"
+  | "harness"
+  | "service"
+  | "browser"
+  | "github"
+  | "system";
+
+type EventActorType =
+  | "user"
+  | "coordinator"
+  | "worker"
+  | "sandbox"
+  | "harness"
+  | "browser"
+  | "github"
+  | "workflow"
+  | "system";
+
+type RedactionStatus = "not_required" | "passed" | "failed" | "blocked";
 
 function makeEvent(
   overrides: Partial<{
@@ -19,11 +44,11 @@ function makeEvent(
     sessionId: string;
     chatId: string | null;
     userId: string;
-    source: string;
-    actorType: string;
+    source: EventSource;
+    actorType: EventActorType;
     actorId: string | null;
     eventName: string;
-    status: string;
+    status: EventStatus;
     summary: string | null;
     requestId: string | null;
     workflowRunId: string | null;
@@ -33,10 +58,10 @@ function makeEvent(
     serviceId: string | null;
     browserRunId: string | null;
     payload: Record<string, unknown>;
-    redactionStatus: string;
+    redactionStatus: RedactionStatus;
     createdAt: string;
   }> = {},
-) {
+): SessionEventSnapshot {
   return {
     id: overrides.id ?? "evt-1",
     sessionId: overrides.sessionId ?? "session-1",
@@ -162,9 +187,8 @@ function makeWorker(
 // Import the module under test — fails before operator-timeline.ts exists
 // ---------------------------------------------------------------------------
 
-const { buildOperatorTimeline, OperatorTimelineError } = await import(
-  "./operator-timeline"
-);
+const { buildOperatorTimeline, OperatorTimelineError } =
+  await import("./operator-timeline");
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -193,17 +217,17 @@ describe("buildOperatorTimeline", () => {
     const result = buildOperatorTimeline(events, [], [step], []);
     expect(result.length).toBeGreaterThanOrEqual(4);
 
-    const timestamps = result.map(
-      (e: { timestamp: string }) => e.timestamp,
-    );
+    const timestamps = result.map((e: { timestamp: string }) => e.timestamp);
     const sorted = [...timestamps].sort();
     expect(timestamps).toEqual(sorted);
 
     // The four source timestamps must all appear in ascending order
-    const entryTimestamps = result.map((e: { timestamp: string }) => e.timestamp);
-    const idxT1 = entryTimestamps.findIndex((t: string) => t === t1);
-    const idxT2 = entryTimestamps.findIndex((t: string) => t === t2);
-    const idxT3 = entryTimestamps.findIndex((t: string) => t === t3);
+    const entryTimestamps = result.map(
+      (e: { timestamp: string }) => e.timestamp,
+    );
+    const idxT1 = entryTimestamps.indexOf(t1);
+    const idxT2 = entryTimestamps.indexOf(t2);
+    const idxT3 = entryTimestamps.indexOf(t3);
     const idxT4 = entryTimestamps.findIndex((t: string) => t >= t4);
     expect(idxT1).toBeLessThan(idxT2);
     expect(idxT2).toBeLessThan(idxT3);
@@ -295,11 +319,9 @@ describe("buildOperatorTimeline", () => {
 
   // TC-004 — Window/limit cap
   test("TC-004: caps result to most-recent N entries when limit option is provided", () => {
-    const events: ReturnType<typeof makeEvent>[] = [];
+    const events: SessionEventSnapshot[] = [];
     for (let i = 0; i < 300; i++) {
-      const ts = new Date(
-        Date.UTC(2026, 4, 1, 10, 0, i),
-      ).toISOString();
+      const ts = new Date(Date.UTC(2026, 4, 1, 10, 0, i)).toISOString();
       events.push(
         makeEvent({ id: `evt-${i}`, createdAt: ts, eventName: `event-${i}` }),
       );
@@ -311,7 +333,9 @@ describe("buildOperatorTimeline", () => {
     // Result should be the 200 most-recent (highest timestamps)
     const lastTs = events[events.length - 1].createdAt;
     const firstTs = events[events.length - 200].createdAt;
-    const resultTimestamps = result.map((e: { timestamp: string }) => e.timestamp);
+    const resultTimestamps = result.map(
+      (e: { timestamp: string }) => e.timestamp,
+    );
     expect(resultTimestamps[resultTimestamps.length - 1]).toBe(lastTs);
     expect(resultTimestamps[0]).toBe(firstTs);
   });
@@ -362,14 +386,12 @@ describe("buildOperatorTimeline", () => {
     });
 
     // Malformed: createdAt is null (invalid)
-    const malformed = { ...makeEvent({ id: "bad-evt" }), createdAt: null };
+    const malformed = {
+      ...makeEvent({ id: "bad-evt" }),
+      createdAt: null as unknown as string,
+    };
 
-    const result = buildOperatorTimeline(
-      [goodEvent, malformed as unknown as ReturnType<typeof makeEvent>],
-      [],
-      [],
-      [],
-    );
+    const result = buildOperatorTimeline([goodEvent, malformed], [], [], []);
 
     expect(result.length).toBe(1);
     expect(result[0].id).toBeDefined();

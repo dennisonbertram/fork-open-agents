@@ -1,10 +1,15 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { db } from "@/lib/db/client";
-import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
+import {
+  chatMessages,
+  chats,
+  workflowRunSteps,
+  workflowRuns,
+} from "@/lib/db/schema";
 import {
   extractManagedRuntimeWorkersFromMessages,
   summarizeManagedRuntimeDirectToolUseFromMessages,
@@ -17,6 +22,7 @@ import {
   listSessionEvents,
   toSessionEventSnapshot,
 } from "@/lib/observability/events";
+import { buildOperatorTimeline } from "@/lib/observability/operator-timeline";
 import { listManagedBrowserRuns } from "@/lib/sandbox/runtime/browser-runs";
 import { listManagedServices } from "@/lib/sandbox/runtime/service-launch";
 
@@ -98,20 +104,51 @@ export async function GET(req: Request, context: RouteContext) {
       : Promise.resolve([]),
   ]);
 
+  // 7th parallel query: workflowRunSteps for all fetched workflow run IDs
+  const workflowRunIds = workflows.map((w) => w.id);
+  const steps =
+    workflowRunIds.length > 0
+      ? await db.query.workflowRunSteps.findMany({
+          where: inArray(workflowRunSteps.workflowRunId, workflowRunIds),
+          orderBy: [asc(workflowRunSteps.startedAt)],
+          limit: 500,
+        })
+      : [];
+
+  const workers = extractManagedRuntimeWorkersFromMessages(workerMessages);
+
+  const workflowRunsJson = workflows.map((workflow) => ({
+    ...workflow,
+    startedAt: workflow.startedAt.toISOString(),
+    finishedAt: workflow.finishedAt.toISOString(),
+    createdAt: workflow.createdAt.toISOString(),
+  }));
+
+  const eventSnapshots = events.map(toSessionEventSnapshot);
+
+  let operatorTimeline: ReturnType<typeof buildOperatorTimeline> = [];
+  try {
+    operatorTimeline = buildOperatorTimeline(
+      eventSnapshots,
+      workflowRunsJson,
+      steps,
+      workers,
+    );
+  } catch (err) {
+    console.error("[observability] buildOperatorTimeline failed:", err);
+    // operatorTimeline stays []
+  }
+
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
-    events: events.map(toSessionEventSnapshot),
+    events: eventSnapshots,
     profileRuns: profileRuns.map(toManagedRuntimeProfileRunSnapshot),
-    workflowRuns: workflows.map((workflow) => ({
-      ...workflow,
-      startedAt: workflow.startedAt.toISOString(),
-      finishedAt: workflow.finishedAt.toISOString(),
-      createdAt: workflow.createdAt.toISOString(),
-    })),
-    workers: extractManagedRuntimeWorkersFromMessages(workerMessages),
+    workflowRuns: workflowRunsJson,
+    workers,
     directToolUse:
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
     services,
     browserRuns,
+    operatorTimeline,
   });
 }
