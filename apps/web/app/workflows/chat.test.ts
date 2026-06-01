@@ -2151,6 +2151,120 @@ describe("runAgentWorkflow", () => {
   // because that test re-mocks @/app/config to throw — an override that
   // persists for subsequent dynamic imports in the same file.
 
+  // ── Step history gap tests (TASK-ISSUE-36 fix) ──────────────────────
+  // RED: These tests fail before FIX 1 is implemented because the current code
+  // records only a `final` event — no `started` or `progress` events.
+
+  test("records a 'started' ledger event immediately after startGoalLedger succeeds", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    // Must have been called at least once with eventType "started"
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ goalId: string; userId: string; eventType: string; summary: string; payload?: Record<string, unknown> }]>;
+
+    const startedCalls = allCalls.filter(([input]) => input.eventType === "started");
+    expect(startedCalls).toHaveLength(1);
+
+    const [startedInput] = startedCalls[0];
+    expect(startedInput.goalId).toBe("goal-test-abc123");
+    expect(startedInput.userId).toBe("user-1");
+    expect(startedInput.summary).toBeTruthy();
+    // payload must carry the workflowRunId so the ledger event is traceable
+    expect(startedInput.payload).toMatchObject({ workflowRunId: "wrun_test-123" });
+  });
+
+  test("records at least one 'progress' event with stepNumber during a single-step run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ goalId: string; userId: string; eventType: string; summary: string; payload?: Record<string, unknown> }]>;
+
+    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    // At least one progress event for the one step that ran
+    expect(progressCalls.length).toBeGreaterThanOrEqual(1);
+
+    const [firstProgressInput] = progressCalls[0];
+    expect(firstProgressInput.goalId).toBe("goal-test-abc123");
+    expect(firstProgressInput.userId).toBe("user-1");
+    // payload must include stepNumber
+    expect(firstProgressInput.payload).toMatchObject({ stepNumber: 1 });
+  });
+
+  test("records a 'progress' event for each step in a multi-step run", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ goalId: string; eventType: string; payload?: Record<string, unknown> }]>;
+
+    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    expect(progressCalls.length).toBe(2);
+
+    const stepNumbers = progressCalls.map(([input]) => input.payload?.stepNumber);
+    expect(stepNumbers).toEqual([1, 2]);
+  });
+
+  test("records 'started', progress events, then 'final' event in order", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ eventType: string }]>;
+
+    const eventTypes = allCalls.map(([input]) => input.eventType);
+    // started comes first, final comes last, progress in between
+    expect(eventTypes[0]).toBe("started");
+    expect(eventTypes[eventTypes.length - 1]).toBe("final");
+    expect(eventTypes.filter((t) => t === "progress").length).toBeGreaterThanOrEqual(1);
+  });
+
+  test("does not record 'started' or 'progress' events when startGoalLedger returns null", async () => {
+    // When recordGoalLedgerStart returns null (e.g. DB unavailable), the goal id
+    // is null and no events should be attempted — no goalId to record against.
+    spies.recordGoalLedgerStart.mockResolvedValueOnce(null);
+
+    await runAgentWorkflow(makeOptions());
+
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ eventType: string }]>;
+
+    const startedCalls = allCalls.filter(([input]) => input.eventType === "started");
+    expect(startedCalls).toHaveLength(0);
+
+    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    expect(progressCalls).toHaveLength(0);
+  });
+
+  test("failed-run final summary uses sanitized user-facing error message (FIX 4)", async () => {
+    // When a run fails with a known error type, the final ledger summary must
+    // use getUserFacingWorkflowErrorMessage, not the raw error string.
+    const restrictedError = new Error(
+      "GatewayInternalServerError: Free credits temporarily have restricted access due to abuse. no_providers_available RestrictedModelsError",
+    );
+    agentStreamError = restrictedError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected to throw
+    }
+
+    const allCalls = spies.recordGoalLedgerEvent.mock
+      .calls as Array<[{ eventType: string; summary: string }]>;
+
+    const finalCalls = allCalls.filter(([input]) => input.eventType === "final");
+    // A final event must have been recorded even on failure (goalLedgerId was set)
+    expect(finalCalls.length).toBeGreaterThanOrEqual(1);
+
+    const finalSummary = finalCalls[finalCalls.length - 1]?.[0].summary ?? "";
+    // The sanitized message does NOT contain the raw internal error keywords
+    expect(finalSummary).not.toContain("GatewayInternalServerError");
+    expect(finalSummary).not.toContain("no_providers_available");
+    // The sanitized message contains the user-facing wording
+    expect(finalSummary).toContain("Vercel AI Gateway");
+  });
+
   test("calls recordGoalLedgerStart with correct fields on a successful run", async () => {
     await runAgentWorkflow(makeOptions());
 

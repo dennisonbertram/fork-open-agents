@@ -168,6 +168,64 @@ describe("recordGoalLedgerStart", () => {
   });
 });
 
+describe("GoalLedgerEventType union: recordGoalLedgerEvent accepts all valid event types", () => {
+  test("accepts eventType 'started' (new: step history gap fix)", async () => {
+    // RED: eventType is currently typed as `string` — after FIX 4 it becomes a
+    // union. This test also asserts the call is forwarded to appendGoalEvent.
+    await recordGoalLedgerEvent({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "started",
+      summary: "Workflow run started",
+      payload: { workflowRunId: "wrun_test-123" },
+    });
+
+    expect(spies.appendGoalEvent).toHaveBeenCalledTimes(1);
+    expect(spies.appendGoalEvent).toHaveBeenCalledWith({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "started",
+      summary: "Workflow run started",
+      payload: { workflowRunId: "wrun_test-123" },
+    });
+  });
+
+  test("accepts eventType 'progress' with stepNumber payload (new: step history gap fix)", async () => {
+    await recordGoalLedgerEvent({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "progress",
+      summary: "Step 1 completed",
+      payload: { stepNumber: 1, finishReason: "tool-calls" },
+    });
+
+    expect(spies.appendGoalEvent).toHaveBeenCalledTimes(1);
+    expect(spies.appendGoalEvent).toHaveBeenCalledWith({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "progress",
+      summary: "Step 1 completed",
+      payload: { stepNumber: 1, finishReason: "tool-calls" },
+    });
+  });
+
+  test("accepts eventType 'final' (existing behavior preserved)", async () => {
+    await recordGoalLedgerEvent({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "final",
+      summary: "Workflow completed successfully.",
+    });
+
+    expect(spies.appendGoalEvent).toHaveBeenCalledWith({
+      goalId: "goal-abc123",
+      userId: "user-1",
+      eventType: "final",
+      summary: "Workflow completed successfully.",
+    });
+  });
+});
+
 describe("recordGoalLedgerEvent", () => {
   test("calls appendGoalEvent with correct arguments", async () => {
     await recordGoalLedgerEvent({
