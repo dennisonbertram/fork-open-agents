@@ -990,4 +990,58 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     // Must not resolve to undefined
     expect(err).not.toBeUndefined();
   });
+
+  // TASK-ISSUE-38 regression tests — catch if the transition guard is reverted.
+
+  test("REG-038-001: GoalLedgerError code union includes invalid_terminal_transition", async () => {
+    // If the new error code is removed from the union, TypeScript would catch it
+    // at compile time — this test provides a runtime backstop.
+    const { GoalLedgerError } = await goalLedgerPromise;
+
+    const err = new GoalLedgerError(
+      "invalid_terminal_transition",
+      "regression guard",
+    );
+    expect(err.code).toBe("invalid_terminal_transition");
+    expect(err.name).toBe("GoalLedgerError");
+  });
+
+  test("REG-038-002: closeGoal prevents double-close (re-closing a complete goal throws invalid_terminal_transition)", async () => {
+    // If the transition guard in closeGoal is reverted, calling closeGoal twice
+    // on the same goal would silently succeed (or fail with a DB constraint).
+    // This test pins the observable behavior: second close → invalid_terminal_transition.
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = [{ id: "goal-double-close", status: "complete" }];
+
+    const err = await closeGoal("goal-double-close", "failed").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_terminal_transition",
+    );
+    // Message must mention both the goal id and the current status for debuggability.
+    expect((err as Error).message).toContain("goal-double-close");
+    expect((err as Error).message).toContain("complete");
+  });
+
+  test("REG-038-003: closeGoal invalid_terminal_transition message includes the attempted next status", async () => {
+    // If the error message is blanked, it becomes impossible to diagnose which
+    // transition was attempted. This test pins the message contract.
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = [{ id: "goal-msg-test", status: "failed" }];
+
+    const err = await closeGoal("goal-msg-test", "archived").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_terminal_transition",
+    );
+    expect((err as Error).message).toContain("archived");
+  });
 });

@@ -108,3 +108,68 @@ describe("validateGoalCompletion", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — catch future breakage from different angles
+// ---------------------------------------------------------------------------
+
+describe("regression: validateGoalCompletion (TASK-ISSUE-38)", () => {
+  test("REG-038-VAL-001: evidence rule only fires on complete status — not on failed", () => {
+    // If the status check is accidentally dropped (checking only evidence and
+    // requireEvidence), failed+no-evidence would wrongly return false.
+    const result: GoalValidationResult = validateGoalCompletion({
+      status: "failed",
+      evidenceRefs: [],
+      requireEvidence: true,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  test("REG-038-VAL-002: requireEvidence:false is the safety valve — even complete+empty passes", () => {
+    // If the requireEvidence guard is dropped, the dormant path would start
+    // firing in production (where requireEvidence=false), breaking the #36
+    // behavior. This test pins the dormant-path contract.
+    const result: GoalValidationResult = validateGoalCompletion({
+      status: "complete",
+      evidenceRefs: [],
+      requireEvidence: false,
+    });
+
+    expect(result.ok).toBe(true);
+    // Also verify the code is NOT set (this is the ok:true branch)
+    expect((result as { ok: false; code?: string }).code).toBeUndefined();
+  });
+
+  test("REG-038-VAL-003: missing_required_evidence code is returned (not validation_rule_failed)", () => {
+    // If the code value is changed to a different string, callers that switch
+    // on the code would silently fall through to the wrong branch.
+    const result: GoalValidationResult = validateGoalCompletion({
+      status: "complete",
+      evidenceRefs: [],
+      requireEvidence: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("missing_required_evidence");
+      expect(result.code).not.toBe("validation_rule_failed");
+    }
+  });
+
+  test("REG-038-VAL-004: reason string is present and non-empty on failure", () => {
+    // If the reason field is dropped or blanked, callers logging the validation
+    // failure would emit an empty message with no actionable info.
+    const result: GoalValidationResult = validateGoalCompletion({
+      status: "complete",
+      evidenceRefs: [],
+      requireEvidence: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(typeof result.reason).toBe("string");
+      expect(result.reason.length).toBeGreaterThan(0);
+    }
+  });
+});
