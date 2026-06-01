@@ -30,13 +30,21 @@ let dbShouldThrow = false;
 const fakeDb = {
   insert: (_table: unknown) => ({
     values: (row: InsertedRow) => ({
-      onConflictDoNothing: (_config: unknown) => {
-        if (dbShouldThrow) {
-          throw new Error("regression: simulated DB connection error");
-        }
-        insertedRows.push(row);
-        return Promise.resolve();
-      },
+      onConflictDoNothing: (_config: unknown) => ({
+        returning: (_fields: unknown) => {
+          if (dbShouldThrow) {
+            throw new Error("regression: simulated DB connection error");
+          }
+          insertedRows.push(row);
+          return Promise.resolve([{ id: row.id }]);
+        },
+      }),
+    }),
+  }),
+  // select path used by conflict-resolution in persistWorkflowInputSnapshot
+  select: () => ({
+    from: (_table: unknown) => ({
+      where: (_cond: unknown) => Promise.resolve([]),
     }),
   }),
 };
