@@ -2,6 +2,7 @@ import "server-only";
 
 import { and, asc, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { z } from "zod";
 import {
   ARTIFACT_KINDS,
   ARTIFACT_REDACTION_STATUSES,
@@ -148,6 +149,14 @@ export async function updateArtifactStatus(
   id: string,
   status: WorkflowArtifactStatus,
 ): Promise<WorkflowArtifact> {
+  const parsed = z.enum(ARTIFACT_STATUSES).safeParse(status);
+  if (!parsed.success) {
+    throw new WorkflowArtifactError(
+      "invalid_artifact",
+      `Invalid artifact status: ${String(status)}`,
+    );
+  }
+
   const [row] = await db
     .update(workflowArtifacts)
     .set({ status, updatedAt: new Date() })
@@ -172,6 +181,14 @@ export async function setArtifactRedactionStatus(
   id: string,
   redactionStatus: WorkflowArtifactRedactionStatus,
 ): Promise<WorkflowArtifact> {
+  const parsed = z.enum(ARTIFACT_REDACTION_STATUSES).safeParse(redactionStatus);
+  if (!parsed.success) {
+    throw new WorkflowArtifactError(
+      "invalid_artifact",
+      `Invalid artifact redaction status: ${String(redactionStatus)}`,
+    );
+  }
+
   const [row] = await db
     .update(workflowArtifacts)
     .set({ redactionStatus, updatedAt: new Date() })
