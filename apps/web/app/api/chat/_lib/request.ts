@@ -4,6 +4,33 @@ export interface ChatRequestBody {
   messages: WebAgentUIMessage[];
   sessionId?: string;
   chatId?: string;
+  /**
+   * Named workflow identifier. Present only for named workflow runs (#46).
+   * When present, the chat route gate calls validateAndPersistWorkflowInputSnapshot
+   * before start(runAgentWorkflow, ...). Absent for classic/freeform chat runs —
+   * the validation gate is bypassed entirely.
+   */
+  workflowId?: string;
+  /**
+   * Submitted input values for the named workflow. Present only when
+   * workflowId is provided. Validated server-side against the workflow's
+   * WorkflowInputSchema before the durable run is started.
+   */
+  inputValues?: Record<string, unknown>;
+  /**
+   * The declared input schema for the named workflow. The client supplies
+   * this so the server can validate inputValues against it. Accepted as
+   * unknown and parsed server-side via parseWorkflowInputSchema (#45).
+   * Required when workflowId is present.
+   * Note: once the #30 catalog lands, the server will look up the schema
+   * by workflowId instead of accepting it from the client.
+   */
+  workflowSchema?: unknown;
+  /**
+   * The client's declared schema version (for version-mismatch detection).
+   * Deferred: version check requires #29/#30 catalog. Currently a no-op.
+   */
+  workflowSchemaVersion?: string;
 }
 
 type ParseChatRequestResult =

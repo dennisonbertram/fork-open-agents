@@ -1272,6 +1272,37 @@ export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;
 export type NewWorkflowRunStep = typeof workflowRunSteps.$inferInsert;
+
+// ── Immutable workflow input snapshot (one per run, written at run-start) ──
+// Stores validated input values with sensitive fields redacted as "[REDACTED]".
+// See issue #46 for rationale (Option B — separate table, not columns on workflowRuns).
+export const workflowInputSnapshots = pgTable(
+  "workflow_input_snapshots",
+  {
+    id: text("id").primaryKey(),
+    workflowRunId: text("workflow_run_id")
+      .notNull()
+      .references(() => workflowRuns.id, { onDelete: "cascade" }),
+    workflowId: text("workflow_id"),
+    schemaVersion: text("schema_version"),
+    // Validated input values; sensitive fields stored as "[REDACTED]" — never raw secrets.
+    inputValues: jsonb("input_values")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    persistedAt: timestamp("persisted_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_input_snapshots_run_id_idx").on(table.workflowRunId),
+    uniqueIndex("workflow_input_snapshots_run_id_unique").on(
+      table.workflowRunId,
+    ),
+  ],
+);
+
+export type WorkflowInputSnapshot = typeof workflowInputSnapshots.$inferSelect;
+export type NewWorkflowInputSnapshot =
+  typeof workflowInputSnapshots.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 

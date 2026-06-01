@@ -31,6 +31,8 @@ import {
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
+import { validateAndPersistWorkflowInputSnapshot } from "@/lib/workflows/run-start";
+import { nanoid } from "nanoid";
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
@@ -100,7 +102,13 @@ export async function POST(req: Request) {
     return parsedBody.response;
   }
 
-  const { messages } = parsedBody.body;
+  const {
+    messages,
+    workflowId,
+    inputValues,
+    workflowSchema,
+    workflowSchemaVersion,
+  } = parsedBody.body;
 
   // 2. Require sessionId and chatId to ensure sandbox ownership verification
   const chatIdentifiers = requireChatIdentifiers(parsedBody.body);
@@ -224,6 +232,72 @@ export async function POST(req: Request) {
         { status: 502, headers: { "X-Request-ID": requestId } },
       );
     }
+  }
+
+  // ── Workflow input validation gate (#46) ──────────────────────────────────
+  // When workflowId is present, validate the submitted inputValues against the
+  // declared schema and persist an immutable snapshot BEFORE starting the
+  // durable run. Sensitive fields are stored as "[REDACTED]" — never raw.
+  //
+  // Backward compat: freeform chat runs (no workflowId) bypass this gate
+  // entirely and proceed directly to start(runAgentWorkflow, ...).
+  //
+  // Architecture: Option 1 (extend chat route — issue #46 default).
+  // Schema lookup: client-supplied workflowSchema (no #30 catalog yet).
+  let workflowSnapshotId: string | undefined;
+  if (workflowId !== undefined && workflowId !== null && workflowId !== "") {
+    const workflowRunId = nanoid();
+    const snapshotResult = await validateAndPersistWorkflowInputSnapshot({
+      workflowRunId,
+      workflowId,
+      schema: workflowSchema,
+      schemaVersion: workflowSchemaVersion ?? null,
+      inputValues: (inputValues ?? {}) as Record<string, unknown>,
+      userId,
+    });
+
+    if (!snapshotResult.success) {
+      switch (snapshotResult.errorKind) {
+        case "workflow_input_invalid":
+          return Response.json(
+            {
+              error: "Workflow input validation failed",
+              errorKind: snapshotResult.errorKind,
+              fieldErrors: snapshotResult.fieldErrors,
+            },
+            { status: 422 },
+          );
+        case "workflow_input_unauthorized":
+          return Response.json(
+            {
+              error: "Unauthorized to start this workflow run",
+              errorKind: snapshotResult.errorKind,
+            },
+            { status: 403 },
+          );
+        case "workflow_version_mismatch":
+          return Response.json(
+            {
+              error: "Workflow schema version mismatch",
+              errorKind: snapshotResult.errorKind,
+              currentVersion: snapshotResult.currentVersion,
+              submittedVersion: snapshotResult.submittedVersion,
+            },
+            { status: 409 },
+          );
+        case "workflow_input_persist_failed":
+          return Response.json(
+            {
+              error: "Failed to persist workflow input snapshot",
+              errorKind: snapshotResult.errorKind,
+            },
+            { status: 500 },
+          );
+      }
+    }
+
+    workflowSnapshotId = snapshotResult.snapshotId;
+    void workflowSnapshotId; // available for future pass-through to runAgentWorkflow
   }
 
   // Start the durable workflow

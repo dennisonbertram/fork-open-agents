@@ -155,12 +155,13 @@ describe("validateAndPersistWorkflowInputSnapshot", () => {
     expect(result.success).toBe(false);
     if (result.success) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    // Narrow to the workflow_input_invalid variant for fieldErrors access
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
     // fieldErrors must be an array with at least one entry for the missing field
     expect(Array.isArray(result.fieldErrors)).toBe(true);
     expect(result.fieldErrors.length).toBeGreaterThan(0);
-    const repoUrlError = result.fieldErrors.find(
-      (e: { key: string; message: string }) => e.key === "repoUrl",
-    );
+    const repoUrlError = result.fieldErrors.find((e) => e.key === "repoUrl");
     expect(repoUrlError).toBeDefined();
     expect(typeof repoUrlError?.message).toBe("string");
     // No snapshot row written
@@ -187,11 +188,11 @@ describe("validateAndPersistWorkflowInputSnapshot", () => {
     expect(result.success).toBe(false);
     if (result.success) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
     expect(Array.isArray(result.fieldErrors)).toBe(true);
     expect(result.fieldErrors.length).toBeGreaterThan(0);
-    const maxDepthError = result.fieldErrors.find(
-      (e: { key: string; message: string }) => e.key === "maxDepth",
-    );
+    const maxDepthError = result.fieldErrors.find((e) => e.key === "maxDepth");
     expect(maxDepthError).toBeDefined();
     // No snapshot row written
     expect(insertedRows).toHaveLength(0);
@@ -217,10 +218,10 @@ describe("validateAndPersistWorkflowInputSnapshot", () => {
     expect(result.success).toBe(false);
     if (result.success) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
     expect(Array.isArray(result.fieldErrors)).toBe(true);
-    const envError = result.fieldErrors.find(
-      (e: { key: string; message: string }) => e.key === "env",
-    );
+    const envError = result.fieldErrors.find((e) => e.key === "env");
     expect(envError).toBeDefined();
     expect(insertedRows).toHaveLength(0);
   });
@@ -355,10 +356,7 @@ describe("validateAndPersistWorkflowInputSnapshot", () => {
     expect(result.errorKind).toBe("workflow_version_mismatch");
   });
 
-  // BT-010: no workflowId → freeform path, helper should handle gracefully
-  // (the route.ts caller checks for workflowId presence before calling, but
-  //  the function itself is defined to require workflowRunId+schema; this test
-  //  ensures the route-level backward compat is documented at the unit level)
+  // BT-010: all field errors collected before returning (not fail-fast)
   test("all field errors are collected before returning (collect all errors, not fail-fast)", async () => {
     const { validateAndPersistWorkflowInputSnapshot } = await modulePromise;
 
@@ -379,6 +377,8 @@ describe("validateAndPersistWorkflowInputSnapshot", () => {
     expect(result.success).toBe(false);
     if (result.success) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
     expect(result.fieldErrors.length).toBeGreaterThanOrEqual(2);
     expect(insertedRows).toHaveLength(0);
   });
