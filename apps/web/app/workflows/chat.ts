@@ -285,6 +285,24 @@ async function emitWorkflowSessionEvent(
   await emitSessionEvent(input);
 }
 
+async function recordResearchAndSpecArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  const { recordWorkflowArtifactBestEffort, buildArtifactInputs } =
+    await import("@/lib/workflows/artifact-generator");
+
+  const inputs = buildArtifactInputs(ctx);
+  await Promise.all(
+    inputs.map((input) => recordWorkflowArtifactBestEffort(input)),
+  );
+}
+
 async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
@@ -1573,6 +1591,29 @@ export async function runAgentWorkflow(options: Options) {
       );
       await sendDataPart(writable, runtimeProofPart);
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+
+      // Record research_packet + spec artifact refs.  Failures are swallowed
+      // by the defensive wrapper — a failed write must not crash the workflow.
+      const objectiveText = options.messages
+        .filter((m) => m.role === "user")
+        .flatMap((m) =>
+          m.parts
+            .filter(
+              (p): p is { type: "text"; text: string } => p.type === "text",
+            )
+            .map((p) => p.text),
+        )
+        .join(" ")
+        .trim()
+        .slice(0, 1000);
+
+      await recordResearchAndSpecArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        objectiveText,
+      });
     }
 
     await Promise.all([
