@@ -503,3 +503,62 @@ describe("FIX-3: Presenter-gate mutation coverage (isPassed gate)", () => {
     expect(html).toContain("Blocked");
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — catch future breakage of FIX 1 + FIX 2 + FIX 3 changes
+// ---------------------------------------------------------------------------
+
+describe("regression: kind-grouping, non-current treatment, and gate mutation", () => {
+  // REGRESSION-8: reverting grouping removes data-kind-group attributes
+  test("REGRESSION-8: data-kind-group attributes are present for all provided kinds", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ kind: "research_packet", id: "rp1" }),
+          passedArtifact({ kind: "final_build_report", id: "fbr1" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain('data-kind-group="research_packet"');
+    expect(html).toContain('data-kind-group="final_build_report"');
+    // Kinds not in the artifact list must not produce group headings
+    expect(html).not.toContain('data-kind-group="spec"');
+    expect(html).not.toContain('data-kind-group="gate_report"');
+    expect(html).not.toContain('data-kind-group="receipt"');
+  });
+
+  // REGRESSION-9: reverting non-current labels removes "Superseded" / "Unavailable"
+  test("REGRESSION-9: superseded and missing statuses render their distinct labels", () => {
+    const supersededHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ status: "superseded" })]}
+      />,
+    );
+    const missingHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ status: "missing" })]}
+      />,
+    );
+
+    expect(supersededHtml).toContain("Superseded");
+    expect(supersededHtml).toContain('data-non-current="true"');
+    expect(missingHtml).toContain("Unavailable (missing)");
+    expect(missingHtml).toContain('data-non-current="true"');
+  });
+
+  // REGRESSION-10: available artifacts must NOT get the non-current treatment
+  // (guards against accidentally marking all artifacts as de-emphasized)
+  test("REGRESSION-10: available artifact never gets data-non-current treatment", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ status: "available" })]}
+      />,
+    );
+
+    expect(html).not.toContain('data-non-current="true"');
+    expect(html).not.toContain("Superseded");
+    expect(html).not.toContain("Unavailable");
+    expect(html).not.toContain("Archived");
+  });
+});
