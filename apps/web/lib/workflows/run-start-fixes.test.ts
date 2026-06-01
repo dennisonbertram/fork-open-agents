@@ -76,7 +76,6 @@ mock.module("@/lib/db/client", () => ({
 // ── Dynamic imports AFTER mocks ────────────────────────────────────────────────
 
 const runStartModulePromise = import("./run-start");
-const persistModulePromise = import("../db/workflow-input-snapshots");
 
 // ── Helper schema definitions ──────────────────────────────────────────────────
 
@@ -177,8 +176,10 @@ describe("Fix 1: unknown key raw persistence (CRITICAL)", () => {
     expect(result.valid).toBe(false);
     if (result.valid) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
     // fieldErrors must name the unknown key
-    const unknownKeyError = result.fieldErrors?.find(
+    const unknownKeyError = result.fieldErrors.find(
       (e) => e.key === "apiKey" || e.message.includes("apiKey"),
     );
     expect(unknownKeyError).toBeDefined();
@@ -533,14 +534,14 @@ describe("Fix 4: validation error messages do not expose raw submitted value (ME
     expect(result.valid).toBe(false);
     if (result.valid) throw new Error("expected failure");
     expect(result.errorKind).toBe("workflow_input_invalid");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
 
     // CRITICAL: none of the field error messages must contain the raw submitted value
-    const allMessages = result.fieldErrors
-      ?.map((e) => e.message)
-      .join(" ") ?? "";
+    const allMessages = result.fieldErrors.map((e) => e.message).join(" ");
     expect(allMessages).not.toContain("SECRET-IN-WRONG-FIELD");
     // Messages should still describe the constraint
-    const envError = result.fieldErrors?.find((e) => e.key === "env");
+    const envError = result.fieldErrors.find((e) => e.key === "env");
     expect(envError).toBeDefined();
     expect(envError?.message).toContain("env"); // field name present
   });
@@ -548,7 +549,7 @@ describe("Fix 4: validation error messages do not expose raw submitted value (ME
   test("type mismatch error does not include raw submitted value in message", async () => {
     const { validateWorkflowInputs } = await runStartModulePromise;
 
-    const schemaWithNumber = {
+    const schemaWithNumberLocal = {
       fields: [
         {
           key: "count",
@@ -562,7 +563,7 @@ describe("Fix 4: validation error messages do not expose raw submitted value (ME
 
     const result = await validateWorkflowInputs({
       workflowId: "wf-test",
-      schema: schemaWithNumber,
+      schema: schemaWithNumberLocal,
       schemaVersion: null,
       inputValues: { count: "SECRET-VALUE-WRONG-TYPE" },
       userId: "user-001",
@@ -570,8 +571,10 @@ describe("Fix 4: validation error messages do not expose raw submitted value (ME
 
     expect(result.valid).toBe(false);
     if (result.valid) throw new Error("expected failure");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
 
-    const allMessages = result.fieldErrors?.map((e) => e.message).join(" ") ?? "";
+    const allMessages = result.fieldErrors.map((e) => e.message).join(" ");
     expect(allMessages).not.toContain("SECRET-VALUE-WRONG-TYPE");
   });
 
@@ -582,14 +585,19 @@ describe("Fix 4: validation error messages do not expose raw submitted value (ME
       workflowId: "wf-test",
       schema: schemaNameOnly,
       schemaVersion: null,
-      inputValues: { name: "Alice", unknownSentinel: "SECRET-UNKNOWN-VALUE-XYZ" },
+      inputValues: {
+        name: "Alice",
+        unknownSentinel: "SECRET-UNKNOWN-VALUE-XYZ",
+      },
       userId: "user-001",
     });
 
     expect(result.valid).toBe(false);
     if (result.valid) throw new Error("expected failure");
+    if (result.errorKind !== "workflow_input_invalid")
+      throw new Error("wrong errorKind");
 
-    const allMessages = result.fieldErrors?.map((e) => e.message).join(" ") ?? "";
+    const allMessages = result.fieldErrors.map((e) => e.message).join(" ");
     expect(allMessages).not.toContain("SECRET-UNKNOWN-VALUE-XYZ");
   });
 });
@@ -607,7 +615,8 @@ describe("Fix 5: onConflict returns real existing row id (MEDIUM)", () => {
   });
 
   test("second persist for same workflowRunId returns id of existing row", async () => {
-    const { persistWorkflowInputSnapshot: persist } = await runStartModulePromise;
+    const { persistWorkflowInputSnapshot: persist } =
+      await runStartModulePromise;
 
     const SHARED_RUN_ID = "conflict-run-id-999";
 
@@ -660,7 +669,8 @@ describe("Fix 6: DB errors are wrapped in WorkflowInputSnapshotError (LOW)", () 
   });
 
   test("persistWorkflowInputSnapshot returns success:false (never throws) when DB throws", async () => {
-    const { persistWorkflowInputSnapshot: persist } = await runStartModulePromise;
+    const { persistWorkflowInputSnapshot: persist } =
+      await runStartModulePromise;
 
     dbShouldThrow = true;
 
