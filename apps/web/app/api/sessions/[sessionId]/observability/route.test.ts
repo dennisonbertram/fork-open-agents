@@ -449,3 +449,78 @@ describe("regression: server-side redaction gate must not leak raw content", () 
     expect((body.workflowArtifacts as unknown[]).length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// FIX 3 (LOW nits): unknown-status + sourceLocation sweep
+// ---------------------------------------------------------------------------
+
+describe("FIX-3: server-side gate handles unknown redactionStatus + sourceLocation sweep", () => {
+  beforeEach(() => {
+    artifactsResult = [];
+    listArtifactsShouldThrow = false;
+  });
+
+  // FIX3-ROUTE-001: unknown/unexpected redactionStatus is treated conservatively
+  // (summary and sourceLocation must be null; the raw value must not appear in response)
+  test("FIX3-ROUTE-001: unknown redactionStatus value is gated conservatively (summary+sourceLocation null, value absent)", async () => {
+    const unknownStatus = "totally_unknown_status_xyz";
+    const rawSummary = "SECRET_UNKNOWN_STATUS_SUMMARY_MUST_NOT_APPEAR";
+    const rawSourceLocation = "s3://bucket/unknown-status-secret.md";
+
+    artifactsResult = [
+      {
+        ...makeArtifact("art-unk", "pending" as "pending"),
+        redactionStatus: unknownStatus,
+        summary: rawSummary,
+        sourceLocation: rawSourceLocation,
+      },
+    ];
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(createRequest(), createRouteContext());
+    const body = (await response.json()) as {
+      workflowArtifacts: Array<{
+        id: string;
+        summary: string | null;
+        sourceLocation: string | null;
+        redactionStatus: string;
+      }>;
+    };
+    const responseText = JSON.stringify(body);
+
+    expect(response.status).toBe(200);
+    expect(body.workflowArtifacts).toHaveLength(1);
+    const art = body.workflowArtifacts[0];
+    // Conservative default: non-"passed" status must gate content
+    expect(art?.summary).toBeNull();
+    expect(art?.sourceLocation).toBeNull();
+    // The unknown status value itself must NOT appear as raw content (it can appear
+    // as the redactionStatus field value, but the summary/location must be null)
+    expect(responseText).not.toContain(rawSummary);
+    expect(responseText).not.toContain(rawSourceLocation);
+  });
+
+  // FIX3-ROUTE-002: sourceLocation full-payload sweep for non-passed artifact
+  // — asserts the raw sourceLocation is absent from the entire serialized response
+  test("FIX3-ROUTE-002: non-passed artifact sourceLocation is absent from full serialized response", async () => {
+    const rawSourceLocation =
+      "s3://secret-bucket/UNIQUE_SECRET_SOURCE_LOCATION_MUST_NOT_APPEAR.md";
+    const rawSummary = "UNIQUE_SECRET_SUMMARY_MUST_NOT_APPEAR";
+
+    artifactsResult = [
+      makeArtifact("art-sweep", "pending", {
+        summary: rawSummary,
+        sourceLocation: rawSourceLocation,
+      }),
+    ];
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(createRequest(), createRouteContext());
+    const responseText = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(200);
+    // Full-payload sweep: neither the summary nor the sourceLocation must appear
+    expect(responseText).not.toContain(rawSummary);
+    expect(responseText).not.toContain(rawSourceLocation);
+  });
+});

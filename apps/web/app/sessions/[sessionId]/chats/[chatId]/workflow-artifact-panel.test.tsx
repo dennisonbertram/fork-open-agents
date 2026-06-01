@@ -272,3 +272,242 @@ describe("regression: WorkflowArtifactsSection gating and presenter integrity", 
     expect(populatedHtml).not.toContain("No workflow artifacts");
   });
 });
+
+// ---------------------------------------------------------------------------
+// FIX 1: kind grouping tests (RED — will fail until grouping is implemented)
+// ---------------------------------------------------------------------------
+
+describe("FIX-1: WorkflowArtifactsSection renders artifacts grouped by kind", () => {
+  // BT-018: A kind-group heading/label is rendered for each kind present
+  test("BT-018: renders a labeled group heading for each distinct kind present", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ kind: "research_packet", id: "a1" }),
+          passedArtifact({ kind: "spec", id: "a2" }),
+        ]}
+      />,
+    );
+
+    // Each kind should appear as a distinct group heading/label
+    // "Research packet" or "research packet" heading for research_packet
+    expect(html).toMatch(/research.?packet/i);
+    // "Spec" heading for spec — at minimum the kind label in a group-heading element
+    // The heading should appear at least once more than just in the artifact row
+    // (i.e., there is a dedicated group heading in addition to the row label)
+    const researchMatches = (html.match(/research.?packet/gi) ?? []).length;
+    expect(researchMatches).toBeGreaterThanOrEqual(2);
+  });
+
+  // BT-019: a kind with no artifacts does NOT render an empty group heading
+  test("BT-019: kinds with no artifacts do not render an empty group heading", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ kind: "research_packet", id: "a1" })]}
+      />,
+    );
+
+    // "spec" kind is not in the artifacts — it must not appear as a heading
+    // We check that "spec" does not appear as a standalone group heading.
+    // "Spec" group heading must be absent when there are no spec artifacts.
+    // The HTML should only reference "research_packet" kind, not "spec" heading.
+    expect(html).not.toMatch(/data-kind-group="spec"/i);
+  });
+
+  // BT-020: artifacts appear under their kind group (grouped, not flat)
+  test("BT-020: receipt artifact appears under the receipt kind group heading", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          blockedArtifact({ kind: "receipt", id: "r1" }),
+          failedArtifact({ kind: "gate_report", id: "g1" }),
+        ]}
+      />,
+    );
+
+    // Both groups must have their group headings
+    expect(html).toMatch(/data-kind-group="receipt"/i);
+    expect(html).toMatch(/data-kind-group="gate.?report"/i);
+    // receipt group heading must appear
+    expect(html).toMatch(/receipt/i);
+    // gate_report group heading must appear
+    expect(html).toMatch(/gate.?report/i);
+  });
+
+  // BT-021: group heading for a kind is a distinct element (data-kind-group attribute)
+  test("BT-021: group headings use data-kind-group attribute for each present kind", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ kind: "research_packet", id: "a1" }),
+          passedArtifact({ kind: "spec", id: "a2" }),
+          passedArtifact({ kind: "receipt", id: "a3" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain('data-kind-group="research_packet"');
+    expect(html).toContain('data-kind-group="spec"');
+    expect(html).toContain('data-kind-group="receipt"');
+    // final_build_report is not in the artifacts — should not appear as group
+    expect(html).not.toContain('data-kind-group="final_build_report"');
+    expect(html).not.toContain('data-kind-group="gate_report"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX 2: distinct non-current status treatment (RED — will fail until implemented)
+// ---------------------------------------------------------------------------
+
+describe("FIX-2: WorkflowArtifactsSection renders non-current statuses with distinct treatment", () => {
+  // BT-022: superseded artifact renders its distinct label
+  test("BT-022: superseded artifact renders 'Superseded' label", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ id: "sup-1", status: "superseded" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Superseded");
+    // Must have the de-emphasized/muted data attribute for visual treatment
+    expect(html).toContain('data-non-current="true"');
+  });
+
+  // BT-023: missing artifact renders "Unavailable (missing)" label
+  test("BT-023: missing artifact renders 'Unavailable (missing)' label", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ id: "miss-1", status: "missing" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Unavailable (missing)");
+    expect(html).toContain('data-non-current="true"');
+  });
+
+  // BT-024: archived artifact renders "Archived" label
+  test("BT-024: archived artifact renders 'Archived' label", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ id: "arch-1", status: "archived" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Archived");
+    expect(html).toContain('data-non-current="true"');
+  });
+
+  // BT-025: redacted-status artifact renders "Redacted" label (ARTIFACT_STATUS redacted)
+  test("BT-025: status=redacted artifact renders 'Redacted' label", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          passedArtifact({ id: "red-1", status: "redacted" }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Redacted");
+    expect(html).toContain('data-non-current="true"');
+  });
+
+  // BT-026: available artifact does NOT get the de-emphasized treatment
+  test("BT-026: available artifact does NOT have data-non-current='true'", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ id: "avail-1", status: "available" })]}
+      />,
+    );
+
+    expect(html).not.toContain('data-non-current="true"');
+  });
+
+  // BT-027: generating artifact does NOT get the de-emphasized treatment
+  test("BT-027: generating artifact does NOT have data-non-current='true'", () => {
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ id: "gen-1", status: "generating" })]}
+      />,
+    );
+
+    expect(html).not.toContain('data-non-current="true"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// FIX 3: Presenter-gate mutation coverage (RED — will fail until mutation
+// coverage test forces the isPassed gate to be fully exercised)
+// ---------------------------------------------------------------------------
+
+describe("FIX-3: Presenter-gate mutation coverage (isPassed gate)", () => {
+  // BT-028: pending artifact with non-null summary/sourceLocation — gate must strip them
+  test("BT-028: pending artifact with non-null summary+sourceLocation — content absent, placeholder present", () => {
+    const secretSummary = "MUTATION_SECRET_SUMMARY_PENDING_MUST_NOT_APPEAR";
+    const secretLocation = "s3://mutation-test/pending-secret.md";
+
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          pendingArtifact({
+            summary: secretSummary,
+            sourceLocation: secretLocation,
+          }),
+        ]}
+      />,
+    );
+
+    // The gate must strip these from the rendered output
+    expect(html).not.toContain(secretSummary);
+    expect(html).not.toContain(secretLocation);
+    // And the placeholder must be shown instead
+    expect(html).toContain("pending review");
+  });
+
+  // BT-029: failed artifact with non-null summary+sourceLocation — gate must strip them
+  test("BT-029: failed artifact with non-null summary+sourceLocation — content absent, placeholder present", () => {
+    const secretSummary = "MUTATION_SECRET_SUMMARY_FAILED_MUST_NOT_APPEAR";
+    const secretLocation = "s3://mutation-test/failed-secret.md";
+
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          failedArtifact({
+            summary: secretSummary,
+            sourceLocation: secretLocation,
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).not.toContain(secretSummary);
+    expect(html).not.toContain(secretLocation);
+    expect(html).toContain("PII detected");
+  });
+
+  // BT-030: blocked artifact with non-null summary+sourceLocation — gate must strip them
+  test("BT-030: blocked artifact with non-null summary+sourceLocation — content absent, placeholder present", () => {
+    const secretSummary = "MUTATION_SECRET_SUMMARY_BLOCKED_MUST_NOT_APPEAR";
+    const secretLocation = "s3://mutation-test/blocked-secret.md";
+
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[
+          blockedArtifact({
+            summary: secretSummary,
+            sourceLocation: secretLocation,
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).not.toContain(secretSummary);
+    expect(html).not.toContain(secretLocation);
+    expect(html).toContain("Blocked");
+  });
+});
