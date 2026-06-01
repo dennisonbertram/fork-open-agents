@@ -552,6 +552,44 @@ describe("runAgentWorkflow", () => {
     expect(source).toContain("async function emitWorkflowSessionEvent");
   });
 
+  test("regression: goal-ledger-recorder is behind a dynamic import in chat.ts", async () => {
+    // If someone refactors the recorder call to a top-level import, it would
+    // break the "use step" isolation that prevents DB calls from running at
+    // workflow-setup time. This test catches that regression.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    expect(source).not.toContain(
+      'import { recordGoalLedgerStart } from "@/lib/workflows/goal-ledger-recorder";',
+    );
+    expect(source).not.toContain(
+      'import { recordGoalLedgerClose } from "@/lib/workflows/goal-ledger-recorder";',
+    );
+    // The recorder IS imported — just dynamically inside a "use step" wrapper.
+    expect(source).toContain('"@/lib/workflows/goal-ledger-recorder"');
+    expect(source).toContain("async function startGoalLedger");
+    expect(source).toContain("async function closeGoalLedger");
+  });
+
+  test("regression: objective is truncated to 200 chars from user message", async () => {
+    // If the truncation is removed, long objectives would break DB column limits.
+    const longText = "A".repeat(500);
+    const options = makeOptions({
+      messages: [
+        {
+          id: "user-1",
+          role: "user" as const,
+          parts: [{ type: "text", text: longText }],
+        },
+      ],
+    });
+
+    await runAgentWorkflow(options);
+
+    const startCalls = spies.recordGoalLedgerStart.mock.calls as unknown[][];
+    const startCall = startCalls[0]?.[0] as { objective?: string } | undefined;
+    expect(startCall?.objective?.length).toBeLessThanOrEqual(200);
+  });
+
   test("throws when no messages provided", async () => {
     try {
       await runAgentWorkflow(makeOptions({ messages: [] }));

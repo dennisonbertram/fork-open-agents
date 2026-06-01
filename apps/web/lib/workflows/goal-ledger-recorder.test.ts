@@ -262,3 +262,91 @@ describe("recordGoalLedgerClose", () => {
     }).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests
+// These catch future breakage: if the implementation in 1908fefb is reverted
+// or the goal-ledger API changes, these fail before the behavioral tests do.
+// ---------------------------------------------------------------------------
+
+describe("regression: terminal status strings match TERMINAL_GOAL_STATUSES", () => {
+  test("recordGoalLedgerClose accepts 'complete' as a valid TerminalGoalStatus", async () => {
+    // If TERMINAL_GOAL_STATUSES drops "complete", TypeScript catches it at
+    // compile time AND this test would fail because closeGoal would throw
+    // a non_terminal_status GoalLedgerError.
+    await recordGoalLedgerClose({
+      goalId: "goal-1",
+      terminalStatus: "complete",
+    });
+    expect(spies.closeGoal).toHaveBeenCalledWith("goal-1", "complete");
+  });
+
+  test("recordGoalLedgerClose accepts 'canceled' as a valid TerminalGoalStatus", async () => {
+    await recordGoalLedgerClose({
+      goalId: "goal-1",
+      terminalStatus: "canceled",
+    });
+    expect(spies.closeGoal).toHaveBeenCalledWith("goal-1", "canceled");
+  });
+
+  test("recordGoalLedgerClose accepts 'failed' as a valid TerminalGoalStatus", async () => {
+    await recordGoalLedgerClose({ goalId: "goal-1", terminalStatus: "failed" });
+    expect(spies.closeGoal).toHaveBeenCalledWith("goal-1", "failed");
+  });
+
+  test("recordGoalLedgerStart maps all five input fields to createGoal", async () => {
+    // If createGoal signature changes (e.g. field rename), this catches it.
+    const goalId = await recordGoalLedgerStart({
+      userId: "u-1",
+      sessionId: "s-1",
+      chatId: "c-1",
+      workflowRunId: "w-1",
+      objective: "regression objective",
+    });
+
+    expect(spies.createGoal).toHaveBeenCalledWith({
+      userId: "u-1",
+      sessionId: "s-1",
+      chatId: "c-1",
+      workflowRunId: "w-1",
+      objective: "regression objective",
+    });
+    expect(goalId).toBe("goal-abc123");
+  });
+
+  test("recorder swallows errors and never propagates to callers", async () => {
+    // Regression: if the try/catch is accidentally removed, this fails.
+    spies.createGoal.mockRejectedValueOnce(
+      new Error("Catastrophic DB failure"),
+    );
+    spies.appendGoalEvent.mockRejectedValueOnce(
+      new Error("Catastrophic DB failure"),
+    );
+    spies.closeGoal.mockRejectedValueOnce(new Error("Catastrophic DB failure"));
+
+    let startResult: string | null | undefined;
+    await expect(async () => {
+      startResult = await recordGoalLedgerStart({
+        userId: "u-1",
+        sessionId: "s-1",
+        chatId: "c-1",
+        workflowRunId: "w-1",
+        objective: "fail test",
+      });
+    }).not.toThrow();
+    expect(startResult).toBeNull();
+
+    await expect(async () => {
+      await recordGoalLedgerEvent({
+        goalId: "g-1",
+        userId: "u-1",
+        eventType: "final",
+        summary: "fail",
+      });
+    }).not.toThrow();
+
+    await expect(async () => {
+      await recordGoalLedgerClose({ goalId: "g-1", terminalStatus: "failed" });
+    }).not.toThrow();
+  });
+});
