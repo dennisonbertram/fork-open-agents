@@ -4,8 +4,8 @@
 
 Add a release pipeline that keeps velocity high while making production hard to
 break: branch-protected PRs, Vercel Preview review with Agent Browser, a stable
-staging environment for authenticated/live-service paths, explicit production
-smoke, and a rollback runbook.
+dev environment for authenticated/live-service paths, explicit production smoke,
+and a rollback runbook.
 
 This is an epic-sized process/platform effort. Implement it as PR-sized slices.
 
@@ -21,7 +21,7 @@ This is an epic-sized process/platform effort. Implement it as PR-sized slices.
   - `bun run typecheck`
   - `bun run test:isolated`
   - `bun run --cwd apps/web db:check`
-- GitHub `main` now has low-friction branch protection:
+- GitHub `develop` and `main` now have low-friction branch protection:
   - pull requests are required
   - `lint-and-typecheck` is required and must be up to date
   - conversation resolution is required
@@ -35,21 +35,29 @@ This is an epic-sized process/platform effort. Implement it as PR-sized slices.
   - install command: `bun install`
   - build command: `bun run build`
   - Node.js: 24.x
-- Vercel deployments currently include both Production and Preview deployments.
+- Vercel deployments currently include Production, Preview, and the custom
+  `dev` environment.
+- Vercel branch mapping is:
+  - `develop` -> Vercel `dev`
+  - `main` -> Vercel Production
+  - other branches / PRs -> Vercel Preview
 - Vercel env shape has an important gap:
   - Neon/Postgres and Redis/KV values exist for Production, Preview, and
-    Development.
+    Development, and are currently also attached to `dev`.
   - Vercel OAuth and GitHub App values exist for Production and Development,
     but not Preview.
+  - Dev and production backing-service values still need to be separated before
+    dev can be treated as production-like for risky live-service testing.
   - That means ordinary previews are useful for unauthenticated UI and route
     smoke, but not for the full signed-in GitHub/sandbox/inference path.
-- There is no configured custom staging environment visible in the env listing.
+- There is no configured custom staging environment visible in the env listing;
+  the current shared pre-production environment is named `dev`.
 
 ## Research Findings
 
 - Vercel supports Custom Environments such as `staging` or `QA` on Pro and
   Enterprise plans. Custom environments can have their own environment variables
-  and can be deployed through `vercel deploy --target=staging`.
+  and can be deployed through `vercel deploy --target=dev`.
 - Vercel Preview deployments can be tested by automation. For protected
   deployments, Vercel supports a project-level automation bypass secret sent as
   `x-vercel-protection-bypass`.
@@ -94,16 +102,16 @@ Use four gates:
    - automated preview smoke after `deployment_status: success`
    - manual Agent Browser review of the Preview URL for visible changes
    - no production secrets or production data
-3. Staging gate
-   - stable `staging` Vercel custom environment
-   - isolated staging Neon database
-   - isolated staging Upstash Redis/KV
-   - stable staging URL registered with Vercel OAuth and GitHub App callbacks
+3. Dev gate
+   - stable `dev` Vercel custom environment tracking `develop`
+   - isolated dev Neon database
+   - isolated dev Upstash Redis/KV
+   - stable dev URL registered with Vercel OAuth and GitHub App callbacks
    - live signed-in smoke for auth, GitHub App, sandbox, workflows, AI Gateway,
      Composio, and future user-owned inference profiles
 4. Production gate
    - branch-protected merge to `main`
-   - production deploy or promotion only after preview and staging evidence
+   - production deploy or promotion only after preview and dev evidence
    - immediate production smoke
    - rollback path recorded in the PR/release notes
 
@@ -121,9 +129,9 @@ After:
 
 - GitHub PR status is the source of truth for code review and automated gates.
 - Vercel Preview deployment URL is the source of truth for per-PR visual review.
-- Staging deployment URL is the source of truth for signed-in/live-service
+- Dev deployment URL is the source of truth for signed-in/live-service
   release proof.
-- PR/release notes record test output, Agent Browser evidence, staging smoke,
+- PR/release notes record test output, Agent Browser evidence, dev smoke,
   production smoke, deployment id/URL, and rollback path.
 - Production is only a final confirmation, not the first realistic test.
 
@@ -146,7 +154,7 @@ Tasks:
   - include administrators
 - Defer one required approval until there is a second regular reviewer.
 - Update `docs/process/github-build-process.md` with the enforced rule.
-- Update `.github/pull_request_template.md` with explicit Preview/Staging/Prod
+- Update `.github/pull_request_template.md` with explicit Preview/Dev/Prod
   smoke checkboxes.
 
 Verification:
@@ -223,9 +231,9 @@ Tasks:
 - Define required evidence by change type:
   - UI-only: screenshot/snapshot, console/errors clean, changed controls clicked
   - API/state: relevant network requests inspected
-  - auth/live-service: defer to staging unless Preview has a deliberately
+  - auth/live-service: defer to dev unless Preview has a deliberately
     protected test-auth setup
-  - migrations: Preview deploy passed and staging migration smoke completed
+  - migrations: Preview deploy passed and dev migration smoke completed
 - Add a PR template checkbox requiring either Agent Browser evidence or a
   documented reason it is not applicable.
 
@@ -235,45 +243,45 @@ Verification:
 - Capture one screenshot and one interactive snapshot.
 - Confirm the checklist is clear enough for another agent to follow.
 
-### Slice 4: Create stable staging
+### Slice 4: Complete stable dev isolation
 
 Goal: make real signed-in, GitHub, sandbox, workflow, and inference testing
-possible without touching production.
+possible in dev without touching production.
 
 Tasks:
 
-- Create a Vercel custom environment named `staging`.
-- Add a stable staging domain, for example:
-  - `staging.open-agents-azure-xi.vercel.app`, or
+- Use the existing Vercel custom environment named `dev`.
+- Add a stable dev domain, for example:
+  - `dev.open-agents-azure-xi.vercel.app`, or
   - a dedicated custom domain if available
-- Add isolated staging env vars:
-  - `POSTGRES_URL` for a staging Neon branch/database
-  - `REDIS_URL` or `KV_URL` for staging Redis/KV
+- Add isolated dev env vars:
+  - `POSTGRES_URL` for a dev Neon branch/database
+  - `REDIS_URL` or `KV_URL` for dev Redis/KV
   - `BETTER_AUTH_SECRET`
   - `BETTER_AUTH_URL`
   - `VERCEL_PROJECT_PRODUCTION_URL`
   - `NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL`
-  - Vercel OAuth app credentials for staging, or a shared app with the staging
+  - Vercel OAuth app credentials for dev, or a shared app with the dev
     callback registered
-  - GitHub App credentials for staging, preferably a separate staging GitHub App
+  - GitHub App credentials for dev, preferably a separate dev GitHub App
   - `GITHUB_WEBHOOK_SECRET`
-  - `AI_GATEWAY_API_KEY` if OIDC is not sufficient in staging
+  - `AI_GATEWAY_API_KEY` if OIDC is not sufficient in dev
   - `OPEN_AGENTS_RESOURCE_PROFILE=hobby` if needed
-  - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` only after staging snapshot behavior is
+  - `VERCEL_SANDBOX_BASE_SNAPSHOT_ID` only after dev snapshot behavior is
     proven
 - Register callback URLs:
-  - `https://<staging-domain>/api/auth/callback/vercel`
-  - `https://<staging-domain>/api/auth/callback/github`
-  - `https://<staging-domain>/api/github/app/callback`
-  - `https://<staging-domain>/api/github/webhook`
-- Add a staging deploy command to docs:
+  - `https://<dev-domain>/api/auth/callback/vercel`
+  - `https://<dev-domain>/api/auth/callback/github`
+  - `https://<dev-domain>/api/github/app/callback`
+  - `https://<dev-domain>/api/github/webhook`
+- Add a dev deploy command to docs:
 
   ```bash
-  vercel deploy --target=staging
+  vercel deploy --target=dev
   ```
 
-- Add a staging smoke checklist:
-  - open staging
+- Add a dev smoke checklist:
+  - open dev
   - sign in with Vercel
   - connect/update GitHub App
   - repo list loads
@@ -285,11 +293,11 @@ Tasks:
 
 Verification:
 
-- `vercel deploy --target=staging` succeeds.
-- `vercel inspect <staging-url>` reports target `staging`.
-- Staging sign-in works.
-- Staging session creation works.
-- Staging smoke is recorded in PR/release notes before production.
+- `vercel deploy --target=dev` succeeds.
+- `vercel inspect <dev-url>` reports target `dev`.
+- Dev sign-in works.
+- Dev session creation works.
+- Dev smoke is recorded in PR/release notes before production.
 
 ### Slice 5: Production deployment and rollback runbook
 
@@ -302,14 +310,15 @@ Tasks:
 
 - Add `docs/process/production-release-runbook.md`.
 - Define the release command path:
-  - Short-term: merge to protected `main` triggers production deploy.
+  - Short-term: release PR from `develop` to protected `main` triggers
+    production deploy.
   - Later: use an explicit release workflow or `vercel promote` with manual
     approval.
 - Require these before production:
   - PR CI green
   - Preview smoke green
   - Agent Browser Preview evidence for UI changes
-  - staging smoke green for auth/sandbox/workflow/provider/migration changes
+  - dev smoke green for auth/sandbox/workflow/provider/migration changes
   - migration risk classification complete
 - Require these after production:
   - record commit SHA
@@ -350,7 +359,7 @@ Tasks:
   - backfills separate from schema introduction when data volume is uncertain
   - destructive drops only after the old app version can no longer write/read
     the removed shape
-- Require staging proof for every schema change.
+- Require dev proof for every schema change.
 - Require rollback notes that distinguish:
   - app rollback only
   - app rollback plus forward-compatible DB state
@@ -364,7 +373,7 @@ Tasks:
 Verification:
 
 - A schema-changing PR cannot be marked ready without migration class and
-  staging evidence.
+  dev evidence.
 - `bun run --cwd apps/web db:check` remains required in CI.
 
 ## Recommended Order
@@ -372,14 +381,14 @@ Verification:
 1. Slice 1: protect `main`.
 2. Slice 2: automated Preview smoke.
 3. Slice 3: documented Agent Browser Preview review.
-4. Slice 4: stable staging.
+4. Slice 4: stable dev.
 5. Slice 5: production release/rollback runbook.
 6. Slice 6: migration release policy.
 
 This order gives immediate risk reduction before introducing more process. The
-first three slices make PRs safer quickly. Staging then handles the parts
-Preview cannot prove: real auth, GitHub App callbacks, sandbox, workflows, and
-provider calls.
+first three slices make PRs safer quickly. Dev then handles the parts Preview
+cannot prove: real auth, GitHub App callbacks, sandbox, workflows, and provider
+calls.
 
 ## Agent Browser Policy
 
@@ -395,7 +404,7 @@ Use Preview Agent Browser for:
 - protected Preview pages when bypass headers are configured
 - console/page/network checks
 
-Use Staging Agent Browser for:
+Use Dev Agent Browser for:
 
 - real sign-in
 - GitHub App installation/update
@@ -415,14 +424,14 @@ Recommended default:
 
 - Keep Preview mostly unauthenticated.
 - Use it for smoke and visual review.
-- Use staging for real auth and live services.
+- Use dev for real auth and live services once dev services are isolated.
 
 Optional later:
 
 - Enable `OPEN_AGENTS_ENABLE_TEST_AUTH=1` only in protected Preview
   environments.
 - Never enable test auth in Production.
-- Treat test-auth Preview as lower trust than staging because it does not prove
+- Treat test-auth Preview as lower trust than dev because it does not prove
   OAuth/GitHub App callbacks.
 
 ## Open Decisions
@@ -430,9 +439,9 @@ Optional later:
 - Should production remain "merge to protected `main` deploys automatically",
   or should production require an explicit manual promotion workflow?
   - Recommendation: start with protected-main auto deploy for speed, then add
-    explicit promotion once staging is stable.
-- Should staging use separate OAuth/GitHub apps?
-  - Recommendation: separate staging GitHub App if possible; shared Vercel OAuth
+    explicit promotion once dev isolation is stable.
+- Should dev use separate OAuth/GitHub apps?
+  - Recommendation: separate dev GitHub App if possible; shared Vercel OAuth
     app is acceptable if it supports multiple callbacks cleanly.
 - Should Preview smoke be HTTP-only first or browser-based in CI?
   - Recommendation: HTTP-only first for reliability, documented Agent Browser
@@ -446,10 +455,10 @@ Optional later:
 - `main` cannot be updated without a PR and required checks.
 - Every PR has a Vercel Preview URL and an automated Preview smoke result.
 - UI PRs include Agent Browser Preview evidence or a clear exception.
-- Staging exists with isolated DB/KV/auth/provider config.
-- Auth/sandbox/workflow/provider changes prove the path in staging before prod.
+- Dev exists with isolated DB/KV/auth/provider config.
+- Auth/sandbox/workflow/provider changes prove the path in dev before prod.
 - Production deploy notes include commit SHA, deployment URL/id, smoke result,
   and rollback path.
-- Migration PRs include compatibility classification and staging proof.
+- Migration PRs include compatibility classification and dev proof.
 - The process is documented well enough that a future agent can execute it
   without relying on this chat transcript.

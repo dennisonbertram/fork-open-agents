@@ -12,6 +12,77 @@ This is the deployment path we used to bring a vanilla Open Agents fork online o
 - Inference: AI SDK `createGateway()` through Vercel AI Gateway. On Vercel, OIDC auth can work without provider API keys; for explicit/local key auth use `AI_GATEWAY_API_KEY`.
 - Execution: Vercel Sandbox for repo clones, shell commands, dev servers, and snapshots.
 
+## Deployment Environments
+
+This project uses a shared dev environment before production:
+
+```text
+develop    -> Vercel custom environment: dev
+main       -> Vercel Production
+other branches / PRs -> Vercel Preview
+```
+
+The `dev` custom environment is branch-matched to `develop` and has its own
+Vercel env-var scope. Production is branch-matched to `main`, so merging a
+feature PR to `develop` should not ship production by itself.
+
+Stable dev alias:
+
+```text
+https://open-agents-env-dev-dennisons-projects.vercel.app
+```
+
+Release flow:
+
+1. Merge feature PRs into `develop`.
+2. Smoke the Vercel `dev` deployment for the `develop` commit.
+3. Promote by opening a release PR from `develop` to `main`.
+4. Merge the release PR and smoke production.
+
+Do not alias a dev-built deployment directly to production. Dev and production
+use separate environment variables, so production should receive a production
+target build from the same reviewed commit line.
+
+### Dev Isolation Requirements
+
+The shared `dev` deployment should be production-shaped but backed by
+non-production services. Do not treat dev as safe for destructive, migration,
+auth, webhook, sandbox, or workflow testing until these values are isolated from
+production:
+
+```env
+POSTGRES_URL=
+DATABASE_URL=
+REDIS_URL=
+KV_URL=
+KV_REST_API_URL=
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=
+VERCEL_PROJECT_PRODUCTION_URL=
+NEXT_PUBLIC_VERCEL_PROJECT_PRODUCTION_URL=
+NEXT_PUBLIC_VERCEL_APP_CLIENT_ID=
+VERCEL_APP_CLIENT_SECRET=
+NEXT_PUBLIC_GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+GITHUB_APP_ID=
+GITHUB_APP_PRIVATE_KEY=
+NEXT_PUBLIC_GITHUB_APP_SLUG=
+GITHUB_WEBHOOK_SECRET=
+```
+
+For production-like testing without production risk, provision dev-specific
+backing resources:
+
+1. a Neon branch or separate database for dev,
+2. a dev Redis/KV database,
+3. a dev Vercel OAuth app or shared app with the dev callback registered,
+4. preferably a separate dev GitHub App and webhook secret,
+5. a dev canonical URL pointing at the stable dev alias.
+
+Before declaring dev isolated, compare value fingerprints without printing
+secrets. `POSTGRES_URL`, `DATABASE_URL`, `REDIS_URL`, `KV_URL`, and
+`KV_REST_API_URL` must differ between `dev` and `production`.
+
 ## Vercel Project
 
 Import the fork into Vercel and verify these project settings:
@@ -23,6 +94,7 @@ Install Command: bun install
 Build Command: bun run build
 Node.js Version: 24.x
 Include source files outside of the Root Directory: enabled
+Production Branch: main
 ```
 
 For Hobby-compatible deploys, set:

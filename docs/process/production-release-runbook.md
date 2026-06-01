@@ -1,7 +1,7 @@
 # Production Release Runbook
 
-Use this runbook when a PR is ready to move from Preview or staging to
-production.
+Use this runbook when a change is ready to move from PR Preview to shared dev,
+then from shared dev to production.
 
 ## Before Merge
 
@@ -15,7 +15,7 @@ Required for every non-trivial PR:
 
 Required for high-risk PRs:
 
-1. staging smoke is recorded,
+1. dev smoke is recorded,
 2. migration compatibility is classified,
 3. live-service risks are named,
 4. rollback is either app-only or explicitly fix-forward.
@@ -25,15 +25,70 @@ GitHub App, sandbox, workflows, and migrations.
 
 ## Current Release Path
 
-The repo uses a speed-first path:
+The repo uses an explicit dev-before-production path:
 
-1. merge a protected PR to `main`,
-2. let Vercel deploy production from `main`,
-3. smoke production immediately,
-4. roll back quickly if smoke fails.
+1. merge a protected feature PR to `develop`,
+2. let Vercel deploy `develop` to the shared `dev` environment,
+3. smoke the shared dev deployment,
+4. open and merge a release PR from `develop` to `main`,
+5. let Vercel deploy production from `main`,
+6. smoke production immediately,
+7. roll back quickly if smoke fails.
 
-Move to explicit manual promotion later if production deploys become frequent
-enough that automatic `main` deploys create coordination problems.
+For backlogged PRs, merge feature work into `develop` first, prove it in the
+shared dev deployment, and then promote the accumulated, tested changes with a
+release PR from `develop` to `main`. Do not merge backlogged feature PRs
+directly to `main` unless they are explicit production hotfixes.
+
+Vercel target mapping:
+
+1. `dev` custom environment tracks `develop`.
+2. `Production` tracks `main`.
+3. `Preview` handles all unassigned branches and PR previews.
+
+Keep production as a separate build/deploy from the same reviewed commit line
+instead of promoting a dev-built deployment. The dev target has its own
+environment variables, so a dev deployment should not be aliased directly to
+production.
+
+Dev must be production-shaped but service-isolated before it is used for risky
+live testing. Confirm the dev database, Redis/KV, auth callbacks, GitHub App
+webhook, and canonical URL are not production resources before running
+destructive flows, migration tests, background-agent dispatch, or sandbox
+workflow tests.
+
+## Dev Smoke
+
+After `develop` deploys to `dev`, record:
+
+1. commit SHA,
+2. Vercel dev deployment URL or id,
+3. stable dev alias,
+4. whether service isolation has been verified,
+5. smoke result,
+6. release PR URL when promoting to production.
+
+Current stable dev alias:
+
+```text
+https://open-agents-env-dev-dennisons-projects.vercel.app
+```
+
+Minimal smoke:
+
+```bash
+DEPLOYMENT_URL=https://open-agents-env-dev-dennisons-projects.vercel.app \
+  bun run --cwd apps/web preview:smoke
+```
+
+For UI changes, also run Agent Browser against the dev deployment:
+
+```bash
+agent-browser --session "dev-smoke-<sha>" open "<dev-deployment-url>"
+agent-browser snapshot -i
+agent-browser errors
+agent-browser console
+```
 
 ## Production Smoke
 
