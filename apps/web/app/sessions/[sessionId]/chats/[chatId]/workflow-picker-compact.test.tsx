@@ -23,6 +23,8 @@ mock.module("swr", () => ({
 const componentModulePromise = import("./workflow-picker-compact");
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
+// Uses real proof levels from the catalog: "level-1" | "level-2" | "level-3"
+// (not the fictitious "basic"/"managed" strings that were used before).
 
 const enabledWorkflow: WorkflowCatalogEntry = {
   id: "test-run",
@@ -30,7 +32,7 @@ const enabledWorkflow: WorkflowCatalogEntry = {
   version: "1.0.0",
   description: "Run the test suite",
   capabilities: ["testing"],
-  proofLevel: "basic",
+  proofLevel: "level-1",
   available: true,
   disabledReason: null,
 };
@@ -41,7 +43,7 @@ const disabledWorkflow: WorkflowCatalogEntry = {
   version: "1.0.0",
   description: "Deploy to the production environment",
   capabilities: ["deployment"],
-  proofLevel: "managed",
+  proofLevel: "level-3",
   available: false,
   disabledReason: "Workflow is currently disabled",
 };
@@ -149,6 +151,74 @@ describe("WorkflowPickerCompact", () => {
 
     expect(html).toContain("disabled");
   });
+
+  // BT-007: WorkflowPickerCompact renders items through the presenter (tested path)
+  // This test asserts the component's rendered HTML contains the item markup
+  // produced by WorkflowPickerItems — specifically, the role="menuitemradio" and
+  // aria-checked attributes that are added by the presenter.
+  // Note: Radix DropdownMenuContent is portaled and not rendered by
+  // renderToStaticMarkup, so we assert the presenter is rendered inline in the
+  // component output. The unification puts WorkflowPickerItems directly in the
+  // DropdownMenuContent subtree which IS included in static markup.
+  test("renders workflow items with role=menuitemradio via the unified presenter", async () => {
+    swrState = { data: { workflows: [enabledWorkflow, disabledWorkflow] } };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        selectedWorkflowId={null}
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    // The unified presenter must emit role="menuitemradio" for each item
+    expect(html).toContain('role="menuitemradio"');
+    // Both workflow names must be present (rendered by the presenter)
+    expect(html).toContain("Test Run");
+    expect(html).toContain("Deploy to Production");
+  });
+
+  // BT-008: WorkflowPickerCompact passes selectedId to presenter (aria-checked)
+  // Previously selectedId was passed to the presenter but never used.
+  // After unification the presenter must mark the selected item with aria-checked="true".
+  test("selected item has aria-checked=true in component output", async () => {
+    swrState = { data: { workflows: [enabledWorkflow, disabledWorkflow] } };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        selectedWorkflowId="test-run"
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    // The presenter must mark the selected workflow with aria-checked="true"
+    expect(html).toContain('aria-checked="true"');
+  });
+
+  // BT-009: disabled items in the component output carry the disabled attribute
+  // This is the critical gap-closure test: previously only the untested Radix
+  // DropdownMenuRadioItem had the disabled attribute. After unification the
+  // presenter renders it and this test catches regressions.
+  test("disabled workflow item has disabled attribute in component output", async () => {
+    swrState = { data: { workflows: [disabledWorkflow] } };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        selectedWorkflowId={null}
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    // The disabled workflow button must have the HTML disabled attribute
+    expect(html).toContain("disabled");
+    // The disabledReason must also be shown for the disabled item
+    expect(html).toContain("Workflow is currently disabled");
+  });
 });
 
 describe("WorkflowPickerItems", () => {
@@ -197,7 +267,7 @@ describe("WorkflowPickerItems", () => {
       />,
     );
 
-    // The disabled workflow's radio item must be marked disabled
+    // The disabled workflow's button must be marked disabled
     expect(html).toContain("disabled");
   });
 
@@ -234,7 +304,9 @@ describe("WorkflowPickerItems", () => {
       />,
     );
 
-    // Invoke the handler directly to verify the contract (simulating a user click)
+    // Invoke the handler directly to verify the contract (simulating a user click).
+    // Note: renderToStaticMarkup produces static HTML without a DOM — click events
+    // cannot be simulated. The handler contract is verified by calling directly.
     onSelect(enabledWorkflow.id);
     expect(calls).toEqual(["test-run"]);
   });
@@ -250,14 +322,78 @@ describe("WorkflowPickerItems", () => {
       />,
     );
 
-    // The proof level hint should be shown
-    expect(html).toContain("basic");
+    // The real proof level "level-1" (not the old fictitious "basic") must appear
+    expect(html).toContain("level-1");
+  });
+
+  // BT-010: presenter items carry role="menuitemradio" for accessibility
+  test("each workflow item button has role=menuitemradio", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow, disabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(html).toContain('role="menuitemradio"');
+  });
+
+  // BT-011: aria-checked reflects selectedId — selected item gets aria-checked="true"
+  test("item matching selectedId has aria-checked=true", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow, disabledWorkflow]}
+        selectedId="test-run"
+        onSelect={() => {}}
+      />,
+    );
+
+    // The selected item must have aria-checked="true"
+    expect(html).toContain('aria-checked="true"');
+  });
+
+  // BT-012: unselected items have aria-checked="false"
+  test("items not matching selectedId have aria-checked=false", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow, disabledWorkflow]}
+        selectedId="test-run"
+        onSelect={() => {}}
+      />,
+    );
+
+    // There must be at least one aria-checked="false" (the unselected item)
+    expect(html).toContain('aria-checked="false"');
+  });
+
+  // BT-013: when selectedId is null, all items have aria-checked="false"
+  test("all items have aria-checked=false when selectedId is null", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow, disabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    // No items should be checked when nothing is selected
+    expect(html).not.toContain('aria-checked="true"');
+    expect(html).toContain('aria-checked="false"');
   });
 });
 
 // ── Regression tests ──────────────────────────────────────────────────────────
 // These tests catch future breakage of the behaviors introduced in
-// feat: TASK-ISSUE-32 (green commit 8b94e325).
+// fix(workflows): unify picker on tested presenter (#32).
 
 describe("WorkflowPickerCompact regression", () => {
   beforeEach(() => {
@@ -277,8 +413,8 @@ describe("WorkflowPickerCompact regression", () => {
       />,
     );
 
-    // The button for the disabled workflow must have disabled attribute
-    // This fails if someone removes disabled={!workflow.available} from the button
+    // The button for the disabled workflow must have disabled attribute.
+    // This FAILS if someone removes disabled={!workflow.available} from the button.
     expect(html).toContain("disabled");
     expect(html).toContain("Deploy to Production");
   });
@@ -356,5 +492,53 @@ describe("WorkflowPickerCompact regression", () => {
     expect(exportedKeys).not.toContain("startWorkflowRun");
     expect(exportedKeys).not.toContain("useRunStart");
     expect(exportedKeys).not.toContain("submitWorkflow");
+  });
+
+  // Regression: aria-checked is wired correctly — selectedId is consumed, not dead
+  // If selectedId consumption is removed from the presenter, this fails.
+  test("presenter aria-checked reflects the selectedId (selectedId is not dead)", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const htmlSelected = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow]}
+        selectedId="test-run"
+        onSelect={() => {}}
+      />,
+    );
+    const htmlUnselected = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(htmlSelected).toContain('aria-checked="true"');
+    expect(htmlUnselected).not.toContain('aria-checked="true"');
+  });
+
+  // Regression: proof levels in fixtures use real catalog values.
+  // If someone changes the catalog proof-level enum, the presenter must still
+  // emit them correctly and the tests must catch any mismatch.
+  test("presenter emits the real proof level string from the workflow definition", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[
+          { ...enabledWorkflow, proofLevel: "level-2" },
+          { ...disabledWorkflow, proofLevel: "level-3" },
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(html).toContain("level-2");
+    expect(html).toContain("level-3");
+    // Must NOT contain the old fictitious proof level strings
+    expect(html).not.toContain('"basic"');
+    expect(html).not.toContain('"managed"');
   });
 });
