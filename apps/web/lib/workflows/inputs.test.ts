@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   parseWorkflowInputSchema,
+  SUPPORTED_FIELD_KINDS,
   type WorkflowInputSchema,
   type WorkflowInputField,
   type WorkflowInputSchemaError,
@@ -419,5 +420,191 @@ describe("catalog integration proof (WorkflowInputSchema compatibility)", () => 
       // A catalog loader that validates input schemas before registration
       // would receive this typed error and reject the workflow definition.
     }
+  });
+});
+
+// ── REGRESSION tests ──────────────────────────────────────────────────────────
+// These tests lock the highest-value invariants. They are written to FAIL if:
+// - Any of the 5 error kinds is renamed or collapsed into another kind
+// - The secret-field auto-normalization behavior changes
+// - parseWorkflowInputSchema starts throwing instead of returning errors
+// - The SUPPORTED_FIELD_KINDS set is altered silently
+
+describe("regression: error taxonomy — all 5 error kinds are distinctly returned", () => {
+  test("REG-001: input_schema_invalid is returned for structurally invalid input", () => {
+    // If someone renames or collapses this kind, this test fails
+    const result = parseWorkflowInputSchema({ notFields: "wrong" });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      // Exact string match — not a loose contains check
+      expect(result.error.kind).toBe("input_schema_invalid");
+    }
+  });
+
+  test("REG-002: unsupported_field_kind is returned for unknown kind, not a generic error", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [{ key: "x", label: "X", kind: "date", required: false }],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.kind).toBe("unsupported_field_kind");
+      // Context fields must be present so caller can act on the error
+      if (result.error.kind === "unsupported_field_kind") {
+        expect(result.error.fieldKey).toBe("x");
+        expect(result.error.received).toBe("date");
+      }
+    }
+  });
+
+  test("REG-003: sensitive_field_unmarked is returned for secret+sensitive:false — not swallowed or collapsed", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        {
+          key: "tok",
+          label: "Token",
+          kind: "secret",
+          required: true,
+          sensitive: false,
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.kind).toBe("sensitive_field_unmarked");
+      if (result.error.kind === "sensitive_field_unmarked") {
+        expect(result.error.fieldKey).toBe("tok");
+      }
+    }
+  });
+
+  test("REG-004: duplicate_field_key is returned with the offending key — not a generic invalid error", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        { key: "shared-key", label: "First", kind: "string", required: true },
+        { key: "shared-key", label: "Second", kind: "number", required: false },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.kind).toBe("duplicate_field_key");
+      if (result.error.kind === "duplicate_field_key") {
+        expect(result.error.key).toBe("shared-key");
+      }
+    }
+  });
+
+  test("REG-005: enum_missing_values is returned for empty allowedValues — not collapsed into input_schema_invalid", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        {
+          key: "status",
+          label: "Status",
+          kind: "enum",
+          required: true,
+          allowedValues: [],
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.kind).toBe("enum_missing_values");
+      if (result.error.kind === "enum_missing_values") {
+        expect(result.error.fieldKey).toBe("status");
+      }
+    }
+  });
+});
+
+describe("regression: secret field auto-sensitivity normalization", () => {
+  test("REG-006: secret field with sensitive omitted always gets sensitive:true — never false or undefined", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        { key: "pw", label: "Password", kind: "secret", required: true },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    const field = result.data.fields[0];
+    // Must be exactly true — not truthy, not undefined
+    expect(field?.sensitive).toBe(true);
+  });
+
+  test("REG-007: non-secret fields always get sensitive:false — never true unless explicitly set", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        { key: "name", label: "Name", kind: "string", required: true },
+        { key: "count", label: "Count", kind: "number", required: false },
+        { key: "flag", label: "Flag", kind: "boolean", required: false },
+        {
+          key: "env",
+          label: "Env",
+          kind: "enum",
+          required: true,
+          allowedValues: ["prod"],
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+    for (const field of result.data.fields) {
+      expect(field.sensitive).toBe(false);
+    }
+  });
+
+  test("REG-008: secret field with sensitive:false is always rejected — never silently normalized", () => {
+    // This ensures the conservative interpretation is locked in:
+    // explicit sensitive:false on a secret field MUST be rejected, not auto-corrected.
+    const result = parseWorkflowInputSchema({
+      fields: [
+        {
+          key: "api-key",
+          label: "API Key",
+          kind: "secret",
+          required: true,
+          sensitive: false,
+        },
+      ],
+    });
+    // Must fail — never succeed with the bad value auto-corrected
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("regression: never-throws guarantee on arbitrary garbage", () => {
+  const garbageInputs: unknown[] = [
+    null,
+    undefined,
+    42,
+    "string",
+    true,
+    [],
+    {},
+    { fields: null },
+    { fields: "not-an-array" },
+    { fields: [null] },
+    { fields: [{ kind: "string" }] }, // missing key and label
+  ];
+
+  for (const input of garbageInputs) {
+    test(`REG-009: parseWorkflowInputSchema(${JSON.stringify(input)}) never throws`, () => {
+      let threw = false;
+      try {
+        parseWorkflowInputSchema(input);
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(false);
+    });
+  }
+});
+
+describe("regression: SUPPORTED_FIELD_KINDS is the canonical 5-element set", () => {
+  test("REG-010: SUPPORTED_FIELD_KINDS contains exactly the 5 first-release kinds", () => {
+    expect(SUPPORTED_FIELD_KINDS).toHaveLength(5);
+    expect(SUPPORTED_FIELD_KINDS).toContain("string");
+    expect(SUPPORTED_FIELD_KINDS).toContain("number");
+    expect(SUPPORTED_FIELD_KINDS).toContain("boolean");
+    expect(SUPPORTED_FIELD_KINDS).toContain("enum");
+    expect(SUPPORTED_FIELD_KINDS).toContain("secret");
   });
 });
