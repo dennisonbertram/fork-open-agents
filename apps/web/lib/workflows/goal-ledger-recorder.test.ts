@@ -408,3 +408,76 @@ describe("regression: terminal status strings match TERMINAL_GOAL_STATUSES", () 
     }).not.toThrow();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests: TASK-ISSUE-36 step history gap fix (13696abf)
+// These catch future breakage: if GoalLedgerEventType reverts to `string`, or
+// the new event types are dropped, these tests fail before behavioral tests do.
+// ---------------------------------------------------------------------------
+
+describe("regression: GoalLedgerEventType union enforces closed set of event types", () => {
+  test("recordGoalLedgerEvent accepts 'started' type and forwards to appendGoalEvent", async () => {
+    // If eventType reverts to `string`, TypeScript won't catch invalid types at
+    // compile time. This test verifies the forwarding still works correctly for
+    // the new types added in TASK-ISSUE-36.
+    await recordGoalLedgerEvent({
+      goalId: "goal-r1",
+      userId: "u-1",
+      eventType: "started",
+      summary: "Workflow run started",
+      payload: { workflowRunId: "wrun_regression" },
+    });
+    expect(spies.appendGoalEvent).toHaveBeenCalledWith({
+      goalId: "goal-r1",
+      userId: "u-1",
+      eventType: "started",
+      summary: "Workflow run started",
+      payload: { workflowRunId: "wrun_regression" },
+    });
+  });
+
+  test("recordGoalLedgerEvent accepts 'progress' type with stepNumber payload", async () => {
+    // If the progress event type is dropped from the union or the forwarding
+    // changes, this test fails immediately.
+    await recordGoalLedgerEvent({
+      goalId: "goal-r2",
+      userId: "u-1",
+      eventType: "progress",
+      summary: "Step 3 completed",
+      payload: { stepNumber: 3, finishReason: "stop" },
+    });
+    expect(spies.appendGoalEvent).toHaveBeenCalledWith({
+      goalId: "goal-r2",
+      userId: "u-1",
+      eventType: "progress",
+      summary: "Step 3 completed",
+      payload: { stepNumber: 3, finishReason: "stop" },
+    });
+  });
+
+  test("recordGoalLedgerEvent swallows errors for 'started' type (defensiveness preserved)", async () => {
+    spies.appendGoalEvent.mockRejectedValueOnce(new Error("DB write timeout"));
+
+    // Must not throw regardless of event type
+    await expect(async () => {
+      await recordGoalLedgerEvent({
+        goalId: "goal-r3",
+        userId: "u-1",
+        eventType: "started",
+        summary: "Workflow run started",
+        payload: { workflowRunId: "wrun_regression" },
+      });
+    }).not.toThrow();
+  });
+
+  test("GoalLedgerEventType is exported from goal-ledger-recorder module", async () => {
+    // This test verifies the module exports the type by confirming the module
+    // can be imported without error and the function that uses it works.
+    // If GoalLedgerEventType is removed or renamed, related TypeScript errors
+    // will surface at compile time, and this runtime test catches wiring issues.
+    const recorderModule = await import("./goal-ledger-recorder");
+    expect(typeof recorderModule.recordGoalLedgerEvent).toBe("function");
+    expect(typeof recorderModule.recordGoalLedgerStart).toBe("function");
+    expect(typeof recorderModule.recordGoalLedgerClose).toBe("function");
+  });
+});

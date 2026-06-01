@@ -2159,16 +2159,15 @@ describe("runAgentWorkflow", () => {
     await runAgentWorkflow(makeOptions());
 
     // Must have been called at least once with eventType "started"
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [
-        {
-          goalId: string;
-          userId: string;
-          eventType: string;
-          summary: string;
-          payload?: Record<string, unknown>;
-        },
-      ]
+    type EventCall = {
+      goalId: string;
+      userId: string;
+      eventType: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const startedCalls = allCalls.filter(
@@ -2189,16 +2188,15 @@ describe("runAgentWorkflow", () => {
   test("records at least one 'progress' event with stepNumber during a single-step run", async () => {
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [
-        {
-          goalId: string;
-          userId: string;
-          eventType: string;
-          summary: string;
-          payload?: Record<string, unknown>;
-        },
-      ]
+    type EventCall = {
+      goalId: string;
+      userId: string;
+      eventType: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const progressCalls = allCalls.filter(
@@ -2220,8 +2218,13 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
 
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [{ goalId: string; eventType: string; payload?: Record<string, unknown> }]
+    type EventCall = {
+      goalId: string;
+      eventType: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const progressCalls = allCalls.filter(
@@ -2238,8 +2241,9 @@ describe("runAgentWorkflow", () => {
   test("records 'started', progress events, then 'final' event in order", async () => {
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [{ eventType: string }]
+    type EventCall = { eventType: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const eventTypes = allCalls.map(([input]) => input.eventType);
@@ -2254,12 +2258,15 @@ describe("runAgentWorkflow", () => {
   test("does not record 'started' or 'progress' events when startGoalLedger returns null", async () => {
     // When recordGoalLedgerStart returns null (e.g. DB unavailable), the goal id
     // is null and no events should be attempted — no goalId to record against.
-    spies.recordGoalLedgerStart.mockResolvedValueOnce(null);
+    spies.recordGoalLedgerStart.mockResolvedValueOnce(
+      null as unknown as string,
+    );
 
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [{ eventType: string }]
+    type EventCall = { eventType: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const startedCalls = allCalls.filter(
@@ -2287,8 +2294,9 @@ describe("runAgentWorkflow", () => {
       // expected to throw
     }
 
-    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
-      [{ eventType: string; summary: string }]
+    type EventCall = { eventType: string; summary: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
     >;
 
     const finalCalls = allCalls.filter(
@@ -2297,7 +2305,9 @@ describe("runAgentWorkflow", () => {
     // A final event must have been recorded even on failure (goalLedgerId was set)
     expect(finalCalls.length).toBeGreaterThanOrEqual(1);
 
-    const finalSummary = finalCalls[finalCalls.length - 1]?.[0].summary ?? "";
+    const lastFinalCall = finalCalls[finalCalls.length - 1];
+    const finalSummary =
+      lastFinalCall !== undefined ? lastFinalCall[0].summary : "";
     // The sanitized message does NOT contain the raw internal error keywords
     expect(finalSummary).not.toContain("GatewayInternalServerError");
     expect(finalSummary).not.toContain("no_providers_available");
@@ -2437,6 +2447,103 @@ describe("runAgentWorkflow", () => {
 
     const types = writtenChunks.map((c) => c.type);
     expect(types[types.length - 1]).toBe("finish");
+  });
+
+  // ── Regression tests: TASK-ISSUE-36 step history gap fix (13696abf) ──
+  // These tests catch future breakage: if started/progress events are dropped,
+  // the goal ledger returns to recording only the final event (the original bug).
+
+  test("regression: progress event payload includes both stepNumber and finishReason", async () => {
+    // If the payload structure changes (e.g. stepNumber dropped), ledger queries
+    // filtering by stepNumber would silently return no results.
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string; payload?: Record<string, unknown> };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
+    expect(progressCalls.length).toBeGreaterThanOrEqual(1);
+
+    for (const [input] of progressCalls) {
+      expect(typeof input.payload?.stepNumber).toBe("number");
+      expect(typeof input.payload?.finishReason).toBe("string");
+    }
+  });
+
+  test("regression: started event payload includes workflowRunId for traceability", async () => {
+    // The workflowRunId in the started event payload is what links the ledger
+    // entry back to the workflow run record. If dropped, the ledger event is
+    // untraceably orphaned.
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string; payload?: Record<string, unknown> };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
+    expect(startedCalls).toHaveLength(1);
+    const firstStartedCall = startedCalls[0];
+    expect(firstStartedCall).toBeDefined();
+    if (firstStartedCall !== undefined) {
+      expect(firstStartedCall[0].payload?.workflowRunId).toBe("wrun_test-123");
+    }
+  });
+
+  test("regression: workflow completes normally when a progress event throws (defensiveness preserved)", async () => {
+    // Simulate: progress event throws, but the final event must still be called
+    // (the progress error is caught by the best-effort wrapper in chat.ts).
+    let progressCallCount = 0;
+    // Cast through unknown to allow our implementation to accept an arg.
+    // The Bun mock type is `Mock<() => Promise<void>>` regardless of how many
+    // args the original spy had; we use unknown to work around that mismatch.
+    (
+      spies.recordGoalLedgerEvent as unknown as {
+        mockImplementation: (fn: (input: unknown) => Promise<void>) => void;
+      }
+    ).mockImplementation(async (input: unknown) => {
+      const typedInput = input as { eventType: string };
+      if (typedInput.eventType === "progress") {
+        progressCallCount++;
+        throw new Error("Simulated progress DB failure");
+      }
+      // Allow other event types (started, final) to succeed
+    });
+
+    // Must not throw even though progress events fail
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    // Stream finishes correctly
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
+
+    // The workflow still called progress (even though it threw)
+    expect(progressCallCount).toBeGreaterThanOrEqual(1);
+
+    // Restore spy
+    spies.recordGoalLedgerEvent.mockReset();
+    spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
+  });
+
+  test("regression: startGoalLedger runs before sandbox/model setup (source structure check)", async () => {
+    // This test reads chat.ts source to verify that startGoalLedger is called
+    // BEFORE the try block that contains resolveChatSandboxRuntime. If someone
+    // moves it back inside the try, setup failures won't create ledger entries.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    // The "started" event wiring block must appear before the sandbox runtime call.
+    const startedEventIdx = source.indexOf(`eventType: "started"`);
+    const sandboxRuntimeIdx = source.indexOf("resolveChatSandboxRuntime({");
+
+    expect(startedEventIdx).toBeGreaterThan(-1);
+    expect(sandboxRuntimeIdx).toBeGreaterThan(-1);
+    expect(startedEventIdx).toBeLessThan(sandboxRuntimeIdx);
   });
 
   test("still clears stream and sends finish even on step error", async () => {
