@@ -1,6 +1,7 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { getSandbox, shellEscape } from "./utils";
+import { classifyToolApproval } from "./approval-policy";
 
 const TIMEOUT_MS = 30_000;
 export const MAX_BODY_LENGTH = 10_000;
@@ -245,6 +246,10 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
+  needsApproval: (args) => {
+    const method = args.method ?? "GET";
+    return classifyToolApproval("webFetch", { method }).requires;
+  },
   description: `Fetch a URL from the web.
 
 USAGE:

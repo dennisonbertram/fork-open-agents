@@ -169,19 +169,21 @@ describe("tool-approvals DB module", () => {
   });
 });
 
-// BT-014: webFetchTool needsApproval — POST triggers approval, GET does not
-// These tests must run in a separate describe because they import a different module
-describe("webFetchTool needsApproval via policy", () => {
-  test("webFetchTool needsApproval is defined (wired via policy)", async () => {
-    mock.module("ai", () => ({
-      tool: <T extends Record<string, unknown>>(def: T) => def,
-    }));
-    mock.module("@open-agents/sandbox", () => ({
-      connectSandbox: async () => ({}),
-      tryConnectVercelSandboxDirect: async () => null,
-    }));
-    const { webFetchTool } =
-      await import("../../../../../../packages/agent/tools/fetch");
-    expect(webFetchTool.needsApproval).toBeDefined();
+// BT-014: classifyToolApproval is the source-of-truth for webFetch approval
+// Tests here verify the policy itself via direct import (no module-mock collisions)
+describe("webFetch policy via classifyToolApproval (BT-014)", () => {
+  test("classifyToolApproval webFetch POST returns requires:true", async () => {
+    const { classifyToolApproval } =
+      await import("../../../../packages/agent/tools/approval-policy");
+    const result = classifyToolApproval("webFetch", { method: "POST" });
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("external-write");
+  });
+
+  test("classifyToolApproval webFetch GET returns requires:false", async () => {
+    const { classifyToolApproval } =
+      await import("../../../../packages/agent/tools/approval-policy");
+    const result = classifyToolApproval("webFetch", { method: "GET" });
+    expect(result.requires).toBe(false);
   });
 });

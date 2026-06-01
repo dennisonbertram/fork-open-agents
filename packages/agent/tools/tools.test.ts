@@ -473,6 +473,41 @@ describe("tools execute behavior", () => {
     expect(allowedBuildCommand).toBe(false);
   });
 
+  test("webFetchTool needsApproval gates non-GET methods via policy", async () => {
+    const baseContext = {
+      sandbox: { workingDirectory: "/repo" },
+      model: "test-model",
+    };
+
+    const getResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "GET" as const },
+      baseContext,
+    );
+    expect(getResult).toBe(false);
+
+    const postResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "POST" as const },
+      baseContext,
+    );
+    expect(postResult).toBe(true);
+
+    const putResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "PUT" as const },
+      baseContext,
+    );
+    expect(putResult).toBe(true);
+
+    const headResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "HEAD" as const },
+      baseContext,
+    );
+    expect(headResult).toBe(false);
+  });
+
   afterEach(() => {
     sandboxRegistry.clear();
     mockToolLoopAgentStream = undefined;
