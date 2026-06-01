@@ -469,7 +469,7 @@ describe("FIX-3: server-side gate handles unknown redactionStatus + sourceLocati
 
     artifactsResult = [
       {
-        ...makeArtifact("art-unk", "pending" as "pending"),
+        ...makeArtifact("art-unk", "pending" as const),
         redactionStatus: unknownStatus,
         summary: rawSummary,
         sourceLocation: rawSourceLocation,

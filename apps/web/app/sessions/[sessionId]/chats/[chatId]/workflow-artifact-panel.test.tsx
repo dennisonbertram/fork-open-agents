@@ -364,9 +364,7 @@ describe("FIX-2: WorkflowArtifactsSection renders non-current statuses with dist
   test("BT-022: superseded artifact renders 'Superseded' label", () => {
     const html = renderToStaticMarkup(
       <WorkflowArtifactsSection
-        artifacts={[
-          passedArtifact({ id: "sup-1", status: "superseded" }),
-        ]}
+        artifacts={[passedArtifact({ id: "sup-1", status: "superseded" })]}
       />,
     );
 
@@ -379,9 +377,7 @@ describe("FIX-2: WorkflowArtifactsSection renders non-current statuses with dist
   test("BT-023: missing artifact renders 'Unavailable (missing)' label", () => {
     const html = renderToStaticMarkup(
       <WorkflowArtifactsSection
-        artifacts={[
-          passedArtifact({ id: "miss-1", status: "missing" }),
-        ]}
+        artifacts={[passedArtifact({ id: "miss-1", status: "missing" })]}
       />,
     );
 
@@ -393,9 +389,7 @@ describe("FIX-2: WorkflowArtifactsSection renders non-current statuses with dist
   test("BT-024: archived artifact renders 'Archived' label", () => {
     const html = renderToStaticMarkup(
       <WorkflowArtifactsSection
-        artifacts={[
-          passedArtifact({ id: "arch-1", status: "archived" }),
-        ]}
+        artifacts={[passedArtifact({ id: "arch-1", status: "archived" })]}
       />,
     );
 
@@ -407,9 +401,7 @@ describe("FIX-2: WorkflowArtifactsSection renders non-current statuses with dist
   test("BT-025: status=redacted artifact renders 'Redacted' label", () => {
     const html = renderToStaticMarkup(
       <WorkflowArtifactsSection
-        artifacts={[
-          passedArtifact({ id: "red-1", status: "redacted" }),
-        ]}
+        artifacts={[passedArtifact({ id: "red-1", status: "redacted" })]}
       />,
     );
 
