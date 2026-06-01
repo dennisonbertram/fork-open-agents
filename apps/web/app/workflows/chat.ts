@@ -294,13 +294,20 @@ async function recordResearchAndSpecArtifacts(ctx: {
 }): Promise<void> {
   "use step";
 
-  const { recordWorkflowArtifactBestEffort, buildArtifactInputs } =
-    await import("@/lib/workflows/artifact-generator");
+  try {
+    const { recordWorkflowArtifactBestEffort, buildArtifactInputs } =
+      await import("@/lib/workflows/artifact-generator");
 
-  const inputs = buildArtifactInputs(ctx);
-  await Promise.all(
-    inputs.map((input) => recordWorkflowArtifactBestEffort(input)),
-  );
+    const inputs = buildArtifactInputs(ctx);
+    await Promise.all(
+      inputs.map((input) => recordWorkflowArtifactBestEffort(input)),
+    );
+  } catch (err: unknown) {
+    console.error(
+      "[final-report] Failed to record research/spec artifacts (best-effort, ignoring):",
+      err,
+    );
+  }
 }
 
 async function recordReceiptAndFinalReportArtifacts(ctx: {
@@ -313,38 +320,56 @@ async function recordReceiptAndFinalReportArtifacts(ctx: {
 }): Promise<void> {
   "use step";
 
-  const { recordWorkflowArtifactBestEffort } =
-    await import("@/lib/workflows/artifact-generator");
-  const { buildReceiptInputs, buildFinalReportInputs } =
-    await import("@/lib/workflows/final-report");
-
-  // Determine hasRequiredEvidence: look up research_packet + spec artifacts for
-  // this run.  If the lookup fails for any reason, default to false (conservative:
-  // treat as missing evidence so we produce a "missing" final report rather than
-  // a potentially misleading "available" one).
-  let hasRequiredEvidence = false;
   try {
-    const { listArtifacts } = await import("@/lib/db/workflow-artifacts");
-    const existingArtifacts = await listArtifacts({
-      workflowRunId: ctx.workflowRunId,
+    const { recordWorkflowArtifactBestEffort } =
+      await import("@/lib/workflows/artifact-generator");
+    const { buildReceiptInputs, buildFinalReportInputs } =
+      await import("@/lib/workflows/final-report");
+
+    // Determine hasRequiredEvidence: look up research_packet + spec artifacts for
+    // this run.  If the lookup fails for any reason, default to false (conservative:
+    // treat as missing evidence so we produce a "missing" final report rather than
+    // a potentially misleading "available" one).
+    //
+    // Evidence rules:
+    //   1. BOTH research_packet AND spec must be present (AND gate, not OR).
+    //   2. Only artifacts with status === "available" count as evidence.
+    //      An expected/generating/failed artifact is not yet real evidence.
+    let hasRequiredEvidence = false;
+    try {
+      const { listArtifacts } = await import("@/lib/db/workflow-artifacts");
+      const existingArtifacts = await listArtifacts({
+        workflowRunId: ctx.workflowRunId,
+      });
+      const availableKinds = new Set(
+        existingArtifacts
+          .filter((a) => a.status === "available")
+          .map((a) => a.kind),
+      );
+      hasRequiredEvidence =
+        availableKinds.has("research_packet") && availableKinds.has("spec");
+    } catch (err: unknown) {
+      console.error(
+        "[chat] Failed to check evidence artifacts (best-effort, treating as missing):",
+        err,
+      );
+    }
+
+    const receiptInput = buildReceiptInputs(ctx);
+    const finalReportInput = buildFinalReportInputs(ctx, {
+      hasRequiredEvidence,
     });
-    hasRequiredEvidence = existingArtifacts.some(
-      (a) => a.kind === "research_packet" || a.kind === "spec",
-    );
+
+    await Promise.all([
+      recordWorkflowArtifactBestEffort(receiptInput),
+      recordWorkflowArtifactBestEffort(finalReportInput),
+    ]);
   } catch (err: unknown) {
     console.error(
-      "[chat] Failed to check evidence artifacts (best-effort, treating as missing):",
+      "[final-report] Failed to record receipt/final-report artifacts (best-effort, ignoring):",
       err,
     );
   }
-
-  const receiptInput = buildReceiptInputs(ctx);
-  const finalReportInput = buildFinalReportInputs(ctx, { hasRequiredEvidence });
-
-  await Promise.all([
-    recordWorkflowArtifactBestEffort(receiptInput),
-    recordWorkflowArtifactBestEffort(finalReportInput),
-  ]);
 }
 
 async function persistInputMessages(
