@@ -121,42 +121,40 @@ const spies = {
     updatedAt: new Date(),
   })),
   // Default: returns research_packet + spec artifacts (hasRequiredEvidence = true)
-  listArtifacts: mock(async (_filter: unknown) =>
-    Promise.resolve([
-      {
-        id: "artifact-research-id",
-        kind: "research_packet",
-        status: "available",
-        redactionStatus: "pending",
-        sourceLocation: null,
-        summary: null,
-        createdByActor: null,
-        workflowRunId: "wrun_test-123",
-        sessionId: "session-1",
-        chatId: "chat-1",
-        goalId: null,
-        gateId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-      {
-        id: "artifact-spec-id",
-        kind: "spec",
-        status: "available",
-        redactionStatus: "pending",
-        sourceLocation: null,
-        summary: null,
-        createdByActor: null,
-        workflowRunId: "wrun_test-123",
-        sessionId: "session-1",
-        chatId: "chat-1",
-        goalId: null,
-        gateId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
-    ]),
-  ),
+  listArtifacts: mock(async (_filter: unknown) => [
+    {
+      id: "artifact-research-id",
+      kind: "research_packet",
+      status: "available",
+      redactionStatus: "pending",
+      sourceLocation: null,
+      summary: null,
+      createdByActor: null,
+      workflowRunId: "wrun_test-123",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      goalId: null,
+      gateId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: "artifact-spec-id",
+      kind: "spec",
+      status: "available",
+      redactionStatus: "pending",
+      sourceLocation: null,
+      summary: null,
+      createdByActor: null,
+      workflowRunId: "wrun_test-123",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      goalId: null,
+      gateId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ]),
 };
 
 let testSessionRecord: {
@@ -2436,9 +2434,7 @@ describe("runAgentWorkflow", () => {
 
   test("creates final_build_report with status 'missing' when no research/spec artifacts exist for the run", async () => {
     // Override listArtifacts to return empty (no research_packet/spec)
-    spies.listArtifacts.mockImplementationOnce(async () =>
-      Promise.resolve([]),
-    );
+    spies.listArtifacts.mockImplementationOnce(async () => []);
 
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {

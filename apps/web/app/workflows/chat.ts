@@ -303,6 +303,50 @@ async function recordResearchAndSpecArtifacts(ctx: {
   );
 }
 
+async function recordReceiptAndFinalReportArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  workflowStatus: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  const { recordWorkflowArtifactBestEffort } =
+    await import("@/lib/workflows/artifact-generator");
+  const { buildReceiptInputs, buildFinalReportInputs } =
+    await import("@/lib/workflows/final-report");
+
+  // Determine hasRequiredEvidence: look up research_packet + spec artifacts for
+  // this run.  If the lookup fails for any reason, default to false (conservative:
+  // treat as missing evidence so we produce a "missing" final report rather than
+  // a potentially misleading "available" one).
+  let hasRequiredEvidence = false;
+  try {
+    const { listArtifacts } = await import("@/lib/db/workflow-artifacts");
+    const existingArtifacts = await listArtifacts({
+      workflowRunId: ctx.workflowRunId,
+    });
+    hasRequiredEvidence = existingArtifacts.some(
+      (a) => a.kind === "research_packet" || a.kind === "spec",
+    );
+  } catch (err: unknown) {
+    console.error(
+      "[chat] Failed to check evidence artifacts (best-effort, treating as missing):",
+      err,
+    );
+  }
+
+  const receiptInput = buildReceiptInputs(ctx);
+  const finalReportInput = buildFinalReportInputs(ctx, { hasRequiredEvidence });
+
+  await Promise.all([
+    recordWorkflowArtifactBestEffort(receiptInput),
+    recordWorkflowArtifactBestEffort(finalReportInput),
+  ]);
+}
+
 async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
@@ -1612,6 +1656,18 @@ export async function runAgentWorkflow(options: Options) {
         sessionId: options.sessionId,
         chatId: options.chatId,
         userId: options.userId,
+        objectiveText,
+      });
+
+      // Record receipt + final_build_report artifact refs.  Failures are
+      // swallowed by the defensive wrapper — a failed write must not crash
+      // the workflow.
+      await recordReceiptAndFinalReportArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        workflowStatus,
         objectiveText,
       });
     }
