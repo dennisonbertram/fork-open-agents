@@ -33,7 +33,12 @@ type FakePage = {
   fill: (selector: string, text: string) => Promise<void>;
   press: (selector: string, key: string) => Promise<void>;
   inputValue: (selector: string) => Promise<string>;
-  locator: (selector: string) => { first: () => { innerText: () => Promise<string>; screenshot: () => Promise<Buffer> } };
+  locator: (selector: string) => {
+    first: () => {
+      textContent: () => Promise<string | null>;
+      screenshot: () => Promise<Buffer>;
+    };
+  };
   getAttribute: (selector: string, attr: string) => Promise<string | null>;
   screenshot: (opts?: { fullPage?: boolean }) => Promise<Buffer>;
 };
@@ -49,7 +54,7 @@ function makeFakePage(overrides: Partial<FakePage> = {}): FakePage {
     inputValue: async () => "typed-value",
     locator: (_selector: string) => ({
       first: () => ({
-        innerText: async () => "  extracted text  ",
+        textContent: async () => "  extracted text  ",
         screenshot: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]), // minimal PNG header
       }),
     }),
@@ -82,9 +87,8 @@ const {
   browserScreenshotTool,
 } = await import("./browser");
 
-const { buildScreenshotPart, buildScreenshotStreamChunk } = await import(
-  "./browser-image-part"
-);
+const { buildScreenshotPart, buildScreenshotStreamChunk } =
+  await import("./browser-image-part");
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -135,7 +139,9 @@ describe("browserNavigateTool", () => {
 
   test("BT-001b: execute returns { success: false, error } on failure — never throws", async () => {
     currentFakePage = makeFakePage({
-      goto: async () => { throw new Error("net::ERR_CONNECTION_REFUSED"); },
+      goto: async () => {
+        throw new Error("net::ERR_CONNECTION_REFUSED");
+      },
     });
 
     const result = await browserNavigateTool().execute?.(
@@ -157,7 +163,10 @@ describe("browserNavigateTool", () => {
     let result: boolean;
     if (typeof needsApproval === "function") {
       result = await Promise.resolve(
-        needsApproval({ url: "https://example.com/" }, executionOptions(makeContext())),
+        needsApproval(
+          { url: "https://example.com/" },
+          executionOptions(makeContext()),
+        ),
       );
     } else {
       result = needsApproval ?? false;
@@ -169,7 +178,9 @@ describe("browserNavigateTool", () => {
     const tool = browserNavigateTool();
     expect(tool.inputSchema).toBeDefined();
     // The schema should be a Zod schema that rejects missing url
-    const parsed = (tool.inputSchema as { safeParse: (v: unknown) => { success: boolean } }).safeParse({});
+    const parsed = (
+      tool.inputSchema as { safeParse: (v: unknown) => { success: boolean } }
+    ).safeParse({});
     expect(parsed.success).toBe(false);
   });
 });
@@ -199,7 +210,9 @@ describe("browserClickTool", () => {
 
   test("BT-002b: execute returns { success: false } when element not found", async () => {
     currentFakePage = makeFakePage({
-      click: async () => { throw new Error("Timeout: waiting for selector"); },
+      click: async () => {
+        throw new Error("Timeout: waiting for selector");
+      },
     });
 
     const result = await browserClickTool().execute?.(
@@ -253,7 +266,9 @@ describe("browserTypeTool", () => {
   test("BT-003b: execute with submit:true marks submitted as true", async () => {
     let pressedKey: string | undefined;
     currentFakePage = makeFakePage({
-      press: async (_selector: string, key: string) => { pressedKey = key; },
+      press: async (_selector: string, key: string) => {
+        pressedKey = key;
+      },
       inputValue: async () => "submitted-value",
     });
 
@@ -271,7 +286,9 @@ describe("browserTypeTool", () => {
 
   test("BT-003c: execute returns { success: false } on fill failure", async () => {
     currentFakePage = makeFakePage({
-      fill: async () => { throw new Error("Element is not visible"); },
+      fill: async () => {
+        throw new Error("Element is not visible");
+      },
     });
 
     const result = await browserTypeTool().execute?.(
@@ -288,7 +305,10 @@ describe("browserTypeTool", () => {
     let result: boolean;
     if (typeof needsApproval === "function") {
       result = await Promise.resolve(
-        needsApproval({ selector: "input", text: "data" }, executionOptions(makeContext())),
+        needsApproval(
+          { selector: "input", text: "data" },
+          executionOptions(makeContext()),
+        ),
       );
     } else {
       result = needsApproval ?? false;
@@ -305,7 +325,7 @@ describe("browserExtractTool", () => {
     currentFakePage = makeFakePage({
       locator: (_selector: string) => ({
         first: () => ({
-          innerText: async () => "  Hello World  ",
+          textContent: async () => "  Hello World  ",
           screenshot: async () => Buffer.from([]),
         }),
       }),
@@ -360,7 +380,9 @@ describe("browserExtractTool", () => {
     currentFakePage = makeFakePage({
       locator: () => ({
         first: () => ({
-          innerText: async () => { throw new Error("Page detached"); },
+          textContent: async () => {
+            throw new Error("Page detached");
+          },
           screenshot: async () => Buffer.from([]),
         }),
       }),
@@ -405,7 +427,9 @@ describe("browserScreenshotTool", () => {
 
     const chunks: unknown[] = [];
     const fakeWriter = {
-      write: (chunk: unknown) => { chunks.push(chunk); },
+      write: (chunk: unknown) => {
+        chunks.push(chunk);
+      },
     };
 
     const ctx = makeContext({ writer: fakeWriter });
@@ -437,7 +461,9 @@ describe("browserScreenshotTool", () => {
 
   test("BT-005d: execute returns { success: false } on screenshot error", async () => {
     currentFakePage = makeFakePage({
-      screenshot: async () => { throw new Error("Target page crashed"); },
+      screenshot: async () => {
+        throw new Error("Target page crashed");
+      },
     });
 
     const result = await browserScreenshotTool().execute?.(
@@ -467,7 +493,7 @@ describe("browserScreenshotTool", () => {
     currentFakePage = makeFakePage({
       locator: (_selector: string) => ({
         first: () => ({
-          innerText: async () => "",
+          textContent: async () => "",
           screenshot: async () => elementPng,
         }),
       }),
@@ -510,7 +536,9 @@ describe("buildScreenshotPart and buildScreenshotStreamChunk", () => {
     const part = buildScreenshotPart({ bytes: pngBytes });
 
     // This is the exact predicate in shared-chat-content.tsx line 466
-    expect(part.type === "file" && part.mediaType?.startsWith("image/")).toBe(true);
+    expect(part.type === "file" && part.mediaType?.startsWith("image/")).toBe(
+      true,
+    );
   });
 
   test("BT-006c: buildScreenshotStreamChunk produces chunk without filename, with correct shape", () => {
@@ -529,15 +557,18 @@ describe("buildScreenshotPart and buildScreenshotStreamChunk", () => {
 const { classifyToolApproval } = await import("./approval-policy");
 
 describe("classifyToolApproval — browser tools", () => {
-
   test("BT-007a: browser_navigate requires approval (conservative outward-facing gate)", () => {
-    const decision = classifyToolApproval("browser_navigate", { url: "https://example.com" });
+    const decision = classifyToolApproval("browser_navigate", {
+      url: "https://example.com",
+    });
     expect(decision.requires).toBe(true);
     expect(decision.category).toBe("browser-navigation");
   });
 
   test("BT-007b: browser_click requires approval", () => {
-    const decision = classifyToolApproval("browser_click", { selector: "button" });
+    const decision = classifyToolApproval("browser_click", {
+      selector: "button",
+    });
     expect(decision.requires).toBe(true);
     expect(decision.category).toBe("browser-navigation");
   });

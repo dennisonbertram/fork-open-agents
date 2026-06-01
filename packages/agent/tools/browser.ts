@@ -25,7 +25,10 @@
 import { tool } from "ai";
 import { z } from "zod";
 import { classifyToolApproval } from "./approval-policy";
-import { buildScreenshotPart, buildScreenshotStreamChunk } from "./browser-image-part";
+import {
+  buildScreenshotPart,
+  buildScreenshotStreamChunk,
+} from "./browser-image-part";
 import { getBrowserSession } from "./browser-session";
 
 // ---------------------------------------------------------------------------
@@ -40,7 +43,10 @@ type BrowserToolContext = {
 };
 
 function getBrowserContext(experimental_context: unknown): BrowserToolContext {
-  if (experimental_context !== null && typeof experimental_context === "object") {
+  if (
+    experimental_context !== null &&
+    typeof experimental_context === "object"
+  ) {
     return experimental_context as BrowserToolContext;
   }
   return {};
@@ -55,7 +61,9 @@ function messageOf(error: unknown): string {
 // ---------------------------------------------------------------------------
 
 const navigateInputSchema = z.object({
-  url: z.string().describe("Absolute URL to navigate to (e.g., https://example.com)"),
+  url: z
+    .string()
+    .describe("Absolute URL to navigate to (e.g., https://example.com)"),
   waitUntil: z
     .enum(["load", "domcontentloaded", "networkidle", "commit"])
     .optional()
@@ -97,8 +105,13 @@ USAGE:
 const clickInputSchema = z.object({
   selector: z
     .string()
-    .describe("CSS selector or Playwright text selector (e.g., 'button#id', 'text=Sign in')."),
-  timeoutMs: z.number().optional().describe("Max wait for the element in ms. Default: 5000"),
+    .describe(
+      "CSS selector or Playwright text selector (e.g., 'button#id', 'text=Sign in').",
+    ),
+  timeoutMs: z
+    .number()
+    .optional()
+    .describe("Max wait for the element in ms. Default: 5000"),
 });
 
 export const browserClickTool = () =>
@@ -112,7 +125,10 @@ USAGE:
     needsApproval: (_args: z.infer<typeof clickInputSchema>) => {
       return classifyToolApproval("browser_click", _args).requires;
     },
-    execute: async ({ selector, timeoutMs = 5000 }, { experimental_context }) => {
+    execute: async (
+      { selector, timeoutMs = 5000 },
+      { experimental_context },
+    ) => {
       try {
         const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
@@ -134,7 +150,9 @@ USAGE:
 // ---------------------------------------------------------------------------
 
 const typeInputSchema = z.object({
-  selector: z.string().describe("CSS selector for the input/textarea to type into."),
+  selector: z
+    .string()
+    .describe("CSS selector for the input/textarea to type into."),
   text: z.string().describe("Text to type into the element."),
   submit: z
     .boolean()
@@ -152,7 +170,10 @@ USAGE:
     needsApproval: (_args: z.infer<typeof typeInputSchema>) => {
       return classifyToolApproval("browser_type", _args).requires;
     },
-    execute: async ({ selector, text, submit = false }, { experimental_context }) => {
+    execute: async (
+      { selector, text, submit = false },
+      { experimental_context },
+    ) => {
       try {
         const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
@@ -176,7 +197,9 @@ const extractInputSchema = z.object({
   selector: z
     .string()
     .optional()
-    .describe("CSS selector to extract text from. Omit to extract the full body."),
+    .describe(
+      "CSS selector to extract text from. Omit to extract the full body.",
+    ),
   attribute: z
     .string()
     .optional()
@@ -203,8 +226,12 @@ USAGE:
           const value = await page.getAttribute(target, attribute);
           return { success: true, selector: target, attribute, value };
         }
-        const text = await page.locator(target).first().innerText();
-        return { success: true, selector: target, text: text.trim() };
+        const rawText = await page.locator(target).first().textContent();
+        return {
+          success: true,
+          selector: target,
+          text: (rawText ?? "").trim(),
+        };
       } catch (error) {
         return { success: false, error: messageOf(error) };
       }

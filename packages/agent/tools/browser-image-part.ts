@@ -30,7 +30,10 @@ export type FileStreamChunk = {
   mediaType: string;
 };
 
-export function toDataUrl(bytes: Buffer | Uint8Array, mediaType: string): string {
+export function toDataUrl(
+  bytes: Buffer | Uint8Array,
+  mediaType: string,
+): string {
   const base64 = Buffer.from(bytes).toString("base64");
   return `data:${mediaType};base64,${base64}`;
 }

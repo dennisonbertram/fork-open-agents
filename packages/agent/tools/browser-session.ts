@@ -23,7 +23,10 @@ export type BrowserContext = {
 
 export type BrowserSession = {
   page: {
-    goto: (url: string, opts?: { waitUntil?: string }) => Promise<{ status: () => number } | null>;
+    goto: (
+      url: string,
+      opts?: { waitUntil?: string },
+    ) => Promise<{ status: () => number } | null>;
     url: () => string;
     title: () => Promise<string>;
     click: (selector: string, opts?: { timeout?: number }) => Promise<void>;
@@ -32,11 +35,14 @@ export type BrowserSession = {
     inputValue: (selector: string) => Promise<string | null>;
     locator: (selector: string) => {
       first: () => {
-        innerText: () => Promise<string>;
+        textContent: () => Promise<string | null>;
         screenshot: () => Promise<Buffer>;
       };
     };
-    getAttribute: (selector: string, attribute: string) => Promise<string | null>;
+    getAttribute: (
+      selector: string,
+      attribute: string,
+    ) => Promise<string | null>;
     screenshot: (opts?: { fullPage?: boolean }) => Promise<Buffer>;
   };
 };
@@ -75,7 +81,9 @@ export async function getBrowserSession(
   return promise;
 }
 
-export async function closeBrowserSession(context: BrowserContext = {}): Promise<void> {
+export async function closeBrowserSession(
+  context: BrowserContext = {},
+): Promise<void> {
   const cacheKey = context.sessionId ?? "_default";
   const promise = sessionCache.get(cacheKey);
   if (!promise) return;

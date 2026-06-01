@@ -1749,7 +1749,11 @@ const runAgentStep = async (
     const stepAgentOptions = {
       ...baseStepAgentOptions,
       writer: {
-        write: async (chunk: { type: "file"; url: string; mediaType: string }) => {
+        write: async (chunk: {
+          type: "file";
+          url: string;
+          mediaType: string;
+        }) => {
           const w = writable.getWriter();
           try {
             await w.write(chunk as UIMessageChunk);
