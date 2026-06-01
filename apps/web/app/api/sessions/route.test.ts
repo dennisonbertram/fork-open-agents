@@ -24,6 +24,8 @@ let matchingProjectsError: Error | null = null;
 const createCalls: Array<Record<string, unknown>> = [];
 const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
+const provisioningKickCalls: string[] = [];
+let kickShouldThrow = false;
 let composioPolicy = { allowed: true, reason: null as string | null };
 
 mock.module("@/lib/session/get-server-session", () => ({
@@ -96,6 +98,16 @@ mock.module("@/lib/db/composio", () => ({
 
 mock.module("@/lib/vercel/token", () => ({
   getUserVercelToken: async () => currentVercelToken,
+}));
+
+mock.module("@/lib/sandbox/provisioning-kick", () => ({
+  kickSandboxProvisioningWorkflow: async (sessionId: string) => {
+    provisioningKickCalls.push(sessionId);
+    if (kickShouldThrow) {
+      throw new Error("provisioning kick failed");
+    }
+    return { status: "started", runId: `provision-${sessionId}` };
+  },
 }));
 
 mock.module("@/lib/vercel/projects", () => ({
@@ -178,7 +190,49 @@ describe("/api/sessions POST vercel project linking", () => {
     createCalls.length = 0;
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
+    provisioningKickCalls.length = 0;
+    kickShouldThrow = false;
     composioPolicy = { allowed: true, reason: null };
+  });
+
+  test("kicks sandbox provisioning for the newly created session", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(provisioningKickCalls).toEqual([String(body.session.id)]);
+  });
+
+  test("a failing provisioning kick does not block session creation", async () => {
+    kickShouldThrow = true;
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.session.id).toBeDefined();
+    expect(provisioningKickCalls).toHaveLength(1);
   });
 
   test("explicit Vercel project is validated against live repo matches before it is persisted", async () => {
