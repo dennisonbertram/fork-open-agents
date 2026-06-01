@@ -1059,7 +1059,6 @@ export const workflowToolApprovals = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("workflow_tool_approvals_approval_id_idx").on(table.approvalId),
     index("workflow_tool_approvals_session_created_idx").on(
       table.sessionId,
       table.createdAt,

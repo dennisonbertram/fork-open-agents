@@ -1,0 +1,1 @@
+DROP INDEX "workflow_tool_approvals_approval_id_idx";

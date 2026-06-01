@@ -344,6 +344,13 @@
       "when": 1780308085359,
       "tag": "0048_strange_pestilence",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1780309422052,
+      "tag": "0049_daffy_sinister_six",
+      "breakpoints": true
     }
   ]
 }

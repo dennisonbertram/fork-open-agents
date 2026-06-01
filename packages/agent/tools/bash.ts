@@ -2,7 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
 import { getSandbox } from "./utils";
-import { bashPolicy } from "./approval-policy";
+import { bashPolicy, classifyToolApproval } from "./approval-policy";
 
 const TIMEOUT_MS = 120_000;
 
@@ -31,11 +31,13 @@ interface ToolOptions {
 
 /**
  * Check if a command should require approval.
- * Thin wrapper delegating to bashPolicy (behavior-preserving).
+ * Thin wrapper delegating to bashPolicy ONLY (backward-compat export).
  * Returns true for dangerous rm/find/shred and dotenv file patterns.
- * Note: git force-push detection is handled by the full classifyToolApproval
- * policy used for new tool wiring, but is excluded here to preserve backward
- * compatibility with existing callers of commandNeedsApproval.
+ *
+ * NOTE: This function is intentionally bashPolicy-only. It does NOT include
+ * gitPushPolicy. For full policy enforcement (including git force-push / reset
+ * --hard / clean -fd), use bashTool().needsApproval or
+ * classifyToolApproval("bash", { command }) instead.
  */
 export function commandNeedsApproval(command: string): boolean {
   return bashPolicy(command).requires;
@@ -44,7 +46,14 @@ export function commandNeedsApproval(command: string): boolean {
 export const bashTool = (options?: ToolOptions) =>
   tool({
     needsApproval: async (args) => {
-      if (commandNeedsApproval(args.command)) {
+      // Route through the full policy classifier so gitPushPolicy fires first,
+      // then bashPolicy. This ensures destructive git ops (force-push, reset
+      // --hard, clean -fd) are gated at runtime, not just in the policy engine.
+      const decision = classifyToolApproval("bash", {
+        command: args.command,
+      });
+
+      if (decision.requires) {
         if (typeof options?.needsApproval === "function") {
           return options.needsApproval(args);
         }
