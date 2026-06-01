@@ -19,7 +19,6 @@ import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
 import { createHook, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
-import { createRunControl } from "@/lib/db/workflow-run-controls";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
@@ -1003,6 +1002,38 @@ async function sendDataPart(
   }
 }
 
+/**
+ * Step-isolated helper that persists the run-control row for a workflow run.
+ *
+ * The DB insert MUST run inside a `'use step'` boundary so that:
+ * 1. The durable workflow runtime can replay the step idempotently on retry
+ *    (the same workflowRunId always resolves to the same DB row).
+ * 2. Node I/O is isolated from the non-deterministic workflow body as required
+ *    by the sandbox/replay contract.
+ *
+ * `createHook` is intentionally kept in the workflow body (not here), because
+ * it registers an in-memory event listener — it is not a DB write and must run
+ * each time the workflow body executes.
+ */
+async function setupRunControl(params: {
+  workflowRunId: string;
+  chatId: string;
+  sessionId: string;
+  userId: string;
+  hookToken: string;
+}): Promise<void> {
+  "use step";
+  const { createRunControl } = await import("@/lib/db/workflow-run-controls");
+  await createRunControl({
+    workflowRunId: params.workflowRunId,
+    chatId: params.chatId,
+    sessionId: params.sessionId,
+    userId: params.userId,
+    hookToken: params.hookToken,
+    idempotencyKey: `init:${params.workflowRunId}`,
+  });
+}
+
 export async function runAgentWorkflow(options: Options) {
   "use workflow";
 
@@ -1066,24 +1097,36 @@ export async function runAgentWorkflow(options: Options) {
   }
 
   // ── Run-control setup (best-effort — must NOT crash the workflow) ──────────
-  // Set up the generic pause/resume hook seam and persist the control row so
-  // the control route can issue pause/resume/cancel commands for this run.
-  // Uses a deterministic hook token derived from the runId so the control route
-  // can call resumeHook without storing additional state.
+  // Register the pause/resume hook listener (must stay in the workflow body —
+  // this is an in-memory registration, not a DB write).
+  // The DB write is deferred to setupRunControl (a 'use step' helper) so that
+  // the durable runtime can replay it idempotently without violating the
+  // no-IO-in-workflow-body contract.
   const pauseHookToken = `pause:${workflowRunId}`;
+  createHook<{ command: "resume" }>({ token: pauseHookToken });
   try {
-    createHook<{ command: "resume" }>({ token: pauseHookToken });
-    await createRunControl({
+    await setupRunControl({
       workflowRunId,
       chatId: options.chatId,
       sessionId: options.sessionId,
       userId: options.userId,
       hookToken: pauseHookToken,
-      idempotencyKey: `init:${workflowRunId}`,
     });
-  } catch {
-    // Best-effort: if control setup fails, the workflow continues unsteered.
-    // Existing freeform behavior is unaffected.
+  } catch (err) {
+    // Best-effort: if control row persist fails, the workflow continues unsteered.
+    // The failure is logged so it is observable; we never rethrow here because a
+    // control-setup failure must not break the run (backward-compat).
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        service: "workflow-steering",
+        action: "workflow-control-setup-failed",
+        workflowRunId,
+        chatId: options.chatId,
+        userId: options.userId,
+        error: String(err),
+      }),
+    );
   }
   // ── End run-control setup ──────────────────────────────────────────────────
 

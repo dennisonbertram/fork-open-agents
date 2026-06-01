@@ -14,7 +14,9 @@ type RouteContext = {
 
 const controlBodySchema = z.object({
   command: z.enum(["pause", "resume", "cancel"]),
-  idempotencyKey: z.string().min(1),
+  // max(128): idempotencyKey is indexed and logged; cap it to prevent
+  // unbounded input from reaching the DB index or log payloads.
+  idempotencyKey: z.string().min(1).max(128),
 });
 
 function errorStatusCode(errorKind: RunControlErrorKind): number {

@@ -1250,7 +1250,9 @@ export const workflowRunControls = pgTable(
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
-    index("workflow_run_controls_run_id_idx").on(table.workflowRunId),
+    // One row per run: enforced at the DB level.
+    // NOT a FK to workflowRuns — see comment above on workflowRunId.
+    uniqueIndex("workflow_run_controls_run_id_unique").on(table.workflowRunId),
     index("workflow_run_controls_user_id_idx").on(table.userId),
     uniqueIndex("workflow_run_controls_run_idempotency_idx").on(
       table.workflowRunId,

@@ -344,6 +344,13 @@
       "when": 1780334448432,
       "tag": "0048_dapper_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1780336599377,
+      "tag": "0049_late_fallen_one",
+      "breakpoints": true
     }
   ]
 }

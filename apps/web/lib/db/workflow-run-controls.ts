@@ -1,6 +1,6 @@
 import "server-only";
 import { nanoid } from "nanoid";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "./client";
 import { workflowRunControls } from "./schema";
 
@@ -26,7 +26,9 @@ export type CreateRunControlInput = {
 
 /**
  * Insert one control row at run-start. Uses onConflictDoNothing on the
- * (workflowRunId, idempotencyKey) unique index for idempotency.
+ * workflow_run_id unique index for idempotency (one row per run).
+ * Re-execution/replay is safe: the same workflowRunId always produces the
+ * same insert and the conflict is silently ignored.
  */
 export async function createRunControl(
   input: CreateRunControlInput,
@@ -48,10 +50,9 @@ export async function createRunControl(
       appliedAt: null,
     })
     .onConflictDoNothing({
-      target: [
-        workflowRunControls.workflowRunId,
-        workflowRunControls.idempotencyKey,
-      ],
+      // Target the single-column unique index on workflow_run_id so that
+      // re-execution during replay does not insert a second row.
+      target: workflowRunControls.workflowRunId,
     })
     .returning();
 
@@ -79,15 +80,36 @@ export type UpdateRunControlStatusInput = {
   commandedBy?: string | null;
   commandedAt?: Date | null;
   appliedAt?: Date | null;
+  /**
+   * Compare-and-set guard. When provided, the UPDATE only takes effect if the
+   * row's current status matches this value. Returns null (0 rows updated) if
+   * the guard fails — a concurrent transition already won the race.
+   */
+  expectedFromStatus?: RunControlRow["status"];
 };
 
 /**
- * In-place UPDATE of the control row status and related fields.
+ * CAS UPDATE of the control row status and related fields.
+ *
+ * When `expectedFromStatus` is provided the UPDATE includes a
+ * `WHERE status = :expectedFromStatus` guard, making the operation a
+ * compare-and-set. Returns null when 0 rows were updated (guard failed).
+ * Callers MUST treat a null return as a concurrent-update race loss and
+ * re-read the row to produce the correct result (conflict / illegal-transition
+ * / idempotent no-op).
  */
 export async function updateRunControlStatus(
   workflowRunId: string,
   updates: UpdateRunControlStatusInput,
 ): Promise<RunControlRow | null> {
+  const whereClause =
+    updates.expectedFromStatus !== undefined
+      ? and(
+          eq(workflowRunControls.workflowRunId, workflowRunId),
+          eq(workflowRunControls.status, updates.expectedFromStatus),
+        )
+      : eq(workflowRunControls.workflowRunId, workflowRunId);
+
   const rows = await db
     .update(workflowRunControls)
     .set({
@@ -108,7 +130,7 @@ export async function updateRunControlStatus(
         updates.appliedAt !== undefined ? updates.appliedAt : undefined,
       updatedAt: new Date(),
     })
-    .where(eq(workflowRunControls.workflowRunId, workflowRunId))
+    .where(whereClause)
     .returning();
 
   return rows[0] ?? null;

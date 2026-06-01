@@ -32,7 +32,7 @@ type FakeControlRow = {
   updatedAt: Date;
 };
 
-let fakeDb: Map<string, FakeControlRow> = new Map();
+let fakeDb = new Map<string, FakeControlRow>();
 let dbShouldThrow = false;
 let updateConditionalHonored = true; // When true, CAS update checks expectedFrom status
 let sdkCancelShouldThrow = false;
@@ -65,7 +65,10 @@ mock.module("../db/workflow-run-controls", () => ({
     // current status matches. This simulates DB-level CAS behavior.
     if (updates.expectedFromStatus !== undefined) {
       conditionalUpdateCallCount++;
-      if (updateConditionalHonored && row.status !== updates.expectedFromStatus) {
+      if (
+        updateConditionalHonored &&
+        row.status !== updates.expectedFromStatus
+      ) {
         // CAS failed — no rows updated
         return null;
       }
@@ -104,18 +107,12 @@ mock.module("../db/workflow-run-controls", () => ({
     fakeDb.set(typedInput.workflowRunId, row);
     return row;
   },
-  WorkflowRunControlError: class WorkflowRunControlError extends Error {
-    code: string;
-    constructor(message: string, code: string) {
-      super(message);
-      this.name = "WorkflowRunControlError";
-      this.code = code;
-    }
-  },
+  // Stub: not exercised in these tests; included for module shape completeness.
+  WorkflowRunControlError: Error,
 }));
 
 mock.module("workflow/api", () => ({
-  getRun: (runId: string) => ({
+  getRun: (_runId: string) => ({
     cancel: async () => {
       if (sdkCancelShouldThrow) {
         throw new Error("SDK cancel failed: network timeout");
@@ -141,7 +138,7 @@ mock.module("workflow/api", () => ({
 function makeRow(
   overrides: Partial<FakeControlRow> & { workflowRunId: string },
 ): FakeControlRow {
-  return {
+  const defaults: FakeControlRow = {
     workflowRunId: overrides.workflowRunId,
     chatId: "chat-1",
     sessionId: "session-1",
@@ -155,8 +152,8 @@ function makeRow(
     appliedAt: null,
     createdAt: new Date("2026-01-01T00:00:00Z"),
     updatedAt: new Date("2026-01-01T00:00:00Z"),
-    ...overrides,
   };
+  return { ...defaults, ...overrides };
 }
 
 // Import AFTER mocks are set up
@@ -222,7 +219,11 @@ describe("FIX 2: CAS transition prevents TOCTOU lost-update", () => {
     // Row is already 'pausing' (first command won the race)
     fakeDb.set(
       "run-cas-2",
-      makeRow({ workflowRunId: "run-cas-2", status: "pausing", idempotencyKey: "idem-pause-A" }),
+      makeRow({
+        workflowRunId: "run-cas-2",
+        status: "pausing",
+        idempotencyKey: "idem-pause-A",
+      }),
     );
 
     // Second command: tries to transition from 'running' (stale read) but row is now 'pausing'
@@ -239,8 +240,10 @@ describe("FIX 2: CAS transition prevents TOCTOU lost-update", () => {
     expect(result.ok).toBe(false);
     // pausing state with different key → conflict
     expect(
-      (result as { ok: false; error: string }).error === "run_control_conflict" ||
-      (result as { ok: false; error: string }).error === "run_control_illegal_transition",
+      (result as { ok: false; error: string }).error ===
+        "run_control_conflict" ||
+        (result as { ok: false; error: string }).error ===
+          "run_control_illegal_transition",
     ).toBe(true);
   });
 
@@ -387,7 +390,7 @@ describe("FIX 3: SDK failure → ok:false + row reverted", () => {
 describe("FIX 4: Schema enforces one-row-per-run", () => {
   test("schema.ts has UNIQUE index on workflow_run_id (not just run+idempotency composite)", async () => {
     const schemaSource = await Bun.file(
-      new URL("../../db/schema.ts", import.meta.url),
+      new URL("../db/schema.ts", import.meta.url),
     ).text();
 
     // Must have a uniqueIndex on workflowRunId alone (not just the composite)
@@ -396,13 +399,15 @@ describe("FIX 4: Schema enforces one-row-per-run", () => {
     //   - uniqueIndex("...").on(table.workflowRunId)  [single-column unique]
     const hasUniqueRunId =
       // Option A: workflowRunId is the primary key
-      schemaSource.includes('workflowRunId: text("workflow_run_id").primaryKey()') ||
+      schemaSource.includes(
+        'workflowRunId: text("workflow_run_id").primaryKey()',
+      ) ||
       schemaSource.includes('text("workflow_run_id").primaryKey()') ||
       // Option B: explicit uniqueIndex on workflow_run_id alone
-      (schemaSource.includes("workflow_run_controls_run_id_unique") ||
-        schemaSource.match(
-          /uniqueIndex\(["'][^"']+["']\)\.on\(table\.workflowRunId\)(?!\s*,)/,
-        ) !== null);
+      schemaSource.includes("workflow_run_controls_run_id_unique") ||
+      schemaSource.match(
+        /uniqueIndex\(["'][^"']+["']\)\.on\(table\.workflowRunId\)(?!\s*,)/,
+      ) !== null;
 
     expect(hasUniqueRunId).toBe(true);
   });
@@ -425,23 +430,43 @@ describe("FIX 4: Schema enforces one-row-per-run", () => {
 
     expect(createRunControlCalls.length).toBe(1);
 
-    // Second insert for same runId — must not throw
-    await expect(
-      createRunControl({
+    // Second insert for same runId — must not throw (idempotent)
+    let secondInsertError: unknown = null;
+    try {
+      await createRunControl({
         workflowRunId: "run-idm-1",
         chatId: "chat-1",
         sessionId: "session-1",
         userId: "user-1",
         hookToken: "pause:run-idm-1",
         idempotencyKey: "init:run-idm-1",
-      }),
-    ).resolves.not.toThrow();
+      });
+    } catch (err) {
+      secondInsertError = err;
+    }
+    expect(secondInsertError).toBeNull();
   });
 });
 
 // ===========================================================================
 // FIX 5: 404 vs 500 in requireOwnedWorkflowRunByRunId
 // ===========================================================================
+
+// Shared stub for WorkflowRunControlError used in mock.module callbacks below.
+// Declared as a function (not class expression) to avoid max-classes-per-file lint.
+function makeWorkflowRunControlErrorStub() {
+  function WorkflowRunControlErrorStub(
+    this: { name: string; code: string; message: string },
+    message: string,
+    code: string,
+  ) {
+    this.name = "WorkflowRunControlError";
+    this.message = message;
+    this.code = code;
+  }
+  WorkflowRunControlErrorStub.prototype = Object.create(Error.prototype);
+  return WorkflowRunControlErrorStub;
+}
 
 describe("FIX 5: 404-vs-500 distinction in ownership check", () => {
   test("requireOwnedWorkflowRunByRunId returns 404 when run not found (no row)", async () => {
@@ -450,19 +475,11 @@ describe("FIX 5: 404-vs-500 distinction in ownership check", () => {
       getRunControl: async () => null,
       updateRunControlStatus: async () => null,
       createRunControl: async () => null,
-      WorkflowRunControlError: class WorkflowRunControlError extends Error {
-        code: string;
-        constructor(message: string, code: string) {
-          super(message);
-          this.name = "WorkflowRunControlError";
-          this.code = code;
-        }
-      },
+      WorkflowRunControlError: makeWorkflowRunControlErrorStub(),
     }));
 
-    const { requireOwnedWorkflowRunByRunId } = await import(
-      "../../app/api/chat/_lib/chat-context"
-    );
+    const { requireOwnedWorkflowRunByRunId } =
+      await import("../../app/api/chat/_lib/chat-context");
 
     const result = await requireOwnedWorkflowRunByRunId({
       userId: "user-1",
@@ -483,19 +500,11 @@ describe("FIX 5: 404-vs-500 distinction in ownership check", () => {
       },
       updateRunControlStatus: async () => null,
       createRunControl: async () => null,
-      WorkflowRunControlError: class WorkflowRunControlError extends Error {
-        code: string;
-        constructor(message: string, code: string) {
-          super(message);
-          this.name = "WorkflowRunControlError";
-          this.code = code;
-        }
-      },
+      WorkflowRunControlError: makeWorkflowRunControlErrorStub(),
     }));
 
-    const { requireOwnedWorkflowRunByRunId } = await import(
-      "../../app/api/chat/_lib/chat-context"
-    );
+    const { requireOwnedWorkflowRunByRunId } =
+      await import("../../app/api/chat/_lib/chat-context");
 
     const result = await requireOwnedWorkflowRunByRunId({
       userId: "user-1",
@@ -549,8 +558,9 @@ describe("FIX 1: setupRunControl is invoked as a step-isolated helper", () => {
       // AND that there's a function with "use step" that calls createRunControl
       (() => {
         // Find the setupRunControl-style function
+        // Use [\s\S] instead of . with s-flag to match across newlines (ES2018+)
         const stepFnMatch = chatSource.match(
-          /async function \w+\([^)]*\)[^{]*\{[^}]*"use step"[^}]*createRunControl/s,
+          /async function \w+\([\s\S]*?\)[\s\S]*?\{[\s\S]*?"use step"[\s\S]*?createRunControl/,
         );
         return stepFnMatch !== null;
       })();
@@ -567,9 +577,7 @@ describe("FIX 1: setupRunControl is invoked as a step-isolated helper", () => {
     // createHook in the same try block in the workflow body.
     // The workflow body should call a step helper instead.
     // We check: the try block containing createHook does NOT also contain createRunControl
-    const workflowBody = chatSource.slice(
-      chatSource.indexOf('"use workflow"'),
-    );
+    const workflowBody = chatSource.slice(chatSource.indexOf('"use workflow"'));
 
     // Find the createHook usage in the workflow body
     const hookIdx = workflowBody.indexOf("createHook");
@@ -593,9 +601,7 @@ describe("FIX 1: setupRunControl is invoked as a step-isolated helper", () => {
 
     // The catch block around the control setup must contain a console.warn or console.error
     // (not be empty). We look for the catch that follows the setupRunControl call.
-    const workflowBody = chatSource.slice(
-      chatSource.indexOf('"use workflow"'),
-    );
+    const workflowBody = chatSource.slice(chatSource.indexOf('"use workflow"'));
 
     // Find the catch near the run-control section (after createHook line)
     const hookIdx = workflowBody.indexOf("createHook");
@@ -604,7 +610,9 @@ describe("FIX 1: setupRunControl is invoked as a step-isolated helper", () => {
     const catchBlock = afterHook.slice(catchIdx, catchIdx + 300);
 
     // The catch block must NOT be empty (must log the failure)
-    const isEmptyCatch = catchBlock.match(/\}\s*catch\s*(\([^)]*\))?\s*\{\s*\}/);
+    const isEmptyCatch = catchBlock.match(
+      /\}\s*catch\s*(\([^)]*\))?\s*\{\s*\}/,
+    );
     expect(isEmptyCatch).toBeNull();
   });
 });
