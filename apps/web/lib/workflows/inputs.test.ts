@@ -293,6 +293,131 @@ describe("parseWorkflowInputSchema", () => {
     expect(field.default).toBe(42);
   });
 
+  test("field defaults must match the declared field kind", () => {
+    const invalidDefaults = [
+      {
+        field: {
+          key: "bad-number",
+          label: "Bad Number",
+          kind: "number",
+          required: false,
+          default: "42",
+        },
+        expectedMessage: "default is not a number",
+      },
+      {
+        field: {
+          key: "bad-boolean",
+          label: "Bad Boolean",
+          kind: "boolean",
+          required: false,
+          default: "false",
+        },
+        expectedMessage: "default is not a boolean",
+      },
+      {
+        field: {
+          key: "bad-string",
+          label: "Bad String",
+          kind: "string",
+          required: false,
+          default: 42,
+        },
+        expectedMessage: "default is not a string",
+      },
+      {
+        field: {
+          key: "bad-secret",
+          label: "Bad Secret",
+          kind: "secret",
+          required: false,
+          default: true,
+        },
+        expectedMessage: "default is not a string",
+      },
+      {
+        field: {
+          key: "bad-enum-type",
+          label: "Bad Enum Type",
+          kind: "enum",
+          required: false,
+          allowedValues: ["small", "large"],
+          default: 1,
+        },
+        expectedMessage: "default is not a string",
+      },
+      {
+        field: {
+          key: "bad-enum-value",
+          label: "Bad Enum Value",
+          kind: "enum",
+          required: false,
+          allowedValues: ["small", "large"],
+          default: "medium",
+        },
+        expectedMessage: "default is not one of its allowedValues",
+      },
+    ];
+
+    for (const { field, expectedMessage } of invalidDefaults) {
+      const result = parseWorkflowInputSchema({ fields: [field] });
+
+      expect(result.success).toBe(false);
+      if (result.success) continue;
+
+      expect(result.error.kind).toBe("input_schema_invalid");
+      expect(result.error.message).toContain(field.key);
+      expect(result.error.message).toContain(expectedMessage);
+    }
+  });
+
+  test("enum field with default in allowedValues is valid", () => {
+    const result = parseWorkflowInputSchema({
+      fields: [
+        {
+          key: "size",
+          label: "Size",
+          kind: "enum",
+          required: false,
+          allowedValues: ["small", "large"],
+          default: "small",
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.data.fields[0]?.default).toBe("small");
+  });
+
+  test("non-enum fields reject allowedValues", () => {
+    const nonEnumKinds = ["string", "number", "boolean", "secret"] as const;
+
+    for (const kind of nonEnumKinds) {
+      const result = parseWorkflowInputSchema({
+        fields: [
+          {
+            key: `${kind}-with-choices`,
+            label: `${kind} with choices`,
+            kind,
+            required: false,
+            allowedValues: ["one", "two"],
+          },
+        ],
+      });
+
+      expect(result.success).toBe(false);
+      if (result.success) continue;
+
+      expect(result.error.kind).toBe("input_schema_invalid");
+      expect(result.error.message).toContain(`${kind}-with-choices`);
+      expect(result.error.message).toContain(
+        "allowedValues is only supported for enum fields",
+      );
+    }
+  });
+
   // ── Never-throws: parseWorkflowInputSchema must not throw on garbage input ───
 
   test("parseWorkflowInputSchema does not throw on null input", () => {

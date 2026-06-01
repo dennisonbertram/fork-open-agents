@@ -180,6 +180,24 @@ function normalizeAndValidateField(raw: RawWorkflowInputField): FieldResult {
     };
   }
 
+  if (validKind !== "enum" && raw.allowedValues !== undefined) {
+    return {
+      ok: false,
+      error: {
+        kind: "input_schema_invalid",
+        message: `Field "${key}" has kind "${validKind}" but allowedValues is only supported for enum fields.`,
+      },
+    };
+  }
+
+  const defaultError = validateFieldDefault(raw, validKind);
+  if (defaultError) {
+    return {
+      ok: false,
+      error: defaultError,
+    };
+  }
+
   // Normalize sensitive: secret → true, all others → false (unless explicitly true)
   const normalizedSensitive =
     validKind === "secret" ? true : (sensitive ?? false);
@@ -201,6 +219,57 @@ function normalizeAndValidateField(raw: RawWorkflowInputField): FieldResult {
         : {}),
     },
   };
+}
+
+function validateFieldDefault(
+  raw: RawWorkflowInputField,
+  validKind: WorkflowFieldKind,
+): WorkflowInputSchemaError | undefined {
+  if (raw.default === undefined) {
+    return;
+  }
+
+  const { default: defaultValue, key } = raw;
+
+  if (validKind === "number" && typeof defaultValue !== "number") {
+    return {
+      kind: "input_schema_invalid",
+      message: `Field "${key}" has kind "number" but default is not a number.`,
+    };
+  }
+
+  if (validKind === "boolean" && typeof defaultValue !== "boolean") {
+    return {
+      kind: "input_schema_invalid",
+      message: `Field "${key}" has kind "boolean" but default is not a boolean.`,
+    };
+  }
+
+  if (
+    (validKind === "string" || validKind === "secret") &&
+    typeof defaultValue !== "string"
+  ) {
+    return {
+      kind: "input_schema_invalid",
+      message: `Field "${key}" has kind "${validKind}" but default is not a string.`,
+    };
+  }
+
+  if (validKind === "enum") {
+    if (typeof defaultValue !== "string") {
+      return {
+        kind: "input_schema_invalid",
+        message: `Field "${key}" has kind "enum" but default is not a string.`,
+      };
+    }
+
+    if (!raw.allowedValues?.includes(defaultValue)) {
+      return {
+        kind: "input_schema_invalid",
+        message: `Field "${key}" has kind "enum" but default is not one of its allowedValues.`,
+      };
+    }
+  }
 }
 
 // ── Canonical public function ─────────────────────────────────────────────────
