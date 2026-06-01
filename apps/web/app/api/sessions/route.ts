@@ -19,6 +19,7 @@ import {
   parseGitHubHttpsUrl,
 } from "@/lib/github/urls";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
+import { kickSandboxProvisioningWorkflow } from "@/lib/sandbox/provisioning-kick";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
 import {
@@ -405,6 +406,16 @@ export async function POST(req: Request) {
               : null,
         },
       },
+    });
+
+    // Start sandbox provisioning immediately so the workspace is warming by
+    // the time the user sends their first message. Non-blocking: a failed kick
+    // must never block session creation (the chat path re-kicks on demand).
+    await kickSandboxProvisioningWorkflow(result.session.id).catch((error) => {
+      console.error(
+        `Failed to kick sandbox provisioning for session ${result.session.id}:`,
+        error,
+      );
     });
 
     return Response.json(result);

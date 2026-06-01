@@ -49,7 +49,12 @@ mock.module("@open-agents/sandbox", () => ({
       currentBranch: "main",
       environmentDetails: "env-details",
       getState: () => activeSandboxState,
-      exec: async () => ({ success: true, exitCode: 0, stdout: "", stderr: "" }),
+      exec: async () => ({
+        success: true,
+        exitCode: 0,
+        stdout: "",
+        stderr: "",
+      }),
     };
   },
 }));
@@ -139,7 +144,11 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
 
 // These are only used by the legacy inline-provision path; stub for safety.
 mock.module("@/lib/github/access", () => ({
-  verifyRepoAccess: async () => ({ ok: true, installationId: 1, repositoryId: 2 }),
+  verifyRepoAccess: async () => ({
+    ok: true,
+    installationId: 1,
+    repositoryId: 2,
+  }),
   getRepoAccessErrorMessage: () => "no access",
 }));
 mock.module("@/lib/github/app", () => ({

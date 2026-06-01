@@ -68,14 +68,16 @@ describe("sandbox provisioning lease helpers", () => {
 
     expect([a, b].filter(Boolean)).toHaveLength(1);
     // A subsequent claim while the lease is held is a no-op.
-    expect(await claimSessionSandboxProvisioningRunId("session-1", "run-C")).toBe(
-      false,
-    );
+    expect(
+      await claimSessionSandboxProvisioningRunId("session-1", "run-C"),
+    ).toBe(false);
   });
 
   test("clearIfOwned releases a held lease and is a no-op when unowned", async () => {
-    const { claimSessionSandboxProvisioningRunId, clearSessionSandboxProvisioningRunIdIfOwned } =
-      await modulePromise;
+    const {
+      claimSessionSandboxProvisioningRunId,
+      clearSessionSandboxProvisioningRunIdIfOwned,
+    } = await modulePromise;
 
     await claimSessionSandboxProvisioningRunId("session-1", "run-A");
     expect(

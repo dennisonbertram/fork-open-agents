@@ -12,7 +12,11 @@ type FakeSession = {
   branch: string | null;
   prNumber: number | null;
   isNewBranch: boolean;
-  sandboxState: { type: "vercel"; sandboxId?: string; sandboxName?: string } | null;
+  sandboxState: {
+    type: "vercel";
+    sandboxId?: string;
+    sandboxName?: string;
+  } | null;
   lifecycleVersion: number;
   globalSkillRefs: string[];
 };
@@ -29,7 +33,11 @@ const fakeSandbox = {
   workingDirectory: "/workspace",
   currentBranch: "main",
   environmentDetails: "env",
-  getState: () => ({ type: "vercel", sandboxId: "sbx-1", sandboxName: "sandbox-1" }),
+  getState: () => ({
+    type: "vercel" as const,
+    sandboxId: "sbx-1",
+    sandboxName: "sandbox-1",
+  }),
   stop: async () => {
     stopCalls.push("stop");
   },
@@ -40,19 +48,34 @@ mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async () => fakeSandbox,
 }));
 
-mock.module("@/lib/db/sessions", () => ({
-  getSessionById: async () => sessionRecord,
-  updateSessionIfNotArchived: async () => updateIfNotArchivedResult,
-}));
-
+// Mock the db client so the real sessions helpers (getSessionById,
+// updateSessionIfNotArchived) run against an in-memory fake.
 mock.module("@/lib/db/client", () => ({
   db: {
+    query: {
+      sessions: {
+        findFirst: async () => sessionRecord,
+      },
+    },
     select: () => ({
       from: () => ({
         where: () => ({
           limit: async () => [
-            { id: "user-1", username: "nico", name: "Nico", email: "nico@example.com" },
+            {
+              id: "user-1",
+              username: "nico",
+              name: "Nico",
+              email: "nico@example.com",
+            },
           ],
+        }),
+      }),
+    }),
+    update: () => ({
+      set: () => ({
+        where: () => ({
+          returning: async () =>
+            updateIfNotArchivedResult ? [updateIfNotArchivedResult] : [],
         }),
       }),
     }),
@@ -83,7 +106,10 @@ mock.module("@/lib/github/users", () => ({
 }));
 
 mock.module("@/lib/sandbox/lifecycle-kick", () => ({
-  kickSandboxLifecycleWorkflow: (input: { sessionId: string; reason: string }) => {
+  kickSandboxLifecycleWorkflow: (input: {
+    sessionId: string;
+    reason: string;
+  }) => {
     lifecycleKickCalls.push(input);
   },
 }));
@@ -116,7 +142,10 @@ function baseSession(): FakeSession {
 describe("provisionSessionSandbox", () => {
   beforeEach(() => {
     sessionRecord = baseSession();
-    updateIfNotArchivedResult = { ...baseSession(), sandboxState: fakeSandbox.getState() };
+    updateIfNotArchivedResult = {
+      ...baseSession(),
+      sandboxState: fakeSandbox.getState(),
+    };
     stopCalls.length = 0;
     lifecycleKickCalls.length = 0;
     installSkillsCalls.length = 0;
@@ -128,7 +157,10 @@ describe("provisionSessionSandbox", () => {
 
     const result = await provisionSessionSandbox({ sessionId: "session-1" });
 
-    expect(result.sandboxState).toMatchObject({ type: "vercel", sandboxId: "sbx-1" });
+    expect(result.sandboxState).toMatchObject({
+      type: "vercel",
+      sandboxId: "sbx-1",
+    });
     expect(result.didSetupWorkspace).toBe(true);
     expect(lifecycleKickCalls).toEqual([
       { sessionId: "session-1", reason: "sandbox-created" },

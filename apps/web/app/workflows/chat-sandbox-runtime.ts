@@ -11,17 +11,7 @@ import {
 import type { UIMessageChunk } from "ai";
 import { getWritable } from "workflow";
 import type { WebAgentWorkspaceStatusData } from "@/app/types";
-import { getSessionById, updateSession } from "@/lib/db/sessions";
-import {
-  verifyRepoAccess,
-  getRepoAccessErrorMessage,
-} from "@/lib/github/access";
-import {
-  mintInstallationToken,
-  revokeInstallationToken,
-  type ScopedInstallationToken,
-} from "@/lib/github/app";
-import { getGitHubUserProfile } from "@/lib/github/users";
+import { getSessionById } from "@/lib/db/sessions";
 import { emitSessionEvent } from "@/lib/observability/events";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import {
@@ -32,23 +22,15 @@ import {
   startManagedRuntimeProfileRun,
 } from "@/lib/observability/managed-runtime-profile-runs";
 import {
-  buildActiveLifecycleUpdate,
-  getNextLifecycleVersion,
-} from "@/lib/sandbox/lifecycle";
-import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
-import {
-  DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-  DEFAULT_SANDBOX_PORTS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
-  DEFAULT_SANDBOX_VCPUS,
-} from "@/lib/sandbox/config";
+  kickSandboxProvisioningWorkflow,
+  waitForSandboxProvisioningRun,
+} from "@/lib/sandbox/provisioning-kick";
 import {
   getResumableSandboxName,
   getSessionSandboxName,
   isSandboxActive,
 } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
-import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
 import { WorkspaceStartupReporter } from "./workspace-startup-log";
 
@@ -121,44 +103,44 @@ function buildSandboxState(session: SessionRecord): SandboxState {
   };
 }
 
-async function getGitUser(userId: string) {
-  const profile = await getGitHubUserProfile(userId);
-  const githubNoreplyEmail =
-    profile?.externalUserId && profile.username
-      ? `${profile.externalUserId}+${profile.username}@users.noreply.github.com`
-      : undefined;
-
-  return {
-    name: profile?.username ?? "Open Harness",
-    email: githubNoreplyEmail ?? `${userId}@users.noreply.github.com`,
-  };
-}
-
-async function installSessionGlobalSkills(params: {
-  session: SessionRecord;
-  sandbox: Sandbox;
-  didSetupWorkspace: boolean;
-}): Promise<void> {
-  if (!params.didSetupWorkspace) {
-    return;
+/**
+ * Ensures the session's sandbox is provisioned and active before the chat
+ * turn reconnects to it. Provisioning now runs in a durable workflow kicked
+ * at session-create time; on the first chat turn we kick (idempotently) and
+ * await the in-flight run rather than provisioning inline.
+ */
+async function getReadySessionSandbox(params: {
+  sessionId: string;
+  userId: string;
+}): Promise<{ session: SessionRecord; didSetupWorkspace: boolean }> {
+  let session = await getSessionById(params.sessionId);
+  if (!session) {
+    throw new Error("Session not found");
+  }
+  if (session.userId !== params.userId) {
+    throw new Error("Unauthorized");
+  }
+  if (session.status === "archived") {
+    throw new Error("Session is archived");
+  }
+  if (isSandboxActive(session.sandboxState)) {
+    return { session, didSetupWorkspace: false };
   }
 
-  const globalSkillRefs = params.session.globalSkillRefs ?? [];
-  if (globalSkillRefs.length === 0) {
-    return;
+  const kick = await kickSandboxProvisioningWorkflow(params.sessionId);
+  if (kick.runId) {
+    await waitForSandboxProvisioningRun(kick.runId);
   }
 
-  try {
-    await installGlobalSkills({
-      sandbox: params.sandbox,
-      globalSkillRefs,
-    });
-  } catch (error) {
-    console.error(
-      `Failed to install global skills for session ${params.session.id}:`,
-      error,
-    );
+  session = await getSessionById(params.sessionId);
+  if (!session) {
+    throw new Error("Session not found");
   }
+  if (!isSandboxActive(session.sandboxState)) {
+    throw new Error(session.lifecycleError ?? "Workspace setup failed");
+  }
+
+  return { session, didSetupWorkspace: true };
 }
 
 async function loadSessionSkills(params: {
@@ -662,135 +644,60 @@ export async function resolveChatSandboxRuntime(params: {
 
   await sendStart(params.assistantId);
 
-  const session = await getSessionById(params.sessionId);
-  if (!session) {
+  const initialSession = await getSessionById(params.sessionId);
+  if (!initialSession) {
     throw new Error("Session not found");
   }
-  if (session.userId !== params.userId) {
+  if (initialSession.userId !== params.userId) {
     throw new Error("Unauthorized");
   }
-  if (session.status === "archived") {
+  if (initialSession.status === "archived") {
     throw new Error("Session is archived");
   }
 
-  const didSetupWorkspace = !isSandboxActive(session.sandboxState);
+  const didSetupWorkspace = !isSandboxActive(initialSession.sandboxState);
   const startupReporter = new WorkspaceStartupReporter(
-    session.runtimeMode === "managed_runtime"
+    initialSession.runtimeMode === "managed_runtime"
       ? "Preparing sandbox and managed runtime"
       : "Preparing sandbox workspace",
     sendWorkspaceStatus,
   );
-  const sandboxInputState = buildSandboxState(session);
   if (didSetupWorkspace) {
+    const sandboxInputState = buildSandboxState(initialSession);
     await startupReporter.send("Setting up the workspace...", [
-      `Session: ${session.id}`,
+      `Session: ${initialSession.id}`,
       `Sandbox name: ${sandboxInputState.sandboxName ?? "ephemeral"}`,
-      session.repoOwner && session.repoName
-        ? `Repository: ${session.repoOwner}/${session.repoName}`
+      initialSession.repoOwner && initialSession.repoName
+        ? `Repository: ${initialSession.repoOwner}/${initialSession.repoName}`
         : "Repository: empty workspace",
-      session.branch ? `Branch: ${session.branch}` : "Branch: default",
+      initialSession.branch
+        ? `Branch: ${initialSession.branch}`
+        : "Branch: default",
     ]);
   }
 
-  const gitUser = await getGitUser(params.userId);
-  let setupToken: ScopedInstallationToken | undefined;
+  // Provisioning (sandbox boot, repo clone, token mint/revoke, global skill
+  // install, and the create-time lifecycle kick) now runs in the durable
+  // sandboxProvisioningWorkflow that is started at session-create time. Here
+  // we await the in-flight run (kicking it on demand as a fallback) and then
+  // bare-reconnect to the ready sandbox instead of provisioning inline.
+  const { session } = await getReadySessionSandbox({
+    sessionId: params.sessionId,
+    userId: params.userId,
+  });
 
-  if (session.cloneUrl) {
-    if (!session.repoOwner || !session.repoName) {
-      throw new Error("Session is missing repository metadata");
-    }
-
-    const access = await verifyRepoAccess({
-      userId: params.userId,
-      owner: session.repoOwner,
-      repo: session.repoName,
-    });
-    if (!access.ok) {
-      throw new Error(getRepoAccessErrorMessage(access.reason));
-    }
-    if (didSetupWorkspace) {
-      await startupReporter.send("Repository access verified.", [
-        `GitHub installation: ${access.installationId}`,
-        `Repository id: ${access.repositoryId}`,
-      ]);
-    }
-
-    setupToken = await mintInstallationToken({
-      installationId: access.installationId,
-      repositoryIds: [access.repositoryId],
-      permissions: { contents: "read" },
-    });
+  const sandboxState = session.sandboxState;
+  if (!sandboxState) {
+    throw new Error("Workspace setup failed");
   }
 
-  let sandbox: Sandbox;
-  try {
-    if (didSetupWorkspace) {
-      await startupReporter.send("Starting the sandbox...", [
-        DEFAULT_SANDBOX_BASE_SNAPSHOT_ID
-          ? `Base snapshot: ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID}`
-          : "Base snapshot: default runtime",
-        `Ports: ${DEFAULT_SANDBOX_PORTS.join(", ")}`,
-        `vCPUs: ${DEFAULT_SANDBOX_VCPUS}`,
-      ]);
-    }
-    sandbox = await connectSandbox({
-      state: sandboxInputState,
-      options: {
-        githubToken: setupToken?.token,
-        gitUser,
-        timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-        vcpus: DEFAULT_SANDBOX_VCPUS,
-        ports: DEFAULT_SANDBOX_PORTS,
-        baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: true,
-        resume: true,
-        createIfMissing: true,
-      },
-    });
-  } finally {
-    if (setupToken) {
-      await revokeInstallationToken(setupToken.token);
-    }
-  }
-
-  const rawSandboxState = sandbox.getState?.();
-  const sandboxState = isSandboxState(rawSandboxState)
-    ? rawSandboxState
-    : sandboxInputState;
+  const sandbox = await connectSandbox(sandboxState);
 
   if (didSetupWorkspace) {
     await startupReporter.send("Sandbox is ready.", [
       `Sandbox session: ${sandboxState.sandboxName ?? sandboxState.sandboxId ?? "unknown"}`,
       `Working directory: ${sandbox.workingDirectory}`,
       sandbox.currentBranch ? `Current branch: ${sandbox.currentBranch}` : "",
-    ]);
-    const globalSkillRefs = session.globalSkillRefs ?? [];
-    if (globalSkillRefs.length > 0) {
-      await startupReporter.send("Installing session skills...", [
-        `Global skills: ${globalSkillRefs.join(", ")}`,
-      ]);
-    }
-  }
-
-  await Promise.all([
-    updateSession(params.sessionId, {
-      sandboxState,
-      snapshotUrl: null,
-      snapshotCreatedAt: null,
-      lifecycleVersion: getNextLifecycleVersion(session.lifecycleVersion),
-      ...buildActiveLifecycleUpdate(sandboxState),
-    }),
-    installSessionGlobalSkills({
-      session,
-      sandbox,
-      didSetupWorkspace,
-    }),
-  ]);
-
-  if (didSetupWorkspace) {
-    await startupReporter.send("Workspace setup finished.", [
-      "Session sandbox state saved.",
-      "Workspace skills cache refreshed.",
     ]);
   }
 
@@ -817,10 +724,9 @@ export async function resolveChatSandboxRuntime(params: {
       : { notes: [] };
   const managedRuntimeNotes = managedRuntimeEnvironment.notes;
 
-  kickSandboxLifecycleWorkflow({
-    sessionId: params.sessionId,
-    reason: "sandbox-created",
-  });
+  // The create-time lifecycle kick is owned by provisionSessionSandbox. Do not
+  // re-fire kickSandboxLifecycleWorkflow here, or it would double-fire for the
+  // same provisioning run.
 
   const skills = await loadSessionSkills({
     sessionId: params.sessionId,

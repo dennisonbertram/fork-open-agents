@@ -115,6 +115,10 @@ export async function getSessionById(sessionId: string) {
   return session ? normalizeSessionRecord(session) : session;
 }
 
+export type SessionRecord = NonNullable<
+  Awaited<ReturnType<typeof getSessionById>>
+>;
+
 export async function getShareById(shareId: string) {
   return db.query.shares.findFirst({
     where: eq(shares.id, shareId),
@@ -328,6 +332,77 @@ export async function claimSessionLifecycleRunId(
     .update(sessions)
     .set({ lifecycleRunId: runId, updatedAt: new Date() })
     .where(and(eq(sessions.id, sessionId), isNull(sessions.lifecycleRunId)))
+    .returning({ id: sessions.id });
+
+  return Boolean(updated);
+}
+
+/**
+ * Updates a session only when it has not been archived. Returns the updated
+ * row, or `undefined` when the session was archived (no row matched) so the
+ * caller can detect an archive race and clean up.
+ */
+export async function updateSessionIfNotArchived(
+  sessionId: string,
+  data: Partial<Omit<NewSession, "id" | "userId" | "createdAt">>,
+) {
+  const [session] = await db
+    .update(sessions)
+    .set({ ...data, updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        ne(sessions.status, "archived"),
+        or(
+          isNull(sessions.lifecycleState),
+          ne(sessions.lifecycleState, "archived"),
+        ),
+      ),
+    )
+    .returning();
+
+  return session ? normalizeSessionRecord(session) : session;
+}
+
+/**
+ * Atomically claims the sandbox provisioning lease when no run is currently
+ * recorded. Returns true when the claim succeeds (first-claim-wins).
+ */
+export async function claimSessionSandboxProvisioningRunId(
+  sessionId: string,
+  runId: string,
+) {
+  const [updated] = await db
+    .update(sessions)
+    .set({ sandboxProvisioningRunId: runId, updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        isNull(sessions.sandboxProvisioningRunId),
+      ),
+    )
+    .returning({ id: sessions.id });
+
+  return Boolean(updated);
+}
+
+/**
+ * Clears the sandbox provisioning lease only when the given run still owns it.
+ * Returns true when a row was cleared.
+ */
+export async function clearSessionSandboxProvisioningRunIdIfOwned(
+  sessionId: string,
+  runId: string,
+) {
+  const [updated] = await db
+    .update(sessions)
+    .set({ sandboxProvisioningRunId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        eq(sessions.sandboxProvisioningRunId, runId),
+      ),
+    )
     .returning({ id: sessions.id });
 
   return Boolean(updated);

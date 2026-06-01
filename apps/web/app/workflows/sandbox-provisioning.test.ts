@@ -21,8 +21,7 @@ mock.module("workflow", () => ({
 
 // Atomic first-claim-wins semantics, mirroring the DB conditional update.
 const sessionsModule = {
-  getSessionById: async () =>
-    sessionRecord ? { ...sessionRecord } : null,
+  getSessionById: async () => (sessionRecord ? { ...sessionRecord } : null),
   claimSessionSandboxProvisioningRunId: async (
     sessionId: string,
     runId: string,
@@ -51,10 +50,7 @@ const sessionsModule = {
     }
     return false;
   },
-  updateSession: async (
-    sessionId: string,
-    patch: Record<string, unknown>,
-  ) => {
+  updateSession: async (sessionId: string, patch: Record<string, unknown>) => {
     if (patch.lifecycleState === "failed") {
       failedUpdates.push({
         sessionId,
@@ -70,7 +66,7 @@ mock.module("@/lib/db/sessions", () => sessionsModule);
 class FakeArchivedError extends Error {
   constructor(sessionId: string) {
     super(`Session ${sessionId} was archived`);
-    this.name = "SessionArchivedDuringProvisioningError";
+    this.name = "FakeArchivedError";
   }
 }
 
@@ -143,7 +139,10 @@ describe("sandboxProvisioningWorkflow", () => {
     sessionRecord = null;
 
     const result = await sandboxProvisioningWorkflow("session-1");
-    expect(result).toMatchObject({ skipped: true, reason: "session-not-found" });
+    expect(result).toMatchObject({
+      skipped: true,
+      reason: "session-not-found",
+    });
     expect(provisionCalls).toHaveLength(0);
   });
 });

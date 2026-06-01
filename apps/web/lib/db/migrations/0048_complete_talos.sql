@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "sandbox_provisioning_run_id" text;
