@@ -104,6 +104,9 @@ const spies = {
   ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
+  recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
+  recordGoalLedgerEvent: mock(() => Promise.resolve()),
+  recordGoalLedgerClose: mock(() => Promise.resolve()),
 };
 
 let testSessionRecord: {
@@ -406,6 +409,12 @@ mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
   listManagedBrowserRuns: spies.listManagedBrowserRuns,
 }));
 
+mock.module("@/lib/workflows/goal-ledger-recorder", () => ({
+  recordGoalLedgerStart: spies.recordGoalLedgerStart,
+  recordGoalLedgerEvent: spies.recordGoalLedgerEvent,
+  recordGoalLedgerClose: spies.recordGoalLedgerClose,
+}));
+
 const { runAgentWorkflow } = await import("./chat");
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -521,6 +530,10 @@ beforeEach(() => {
     enabledModelIds: [],
   };
   Object.values(spies).forEach((s) => s.mockClear());
+  // Reset recorder spies to their default successful implementations.
+  spies.recordGoalLedgerStart.mockResolvedValue("goal-test-abc123");
+  spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
+  spies.recordGoalLedgerClose.mockResolvedValue(undefined);
 });
 
 describe("runAgentWorkflow", () => {
@@ -2117,5 +2130,120 @@ describe("runAgentWorkflow", () => {
 
     // The finally block should still fire
     expect(spies.clearActiveStream).toHaveBeenCalled();
+  });
+
+  // ── Goal ledger recorder lifecycle tests ───────────────────────────
+
+  test("calls recordGoalLedgerStart with correct fields on a successful run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.recordGoalLedgerStart).toHaveBeenCalledTimes(1);
+    expect(spies.recordGoalLedgerStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        workflowRunId: "wrun_test-123",
+        objective: expect.any(String),
+      }),
+    );
+  });
+
+  test("objective is derived from the last user message text", async () => {
+    const options = makeOptions({
+      messages: [
+        {
+          id: "user-1",
+          role: "user" as const,
+          parts: [
+            { type: "text", text: "Please help me refactor the auth module" },
+          ],
+        },
+      ],
+    });
+
+    await runAgentWorkflow(options);
+
+    const startCall = spies.recordGoalLedgerStart.mock.calls[0]?.[0] as {
+      objective?: string;
+    };
+    expect(startCall?.objective).toContain("refactor the auth module");
+  });
+
+  test("calls recordGoalLedgerClose with terminal status 'complete' on a successful run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledTimes(1);
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goalId: "goal-test-abc123",
+        terminalStatus: "complete",
+      }),
+    );
+  });
+
+  test("calls recordGoalLedgerClose with terminal status 'failed' when maxSteps exhausted", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalStatus: "failed",
+      }),
+    );
+  });
+
+  test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
+    // Simulate abort by making runStatus return "aborted" during the step
+    let stepCount = 0;
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      async (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return createResolvedChatSandboxRuntime();
+      },
+    );
+    runStatus = "aborted";
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalStatus: "canceled",
+      }),
+    );
+
+    // Restore
+    stepCount = 0;
+    void stepCount;
+    runStatus = "running";
+  });
+
+  test("runAgentWorkflow completes normally even when recordGoalLedgerStart rejects", async () => {
+    // Defensive regression: recorder failure must never crash chat
+    spies.recordGoalLedgerStart.mockRejectedValueOnce(
+      new Error("DB connection failed"),
+    );
+
+    // The workflow should still complete without throwing
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    // Core workflow behavior is unchanged: the stream finishes
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
+    expect(spies.persistAssistantMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test("runAgentWorkflow completes normally even when recordGoalLedgerClose rejects", async () => {
+    // Defensive regression: close failure must not crash chat
+    spies.recordGoalLedgerClose.mockRejectedValueOnce(
+      new Error("DB write failed"),
+    );
+
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
   });
 });
