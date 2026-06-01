@@ -249,7 +249,7 @@ describe("WorkflowPickerItems", () => {
     expect(html).toContain("Workflow is currently disabled");
   });
 
-  test("disabled item carries the aria-disabled or disabled marker", async () => {
+  test("disabled item carries the HTML disabled attribute on the button", async () => {
     const { WorkflowPickerItems } = await componentModulePromise;
 
     const html = renderToStaticMarkup(
@@ -260,8 +260,10 @@ describe("WorkflowPickerItems", () => {
       />,
     );
 
-    // The disabled workflow's button must be marked disabled
-    expect(html).toContain("disabled");
+    // The disabled workflow's button must have the HTML boolean disabled attribute.
+    // React renders disabled={true} as disabled="" in static markup.
+    // Checking for disabled="" is precise: it won't match aria-disabled="true".
+    expect(html).toContain('disabled=""');
   });
 
   test("enabled item does NOT have a disabledReason rendered", async () => {
@@ -406,9 +408,12 @@ describe("WorkflowPickerCompact regression", () => {
       />,
     );
 
-    // The button for the disabled workflow must have disabled attribute.
-    // This FAILS if someone removes disabled={!workflow.available} from the button.
-    expect(html).toContain("disabled");
+    // The button for the disabled workflow must have the HTML boolean disabled attribute.
+    // React renders disabled={true} as disabled="" in static markup.
+    // Using disabled="" (not just "disabled") so the assertion won't pass on
+    // aria-disabled="true" alone — this FAILS if someone removes
+    // disabled={!workflow.available} from the button.
+    expect(html).toContain('disabled=""');
     expect(html).toContain("Deploy to Production");
   });
 
