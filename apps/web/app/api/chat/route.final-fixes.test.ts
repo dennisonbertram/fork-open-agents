@@ -9,7 +9,15 @@
  * Written BEFORE implementation — all tests in this file must fail initially.
  * Run with: bun test apps/web/app/api/chat/route.final-fixes.test.ts
  */
-import { afterAll, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import {
+  afterAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -212,7 +220,9 @@ mock.module("@/lib/workflows/run-start", () => ({
     }
     return { success: true as const, snapshotId: "snap-001" };
   },
-  WorkflowInputSnapshotError: class WorkflowInputSnapshotError extends Error {},
+  WorkflowInputSnapshotError: class WorkflowInputSnapshotError extends Error {
+    override name = "WorkflowInputSnapshotError";
+  },
 }));
 
 // Lazy-import after all mocks
@@ -243,7 +253,13 @@ function createWorkflowRequest() {
       workflowId: "wf-test",
       workflowSchema: {
         fields: [
-          { key: "name", label: "Name", kind: "string", required: true, sensitive: false },
+          {
+            key: "name",
+            label: "Name",
+            kind: "string",
+            required: true,
+            sensitive: false,
+          },
         ],
       },
       inputValues: { name: "Alice" },
@@ -318,14 +334,14 @@ describe("Fix A: persist-failure observability — branch on returned result (no
       // Find the persist-failure warning call
       const warnCalls = warnSpy.mock.calls as unknown[][];
       const persistWarnCall = warnCalls.find(
-        (args) =>
-          typeof args[0] === "string" &&
-          args[0].includes("persist"),
+        (args) => typeof args[0] === "string" && args[0].includes("persist"),
       );
       expect(persistWarnCall).toBeDefined();
 
       // The warning context must include the runId (field key, not raw input value)
-      const warnContext = persistWarnCall?.[1] as Record<string, unknown> | undefined;
+      const warnContext = persistWarnCall?.[1] as
+        | Record<string, unknown>
+        | undefined;
       expect(warnContext).toBeDefined();
       // Must include workflowRunId
       expect(Object.keys(warnContext ?? {})).toContain("workflowRunId");
@@ -351,9 +367,7 @@ describe("Fix A: persist-failure observability — branch on returned result (no
       // Find any persist-failure warning
       const warnCalls = warnSpy.mock.calls as unknown[][];
       const persistWarnCall = warnCalls.find(
-        (args) =>
-          typeof args[0] === "string" &&
-          args[0].includes("persist"),
+        (args) => typeof args[0] === "string" && args[0].includes("persist"),
       );
       // No persist-failure warning should be logged on success
       expect(persistWarnCall).toBeUndefined();
@@ -393,9 +407,7 @@ describe("Fix A: persist-failure observability — branch on returned result (no
       // No persist-failure warning for freeform chat
       const warnCalls = warnSpy.mock.calls as unknown[][];
       const persistWarnCall = warnCalls.find(
-        (args) =>
-          typeof args[0] === "string" &&
-          args[0].includes("persist"),
+        (args) => typeof args[0] === "string" && args[0].includes("persist"),
       );
       expect(persistWarnCall).toBeUndefined();
     } finally {

@@ -433,7 +433,8 @@ export async function validateWorkflowInputs(
       fieldErrors: [
         {
           key: "__inputValues__",
-          message: "inputValues must be a plain object (no class instances or exotic objects).",
+          message:
+            "inputValues must be a plain object (no class instances or exotic objects).",
         },
       ],
     };

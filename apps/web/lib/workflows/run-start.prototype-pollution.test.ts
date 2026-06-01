@@ -129,7 +129,9 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
     // Create an object that INHERITS 'declaredKey' from its prototype
     // but does NOT own it. This bypasses the Object.keys() unknown-key check
     // in validateInputValues (which uses own keys) but 'in' would still find it.
-    const inheritedInput = Object.create({ declaredKey: "INHERITED-VALUE" }) as Record<string, unknown>;
+    const inheritedInput = Object.create({
+      declaredKey: "INHERITED-VALUE",
+    }) as Record<string, unknown>;
     // Add own 'name' key so validation passes
     inheritedInput["name"] = "Alice";
 
@@ -146,7 +148,9 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
     if (validation.valid) {
       // If validation passes, the redacted values must NOT include the inherited value
       // 'declaredKey' was not an OWN property, so it must be absent from redactedValues
-      expect(Object.hasOwn(validation.redactedValues, "declaredKey")).toBe(false);
+      expect(Object.hasOwn(validation.redactedValues, "declaredKey")).toBe(
+        false,
+      );
       expect(validation.redactedValues["declaredKey"]).toBeUndefined();
 
       // The stored row must not contain the inherited value
@@ -180,10 +184,8 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
     const { validateWorkflowInputs } = await modulePromise;
 
     class CustomClass {
-      name: string;
-      constructor() {
-        this.name = "Alice";
-      }
+      name: string = "Alice";
+      constructor() {}
     }
 
     const classInstance = new CustomClass();
@@ -220,7 +222,8 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
 
     // null-prototype plain objects should be accepted
     expect(result.valid).toBe(true);
-    if (!result.valid) throw new Error("expected null-proto object to be accepted");
+    if (!result.valid)
+      throw new Error("expected null-proto object to be accepted");
     expect(result.redactedValues["name"]).toBe("Bob");
   });
 
@@ -238,7 +241,8 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
 
     // A schema declaring __proto__ as a field key must be rejected
     expect(result.valid).toBe(false);
-    if (result.valid) throw new Error("expected failure for __proto__ field key");
+    if (result.valid)
+      throw new Error("expected failure for __proto__ field key");
     expect(result.errorKind).toBe("workflow_input_invalid");
     expect(insertedRows).toHaveLength(0);
   });
@@ -257,7 +261,8 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
 
     // A schema declaring 'constructor' as a field key must be rejected
     expect(result.valid).toBe(false);
-    if (result.valid) throw new Error("expected failure for 'constructor' field key");
+    if (result.valid)
+      throw new Error("expected failure for 'constructor' field key");
     expect(result.errorKind).toBe("workflow_input_invalid");
     expect(insertedRows).toHaveLength(0);
   });
@@ -287,7 +292,8 @@ describe("Fix B: prototype-pollution hardening in buildRedactedSnapshot", () => 
     });
 
     expect(result.valid).toBe(false);
-    if (result.valid) throw new Error("expected failure for 'prototype' field key");
+    if (result.valid)
+      throw new Error("expected failure for 'prototype' field key");
     expect(result.errorKind).toBe("workflow_input_invalid");
     expect(insertedRows).toHaveLength(0);
   });
