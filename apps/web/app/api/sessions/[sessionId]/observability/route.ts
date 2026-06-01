@@ -22,7 +22,10 @@ import {
   listSessionEvents,
   toSessionEventSnapshot,
 } from "@/lib/observability/events";
-import { buildOperatorTimeline } from "@/lib/observability/operator-timeline";
+import {
+  buildOperatorTimeline,
+  type TimelineEventRecorder,
+} from "@/lib/observability/operator-timeline";
 import { listManagedBrowserRuns } from "@/lib/sandbox/runtime/browser-runs";
 import { listManagedServices } from "@/lib/sandbox/runtime/service-launch";
 
@@ -126,6 +129,19 @@ export async function GET(req: Request, context: RouteContext) {
 
   const eventSnapshots = events.map(toSessionEventSnapshot);
 
+  // Structured-logging recorder: emits observable events for operator-timeline
+  // lifecycle so build success/failure and skipped entries are traceable in prod
+  // logs. All calls are best-effort — recorder failures never break the route.
+  // NOTE: a full session-event row per timeline build is intentionally out of
+  // scope here to avoid write amplification on every observability GET request.
+  const timelineRecorder: TimelineEventRecorder = (eventName, fields) => {
+    if (eventName === "operator-timeline-build-failed") {
+      console.warn(`[operator-timeline] ${eventName}`, fields);
+    } else {
+      console.info(`[operator-timeline] ${eventName}`, fields);
+    }
+  };
+
   let operatorTimeline: ReturnType<typeof buildOperatorTimeline> = [];
   try {
     operatorTimeline = buildOperatorTimeline(
@@ -133,6 +149,8 @@ export async function GET(req: Request, context: RouteContext) {
       workflowRunsJson,
       steps,
       workers,
+      undefined,
+      timelineRecorder,
     );
   } catch (err) {
     console.error("[observability] buildOperatorTimeline failed:", err);

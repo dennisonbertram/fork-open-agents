@@ -79,7 +79,10 @@ const DEFAULT_RECORDER: TimelineEventRecorder = () => {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_LIMIT = 200;
-const DEFAULT_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+// NOTE: There is intentionally NO default for windowMs.
+// When windowMs is absent/undefined, windowing is disabled and all entries pass.
+// Only an explicit windowMs value activates time-based filtering.
 
 function toTimestamp(value: unknown): string | null {
   if (typeof value === "string") {
@@ -119,7 +122,19 @@ function safeRedactSummary(value: string | null): string | null {
 }
 
 function dedupeKey(entry: OperatorTimelineEntry): string {
-  return `${entry.kind}:${entry.actor}:${entry.label}:${entry.correlationIds.workflowRunId ?? ""}`;
+  // Include summary and identity-distinguishing fields so that consecutive entries
+  // that share kind/actor/label/workflowRunId but differ in any meaningful field
+  // (e.g. summary, workerId, requestId, workflowRunStepId) are NOT collapsed.
+  return [
+    entry.kind,
+    entry.actor,
+    entry.label,
+    entry.correlationIds.workflowRunId ?? "",
+    entry.summary ?? "",
+    entry.correlationIds.workerId ?? "",
+    entry.correlationIds.requestId ?? "",
+    entry.correlationIds.workflowRunStepId ?? "",
+  ].join(":");
 }
 
 function collapseConsecutiveDuplicates(
@@ -266,7 +281,10 @@ function workflowStepToEntry(
   sessionId: string,
   chatId: string | null,
 ): OperatorTimelineEntry {
-  const timestamp = toTimestamp(step.startedAt) ?? step.createdAt.toISOString();
+  // Prefer startedAt; fall back to createdAt if startedAt is missing.
+  // The build guard allows steps with valid createdAt even if startedAt is absent.
+  const timestamp =
+    toTimestamp(step.startedAt) ?? step.createdAt.toISOString();
   return {
     id: step.id,
     timestamp,
@@ -338,14 +356,40 @@ export function buildOperatorTimeline(
   workflowRuns: WorkflowRunJson[],
   workflowRunSteps: WorkflowRunStep[],
   workers: ManagedRuntimeWorkerJson[],
-  options?: { limit?: number; windowMs?: number },
+  options?: {
+    limit?: number;
+    /**
+     * Time window in milliseconds. When provided, entries older than
+     * `now - windowMs` are excluded. When absent/undefined, windowing is
+     * disabled and all entries pass through regardless of age.
+     */
+    windowMs?: number;
+    /**
+     * Explicit current timestamp (ms since epoch) used to compute the window
+     * cutoff. Defaults to Date.now(). Inject this in tests for determinism.
+     */
+    now?: number;
+  },
   recorder: TimelineEventRecorder = DEFAULT_RECORDER,
 ): OperatorTimelineEntry[] {
   const limit = options?.limit ?? DEFAULT_LIMIT;
-  const windowMs = options?.windowMs ?? DEFAULT_WINDOW_MS;
+  const windowMs = options?.windowMs; // undefined = windowing disabled
+  const nowMs = options?.now ?? Date.now();
 
   const allEntries: OperatorTimelineEntry[] = [];
   const startMs = Date.now();
+
+  // Capture sessionId defensively before the try block so the catch can reference
+  // it safely even when events/workflowRuns are malformed or null.
+  let capturedSessionId = "";
+  try {
+    capturedSessionId =
+      (Array.isArray(events) ? events[0]?.sessionId : undefined) ??
+      (Array.isArray(workflowRuns) ? workflowRuns[0]?.sessionId : undefined) ??
+      "";
+  } catch {
+    // best-effort — capturedSessionId stays ""
+  }
 
   try {
     // Determine sessionId from first available source
@@ -385,11 +429,17 @@ export function buildOperatorTimeline(
 
     // --- workflow run steps ---
     for (const step of workflowRunSteps) {
-      const stepTs = toTimestamp(step.startedAt);
+      // Accept either startedAt or createdAt as the timestamp source.
+      // A step with an invalid startedAt but a valid createdAt is recoverable.
+      const stepTs =
+        toTimestamp(step.startedAt) ?? toTimestamp(step.createdAt);
       if (!stepTs || !step.id) {
         console.warn(
           `[operator-timeline] Skipping malformed workflow step — errorKind: operator_timeline_invalid_event`,
-          { stepId: step.id ?? "(unknown)", reason: "invalid startedAt" },
+          {
+            stepId: step.id ?? "(unknown)",
+            reason: "invalid startedAt and createdAt",
+          },
         );
         try {
           recorder("operator-timeline-event-skipped", {
@@ -420,14 +470,15 @@ export function buildOperatorTimeline(
       return a.id.localeCompare(b.id);
     });
 
-    // --- apply windowMs filter ---
-    const cutoff = new Date(Date.now() - windowMs).toISOString();
-    const windowed = allEntries.filter((e) => e.timestamp >= cutoff);
-
-    // If windowing left us with nothing but we had entries, use the original set
-    // (this handles tests that use old timestamps — the window applies relative to now)
+    // --- apply windowMs filter (only when windowMs is explicitly provided) ---
+    // When windowMs is undefined, all entries pass through regardless of age.
     const afterWindow =
-      windowed.length === 0 && allEntries.length > 0 ? allEntries : windowed;
+      windowMs !== undefined
+        ? allEntries.filter(
+            (e) =>
+              e.timestamp >= new Date(nowMs - windowMs).toISOString(),
+          )
+        : allEntries;
 
     // --- collapse consecutive duplicates ---
     const deduped = collapseConsecutiveDuplicates(afterWindow);
@@ -455,7 +506,7 @@ export function buildOperatorTimeline(
       // Already a typed error — re-throw it
       try {
         recorder("operator-timeline-build-failed", {
-          sessionId: events[0]?.sessionId ?? "",
+          sessionId: capturedSessionId,
           errorKind: "operator_timeline_build_failed",
         });
       } catch {
@@ -471,7 +522,7 @@ export function buildOperatorTimeline(
 
     try {
       recorder("operator-timeline-build-failed", {
-        sessionId: events[0]?.sessionId ?? "",
+        sessionId: capturedSessionId,
         errorKind: "operator_timeline_build_failed",
       });
     } catch {
