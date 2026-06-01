@@ -82,7 +82,9 @@ function blockedArtifact(
 describe("WorkflowArtifactsSection", () => {
   // BT-008: empty state for empty array
   test("BT-008: renders empty state when artifacts array is empty", () => {
-    const html = renderToStaticMarkup(<WorkflowArtifactsSection artifacts={[]} />);
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[]} />,
+    );
 
     expect(html).toContain("Workflow Artifacts");
     expect(html).toContain("No workflow artifacts");
@@ -201,5 +203,72 @@ describe("WorkflowArtifactsSection", () => {
     expect(html).toContain("pending review");
     expect(html).toContain("PII detected");
     expect(html).toContain("Blocked");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — catch if the presenter is removed, the gating logic
+// is reverted, or the empty-state path is broken
+// ---------------------------------------------------------------------------
+
+describe("regression: WorkflowArtifactsSection gating and presenter integrity", () => {
+  // REGRESSION-4: Section heading must always be present (catches component removal)
+  test("REGRESSION-4: Workflow Artifacts section heading is always rendered", () => {
+    const emptyHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[]} />,
+    );
+    const populatedHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[passedArtifact()]} />,
+    );
+
+    expect(emptyHtml).toContain("Workflow Artifacts");
+    expect(populatedHtml).toContain("Workflow Artifacts");
+  });
+
+  // REGRESSION-5: passed artifact content is always shown (catches over-redaction)
+  test("REGRESSION-5: passed artifact content appears — not accidentally gated", () => {
+    const uniqueSummary = "UNIQUE_SUMMARY_MUST_APPEAR_IN_PASSED_RENDER";
+    const html = renderToStaticMarkup(
+      <WorkflowArtifactsSection
+        artifacts={[passedArtifact({ summary: uniqueSummary })]}
+      />,
+    );
+
+    expect(html).toContain(uniqueSummary);
+  });
+
+  // REGRESSION-6: each non-passed status has a specific gated placeholder
+  // (catches if placeholder map is cleared or keys are renamed)
+  test("REGRESSION-6: each non-passed redactionStatus has correct gated placeholder text", () => {
+    const pendingHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[pendingArtifact()]} />,
+    );
+    const failedHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[failedArtifact()]} />,
+    );
+    const blockedHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[blockedArtifact()]} />,
+    );
+
+    expect(pendingHtml).toContain("Redacted");
+    expect(pendingHtml).toContain("pending review");
+    expect(failedHtml).toContain("Redacted");
+    expect(failedHtml).toContain("PII detected");
+    expect(blockedHtml).toContain("Blocked");
+    expect(blockedHtml).toContain("pending review");
+  });
+
+  // REGRESSION-7: empty-state message is specific enough to be testable
+  test("REGRESSION-7: empty state message is shown for [] and not for non-empty artifacts", () => {
+    const emptyHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[]} />,
+    );
+    const populatedHtml = renderToStaticMarkup(
+      <WorkflowArtifactsSection artifacts={[passedArtifact()]} />,
+    );
+
+    expect(emptyHtml).toContain("No workflow artifacts");
+    // The empty-state message does NOT appear when artifacts are present
+    expect(populatedHtml).not.toContain("No workflow artifacts");
   });
 });

@@ -346,3 +346,106 @@ describe("/api/sessions/[sessionId]/observability — workflowArtifacts extensio
     expect(body).toHaveProperty("workflowArtifacts");
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — catch if the server-side gate or workflowArtifacts
+// field is reverted in the future
+// ---------------------------------------------------------------------------
+
+describe("regression: server-side redaction gate must not leak raw content", () => {
+  beforeEach(() => {
+    artifactsResult = [];
+    listArtifactsShouldThrow = false;
+  });
+
+  // REGRESSION-1: All three non-passed statuses gate content in a single
+  // response — if the gate is removed from any branch, this fails.
+  test("REGRESSION-1: mixed passed + non-passed: only passed artifact carries content", async () => {
+    const passedSecret = "SAFE_CONTENT_FOR_PASSED";
+    const pendingSecret = "SECRET_FOR_PENDING_MUST_NOT_APPEAR";
+    const failedSecret = "SECRET_FOR_FAILED_MUST_NOT_APPEAR";
+    const blockedSecret = "SECRET_FOR_BLOCKED_MUST_NOT_APPEAR";
+
+    artifactsResult = [
+      makeArtifact("p1", "passed", {
+        summary: passedSecret,
+        sourceLocation: "s3://safe.md",
+      }),
+      makeArtifact("p2", "pending", {
+        summary: pendingSecret,
+        sourceLocation: "s3://pend.md",
+      }),
+      makeArtifact("p3", "failed", {
+        summary: failedSecret,
+        sourceLocation: "s3://fail.md",
+      }),
+      makeArtifact("p4", "blocked", {
+        summary: blockedSecret,
+        sourceLocation: "s3://block.md",
+      }),
+    ];
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(createRequest(), createRouteContext());
+    const body = (await response.json()) as {
+      workflowArtifacts: Array<{
+        id: string;
+        summary: string | null;
+        sourceLocation: string | null;
+        redactionStatus: string;
+      }>;
+    };
+    const responseText = JSON.stringify(body);
+
+    expect(body.workflowArtifacts).toHaveLength(4);
+
+    const passed = body.workflowArtifacts.find((a) => a.id === "p1");
+    const pending = body.workflowArtifacts.find((a) => a.id === "p2");
+    const failed = body.workflowArtifacts.find((a) => a.id === "p3");
+    const blocked = body.workflowArtifacts.find((a) => a.id === "p4");
+
+    // Passed: content visible
+    expect(passed?.summary).toBe(passedSecret);
+    expect(passed?.sourceLocation).toBe("s3://safe.md");
+
+    // Non-passed: null content
+    expect(pending?.summary).toBeNull();
+    expect(pending?.sourceLocation).toBeNull();
+    expect(failed?.summary).toBeNull();
+    expect(failed?.sourceLocation).toBeNull();
+    expect(blocked?.summary).toBeNull();
+    expect(blocked?.sourceLocation).toBeNull();
+
+    // Secrets must be absent from the entire serialized response
+    expect(responseText).not.toContain(pendingSecret);
+    expect(responseText).not.toContain(failedSecret);
+    expect(responseText).not.toContain(blockedSecret);
+
+    // The passed content DOES appear (gate only applies to non-passed)
+    expect(responseText).toContain(passedSecret);
+  });
+
+  // REGRESSION-2: workflowArtifacts field must always be present (never undefined)
+  // — catches removal of the field from the response shape
+  test("REGRESSION-2: workflowArtifacts field is always an array in the response", async () => {
+    const { GET } = await routeModulePromise;
+    const response = await GET(createRequest(), createRouteContext());
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(Array.isArray(body.workflowArtifacts)).toBe(true);
+  });
+
+  // REGRESSION-3: listArtifacts failure must not remove workflowArtifacts entirely
+  // — catches if catch block is removed or re-throws
+  test("REGRESSION-3: DB failure yields workflowArtifacts array (not undefined or error)", async () => {
+    listArtifactsShouldThrow = true;
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(createRequest(), createRouteContext());
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(Array.isArray(body.workflowArtifacts)).toBe(true);
+    expect((body.workflowArtifacts as unknown[]).length).toBe(0);
+  });
+});
