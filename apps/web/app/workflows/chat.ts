@@ -17,8 +17,9 @@ import {
 import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
-import { getWorkflowMetadata, getWritable } from "workflow";
+import { createHook, getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
+import { createRunControl } from "@/lib/db/workflow-run-controls";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
@@ -1063,6 +1064,28 @@ export async function runAgentWorkflow(options: Options) {
     await closeStream(writable);
     return;
   }
+
+  // ── Run-control setup (best-effort — must NOT crash the workflow) ──────────
+  // Set up the generic pause/resume hook seam and persist the control row so
+  // the control route can issue pause/resume/cancel commands for this run.
+  // Uses a deterministic hook token derived from the runId so the control route
+  // can call resumeHook without storing additional state.
+  const pauseHookToken = `pause:${workflowRunId}`;
+  try {
+    createHook<{ command: "resume" }>({ token: pauseHookToken });
+    await createRunControl({
+      workflowRunId,
+      chatId: options.chatId,
+      sessionId: options.sessionId,
+      userId: options.userId,
+      hookToken: pauseHookToken,
+      idempotencyKey: `init:${workflowRunId}`,
+    });
+  } catch {
+    // Best-effort: if control setup fails, the workflow continues unsteered.
+    // Existing freeform behavior is unaffected.
+  }
+  // ── End run-control setup ──────────────────────────────────────────────────
 
   const modelMessagesPromise = convertMessages(options.messages);
   const inputMessagesPersistPromise = persistInputMessages(

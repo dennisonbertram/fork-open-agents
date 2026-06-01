@@ -201,6 +201,7 @@ function buildAgentSteps() {
 // ── Module mocks ───────────────────────────────────────────────────
 
 mock.module("workflow", () => ({
+  createHook: () => ({ token: "pause:wrun_test-123" }),
   getWorkflowMetadata: () => ({ workflowRunId: "wrun_test-123" }),
   getWritable: () => {
     const writable = new WritableStream<UIMessageChunk>({
@@ -209,6 +210,20 @@ mock.module("workflow", () => ({
       },
     });
     return writable;
+  },
+}));
+
+mock.module("@/lib/db/workflow-run-controls", () => ({
+  createRunControl: async () => null,
+  getRunControl: async () => null,
+  updateRunControlStatus: async () => null,
+  WorkflowRunControlError: class WorkflowRunControlError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = "WorkflowRunControlError";
+      this.code = code;
+    }
   },
 }));
 

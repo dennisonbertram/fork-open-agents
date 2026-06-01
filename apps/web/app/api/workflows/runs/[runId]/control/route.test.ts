@@ -32,7 +32,9 @@ let applyRunControlCommandResult: RunControlResult = {
 
 const requireAuthenticatedUserMock = mock(async () => authResult);
 const requireOwnedWorkflowRunByRunIdMock = mock(async () => ownershipResult);
-const applyRunControlCommandMock = mock(async () => applyRunControlCommandResult);
+const applyRunControlCommandMock = mock(
+  async () => applyRunControlCommandResult,
+);
 
 mock.module("@/app/api/chat/_lib/chat-context", () => ({
   requireAuthenticatedUser: requireAuthenticatedUserMock,
@@ -46,21 +48,20 @@ mock.module("@/lib/workflows/run-control", () => ({
 // Import route AFTER mocks
 const routeModulePromise = import("./route");
 
+const defaultBody: Record<string, unknown> = {
+  command: "pause",
+  idempotencyKey: "idem-test-1",
+};
+
 function makeRequest(
   runId: string,
-  body: Record<string, unknown> = {
-    command: "pause",
-    idempotencyKey: "idem-test-1",
-  },
+  body: Record<string, unknown> = defaultBody,
 ) {
-  return new Request(
-    `http://localhost/api/workflows/runs/${runId}/control`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
+  return new Request(`http://localhost/api/workflows/runs/${runId}/control`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 function context(runId = "run-1") {

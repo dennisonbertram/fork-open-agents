@@ -29,28 +29,6 @@ let dbShouldThrow = false;
 let resumeHookCalls: unknown[] = [];
 let cancelCalls: string[] = [];
 
-const fakeDb = {
-  select: () => ({
-    from: (_table: unknown) => ({
-      where: async (_cond: unknown) =>
-        fakeControlRow ? [fakeControlRow] : [],
-    }),
-  }),
-  update: (_table: unknown) => ({
-    set: (_values: unknown) => ({
-      where: async (_cond: unknown) => {
-        if (dbShouldThrow) throw new Error("DB connection error");
-        if (fakeControlRow) {
-          // Apply the set values to our fake row so subsequent reads reflect updates
-          const setValues = _values as Partial<FakeControlRow>;
-          fakeControlRow = { ...fakeControlRow, ...setValues };
-        }
-        return [];
-      },
-    }),
-  }),
-};
-
 mock.module("../db/workflow-run-controls", () => ({
   getRunControl: async (runId: string) => {
     if (dbShouldThrow) throw new Error("DB connection error");
@@ -74,6 +52,7 @@ mock.module("../db/workflow-run-controls", () => ({
     code: string;
     constructor(message: string, code: string) {
       super(message);
+      this.name = "WorkflowRunControlError";
       this.code = code;
     }
   },
@@ -96,7 +75,9 @@ const runControlModulePromise = import("./run-control");
 // ---------------------------------------------------------------------------
 // Helper to make a fresh control row
 // ---------------------------------------------------------------------------
-function makeControlRow(overrides: Partial<FakeControlRow> = {}): FakeControlRow {
+function makeControlRow(
+  overrides: Partial<FakeControlRow> = {},
+): FakeControlRow {
   return {
     id: "ctrl-1",
     workflowRunId: "run-1",

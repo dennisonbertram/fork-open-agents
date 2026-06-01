@@ -1211,6 +1211,54 @@ export const workflowRunSteps = pgTable(
   ],
 );
 
+export const workflowRunControls = pgTable(
+  "workflow_run_controls",
+  {
+    id: text("id").primaryKey(),
+    // NOT a FK to workflowRuns.id — this row is written at run START, before
+    // the workflowRuns row exists (written only at run END). A FK would
+    // violate on insert. The workflowRunId stores the SDK run ID value.
+    workflowRunId: text("workflow_run_id").notNull(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: [
+        "running",
+        "pausing",
+        "paused",
+        "resuming",
+        "cancelling",
+        "cancelled",
+      ],
+    }).notNull(),
+    pendingCommandKind: text("pending_command_kind", {
+      enum: ["pause", "resume", "cancel"],
+    }),
+    hookToken: text("hook_token"),
+    idempotencyKey: text("idempotency_key").notNull(),
+    commandedBy: text("commanded_by"),
+    commandedAt: timestamp("commanded_at"),
+    appliedAt: timestamp("applied_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_run_controls_run_id_idx").on(table.workflowRunId),
+    index("workflow_run_controls_user_id_idx").on(table.userId),
+    uniqueIndex("workflow_run_controls_run_idempotency_idx").on(
+      table.workflowRunId,
+      table.idempotencyKey,
+    ),
+  ],
+);
+
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
@@ -1261,6 +1309,8 @@ export type BackgroundAgentRun = typeof backgroundAgentRuns.$inferSelect;
 export type NewBackgroundAgentRun = typeof backgroundAgentRuns.$inferInsert;
 export type BackgroundAgentEvent = typeof backgroundAgentEvents.$inferSelect;
 export type NewBackgroundAgentEvent = typeof backgroundAgentEvents.$inferInsert;
+export type WorkflowRunControl = typeof workflowRunControls.$inferSelect;
+export type NewWorkflowRunControl = typeof workflowRunControls.$inferInsert;
 export type BackgroundAgentOutput = typeof backgroundAgentOutputs.$inferSelect;
 export type NewBackgroundAgentOutput =
   typeof backgroundAgentOutputs.$inferInsert;

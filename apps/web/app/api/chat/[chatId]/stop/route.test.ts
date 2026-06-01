@@ -1,5 +1,25 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
+// Mock the new workflow-run-controls DB module added by #50 (imported through
+// chat-context.ts via requireOwnedWorkflowRunByRunId). The stop route does
+// not use this module directly, but the import chain requires it to be
+// resolvable in test context.
+mock.module("@/lib/db/workflow-run-controls", () => ({
+  getRunControl: async () => null,
+  createRunControl: async () => null,
+  updateRunControlStatus: async () => null,
+  WorkflowRunControlError: class WorkflowRunControlError extends Error {
+    code: string;
+    constructor(message: string, code: string) {
+      super(message);
+      this.name = "WorkflowRunControlError";
+      this.code = code;
+    }
+  },
+}));
+
 // ── Mutable state ──────────────────────────────────────────────────
 
 let currentAuthSession: { user: { id: string } } | null = {
