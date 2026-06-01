@@ -483,4 +483,404 @@ describe("/shared/[shareId] page", () => {
 
     expect(element.props.lastUserMessageSentAt).toBeNull();
   });
+
+  test("redacts tool-bash output containing a secret token on shared pages", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-bash",
+              state: "output-available",
+              input: { command: "env" },
+              output: {
+                success: true,
+                exitCode: 0,
+                stdout:
+                  "PATH=/usr/bin\nOPENAI_API_KEY=sk-1234567890123456abcdefgh\nHOME=/root",
+                stderr: "",
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const bashOutput = parts?.[0]?.output as Record<string, unknown>;
+
+    expect(bashOutput?.stdout).not.toContain("sk-1234567890123456abcdefgh");
+    expect(bashOutput?.stdout).toContain("[REDACTED");
+  });
+
+  test("redacts tool-bash output containing a Bearer token on shared pages", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-bash",
+              state: "output-available",
+              input: { command: "curl -H 'Authorization: Bearer supersecrettoken123' https://api.example.com" },
+              output: {
+                success: true,
+                exitCode: 0,
+                stdout: "Response: 200 OK",
+                stderr: "Authorization: Bearer supersecrettoken123",
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const bashOutput = parts?.[0]?.output as Record<string, unknown>;
+
+    expect(bashOutput?.stderr).not.toContain("supersecrettoken123");
+    expect(bashOutput?.stderr).toContain("[REDACTED]");
+  });
+
+  test("does not over-redact benign tool-bash output on shared pages", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-bash",
+              state: "output-available",
+              input: { command: "bun test" },
+              output: {
+                success: true,
+                exitCode: 0,
+                stdout: "npm install completed\n3 packages added\nDone in 1.23s",
+                stderr: "",
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const bashOutput = parts?.[0]?.output as Record<string, unknown>;
+
+    expect(bashOutput?.stdout).toBe(
+      "npm install completed\n3 packages added\nDone in 1.23s",
+    );
+    expect(bashOutput?.exitCode).toBe(0);
+    expect(bashOutput?.success).toBe(true);
+  });
+
+  test("redacts data-runtime-proof evidence strings containing secrets on shared pages", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-runtime-proof",
+              data: {
+                status: "completed",
+                runtimeMode: "managed_runtime",
+                workflowRunId: "run-abc",
+                sandboxName: "sandbox-1",
+                profile: {
+                  id: "profile-1",
+                  version: "1.0",
+                  displayName: "Test Profile",
+                  profileRunId: null,
+                },
+                workerEvidence: {
+                  total: 1,
+                  completed: 1,
+                  failed: 0,
+                  running: 0,
+                  latest: {
+                    id: "worker-1",
+                    workerType: "executor",
+                    status: "completed",
+                    sandboxName: null,
+                    profileId: null,
+                    profileVersion: null,
+                    profileDisplayName: null,
+                    profileRunId: null,
+                    currentToolName: "bash",
+                    currentToolSummary:
+                      "Ran: export DB_PASSWORD=hunter2supersecretvalue",
+                    toolCallCount: 5,
+                    summary:
+                      "Completed with GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz012345",
+                  },
+                },
+                coordinatorDirectToolUse: {
+                  observed: true,
+                  count: 1,
+                  toolTypes: ["bash"],
+                  toolLabels: ["ran export DB_PASSWORD=hunter2supersecretvalue"],
+                  warning:
+                    "Tool output contained Bearer eyJhbGciOiJIUzI1NiJ9.secret",
+                },
+                evidence: [
+                  "Worker ran: OPENAI_API_KEY=sk-proj-abcdef1234567890abcdef1234567890ab",
+                  "No issues found",
+                ],
+                serviceEvidence: {
+                  total: 0,
+                  running: 0,
+                  failed: 0,
+                  latest: null,
+                },
+                browserEvidence: {
+                  total: 0,
+                  passed: 0,
+                  failed: 0,
+                  latest: null,
+                },
+                limitations: [],
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const proofPart = parts?.[0] as Record<string, unknown>;
+    const data = proofPart?.data as Record<string, unknown>;
+    const workerEvidence = data?.workerEvidence as Record<string, unknown>;
+    const latest = workerEvidence?.latest as Record<string, unknown>;
+    const coordinator = data?.coordinatorDirectToolUse as Record<
+      string,
+      unknown
+    >;
+    const evidence = data?.evidence as string[];
+    const toolLabels = coordinator?.toolLabels as string[];
+
+    // Secrets must be scrubbed
+    expect(evidence[0]).not.toContain(
+      "sk-proj-abcdef1234567890abcdef1234567890ab",
+    );
+    expect(evidence[0]).toContain("[REDACTED");
+    expect(evidence[1]).toBe("No issues found");
+
+    expect(latest?.currentToolSummary).not.toContain(
+      "hunter2supersecretvalue",
+    );
+    expect(latest?.currentToolSummary).toContain("[REDACTED]");
+
+    expect(latest?.summary).not.toContain(
+      "ghp_abcdefghijklmnopqrstuvwxyz012345",
+    );
+    expect(latest?.summary).toContain("[REDACTED");
+
+    expect(toolLabels[0]).not.toContain("hunter2supersecretvalue");
+    expect(toolLabels[0]).toContain("[REDACTED]");
+
+    expect(coordinator?.warning).not.toContain(
+      "eyJhbGciOiJIUzI1NiJ9.secret",
+    );
+    expect(coordinator?.warning).toContain("[REDACTED]");
+
+    // Non-secret fields unchanged
+    expect(data?.workflowRunId).toBe("run-abc");
+    expect(data?.status).toBe("completed");
+    expect(workerEvidence?.total).toBe(1);
+    expect(latest?.toolCallCount).toBe(5);
+  });
+
+  test("preserves data-runtime-proof non-secret fields unchanged on shared pages", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-runtime-proof",
+              data: {
+                status: "completed",
+                runtimeMode: "managed_runtime",
+                workflowRunId: "wf-xyz",
+                sandboxName: null,
+                profile: {
+                  id: "p1",
+                  version: "2.0",
+                  displayName: "Safe Profile",
+                  profileRunId: null,
+                },
+                workerEvidence: {
+                  total: 0,
+                  completed: 0,
+                  failed: 0,
+                  running: 0,
+                  latest: null,
+                },
+                coordinatorDirectToolUse: {
+                  observed: false,
+                  count: 0,
+                  toolTypes: [],
+                  toolLabels: [],
+                  warning: null,
+                },
+                evidence: ["All systems nominal"],
+                serviceEvidence: {
+                  total: 0,
+                  running: 0,
+                  failed: 0,
+                  latest: null,
+                },
+                browserEvidence: {
+                  total: 0,
+                  passed: 0,
+                  failed: 0,
+                  latest: null,
+                },
+                limitations: [],
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const proofPart = parts?.[0] as Record<string, unknown>;
+    const data = proofPart?.data as Record<string, unknown>;
+    const evidence = data?.evidence as string[];
+
+    expect(data?.status).toBe("completed");
+    expect(data?.workflowRunId).toBe("wf-xyz");
+    expect(evidence[0]).toBe("All systems nominal");
+  });
+
+  test("existing .env tool-read redaction still works after bash/proof changes", async () => {
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-read",
+              state: "output-available",
+              input: { filePath: ".env" },
+              output: {
+                success: true,
+                content: "1: SECRET=abc\n2: TOKEN=xyz",
+                totalLines: 2,
+                startLine: 1,
+                endLine: 2,
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const readOutput = parts?.[0]?.output as Record<string, unknown>;
+
+    expect(readOutput?.content).toBe(
+      "1: [redacted from shared page]\n2: [redacted from shared page]",
+    );
+    expect(readOutput?.totalLines).toBe(2);
+  });
 });
