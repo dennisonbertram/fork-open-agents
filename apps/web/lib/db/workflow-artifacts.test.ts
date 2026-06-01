@@ -427,3 +427,133 @@ describe("enum parity: artifacts.ts Zod enums match the DB schema enum lists", (
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION TESTS — catch future breakage of the artifact contract
+//
+// Each test targets a specific invariant that would break if the green commit
+// (98c3e595) were reverted or the contract were silently mutated.
+// ---------------------------------------------------------------------------
+
+describe("regression: default field values cannot be silently removed", () => {
+  beforeEach(() => resetFake());
+
+  test("REG-001: createArtifact always sets status='expected' when not provided", async () => {
+    // Regression: if the default is removed from createArtifact, this test
+    // fails because the fakeDb echo returns the value passed in the .values()
+    // call — which would be undefined instead of "expected".
+    const { createArtifact } = await artifactsModulePromise;
+
+    const result = await createArtifact({ kind: "receipt" });
+
+    expect(result.status).toBe("expected");
+  });
+
+  test("REG-002: createArtifact always sets redactionStatus='pending' when not provided", async () => {
+    // Regression: if the redactionStatus default is dropped, redaction
+    // enforcement in issue #43 would receive undefined instead of "pending"
+    // and could skip the review queue entirely.
+    const { createArtifact } = await artifactsModulePromise;
+
+    const result = await createArtifact({ kind: "gate_report" });
+
+    expect(result.redactionStatus).toBe("pending");
+  });
+});
+
+describe("regression: filter guard cannot be bypassed", () => {
+  beforeEach(() => resetFake());
+
+  test("REG-003: listArtifacts rejects every combination of empty filter", async () => {
+    // Regression: if someone removes the empty-filter guard from listArtifacts,
+    // the DB would run a full-table scan that leaks cross-tenant artifacts.
+    const { listArtifacts, WorkflowArtifactError } =
+      await artifactsModulePromise;
+
+    const emptyVariants = [
+      {},
+      { workflowRunId: undefined },
+      { sessionId: undefined, chatId: undefined },
+    ] as Parameters<typeof listArtifacts>[0][];
+
+    for (const filter of emptyVariants) {
+      await expect(listArtifacts(filter)).rejects.toBeInstanceOf(
+        WorkflowArtifactError,
+      );
+      await expect(listArtifacts(filter)).rejects.toMatchObject({
+        code: "invalid_artifact",
+      });
+    }
+  });
+});
+
+describe("regression: not_found errors are honest — undefined is never returned", () => {
+  beforeEach(() => resetFake());
+
+  test("REG-004: getArtifact throws WorkflowArtifactError(not_found) rather than returning undefined", async () => {
+    // Regression: if someone changes getArtifact to return undefined on miss,
+    // callers would silently get undefined instead of a typed error, breaking
+    // the "honest error" invariant from goal-ledger.
+    const { getArtifact, WorkflowArtifactError } = await artifactsModulePromise;
+    fakeSelectRows = [];
+
+    const result = getArtifact("does-not-exist");
+
+    // Must reject, not resolve
+    await expect(result).rejects.toBeInstanceOf(WorkflowArtifactError);
+    // Must have the right code, not a generic Error
+    await expect(getArtifact("does-not-exist")).rejects.toMatchObject({
+      code: "not_found",
+    });
+  });
+
+  test("REG-005: updateArtifactStatus throws WorkflowArtifactError(not_found) rather than returning undefined", async () => {
+    // Regression: mirrors REG-004 for the update path.
+    const { updateArtifactStatus, WorkflowArtifactError } =
+      await artifactsModulePromise;
+    fakeUpdatedRows = [];
+
+    await expect(
+      updateArtifactStatus("no-such-id", "available"),
+    ).rejects.toBeInstanceOf(WorkflowArtifactError);
+    await expect(
+      updateArtifactStatus("no-such-id", "available"),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+});
+
+describe("regression: enum membership is fixed — no silent additions or removals", () => {
+  test("REG-006: ARTIFACT_KINDS has exactly 5 members", async () => {
+    // Regression: adding or removing a kind without updating dependent systems
+    // (e.g., UI rendering, downstream consumers) would break silently.
+    const { ARTIFACT_KINDS } = await import("../workflows/artifacts");
+
+    expect(ARTIFACT_KINDS).toHaveLength(5);
+    expect(ARTIFACT_KINDS).toContain("research_packet");
+    expect(ARTIFACT_KINDS).toContain("spec");
+    expect(ARTIFACT_KINDS).toContain("receipt");
+    expect(ARTIFACT_KINDS).toContain("gate_report");
+    expect(ARTIFACT_KINDS).toContain("final_build_report");
+  });
+
+  test("REG-007: ARTIFACT_STATUSES has exactly 8 members", async () => {
+    // Regression: the sub-epic #39 product spec defines exactly 8 statuses.
+    const { ARTIFACT_STATUSES } = await import("../workflows/artifacts");
+
+    expect(ARTIFACT_STATUSES).toHaveLength(8);
+  });
+
+  test("REG-008: ARTIFACT_REDACTION_STATUSES has exactly 4 members matching redaction vocabulary", async () => {
+    // Regression: the 4-value redaction vocabulary is shared with
+    // sandboxBrowserRuns and backgroundAgentEvents; a silent mismatch would
+    // cause redaction enforcement (#43) to handle unknown states incorrectly.
+    const { ARTIFACT_REDACTION_STATUSES } =
+      await import("../workflows/artifacts");
+
+    expect(ARTIFACT_REDACTION_STATUSES).toHaveLength(4);
+    expect(ARTIFACT_REDACTION_STATUSES).toContain("pending");
+    expect(ARTIFACT_REDACTION_STATUSES).toContain("passed");
+    expect(ARTIFACT_REDACTION_STATUSES).toContain("failed");
+    expect(ARTIFACT_REDACTION_STATUSES).toContain("blocked");
+  });
+});
