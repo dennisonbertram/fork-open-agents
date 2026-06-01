@@ -1137,6 +1137,84 @@ export const backgroundAgentToolSessions = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// workflow_artifacts — typed artifact contract and DB storage refs.
+//
+// FK notes:
+//   workflowRunId → workflowRuns.id (set null on delete)
+//   sessionId     → sessions.id     (set null on delete)
+//   chatId        → chats.id        (set null on delete)
+//   goalId        — NO FK; the workflow_goals table does not yet exist on main.
+//                   The FK will be wired in a later slice once that table lands.
+//   gateId        — NO FK; no gate table exists yet.
+//
+// Redaction alignment:
+//   redactionStatus reuses the same four values as sandboxBrowserRuns and
+//   backgroundAgentEvents ("pending" | "passed" | "failed" | "blocked").
+//   Enforcement (actually blocking delivery when status = "failed" | "blocked")
+//   is wired in issue #43 — this table only stores the status field.
+// ---------------------------------------------------------------------------
+export const workflowArtifacts = pgTable(
+  "workflow_artifacts",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", {
+      enum: [
+        "research_packet",
+        "spec",
+        "receipt",
+        "gate_report",
+        "final_build_report",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "expected",
+        "generating",
+        "available",
+        "superseded",
+        "redacted",
+        "failed",
+        "missing",
+        "archived",
+      ],
+    })
+      .notNull()
+      .default("expected"),
+    redactionStatus: text("redaction_status", {
+      enum: ["pending", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("pending"),
+    // Path/URL/key pointer — NOT content. Content is never stored in the DB.
+    sourceLocation: text("source_location"),
+    summary: text("summary"),
+    createdByActor: text("created_by_actor"),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    // NO FK — workflow_goals table not yet on main (wired in a later slice)
+    goalId: text("goal_id"),
+    // NO FK — no gate table exists yet
+    gateId: text("gate_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_artifacts_workflow_run_idx").on(table.workflowRunId),
+    index("workflow_artifacts_kind_status_idx").on(table.kind, table.status),
+  ],
+);
+
+export type WorkflowArtifact = typeof workflowArtifacts.$inferSelect;
+export type NewWorkflowArtifact = typeof workflowArtifacts.$inferInsert;
+
 export const workflowRuns = pgTable(
   "workflow_runs",
   {

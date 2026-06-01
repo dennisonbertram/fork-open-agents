@@ -231,7 +231,9 @@ describe("listArtifacts", () => {
     const { listArtifacts, WorkflowArtifactError } =
       await artifactsModulePromise;
 
-    await expect(listArtifacts({})).rejects.toBeInstanceOf(WorkflowArtifactError);
+    await expect(listArtifacts({})).rejects.toBeInstanceOf(
+      WorkflowArtifactError,
+    );
     await expect(listArtifacts({})).rejects.toMatchObject({
       code: "invalid_artifact",
     });
@@ -414,9 +416,8 @@ describe("enum parity: artifacts.ts Zod enums match the DB schema enum lists", (
   });
 
   test("BT-006c: ARTIFACT_REDACTION_STATUSES matches the existing redactionStatus vocabulary", async () => {
-    const { ARTIFACT_REDACTION_STATUSES } = await import(
-      "../workflows/artifacts"
-    );
+    const { ARTIFACT_REDACTION_STATUSES } =
+      await import("../workflows/artifacts");
 
     // Must align with sandboxBrowserRuns.redactionStatus enum in schema.ts
     const expected = ["pending", "passed", "failed", "blocked"] as const;
