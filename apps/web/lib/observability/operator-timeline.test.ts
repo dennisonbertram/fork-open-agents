@@ -869,4 +869,115 @@ describe("buildOperatorTimeline", () => {
     expect(threw).toBe(false);
     expect(result.length).toBe(1);
   });
+
+  // ---------------------------------------------------------------------------
+  // REGRESSION GUARDS — catch future breakage of the three fixes
+  // ---------------------------------------------------------------------------
+
+  // REGRESSION-W1: window boundary is exact — entry at exactly cutoff is included
+  // If the window cutoff comparison is changed from >= to >, boundary entries are lost.
+  test("REGRESSION-W1: entry at exactly the window boundary cutoff is included", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0); // 2026-05-01T12:00:00Z
+    const windowMs = 2 * 60 * 60 * 1000; // 2 hours
+    // Cutoff is exactly 2026-05-01T10:00:00Z
+    const exactCutoff = new Date(nowMs - windowMs).toISOString(); // "2026-05-01T10:00:00.000Z"
+
+    const events = [
+      makeEvent({
+        id: "at-boundary",
+        createdAt: exactCutoff,
+        eventName: "boundary-event",
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs,
+      now: nowMs,
+    });
+
+    // Entry at exactly the cutoff timestamp must be included
+    expect(result.length).toBe(1);
+    expect(result[0].id).toBe("at-boundary");
+  });
+
+  // REGRESSION-W2: removing windowMs fallback stays removed — stale data must not leak
+  // If the fallback is reintroduced (windowed.length === 0 → allEntries), this test fails.
+  test("REGRESSION-W2: stale-only input with explicit windowMs returns [] (no fallback)", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const events = [
+      makeEvent({
+        id: "very-old",
+        createdAt: "2020-01-01T00:00:00.000Z",
+        eventName: "ancient",
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 60 * 60 * 1000, // 1 hour
+      now: nowMs,
+    });
+
+    expect(result).toEqual([]);
+  });
+
+  // REGRESSION-D1: data-preserving dedup — distinct summaries survive across large batches
+  // If dedup key is reverted to coarse form, this test fails because distinct entries collapse.
+  test("REGRESSION-D1: N consecutive entries with unique summaries all survive dedup", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const count = 10;
+    const events = Array.from({ length: count }, (_, i) =>
+      makeEvent({
+        id: `batch-${i}`,
+        createdAt: new Date(
+          Date.UTC(2026, 4, 1, 11, 0, i),
+        ).toISOString(),
+        eventName: "worker-launched",
+        actorType: "workflow",
+        workflowRunId: "run-dedup",
+        summary: `unique-summary-${i}`,
+      }),
+    );
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 2 * 60 * 60 * 1000,
+      now: nowMs,
+    });
+
+    // All 10 entries must survive because each has a unique summary
+    expect(result.length).toBe(count);
+  });
+
+  // REGRESSION-R1: recorder emits for every successful build — not just first call
+  // If recorder call is removed from the success path, this test fails.
+  test("REGRESSION-R1: recorder is called once per successful buildOperatorTimeline invocation", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const builtCallCount = { value: 0 };
+    const countingRecorder = mock(
+      (eventName: string, _fields: Record<string, unknown>) => {
+        if (eventName === "operator-timeline-built") {
+          builtCallCount.value++;
+        }
+      },
+    );
+
+    // Call twice — each must emit exactly one built event
+    buildOperatorTimeline(
+      [makeEvent({ id: "r1-a", createdAt: "2026-05-01T11:00:00.000Z" })],
+      [],
+      [],
+      [],
+      { windowMs: 2 * 60 * 60 * 1000, now: nowMs },
+      countingRecorder,
+    );
+    buildOperatorTimeline(
+      [makeEvent({ id: "r1-b", createdAt: "2026-05-01T11:05:00.000Z" })],
+      [],
+      [],
+      [],
+      { windowMs: 2 * 60 * 60 * 1000, now: nowMs },
+      countingRecorder,
+    );
+
+    expect(builtCallCount.value).toBe(2);
+  });
 });
