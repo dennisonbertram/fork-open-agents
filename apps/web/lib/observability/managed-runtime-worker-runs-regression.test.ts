@@ -69,6 +69,14 @@ mock.module("@/lib/harness/redaction", () => ({
   redactHarnessValue: redactHarnessValueMock,
 }));
 
+// Mock events module — event emission is tested separately in event.test.ts
+mock.module("@/lib/observability/events", () => ({
+  emitSessionEvent: mock(() => Promise.resolve(null)),
+  recordSessionEvent: mock(() => Promise.resolve(null)),
+  listSessionEvents: mock(() => Promise.resolve([])),
+  toSessionEventSnapshot: mock((e: unknown) => e),
+}));
+
 const {
   recordManagedRuntimeWorkerRun,
   persistWorkerRunBestEffort,

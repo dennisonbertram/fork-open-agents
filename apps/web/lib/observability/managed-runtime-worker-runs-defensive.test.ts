@@ -26,6 +26,14 @@ mock.module("@/lib/db/client", () => ({
 // leak the mock into other co-located test files and break their assertions.
 // The defensive test only needs to verify that DB failures are swallowed.
 
+// Mock events module — event emission is tested separately in event.test.ts
+mock.module("@/lib/observability/events", () => ({
+  emitSessionEvent: mock(() => Promise.resolve(null)),
+  recordSessionEvent: mock(() => Promise.resolve(null)),
+  listSessionEvents: mock(() => Promise.resolve([])),
+  toSessionEventSnapshot: mock((e: unknown) => e),
+}));
+
 const { persistWorkerRunBestEffort } =
   await import("./managed-runtime-worker-runs");
 

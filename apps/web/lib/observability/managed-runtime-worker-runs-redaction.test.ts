@@ -91,11 +91,13 @@ mock.module("@/lib/harness/redaction", () => ({
 
 mock.module("@/lib/observability/events", () => ({
   emitSessionEvent: mock(() => Promise.resolve(null)),
+  recordSessionEvent: mock(() => Promise.resolve(null)),
+  listSessionEvents: mock(() => Promise.resolve([])),
+  toSessionEventSnapshot: mock((e: unknown) => e),
 }));
 
-const { recordManagedRuntimeWorkerRun } = await import(
-  "./managed-runtime-worker-runs"
-);
+const { recordManagedRuntimeWorkerRun } =
+  await import("./managed-runtime-worker-runs");
 
 const SECRET_SUMMARY = "deploy with OPENAI_API_KEY=sk-1234567890123456";
 

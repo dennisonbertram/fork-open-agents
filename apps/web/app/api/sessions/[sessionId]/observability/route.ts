@@ -102,7 +102,7 @@ export async function GET(req: Request, context: RouteContext) {
           .limit(20)
       : Promise.resolve([]),
     sessionContext.sessionRecord.runtimeMode === "managed_runtime"
-      ? listManagedRuntimeWorkerRunsForSession(sessionId)
+      ? listManagedRuntimeWorkerRunsForSession({ sessionId, chatId })
       : Promise.resolve([]),
   ]);
 

@@ -73,6 +73,8 @@ const emitSessionEventMock = mock(() =>
 mock.module("@/lib/observability/events", () => ({
   emitSessionEvent: emitSessionEventMock,
   recordSessionEvent: mock(() => Promise.resolve(null)),
+  listSessionEvents: mock(() => Promise.resolve([])),
+  toSessionEventSnapshot: mock((e: unknown) => e),
 }));
 
 const { recordManagedRuntimeWorkerRun, persistWorkerRunBestEffort } =
@@ -108,7 +110,10 @@ describe("managed_runtime.worker.recorded event emission", () => {
     expect(emitSessionEventMock).toHaveBeenCalledTimes(1);
 
     // Must use the correct event name
-    const callArg = emitSessionEventMock.mock.calls[0][0] as Record<string, unknown>;
+    const calls = emitSessionEventMock.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    const callArg = calls[0][0];
     expect(callArg.eventName).toBe("managed_runtime.worker.recorded");
   });
 
@@ -132,7 +137,10 @@ describe("managed_runtime.worker.recorded event emission", () => {
       finishedAt: null,
     });
 
-    const callArg = emitSessionEventMock.mock.calls[0][0] as Record<string, unknown>;
+    const calls2 = emitSessionEventMock.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    const callArg = calls2[0][0];
 
     // Correlation ids must be present
     expect(callArg.sessionId).toBe("session-ev");
@@ -209,7 +217,10 @@ describe("managed_runtime.worker.recorded event emission", () => {
 
     // The event should have been emitted even through the best-effort wrapper
     expect(emitSessionEventMock).toHaveBeenCalledTimes(1);
-    const callArg = emitSessionEventMock.mock.calls[0][0] as Record<string, unknown>;
-    expect(callArg.eventName).toBe("managed_runtime.worker.recorded");
+    const calls4 = emitSessionEventMock.mock.calls as unknown as Array<
+      [Record<string, unknown>]
+    >;
+    const callArg4 = calls4[0][0];
+    expect(callArg4.eventName).toBe("managed_runtime.worker.recorded");
   });
 });

@@ -86,6 +86,14 @@ mock.module("@/lib/harness/redaction", () => ({
   }),
 }));
 
+// Mock events module — event emission is tested separately in event.test.ts
+mock.module("@/lib/observability/events", () => ({
+  emitSessionEvent: mock(() => Promise.resolve(null)),
+  recordSessionEvent: mock(() => Promise.resolve(null)),
+  listSessionEvents: mock(() => Promise.resolve([])),
+  toSessionEventSnapshot: mock((e: unknown) => e),
+}));
+
 const {
   recordManagedRuntimeWorkerRun,
   listManagedRuntimeWorkerRunsForSession,
@@ -163,11 +171,23 @@ describe("managed runtime worker runs persistence", () => {
 
   describe("listManagedRuntimeWorkerRunsForSession", () => {
     test("returns rows for a given session ordered by createdAt", async () => {
-      const rows = await listManagedRuntimeWorkerRunsForSession("session-1");
+      const rows = await listManagedRuntimeWorkerRunsForSession({
+        sessionId: "session-1",
+      });
 
       expect(findManyMock).toHaveBeenCalledTimes(1);
       expect(rows).toHaveLength(1);
       expect(rows[0].sessionId).toBe("session-1");
+    });
+
+    test("accepts optional chatId parameter for chat-scoped queries", async () => {
+      const rows = await listManagedRuntimeWorkerRunsForSession({
+        sessionId: "session-1",
+        chatId: "chat-1",
+      });
+
+      expect(findManyMock).toHaveBeenCalledTimes(1);
+      expect(rows).toHaveLength(1);
     });
   });
 

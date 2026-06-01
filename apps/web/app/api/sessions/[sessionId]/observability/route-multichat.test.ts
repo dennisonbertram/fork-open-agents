@@ -75,9 +75,9 @@ const chatBMessageWorker = {
   updatedAt: "2026-06-01T11:00:00.000Z",
 };
 
-const extractManagedRuntimeWorkersFromMessagesMock = mock(
-  () => [chatBMessageWorker],
-);
+const extractManagedRuntimeWorkersFromMessagesMock = mock(() => [
+  chatBMessageWorker,
+]);
 
 const summarizeManagedRuntimeDirectToolUseFromMessagesMock = mock(() => ({
   observed: false,
@@ -164,7 +164,10 @@ const chatBDurableRow: DurableWorkerRow = {
 
 // This mock simulates the FIXED behaviour: returns only rows matching chatId
 const listManagedRuntimeWorkerRunsForSessionMock = mock(
-  (params: { sessionId: string; chatId?: string | null }): Promise<DurableWorkerRow[]> => {
+  (params: {
+    sessionId: string;
+    chatId?: string | null;
+  }): Promise<DurableWorkerRow[]> => {
     // Return only rows matching the requested chatId
     if (params.chatId === "chat-A") {
       return Promise.resolve([chatADurableRow]);
@@ -211,6 +214,7 @@ mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
 mock.module("@/lib/observability/events", () => ({
   listSessionEvents: mock(() => Promise.resolve([])),
   toSessionEventSnapshot: mock((e: unknown) => e),
+  emitSessionEvent: mock(() => Promise.resolve(null)),
 }));
 
 mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
@@ -244,7 +248,10 @@ describe("/api/sessions/[sessionId]/observability GET — multi-chat attribution
     // so it falls back to message-derived workers for chat-B.
     // This test verifies the route passes chatId to the query function and uses per-chat result.
     listManagedRuntimeWorkerRunsForSessionMock.mockImplementation(
-      (params: { sessionId: string; chatId?: string | null }): Promise<DurableWorkerRow[]> => {
+      (params: {
+        sessionId: string;
+        chatId?: string | null;
+      }): Promise<DurableWorkerRow[]> => {
         // Correct behaviour: filter by chatId. chat-B has NO durable rows.
         if (params.chatId === "chat-B") {
           return Promise.resolve([]);
@@ -278,13 +285,18 @@ describe("/api/sessions/[sessionId]/observability GET — multi-chat attribution
       expect.objectContaining({ chatId: "chat-B" }),
     );
     // message-derived extraction was called as fallback
-    expect(extractManagedRuntimeWorkersFromMessagesMock).toHaveBeenCalledTimes(1);
+    expect(extractManagedRuntimeWorkersFromMessagesMock).toHaveBeenCalledTimes(
+      1,
+    );
   });
 
   test("BT-MC-002: chat-B request with chat-B durable rows returns those durable workers (positive case)", async () => {
     // chat-B has its own durable rows → route should return those (source "durable")
     listManagedRuntimeWorkerRunsForSessionMock.mockImplementation(
-      (params: { sessionId: string; chatId?: string | null }): Promise<DurableWorkerRow[]> => {
+      (params: {
+        sessionId: string;
+        chatId?: string | null;
+      }): Promise<DurableWorkerRow[]> => {
         if (params.chatId === "chat-B") {
           return Promise.resolve([chatBDurableRow]);
         }
