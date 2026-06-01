@@ -1728,7 +1728,7 @@ const runAgentStep = async (
   let lastStreamError: unknown;
 
   try {
-    const stepAgentOptions =
+    const baseStepAgentOptions =
       inferenceProfileId && agentOptions.model
         ? {
             ...agentOptions,
@@ -1744,6 +1744,21 @@ const runAgentStep = async (
             }),
           }
         : agentOptions;
+
+    // Thread the stream writer so browser tools can stream inline screenshots.
+    const stepAgentOptions = {
+      ...baseStepAgentOptions,
+      writer: {
+        write: async (chunk: { type: "file"; url: string; mediaType: string }) => {
+          const w = writable.getWriter();
+          try {
+            await w.write(chunk as UIMessageChunk);
+          } finally {
+            w.releaseLock();
+          }
+        },
+      },
+    };
 
     await emitSessionEvent({
       sessionId,

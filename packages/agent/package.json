@@ -15,6 +15,7 @@
     "@ai-sdk/openai": "catalog:",
     "@open-agents/sandbox": "workspace:*",
     "ai": "catalog:",
+    "playwright": "^1.60.0",
     "zod": "catalog:"
   },
   "devDependencies": {

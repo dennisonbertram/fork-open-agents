@@ -14,6 +14,11 @@ import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
   bashTool,
+  browserClickTool,
+  browserExtractTool,
+  browserNavigateTool,
+  browserScreenshotTool,
+  browserTypeTool,
   editFileTool,
   globTool,
   grepTool,
@@ -73,6 +78,14 @@ const callOptionsSchema = z.object({
       sandboxName: z.string().optional(),
     })
     .optional(),
+  /**
+   * Optional stream writer for inline image/file chunks (e.g. browser screenshots).
+   * When provided, browser screenshot tool calls writer.write({ type: "file", ... })
+   * so screenshots render inline in chat.
+   */
+  writer: z
+    .custom<{ write: (chunk: { type: "file"; url: string; mediaType: string }) => void }>()
+    .optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -104,6 +117,11 @@ const tools = {
   setup_managed_runtime_profile: setupManagedRuntimeProfileTool,
   skill: skillTool,
   web_fetch: webFetchTool,
+  browser_navigate: browserNavigateTool(),
+  browser_click: browserClickTool(),
+  browser_type: browserTypeTool(),
+  browser_extract: browserExtractTool(),
+  browser_screenshot: browserScreenshotTool(),
 } satisfies ToolSet;
 
 export const OPEN_AGENT_TOOL_NAMES = Object.keys(tools) as Array<
@@ -201,6 +219,7 @@ export const openAgent = new ToolLoopAgent({
     const runtimeMode = options.runtimeMode ?? "classic";
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
+    const writer = options.writer;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -230,6 +249,7 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         runtimeMode,
         managedRuntime,
+        ...(writer ? { writer } : {}),
       },
     };
   },

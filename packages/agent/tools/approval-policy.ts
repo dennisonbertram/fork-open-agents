@@ -102,6 +102,18 @@ const KNOWN_OUTWARD_FACING_TOOLS = new Set([
   "editFileTool",
 ]);
 
+/**
+ * Browser tool names — all require approval unconditionally because they reach
+ * outward-facing / external web surfaces (arbitrary navigation, DOM interaction).
+ */
+const BROWSER_TOOL_NAMES = new Set([
+  "browser_navigate",
+  "browser_click",
+  "browser_type",
+  "browser_extract",
+  "browser_screenshot",
+]);
+
 // ---------------------------------------------------------------------------
 // Sub-policies
 // ---------------------------------------------------------------------------
@@ -202,6 +214,15 @@ export function classifyToolApproval(
     input !== null && typeof input === "object"
       ? (input as Record<string, unknown>)
       : {};
+
+  // 0. Browser tools — always require approval (outward-facing external web surfaces)
+  if (BROWSER_TOOL_NAMES.has(toolName)) {
+    return {
+      requires: true,
+      category: "browser-navigation",
+      reason: `Browser tool "${toolName}" navigates external web surfaces and requires approval`,
+    };
+  }
 
   // 1. Bash-specific policies (gitPush checked first for more specific category)
   if (toolName === "bash" || toolName === "bashTool") {
