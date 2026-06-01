@@ -340,3 +340,42 @@ describe("regression: buildFinalReportInputs sourceLocation format is stable", (
     expect(input.sourceLocation).toBe(`workflow-run/${id}/final-build-report`);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: evidence gate requires BOTH kinds — hasRequiredEvidence=false
+// when only one kind is supplied must produce "missing", not "available".
+// If the AND gate in chat.ts were reverted to OR, it would pass true to
+// decideFinalReportStatus when only one kind was present; the integration
+// tests in chat.test.ts catch that directly. This test documents the
+// pure-function contract: hasRequiredEvidence=false must always yield
+// "missing" for a completed run.
+// ---------------------------------------------------------------------------
+
+describe("regression: evidence gate is AND not OR — pure function contract", () => {
+  test("decideFinalReportStatus returns 'missing' when hasRequiredEvidence is false", () => {
+    const result = decideFinalReportStatus({
+      workflowStatus: "completed",
+      hasRequiredEvidence: false,
+    });
+    expect(result).toBe("missing");
+    expect(result).not.toBe("available");
+  });
+
+  test("decideFinalReportStatus returns 'available' only when hasRequiredEvidence is true AND run completed", () => {
+    const result = decideFinalReportStatus({
+      workflowStatus: "completed",
+      hasRequiredEvidence: true,
+    });
+    expect(result).toBe("available");
+  });
+
+  test("decideFinalReportStatus never returns 'available' when workflowStatus is not completed, even with evidence", () => {
+    for (const status of ["failed", "aborted", "unknown"] as const) {
+      const result = decideFinalReportStatus({
+        workflowStatus: status,
+        hasRequiredEvidence: true,
+      });
+      expect(result).not.toBe("available");
+    }
+  });
+});

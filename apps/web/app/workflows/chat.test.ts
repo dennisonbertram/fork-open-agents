@@ -2848,21 +2848,23 @@ describe("runAgentWorkflow", () => {
 
   // ── FIX 2: outer guard — thrown recording step must NOT flip workflowStatus to "failed" ──
 
-  // BT-GUARD-001: if buildReceiptInputs/buildFinalReportInputs throws, workflow still completes
-  test("records workflowStatus 'completed' even when buildReceiptInputs throws inside the recorder", async () => {
-    // Make buildReceiptInputs throw to simulate a failure inside recordReceiptAndFinalReportArtifacts.
-    // The outer try/catch guard in recordReceiptAndFinalReportArtifacts must swallow this.
-    mock.module("@/lib/workflows/final-report", () => ({
-      buildReceiptInputs: () => {
+  // BT-GUARD-001: if recordWorkflowArtifactBestEffort throws inside
+  // recordReceiptAndFinalReportArtifacts, the workflow still records "completed".
+  // We make recordWorkflowArtifactBestEffort throw to exercise the OUTER guard.
+  // We intentionally avoid mocking @/lib/workflows/final-report because
+  // mock.module mutates the live module namespace and would corrupt other test
+  // files running in the same process.
+  test("records workflowStatus 'completed' even when recordWorkflowArtifactBestEffort throws inside the receipt recorder", async () => {
+    // Override artifact-generator so recordWorkflowArtifactBestEffort throws
+    // synchronously, bypassing the inner best-effort catch and reaching the
+    // outer guard in recordReceiptAndFinalReportArtifacts.
+    mock.module("@/lib/workflows/artifact-generator", () => ({
+      recordWorkflowArtifactBestEffort: async () => {
         throw new Error(
-          "Simulated buildReceiptInputs failure for FIX-2 outer-guard test",
+          "Simulated recordWorkflowArtifactBestEffort failure for FIX-2 outer-guard test",
         );
       },
-      buildFinalReportInputs: () => {
-        throw new Error(
-          "Simulated buildFinalReportInputs failure for FIX-2 outer-guard test",
-        );
-      },
+      buildArtifactInputs: () => [],
     }));
 
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
