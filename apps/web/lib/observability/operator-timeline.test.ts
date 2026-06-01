@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, mock, spyOn, test } from "bun:test";
 import type { SessionEventSnapshot } from "./events";
 
 // ---------------------------------------------------------------------------
@@ -618,5 +618,255 @@ describe("buildOperatorTimeline", () => {
     // correlationIds must have sessionId
     const correlationIds = entry.correlationIds as Record<string, unknown>;
     expect(Object.hasOwn(correlationIds, "sessionId")).toBe(true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // FIX 1 — windowMs is honored (no unfiltered fallback) + explicit now
+  // ---------------------------------------------------------------------------
+
+  // FIX1-A: entries older than the window are excluded
+  test("FIX1-A: entries older than windowMs are excluded from result", () => {
+    // All events are 2 hours old relative to explicit now
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0); // 2026-05-01T12:00:00Z
+    const oneHourAgo = "2026-05-01T11:00:00.000Z"; // 1h before now — within 2h window
+    const threeHoursAgo = "2026-05-01T09:00:00.000Z"; // 3h before now — outside 2h window
+
+    const events = [
+      makeEvent({ id: "in-window", createdAt: oneHourAgo, eventName: "recent" }),
+      makeEvent({
+        id: "out-of-window",
+        createdAt: threeHoursAgo,
+        eventName: "old",
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 2 * 60 * 60 * 1000,
+      now: nowMs,
+    });
+
+    // Only the in-window event should appear
+    expect(result.length).toBe(1);
+    expect(result[0].id).toBe("in-window");
+  });
+
+  // FIX1-B: all entries outside window returns [] (NOT the unfiltered set)
+  test("FIX1-B: all entries outside windowMs returns empty array, not unfiltered fallback", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0); // 2026-05-01T12:00:00Z
+    // All events are 2 days old — outside a 1h window
+    const events = [
+      makeEvent({
+        id: "stale-1",
+        createdAt: "2026-04-29T10:00:00.000Z",
+        eventName: "old-event-1",
+      }),
+      makeEvent({
+        id: "stale-2",
+        createdAt: "2026-04-29T11:00:00.000Z",
+        eventName: "old-event-2",
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 60 * 60 * 1000, // 1 hour
+      now: nowMs,
+    });
+
+    // Must return [] — NOT fall back to the 2 stale entries
+    expect(result).toEqual([]);
+  });
+
+  // FIX1-C: without windowMs, all entries pass regardless of age
+  test("FIX1-C: when windowMs is omitted, all entries pass regardless of timestamp age", () => {
+    // Entries from years ago — should all pass with no windowing
+    const events = [
+      makeEvent({
+        id: "ancient-1",
+        createdAt: "2020-01-01T00:00:00.000Z",
+        eventName: "old-event",
+      }),
+      makeEvent({
+        id: "ancient-2",
+        createdAt: "2019-06-15T00:00:00.000Z",
+        eventName: "older-event",
+      }),
+    ];
+
+    // No windowMs passed → windowing disabled
+    const result = buildOperatorTimeline(events, [], [], []);
+
+    expect(result.length).toBe(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // FIX 2 — dedup key must not collapse distinct consecutive entries
+  // ---------------------------------------------------------------------------
+
+  // FIX2-A: consecutive entries with same kind/actor/label/workflowRunId but DIFFERENT summary → both kept
+  test("FIX2-A: consecutive entries with different summary are NOT collapsed", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const events = [
+      makeEvent({
+        id: "same-kind-1",
+        createdAt: "2026-05-01T11:00:00.000Z",
+        eventName: "worker-launched",
+        actorType: "workflow",
+        workflowRunId: "run-xyz",
+        summary: "summary-A", // distinct summary
+      }),
+      makeEvent({
+        id: "same-kind-2",
+        createdAt: "2026-05-01T11:01:00.000Z",
+        eventName: "worker-launched",
+        actorType: "workflow",
+        workflowRunId: "run-xyz",
+        summary: "summary-B", // different summary — must NOT be deduped
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 2 * 60 * 60 * 1000,
+      now: nowMs,
+    });
+
+    // Both entries must be preserved because summaries differ
+    expect(result.length).toBe(2);
+    const summaries = result.map(
+      (e: { summary: string | null }) => e.summary,
+    );
+    // Both summaries present (they pass through redaction unchanged for plain text)
+    expect(summaries).toContain("summary-A");
+    expect(summaries).toContain("summary-B");
+  });
+
+  // FIX2-B: true consecutive duplicates (identical in all meaningful fields) still collapse
+  test("FIX2-B: consecutive entries identical in ALL meaningful fields are still collapsed to one", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const events = [
+      makeEvent({
+        id: "true-dup-1",
+        createdAt: "2026-05-01T11:00:00.000Z",
+        eventName: "worker-launched",
+        actorType: "workflow",
+        workflowRunId: "run-xyz",
+        summary: "same-summary",
+      }),
+      makeEvent({
+        id: "true-dup-2",
+        createdAt: "2026-05-01T11:01:00.000Z",
+        eventName: "worker-launched",
+        actorType: "workflow",
+        workflowRunId: "run-xyz",
+        summary: "same-summary", // identical summary → collapse
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], [], {
+      windowMs: 2 * 60 * 60 * 1000,
+      now: nowMs,
+    });
+
+    // Same kind + actor + label + workflowRunId + summary → collapsed
+    expect(result.length).toBe(1);
+  });
+
+  // ---------------------------------------------------------------------------
+  // FIX 3 — recorder is actually invoked (not a no-op)
+  // ---------------------------------------------------------------------------
+
+  // FIX3-A: recorder receives operator-timeline-built on success
+  test("FIX3-A: injected recorder is called with operator-timeline-built on successful build", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const spyRecorder = mock(
+      (eventName: string, fields: Record<string, unknown>) => {
+        calls.push([eventName, fields]);
+      },
+    );
+
+    buildOperatorTimeline(
+      [
+        makeEvent({
+          id: "rec-evt",
+          createdAt: "2026-05-01T11:00:00.000Z",
+          sessionId: "sess-rec",
+        }),
+      ],
+      [],
+      [],
+      [],
+      { windowMs: 2 * 60 * 60 * 1000, now: nowMs },
+      spyRecorder,
+    );
+
+    const builtCall = calls.find(([name]) => name === "operator-timeline-built");
+    expect(builtCall).toBeDefined();
+    // Must include sessionId and entryCount
+    const fields = builtCall?.[1] ?? {};
+    expect(fields.sessionId).toBe("sess-rec");
+    expect(typeof fields.entryCount).toBe("number");
+  });
+
+  // FIX3-B: recorder receives operator-timeline-build-failed when build throws
+  test("FIX3-B: injected recorder is called with operator-timeline-build-failed when build fails", () => {
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    const spyRecorder = mock(
+      (eventName: string, fields: Record<string, unknown>) => {
+        calls.push([eventName, fields]);
+      },
+    );
+
+    // Trigger a build failure by forcing an OperatorTimelineError inside
+    // Pass a corrupt events array that will cause processing to throw
+    const corruptEvents = null as unknown as Parameters<
+      typeof buildOperatorTimeline
+    >[0];
+
+    let threw = false;
+    try {
+      buildOperatorTimeline(corruptEvents, [], [], [], undefined, spyRecorder);
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(true);
+    const failedCall = calls.find(
+      ([name]) => name === "operator-timeline-build-failed",
+    );
+    expect(failedCall).toBeDefined();
+  });
+
+  // FIX3-C: recorder emission never throws even when recorder itself throws
+  test("FIX3-C: recorder that throws internally does not break the timeline build", () => {
+    const nowMs = Date.UTC(2026, 4, 1, 12, 0, 0);
+    const throwingRecorder = mock(
+      (_eventName: string, _fields: Record<string, unknown>) => {
+        throw new Error("recorder failed");
+      },
+    );
+
+    let result: ReturnType<typeof buildOperatorTimeline> = [];
+    let threw = false;
+    try {
+      result = buildOperatorTimeline(
+        [
+          makeEvent({
+            id: "safe-evt",
+            createdAt: "2026-05-01T11:00:00.000Z",
+          }),
+        ],
+        [],
+        [],
+        [],
+        { windowMs: 2 * 60 * 60 * 1000, now: nowMs },
+        throwingRecorder,
+      );
+    } catch {
+      threw = true;
+    }
+
+    // The timeline build must succeed despite recorder throwing
+    expect(threw).toBe(false);
+    expect(result.length).toBe(1);
   });
 });
