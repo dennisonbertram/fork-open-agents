@@ -297,3 +297,166 @@ describe("regression: writer absent — screenshot does not attempt to write", (
     expect(result).toMatchObject({ success: true, streamed: false });
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION-005: async writer contract — no unhandled rejections from screenshot
+// ---------------------------------------------------------------------------
+describe("regression: async writer contract — writing is awaited, errors are caught", () => {
+  test("REGRESSION-005a: async writer.write is awaited — tool returns success when write resolves", async () => {
+    fakePage = makeFakePage();
+    let writeWasCalled = false;
+    const asyncWriter = {
+      write: async (_chunk: unknown): Promise<void> => {
+        writeWasCalled = true;
+        await Promise.resolve();
+      },
+    };
+    const result = await browserScreenshotTool().execute?.(
+      {},
+      executionOptions(makeContext({ writer: asyncWriter })),
+    );
+    expect(writeWasCalled).toBe(true);
+    expect(result).toMatchObject({ success: true, streamed: true });
+  });
+
+  test("REGRESSION-005b: writer.write that rejects → tool returns well-formed result, no unhandled rejection", async () => {
+    fakePage = makeFakePage();
+    let unhandled = false;
+    const handler = () => {
+      unhandled = true;
+    };
+    process.on("unhandledRejection", handler);
+
+    const rejectingWriter = {
+      write: (): Promise<void> =>
+        Promise.reject(new Error("stream locked — regression guard")),
+    };
+
+    const result = await browserScreenshotTool().execute?.(
+      {},
+      executionOptions(makeContext({ writer: rejectingWriter })),
+    );
+
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+    process.off("unhandledRejection", handler);
+
+    expect(unhandled).toBe(false);
+    expect(result).toBeDefined();
+    expect(result).toHaveProperty("success");
+  });
+
+  test("REGRESSION-005c: oversized screenshot is NOT streamed (byte cap enforced)", async () => {
+    fakePage = {
+      ...makeFakePage(),
+      screenshot: async () => Buffer.alloc(4 * 1024 * 1024, 0x89),
+    };
+    const chunks: unknown[] = [];
+    const writer = {
+      write: async (chunk: unknown): Promise<void> => {
+        chunks.push(chunk);
+      },
+    };
+    const result = await browserScreenshotTool().execute?.(
+      {},
+      executionOptions(makeContext({ writer })),
+    );
+    // Must succeed but NOT stream the oversized screenshot
+    if (result && "success" in result && result.success) {
+      expect((result as { streamed: boolean }).streamed).toBe(false);
+      expect(chunks).toHaveLength(0);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION-006: extract redaction + cap contract
+// ---------------------------------------------------------------------------
+describe("regression: extract text redaction + cap", () => {
+  test("REGRESSION-006a: extract output containing a Bearer token is redacted before return", async () => {
+    fakePage = {
+      ...makeFakePage(),
+      locator: () => ({
+        first: () => ({
+          textContent: async () =>
+            "Access with: Bearer sk-REGRESSION-GUARD-TOKEN-123456 for auth",
+          screenshot: async () => Buffer.from([]),
+        }),
+      }),
+    };
+    const { browserExtractTool: extract } = await import("./browser");
+    const result = await extract().execute?.(
+      { selector: "p" },
+      executionOptions(makeContext()),
+    );
+    if (result && "success" in result && result.success && "text" in result) {
+      expect((result as { text: string }).text).not.toContain(
+        "Bearer sk-REGRESSION-GUARD-TOKEN-123456",
+      );
+      expect((result as { text: string }).text).toContain("[REDACTED]");
+    } else {
+      throw new Error("Expected success result with text");
+    }
+  });
+
+  test("REGRESSION-006b: extract output longer than 10000 chars is truncated with marker", async () => {
+    fakePage = {
+      ...makeFakePage(),
+      locator: () => ({
+        first: () => ({
+          textContent: async () => "X".repeat(20000),
+          screenshot: async () => Buffer.from([]),
+        }),
+      }),
+    };
+    const { browserExtractTool: extract2 } = await import("./browser");
+    const result = await extract2().execute?.(
+      { selector: "body" },
+      executionOptions(makeContext()),
+    );
+    if (result && "success" in result && result.success && "text" in result) {
+      expect((result as { text: string }).text.length).toBeLessThanOrEqual(
+        10100,
+      );
+      expect((result as { text: string }).text).toContain("[TRUNCATED");
+    } else {
+      throw new Error("Expected success result with text");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// REGRESSION-007: sessionId is threaded from context to getBrowserSession
+// ---------------------------------------------------------------------------
+describe("regression: sessionId threading — each chat gets its own browser key", () => {
+  test("REGRESSION-007: distinct sessionIds produce distinct cache keys in getBrowserSession", async () => {
+    const capturedKeys: Array<string | undefined> = [];
+
+    mock.module("./browser-session", () => ({
+      getBrowserSession: async (ctx: { sessionId?: string }) => {
+        capturedKeys.push(ctx?.sessionId);
+        return {
+          page: {
+            goto: async () => ({ status: () => 200 }),
+            url: () => "https://x.com",
+            title: async () => "X",
+          },
+        };
+      },
+      closeBrowserSession: async () => {},
+    }));
+
+    const { browserNavigateTool: nav } = await import("./browser");
+    await nav().execute?.(
+      { url: "https://a.com" },
+      executionOptions(makeContext({ sessionId: "chat-111" })),
+    );
+    await nav().execute?.(
+      { url: "https://b.com" },
+      executionOptions(makeContext({ sessionId: "chat-222" })),
+    );
+
+    expect(capturedKeys).toContain("chat-111");
+    expect(capturedKeys).toContain("chat-222");
+    expect(capturedKeys[0]).not.toBe(capturedKeys[1]);
+  });
+});
