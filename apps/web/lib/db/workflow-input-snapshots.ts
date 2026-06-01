@@ -83,9 +83,7 @@ export async function persistWorkflowInputSnapshot(
       const existing = await db
         .select({ id: workflowInputSnapshots.id })
         .from(workflowInputSnapshots)
-        .where(
-          eq(workflowInputSnapshots.workflowRunId, input.workflowRunId),
-        );
+        .where(eq(workflowInputSnapshots.workflowRunId, input.workflowRunId));
       if (existing.length > 0 && existing[0]?.id) {
         return existing[0].id;
       }
