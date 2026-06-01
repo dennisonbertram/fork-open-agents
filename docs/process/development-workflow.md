@@ -149,7 +149,7 @@ Preferred proof order:
 3. local service smoke,
 4. Agent Browser or Playwright smoke for visible UI,
 5. Vercel Preview smoke after deployment,
-6. staging or production smoke for live-service paths.
+6. dev or production smoke for live-service paths.
 
 Live LLM calls, real customer repositories, production databases, and live
 provider behavior should be canaries, not the primary regression suite when a

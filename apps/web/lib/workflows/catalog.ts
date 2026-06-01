@@ -74,7 +74,7 @@ function freezeDefinition(
  */
 function readOnlyMap<K, V>(source: Map<K, V>): ReadonlyMap<K, V> {
   return new Proxy(source, {
-    get(target, prop, receiver) {
+    get(target, prop) {
       if (prop === "set" || prop === "delete" || prop === "clear") {
         return () => {
           throw new TypeError(
@@ -82,7 +82,7 @@ function readOnlyMap<K, V>(source: Map<K, V>): ReadonlyMap<K, V> {
           );
         };
       }
-      const value = Reflect.get(target, prop, receiver);
+      const value = Reflect.get(target, prop, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   }) as unknown as ReadonlyMap<K, V>;
@@ -126,7 +126,8 @@ export function buildRegistry(
         onlyProofLevelFailed &&
         raw !== null &&
         raw !== undefined &&
-        typeof raw === "object"
+        typeof raw === "object" &&
+        Object.hasOwn(raw, "proofLevel")
       ) {
         // The raw value is an object with all required fields, but proofLevel
         // is not a recognised enum member.

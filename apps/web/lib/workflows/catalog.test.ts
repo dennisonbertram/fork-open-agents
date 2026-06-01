@@ -145,6 +145,20 @@ describe("buildRegistry — validation", () => {
     expect(err.kind).toBe("unsupported_proof_level");
   });
 
+  test("BT-006b: rejects a definition missing proofLevel with definition_invalid", () => {
+    const { proofLevel: _proofLevel, ...bad } = VALID_DEFINITION;
+    let thrown: unknown;
+    try {
+      buildRegistry([bad]);
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown).toBeInstanceOf(WorkflowCatalogError);
+    const err = thrown as WorkflowCatalogError;
+    expect(err.kind).toBe("definition_invalid");
+    expect(err.message).not.toContain('proofLevel "undefined"');
+  });
+
   // BT-007: Version validation — malformed version is rejected
   test("BT-007: rejects a definition with a malformed version string", () => {
     const bad = { ...VALID_DEFINITION, version: "not-a-version" };
@@ -485,6 +499,15 @@ describe("FIX-2: registry values and DEFAULT_CATALOG are immutable after constru
     // Whether set throws or is a no-op, the injected id must not be discoverable
     const injected = lookupWorkflow(registry, "injected-workflow");
     expect(injected).toBeUndefined();
+  });
+
+  test("FIX2-003b: registry.definitions exposes size without throwing", () => {
+    const registry = buildRegistry([
+      VALID_DEFINITION,
+      { ...VALID_DEFINITION, id: "second-workflow" },
+    ]);
+
+    expect(registry.definitions.size).toBe(2);
   });
 
   test("FIX2-004: DEFAULT_CATALOG cannot be mutated by pushing a new entry", () => {

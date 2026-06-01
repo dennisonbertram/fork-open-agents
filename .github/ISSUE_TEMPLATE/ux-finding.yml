@@ -1,0 +1,103 @@
+name: "UX finding"
+description: "A single usability/UX finding observed while using the product as a real user. Evidence-grounded."
+title: "[UX] "
+labels: ["ux-finding"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a UX finding. File **one discrete problem per issue** and ground every field in real evidence (a verbatim user quote, a screenshot, the exact place it happened). These findings come from product walks where a clueless first-time user pursues a real goal; their confusion is treated as ground truth, not user error.
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How badly does this hurt a real user trying to get their job done?
+      options:
+        - "Critical — blocks the job, causes abandonment, or breaks trust"
+        - "Major — significant friction/confusion/risk; user struggles but may recover"
+        - "Minor — papercut; noticeable but not blocking"
+    validations:
+      required: true
+  - type: dropdown
+    id: finding_type
+    attributes:
+      label: Finding type
+      options:
+        - "Value clarity / onboarding (what is this, why, how to start)"
+        - "Jargon / labeling (internal vocabulary leaking to users)"
+        - "Discoverability (user can't find a needed action)"
+        - "Trust & safety signal (cost, irreversibility, scope)"
+        - "Feedback / system status (no progress, silent failure)"
+        - "Mental-model mismatch"
+        - "Broken / empty surface (functional bug)"
+        - "Visual / layout"
+    validations:
+      required: true
+  - type: input
+    id: surface
+    attributes:
+      label: Surface / location
+      description: Route/page + the specific element.
+      placeholder: "/sessions → New Session → runtime toggle button"
+    validations:
+      required: true
+  - type: input
+    id: persona_journey
+    attributes:
+      label: Persona & journey
+      placeholder: "naive-first-timer — trying to share a session with a teammate"
+    validations:
+      required: true
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened (the confusion)
+      description: What the user actually experienced.
+    validations:
+      required: true
+  - type: textarea
+    id: expectation
+    attributes:
+      label: What the user expected
+    validations:
+      required: false
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: Verbatim user quote(s), screenshot path(s)/link(s), console/error output. Evidence or it didn't happen.
+    validations:
+      required: true
+  - type: textarea
+    id: ux_assessment
+    attributes:
+      label: UX assessment
+      description: |
+        The core of this report. Cover: how the feature/action should be EXPOSED; how the user should USE it; how it should be made CLEAR (labels, empty states, jargon to avoid, confirmation/feedback); and how it should DELIVER VALUE. Be specific and grounded in the evidence.
+    validations:
+      required: true
+  - type: textarea
+    id: suggested_direction
+    attributes:
+      label: Suggested direction (non-prescriptive)
+      description: Optional. Leave implementation specifics to grooming.
+    validations:
+      required: false
+  - type: input
+    id: frequency
+    attributes:
+      label: Frequency
+      placeholder: "Seen in 3 journeys: dashboard, new-session, share"
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submit
+      options:
+        - label: This is a single discrete finding (not a bundle)
+          required: true
+        - label: Evidence (quote/screenshot/error) is included
+          required: true
+        - label: Filed against the operator's fork (not vercel-labs upstream)
+          required: true
