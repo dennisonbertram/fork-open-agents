@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type {
+  WorkflowArtifactRedactionStatus,
+  WorkflowArtifactStatus,
+} from "../workflows/artifacts";
 
 // ---------------------------------------------------------------------------
 // Fake DB infrastructure — mirrors the mocked-db pattern used in sessions.test.ts
@@ -38,14 +42,18 @@ const fakeDb = {
     values: (input: unknown) => ({
       returning: async (): Promise<FakeRow[]> => {
         if (fakeInsertedRows.length > 0) return fakeInsertedRows;
-        // If no explicit fake rows set, simulate an inserted row from input
+        // If no explicit fake rows set, echo back exactly what the insert
+        // passed (raw — no default substitution for status/redactionStatus).
+        // This is intentional: if the app-level default is removed from
+        // createArtifact, the field will be undefined here and REG-001/REG-002
+        // will fail — proving the regression guard bites.
         const row = input as Partial<FakeRow>;
         return [
           {
             id: row.id ?? "fake-id",
             kind: row.kind ?? "research_packet",
-            status: row.status ?? "expected",
-            redactionStatus: row.redactionStatus ?? "pending",
+            status: row.status as string,
+            redactionStatus: row.redactionStatus as string,
             sourceLocation: row.sourceLocation ?? null,
             summary: row.summary ?? null,
             createdByActor: row.createdByActor ?? null,
@@ -328,6 +336,21 @@ describe("updateArtifactStatus", () => {
       updateArtifactStatus("ghost-id", "available"),
     ).rejects.toMatchObject({ code: "not_found" });
   });
+
+  test("BT-004c: throws invalid_artifact when status is not in the enum", async () => {
+    // FIX B: updateArtifactStatus must validate the enum BEFORE issuing the
+    // UPDATE — a cast/JS caller should not be able to persist an out-of-vocab
+    // value. Throw WorkflowArtifactError("invalid_artifact") before any DB call.
+    const { updateArtifactStatus, WorkflowArtifactError } =
+      await artifactsModulePromise;
+
+    await expect(
+      updateArtifactStatus("art-x", "bogus" as WorkflowArtifactStatus),
+    ).rejects.toBeInstanceOf(WorkflowArtifactError);
+    await expect(
+      updateArtifactStatus("art-x", "bogus" as WorkflowArtifactStatus),
+    ).rejects.toMatchObject({ code: "invalid_artifact" });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -374,6 +397,26 @@ describe("setArtifactRedactionStatus", () => {
     await expect(
       setArtifactRedactionStatus("ghost-id", "passed"),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  test("BT-005c: throws invalid_artifact when redactionStatus is not in the enum", async () => {
+    // FIX B: setArtifactRedactionStatus must validate the enum BEFORE issuing
+    // the UPDATE — same invariant as BT-004c for the redaction path.
+    const { setArtifactRedactionStatus, WorkflowArtifactError } =
+      await artifactsModulePromise;
+
+    await expect(
+      setArtifactRedactionStatus(
+        "art-y",
+        "bogus" as WorkflowArtifactRedactionStatus,
+      ),
+    ).rejects.toBeInstanceOf(WorkflowArtifactError);
+    await expect(
+      setArtifactRedactionStatus(
+        "art-y",
+        "bogus" as WorkflowArtifactRedactionStatus,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_artifact" });
   });
 });
 
