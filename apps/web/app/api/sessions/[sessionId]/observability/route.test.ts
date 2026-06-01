@@ -295,8 +295,11 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
     expect(a).toBeDefined();
     expect(b).toBeDefined();
 
-    expect((a?.events as unknown[]).length).toBe(1);
-    expect((b?.events as unknown[]).length).toBe(0);
-    expect(b?.blockedReason).toBe("waiting on external API");
+    // Non-optional access after .toBeDefined() assertion above
+    expect((a as Record<string, unknown>).events).toHaveLength(1);
+    expect((b as Record<string, unknown>).events).toHaveLength(0);
+    expect((b as Record<string, unknown>).blockedReason).toBe(
+      "waiting on external API",
+    );
   });
 });

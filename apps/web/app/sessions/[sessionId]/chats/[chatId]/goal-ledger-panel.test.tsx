@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { WorkflowGoalEventJson, WorkflowGoalJson } from "./hooks/use-session-observability";
+import type {
+  WorkflowGoalEventJson,
+  WorkflowGoalJson,
+} from "./hooks/use-session-observability";
 import { GoalLedgerSection } from "./goal-ledger-panel";
 
 function makeGoal(overrides: Partial<WorkflowGoalJson> = {}): WorkflowGoalJson {
@@ -44,9 +47,24 @@ describe("GoalLedgerSection", () => {
 
   test("BT-007: renders ordered event timeline with sequence, eventType and summary", () => {
     const events: WorkflowGoalEventJson[] = [
-      makeEvent({ id: "ev-1", sequence: 1, eventType: "goal_started", summary: "Goal began." }),
-      makeEvent({ id: "ev-2", sequence: 2, eventType: "progress", summary: "Halfway done." }),
-      makeEvent({ id: "ev-3", sequence: 3, eventType: "goal_completed", summary: "Finished." }),
+      makeEvent({
+        id: "ev-1",
+        sequence: 1,
+        eventType: "goal_started",
+        summary: "Goal began.",
+      }),
+      makeEvent({
+        id: "ev-2",
+        sequence: 2,
+        eventType: "progress",
+        summary: "Halfway done.",
+      }),
+      makeEvent({
+        id: "ev-3",
+        sequence: 3,
+        eventType: "goal_completed",
+        summary: "Finished.",
+      }),
     ];
     const html = renderToStaticMarkup(
       <GoalLedgerSection goals={[makeGoal({ events })]} />,
@@ -95,7 +113,8 @@ describe("GoalLedgerSection", () => {
       />,
     );
 
-    expect(html).toContain("awaiting_input");
+    // The chip renders the status with underscores replaced by spaces
+    expect(html).toContain("awaiting input");
     expect(html).toContain("Awaiting user confirmation");
     expect(html).toContain("Needs attention");
   });
@@ -122,7 +141,11 @@ describe("GoalLedgerSection", () => {
 
   test("BT-012: renders multiple goals", () => {
     const goalA = makeGoal({ id: "g-1", objective: "Build auth service" });
-    const goalB = makeGoal({ id: "g-2", objective: "Write e2e tests", status: "complete" });
+    const goalB = makeGoal({
+      id: "g-2",
+      objective: "Write e2e tests",
+      status: "complete",
+    });
     const html = renderToStaticMarkup(
       <GoalLedgerSection goals={[goalA, goalB]} />,
     );
