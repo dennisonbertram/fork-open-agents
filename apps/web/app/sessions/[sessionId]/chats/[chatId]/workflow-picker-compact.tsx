@@ -1,6 +1,7 @@
 "use client";
 
 import { Workflow } from "lucide-react";
+import { useState } from "react";
 import useSWR from "swr";
 import type { WorkflowCatalogEntry } from "@/app/api/workflows/catalog/route";
 import { Button } from "@/components/ui/button";
@@ -8,8 +9,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -48,16 +47,29 @@ async function fetchWorkflowCatalog(
 // ── Pure presenter (exported for testability) ─────────────────────────────────
 
 /**
- * Renders the list of workflow items as plain HTML list elements.
- * Exported as a pure presenter so tests can assert item names, disabled
- * reasons, and disabled markers via renderToStaticMarkup without needing
- * the Radix DropdownMenu portal context.
+ * Renders the list of workflow items as plain HTML buttons with full
+ * accessibility markup (role="menuitemradio", aria-checked, aria-disabled).
  *
- * When used inside WorkflowPickerCompact, the onSelect callback is wired
- * into the DropdownMenuRadioGroup instead (to get native Radix selection).
+ * This is the SINGLE source of truth for item rendering. WorkflowPickerCompact
+ * renders its menu items exclusively through this component — there is no
+ * duplicated Radix DropdownMenuRadioGroup item block.
+ *
+ * Exported as a pure presenter so tests can assert item names, disabled
+ * reasons, aria-checked states, and disabled markers via renderToStaticMarkup
+ * without needing the Radix DropdownMenu portal context.
+ *
+ * Note: selection-only contract — there is no deselect affordance. Once a
+ * workflow is selected, the user selects a different one to change it. This
+ * keeps the v1 surface minimal; a deselect option can be added in v2 if needed.
+ *
+ * Note on click simulation: renderToStaticMarkup produces static HTML with no
+ * DOM event handlers. Click behavior is verified by calling onSelect directly
+ * in tests. The static markup tests (disabled, aria-checked, disabledReason)
+ * cover all user-visible properties of the items.
  */
 export function WorkflowPickerItems({
   workflows,
+  selectedId,
   onSelect,
 }: WorkflowPickerItemsProps) {
   return (
@@ -69,12 +81,15 @@ export function WorkflowPickerItems({
           key={workflow.id}
         >
           <button
+            aria-checked={workflow.id === selectedId}
+            aria-disabled={!workflow.available}
             disabled={!workflow.available}
             onClick={() => {
               if (workflow.available) {
                 onSelect(workflow.id);
               }
             }}
+            role="menuitemradio"
             type="button"
           >
             <span className="flex min-w-0 flex-col gap-0.5">
@@ -103,12 +118,17 @@ export function WorkflowPickerItems({
  * Compact workflow picker chip for the chat composer toolbar.
  * Fetches the workflow catalog via SWR and exposes a controlled selection
  * interface. Does NOT start a run — selection is local state only.
+ *
+ * Renders menu items exclusively via WorkflowPickerItems (the tested presenter).
+ * The menu is open-state controlled so handleSelect can close it after selection.
  */
 export function WorkflowPickerCompact({
   disabled = false,
   selectedWorkflowId = null,
   onSelectWorkflow,
 }: WorkflowPickerCompactProps) {
+  const [open, setOpen] = useState(false);
+
   const { data, error, isLoading } = useSWR(
     "/api/workflows/catalog",
     fetchWorkflowCatalog,
@@ -130,8 +150,13 @@ export function WorkflowPickerCompact({
         ? "No workflows available"
         : "Select workflow";
 
+  function handleSelect(id: string | null) {
+    onSelectWorkflow?.(id);
+    setOpen(false);
+  }
+
   return (
-    <DropdownMenu>
+    <DropdownMenu onOpenChange={setOpen} open={open}>
       <Tooltip>
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
@@ -164,35 +189,11 @@ export function WorkflowPickerCompact({
             {error ? "Failed to load workflows." : "No workflows available."}
           </div>
         ) : null}
-        <DropdownMenuRadioGroup
-          value={selectedWorkflowId ?? ""}
-          onValueChange={(value) => {
-            onSelectWorkflow?.(value === "" ? null : value);
-          }}
-        >
-          {workflows.map((workflow) => (
-            <DropdownMenuRadioItem
-              className="items-start"
-              disabled={!workflow.available}
-              key={workflow.id}
-              value={workflow.id}
-            >
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="truncate">{workflow.name}</span>
-                  <span className="text-muted-foreground shrink-0 text-[11px]">
-                    {workflow.proofLevel}
-                  </span>
-                </span>
-                {!workflow.available && workflow.disabledReason ? (
-                  <span className="text-muted-foreground max-w-[16rem] truncate text-[11px]">
-                    {workflow.disabledReason}
-                  </span>
-                ) : null}
-              </span>
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        <WorkflowPickerItems
+          onSelect={handleSelect}
+          selectedId={selectedWorkflowId ?? null}
+          workflows={workflows}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );
