@@ -15,6 +15,7 @@ let provisioned = false;
 const connectSandboxCalls: unknown[] = [];
 const waitCalls: string[] = [];
 const kickCalls: string[] = [];
+const lifecycleKickCalls: unknown[] = [];
 
 function currentSession() {
   return {
@@ -163,7 +164,9 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
   getNextLifecycleVersion: () => 1,
 }));
 mock.module("@/lib/sandbox/lifecycle-kick", () => ({
-  kickSandboxLifecycleWorkflow: () => undefined,
+  kickSandboxLifecycleWorkflow: (input: unknown) => {
+    lifecycleKickCalls.push(input);
+  },
 }));
 
 const modulePromise = import("./chat-sandbox-runtime");
@@ -175,6 +178,7 @@ describe("resolveChatSandboxRuntime", () => {
     connectSandboxCalls.length = 0;
     waitCalls.length = 0;
     kickCalls.length = 0;
+    lifecycleKickCalls.length = 0;
   });
 
   test("waits for the in-flight provisioning run and bare-reconnects", async () => {
@@ -200,5 +204,44 @@ describe("resolveChatSandboxRuntime", () => {
 
     expect(result.sandboxState).toEqual(activeSandboxState);
     expect(result.workingDirectory).toBe("/workspace");
+  });
+
+  test("does not re-fire the lifecycle kick (provisioning owns it)", async () => {
+    const { resolveChatSandboxRuntime } = await modulePromise;
+
+    await resolveChatSandboxRuntime({
+      userId: "user-1",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      assistantId: "assistant-1",
+      workflowRunId: "wrun-1",
+    });
+
+    // provisionSessionSandbox owns the create-time lifecycle kick; the chat
+    // path must not double-fire it for the same provisioning run.
+    expect(lifecycleKickCalls).toHaveLength(0);
+  });
+
+  test("preserves runtimeMode and managedRuntime fields for managed sessions (BT-006)", async () => {
+    runtimeMode = "managed_runtime";
+    const { resolveChatSandboxRuntime } = await modulePromise;
+
+    const result = await resolveChatSandboxRuntime({
+      userId: "user-1",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      assistantId: "assistant-1",
+      workflowRunId: "wrun-1",
+    });
+
+    expect(result.runtimeMode).toBe("managed_runtime");
+    expect(result.managedRuntime).toMatchObject({
+      profileId: "web-bun-agent-browser",
+      profileVersion: "1",
+      profileDisplayName: "Web Bun Agent",
+      profileRunId: "profile-run-1",
+    });
+    // Managed-runtime environment details are appended to the returned context.
+    expect(result.environmentDetails).toContain("# Managed Runtime");
   });
 });
