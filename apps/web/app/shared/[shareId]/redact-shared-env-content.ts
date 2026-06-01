@@ -1,5 +1,10 @@
 import { posix } from "node:path";
-import type { WebAgentUIMessage, WebAgentUIMessagePart } from "@/app/types";
+import type {
+  WebAgentRuntimeProofData,
+  WebAgentUIMessage,
+  WebAgentUIMessagePart,
+} from "@/app/types";
+import { redactHarnessValue } from "@/lib/harness/redaction";
 
 const REDACTED_READ_LINE = "[redacted from shared page]";
 const REDACTED_WRITE_LINE = "[content redacted from shared page]";
@@ -280,9 +285,94 @@ function sanitizeMessagePart(
         ...part,
         output: sanitizeTaskOutput(part.output) as typeof part.output,
       } as WebAgentUIMessagePart;
+    case "tool-bash":
+      if (part.state !== "output-available") {
+        return part;
+      }
+
+      return {
+        ...part,
+        output: sanitizeBashOutput(part.output) as typeof part.output,
+      } as WebAgentUIMessagePart;
+    case "data-runtime-proof":
+      return {
+        ...part,
+        data: sanitizeRuntimeProofData(part.data),
+      } as WebAgentUIMessagePart;
     default:
       return part;
   }
+}
+
+function redactStringValue(value: unknown): string | null {
+  if (typeof value === "string") {
+    // Pass without a key so redactHarnessValue uses pattern-based redactString,
+    // not the ARTIFACT_CONTENT_KEYS blanket replacement.
+    return redactHarnessValue(value) as string;
+  }
+  return null;
+}
+
+function sanitizeBashOutput(output: unknown): unknown {
+  if (!isRecord(output)) {
+    return output;
+  }
+
+  const result: Record<string, unknown> = { ...output };
+
+  for (const key of ["stdout", "stderr"] as const) {
+    if (typeof result[key] === "string") {
+      result[key] = redactStringValue(result[key]);
+    }
+  }
+
+  return result;
+}
+
+function sanitizeRuntimeProofData(
+  data: WebAgentRuntimeProofData,
+): WebAgentRuntimeProofData {
+  const latest = data.workerEvidence.latest;
+
+  return {
+    ...data,
+    evidence: data.evidence.map((entry) =>
+      typeof redactHarnessValue(entry) === "string"
+        ? (redactHarnessValue(entry) as string)
+        : entry,
+    ),
+    workerEvidence: {
+      ...data.workerEvidence,
+      latest:
+        latest === null
+          ? null
+          : {
+              ...latest,
+              currentToolSummary:
+                latest.currentToolSummary === null
+                  ? null
+                  : (redactHarnessValue(latest.currentToolSummary) as string),
+              summary:
+                latest.summary === null
+                  ? null
+                  : (redactHarnessValue(latest.summary) as string),
+            },
+    },
+    coordinatorDirectToolUse: {
+      ...data.coordinatorDirectToolUse,
+      toolLabels: data.coordinatorDirectToolUse.toolLabels.map((label) =>
+        typeof redactHarnessValue(label) === "string"
+          ? (redactHarnessValue(label) as string)
+          : label,
+      ),
+      warning:
+        data.coordinatorDirectToolUse.warning === null
+          ? null
+          : (redactHarnessValue(
+              data.coordinatorDirectToolUse.warning,
+            ) as string),
+    },
+  };
 }
 
 export function redactSharedEnvContent(
