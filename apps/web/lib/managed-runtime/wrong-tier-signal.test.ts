@@ -11,7 +11,10 @@ describe("wrong-tier signal", () => {
   // BT-006a: docker verify-docker-daemon failure is classified "wrong_tier"
   test("docker-in-sandbox verify-docker-daemon failure is classified wrong_tier", () => {
     expect(
-      isWrongTierVerificationFailure("docker-in-sandbox", "verify-docker-daemon"),
+      isWrongTierVerificationFailure(
+        "docker-in-sandbox",
+        "verify-docker-daemon",
+      ),
     ).toBe(true);
   });
 
@@ -36,9 +39,9 @@ describe("wrong-tier signal", () => {
 
   // BT-006b: python setup failure is NOT wrong_tier
   test("python-uv verify-python failure is classified setup_failure, not wrong_tier", () => {
-    expect(
-      isWrongTierVerificationFailure("python-uv", "verify-python"),
-    ).toBe(false);
+    expect(isWrongTierVerificationFailure("python-uv", "verify-python")).toBe(
+      false,
+    );
   });
 
   test("classifyVerificationFailure returns setup_failure for python-uv verify-python", () => {

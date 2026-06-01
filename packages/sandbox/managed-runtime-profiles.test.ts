@@ -78,7 +78,7 @@ describe("managed runtime profiles", () => {
     test("has setup commands referencing uv install", () => {
       const profile = getManagedRuntimeProfile("python-uv");
       expect(profile.setupCommands.length).toBeGreaterThan(0);
-      const installCmd = profile.setupCommands[0];
+      const installCmd = profile.setupCommands[0]!;
       expect(installCmd.command).toContain("uv");
       expect(installCmd.command).toContain("set -e");
     });

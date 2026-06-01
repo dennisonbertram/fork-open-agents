@@ -50,9 +50,9 @@ describe("detectRepoProfile", () => {
 
   // BT-005a: deterministic precedence — Python wins over Docker when both present
   test("precedence: python-uv wins over docker-in-sandbox when both markers present", () => {
-    expect(
-      detectRepoProfile(["pyproject.toml", "Dockerfile"]),
-    ).toBe("python-uv");
+    expect(detectRepoProfile(["pyproject.toml", "Dockerfile"])).toBe(
+      "python-uv",
+    );
   });
 
   // BT-005b: go wins over Docker
@@ -68,16 +68,13 @@ describe("detectRepoProfile", () => {
   // BT-005d: { path: string }[] overload
   test("accepts object array overload { path: string }[]", () => {
     expect(
-      detectRepoProfile([
-        { path: "pyproject.toml" },
-        { path: "src/app.py" },
-      ]),
+      detectRepoProfile([{ path: "pyproject.toml" }, { path: "src/app.py" }]),
     ).toBe("python-uv");
   });
 
   test("detects go.mod via object array overload", () => {
-    expect(detectRepoProfile([{ path: "go.mod" }, { path: "cmd/main.go" }])).toBe(
-      "go-toolchain",
-    );
+    expect(
+      detectRepoProfile([{ path: "go.mod" }, { path: "cmd/main.go" }]),
+    ).toBe("go-toolchain");
   });
 });
