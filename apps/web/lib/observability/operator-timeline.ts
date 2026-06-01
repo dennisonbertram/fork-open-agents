@@ -283,8 +283,7 @@ function workflowStepToEntry(
 ): OperatorTimelineEntry {
   // Prefer startedAt; fall back to createdAt if startedAt is missing.
   // The build guard allows steps with valid createdAt even if startedAt is absent.
-  const timestamp =
-    toTimestamp(step.startedAt) ?? step.createdAt.toISOString();
+  const timestamp = toTimestamp(step.startedAt) ?? step.createdAt.toISOString();
   return {
     id: step.id,
     timestamp,
@@ -431,8 +430,7 @@ export function buildOperatorTimeline(
     for (const step of workflowRunSteps) {
       // Accept either startedAt or createdAt as the timestamp source.
       // A step with an invalid startedAt but a valid createdAt is recoverable.
-      const stepTs =
-        toTimestamp(step.startedAt) ?? toTimestamp(step.createdAt);
+      const stepTs = toTimestamp(step.startedAt) ?? toTimestamp(step.createdAt);
       if (!stepTs || !step.id) {
         console.warn(
           `[operator-timeline] Skipping malformed workflow step — errorKind: operator_timeline_invalid_event`,
@@ -475,8 +473,7 @@ export function buildOperatorTimeline(
     const afterWindow =
       windowMs !== undefined
         ? allEntries.filter(
-            (e) =>
-              e.timestamp >= new Date(nowMs - windowMs).toISOString(),
+            (e) => e.timestamp >= new Date(nowMs - windowMs).toISOString(),
           )
         : allEntries;
 

@@ -632,7 +632,11 @@ describe("buildOperatorTimeline", () => {
     const threeHoursAgo = "2026-05-01T09:00:00.000Z"; // 3h before now — outside 2h window
 
     const events = [
-      makeEvent({ id: "in-window", createdAt: oneHourAgo, eventName: "recent" }),
+      makeEvent({
+        id: "in-window",
+        createdAt: oneHourAgo,
+        eventName: "recent",
+      }),
       makeEvent({
         id: "out-of-window",
         createdAt: threeHoursAgo,
@@ -731,9 +735,7 @@ describe("buildOperatorTimeline", () => {
 
     // Both entries must be preserved because summaries differ
     expect(result.length).toBe(2);
-    const summaries = result.map(
-      (e: { summary: string | null }) => e.summary,
-    );
+    const summaries = result.map((e: { summary: string | null }) => e.summary);
     // Both summaries present (they pass through redaction unchanged for plain text)
     expect(summaries).toContain("summary-A");
     expect(summaries).toContain("summary-B");
@@ -799,7 +801,9 @@ describe("buildOperatorTimeline", () => {
       spyRecorder,
     );
 
-    const builtCall = calls.find(([name]) => name === "operator-timeline-built");
+    const builtCall = calls.find(
+      ([name]) => name === "operator-timeline-built",
+    );
     expect(builtCall).toBeDefined();
     // Must include sessionId and entryCount
     const fields = builtCall?.[1] ?? {};
@@ -928,9 +932,7 @@ describe("buildOperatorTimeline", () => {
     const events = Array.from({ length: count }, (_, i) =>
       makeEvent({
         id: `batch-${i}`,
-        createdAt: new Date(
-          Date.UTC(2026, 4, 1, 11, 0, i),
-        ).toISOString(),
+        createdAt: new Date(Date.UTC(2026, 4, 1, 11, 0, i)).toISOString(),
         eventName: "worker-launched",
         actorType: "workflow",
         workflowRunId: "run-dedup",
