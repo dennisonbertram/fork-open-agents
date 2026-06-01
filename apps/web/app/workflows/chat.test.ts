@@ -120,6 +120,43 @@ const spies = {
     createdAt: new Date(),
     updatedAt: new Date(),
   })),
+  // Default: returns research_packet + spec artifacts (hasRequiredEvidence = true)
+  listArtifacts: mock(async (_filter: unknown) =>
+    Promise.resolve([
+      {
+        id: "artifact-research-id",
+        kind: "research_packet",
+        status: "available",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+      {
+        id: "artifact-spec-id",
+        kind: "spec",
+        status: "available",
+        redactionStatus: "pending",
+        sourceLocation: null,
+        summary: null,
+        createdByActor: null,
+        workflowRunId: "wrun_test-123",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        goalId: null,
+        gateId: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    ]),
+  ),
 };
 
 let testSessionRecord: {
@@ -424,6 +461,7 @@ mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
 
 mock.module("@/lib/db/workflow-artifacts", () => ({
   createArtifact: spies.createArtifact,
+  listArtifacts: spies.listArtifacts,
 }));
 
 const { runAgentWorkflow } = await import("./chat");
@@ -2327,6 +2365,210 @@ describe("runAgentWorkflow", () => {
       expect(typeof input.summary).toBe("string");
       expect((input.summary ?? "").length).toBeGreaterThan(0);
     }
+  });
+
+  // ── BT-007: receipt + final_build_report generated on managed_runtime completion ──
+
+  test("creates receipt and final_build_report artifacts for a managed_runtime run", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const kinds = artifactCalls.map(
+      (call) => (call[0] as { kind: string }).kind,
+    );
+
+    expect(kinds).toContain("receipt");
+    expect(kinds).toContain("final_build_report");
+  });
+
+  // ── BT-008: evidence gating — completed run WITH research/spec artifacts → final_build_report available ──
+
+  test("creates final_build_report with status 'available' when research/spec artifacts exist for the run", async () => {
+    // listArtifacts default spy returns research_packet + spec (hasRequiredEvidence = true)
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    expect(input.status).toBe("available");
+  });
+
+  // ── BT-009: evidence gating — completed run WITHOUT research/spec artifacts → final_build_report missing ──
+
+  test("creates final_build_report with status 'missing' when no research/spec artifacts exist for the run", async () => {
+    // Override listArtifacts to return empty (no research_packet/spec)
+    spies.listArtifacts.mockImplementationOnce(async () =>
+      Promise.resolve([]),
+    );
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const finalReport = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "final_build_report",
+    );
+    expect(finalReport).toBeDefined();
+    const input = finalReport![0] as { status: string };
+    expect(input.status).toBe("missing");
+  });
+
+  // ── BT-010: receipt redaction — secret not written ──
+
+  test("redacts secrets from receipt and final_build_report summaries", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(
+      makeOptions({
+        messages: [
+          {
+            id: "user-1",
+            role: "user" as const,
+            parts: [
+              {
+                type: "text",
+                text: "Deploy using Bearer sk-supersecret12345 for auth",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const receiptAndFinal = artifactCalls.filter((call) => {
+      const kind = (call[0] as { kind: string }).kind;
+      return kind === "receipt" || kind === "final_build_report";
+    });
+
+    expect(receiptAndFinal.length).toBeGreaterThanOrEqual(2);
+
+    for (const call of receiptAndFinal) {
+      const input = call[0] as { summary: string | null };
+      expect(input.summary ?? "").not.toContain("sk-supersecret12345");
+    }
+  });
+
+  // ── BT-011: defensive — listArtifacts failure does not crash the workflow ──
+
+  test("runAgentWorkflow completes normally when listArtifacts rejects", async () => {
+    spies.listArtifacts.mockImplementationOnce(async () => {
+      throw new Error("DB connection failed during listArtifacts");
+    });
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    // Must NOT throw
+    await runAgentWorkflow(makeOptions());
+
+    // Workflow still emits start + finish
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[0]).toBe("start");
+    expect(types[types.length - 1]).toBe("finish");
+    expect(spies.clearActiveStream).toHaveBeenCalled();
+  });
+
+  // ── BT-012: managed-only — classic run does NOT create receipt or final_build_report ──
+
+  test("does NOT create receipt or final_build_report artifacts for a classic run", async () => {
+    // Default resolveChatSandboxRuntime returns runtimeMode: "classic"
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const kinds = artifactCalls.map(
+      (call) => (call[0] as { kind: string }).kind,
+    );
+
+    expect(kinds).not.toContain("receipt");
+    expect(kinds).not.toContain("final_build_report");
   });
 
   test("still clears stream and sends finish even on step error", async () => {
