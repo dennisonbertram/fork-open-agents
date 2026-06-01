@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { WorkflowGoal, WorkflowGoalEvent } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -88,8 +89,8 @@ mock.module("@/lib/sandbox/runtime/service-launch", () => ({
 // Goal-ledger mocks (mutable per test)
 // ---------------------------------------------------------------------------
 
-const listGoalsMock = mock(async () => []);
-const listGoalEventsMock = mock(async () => []);
+const listGoalsMock = mock(async (): Promise<WorkflowGoal[]> => []);
+const listGoalEventsMock = mock(async (): Promise<WorkflowGoalEvent[]> => []);
 
 mock.module("@/lib/db/goal-ledger", () => ({
   listGoals: listGoalsMock,
@@ -129,7 +130,7 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
   });
 
   test("BT-001: response includes workflowGoals array when goals exist for the session+chat", async () => {
-    const goal = {
+    const goal: WorkflowGoal = {
       id: "goal-1",
       userId: "user-1",
       sessionId: "session-1",
@@ -143,7 +144,7 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
       createdAt: new Date("2026-05-01T10:00:00.000Z"),
       updatedAt: new Date("2026-05-01T11:00:00.000Z"),
     };
-    const event = {
+    const event: WorkflowGoalEvent = {
       id: "event-1",
       goalId: "goal-1",
       userId: "user-1",
@@ -237,7 +238,7 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
   });
 
   test("BT-005: multiple goals each carry their own embedded events", async () => {
-    const goalA = {
+    const goalA: WorkflowGoal = {
       id: "goal-a",
       userId: "user-1",
       sessionId: "session-1",
@@ -251,7 +252,7 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
       createdAt: new Date("2026-05-01T10:00:00.000Z"),
       updatedAt: new Date("2026-05-01T11:00:00.000Z"),
     };
-    const goalB = {
+    const goalB: WorkflowGoal = {
       id: "goal-b",
       userId: "user-1",
       sessionId: "session-1",
@@ -265,22 +266,21 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
       createdAt: new Date("2026-05-01T12:00:00.000Z"),
       updatedAt: new Date("2026-05-01T13:00:00.000Z"),
     };
+    const eventA: WorkflowGoalEvent = {
+      id: "ev-a1",
+      goalId: "goal-a",
+      userId: "user-1",
+      sequence: 1,
+      eventType: "completed",
+      summary: "A done",
+      payload: {},
+      createdAt: new Date("2026-05-01T11:00:00.000Z"),
+    };
 
     listGoalsMock.mockResolvedValue([goalA, goalB]);
     // listGoalEvents called once per goal; alternate based on call order
     listGoalEventsMock
-      .mockResolvedValueOnce([
-        {
-          id: "ev-a1",
-          goalId: "goal-a",
-          userId: "user-1",
-          sequence: 1,
-          eventType: "completed",
-          summary: "A done",
-          payload: {},
-          createdAt: new Date("2026-05-01T11:00:00.000Z"),
-        },
-      ])
+      .mockResolvedValueOnce([eventA])
       .mockResolvedValueOnce([]);
 
     const { GET } = await routeModulePromise;
