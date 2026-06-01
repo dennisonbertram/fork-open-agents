@@ -163,3 +163,40 @@ describe("REGRESSION-006: gitPushPolicy does not over-block ordinary git operati
     },
   );
 });
+
+// REGRESSION-007: classifyToolApproval("bash", ...) enforces gitPushPolicy
+// Catches if bash tool is accidentally reverted to bashPolicy-only routing.
+// If bashTool().needsApproval stops using classifyToolApproval, destructive git
+// ops would pass through unapproved.
+describe("REGRESSION-007: classifyToolApproval enforces gitPushPolicy for bash tool", () => {
+  test("bash git push --force requires approval via classifyToolApproval", () => {
+    const result = classifyToolApproval("bash", {
+      command: "git push --force origin main",
+    });
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("git-force-push");
+  });
+
+  test("bash git reset --hard requires approval via classifyToolApproval", () => {
+    const result = classifyToolApproval("bash", {
+      command: "git reset --hard HEAD~1",
+    });
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("git-force-push");
+  });
+
+  test("bash git clean -fd requires approval via classifyToolApproval", () => {
+    const result = classifyToolApproval("bash", {
+      command: "git clean -fd",
+    });
+    expect(result.requires).toBe(true);
+    expect(result.category).toBe("git-force-push");
+  });
+
+  test("bash ordinary git push does NOT require approval via classifyToolApproval", () => {
+    const result = classifyToolApproval("bash", {
+      command: "git push origin main",
+    });
+    expect(result.requires).toBe(false);
+  });
+});
