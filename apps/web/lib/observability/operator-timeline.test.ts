@@ -465,4 +465,158 @@ describe("buildOperatorTimeline", () => {
     expect(err.kind).toBe("operator_timeline_build_failed");
     expect(err.message).toBe("test error");
   });
+
+  // ---------------------------------------------------------------------------
+  // REGRESSION TESTS — these guards catch future breakage
+  // ---------------------------------------------------------------------------
+
+  // REGRESSION-001: Secret never appears in ANY timeline entry (payload-level)
+  // If redaction is bypassed, a secret token would appear verbatim in entry.label or entry.summary.
+  test("REGRESSION-001: no secret token appears in any entry label or summary", () => {
+    const SECRET = "ghp_AAABBBCCC12345678901234567890";
+    const events = [
+      makeEvent({
+        id: "reg-sec-1",
+        createdAt: "2026-05-01T10:00:00.000Z",
+        eventName: `Deploying with ${SECRET}`,
+        summary: `Token=${SECRET}`,
+      }),
+      makeEvent({
+        id: "reg-sec-2",
+        createdAt: "2026-05-01T10:01:00.000Z",
+        eventName: "normal event",
+        summary: null,
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], []);
+    for (const entry of result as Array<{
+      label: string;
+      summary: string | null;
+    }>) {
+      expect(entry.label).not.toContain(SECRET);
+      if (entry.summary !== null) {
+        expect(entry.summary).not.toContain(SECRET);
+      }
+    }
+  });
+
+  // REGRESSION-002: Chronological order is stable even with tie-breaking by id
+  // If sort stability is lost, equal-timestamp entries could swap.
+  test("REGRESSION-002: tie-breaking by id preserves stable sort for same-timestamp entries", () => {
+    const ts = "2026-05-01T10:00:00.000Z";
+    const events = [
+      makeEvent({ id: "zzz-last", createdAt: ts, eventName: "event-z" }),
+      makeEvent({ id: "aaa-first", createdAt: ts, eventName: "event-a" }),
+      makeEvent({ id: "mmm-mid", createdAt: ts, eventName: "event-m" }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], []);
+    const ids = result.map((e: { id: string }) => e.id);
+
+    // All same timestamp — id tie-break must produce ascending order
+    expect(ids.indexOf("aaa-first")).toBeLessThan(ids.indexOf("mmm-mid"));
+    expect(ids.indexOf("mmm-mid")).toBeLessThan(ids.indexOf("zzz-last"));
+  });
+
+  // REGRESSION-003: Dedup does NOT collapse non-consecutive identical entries
+  // If dedup collapses globally (not just consecutive), this test fails.
+  test("REGRESSION-003: non-consecutive identical entries are preserved, not collapsed", () => {
+    const events = [
+      makeEvent({
+        id: "a",
+        createdAt: "2026-05-01T10:01:00.000Z",
+        eventName: "dup-event",
+        actorType: "system",
+        workflowRunId: null,
+      }),
+      makeEvent({
+        id: "b",
+        createdAt: "2026-05-01T10:02:00.000Z",
+        eventName: "different-event",
+        actorType: "system",
+        workflowRunId: null,
+      }),
+      makeEvent({
+        id: "c",
+        createdAt: "2026-05-01T10:03:00.000Z",
+        eventName: "dup-event",
+        actorType: "system",
+        workflowRunId: null,
+      }),
+    ];
+
+    const result = buildOperatorTimeline(events, [], [], []);
+    // Non-consecutive duplicates must NOT be collapsed → 3 entries
+    expect(result.length).toBe(3);
+  });
+
+  // REGRESSION-004: malformed event does NOT cause a throw — must remain best-effort
+  // If malformed-event handling is removed and a throw is introduced, this test fails.
+  test("REGRESSION-004: multiple malformed events are all skipped without throwing", () => {
+    const goodEvent = makeEvent({
+      id: "good-reg",
+      createdAt: "2026-05-01T10:00:00.000Z",
+    });
+    const malformed1 = { ...makeEvent(), createdAt: null as unknown as string };
+    const malformed2 = { ...makeEvent(), createdAt: "" as unknown as string };
+
+    let threw = false;
+    let result: Array<{ id: string }> = [];
+    try {
+      result = buildOperatorTimeline(
+        [malformed1, goodEvent, malformed2],
+        [],
+        [],
+        [],
+      );
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    // Only the good event should appear
+    expect(result.length).toBe(1);
+    expect(result[0].id).toBe("good-reg");
+  });
+
+  // REGRESSION-005: existing SessionObservabilityResponse fields are additive
+  // (type-level: operatorTimeline is optional and does not break callers that
+  //  do not destructure it — validated by the fact that all adjacent tests pass
+  //  without referencing the new field, and the type allows undefined)
+  test("REGRESSION-005: OperatorTimelineEntry has all required shape fields", () => {
+    const result = buildOperatorTimeline(
+      [
+        makeEvent({
+          id: "shape-check",
+          createdAt: "2026-05-01T10:00:00.000Z",
+        }),
+      ],
+      [],
+      [],
+      [],
+    );
+
+    expect(result.length).toBe(1);
+    const entry = result[0] as Record<string, unknown>;
+
+    // Every required field from the issue spec must be present
+    const requiredFields = [
+      "id",
+      "timestamp",
+      "kind",
+      "actor",
+      "label",
+      "summary",
+      "correlationIds",
+      "severity",
+    ];
+    for (const field of requiredFields) {
+      expect(Object.hasOwn(entry, field)).toBe(true);
+    }
+
+    // correlationIds must have sessionId
+    const correlationIds = entry.correlationIds as Record<string, unknown>;
+    expect(Object.hasOwn(correlationIds, "sessionId")).toBe(true);
+  });
 });
