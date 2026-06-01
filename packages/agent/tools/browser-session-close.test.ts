@@ -16,11 +16,13 @@ import { describe, expect, mock, test } from "bun:test";
 // The same pattern as browser-session.test.ts.
 // ---------------------------------------------------------------------------
 
-function makeFakePlaywright(opts: {
-  onLaunch?: () => void;
-  failLaunch?: boolean;
-  onBrowserClose?: () => void;
-} = {}) {
+function makeFakePlaywright(
+  opts: {
+    onLaunch?: () => void;
+    failLaunch?: boolean;
+    onBrowserClose?: () => void;
+  } = {},
+) {
   return {
     chromium: {
       launch: async (_launchOpts: { headless?: boolean; args?: string[] }) => {
@@ -50,7 +52,11 @@ describe("SHOULD-6: compare-and-delete guard in closeBrowserSession", () => {
     let launchCount = 0;
 
     mock.module("playwright", () =>
-      makeFakePlaywright({ onLaunch: () => { launchCount++; } }),
+      makeFakePlaywright({
+        onLaunch: () => {
+          launchCount++;
+        },
+      }),
     );
 
     const { getBrowserSession, closeBrowserSession } =
@@ -78,7 +84,11 @@ describe("SHOULD-6: compare-and-delete guard in closeBrowserSession", () => {
     let launchCount = 0;
 
     mock.module("playwright", () =>
-      makeFakePlaywright({ onLaunch: () => { launchCount++; } }),
+      makeFakePlaywright({
+        onLaunch: () => {
+          launchCount++;
+        },
+      }),
     );
 
     const { getBrowserSession, closeBrowserSession } =

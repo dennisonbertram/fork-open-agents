@@ -11,12 +11,19 @@
  * Each tool:
  *  - Follows the repo convention: factory function returning tool({ description, inputSchema, execute, needsApproval })
  *  - Uses execute(args, { experimental_context }) — reads browser session from an injectable resolver
- *  - Returns discriminated { success: true, ... } / { success: false, error } — never throws
+ *  - Returns discriminated { success: true, ... } / { success: false, error: {kind, message} } — never throws
  *  - Routes needsApproval through classifyToolApproval (approval-policy.ts) — browser tools are outward-facing → requires approval
  *
  * The writer contract for screenshots:
  *  - If context.writer is present, tool calls writer.write({ type: "file", url: "data:image/png;base64,...", mediaType: "image/png" })
  *  - This renders inline in the chat renderer (shared-chat-content.tsx:466)
+ *
+ * Browser event observability (SHOULD-4):
+ *  - If context.browserEventRecorder is present, best-effort events are emitted
+ *    for navigate, click, type, extract, screenshot, and failure actions.
+ *  - A throwing recorder NEVER crashes the tool — all recorder calls are wrapped
+ *    in try/catch that swallows errors silently.
+ *  - Default: no-op when browserEventRecorder is absent.
  *
  * Playwright is lazily loaded via browser-session.ts (dynamic import) so this
  * module typechecks and unit tests can mock the session without Chromium.
@@ -37,6 +44,14 @@ import {
 // Context helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Injectable event recorder for structured browser.* events.
+ * Must be best-effort: a throwing recorder must NOT crash the tool.
+ */
+type BrowserEventRecorder = {
+  record: (eventName: string, payload: unknown) => void;
+};
+
 type BrowserToolContext = {
   writer?: {
     // Returns Promise<void> | void — always awaited inside the tool so a
@@ -48,6 +63,8 @@ type BrowserToolContext = {
     }) => Promise<void> | void;
   };
   sessionId?: string;
+  /** Optional injectable event recorder (SHOULD-4). Defaults to no-op. */
+  browserEventRecorder?: BrowserEventRecorder;
 };
 
 function getBrowserContext(experimental_context: unknown): BrowserToolContext {
@@ -62,6 +79,79 @@ function getBrowserContext(experimental_context: unknown): BrowserToolContext {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Best-effort event emission. Wraps recorder.record() in try/catch so a
+ * throwing recorder can NEVER crash the agent turn. Same defensive pattern
+ * as the goal-ledger/artifact recorders in managed-runtime.
+ */
+function emitBrowserEvent(
+  recorder: BrowserEventRecorder | undefined,
+  eventName: string,
+  payload: Record<string, unknown>,
+): void {
+  if (!recorder) return;
+  try {
+    recorder.record(eventName, payload);
+  } catch {
+    // Best-effort: swallow all recorder errors silently.
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Typed error shape (SHOULD-5)
+// ---------------------------------------------------------------------------
+
+type BrowserErrorKind =
+  | "navigation_timeout"
+  | "selector_not_found"
+  | "fill_failed"
+  | "extract_failed"
+  | "screenshot_failed"
+  | "browser_launch_failed";
+
+type BrowserError = {
+  kind: BrowserErrorKind;
+  message: string;
+};
+
+function classifyBrowserError(
+  toolName:
+    | "navigate"
+    | "click"
+    | "type"
+    | "extract"
+    | "screenshot"
+    | "session",
+  error: unknown,
+): BrowserError {
+  const message = messageOf(error);
+  const lowerMsg = message.toLowerCase();
+
+  if (toolName === "navigate") {
+    return { kind: "navigation_timeout", message };
+  }
+  if (toolName === "click") {
+    if (
+      lowerMsg.includes("timeout") ||
+      lowerMsg.includes("selector") ||
+      lowerMsg.includes("waiting")
+    ) {
+      return { kind: "selector_not_found", message };
+    }
+    return { kind: "selector_not_found", message };
+  }
+  if (toolName === "type") {
+    return { kind: "fill_failed", message };
+  }
+  if (toolName === "extract") {
+    return { kind: "extract_failed", message };
+  }
+  if (toolName === "screenshot") {
+    return { kind: "screenshot_failed", message };
+  }
+  return { kind: "browser_launch_failed", message };
 }
 
 // ---------------------------------------------------------------------------
@@ -90,18 +180,29 @@ USAGE:
       return classifyToolApproval("browser_navigate", _args).requires;
     },
     execute: async ({ url, waitUntil = "load" }, { experimental_context }) => {
+      const ctx = getBrowserContext(experimental_context);
+      const recorder = ctx.browserEventRecorder;
       try {
-        const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
         const response = await page.goto(url, { waitUntil });
+        const finalUrl = page.url();
+        emitBrowserEvent(recorder, "browser.navigate", {
+          url: finalUrl,
+          status: response?.status() ?? null,
+        });
         return {
           success: true,
-          url: page.url(),
+          url: finalUrl,
           status: response?.status() ?? null,
           title: await page.title(),
         };
       } catch (error) {
-        return { success: false, error: messageOf(error) };
+        const browserError = classifyBrowserError("navigate", error);
+        emitBrowserEvent(recorder, "browser.action.failed", {
+          action: "navigate",
+          kind: browserError.kind,
+        });
+        return { success: false, error: browserError };
       }
     },
   });
@@ -137,10 +238,15 @@ USAGE:
       { selector, timeoutMs = 5000 },
       { experimental_context },
     ) => {
+      const ctx = getBrowserContext(experimental_context);
+      const recorder = ctx.browserEventRecorder;
       try {
-        const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
         await page.click(selector, { timeout: timeoutMs });
+        emitBrowserEvent(recorder, "browser.action.performed", {
+          action: "click",
+          selector,
+        });
         return {
           success: true,
           selector,
@@ -148,7 +254,13 @@ USAGE:
           title: await page.title(),
         };
       } catch (error) {
-        return { success: false, selector, error: messageOf(error) };
+        const browserError = classifyBrowserError("click", error);
+        emitBrowserEvent(recorder, "browser.action.failed", {
+          action: "click",
+          selector,
+          kind: browserError.kind,
+        });
+        return { success: false, selector, error: browserError };
       }
     },
   });
@@ -182,17 +294,29 @@ USAGE:
       { selector, text, submit = false },
       { experimental_context },
     ) => {
+      const ctx = getBrowserContext(experimental_context);
+      const recorder = ctx.browserEventRecorder;
       try {
-        const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
         await page.fill(selector, text);
         if (submit) {
           await page.press(selector, "Enter");
         }
         const value = await page.inputValue(selector).catch(() => null);
+        emitBrowserEvent(recorder, "browser.action.performed", {
+          action: "type",
+          selector,
+          submitted: submit,
+        });
         return { success: true, selector, value, submitted: submit };
       } catch (error) {
-        return { success: false, selector, error: messageOf(error) };
+        const browserError = classifyBrowserError("type", error);
+        emitBrowserEvent(recorder, "browser.action.failed", {
+          action: "type",
+          selector,
+          kind: browserError.kind,
+        });
+        return { success: false, selector, error: browserError };
       }
     },
   });
@@ -226,12 +350,24 @@ USAGE:
       return classifyToolApproval("browser_extract", _args).requires;
     },
     execute: async ({ selector, attribute }, { experimental_context }) => {
+      const ctx = getBrowserContext(experimental_context);
+      const recorder = ctx.browserEventRecorder;
       try {
-        const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
         const target = selector ?? "body";
         if (attribute) {
-          const value = await page.getAttribute(target, attribute);
+          const rawValue = await page.getAttribute(target, attribute);
+          // MUST-2: Apply the same redact+cap pipeline to attribute values.
+          // href/src/action attributes can carry credentialed URLs and ?token= secrets.
+          const value =
+            typeof rawValue === "string"
+              ? capBrowserText(redactBrowserText(rawValue))
+              : rawValue;
+          emitBrowserEvent(recorder, "browser.action.performed", {
+            action: "extract",
+            selector: target,
+            attribute,
+          });
           return { success: true, selector: target, attribute, value };
         }
         const rawText = await page.locator(target).first().textContent();
@@ -240,13 +376,23 @@ USAGE:
         const trimmed = (rawText ?? "").trim();
         const redacted = redactBrowserText(trimmed);
         const capped = capBrowserText(redacted);
+        emitBrowserEvent(recorder, "browser.action.performed", {
+          action: "extract",
+          selector: target,
+          byteLength: capped.length,
+        });
         return {
           success: true,
           selector: target,
           text: capped,
         };
       } catch (error) {
-        return { success: false, error: messageOf(error) };
+        const browserError = classifyBrowserError("extract", error);
+        emitBrowserEvent(recorder, "browser.action.failed", {
+          action: "extract",
+          kind: browserError.kind,
+        });
+        return { success: false, error: browserError };
       }
     },
   });
@@ -273,7 +419,7 @@ export type ScreenshotToolResult =
       byteLength: number;
       streamed: boolean;
     }
-  | { success: false; error: string };
+  | { success: false; error: BrowserError };
 
 export const browserScreenshotTool = () =>
   tool({
@@ -290,8 +436,9 @@ USAGE:
       { fullPage = false, selector },
       { experimental_context },
     ): Promise<ScreenshotToolResult> => {
+      const ctx = getBrowserContext(experimental_context);
+      const recorder = ctx.browserEventRecorder;
       try {
-        const ctx = getBrowserContext(experimental_context);
         const { page } = await getBrowserSession({ sessionId: ctx.sessionId });
         const mediaType = "image/png";
 
@@ -321,6 +468,12 @@ USAGE:
           }
         }
 
+        emitBrowserEvent(recorder, "browser.screenshot.captured", {
+          byteLength: bytes.byteLength,
+          streamed,
+          withinCap: bytes.byteLength <= SCREENSHOT_BYTE_CAP,
+        });
+
         return {
           success: true,
           mediaType,
@@ -328,7 +481,12 @@ USAGE:
           streamed,
         };
       } catch (error) {
-        return { success: false, error: messageOf(error) };
+        const browserError = classifyBrowserError("screenshot", error);
+        emitBrowserEvent(recorder, "browser.action.failed", {
+          action: "screenshot",
+          kind: browserError.kind,
+        });
+        return { success: false, error: browserError };
       }
     },
   });

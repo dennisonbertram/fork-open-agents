@@ -29,7 +29,7 @@ describe("NICE-7: SCREENSHOT_BYTE_CAP documentation and accuracy", () => {
 
     // Base64 overhead is ~1.33x — verify within 1.25-1.40 range
     expect(overhead).toBeGreaterThanOrEqual(1.25);
-    expect(overhead).toBeLessThanOrEqual(1.40);
+    expect(overhead).toBeLessThanOrEqual(1.4);
   });
 
   test("NICE-7c: effective data-URL size for cap-sized raw bytes stays within a documented bound", () => {

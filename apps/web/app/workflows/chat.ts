@@ -1601,6 +1601,16 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
   } finally {
+    // SHOULD-6: Best-effort close of the per-chat browser session at run end.
+    // Prevents Chromium processes from leaking across workflow runs.
+    // Wrapped in a separate try/catch so a close failure never masks the real error.
+    try {
+      const { closeBrowserSession } = await import("@open-agents/agent");
+      await closeBrowserSession({ sessionId: options.chatId });
+    } catch {
+      // Best-effort — swallow close errors silently.
+    }
+
     try {
       // On unexpected errors, still clear the active stream and close
       // so the chat is never permanently marked as streaming.
@@ -1756,7 +1766,8 @@ const runAgentStep = async (
     // writer is already active; the queue prevents that race.
     let writeQueue: Promise<void> = Promise.resolve();
     const enqueueWrite = (chunk: UIMessageChunk): Promise<void> => {
-      writeQueue = writeQueue.then(async () => {
+      // Queue the per-write promise so callers can await THIS write's outcome.
+      const next = writeQueue.then(async () => {
         const w = writable.getWriter();
         try {
           await w.write(chunk);
@@ -1764,7 +1775,10 @@ const runAgentStep = async (
           w.releaseLock();
         }
       });
-      return writeQueue;
+      // The tail that future writes chain on MUST be non-rejecting so that one
+      // failed write does NOT poison the queue and silently drop all later writes.
+      writeQueue = next.catch(() => undefined);
+      return next;
     };
 
     const stepAgentOptions = {

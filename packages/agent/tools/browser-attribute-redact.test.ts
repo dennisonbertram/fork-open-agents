@@ -129,7 +129,9 @@ describe("MUST-2 browser_extract attribute redaction", () => {
 
     expect(result).toBeDefined();
     if (!result || !("success" in result) || !result.success) {
-      throw new Error("Expected success result, got: " + JSON.stringify(result));
+      throw new Error(
+        "Expected success result, got: " + JSON.stringify(result),
+      );
     }
     const value = (result as { value: string | null }).value;
     if (value === null) {

@@ -137,7 +137,7 @@ describe("browserNavigateTool", () => {
     });
   });
 
-  test("BT-001b: execute returns { success: false, error } on failure — never throws", async () => {
+  test("BT-001b: execute returns { success: false, error: {kind,message} } on failure — never throws", async () => {
     currentFakePage = makeFakePage({
       goto: async () => {
         throw new Error("net::ERR_CONNECTION_REFUSED");
@@ -151,7 +151,10 @@ describe("browserNavigateTool", () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: expect.stringContaining("ERR_CONNECTION_REFUSED"),
+      error: {
+        kind: "navigation_timeout",
+        message: expect.stringContaining("ERR_CONNECTION_REFUSED"),
+      },
     });
   });
 
@@ -208,7 +211,7 @@ describe("browserClickTool", () => {
     });
   });
 
-  test("BT-002b: execute returns { success: false } when element not found", async () => {
+  test("BT-002b: execute returns { success: false, error: {kind,message} } when element not found", async () => {
     currentFakePage = makeFakePage({
       click: async () => {
         throw new Error("Timeout: waiting for selector");
@@ -222,7 +225,7 @@ describe("browserClickTool", () => {
 
     expect(result).toMatchObject({
       success: false,
-      error: expect.any(String),
+      error: { kind: "selector_not_found", message: expect.any(String) },
     });
   });
 
@@ -284,7 +287,7 @@ describe("browserTypeTool", () => {
     });
   });
 
-  test("BT-003c: execute returns { success: false } on fill failure", async () => {
+  test("BT-003c: execute returns { success: false, error: {kind,message} } on fill failure", async () => {
     currentFakePage = makeFakePage({
       fill: async () => {
         throw new Error("Element is not visible");
@@ -296,7 +299,10 @@ describe("browserTypeTool", () => {
       executionOptions(makeContext()),
     );
 
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "fill_failed", message: expect.any(String) },
+    });
   });
 
   test("BT-003d: needsApproval returns true for browser type (approval gate)", async () => {
@@ -376,7 +382,7 @@ describe("browserExtractTool", () => {
     });
   });
 
-  test("BT-004d: execute returns { success: false } on error", async () => {
+  test("BT-004d: execute returns { success: false, error: {kind,message} } on error", async () => {
     currentFakePage = makeFakePage({
       locator: () => ({
         first: () => ({
@@ -393,7 +399,10 @@ describe("browserExtractTool", () => {
       executionOptions(makeContext()),
     );
 
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "extract_failed", message: expect.any(String) },
+    });
   });
 });
 
@@ -459,7 +468,7 @@ describe("browserScreenshotTool", () => {
     expect(result).toMatchObject({ success: true, streamed: false });
   });
 
-  test("BT-005d: execute returns { success: false } on screenshot error", async () => {
+  test("BT-005d: execute returns { success: false, error: {kind,message} } on screenshot error", async () => {
     currentFakePage = makeFakePage({
       screenshot: async () => {
         throw new Error("Target page crashed");
@@ -471,7 +480,10 @@ describe("browserScreenshotTool", () => {
       executionOptions(makeContext()),
     );
 
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "screenshot_failed", message: expect.any(String) },
+    });
   });
 
   test("BT-005e: needsApproval returns true for browser screenshot (approval gate)", async () => {

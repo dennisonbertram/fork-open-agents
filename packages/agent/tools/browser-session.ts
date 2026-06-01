@@ -123,9 +123,16 @@ export async function getBrowserSession(
     const page = await browserCtx.newPage();
     return { page } as BrowserSession;
   })().catch((err: unknown) => {
-    // Self-heal: evict the failed entry so the next getBrowserSession call
-    // re-attempts rather than returning the same rejected promise.
-    sessionCache.delete(cacheKey);
+    // SHOULD-6: Compare-and-delete guard — only evict THIS entry, not a newer
+    // one that may have been created under the same key after this launch failed.
+    if (sessionCache.get(cacheKey) === entry) {
+      sessionCache.delete(cacheKey);
+    }
+    // Best-effort close of browser handle if it was partially allocated before
+    // newContext/newPage failed (prevents Chromium zombie processes).
+    if (entry.browser) {
+      entry.browser.close().catch(() => undefined);
+    }
     throw err;
   });
 
@@ -147,8 +154,13 @@ export async function closeBrowserSession(
   const entry = sessionCache.get(cacheKey);
   if (!entry) return;
 
-  // Evict from cache first so a concurrent getBrowserSession call can start fresh.
-  sessionCache.delete(cacheKey);
+  // SHOULD-6: Compare-and-delete guard — only evict THIS entry from the cache.
+  // A concurrent getBrowserSession call may have already replaced this entry
+  // with a new one under the same key; deleting unconditionally would evict
+  // the new entry, causing the next call to re-launch unnecessarily.
+  if (sessionCache.get(cacheKey) === entry) {
+    sessionCache.delete(cacheKey);
+  }
 
   try {
     // Wait for the session to be ready (or already rejected) before closing.

@@ -61,12 +61,8 @@ mock.module("./browser-session", () => ({
 // Late imports
 // ---------------------------------------------------------------------------
 
-const {
-  browserNavigateTool,
-  browserScreenshotTool,
-  browserClickTool,
-  browserExtractTool,
-} = await import("./browser");
+const { browserNavigateTool, browserScreenshotTool, browserClickTool } =
+  await import("./browser");
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -183,10 +179,7 @@ describe("SHOULD-4: structured browser.* event emission", () => {
       writer: { write: async (_: unknown) => {} },
     });
 
-    await browserScreenshotTool().execute?.(
-      {},
-      executionOptions(ctx),
-    );
+    await browserScreenshotTool().execute?.({}, executionOptions(ctx));
 
     // None of the emitted event payloads should contain a base64 data URL
     const serialized = JSON.stringify(emittedEvents);

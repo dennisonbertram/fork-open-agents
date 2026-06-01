@@ -205,7 +205,7 @@ describe("regression: browser approval gate — all five tools gated", () => {
 // REGRESSION-003: non-throwing contract for all tools
 // ---------------------------------------------------------------------------
 describe("regression: non-throwing contract — tools return {success:false} not throw", () => {
-  test("REGRESSION-003a: browserNavigateTool returns {success:false} on error", async () => {
+  test("REGRESSION-003a: browserNavigateTool returns {success:false, error:{kind,message}} on error", async () => {
     fakePage = {
       ...makeFakePage(),
       goto: async () => {
@@ -218,11 +218,14 @@ describe("regression: non-throwing contract — tools return {success:false} not
     );
     expect(result).toMatchObject({
       success: false,
-      error: expect.stringContaining("ECONNREFUSED"),
+      error: {
+        kind: "navigation_timeout",
+        message: expect.stringContaining("ECONNREFUSED"),
+      },
     });
   });
 
-  test("REGRESSION-003b: browserClickTool returns {success:false} on error", async () => {
+  test("REGRESSION-003b: browserClickTool returns {success:false, error:{kind,message}} on error", async () => {
     fakePage = {
       ...makeFakePage(),
       click: async () => {
@@ -233,10 +236,13 @@ describe("regression: non-throwing contract — tools return {success:false} not
       { selector: "#missing" },
       executionOptions(makeContext()),
     );
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "selector_not_found", message: expect.any(String) },
+    });
   });
 
-  test("REGRESSION-003c: browserTypeTool returns {success:false} on error", async () => {
+  test("REGRESSION-003c: browserTypeTool returns {success:false, error:{kind,message}} on error", async () => {
     fakePage = {
       ...makeFakePage(),
       fill: async () => {
@@ -247,10 +253,13 @@ describe("regression: non-throwing contract — tools return {success:false} not
       { selector: "#gone", text: "hello" },
       executionOptions(makeContext()),
     );
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "fill_failed", message: expect.any(String) },
+    });
   });
 
-  test("REGRESSION-003d: browserExtractTool returns {success:false} on error", async () => {
+  test("REGRESSION-003d: browserExtractTool returns {success:false, error:{kind,message}} on error", async () => {
     fakePage = {
       ...makeFakePage(),
       locator: () => ({
@@ -266,10 +275,13 @@ describe("regression: non-throwing contract — tools return {success:false} not
       { selector: "#gone" },
       executionOptions(makeContext()),
     );
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "extract_failed", message: expect.any(String) },
+    });
   });
 
-  test("REGRESSION-003e: browserScreenshotTool returns {success:false} on error", async () => {
+  test("REGRESSION-003e: browserScreenshotTool returns {success:false, error:{kind,message}} on error", async () => {
     fakePage = {
       ...makeFakePage(),
       screenshot: async () => {
@@ -280,7 +292,10 @@ describe("regression: non-throwing contract — tools return {success:false} not
       {},
       executionOptions(makeContext()),
     );
-    expect(result).toMatchObject({ success: false, error: expect.any(String) });
+    expect(result).toMatchObject({
+      success: false,
+      error: { kind: "screenshot_failed", message: expect.any(String) },
+    });
   });
 });
 

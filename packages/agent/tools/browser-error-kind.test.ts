@@ -29,8 +29,6 @@ mock.module("@open-agents/sandbox", () => ({
   tryConnectVercelSandboxDirect: async () => null,
 }));
 
-const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-
 function executionOptions(experimental_context?: unknown) {
   return { toolCallId: "tc-errorkind", messages: [], experimental_context };
 }
@@ -72,7 +70,10 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
 
     expect(result).toBeDefined();
     expect(result).toHaveProperty("success", false);
-    const errorResult = result as { success: false; error: { kind: string; message: string } };
+    const errorResult = result as {
+      success: false;
+      error: { kind: string; message: string };
+    };
     expect(errorResult.error).toHaveProperty("kind");
     expect(typeof errorResult.error.kind).toBe("string");
     expect(errorResult.error).toHaveProperty("message");
@@ -102,7 +103,10 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
     );
 
     expect(result).toHaveProperty("success", false);
-    const errorResult = result as { success: false; error: { kind: string; message: string } };
+    const errorResult = result as {
+      success: false;
+      error: { kind: string; message: string };
+    };
     expect(errorResult.error.kind).toBe("selector_not_found");
   });
 
@@ -129,7 +133,10 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
     );
 
     expect(result).toHaveProperty("success", false);
-    const errorResult = result as { success: false; error: { kind: string; message: string } };
+    const errorResult = result as {
+      success: false;
+      error: { kind: string; message: string };
+    };
     expect(errorResult.error.kind).toBe("fill_failed");
   });
 
@@ -160,7 +167,10 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
     );
 
     expect(result).toHaveProperty("success", false);
-    const errorResult = result as { success: false; error: { kind: string; message: string } };
+    const errorResult = result as {
+      success: false;
+      error: { kind: string; message: string };
+    };
     expect(errorResult.error.kind).toBe("extract_failed");
   });
 
@@ -191,7 +201,10 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
     );
 
     expect(result).toHaveProperty("success", false);
-    const errorResult = result as { success: false; error: { kind: string; message: string } };
+    const errorResult = result as {
+      success: false;
+      error: { kind: string; message: string };
+    };
     expect(errorResult.error.kind).toBe("screenshot_failed");
   });
 
@@ -214,15 +227,16 @@ describe("SHOULD-5: typed error.kind discriminated shape", () => {
     }));
 
     const chunks: unknown[] = [];
-    const writer = { write: async (c: unknown): Promise<void> => { chunks.push(c); } };
+    const writer = {
+      write: async (c: unknown): Promise<void> => {
+        chunks.push(c);
+      },
+    };
     const ctx = makeContext();
     const ctxWithWriter = { ...ctx, writer };
 
     const { browserScreenshotTool: shot } = await import("./browser");
-    const result = await shot().execute?.(
-      {},
-      executionOptions(ctxWithWriter),
-    );
+    const result = await shot().execute?.({}, executionOptions(ctxWithWriter));
 
     // success:true but streamed:false for oversized capture
     expect(result).toBeDefined();
