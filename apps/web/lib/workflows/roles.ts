@@ -7,10 +7,13 @@
  *
  * Downstream consumers (#56, #57, #58) import from here rather than directly
  * from the agent package, keeping the dependency direction clean:
- *   apps/web → packages/agent (never the reverse).
+ *   apps/web -> packages/agent (never the reverse).
  *
  * Do NOT define registry entries or Zod schemas in this file.
  */
+import type { RoleContract, RoleId } from "@open-agents/agent";
+import { ROLE_REGISTRY } from "@open-agents/agent";
+
 export {
   parseRoleContract,
   ROLE_REGISTRY,
@@ -28,11 +31,8 @@ export {
 // Workflow-layer display helpers (consumed by #58 Runtime Inspector)
 // ---------------------------------------------------------------------------
 
-import type { RoleContract, RoleId } from "@open-agents/agent";
-import { ROLE_REGISTRY } from "@open-agents/agent";
-
 /**
- * Returns the human-readable label for a role id, or undefined if not found.
+ * Returns the human-readable label for a role id.
  * Used by #58 to render role status chips.
  */
 export function getRoleLabel(roleId: RoleId): string {
@@ -49,7 +49,6 @@ export function listRoles(): RoleContract[] {
 
 /**
  * Looks up a single role contract by id.
- * Returns undefined if the id is not in the registry.
  */
 export function lookupRole(roleId: RoleId): RoleContract {
   return ROLE_REGISTRY[roleId];
