@@ -194,19 +194,79 @@ export function listWorkflows(
   return all;
 }
 
-// ── Default stub catalog (AT MOST ONE entry — full seeding deferred to #33) ──
+// ── Default catalog — seeded in issue #33 ────────────────────────────────────
+// All initial entries are disabled (enabled: false) because the managed
+// workflow runtime that executes them has not shipped. The reason is embedded
+// in each entry's description so the #31 catalog API can surface it to users.
+// See docs/process/workflow-catalog-conventions.md for naming and proof-level
+// conventions and guidance on adding future entries.
 
-const _stubEntry = Object.freeze({
-  id: "stub-workflow",
+const _verifiedBuild = Object.freeze({
+  id: "verified-build",
   version: "0.1.0",
-  name: "Stub Workflow",
+  name: "Verified Build",
   description:
-    "Placeholder workflow definition. Real catalog entries will be added in issue #33.",
-  capabilities: Object.freeze([]) as unknown as string[],
+    "Runs a multi-agent verified build — coordinator spawns scoped worker cells, collects evidence bundles, and produces a go/no-go report. Not yet available: the managed workflow runtime that executes this workflow has not shipped.",
+  capabilities: Object.freeze([
+    "multi-agent-coordination",
+    "evidence-collection",
+    "build-verification",
+    "go-no-go-report",
+  ]) as unknown as string[],
+  proofLevel: "level-3" as const,
+  enabled: false,
+});
+
+const _deepResearch = Object.freeze({
+  id: "deep-research",
+  version: "0.1.0",
+  name: "Deep Research",
+  description:
+    "Orchestrates a structured research sweep across documentation, issues, and code, then synthesises findings into a structured report. Not yet available: the managed workflow runtime that executes this workflow has not shipped.",
+  capabilities: Object.freeze([
+    "document-retrieval",
+    "synthesis",
+    "structured-report",
+  ]) as unknown as string[],
   proofLevel: "level-1" as const,
   enabled: false,
 });
 
+const _runtimeProfileValidation = Object.freeze({
+  id: "runtime-profile-validation",
+  version: "0.1.0",
+  name: "Runtime Profile Validation",
+  description:
+    "Validates a managed runtime profile by executing its setup and probe steps in a sandbox and asserting all required tools are present and correctly versioned. Not yet available: the managed workflow runtime that executes this workflow has not shipped.",
+  capabilities: Object.freeze([
+    "sandbox-execution",
+    "tool-probe",
+    "profile-validation",
+  ]) as unknown as string[],
+  proofLevel: "level-2" as const,
+  enabled: false,
+});
+
+const _releaseSmoke = Object.freeze({
+  id: "release-smoke",
+  version: "0.1.0",
+  name: "Release Smoke",
+  description:
+    "Runs a post-deploy production smoke against key user-visible paths and surfaces a pass/fail report linked to the deployed commit. Not yet available: the managed workflow runtime that executes this workflow has not shipped.",
+  capabilities: Object.freeze([
+    "production-smoke",
+    "deployment-verification",
+    "user-path-check",
+  ]) as unknown as string[],
+  proofLevel: "level-3" as const,
+  enabled: false,
+});
+
 export const DEFAULT_CATALOG: ReadonlyArray<WorkflowDefinition> = Object.freeze(
-  [_stubEntry] as WorkflowDefinition[],
+  [
+    _verifiedBuild,
+    _deepResearch,
+    _runtimeProfileValidation,
+    _releaseSmoke,
+  ] as WorkflowDefinition[],
 );

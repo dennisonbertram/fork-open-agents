@@ -30,6 +30,9 @@ Start here:
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
   handoff.
+- [Workflow Catalog Conventions](workflow-catalog-conventions.md) - id naming,
+  versioning, proof-level mapping, disabled-entry rules, and how to add catalog
+  entries.
 
 Supporting docs:
 

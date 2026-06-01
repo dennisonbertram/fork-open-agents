@@ -201,25 +201,73 @@ describe("SUPPORTED_PROOF_LEVELS", () => {
   });
 });
 
-// ── Stub catalog entry ───────────────────────────────────────────────────────
+// ── ISSUE-33: Seeded catalog entries ─────────────────────────────────────────
+// Updated from "AT MOST ONE stub" to four real seeded entries.
 
-describe("DEFAULT_CATALOG (stub entry)", () => {
-  test("the stub catalog exports at least one entry and it is valid", async () => {
-    const { DEFAULT_CATALOG } = await import("./catalog");
-    expect(Array.isArray(DEFAULT_CATALOG)).toBe(true);
-    // At least one stub entry is seeded per spec (AT MOST ONE)
-    expect(DEFAULT_CATALOG.length).toBeGreaterThanOrEqual(1);
-    expect(DEFAULT_CATALOG.length).toBeLessThanOrEqual(1);
-    const entry = DEFAULT_CATALOG[0];
-    expect(entry).toBeDefined();
-    expect(typeof entry?.id).toBe("string");
-    expect(entry?.id.length).toBeGreaterThan(0);
+const EXPECTED_CATALOG_IDS = new Set([
+  "verified-build",
+  "deep-research",
+  "runtime-profile-validation",
+  "release-smoke",
+]);
+
+describe("DEFAULT_CATALOG (seeded entries)", () => {
+  // BT-ISSUE33-001: Seeded set present — catalog contains exactly the four ids
+  test("BT-ISSUE33-001: DEFAULT_CATALOG contains exactly 4 entries with the correct ids", () => {
+    expect(DEFAULT_CATALOG.length).toBe(4);
+    const ids = new Set(DEFAULT_CATALOG.map((d) => d.id));
+    for (const expectedId of EXPECTED_CATALOG_IDS) {
+      expect(ids.has(expectedId)).toBe(true);
+    }
+    // No extra ids beyond the four expected
+    expect(ids.size).toBe(4);
   });
 
-  test("the stub catalog entry is valid (buildRegistry does not throw)", async () => {
-    // This is the integration check: the default catalog can be built successfully
-    const { DEFAULT_CATALOG } = await import("./catalog");
+  // BT-ISSUE33-002: All ids are unique (no duplicates in DEFAULT_CATALOG)
+  test("BT-ISSUE33-002: all DEFAULT_CATALOG ids are unique", () => {
+    const ids = DEFAULT_CATALOG.map((d) => d.id);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(ids.length);
+  });
+
+  // BT-ISSUE33-003: All entries are valid (buildRegistry does not throw)
+  test("BT-ISSUE33-003: buildRegistry(DEFAULT_CATALOG) succeeds without throwing", () => {
     expect(() => buildRegistry(DEFAULT_CATALOG)).not.toThrow();
+  });
+
+  // BT-ISSUE33-004: Every entry has all required fields with correct types
+  test("BT-ISSUE33-004: every entry has correct field types and proofLevel in SUPPORTED_PROOF_LEVELS", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      expect(typeof entry.id).toBe("string");
+      expect(entry.id.length).toBeGreaterThan(0);
+      expect(typeof entry.version).toBe("string");
+      expect(entry.version.length).toBeGreaterThan(0);
+      expect(typeof entry.name).toBe("string");
+      expect(entry.name.length).toBeGreaterThan(0);
+      expect(typeof entry.description).toBe("string");
+      expect(Array.isArray(entry.capabilities)).toBe(true);
+      expect(typeof entry.enabled).toBe("boolean");
+      expect(SUPPORTED_PROOF_LEVELS).toContain(entry.proofLevel);
+    }
+  });
+
+  // BT-ISSUE33-005: All initial entries are disabled with a non-empty description explaining why
+  test("BT-ISSUE33-005: every initial catalog entry is disabled and has a description of at least 20 chars", () => {
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.enabled).toBe(false);
+      // Description must carry the disabled reason — minimum meaningful length
+      expect(entry.description.length).toBeGreaterThan(20);
+    }
+  });
+
+  // BT-ISSUE33-006: Each specific expected id is present and lookupWorkflow finds it
+  test("BT-ISSUE33-006: lookupWorkflow finds each of the four expected catalog entries", () => {
+    const registry = buildRegistry(DEFAULT_CATALOG);
+    for (const id of EXPECTED_CATALOG_IDS) {
+      const entry = lookupWorkflow(registry, id);
+      expect(entry).toBeDefined();
+      expect(entry?.id).toBe(id);
+    }
   });
 });
 
@@ -495,5 +543,64 @@ describe("FIX-2: registry values and DEFAULT_CATALOG are immutable after constru
 
     // capabilities length must be unchanged
     expect(entry.capabilities.length).toBe(originalCapabilities.length);
+  });
+});
+
+// ── ISSUE-33 REGRESSION tests ─────────────────────────────────────────────────
+// These tests catch regressions if the seeded catalog from issue #33 is
+// reverted, partially reverted, or silently broken.
+
+describe("regression(ISSUE-33): seeded catalog integrity", () => {
+  test("REG-I33-001: stub-workflow id is NOT present in DEFAULT_CATALOG (old placeholder removed)", () => {
+    // If catalog.ts reverts to the stub, this test catches it.
+    const ids = DEFAULT_CATALOG.map((d) => d.id);
+    expect(ids).not.toContain("stub-workflow");
+  });
+
+  test("REG-I33-002: no initial catalog entry is enabled — none should be prematurely activated", () => {
+    // If someone flips enabled=true on an unshipped workflow, this test fails.
+    const enabled = DEFAULT_CATALOG.filter((d) => d.enabled === true);
+    expect(enabled).toHaveLength(0);
+  });
+
+  test("REG-I33-003: every initial catalog entry description contains 'Not yet available'", () => {
+    // If the disabled-reason convention is dropped from a description, this catches it.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.description).toContain("Not yet available");
+    }
+  });
+
+  test("REG-I33-004: verified-build and release-smoke use level-3 proof", () => {
+    // These workflows require production proof. If the level is downgraded, this fails.
+    const verifiedBuild = DEFAULT_CATALOG.find(
+      (d) => d.id === "verified-build",
+    );
+    const releaseSmoke = DEFAULT_CATALOG.find((d) => d.id === "release-smoke");
+    expect(verifiedBuild?.proofLevel).toBe("level-3");
+    expect(releaseSmoke?.proofLevel).toBe("level-3");
+  });
+
+  test("REG-I33-005: deep-research uses level-1 and runtime-profile-validation uses level-2", () => {
+    // Proof level assignments are documented in workflow-catalog-conventions.md.
+    const deepResearch = DEFAULT_CATALOG.find((d) => d.id === "deep-research");
+    const runtimeProfileValidation = DEFAULT_CATALOG.find(
+      (d) => d.id === "runtime-profile-validation",
+    );
+    expect(deepResearch?.proofLevel).toBe("level-1");
+    expect(runtimeProfileValidation?.proofLevel).toBe("level-2");
+  });
+
+  test("REG-I33-006: every entry has at least one capability tag", () => {
+    // Empty capabilities on a real workflow would silently reduce API value.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.capabilities.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("REG-I33-007: all four entries use version 0.1.0", () => {
+    // Version drift from the initial catalog would indicate an unintentional change.
+    for (const entry of DEFAULT_CATALOG) {
+      expect(entry.version).toBe("0.1.0");
+    }
   });
 });
