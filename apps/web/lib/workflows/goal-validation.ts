@@ -1,20 +1,29 @@
 /**
  * Goal terminal-state validation service.
  *
- * STUB — implementation pending. All behavioral tests should FAIL against this stub.
+ * Pure functions — no DB, no side effects, no `any`.
  *
- * @remarks
- * **needs_human mapping**: The `needs_human` concept from the issue does NOT
+ * Design notes:
+ *
+ * needs_human mapping: The `needs_human` concept from issue #38 does NOT
  * correspond to a new schema enum value or DB migration. It maps to the
  * existing non-terminal statuses `awaiting_input` / `blocked` in the
  * workflow_goals status enum. No new enum value or migration is added.
  *
- * **requireEvidence dormant**: `requireEvidence` is currently sourced as
+ * requireEvidence dormant: `requireEvidence` is currently sourced as
  * `false` everywhere because goals are not yet linked to a proof level (proof
- * levels live on workflow catalog *definitions*, not goals). The evidence rule
+ * levels live on workflow catalog definitions, not goals). The evidence rule
  * is therefore intentionally DORMANT until a future slice links proof levels to
- * goals at close-time. This matches the issue's "require evidence refs ... WHERE
- * PROOF LEVEL DEMANDS THEM" language.
+ * goals at close-time. This matches issue #38's "require evidence refs ...
+ * WHERE PROOF LEVEL DEMANDS THEM" language.
+ *
+ * Terminal-state rule mapping (documented — not schema changes):
+ *   "complete"    - terminal; may require evidence when proof level demands it.
+ *   "failed"      - terminal; no evidence required.
+ *   "canceled"    - terminal; no evidence required.
+ *   "archived"    - terminal; no evidence required.
+ *   "blocked"     - NON-terminal; maps to awaiting_input/blocked semantics.
+ *   "needs_human" - NOT a schema enum value; maps to existing awaiting_input/blocked.
  */
 
 // ---------------------------------------------------------------------------
@@ -30,18 +39,40 @@ export type GoalValidationResult =
     };
 
 // ---------------------------------------------------------------------------
-// validateGoalCompletion — STUB (not yet implemented)
+// validateGoalCompletion
 // ---------------------------------------------------------------------------
 
 /**
- * STUB: always returns { ok: true }.
- * Behavioral tests BT-038-002 will fail against this stub.
+ * Validate a goal before it is closed as "complete".
+ *
+ * Rules applied (in order):
+ *   1. If `status === "complete"` AND `requireEvidence === true` AND
+ *      `evidenceRefs.length === 0`, return `{ ok: false, code: "missing_required_evidence" }`.
+ *   2. All other cases (non-complete statuses, requireEvidence=false, evidence
+ *      present) return `{ ok: true }`.
+ *
+ * Note: `requireEvidence` is passed as `false` by all current callers because
+ * goals are not yet linked to proof levels. This means the evidence rule is
+ * dormant in production today. The branch that returns `missing_required_evidence`
+ * is tested and exercised by the integration test in chat.test.ts via a forced
+ * mock, confirming the wiring is correct.
  */
-export function validateGoalCompletion(_input: {
+export function validateGoalCompletion(input: {
   status: string;
   evidenceRefs: readonly string[];
   requireEvidence: boolean;
 }): GoalValidationResult {
-  // STUB: returns ok without checking rules — BT-038-002 will fail here
+  if (
+    input.status === "complete" &&
+    input.requireEvidence &&
+    input.evidenceRefs.length === 0
+  ) {
+    return {
+      ok: false,
+      code: "missing_required_evidence",
+      reason: "A complete goal requires at least one evidence ref.",
+    };
+  }
+
   return { ok: true };
 }

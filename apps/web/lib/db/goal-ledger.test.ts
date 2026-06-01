@@ -615,6 +615,9 @@ describe("closeGoal", () => {
   test("BT-005a: updates status and updatedAt when given a terminal status", async () => {
     const { closeGoal } = await goalLedgerPromise;
 
+    // closeGoal now uses a transaction with FOR UPDATE — provide a non-terminal
+    // current status so the transition guard allows the update.
+    fakeGoalLockReturn = [{ id: "goal-1", status: "running" }];
     const now = new Date();
     fakeUpdateReturn = {
       id: "goal-1",
@@ -637,6 +640,8 @@ describe("closeGoal", () => {
   test("BT-005b: throws GoalLedgerError with code 'non_terminal_status' for non-terminal status", async () => {
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
+    // The non_terminal_status guard fires before the transaction, so
+    // fakeGoalLockReturn is irrelevant for this test.
     const err = await closeGoal("goal-1", "running" as never).catch(
       (e: unknown) => e,
     );
@@ -648,11 +653,15 @@ describe("closeGoal", () => {
     expect((err as Error).message).toContain("terminal");
   });
 
-  test("BT-005c: accepts all terminal statuses without throwing", async () => {
+  test("BT-005c: accepts all terminal statuses without throwing (from non-terminal source)", async () => {
     const { closeGoal, TERMINAL_GOAL_STATUSES } = await goalLedgerPromise;
 
     const now = new Date();
     for (const status of TERMINAL_GOAL_STATUSES) {
+      // Provide a non-terminal current status so the transition guard allows
+      // the update. Reset txSelectCallCount before each iteration.
+      fakeGoalLockReturn = [{ id: "goal-x", status: "running" }];
+      txSelectCallCount = 0;
       fakeUpdateReturn = {
         id: "goal-x",
         userId: "user-1",
@@ -667,11 +676,11 @@ describe("closeGoal", () => {
     }
   });
 
-  test("BT-005d: throws GoalLedgerError with code 'not_found' when no row is updated (goal does not exist)", async () => {
+  test("BT-005d: throws GoalLedgerError with code 'not_found' when the goal row does not exist", async () => {
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
-    // fakeUpdateReturn stays null → returning() returns []
-    fakeUpdateReturn = null;
+    // Drive the FOR UPDATE lock to return an empty array (goal missing).
+    fakeGoalLockReturn = [];
 
     const err = await closeGoal("missing-goal", "complete").catch(
       (e: unknown) => e,
@@ -857,6 +866,8 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     // consumers can no longer detect that a goal was closed.
     const { closeGoal } = await goalLedgerPromise;
 
+    // closeGoal now uses FOR UPDATE — provide a non-terminal source status.
+    fakeGoalLockReturn = [{ id: "g-reg", status: "draft" }];
     const beforeCall = new Date();
     const now = new Date();
     fakeUpdateReturn = {
@@ -919,10 +930,12 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
   test("REG-007: closeGoal not_found message includes the goalId for debuggability", async () => {
     // If the not_found throw is reverted or the message is blanked, a caller
     // receiving a 500 will have no idea which goal was missing. This test pins
-    // the message contract.
+    // the message contract. closeGoal now uses FOR UPDATE — drive the lock to
+    // return no row (goal missing from DB).
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
-    fakeUpdateReturn = null;
+    // Drive the FOR UPDATE lock to return an empty array (goal not found).
+    fakeGoalLockReturn = [];
 
     const err = await closeGoal("ghost-goal-id", "complete").catch(
       (e: unknown) => e,

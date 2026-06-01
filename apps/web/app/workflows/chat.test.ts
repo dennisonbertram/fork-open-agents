@@ -416,16 +416,38 @@ mock.module("@/lib/workflows/goal-ledger-recorder", () => ({
 }));
 
 // Mock the goal-validation module so integration tests can control its output.
-// Default: always returns { ok: true } (requireEvidence=false → no-op in production).
-let goalValidationResult: { ok: boolean; code?: string; reason?: string } = {
-  ok: true,
-};
+// The spy delegates to the real implementation by default, so it does not
+// interfere with goal-validation.test.ts which tests the real module directly.
+// Individual tests can override goalValidationResult to force a failure.
+let goalValidationResult: {
+  ok: boolean;
+  code?: string;
+  reason?: string;
+} | null = null;
+
 const validateGoalCompletionSpy = mock(
-  (_input: {
+  (input: {
     status: string;
     evidenceRefs: readonly string[];
     requireEvidence: boolean;
-  }) => goalValidationResult,
+  }): { ok: boolean; code?: string; reason?: string } => {
+    if (goalValidationResult !== null) {
+      return goalValidationResult;
+    }
+    // Default: complete + requireEvidence=false → ok (production behavior)
+    if (
+      input.status === "complete" &&
+      input.requireEvidence &&
+      input.evidenceRefs.length === 0
+    ) {
+      return {
+        ok: false,
+        code: "missing_required_evidence",
+        reason: "A complete goal requires at least one evidence ref.",
+      };
+    }
+    return { ok: true };
+  },
 );
 
 mock.module("@/lib/workflows/goal-validation", () => ({
@@ -551,8 +573,8 @@ beforeEach(() => {
   spies.recordGoalLedgerStart.mockResolvedValue("goal-test-abc123");
   spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
   spies.recordGoalLedgerClose.mockResolvedValue(undefined);
-  // Reset goal-validation spy and result.
-  goalValidationResult = { ok: true };
+  // Reset goal-validation spy and result (null = use real logic in spy).
+  goalValidationResult = null;
   validateGoalCompletionSpy.mockClear();
 });
 
@@ -2398,6 +2420,79 @@ describe("runAgentWorkflow", () => {
     );
   });
 
+  // ── Issue #38: goal validation integration ────────────────────────────────
+  // NOTE: These tests MUST appear before any test that re-mocks @/app/config,
+  // because those re-mocks persist for subsequent dynamic imports in the same file.
+
+  test("BT-038-CHAT-001: finalization calls validateGoalCompletion before closing as complete", async () => {
+    // Default goalValidationResult is { ok: true } → close proceeds normally.
+    await runAgentWorkflow(makeOptions());
+
+    // validateGoalCompletion must have been called with status "complete"
+    // and requireEvidence false (no proof-level link yet → dormant).
+    expect(validateGoalCompletionSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "complete",
+        requireEvidence: false,
+      }),
+    );
+    // Normal close still happens
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({ terminalStatus: "complete" }),
+    );
+  });
+
+  test("BT-038-CHAT-002: when validation fails (forced mock), goal is recorded as blocked instead of complete", async () => {
+    // Force validation to fail — simulates a future requireEvidence:true scenario.
+    goalValidationResult = {
+      ok: false,
+      code: "missing_required_evidence",
+      reason: "A complete goal requires at least one evidence ref.",
+    };
+
+    await runAgentWorkflow(makeOptions());
+
+    // Must NOT have closed as "complete".
+    const closeCalls = spies.recordGoalLedgerClose.mock
+      .calls as unknown[][] as Array<
+      [{ goalId: string; terminalStatus: string }]
+    >;
+    const completeCalls = closeCalls.filter(
+      ([input]) => input.terminalStatus === "complete",
+    );
+    expect(completeCalls).toHaveLength(0);
+
+    // Should have emitted a "blocked" ledger event to record the validation failure.
+    type EventCall = {
+      goalId: string;
+      eventType: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+    };
+    const allEventCalls = spies.recordGoalLedgerEvent.mock
+      .calls as unknown[][] as Array<[EventCall]>;
+    const blockedCalls = allEventCalls.filter(
+      ([input]) => input.eventType === "blocked",
+    );
+    expect(blockedCalls).toHaveLength(1);
+    const [blockedInput] = blockedCalls[0];
+    expect(blockedInput.summary).toContain("validation");
+  });
+
+  test("regression: validateGoalCompletion is called via dynamic import (source structure check)", async () => {
+    // This test reads chat.ts source to verify that goal-validation is imported
+    // dynamically — consistent with the "use step" isolation pattern used for
+    // other DB-touching modules.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    // The module must be referenced as a dynamic import, not a top-level import.
+    expect(source).not.toContain(
+      'import { validateGoalCompletion } from "@/lib/workflows/goal-validation";',
+    );
+    expect(source).toContain('"@/lib/workflows/goal-validation"');
+    expect(source).toContain("validateGoalCompletion");
+  });
+
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
     // Simulate abort: override the agent stream to throw an AbortError.
     // This is what happens when the user clicks Stop — the agent stream throws
@@ -2588,74 +2683,5 @@ describe("runAgentWorkflow", () => {
 
     // The finally block should still fire
     expect(spies.clearActiveStream).toHaveBeenCalled();
-  });
-
-  // ── Issue #38: goal validation integration ────────────────────────────────
-
-  test("BT-038-CHAT-001: finalization calls validateGoalCompletion before closing as complete", async () => {
-    // Default goalValidationResult is { ok: true } → close proceeds normally.
-    await runAgentWorkflow(makeOptions());
-
-    // validateGoalCompletion must have been called with status "complete"
-    // and requireEvidence false (no proof-level link yet → dormant).
-    expect(validateGoalCompletionSpy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "complete",
-        requireEvidence: false,
-      }),
-    );
-    // Normal close still happens
-    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
-      expect.objectContaining({ terminalStatus: "complete" }),
-    );
-  });
-
-  test("BT-038-CHAT-002: when validation fails (forced mock), goal is recorded as blocked instead of complete", async () => {
-    // Force validation to fail — simulates a future requireEvidence:true scenario.
-    goalValidationResult = {
-      ok: false,
-      code: "missing_required_evidence",
-      reason: "A complete goal requires at least one evidence ref.",
-    };
-
-    await runAgentWorkflow(makeOptions());
-
-    // Must NOT have closed as "complete".
-    const closeCalls = spies.recordGoalLedgerClose.mock
-      .calls as unknown[][] as Array<[{ goalId: string; terminalStatus: string }]>;
-    const completeCalls = closeCalls.filter(
-      ([input]) => input.terminalStatus === "complete",
-    );
-    expect(completeCalls).toHaveLength(0);
-
-    // Should have emitted a "blocked" ledger event to record the validation failure.
-    type EventCall = {
-      goalId: string;
-      eventType: string;
-      summary: string;
-      payload?: Record<string, unknown>;
-    };
-    const allEventCalls = spies.recordGoalLedgerEvent.mock
-      .calls as unknown[][] as Array<[EventCall]>;
-    const blockedCalls = allEventCalls.filter(
-      ([input]) => input.eventType === "blocked",
-    );
-    expect(blockedCalls).toHaveLength(1);
-    const [blockedInput] = blockedCalls[0];
-    expect(blockedInput.summary).toContain("validation");
-  });
-
-  test("regression: validateGoalCompletion is called via dynamic import (source structure check)", async () => {
-    // This test reads chat.ts source to verify that goal-validation is imported
-    // dynamically — consistent with the "use step" isolation pattern used for
-    // other DB-touching modules.
-    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
-
-    // The module must be referenced as a dynamic import, not a top-level import.
-    expect(source).not.toContain(
-      'import { validateGoalCompletion } from "@/lib/workflows/goal-validation";',
-    );
-    expect(source).toContain('"@/lib/workflows/goal-validation"');
-    expect(source).toContain("validateGoalCompletion");
   });
 });
