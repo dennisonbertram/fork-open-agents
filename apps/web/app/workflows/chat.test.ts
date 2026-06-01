@@ -104,6 +104,22 @@ const spies = {
   ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
+  createArtifact: mock(async (_input: unknown) => ({
+    id: "artifact-created-id",
+    kind: "research_packet",
+    status: "available",
+    redactionStatus: "pending",
+    sourceLocation: null,
+    summary: null,
+    createdByActor: null,
+    workflowRunId: null,
+    sessionId: null,
+    chatId: null,
+    goalId: null,
+    gateId: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })),
 };
 
 let testSessionRecord: {
@@ -404,6 +420,10 @@ mock.module("@/lib/sandbox/runtime/service-launch", () => ({
 
 mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
   listManagedBrowserRuns: spies.listManagedBrowserRuns,
+}));
+
+mock.module("@/lib/db/workflow-artifacts", () => ({
+  createArtifact: spies.createArtifact,
 }));
 
 const { runAgentWorkflow } = await import("./chat");
@@ -2093,6 +2113,220 @@ describe("runAgentWorkflow", () => {
     );
 
     expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
+  });
+
+  // ── BT-001: artifact generation — managed_runtime creates research_packet + spec ──
+
+  test("creates research_packet and spec artifacts for a managed_runtime run", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const kinds = artifactCalls.map(
+      (call) => (call[0] as { kind: string }).kind,
+    );
+
+    expect(kinds).toContain("research_packet");
+    expect(kinds).toContain("spec");
+  });
+
+  // ── BT-002: artifact carries correct context fields ──
+
+  test("creates artifacts with correct workflowRunId, sessionId, chatId, userId", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    expect(artifactCalls.length).toBeGreaterThanOrEqual(2);
+
+    for (const call of artifactCalls) {
+      const input = call[0] as {
+        workflowRunId: string;
+        sessionId: string;
+        chatId: string;
+      };
+      expect(input.workflowRunId).toBe("wrun_test-123");
+      expect(input.sessionId).toBe("session-1");
+      expect(input.chatId).toBe("chat-1");
+    }
+  });
+
+  // ── BT-003: redaction — secret is not present in artifact summary ──
+
+  test("redacts secrets from artifact summary — bearer token is not written to createArtifact", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(
+      makeOptions({
+        messages: [
+          {
+            id: "user-1",
+            role: "user" as const,
+            parts: [
+              {
+                type: "text",
+                text: "Call the service using Bearer sk-supersecrettoken12345 to authenticate",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    expect(artifactCalls.length).toBeGreaterThanOrEqual(2);
+
+    for (const call of artifactCalls) {
+      const input = call[0] as { summary: string | null };
+      expect(input.summary ?? "").not.toContain("sk-supersecrettoken12345");
+    }
+  });
+
+  // ── BT-004: defensive — createArtifact failure does not crash the workflow ──
+
+  test("runAgentWorkflow completes normally even when createArtifact rejects", async () => {
+    spies.createArtifact.mockImplementation(async () => {
+      throw new Error("Artifact DB write failed");
+    });
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    // Must NOT throw
+    await runAgentWorkflow(makeOptions());
+
+    // Workflow still emits start + finish
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[0]).toBe("start");
+    expect(types[types.length - 1]).toBe("finish");
+
+    // And normal persistence still happens
+    expect(spies.clearActiveStream).toHaveBeenCalled();
+
+    // Reset to default spy
+    spies.createArtifact.mockRestore();
+  });
+
+  // ── BT-005: managed-only — classic run does NOT create artifacts ──
+
+  test("does NOT call createArtifact for a classic (non-managed) run", async () => {
+    // Default resolveChatSandboxRuntime returns runtimeMode: "classic"
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.createArtifact).not.toHaveBeenCalled();
+  });
+
+  // ── BT-006: artifact summary is non-empty for a normal objective ──
+
+  test("artifact summary is non-empty string for a normal user message", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(
+      makeOptions({
+        messages: [
+          {
+            id: "user-1",
+            role: "user" as const,
+            parts: [
+              {
+                type: "text",
+                text: "Build a pagination component for the items list",
+              },
+            ],
+          },
+        ],
+      }),
+    );
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    expect(artifactCalls.length).toBeGreaterThanOrEqual(2);
+
+    for (const call of artifactCalls) {
+      const input = call[0] as { summary: string | null };
+      expect(typeof input.summary).toBe("string");
+      expect((input.summary ?? "").length).toBeGreaterThan(0);
+    }
   });
 
   test("still clears stream and sends finish even on step error", async () => {
