@@ -2108,31 +2108,10 @@ describe("runAgentWorkflow", () => {
     expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
   });
 
-  test("still clears stream and sends finish even on step error", async () => {
-    // Mock the agent to throw
-    mock.module("@/app/config", () => ({
-      webAgent: {
-        tools: {},
-        stream: async () => {
-          throw new Error("Agent failed");
-        },
-      },
-    }));
-
-    // Re-import to pick up new mock
-    const { runAgentWorkflow: reloadedRun } = await import("./chat");
-
-    try {
-      await reloadedRun(makeOptions());
-    } catch {
-      // Expected to throw
-    }
-
-    // The finally block should still fire
-    expect(spies.clearActiveStream).toHaveBeenCalled();
-  });
-
   // ── Goal ledger recorder lifecycle tests ───────────────────────────
+  // NOTE: These tests must appear BEFORE the "still clears stream" test,
+  // because that test re-mocks @/app/config to throw — an override that
+  // persists for subsequent dynamic imports in the same file.
 
   test("calls recordGoalLedgerStart with correct fields on a successful run", async () => {
     await runAgentWorkflow(makeOptions());
@@ -2156,7 +2135,10 @@ describe("runAgentWorkflow", () => {
           id: "user-1",
           role: "user" as const,
           parts: [
-            { type: "text", text: "Please help me refactor the auth module" },
+            {
+              type: "text",
+              text: "Please help me refactor the auth module",
+            },
           ],
         },
       ],
@@ -2164,9 +2146,8 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(options);
 
-    const startCall = spies.recordGoalLedgerStart.mock.calls[0]?.[0] as {
-      objective?: string;
-    };
+    const startCalls = spies.recordGoalLedgerStart.mock.calls as unknown[][];
+    const startCall = startCalls[0]?.[0] as { objective?: string } | undefined;
     expect(startCall?.objective).toContain("refactor the auth module");
   });
 
@@ -2196,28 +2177,47 @@ describe("runAgentWorkflow", () => {
   });
 
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
-    // Simulate abort by making runStatus return "aborted" during the step
-    let stepCount = 0;
-    spies.resolveChatSandboxRuntime.mockImplementationOnce(
-      async (params: { assistantId: string }) => {
-        writtenChunks.push({ type: "start", messageId: params.assistantId });
-        return createResolvedChatSandboxRuntime();
+    // Simulate abort: override the agent stream to throw an AbortError.
+    // This is what happens when the user clicks Stop — the agent stream throws
+    // and isAbortError(error) is true, causing stepWasAborted=true and
+    // ultimately workflowStatus="aborted" which maps to terminalStatus="canceled".
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+    mock.module("@/app/config", () => ({
+      webAgent: {
+        tools: {},
+        stream: async () => ({
+          toUIMessageStream: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next() {
+                  return Promise.reject(abortError);
+                },
+                return() {
+                  return Promise.resolve({ value: undefined, done: true });
+                },
+              };
+            },
+          }),
+          totalUsage: Promise.resolve(agentTotalUsage),
+          finishReason: Promise.resolve("stop"),
+          rawFinishReason: Promise.resolve("AbortError"),
+          response: Promise.resolve({ messages: [] }),
+          steps: Promise.resolve([]),
+        }),
       },
-    );
-    runStatus = "aborted";
+    }));
 
-    await runAgentWorkflow(makeOptions());
+    const { runAgentWorkflow: abortRun } = await import("./chat");
+
+    // Aborted workflow does not rethrow — it completes with "aborted" status.
+    await abortRun(makeOptions());
 
     expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
       expect.objectContaining({
         terminalStatus: "canceled",
       }),
     );
-
-    // Restore
-    stepCount = 0;
-    void stepCount;
-    runStatus = "running";
   });
 
   test("runAgentWorkflow completes normally even when recordGoalLedgerStart rejects", async () => {
@@ -2245,5 +2245,29 @@ describe("runAgentWorkflow", () => {
 
     const types = writtenChunks.map((c) => c.type);
     expect(types[types.length - 1]).toBe("finish");
+  });
+
+  test("still clears stream and sends finish even on step error", async () => {
+    // Mock the agent to throw
+    mock.module("@/app/config", () => ({
+      webAgent: {
+        tools: {},
+        stream: async () => {
+          throw new Error("Agent failed");
+        },
+      },
+    }));
+
+    // Re-import to pick up new mock
+    const { runAgentWorkflow: reloadedRun } = await import("./chat");
+
+    try {
+      await reloadedRun(makeOptions());
+    } catch {
+      // Expected to throw
+    }
+
+    // The finally block should still fire
+    expect(spies.clearActiveStream).toHaveBeenCalled();
   });
 });
