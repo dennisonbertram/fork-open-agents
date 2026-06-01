@@ -266,19 +266,14 @@ describe("GATE_REGISTRY", () => {
     expect(GATE_REGISTRY["scope-change-gate"].trigger).toBe("mid_run");
   });
 
-  test("GATE_REGISTRY is frozen (immutable — adding a key throws in strict mode or is silently ignored)", () => {
-    const registry = GATE_REGISTRY as Record<string, ReviewGate>;
-    const attempt = () => {
-      "use strict";
-      // @ts-expect-error intentional mutation attempt
-      registry["injected-gate"] = GATE_REGISTRY["plan-approval-gate"];
-    };
-    // In strict mode this throws; outside strict mode it silently fails.
-    // Either way the registry must not contain the injected key afterward.
+  test("GATE_REGISTRY is frozen (immutable — adding a key throws or is silently ignored)", () => {
+    // Cast through unknown to bypass readonly — simulates a runtime caller that
+    // ignores TypeScript types. Object.freeze() enforces immutability at runtime.
+    const registry = GATE_REGISTRY as unknown as Record<string, ReviewGate>;
     try {
-      attempt();
+      registry["injected-gate"] = GATE_REGISTRY["plan-approval-gate"];
     } catch {
-      // Expected in strict mode
+      // Expected: TypeError from Object.freeze in strict mode
     }
     expect(registry["injected-gate"]).toBeUndefined();
   });

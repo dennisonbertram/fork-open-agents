@@ -220,7 +220,8 @@ export function parseReviewGate(
     const policyIssue = issues.find(
       (issue) =>
         issue.code === "custom" &&
-        issue.message === "autoApprove and requiresHuman are mutually exclusive",
+        issue.message ===
+          "autoApprove and requiresHuman are mutually exclusive",
     );
     if (policyIssue) {
       return {
@@ -287,8 +288,8 @@ export function parseReviewGate(
  * Conservative-default semantics (mirrors #96 approval-policy posture):
  * - If requiresHuman is true and no humanDecision is present →
  *   awaiting_human (does NOT assume approved).
- * - If requiredEvidence is declared and evidenceSatisfied is false →
- *   failed (does NOT assume satisfied).
+ * - If requiredEvidence is declared and evidenceSatisfied is not explicitly
+ *   true (false OR undefined/not provided) → failed (does NOT assume satisfied).
  * - The `gate.blocking` field is a CALLER responsibility signal.
  *   This function always reports the true computed state; it never
  *   suppresses a failure because blocking is false.
@@ -297,7 +298,7 @@ export function parseReviewGate(
  * 1. autoApprove → immediate "passed"
  * 2. humanDecision: rejected → "failed"
  * 3. requiresHuman + no humanDecision → "awaiting_human"
- * 4. requiredEvidence + evidenceSatisfied: false → "failed"
+ * 4. requiredEvidence + evidenceSatisfied !== true → "failed" (conservative)
  * 5. humanDecision: approved (with any remaining checks passing) → "passed"
  * 6. requiredEvidence + evidenceSatisfied: true → "passed"
  * 7. No policy constraints → "passed"
@@ -333,10 +334,11 @@ export function evaluateGate(
   }
 
   // Priority 4: required evidence not satisfied (conservative default).
+  // evidenceSatisfied must be explicitly true; undefined or false both fail.
   if (
     policy.requiredEvidence !== undefined &&
     policy.requiredEvidence.length > 0 &&
-    context.evidenceSatisfied === false
+    context.evidenceSatisfied !== true
   ) {
     return {
       state: "failed",
