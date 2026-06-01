@@ -14,19 +14,20 @@ mock.module("@/lib/db/client", () => ({
     }),
     query: {
       managedRuntimeWorkerRuns: {
-        findMany: mock(() => Promise.reject(new Error("DB connection refused"))),
+        findMany: mock(() =>
+          Promise.reject(new Error("DB connection refused")),
+        ),
       },
     },
   },
 }));
 
-mock.module("@/lib/harness/redaction", () => ({
-  redactHarnessValue: mock((v: unknown) => v),
-}));
+// We intentionally do NOT mock @/lib/harness/redaction here because that would
+// leak the mock into other co-located test files and break their assertions.
+// The defensive test only needs to verify that DB failures are swallowed.
 
-const { persistWorkerRunBestEffort } = await import(
-  "./managed-runtime-worker-runs"
-);
+const { persistWorkerRunBestEffort } =
+  await import("./managed-runtime-worker-runs");
 
 describe("best-effort worker run persistence", () => {
   test("persistWorkerRunBestEffort does not throw when DB fails", async () => {

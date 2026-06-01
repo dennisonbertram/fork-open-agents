@@ -10,6 +10,10 @@ import {
   summarizeManagedRuntimeDirectToolUseFromMessages,
 } from "@/lib/observability/managed-runtime-workers";
 import {
+  listManagedRuntimeWorkerRunsForSession,
+  toManagedRuntimeWorkerSnapshot,
+} from "@/lib/observability/managed-runtime-worker-runs";
+import {
   listManagedRuntimeProfileRuns,
   toManagedRuntimeProfileRunSnapshot,
 } from "@/lib/observability/managed-runtime-profile-runs";
@@ -63,6 +67,7 @@ export async function GET(req: Request, context: RouteContext) {
     services,
     browserRuns,
     workerMessages,
+    durableWorkerRows,
   ] = await Promise.all([
     listSessionEvents({ sessionId, chatId, limit: eventLimit }),
     listManagedRuntimeProfileRuns({ sessionId, chatId, limit: 20 }),
@@ -96,7 +101,18 @@ export async function GET(req: Request, context: RouteContext) {
           .orderBy(desc(chatMessages.createdAt), desc(chatMessages.id))
           .limit(20)
       : Promise.resolve([]),
+    sessionContext.sessionRecord.runtimeMode === "managed_runtime"
+      ? listManagedRuntimeWorkerRunsForSession(sessionId)
+      : Promise.resolve([]),
   ]);
+
+  // Durable-first: prefer rows from managed_runtime_worker_runs when available.
+  // Falls back to message-derived extraction when no durable records exist yet
+  // (e.g. sessions created before this feature shipped).
+  const workers =
+    durableWorkerRows.length > 0
+      ? durableWorkerRows.map(toManagedRuntimeWorkerSnapshot)
+      : extractManagedRuntimeWorkersFromMessages(workerMessages);
 
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
@@ -108,7 +124,7 @@ export async function GET(req: Request, context: RouteContext) {
       finishedAt: workflow.finishedAt.toISOString(),
       createdAt: workflow.createdAt.toISOString(),
     })),
-    workers: extractManagedRuntimeWorkersFromMessages(workerMessages),
+    workers,
     directToolUse:
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
     services,

@@ -85,7 +85,9 @@ export type WorkflowRunJson = {
 
 export type ManagedRuntimeWorkerJson = {
   id: string;
-  source: "message";
+  // "message" = derived from chat message parts (fallback)
+  // "durable"  = read from the managed_runtime_worker_runs DB table
+  source: "message" | "durable";
   taskToolCallId: string;
   workerType: string;
   status: string;

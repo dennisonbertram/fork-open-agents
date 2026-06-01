@@ -1275,6 +1275,76 @@ export type NewWorkflowRunStep = typeof workflowRunSteps.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 
+// Durable records of managed-runtime worker executions for attribution.
+// Column "workerType" corresponds to the snapshot's workerType field (also known
+// as agentRole in some contexts). Dedup key: (sessionId, taskToolCallId).
+export const managedRuntimeWorkerRuns = pgTable(
+  "managed_runtime_worker_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Plain text — no FK to workflowRuns (workflow rows may not yet exist)
+    workflowRunId: text("workflow_run_id"),
+    // Dedup/correlation key from the worker tool call
+    taskToolCallId: text("task_tool_call_id").notNull(),
+    // Worker role (a.k.a. agentRole in some contexts)
+    workerType: text("worker_type").notNull(),
+    status: text("status", {
+      enum: [
+        "pending",
+        "starting",
+        "running",
+        "blocked",
+        "failed",
+        "denied",
+        "completed",
+        "interrupted",
+      ],
+    }).notNull(),
+    sandboxName: text("sandbox_name"),
+    profileId: text("profile_id"),
+    profileVersion: text("profile_version"),
+    profileDisplayName: text("profile_display_name"),
+    // FK to managed_runtime_profile_runs — nullable, SET NULL on delete
+    profileRunId: text("profile_run_id").references(
+      () => managedRuntimeProfileRuns.id,
+      { onDelete: "set null" },
+    ),
+    toolCallCount: integer("tool_call_count").notNull().default(0),
+    // REDACTED before persist
+    summary: text("summary"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    // Upsert dedup key
+    uniqueIndex("managed_runtime_worker_runs_session_task_idx").on(
+      table.sessionId,
+      table.taskToolCallId,
+    ),
+    // Efficient session timeline queries
+    index("managed_runtime_worker_runs_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type ManagedRuntimeWorkerRun =
+  typeof managedRuntimeWorkerRuns.$inferSelect;
+export type NewManagedRuntimeWorkerRun =
+  typeof managedRuntimeWorkerRuns.$inferInsert;
+
 export const composioToolProfiles = pgTable(
   "composio_tool_profiles",
   {

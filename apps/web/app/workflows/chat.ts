@@ -65,6 +65,7 @@ import {
   summarizeManagedRuntimeDirectToolUse,
   type ManagedRuntimeWorkerSnapshot,
 } from "@/lib/observability/managed-runtime-workers";
+import { persistWorkerRunBestEffort } from "@/lib/observability/managed-runtime-worker-runs";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
 import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
 
@@ -1555,6 +1556,36 @@ export async function runAgentWorkflow(options: Options) {
         sessionId: options.sessionId,
         chatId: options.chatId,
       });
+
+      // Defensive best-effort: persist durable worker run records for attribution.
+      // Wrapped in try/catch (via persistWorkerRunBestEffort) so failures here
+      // NEVER crash the chat workflow.
+      const proofWorkers = extractManagedRuntimeWorkersFromParts(
+        pendingAssistantResponse.parts,
+      );
+      await Promise.all(
+        proofWorkers.map((worker) =>
+          persistWorkerRunBestEffort({
+            sessionId: options.sessionId,
+            chatId: options.chatId,
+            userId: options.userId,
+            workflowRunId,
+            taskToolCallId: worker.taskToolCallId,
+            workerType: worker.workerType,
+            status: worker.status,
+            sandboxName: worker.sandboxName,
+            profileId: worker.profileId,
+            profileVersion: worker.profileVersion,
+            profileDisplayName: worker.profileDisplayName,
+            profileRunId: worker.profileRunId,
+            toolCallCount: worker.toolCallCount,
+            summary: worker.summary,
+            startedAt: null,
+            finishedAt: null,
+          }),
+        ),
+      );
+
       const runtimeProofPart: WebAgentRuntimeProofDataPart = {
         type: "data-runtime-proof",
         id: `${assistantId}:runtime-proof`,

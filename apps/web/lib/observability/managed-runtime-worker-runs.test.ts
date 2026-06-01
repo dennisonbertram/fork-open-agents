@@ -147,7 +147,8 @@ describe("managed runtime worker runs persistence", () => {
         profileDisplayName: null,
         profileRunId: null,
         toolCallCount: 0,
-        summary: "Install npm package with OPENAI_API_KEY=sk-12345678901234567890",
+        summary:
+          "Install npm package with OPENAI_API_KEY=sk-12345678901234567890",
         startedAt: null,
         finishedAt: null,
       });
