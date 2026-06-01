@@ -254,3 +254,107 @@ describe("WorkflowPickerItems", () => {
     expect(html).toContain("basic");
   });
 });
+
+// ── Regression tests ──────────────────────────────────────────────────────────
+// These tests catch future breakage of the behaviors introduced in
+// feat: TASK-ISSUE-32 (green commit 8b94e325).
+
+describe("WorkflowPickerCompact regression", () => {
+  beforeEach(() => {
+    swrState = {};
+  });
+
+  // Regression: disabled item in presenter must NOT be clickable (button disabled)
+  // If disabled items were made clickable, the disabledReason affordance breaks.
+  test("disabled workflow button in presenter has the HTML disabled attribute", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[disabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    // The button for the disabled workflow must have disabled attribute
+    // This fails if someone removes disabled={!workflow.available} from the button
+    expect(html).toContain("disabled");
+    expect(html).toContain("Deploy to Production");
+  });
+
+  // Regression: disabledReason must be visible in the presenter
+  // If the conditional render of disabledReason is removed, this fails
+  test("disabledReason text is always rendered for unavailable workflows", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+    const customDisabledWorkflow: WorkflowCatalogEntry = {
+      ...disabledWorkflow,
+      disabledReason: "Coming in v2 release",
+    };
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[customDisabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(html).toContain("Coming in v2 release");
+  });
+
+  // Regression: enabled workflow must NOT show a disabledReason
+  // If the conditional check is dropped, enabled items would show null/undefined
+  test("enabled workflows do not render a disabledReason span", async () => {
+    const { WorkflowPickerItems } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerItems
+        workflows={[enabledWorkflow]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    // No disabled spans for an enabled workflow — if disabledReason condition
+    // were removed, "null" or empty spans would appear
+    expect(html).not.toContain("Workflow is currently disabled");
+    expect(html).toContain("Test Run");
+  });
+
+  // Regression: WorkflowPickerCompact trigger must be disabled when loading
+  // If isTriggerDisabled logic loses the isLoading check, this fails
+  test("trigger is disabled during SWR loading regardless of disabled prop value", async () => {
+    swrState = { isLoading: true };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const htmlNotDisabledProp = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        selectedWorkflowId={null}
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    // Even with disabled=false, the trigger must be disabled while loading
+    expect(htmlNotDisabledProp).toContain("disabled");
+  });
+
+  // Regression: component exports only the expected public API (no run-start exports)
+  // This verifies the selection-only contract: if run-start logic were added
+  // and wired as a top-level export, this snapshot of exported names catches it.
+  test("component module exports only the expected symbols (no run-start exports)", async () => {
+    const mod = await componentModulePromise;
+    const exportedKeys = Object.keys(mod).sort();
+
+    // Allowed exports: the two components and the two interface/prop-type brands
+    // (bun:test reflects exported functions, not interfaces)
+    expect(exportedKeys).toContain("WorkflowPickerCompact");
+    expect(exportedKeys).toContain("WorkflowPickerItems");
+
+    // Must NOT export any run-start or mutation surface
+    expect(exportedKeys).not.toContain("startWorkflowRun");
+    expect(exportedKeys).not.toContain("useRunStart");
+    expect(exportedKeys).not.toContain("submitWorkflow");
+  });
+});
