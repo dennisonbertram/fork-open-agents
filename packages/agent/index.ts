@@ -38,6 +38,19 @@ export type {
   SubagentMessageMetadata,
   SubagentUIMessage,
 } from "./subagents/types";
+// Role registry exports
+export {
+  ROLE_REGISTRY,
+  parseRoleContract,
+  roleContractSchema,
+  roleIdSchema,
+  roleFamilySchema,
+  type RoleContract,
+  type RoleContractError,
+  type RoleContractErrorKind,
+  type RoleFamily,
+  type RoleId,
+} from "./subagents/role-contract";
 export type { BuildSystemPromptOptions } from "./system-prompt";
 export { buildSystemPrompt } from "./system-prompt";
 export {

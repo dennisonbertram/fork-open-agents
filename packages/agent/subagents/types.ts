@@ -2,6 +2,7 @@ import type { InferAgentUIMessage, LanguageModelUsage } from "ai";
 import type { designSubagent } from "./design";
 import type { executorSubagent } from "./executor";
 import type { explorerSubagent } from "./explorer";
+export type { RoleContract, RoleId } from "./role-contract";
 
 export type SubagentMessageMetadata = {
   lastStepUsage?: LanguageModelUsage;
