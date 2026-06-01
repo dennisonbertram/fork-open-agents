@@ -302,7 +302,7 @@ async function startGoalLedger(input: {
 async function appendGoalLedgerEvent(input: {
   goalId: string;
   userId: string;
-  eventType: string;
+  eventType: import("@/lib/workflows/goal-ledger-recorder").GoalLedgerEventType;
   summary: string;
   payload?: Record<string, unknown>;
 }): Promise<void> {
@@ -1157,6 +1157,49 @@ export async function runAgentWorkflow(options: Options) {
   let inferenceProfileName: string | null = null;
   let inferenceProvider: string | null = null;
 
+  // FIX 2: Start the goal ledger early — before the sandbox/model Promise.all —
+  // so that setup-phase failures are still captured in the ledger (the finally
+  // block will close it with "failed" status even when setup throws). Guarded
+  // best-effort: a failure here must not crash the workflow.
+  try {
+    const lastUserMessage = options.messages.findLast((m) => m.role === "user");
+    const textPart = lastUserMessage?.parts.find((p) => p.type === "text");
+    const rawObjective =
+      typeof textPart === "object" &&
+      textPart !== null &&
+      "text" in textPart &&
+      typeof textPart.text === "string"
+        ? textPart.text.slice(0, 200)
+        : `Workflow run ${workflowRunId}`;
+    goalLedgerId = await startGoalLedger({
+      userId: options.userId,
+      sessionId: options.sessionId,
+      chatId: options.chatId,
+      workflowRunId,
+      objective: rawObjective,
+    });
+    // FIX 1: Record the "started" event immediately after the goal row is created.
+    if (goalLedgerId) {
+      try {
+        await appendGoalLedgerEvent({
+          goalId: goalLedgerId,
+          userId: options.userId,
+          eventType: "started",
+          summary: rawObjective || "Workflow run started",
+          payload: { workflowRunId },
+        });
+      } catch (startedErr: unknown) {
+        console.error(
+          "[chat] goal-ledger started event failed (non-fatal):",
+          startedErr,
+        );
+      }
+    }
+  } catch (err: unknown) {
+    console.error("[chat] goal-ledger start failed (non-fatal):", err);
+    goalLedgerId = null;
+  }
+
   try {
     const [runtime, modelRuntime, modelMessages] = await Promise.all([
       resolveChatSandboxRuntime({
@@ -1219,34 +1262,6 @@ export async function runAgentWorkflow(options: Options) {
         skillCount: runtime.skills.length,
       },
     });
-    // Record the goal ledger start. Derive the objective from the last user
-    // message text (truncated to 200 chars). Falls back to a run-id string if
-    // no text part is found. The call site is also guarded so that an
-    // unexpected wrapper failure cannot crash the workflow.
-    try {
-      const lastUserMessage = options.messages.findLast(
-        (m) => m.role === "user",
-      );
-      const textPart = lastUserMessage?.parts.find((p) => p.type === "text");
-      const rawObjective =
-        typeof textPart === "object" &&
-        textPart !== null &&
-        "text" in textPart &&
-        typeof textPart.text === "string"
-          ? textPart.text.slice(0, 200)
-          : `Workflow run ${workflowRunId}`;
-      goalLedgerId = await startGoalLedger({
-        userId: options.userId,
-        sessionId: options.sessionId,
-        chatId: options.chatId,
-        workflowRunId,
-        objective: rawObjective,
-      });
-    } catch (err: unknown) {
-      console.error("[chat] goal-ledger start failed (non-fatal):", err);
-      goalLedgerId = null;
-    }
-
     pendingAssistantResponse = {
       ...pendingAssistantResponse,
       metadata: withModelMetadata(
@@ -1333,6 +1348,28 @@ export async function runAgentWorkflow(options: Options) {
         totalUsage = totalUsage
           ? addLanguageModelUsage(totalUsage, result.stepUsage)
           : result.stepUsage;
+      }
+
+      // FIX 1: Record a progress event for each completed agent step.
+      // Best-effort; never throws. runAgentStep's signature is unchanged.
+      if (goalLedgerId) {
+        try {
+          await appendGoalLedgerEvent({
+            goalId: goalLedgerId,
+            userId: options.userId,
+            eventType: "progress",
+            summary: `Step ${step + 1} completed`,
+            payload: {
+              stepNumber: step + 1,
+              finishReason: result.finishReason,
+            },
+          });
+        } catch (progressErr: unknown) {
+          console.error(
+            "[chat] goal-ledger progress event failed (non-fatal):",
+            progressErr,
+          );
+        }
       }
 
       const shouldContinue =
@@ -1749,12 +1786,14 @@ export async function runAgentWorkflow(options: Options) {
       // that any unexpected wrapper failure cannot crash the workflow.
       if (goalLedgerId) {
         try {
+          // FIX 4: Use the sanitized user-facing error message for the failed
+          // summary so the ledger does not store raw internal error text.
           const finalSummary =
             workflowStatus === "completed"
               ? "Workflow completed successfully."
               : workflowStatus === "aborted"
                 ? "Workflow was aborted."
-                : `Workflow failed: ${caughtError ? getErrorMessage(caughtError) : "unknown error"}`;
+                : `Workflow failed: ${caughtError ? getUserFacingWorkflowErrorMessage(caughtError) : "unknown error"}`;
           // Map workflow status to terminal goal status.
           // workflowStatus values: "completed" | "aborted" | "failed"
           // TERMINAL_GOAL_STATUSES values: "complete" | "canceled" | "failed" | "archived"

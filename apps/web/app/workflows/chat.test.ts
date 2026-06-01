@@ -2159,10 +2159,21 @@ describe("runAgentWorkflow", () => {
     await runAgentWorkflow(makeOptions());
 
     // Must have been called at least once with eventType "started"
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ goalId: string; userId: string; eventType: string; summary: string; payload?: Record<string, unknown> }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [
+        {
+          goalId: string;
+          userId: string;
+          eventType: string;
+          summary: string;
+          payload?: Record<string, unknown>;
+        },
+      ]
+    >;
 
-    const startedCalls = allCalls.filter(([input]) => input.eventType === "started");
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
     expect(startedCalls).toHaveLength(1);
 
     const [startedInput] = startedCalls[0];
@@ -2170,16 +2181,29 @@ describe("runAgentWorkflow", () => {
     expect(startedInput.userId).toBe("user-1");
     expect(startedInput.summary).toBeTruthy();
     // payload must carry the workflowRunId so the ledger event is traceable
-    expect(startedInput.payload).toMatchObject({ workflowRunId: "wrun_test-123" });
+    expect(startedInput.payload).toMatchObject({
+      workflowRunId: "wrun_test-123",
+    });
   });
 
   test("records at least one 'progress' event with stepNumber during a single-step run", async () => {
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ goalId: string; userId: string; eventType: string; summary: string; payload?: Record<string, unknown> }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [
+        {
+          goalId: string;
+          userId: string;
+          eventType: string;
+          summary: string;
+          payload?: Record<string, unknown>;
+        },
+      ]
+    >;
 
-    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
     // At least one progress event for the one step that ran
     expect(progressCalls.length).toBeGreaterThanOrEqual(1);
 
@@ -2196,27 +2220,35 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
 
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ goalId: string; eventType: string; payload?: Record<string, unknown> }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [{ goalId: string; eventType: string; payload?: Record<string, unknown> }]
+    >;
 
-    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
     expect(progressCalls.length).toBe(2);
 
-    const stepNumbers = progressCalls.map(([input]) => input.payload?.stepNumber);
+    const stepNumbers = progressCalls.map(
+      ([input]) => input.payload?.stepNumber,
+    );
     expect(stepNumbers).toEqual([1, 2]);
   });
 
   test("records 'started', progress events, then 'final' event in order", async () => {
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ eventType: string }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [{ eventType: string }]
+    >;
 
     const eventTypes = allCalls.map(([input]) => input.eventType);
     // started comes first, final comes last, progress in between
     expect(eventTypes[0]).toBe("started");
     expect(eventTypes[eventTypes.length - 1]).toBe("final");
-    expect(eventTypes.filter((t) => t === "progress").length).toBeGreaterThanOrEqual(1);
+    expect(
+      eventTypes.filter((t) => t === "progress").length,
+    ).toBeGreaterThanOrEqual(1);
   });
 
   test("does not record 'started' or 'progress' events when startGoalLedger returns null", async () => {
@@ -2226,13 +2258,18 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions());
 
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ eventType: string }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [{ eventType: string }]
+    >;
 
-    const startedCalls = allCalls.filter(([input]) => input.eventType === "started");
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
     expect(startedCalls).toHaveLength(0);
 
-    const progressCalls = allCalls.filter(([input]) => input.eventType === "progress");
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
     expect(progressCalls).toHaveLength(0);
   });
 
@@ -2250,10 +2287,13 @@ describe("runAgentWorkflow", () => {
       // expected to throw
     }
 
-    const allCalls = spies.recordGoalLedgerEvent.mock
-      .calls as Array<[{ eventType: string; summary: string }]>;
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as Array<
+      [{ eventType: string; summary: string }]
+    >;
 
-    const finalCalls = allCalls.filter(([input]) => input.eventType === "final");
+    const finalCalls = allCalls.filter(
+      ([input]) => input.eventType === "final",
+    );
     // A final event must have been recorded even on failure (goalLedgerId was set)
     expect(finalCalls.length).toBeGreaterThanOrEqual(1);
 

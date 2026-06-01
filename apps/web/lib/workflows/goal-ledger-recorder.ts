@@ -6,6 +6,26 @@ import type { TerminalGoalStatus } from "@/lib/db/goal-ledger";
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * The closed set of event types that can be appended to a goal ledger entry.
+ *
+ * - "started"    — emitted once, right after the goal row is created.
+ * - "progress"   — emitted after each agent step completes.
+ * - "blocked"    — emitted when the workflow pauses awaiting human approval
+ *                  (reserved; not wired yet — no such phase in the current
+ *                  managed workflow path).
+ * - "validation" — emitted when a formal proof/validation step runs
+ *                  (reserved; not wired yet — no such phase in the current
+ *                  managed workflow path).
+ * - "final"      — emitted once at the end, before closeGoal.
+ */
+export type GoalLedgerEventType =
+  | "started"
+  | "progress"
+  | "blocked"
+  | "validation"
+  | "final";
+
 export type RecordGoalLedgerStartInput = {
   userId: string;
   sessionId: string;
@@ -17,7 +37,7 @@ export type RecordGoalLedgerStartInput = {
 export type RecordGoalLedgerEventInput = {
   goalId: string;
   userId: string;
-  eventType: string;
+  eventType: GoalLedgerEventType;
   summary: string;
   payload?: Record<string, unknown>;
 };
@@ -80,7 +100,7 @@ export async function recordGoalLedgerEvent(
     const eventInput: {
       goalId: string;
       userId: string;
-      eventType: string;
+      eventType: GoalLedgerEventType;
       summary: string;
       payload?: Record<string, unknown>;
     } = {
