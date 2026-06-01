@@ -6,9 +6,10 @@ export interface ChatRequestBody {
   chatId?: string;
   /**
    * Named workflow identifier. Present only for named workflow runs (#46).
-   * When present, the chat route gate calls validateAndPersistWorkflowInputSnapshot
-   * before start(runAgentWorkflow, ...). Absent for classic/freeform chat runs —
-   * the validation gate is bypassed entirely.
+   * When present, the chat route gate calls validateWorkflowInputs (pure)
+   * BEFORE start(runAgentWorkflow, ...), then persistWorkflowInputSnapshot
+   * AFTER start() with the real run.runId. Absent for classic/freeform chat
+   * runs — the validation gate is bypassed entirely.
    */
   workflowId?: string;
   /**

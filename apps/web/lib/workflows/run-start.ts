@@ -170,7 +170,12 @@ export type PersistWorkflowInputSnapshotArgs = {
  * Legacy combined args type (kept for compat — run-start.test.ts).
  */
 export type ValidateAndPersistArgs = {
-  /** The run id (nanoid) that was allocated for this workflow run. */
+  /**
+   * The REAL run id returned by start(runAgentWorkflow, ...).
+   * MUST NOT be a pre-generated nanoid — that recreates the pre-start
+   * FK-mismatch bug fixed by issue-46. Use the split API instead if
+   * you need the validate-before-start guarantee.
+   */
   workflowRunId: string;
   /** Named workflow identifier. Nullable until catalog (#29/#30) lands. */
   workflowId?: string | null;
@@ -183,6 +188,16 @@ export type ValidateAndPersistArgs = {
 // ── Redaction constants ────────────────────────────────────────────────────
 
 const REDACTED = "[REDACTED]";
+
+/**
+ * Forbidden field keys — prototype-pollution defense (final-fix B).
+ *
+ * These keys have special meaning in JavaScript's prototype chain. A schema
+ * that declares one of these as a field key could cause confusing behavior or
+ * prototype pollution when reading inputValues with the 'in' operator or bracket
+ * notation. Reject them early so neither validation nor persist can be affected.
+ */
+const FORBIDDEN_FIELD_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 /**
  * Secret-key pattern backstop (FIX 3 — defense-in-depth).
@@ -213,6 +228,22 @@ function validateInputValues(
   inputValues: Record<string, unknown>,
 ): WorkflowFieldError[] {
   const errors: WorkflowFieldError[] = [];
+
+  // final-fix B: Reject forbidden field keys declared in the schema itself.
+  // __proto__, constructor, prototype have special meaning in the JS prototype
+  // chain and must never appear as workflow field keys.
+  for (const field of schema.fields) {
+    if (FORBIDDEN_FIELD_KEYS.has(field.key)) {
+      errors.push({
+        key: field.key,
+        message: `Field key "${field.key}" is reserved and cannot be used as a workflow input field key.`,
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    return errors;
+  }
 
   // FIX 1: Reject any key in inputValues NOT declared in the schema.
   // Build a set of declared keys for O(1) lookup.
@@ -318,16 +349,23 @@ function buildRedactedSnapshot(
   inputValues: Record<string, unknown>,
 ): Record<string, unknown> {
   // Build from schema fields ONLY — do NOT clone inputValues.
-  const redacted: Record<string, unknown> = {};
+  // Use Object.create(null) for the output to avoid any prototype on the result.
+  const redacted: Record<string, unknown> = Object.create(null) as Record<
+    string,
+    unknown
+  >;
 
   for (const field of schema.fields) {
-    if (!(field.key in inputValues)) {
+    // final-fix B: Use Object.hasOwn instead of 'in' to avoid walking the
+    // prototype chain. An inherited value (e.g. from Object.create({key:v}))
+    // would be found by 'in' but must NOT be persisted — it bypassed the
+    // own-key unknown-key check in validateInputValues.
+    if (!Object.hasOwn(inputValues, field.key)) {
       // Optional field not submitted — skip entirely (not even store undefined)
       continue;
     }
 
-    const shouldRedact =
-      field.sensitive || SECRET_KEY_PATTERN.test(field.key);
+    const shouldRedact = field.sensitive || SECRET_KEY_PATTERN.test(field.key);
 
     redacted[field.key] = shouldRedact ? REDACTED : inputValues[field.key];
   }
@@ -366,6 +404,10 @@ export async function validateWorkflowInputs(
 
   // ── 2. Validate inputValues is a plain object ────────────────────────────
   // Defense: reject non-object inputValues before further processing.
+  // final-fix B: also reject class instances (objects whose prototype is neither
+  // Object.prototype nor null). A Map, class instance, or other exotic object
+  // could carry unexpected inherited properties that slip past Object.keys()
+  // unknown-key checks. Only accept true plain objects and null-prototype objects.
   if (
     typeof inputValues !== "object" ||
     inputValues === null ||
@@ -378,6 +420,20 @@ export async function validateWorkflowInputs(
         {
           key: "__inputValues__",
           message: "inputValues must be a plain object.",
+        },
+      ],
+    };
+  }
+
+  const inputProto = Object.getPrototypeOf(inputValues) as unknown;
+  if (inputProto !== Object.prototype && inputProto !== null) {
+    return {
+      valid: false,
+      errorKind: "workflow_input_invalid",
+      fieldErrors: [
+        {
+          key: "__inputValues__",
+          message: "inputValues must be a plain object (no class instances or exotic objects).",
         },
       ],
     };
@@ -461,15 +517,23 @@ export async function persistWorkflowInputSnapshot(
 /**
  * Legacy combined validate-and-persist function.
  *
- * DEPRECATED in favor of the split validateWorkflowInputs + persistWorkflowInputSnapshot.
- * Kept for backward compat with existing tests (run-start.test.ts) and route.ts
- * callers that have not yet been migrated to the two-phase approach.
+ * DEPRECATED — prefer the split API:
+ *   validateWorkflowInputs(args)  →  pure, no side effects
+ *   persistWorkflowInputSnapshot(args)  →  best-effort, never throws
+ *
+ * Kept for backward compat with existing tests (run-start.test.ts).
+ * The live route.ts path uses the split API (validate → start() → persist).
  *
  * Architecture note: this function calls persist synchronously after validate —
  * meaning persist failure returns workflow_input_persist_failed and the run is
- * NOT started. The new route.ts path (FIX 2) reverses this: validate first,
- * start the run, then persist best-effort. This wrapper preserves old behavior
- * for callers that haven't been updated.
+ * NOT started. The split route.ts path reverses this: validate first, start
+ * the run, then persist best-effort. This wrapper preserves old behavior for
+ * test callers.
+ *
+ * IMPORTANT: The `workflowRunId` arg MUST be the REAL run id returned by
+ * start(runAgentWorkflow, ...) — NOT a pre-generated nanoid. Passing a
+ * pre-generated nanoid recreates the pre-start FK-mismatch bug that was
+ * fixed by issue-46. If you need the two-phase behavior, use the split API.
  *
  * Returns a discriminated union — NEVER throws.
  */

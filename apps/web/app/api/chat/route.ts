@@ -317,24 +317,30 @@ export async function POST(req: Request) {
     },
   ]);
 
-  // Step 3 (#46 FIX 2): Best-effort persist of the redacted snapshot with the
-  // REAL run.runId (available only after start() returns). A persist failure
-  // must NOT kill the already-started run — log field keys only, continue.
+  // Step 3 (#46 FIX 2 + final-fix A): Best-effort persist of the redacted
+  // snapshot with the REAL run.runId (available only after start() returns).
+  // persistWorkflowInputSnapshot NEVER throws — it returns {success:false} on
+  // DB error. Branch on the returned result so persist failures are observable.
+  // A persist failure must NOT kill the already-started run.
+  // Log field keys / ids only — NEVER raw input values.
   if (validatedWorkflowInput) {
-    try {
-      await persistWorkflowInputSnapshot({
-        workflowRunId: run.runId,
-        workflowId: validatedWorkflowInput.workflowId,
-        schemaVersion: workflowSchemaVersion ?? null,
-        redactedValues: validatedWorkflowInput.redactedValues,
-        persistedAt: new Date(),
-      });
-    } catch {
+    const persistResult = await persistWorkflowInputSnapshot({
+      workflowRunId: run.runId,
+      workflowId: validatedWorkflowInput.workflowId,
+      schemaVersion: workflowSchemaVersion ?? null,
+      redactedValues: validatedWorkflowInput.redactedValues,
+      persistedAt: new Date(),
+    });
+
+    if (!persistResult.success) {
       // Best-effort — do NOT fail the response after the run has started.
-      // Log field keys only; raw values are never logged.
+      // Log ids/field-keys only; raw input values are NEVER logged.
       console.warn(
         "[chat/route] workflow input snapshot persist failed after run start",
-        { workflowRunId: run.runId, workflowId: validatedWorkflowInput.workflowId },
+        {
+          workflowRunId: run.runId,
+          workflowId: validatedWorkflowInput.workflowId,
+        },
       );
     }
   }
