@@ -2567,6 +2567,78 @@ describe("runAgentWorkflow", () => {
     expect(kinds).not.toContain("final_build_report");
   });
 
+  // ── Regression: receipt + final_build_report are ALWAYS created on managed_runtime
+  //    completion, and all four artifact kinds (research_packet, spec, receipt,
+  //    final_build_report) are present together. ──
+
+  test("regression: all four artifact kinds created for a managed_runtime run", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const kinds = artifactCalls.map(
+      (call) => (call[0] as { kind: string }).kind,
+    );
+
+    // Regression: removing either artifact recording step would drop entries
+    expect(kinds).toContain("research_packet");
+    expect(kinds).toContain("spec");
+    expect(kinds).toContain("receipt");
+    expect(kinds).toContain("final_build_report");
+  });
+
+  // ── Regression: receipt status is always 'available' even when evidence is absent ──
+
+  test("regression: receipt status is 'available' even when no research/spec evidence exists", async () => {
+    spies.listArtifacts.mockImplementationOnce(async () => []);
+
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactCalls = spies.createArtifact.mock.calls as unknown[][];
+    const receiptCall = artifactCalls.find(
+      (call) => (call[0] as { kind: string }).kind === "receipt",
+    );
+
+    expect(receiptCall).toBeDefined();
+    // Regression: receipt is not evidence-gated; status must always be "available"
+    expect((receiptCall![0] as { status: string }).status).toBe("available");
+  });
+
   test("still clears stream and sends finish even on step error", async () => {
     // Mock the agent to throw
     mock.module("@/app/config", () => ({
