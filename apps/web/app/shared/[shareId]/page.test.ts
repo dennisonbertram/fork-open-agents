@@ -1535,4 +1535,167 @@ describe("/shared/[shareId] page", () => {
     // Payload-level: nowhere in serialized props
     expect(JSON.stringify(element.props)).not.toContain("dupwarningtoken999");
   });
+
+  // ---- REGRESSION: mutation-catchers for this second-pass fix ----
+
+  test("regression: bash input.command redaction applies regardless of whether output is present", async () => {
+    // This catches a regression where the state-guard is re-added before command redaction.
+    // Both variants (with and without output) must scrub the command.
+    const secretCmd =
+      "curl -H 'Authorization: Bearer regtoken-abc123xyz' https://api.internal/data";
+
+    for (const state of ["input-available", "output-available"] as const) {
+      const part: Record<string, unknown> =
+        state === "output-available"
+          ? {
+              type: "tool-bash",
+              state,
+              input: { command: secretCmd },
+              output: { success: true, exitCode: 0, stdout: "ok", stderr: "" },
+            }
+          : { type: "tool-bash", state, input: { command: secretCmd } };
+
+      messageRows = [
+        {
+          parts: { id: "m1", role: "assistant", parts: [part] },
+          role: "assistant",
+          createdAt: new Date("2025-01-01T00:00:00Z"),
+        },
+      ];
+
+      const { default: SharedPage } = await pageModulePromise;
+      const element = (await SharedPage({
+        params: Promise.resolve({ shareId: "share-1" }),
+      })) as {
+        props: {
+          chats: Array<{
+            messagesWithTiming: Array<{
+              message: { parts: Array<Record<string, unknown>> };
+            }>;
+          }>;
+        };
+      };
+
+      const parts =
+        element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+      const bashInput = parts?.[0]?.input as Record<string, unknown>;
+
+      // Must be scrubbed for both input-available and output-available states
+      expect(bashInput?.command).not.toContain("regtoken-abc123xyz");
+    }
+  });
+
+  test("regression: serviceEvidence and browserEvidence latest fields are actively processed (not passthrough)", async () => {
+    // Catches a regression where sanitizeRuntimeProofData returns early or skips
+    // the new service/browser blocks entirely.
+    messageRows = [
+      {
+        parts: {
+          id: "m1",
+          role: "assistant",
+          parts: [
+            {
+              type: "data-runtime-proof",
+              data: {
+                status: "completed",
+                runtimeMode: "managed_runtime",
+                workflowRunId: "wf-regression",
+                sandboxName: null,
+                profile: {
+                  id: "p1",
+                  version: "1.0",
+                  displayName: "Profile",
+                  profileRunId: null,
+                },
+                workerEvidence: {
+                  total: 0,
+                  completed: 0,
+                  failed: 0,
+                  running: 0,
+                  latest: null,
+                },
+                coordinatorDirectToolUse: {
+                  observed: false,
+                  count: 0,
+                  toolTypes: [],
+                  toolLabels: [],
+                  warning: null,
+                },
+                evidence: [],
+                serviceEvidence: {
+                  total: 1,
+                  running: 1,
+                  failed: 0,
+                  latest: {
+                    id: "svc-reg",
+                    kind: "web",
+                    status: "running",
+                    packagePath: "/app",
+                    port: 3000,
+                    url: "https://admin:regsvcpw999@internal.svc/health",
+                    logPath: null,
+                    lastHealthStatus: 200,
+                    failureMessage: null,
+                  },
+                },
+                browserEvidence: {
+                  total: 1,
+                  passed: 0,
+                  failed: 1,
+                  latest: {
+                    id: "browser-reg",
+                    status: "failed",
+                    targetUrl:
+                      "https://user:regbrowserpw888@staging.example.com/",
+                    summary: null,
+                    artifactCount: 0,
+                    redactionStatus: "none",
+                  },
+                },
+                limitations: [],
+              },
+            },
+          ],
+        },
+        role: "assistant",
+        createdAt: new Date("2025-01-01T00:00:00Z"),
+      },
+    ];
+
+    const { default: SharedPage } = await pageModulePromise;
+    const element = (await SharedPage({
+      params: Promise.resolve({ shareId: "share-1" }),
+    })) as {
+      props: {
+        chats: Array<{
+          messagesWithTiming: Array<{
+            message: { parts: Array<Record<string, unknown>> };
+          }>;
+        }>;
+      };
+    };
+
+    const parts = element.props.chats[0]?.messagesWithTiming[0]?.message.parts;
+    const proofPart = parts?.[0] as Record<string, unknown>;
+    const data = proofPart?.data as Record<string, unknown>;
+    const serviceEvidence = data?.serviceEvidence as Record<string, unknown>;
+    const svcLatest = serviceEvidence?.latest as Record<string, unknown>;
+    const browserEvidence = data?.browserEvidence as Record<string, unknown>;
+    const browserLatest = browserEvidence?.latest as Record<string, unknown>;
+
+    // URL credentials stripped for both service and browser
+    expect(svcLatest?.url).not.toContain("regsvcpw999");
+    expect(browserLatest?.targetUrl).not.toContain("regbrowserpw888");
+
+    // Structural fields preserved
+    expect(svcLatest?.id).toBe("svc-reg");
+    expect(svcLatest?.port).toBe(3000);
+    expect(svcLatest?.status).toBe("running");
+    expect(browserLatest?.id).toBe("browser-reg");
+    expect(browserLatest?.status).toBe("failed");
+
+    // Full payload clean
+    expect(JSON.stringify(element.props)).not.toContain("regsvcpw999");
+    expect(JSON.stringify(element.props)).not.toContain("regbrowserpw888");
+  });
 });
