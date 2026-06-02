@@ -2554,9 +2554,9 @@ describe("runAgentWorkflow", () => {
 
   test("runAgentWorkflow completes normally even when recordGoalLedgerClose rejects", async () => {
     // Defensive regression: close failure must not crash chat
-    spies.recordGoalLedgerClose.mockRejectedValueOnce(
-      new Error("DB write failed"),
-    );
+    spies.recordGoalLedgerClose.mockImplementationOnce(async () => {
+      throw new Error("DB write failed");
+    });
 
     await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
 
