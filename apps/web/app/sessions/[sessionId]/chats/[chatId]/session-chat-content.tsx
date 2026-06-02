@@ -169,6 +169,7 @@ import {
   RuntimeModeSelectorCompact,
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
+import { WorkflowPickerCompact } from "./workflow-picker-compact";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -1199,6 +1200,9 @@ export function SessionChatContent({
   >(null);
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null,
+  );
   const hasMounted = useHasMounted();
   const {
     activeView,
@@ -4676,6 +4680,11 @@ export function SessionChatContent({
                               profiles={managedRuntimeProfiles}
                               runtimeMode={session.runtimeMode}
                               selectedProfile={selectedManagedRuntimeProfile}
+                            />
+                            <WorkflowPickerCompact
+                              disabled={isArchived || isChatInFlight}
+                              onSelectWorkflow={setSelectedWorkflowId}
+                              selectedWorkflowId={selectedWorkflowId}
                             />
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}
