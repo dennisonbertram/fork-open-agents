@@ -615,6 +615,9 @@ describe("closeGoal", () => {
   test("BT-005a: updates status and updatedAt when given a terminal status", async () => {
     const { closeGoal } = await goalLedgerPromise;
 
+    // closeGoal now uses a transaction with FOR UPDATE — provide a non-terminal
+    // current status so the transition guard allows the update.
+    fakeGoalLockReturn = [{ id: "goal-1", status: "running" }];
     const now = new Date();
     fakeUpdateReturn = {
       id: "goal-1",
@@ -637,6 +640,8 @@ describe("closeGoal", () => {
   test("BT-005b: throws GoalLedgerError with code 'non_terminal_status' for non-terminal status", async () => {
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
+    // The non_terminal_status guard fires before the transaction, so
+    // fakeGoalLockReturn is irrelevant for this test.
     const err = await closeGoal("goal-1", "running" as never).catch(
       (e: unknown) => e,
     );
@@ -648,11 +653,15 @@ describe("closeGoal", () => {
     expect((err as Error).message).toContain("terminal");
   });
 
-  test("BT-005c: accepts all terminal statuses without throwing", async () => {
+  test("BT-005c: accepts all terminal statuses without throwing (from non-terminal source)", async () => {
     const { closeGoal, TERMINAL_GOAL_STATUSES } = await goalLedgerPromise;
 
     const now = new Date();
     for (const status of TERMINAL_GOAL_STATUSES) {
+      // Provide a non-terminal current status so the transition guard allows
+      // the update. Reset txSelectCallCount before each iteration.
+      fakeGoalLockReturn = [{ id: "goal-x", status: "running" }];
+      txSelectCallCount = 0;
       fakeUpdateReturn = {
         id: "goal-x",
         userId: "user-1",
@@ -667,11 +676,11 @@ describe("closeGoal", () => {
     }
   });
 
-  test("BT-005d: throws GoalLedgerError with code 'not_found' when no row is updated (goal does not exist)", async () => {
+  test("BT-005d: throws GoalLedgerError with code 'not_found' when the goal row does not exist", async () => {
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
-    // fakeUpdateReturn stays null → returning() returns []
-    fakeUpdateReturn = null;
+    // Drive the FOR UPDATE lock to return an empty array (goal missing).
+    fakeGoalLockReturn = [];
 
     const err = await closeGoal("missing-goal", "complete").catch(
       (e: unknown) => e,
@@ -681,6 +690,89 @@ describe("closeGoal", () => {
     expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
       "not_found",
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BT-038-005: closeGoal — terminal transition guard (TASK-ISSUE-38)
+// ---------------------------------------------------------------------------
+describe("closeGoal — terminal transition guard", () => {
+  test("BT-038-005a: throws GoalLedgerError with code 'invalid_terminal_transition' when goal is already terminal", async () => {
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    // Drive the FOR UPDATE lock select to return a row with a terminal status
+    fakeGoalLockReturn = [{ id: "goal-already-done", status: "complete" }];
+
+    const err = await closeGoal("goal-already-done", "failed").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_terminal_transition",
+    );
+    expect((err as Error).message).toContain("goal-already-done");
+    expect((err as Error).message).toContain("complete");
+  });
+
+  test("BT-038-005b: succeeds (returns updated row) when current status is non-terminal (running)", async () => {
+    const { closeGoal } = await goalLedgerPromise;
+
+    // Drive the FOR UPDATE lock select to return a row with a non-terminal status
+    fakeGoalLockReturn = [{ id: "goal-in-progress", status: "running" }];
+    const now = new Date();
+    fakeUpdateReturn = {
+      id: "goal-in-progress",
+      userId: "user-1",
+      objective: "do the thing",
+      status: "complete",
+      evidenceRefs: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const result = await closeGoal("goal-in-progress", "complete");
+
+    expect(result.status).toBe("complete");
+    const updated = lastUpdateValues as Record<string, unknown>;
+    expect(updated.status).toBe("complete");
+  });
+
+  test("BT-038-005c: throws GoalLedgerError 'invalid_terminal_transition' for all terminal statuses as source", async () => {
+    const { closeGoal, GoalLedgerError, TERMINAL_GOAL_STATUSES } =
+      await goalLedgerPromise;
+
+    for (const currentStatus of TERMINAL_GOAL_STATUSES) {
+      fakeGoalLockReturn = [{ id: "goal-x", status: currentStatus }];
+      // Reset txSelectCallCount for each iteration
+      txSelectCallCount = 0;
+
+      const err = await closeGoal("goal-x", "complete").catch(
+        (e: unknown) => e,
+      );
+
+      expect(err).toBeInstanceOf(GoalLedgerError);
+      expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+        "invalid_terminal_transition",
+      );
+    }
+  });
+
+  test("BT-038-005d: throws GoalLedgerError 'not_found' when FOR UPDATE lock returns no row", async () => {
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    // Drive the FOR UPDATE lock select to return an empty array (goal not found)
+    fakeGoalLockReturn = [];
+
+    const err = await closeGoal("missing-goal", "complete").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "not_found",
+    );
+    expect((err as Error).message).toContain("missing-goal");
   });
 });
 
@@ -774,6 +866,8 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     // consumers can no longer detect that a goal was closed.
     const { closeGoal } = await goalLedgerPromise;
 
+    // closeGoal now uses FOR UPDATE — provide a non-terminal source status.
+    fakeGoalLockReturn = [{ id: "g-reg", status: "draft" }];
     const beforeCall = new Date();
     const now = new Date();
     fakeUpdateReturn = {
@@ -836,10 +930,12 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
   test("REG-007: closeGoal not_found message includes the goalId for debuggability", async () => {
     // If the not_found throw is reverted or the message is blanked, a caller
     // receiving a 500 will have no idea which goal was missing. This test pins
-    // the message contract.
+    // the message contract. closeGoal now uses FOR UPDATE — drive the lock to
+    // return no row (goal missing from DB).
     const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
 
-    fakeUpdateReturn = null;
+    // Drive the FOR UPDATE lock to return an empty array (goal not found).
+    fakeGoalLockReturn = [];
 
     const err = await closeGoal("ghost-goal-id", "complete").catch(
       (e: unknown) => e,
@@ -893,5 +989,59 @@ describe("regression: TERMINAL_GOAL_STATUSES contract", () => {
     );
     // Must not resolve to undefined
     expect(err).not.toBeUndefined();
+  });
+
+  // TASK-ISSUE-38 regression tests — catch if the transition guard is reverted.
+
+  test("REG-038-001: GoalLedgerError code union includes invalid_terminal_transition", async () => {
+    // If the new error code is removed from the union, TypeScript would catch it
+    // at compile time — this test provides a runtime backstop.
+    const { GoalLedgerError } = await goalLedgerPromise;
+
+    const err = new GoalLedgerError(
+      "invalid_terminal_transition",
+      "regression guard",
+    );
+    expect(err.code).toBe("invalid_terminal_transition");
+    expect(err.name).toBe("GoalLedgerError");
+  });
+
+  test("REG-038-002: closeGoal prevents double-close (re-closing a complete goal throws invalid_terminal_transition)", async () => {
+    // If the transition guard in closeGoal is reverted, calling closeGoal twice
+    // on the same goal would silently succeed (or fail with a DB constraint).
+    // This test pins the observable behavior: second close → invalid_terminal_transition.
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = [{ id: "goal-double-close", status: "complete" }];
+
+    const err = await closeGoal("goal-double-close", "failed").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_terminal_transition",
+    );
+    // Message must mention both the goal id and the current status for debuggability.
+    expect((err as Error).message).toContain("goal-double-close");
+    expect((err as Error).message).toContain("complete");
+  });
+
+  test("REG-038-003: closeGoal invalid_terminal_transition message includes the attempted next status", async () => {
+    // If the error message is blanked, it becomes impossible to diagnose which
+    // transition was attempted. This test pins the message contract.
+    const { closeGoal, GoalLedgerError } = await goalLedgerPromise;
+
+    fakeGoalLockReturn = [{ id: "goal-msg-test", status: "failed" }];
+
+    const err = await closeGoal("goal-msg-test", "archived").catch(
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(GoalLedgerError);
+    expect((err as InstanceType<typeof GoalLedgerError>).code).toBe(
+      "invalid_terminal_transition",
+    );
+    expect((err as Error).message).toContain("archived");
   });
 });

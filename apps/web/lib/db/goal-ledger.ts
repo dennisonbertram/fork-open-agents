@@ -39,24 +39,28 @@ export type TerminalGoalStatus = (typeof TERMINAL_GOAL_STATUSES)[number];
  * Thrown by goal-ledger helpers for all typed error conditions.
  *
  * Codes:
- *   - "invalid_input"      — caller provided invalid arguments (e.g. empty objective, no filter)
- *   - "non_terminal_status" — closeGoal received a status that is not in TERMINAL_GOAL_STATUSES
- *   - "not_found"           — the target row did not exist (e.g. closeGoal on missing id, appendGoalEvent on missing goal)
- *   - "persist_failed"      — an insert/update returned no row unexpectedly (DB-level failure)
+ *   - "invalid_input"               — caller provided invalid arguments (e.g. empty objective, no filter)
+ *   - "non_terminal_status"         — closeGoal received a status that is not in TERMINAL_GOAL_STATUSES
+ *   - "not_found"                   — the target row did not exist (e.g. closeGoal on missing id, appendGoalEvent on missing goal)
+ *   - "persist_failed"              — an insert/update returned no row unexpectedly (DB-level failure)
+ *   - "invalid_terminal_transition" — closeGoal was called on a goal that is already in a terminal
+ *                                     state; transitions OUT of terminal states are forbidden (#38).
  */
 export class GoalLedgerError extends Error {
   readonly code:
     | "non_terminal_status"
     | "invalid_input"
     | "not_found"
-    | "persist_failed";
+    | "persist_failed"
+    | "invalid_terminal_transition";
 
   constructor(
     code:
       | "non_terminal_status"
       | "invalid_input"
       | "not_found"
-      | "persist_failed",
+      | "persist_failed"
+      | "invalid_terminal_transition",
     message: string,
   ) {
     super(message);
@@ -289,13 +293,19 @@ export async function listGoalEvents(
 /**
  * Transition a goal to a terminal status and bump updatedAt.
  *
+ * Locking strategy: the goal row is locked with SELECT ... FOR UPDATE before
+ * inspecting and updating its status. This serializes concurrent close calls
+ * per goal — two concurrent calls will queue behind the lock rather than
+ * racing to read/write the same status, mirroring the locking strategy used
+ * in `appendGoalEvent`.
+ *
  * - Throws GoalLedgerError (code: "non_terminal_status") if the provided
  *   status is not in TERMINAL_GOAL_STATUSES.
- * - Throws GoalLedgerError (code: "not_found") if no row was updated
- *   (i.e. the goal id does not exist or was already deleted).
- *
- * Transition-validity enforcement (preventing movement out of an already-
- * terminal state) is deferred to #38.
+ * - Throws GoalLedgerError (code: "not_found") if the goal row does not exist.
+ * - Throws GoalLedgerError (code: "invalid_terminal_transition") if the goal
+ *   is already in a terminal state; transitions out of terminal states are
+ *   forbidden (#38). This prevents double-close and ensures terminal states
+ *   are immutable.
  */
 export async function closeGoal(
   goalId: string,
@@ -308,18 +318,45 @@ export async function closeGoal(
     );
   }
 
-  const [row] = await db
-    .update(workflowGoals)
-    .set({ status: terminalStatus, updatedAt: new Date() })
-    .where(eq(workflowGoals.id, goalId))
-    .returning();
+  return db.transaction(async (tx) => {
+    // Acquire a row lock on the goal to prevent concurrent close calls from
+    // racing to read and update the same status simultaneously.
+    const [currentRow] = await tx
+      .select()
+      .from(workflowGoals)
+      .where(eq(workflowGoals.id, goalId))
+      .for("update");
 
-  if (row === undefined) {
-    throw new GoalLedgerError(
-      "not_found",
-      `closeGoal: goal "${goalId}" not found.`,
-    );
-  }
+    if (currentRow === undefined) {
+      throw new GoalLedgerError(
+        "not_found",
+        `closeGoal: goal "${goalId}" not found.`,
+      );
+    }
 
-  return row;
+    // Reject transitions out of already-terminal states (#38).
+    if (
+      (TERMINAL_GOAL_STATUSES as readonly string[]).includes(currentRow.status)
+    ) {
+      throw new GoalLedgerError(
+        "invalid_terminal_transition",
+        `closeGoal: goal "${goalId}" is already terminal ("${currentRow.status}"); cannot transition to "${terminalStatus}".`,
+      );
+    }
+
+    const [row] = await tx
+      .update(workflowGoals)
+      .set({ status: terminalStatus, updatedAt: new Date() })
+      .where(eq(workflowGoals.id, goalId))
+      .returning();
+
+    if (row === undefined) {
+      throw new GoalLedgerError(
+        "persist_failed",
+        `closeGoal: update for goal "${goalId}" returned no row — unexpected persistence failure.`,
+      );
+    }
+
+    return row;
+  });
 }

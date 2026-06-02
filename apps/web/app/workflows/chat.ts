@@ -324,6 +324,42 @@ async function closeGoalLedger(input: {
   await recordGoalLedgerClose(input);
 }
 
+/**
+ * Validate a goal before closing as "complete".
+ *
+ * Uses "use step" so Workflow memoization applies on replay. This is the
+ * integration point for issue #38's evidence-validation requirement.
+ *
+ * NOTE: `requireEvidence` is always `false` today because goals are not yet
+ * linked to proof levels — so this call is a no-op in production. It WILL
+ * start enforcing when a future slice wires proof levels. The blocked branch
+ * is exercised by the chat integration test (forced mock).
+ */
+async function validateGoalForClose(input: {
+  goalId: string;
+  userId: string;
+  terminalStatus: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  "use step";
+
+  const { validateGoalCompletion } =
+    await import("@/lib/workflows/goal-validation");
+
+  // evidenceRefs: currently always [] — goals are not yet linked to evidence.
+  // requireEvidence: always false — proof level is not yet linked to goals.
+  const result = validateGoalCompletion({
+    status: input.terminalStatus,
+    evidenceRefs: [],
+    requireEvidence: false,
+  });
+
+  if (result.ok) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: result.reason };
+}
+
 async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
@@ -1809,10 +1845,36 @@ export async function runAgentWorkflow(options: Options) {
             eventType: "final",
             summary: finalSummary,
           });
-          await closeGoalLedger({
+
+          // Issue #38: validate before closing as "complete". requireEvidence
+          // is false today (proof levels not yet linked to goals), so this is
+          // a no-op in production. The blocked branch is tested via forced mock.
+          const validation = await validateGoalForClose({
             goalId: goalLedgerId,
+            userId: options.userId,
             terminalStatus,
           });
+
+          if (!validation.ok) {
+            // Validation failed — record a blocked event instead of closing.
+            // This branch is currently unreachable in production (requireEvidence=false)
+            // but is exercised by the integration test via a forced mock.
+            console.error(
+              `[chat] goal-ledger validation failed for goal "${goalLedgerId}": ${validation.reason ?? "validation_rule_failed"}`,
+            );
+            await appendGoalLedgerEvent({
+              goalId: goalLedgerId,
+              userId: options.userId,
+              eventType: "blocked",
+              summary: `Goal close blocked by validation: ${validation.reason ?? "validation_rule_failed"}`,
+              payload: { reason: validation.reason },
+            });
+          } else {
+            await closeGoalLedger({
+              goalId: goalLedgerId,
+              terminalStatus,
+            });
+          }
         } catch (err: unknown) {
           console.error("[chat] goal-ledger close failed (non-fatal):", err);
         }
