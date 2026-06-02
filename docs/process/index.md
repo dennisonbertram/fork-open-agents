@@ -30,6 +30,9 @@ Start here:
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
   handoff.
+- [Pipeline Gates](pipeline-gates.md) - the machine-enforced layer (pre-push
+  hook, CI build/guards jobs, migration-safety, test-touch, production smoke)
+  under the prose process docs.
 
 Supporting docs:
 

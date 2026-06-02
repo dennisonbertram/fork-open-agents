@@ -24,7 +24,11 @@
     "fix": "ultracite fix",
     "ci": "bun run check && bun run typecheck && bun run test:isolated && bun run --cwd apps/web db:check",
     "test:isolated": "bun run scripts/test-isolated.ts",
-    "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout"
+    "test:coverage": "bun test --coverage",
+    "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout",
+    "check:migration-safety": "bun run scripts/check-migration-safety.ts",
+    "check:test-touch": "bun run scripts/check-test-touch.ts",
+    "hooks:install": "git config core.hooksPath .githooks && echo 'git hooks installed (core.hooksPath=.githooks)'"
   },
   "devDependencies": {
     "oxfmt": "^0.43.0",

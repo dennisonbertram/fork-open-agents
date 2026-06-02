@@ -37,6 +37,13 @@ enough that automatic `main` deploys create coordination problems.
 
 ## Production Smoke
 
+The `Production Smoke` GitHub workflow
+(`.github/workflows/production-smoke.yml`) runs the smoke checks automatically
+when Vercel reports a successful production deployment, so a broken production
+turns the commit's checks red without waiting for a human. It does not
+auto-roll-back; use the manual path below. Still record the run by hand for
+high-risk changes.
+
 After production deploys, record:
 
 1. commit SHA,
