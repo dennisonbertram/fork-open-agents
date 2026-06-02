@@ -4,6 +4,7 @@ import {
   requireOwnedSession,
 } from "@/app/api/sessions/_lib/session-context";
 import { db } from "@/lib/db/client";
+import { listGoalEvents, listGoals } from "@/lib/db/goal-ledger";
 import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
 import {
   extractManagedRuntimeWorkersFromMessages,
@@ -98,6 +99,56 @@ export async function GET(req: Request, context: RouteContext) {
       : Promise.resolve([]),
   ]);
 
+  // Defensively query goal-ledger — a failure here must NOT break the rest of
+  // the observability response. Append workflowGoals: [] on any error.
+  let workflowGoals: Array<{
+    id: string;
+    objective: string;
+    status: string;
+    blockedReason: string | null;
+    evidenceRefs: string[];
+    createdAt: string;
+    updatedAt: string;
+    events: Array<{
+      id: string;
+      eventType: string;
+      summary: string;
+      sequence: number;
+      payload?: Record<string, unknown>;
+      createdAt: string;
+    }>;
+  }> = [];
+
+  try {
+    const goals = await listGoals({ sessionId, chatId: chatId ?? undefined });
+    workflowGoals = await Promise.all(
+      goals.map(async (goal) => {
+        const goalEvents = await listGoalEvents(goal.id);
+        return {
+          id: goal.id,
+          objective: goal.objective,
+          status: goal.status,
+          blockedReason: goal.blockedReason ?? null,
+          evidenceRefs: goal.evidenceRefs,
+          createdAt: goal.createdAt.toISOString(),
+          updatedAt: goal.updatedAt.toISOString(),
+          events: goalEvents.map((event) => ({
+            id: event.id,
+            eventType: event.eventType,
+            summary: event.summary,
+            sequence: event.sequence,
+            payload: event.payload,
+            createdAt: event.createdAt.toISOString(),
+          })),
+        };
+      }),
+    );
+  } catch {
+    // Goal-ledger failure is non-fatal; surface empty array so the rest of
+    // the observability response remains valid.
+    workflowGoals = [];
+  }
+
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
     events: events.map(toSessionEventSnapshot),
@@ -113,5 +164,6 @@ export async function GET(req: Request, context: RouteContext) {
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
     services,
     browserRuns,
+    workflowGoals,
   });
 }

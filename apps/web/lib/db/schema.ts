@@ -1513,3 +1513,102 @@ export const usageEvents = pgTable("usage_events", {
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Goal ledger — issue #35
+//
+// Terminal statuses (complete, failed, canceled, archived) are statuses from
+// which no further progression is expected. Transition-validity enforcement
+// (preventing movement OUT of a terminal state) is deferred to issue #38.
+// ---------------------------------------------------------------------------
+
+export type WorkflowGoalPlan = {
+  steps: string[];
+};
+
+export const workflowGoals = pgTable(
+  "workflow_goals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // App-level reference only: goal rows are created at workflow start before
+    // workflow_runs rows are persisted at finish, so this cannot be an FK.
+    workflowRunId: text("workflow_run_id"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    objective: text("objective").notNull(),
+    // Status enum uses lowercase words to match existing codebase conventions
+    // (e.g. backgroundAgentRuns uses "queued", "running", "succeeded" etc.)
+    // Terminal statuses: complete, failed, canceled, archived
+    status: text("status", {
+      enum: [
+        "draft",
+        "planned",
+        "running",
+        "awaiting_input",
+        "blocked",
+        "validating",
+        "complete",
+        "failed",
+        "canceled",
+        "archived",
+      ],
+    })
+      .notNull()
+      .default("draft"),
+    plan: jsonb("plan").$type<WorkflowGoalPlan>(),
+    blockedReason: text("blocked_reason"),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_goals_user_created_idx").on(table.userId, table.createdAt),
+    index("workflow_goals_workflow_run_idx").on(table.workflowRunId),
+  ],
+);
+
+export const workflowGoalEvents = pgTable(
+  "workflow_goal_events",
+  {
+    id: text("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => workflowGoals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    eventType: text("event_type").notNull(),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("workflow_goal_events_goal_seq_idx").on(
+      table.goalId,
+      table.sequence,
+    ),
+    index("workflow_goal_events_goal_created_idx").on(
+      table.goalId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type WorkflowGoal = typeof workflowGoals.$inferSelect;
+export type NewWorkflowGoal = typeof workflowGoals.$inferInsert;
+export type WorkflowGoalEvent = typeof workflowGoalEvents.$inferSelect;
+export type NewWorkflowGoalEvent = typeof workflowGoalEvents.$inferInsert;

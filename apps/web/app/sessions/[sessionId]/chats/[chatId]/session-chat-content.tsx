@@ -159,6 +159,7 @@ import {
 } from "@/lib/inference/model-option-id";
 import { useStreamRecovery } from "./hooks/use-stream-recovery";
 import { useAutoCommitStatus } from "./hooks/use-auto-commit-status";
+import { useSessionObservability } from "./hooks/use-session-observability";
 import { useCodeEditor } from "./hooks/use-code-editor";
 import { useDevServer } from "./hooks/use-dev-server";
 import { useGitPanel } from "./git-panel-context";
@@ -226,6 +227,10 @@ const RuntimeObservabilityPanel = dynamic(
     import("./runtime-observability-panel").then(
       (m) => m.RuntimeObservabilityPanel,
     ),
+  { ssr: false },
+);
+const CompactGoalSummary = dynamic(
+  () => import("./compact-goal-summary").then((m) => m.CompactGoalSummary),
   { ssr: false },
 );
 
@@ -1378,6 +1383,11 @@ export function SessionChatContent({
       fetcher,
       { revalidateOnFocus: false },
     );
+  // Compact goal summary — read-only; same SWR key as RuntimeObservabilityPanel
+  const { data: observabilityData } = useSessionObservability({
+    sessionId: session.id,
+    chatId: chatInfo.id,
+  });
   const managedRuntimeProfiles = useMemo(
     () =>
       managedRuntimeProfilesData?.profiles ??
@@ -3255,6 +3265,10 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
+            {/* Compact read-only goal summary chip */}
+            <CompactGoalSummary
+              goals={observabilityData?.workflowGoals ?? []}
+            />
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
