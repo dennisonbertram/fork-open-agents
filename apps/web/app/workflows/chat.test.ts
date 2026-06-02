@@ -104,6 +104,9 @@ const spies = {
   ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
+  recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
+  recordGoalLedgerEvent: mock(() => Promise.resolve()),
+  recordGoalLedgerClose: mock(() => Promise.resolve()),
 };
 
 let testSessionRecord: {
@@ -406,6 +409,12 @@ mock.module("@/lib/sandbox/runtime/browser-runs", () => ({
   listManagedBrowserRuns: spies.listManagedBrowserRuns,
 }));
 
+mock.module("@/lib/workflows/goal-ledger-recorder", () => ({
+  recordGoalLedgerStart: spies.recordGoalLedgerStart,
+  recordGoalLedgerEvent: spies.recordGoalLedgerEvent,
+  recordGoalLedgerClose: spies.recordGoalLedgerClose,
+}));
+
 const { runAgentWorkflow } = await import("./chat");
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -521,6 +530,10 @@ beforeEach(() => {
     enabledModelIds: [],
   };
   Object.values(spies).forEach((s) => s.mockClear());
+  // Reset recorder spies to their default successful implementations.
+  spies.recordGoalLedgerStart.mockResolvedValue("goal-test-abc123");
+  spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
+  spies.recordGoalLedgerClose.mockResolvedValue(undefined);
 });
 
 describe("runAgentWorkflow", () => {
@@ -537,6 +550,44 @@ describe("runAgentWorkflow", () => {
       'import { getUserPreferences } from "@/lib/db/user-preferences";',
     );
     expect(source).toContain("async function emitWorkflowSessionEvent");
+  });
+
+  test("regression: goal-ledger-recorder is behind a dynamic import in chat.ts", async () => {
+    // If someone refactors the recorder call to a top-level import, it would
+    // break the "use step" isolation that prevents DB calls from running at
+    // workflow-setup time. This test catches that regression.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    expect(source).not.toContain(
+      'import { recordGoalLedgerStart } from "@/lib/workflows/goal-ledger-recorder";',
+    );
+    expect(source).not.toContain(
+      'import { recordGoalLedgerClose } from "@/lib/workflows/goal-ledger-recorder";',
+    );
+    // The recorder IS imported — just dynamically inside a "use step" wrapper.
+    expect(source).toContain('"@/lib/workflows/goal-ledger-recorder"');
+    expect(source).toContain("async function startGoalLedger");
+    expect(source).toContain("async function closeGoalLedger");
+  });
+
+  test("regression: objective is truncated to 200 chars from user message", async () => {
+    // If the truncation is removed, long objectives would break DB column limits.
+    const longText = "A".repeat(500);
+    const options = makeOptions({
+      messages: [
+        {
+          id: "user-1",
+          role: "user" as const,
+          parts: [{ type: "text", text: longText }],
+        },
+      ],
+    });
+
+    await runAgentWorkflow(options);
+
+    const startCalls = spies.recordGoalLedgerStart.mock.calls as unknown[][];
+    const startCall = startCalls[0]?.[0] as { objective?: string } | undefined;
+    expect(startCall?.objective?.length).toBeLessThanOrEqual(200);
   });
 
   test("throws when no messages provided", async () => {
@@ -2093,6 +2144,406 @@ describe("runAgentWorkflow", () => {
     );
 
     expect(spies.runAutoCommitStep).not.toHaveBeenCalled();
+  });
+
+  // ── Goal ledger recorder lifecycle tests ───────────────────────────
+  // NOTE: These tests must appear BEFORE the "still clears stream" test,
+  // because that test re-mocks @/app/config to throw — an override that
+  // persists for subsequent dynamic imports in the same file.
+
+  // ── Step history gap tests (TASK-ISSUE-36 fix) ──────────────────────
+  // RED: These tests fail before FIX 1 is implemented because the current code
+  // records only a `final` event — no `started` or `progress` events.
+
+  test("records a 'started' ledger event immediately after startGoalLedger succeeds", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    // Must have been called at least once with eventType "started"
+    type EventCall = {
+      goalId: string;
+      userId: string;
+      eventType: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
+    expect(startedCalls).toHaveLength(1);
+
+    const [startedInput] = startedCalls[0];
+    expect(startedInput.goalId).toBe("goal-test-abc123");
+    expect(startedInput.userId).toBe("user-1");
+    expect(startedInput.summary).toBeTruthy();
+    // payload must carry the workflowRunId so the ledger event is traceable
+    expect(startedInput.payload).toMatchObject({
+      workflowRunId: "wrun_test-123",
+    });
+  });
+
+  test("records at least one 'progress' event with stepNumber during a single-step run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = {
+      goalId: string;
+      userId: string;
+      eventType: string;
+      summary: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
+    // At least one progress event for the one step that ran
+    expect(progressCalls.length).toBeGreaterThanOrEqual(1);
+
+    const [firstProgressInput] = progressCalls[0];
+    expect(firstProgressInput.goalId).toBe("goal-test-abc123");
+    expect(firstProgressInput.userId).toBe("user-1");
+    // payload must include stepNumber
+    expect(firstProgressInput.payload).toMatchObject({ stepNumber: 1 });
+  });
+
+  test("records a 'progress' event for each step in a multi-step run", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    type EventCall = {
+      goalId: string;
+      eventType: string;
+      payload?: Record<string, unknown>;
+    };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
+    expect(progressCalls.length).toBe(2);
+
+    const stepNumbers = progressCalls.map(
+      ([input]) => input.payload?.stepNumber,
+    );
+    expect(stepNumbers).toEqual([1, 2]);
+  });
+
+  test("records 'started', progress events, then 'final' event in order", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const eventTypes = allCalls.map(([input]) => input.eventType);
+    // started comes first, final comes last, progress in between
+    expect(eventTypes[0]).toBe("started");
+    expect(eventTypes[eventTypes.length - 1]).toBe("final");
+    expect(
+      eventTypes.filter((t) => t === "progress").length,
+    ).toBeGreaterThanOrEqual(1);
+  });
+
+  test("does not record 'started' or 'progress' events when startGoalLedger returns null", async () => {
+    // When recordGoalLedgerStart returns null (e.g. DB unavailable), the goal id
+    // is null and no events should be attempted — no goalId to record against.
+    spies.recordGoalLedgerStart.mockResolvedValueOnce(
+      null as unknown as string,
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
+    expect(startedCalls).toHaveLength(0);
+
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
+    expect(progressCalls).toHaveLength(0);
+  });
+
+  test("failed-run final summary uses sanitized user-facing error message (FIX 4)", async () => {
+    // When a run fails with a known error type, the final ledger summary must
+    // use getUserFacingWorkflowErrorMessage, not the raw error string.
+    const restrictedError = new Error(
+      "GatewayInternalServerError: Free credits temporarily have restricted access due to abuse. no_providers_available RestrictedModelsError",
+    );
+    agentStreamError = restrictedError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected to throw
+    }
+
+    type EventCall = { eventType: string; summary: string };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const finalCalls = allCalls.filter(
+      ([input]) => input.eventType === "final",
+    );
+    // A final event must have been recorded even on failure (goalLedgerId was set)
+    expect(finalCalls.length).toBeGreaterThanOrEqual(1);
+
+    const lastFinalCall = finalCalls[finalCalls.length - 1];
+    const finalSummary =
+      lastFinalCall !== undefined ? lastFinalCall[0].summary : "";
+    // The sanitized message does NOT contain the raw internal error keywords
+    expect(finalSummary).not.toContain("GatewayInternalServerError");
+    expect(finalSummary).not.toContain("no_providers_available");
+    // The sanitized message contains the user-facing wording
+    expect(finalSummary).toContain("Vercel AI Gateway");
+  });
+
+  test("calls recordGoalLedgerStart with correct fields on a successful run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.recordGoalLedgerStart).toHaveBeenCalledTimes(1);
+    expect(spies.recordGoalLedgerStart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: "user-1",
+        sessionId: "session-1",
+        chatId: "chat-1",
+        workflowRunId: "wrun_test-123",
+        objective: expect.any(String),
+      }),
+    );
+  });
+
+  test("objective is derived from the last user message text", async () => {
+    const options = makeOptions({
+      messages: [
+        {
+          id: "user-1",
+          role: "user" as const,
+          parts: [
+            {
+              type: "text",
+              text: "Please help me refactor the auth module",
+            },
+          ],
+        },
+      ],
+    });
+
+    await runAgentWorkflow(options);
+
+    const startCalls = spies.recordGoalLedgerStart.mock.calls as unknown[][];
+    const startCall = startCalls[0]?.[0] as { objective?: string } | undefined;
+    expect(startCall?.objective).toContain("refactor the auth module");
+  });
+
+  test("calls recordGoalLedgerClose with terminal status 'complete' on a successful run", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledTimes(1);
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        goalId: "goal-test-abc123",
+        terminalStatus: "complete",
+      }),
+    );
+  });
+
+  test("calls recordGoalLedgerClose with terminal status 'failed' when maxSteps exhausted", async () => {
+    agentFinishReason = "tool-calls";
+    agentRawFinishReason = "provider_tool_use";
+
+    await runAgentWorkflow(makeOptions({ maxSteps: 2 }));
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalStatus: "failed",
+      }),
+    );
+  });
+
+  test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
+    // Simulate abort: override the agent stream to throw an AbortError.
+    // This is what happens when the user clicks Stop — the agent stream throws
+    // and isAbortError(error) is true, causing stepWasAborted=true and
+    // ultimately workflowStatus="aborted" which maps to terminalStatus="canceled".
+    const abortError = new Error("The operation was aborted.");
+    abortError.name = "AbortError";
+    mock.module("@/app/config", () => ({
+      webAgent: {
+        tools: {},
+        stream: async () => ({
+          toUIMessageStream: () => ({
+            [Symbol.asyncIterator]() {
+              return {
+                next() {
+                  return Promise.reject(abortError);
+                },
+                return() {
+                  return Promise.resolve({ value: undefined, done: true });
+                },
+              };
+            },
+          }),
+          totalUsage: Promise.resolve(agentTotalUsage),
+          finishReason: Promise.resolve("stop"),
+          rawFinishReason: Promise.resolve("AbortError"),
+          response: Promise.resolve({ messages: [] }),
+          steps: Promise.resolve([]),
+        }),
+      },
+    }));
+
+    const { runAgentWorkflow: abortRun } = await import("./chat");
+
+    // Aborted workflow does not rethrow — it completes with "aborted" status.
+    await abortRun(makeOptions());
+
+    expect(spies.recordGoalLedgerClose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        terminalStatus: "canceled",
+      }),
+    );
+  });
+
+  test("runAgentWorkflow completes normally even when recordGoalLedgerStart rejects", async () => {
+    // Defensive regression: recorder failure must never crash chat
+    spies.recordGoalLedgerStart.mockRejectedValueOnce(
+      new Error("DB connection failed"),
+    );
+
+    // The workflow should still complete without throwing
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    // Core workflow behavior is unchanged: the stream finishes
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
+    expect(spies.persistAssistantMessage).toHaveBeenCalledTimes(1);
+  });
+
+  test("runAgentWorkflow completes normally even when recordGoalLedgerClose rejects", async () => {
+    // Defensive regression: close failure must not crash chat
+    spies.recordGoalLedgerClose.mockRejectedValueOnce(
+      new Error("DB write failed"),
+    );
+
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
+  });
+
+  // ── Regression tests: TASK-ISSUE-36 step history gap fix (13696abf) ──
+  // These tests catch future breakage: if started/progress events are dropped,
+  // the goal ledger returns to recording only the final event (the original bug).
+
+  test("regression: progress event payload includes both stepNumber and finishReason", async () => {
+    // If the payload structure changes (e.g. stepNumber dropped), ledger queries
+    // filtering by stepNumber would silently return no results.
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string; payload?: Record<string, unknown> };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const progressCalls = allCalls.filter(
+      ([input]) => input.eventType === "progress",
+    );
+    expect(progressCalls.length).toBeGreaterThanOrEqual(1);
+
+    for (const [input] of progressCalls) {
+      expect(typeof input.payload?.stepNumber).toBe("number");
+      expect(typeof input.payload?.finishReason).toBe("string");
+    }
+  });
+
+  test("regression: started event payload includes workflowRunId for traceability", async () => {
+    // The workflowRunId in the started event payload is what links the ledger
+    // entry back to the workflow run record. If dropped, the ledger event is
+    // untraceably orphaned.
+    await runAgentWorkflow(makeOptions());
+
+    type EventCall = { eventType: string; payload?: Record<string, unknown> };
+    const allCalls = spies.recordGoalLedgerEvent.mock.calls as unknown as Array<
+      [EventCall]
+    >;
+
+    const startedCalls = allCalls.filter(
+      ([input]) => input.eventType === "started",
+    );
+    expect(startedCalls).toHaveLength(1);
+    const firstStartedCall = startedCalls[0];
+    expect(firstStartedCall).toBeDefined();
+    if (firstStartedCall !== undefined) {
+      expect(firstStartedCall[0].payload?.workflowRunId).toBe("wrun_test-123");
+    }
+  });
+
+  test("regression: workflow completes normally when a progress event throws (defensiveness preserved)", async () => {
+    // Simulate: progress event throws, but the final event must still be called
+    // (the progress error is caught by the best-effort wrapper in chat.ts).
+    let progressCallCount = 0;
+    // Cast through unknown to allow our implementation to accept an arg.
+    // The Bun mock type is `Mock<() => Promise<void>>` regardless of how many
+    // args the original spy had; we use unknown to work around that mismatch.
+    (
+      spies.recordGoalLedgerEvent as unknown as {
+        mockImplementation: (fn: (input: unknown) => Promise<void>) => void;
+      }
+    ).mockImplementation(async (input: unknown) => {
+      const typedInput = input as { eventType: string };
+      if (typedInput.eventType === "progress") {
+        progressCallCount++;
+        throw new Error("Simulated progress DB failure");
+      }
+      // Allow other event types (started, final) to succeed
+    });
+
+    // Must not throw even though progress events fail
+    await expect(runAgentWorkflow(makeOptions())).resolves.toBeUndefined();
+
+    // Stream finishes correctly
+    const types = writtenChunks.map((c) => c.type);
+    expect(types[types.length - 1]).toBe("finish");
+
+    // The workflow still called progress (even though it threw)
+    expect(progressCallCount).toBeGreaterThanOrEqual(1);
+
+    // Restore spy
+    spies.recordGoalLedgerEvent.mockReset();
+    spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
+  });
+
+  test("regression: startGoalLedger runs before sandbox/model setup (source structure check)", async () => {
+    // This test reads chat.ts source to verify that startGoalLedger is called
+    // BEFORE the try block that contains resolveChatSandboxRuntime. If someone
+    // moves it back inside the try, setup failures won't create ledger entries.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+
+    // The "started" event wiring block must appear before the sandbox runtime call.
+    const startedEventIdx = source.indexOf(`eventType: "started"`);
+    const sandboxRuntimeIdx = source.indexOf("resolveChatSandboxRuntime({");
+
+    expect(startedEventIdx).toBeGreaterThan(-1);
+    expect(sandboxRuntimeIdx).toBeGreaterThan(-1);
+    expect(startedEventIdx).toBeLessThan(sandboxRuntimeIdx);
   });
 
   test("still clears stream and sends finish even on step error", async () => {
