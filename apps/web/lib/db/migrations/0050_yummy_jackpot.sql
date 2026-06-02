@@ -54,15 +54,6 @@ END $$;
 DO $$
 BEGIN
 	IF NOT EXISTS (
-		SELECT 1 FROM pg_constraint WHERE conname = 'workflow_goals_workflow_run_id_workflow_runs_id_fk'
-	) THEN
-		ALTER TABLE "workflow_goals" ADD CONSTRAINT "workflow_goals_workflow_run_id_workflow_runs_id_fk" FOREIGN KEY ("workflow_run_id") REFERENCES "public"."workflow_runs"("id") ON DELETE set null ON UPDATE no action;
-	END IF;
-END $$;
---> statement-breakpoint
-DO $$
-BEGIN
-	IF NOT EXISTS (
 		SELECT 1 FROM pg_constraint WHERE conname = 'workflow_goals_session_id_sessions_id_fk'
 	) THEN
 		ALTER TABLE "workflow_goals" ADD CONSTRAINT "workflow_goals_session_id_sessions_id_fk" FOREIGN KEY ("session_id") REFERENCES "public"."sessions"("id") ON DELETE set null ON UPDATE no action;

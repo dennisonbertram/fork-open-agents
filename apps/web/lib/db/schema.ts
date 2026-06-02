@@ -1533,9 +1533,9 @@ export const workflowGoals = pgTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
-    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
-      onDelete: "set null",
-    }),
+    // App-level reference only: goal rows are created at workflow start before
+    // workflow_runs rows are persisted at finish, so this cannot be an FK.
+    workflowRunId: text("workflow_run_id"),
     sessionId: text("session_id").references(() => sessions.id, {
       onDelete: "set null",
     }),

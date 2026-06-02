@@ -1,6 +1,6 @@
 {
-  "id": "f1fa8286-efc2-4309-b615-8c5463a88b8e",
-  "prevId": "9345a1d8-9bef-41d7-8902-d49cdcc4a3f3",
+  "id": "4593140a-206d-4739-9248-ae2a5cf5be25",
+  "prevId": "f1fa8286-efc2-4309-b615-8c5463a88b8e",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -5151,15 +5151,6 @@
           "columnsFrom": ["user_id"],
           "columnsTo": ["id"],
           "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workflow_goals_workflow_run_id_workflow_runs_id_fk": {
-          "name": "workflow_goals_workflow_run_id_workflow_runs_id_fk",
-          "tableFrom": "workflow_goals",
-          "tableTo": "workflow_runs",
-          "columnsFrom": ["workflow_run_id"],
-          "columnsTo": ["id"],
-          "onDelete": "set null",
           "onUpdate": "no action"
         },
         "workflow_goals_session_id_sessions_id_fk": {
