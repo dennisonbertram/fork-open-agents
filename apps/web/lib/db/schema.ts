@@ -1272,6 +1272,45 @@ export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;
 export type NewWorkflowRunStep = typeof workflowRunSteps.$inferInsert;
+
+// ── Immutable workflow input snapshot (one per run, written at run-start) ──
+// Stores validated input values with sensitive fields redacted as "[REDACTED]".
+// See issue #46 for rationale (Option B — separate table, not columns on workflowRuns).
+//
+// FIX 2 (issue #46): The FK to workflow_runs.id has been intentionally dropped.
+// The snapshot is persisted AFTER start(runAgentWorkflow, ...) using the REAL
+// run.runId. Because workflow_runs rows are written at run-FINISH (via
+// recordWorkflowRun), the parent row does not yet exist at persist time — a hard
+// FK would cause a Postgres FK violation. The workflowRunId is kept as a plain
+// indexed text column (application-level reference). ON DELETE CASCADE behavior
+// is intentionally dropped; audit snapshots are retained even if the run row is
+// cleaned up. App-level cleanup (e.g. cascade via scheduled job) is a follow-up.
+export const workflowInputSnapshots = pgTable(
+  "workflow_input_snapshots",
+  {
+    id: text("id").primaryKey(),
+    // Plain text reference to the workflow run id (no FK — see note above).
+    workflowRunId: text("workflow_run_id").notNull(),
+    workflowId: text("workflow_id"),
+    schemaVersion: text("schema_version"),
+    // Validated input values; sensitive fields stored as "[REDACTED]" — never raw secrets.
+    inputValues: jsonb("input_values")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    persistedAt: timestamp("persisted_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_input_snapshots_run_id_idx").on(table.workflowRunId),
+    uniqueIndex("workflow_input_snapshots_run_id_unique").on(
+      table.workflowRunId,
+    ),
+  ],
+);
+
+export type WorkflowInputSnapshot = typeof workflowInputSnapshots.$inferSelect;
+export type NewWorkflowInputSnapshot =
+  typeof workflowInputSnapshots.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 
