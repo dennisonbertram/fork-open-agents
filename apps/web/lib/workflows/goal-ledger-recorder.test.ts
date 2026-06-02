@@ -132,9 +132,9 @@ describe("recordGoalLedgerStart", () => {
   });
 
   test("returns null and does NOT rethrow when createGoal throws GoalLedgerError", async () => {
-    spies.createGoal.mockRejectedValueOnce(
-      new Error("GoalLedgerError: persist_failed"),
-    );
+    spies.createGoal.mockImplementationOnce(async () => {
+      throw new Error("GoalLedgerError: persist_failed");
+    });
 
     let result: string | null | undefined;
     await expect(async () => {
@@ -151,7 +151,9 @@ describe("recordGoalLedgerStart", () => {
   });
 
   test("returns null and does NOT rethrow when createGoal throws a generic Error", async () => {
-    spies.createGoal.mockRejectedValueOnce(new Error("Connection refused"));
+    spies.createGoal.mockImplementationOnce(async () => {
+      throw new Error("Connection refused");
+    });
 
     let result: string | null | undefined;
     await expect(async () => {
@@ -263,9 +265,9 @@ describe("recordGoalLedgerEvent", () => {
   });
 
   test("swallows errors from appendGoalEvent and does NOT rethrow", async () => {
-    spies.appendGoalEvent.mockRejectedValueOnce(
-      new Error("GoalLedgerError: not_found"),
-    );
+    spies.appendGoalEvent.mockImplementationOnce(async () => {
+      throw new Error("GoalLedgerError: not_found");
+    });
 
     await expect(async () => {
       await recordGoalLedgerEvent({
@@ -308,9 +310,9 @@ describe("recordGoalLedgerClose", () => {
   });
 
   test("swallows errors from closeGoal and does NOT rethrow", async () => {
-    spies.closeGoal.mockRejectedValueOnce(
-      new Error("GoalLedgerError: not_found"),
-    );
+    spies.closeGoal.mockImplementationOnce(async () => {
+      throw new Error("GoalLedgerError: not_found");
+    });
 
     await expect(async () => {
       await recordGoalLedgerClose({
@@ -374,13 +376,15 @@ describe("regression: terminal status strings match TERMINAL_GOAL_STATUSES", () 
 
   test("recorder swallows errors and never propagates to callers", async () => {
     // Regression: if the try/catch is accidentally removed, this fails.
-    spies.createGoal.mockRejectedValueOnce(
-      new Error("Catastrophic DB failure"),
-    );
-    spies.appendGoalEvent.mockRejectedValueOnce(
-      new Error("Catastrophic DB failure"),
-    );
-    spies.closeGoal.mockRejectedValueOnce(new Error("Catastrophic DB failure"));
+    spies.createGoal.mockImplementationOnce(async () => {
+      throw new Error("Catastrophic DB failure");
+    });
+    spies.appendGoalEvent.mockImplementationOnce(async () => {
+      throw new Error("Catastrophic DB failure");
+    });
+    spies.closeGoal.mockImplementationOnce(async () => {
+      throw new Error("Catastrophic DB failure");
+    });
 
     let startResult: string | null | undefined;
     await expect(async () => {
@@ -456,7 +460,9 @@ describe("regression: GoalLedgerEventType union enforces closed set of event typ
   });
 
   test("recordGoalLedgerEvent swallows errors for 'started' type (defensiveness preserved)", async () => {
-    spies.appendGoalEvent.mockRejectedValueOnce(new Error("DB write timeout"));
+    spies.appendGoalEvent.mockImplementationOnce(async () => {
+      throw new Error("DB write timeout");
+    });
 
     // Must not throw regardless of event type
     await expect(async () => {
