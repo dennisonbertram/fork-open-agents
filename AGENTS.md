@@ -183,10 +183,54 @@ git add "apps/web/app/tasks/[id]/page.tsx"
 ## Architecture (Summary)
 
 ```
-Web -> Agent (packages/agent) -> Sandbox (packages/sandbox)
+Web (apps/web) -> Agent (packages/agent) -> Sandbox (packages/sandbox)
+                                              -> packages/shared (utilities)
 ```
 
-See [Architecture & Workspace Structure](docs/agents/architecture.md) for details.
+- **apps/web** — Next.js app: auth, sessions/chat, repositories, settings, and
+  the API routes under `app/api/*` that drive every subsystem below. Domain
+  logic lives in `apps/web/lib/*` (one folder per concern: `auth`, `db`,
+  `sandbox`, `session`, `chat`, `github`, `vercel`, `managed-runtime`,
+  `background-agents`, `verified-build`, `composio`, `workflows`, `harness`,
+  `inference`, `skills`, `observability`, `usage`, `deployment`, `git`, `diff`).
+- **packages/agent** — `openAgent`, a `ToolLoopAgent` with file/bash/fetch/task
+  tools, the `explorer`/`executor` subagents (`task` tool delegation), skills
+  loading, and two runtime modes: `classic` and `managed_runtime`
+  (`OPEN_AGENT_RUNTIME_MODES`). Tool policy per mode lives in `open-agent.ts`.
+- **packages/sandbox** — execution backend abstraction. The active backend is
+  Vercel Sandbox (`connectSandbox` → `connectVercel`), plus managed-runtime
+  profile setup/verification commands.
+- **packages/shared** — cross-package utilities (diff, tool-state, paste-blocks).
+
+Database tables (`apps/web/lib/db/schema.ts`) back these subsystems: sessions &
+chats, sandbox services/browser runs, managed-runtime profiles & runs,
+verified-build runs/events, background agents (triggers, grants, runs, events,
+outputs, tool sessions), workflow runs/steps, Composio profiles/sessions,
+GitHub installations, Vercel project links, inference profiles, usage events,
+and user preferences.
+
+See [Architecture & Workspace Structure](docs/agents/architecture.md) for the
+canonical description.
+
+### Major Subsystems
+
+These are the larger feature areas; each has a plan/epic that is the durable
+record of intent (link back to it from new planning docs and issues):
+
+- **Managed Runtime** — runtime profiles that declare their own toolchain and
+  setup/verification commands. See
+  [Managed Runtime Profiles](docs/plans/managed-runtime-profiles.md) and the
+  [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md).
+- **Background Agents** — triggered/cron sandbox automation gated by repo
+  allowlist and tool grants. See
+  [Background Agents Epic](docs/plans/background-agents-epic.md) and the
+  [Background Agents Live Proof](docs/process/background-agents-live-proof.md).
+- **Verified Build** — verified build bridge, contracts, and observability. See
+  [Verified Build Roadmap](docs/plans/verified-build-roadmap.md).
+- **Composio Tools** — external tool connections for agents. See
+  [Composio Agent Tools Epic](docs/plans/composio-agent-tools-epic.md).
+- **Workflows / Harness** — multi-step run orchestration and the agent harness
+  API under `app/api/harness/*`.
 
 ## File Organization & Separation of Concerns
 
