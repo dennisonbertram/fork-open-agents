@@ -351,6 +351,13 @@
       "when": 1780322797343,
       "tag": "0049_mature_lightspeed",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1780411521636,
+      "tag": "0050_yummy_jackpot",
+      "breakpoints": true
     }
   ]
 }
