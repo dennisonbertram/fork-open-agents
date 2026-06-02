@@ -1,5 +1,3 @@
-"use server";
-
 import type { TerminalGoalStatus } from "@/lib/db/goal-ledger";
 
 // ---------------------------------------------------------------------------
