@@ -37,6 +37,9 @@ const routerRefresh = mock(() => undefined);
 
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push, refresh: routerRefresh }),
+  redirect: (_path: string) => {
+    throw new Error("redirect");
+  },
 }));
 
 // The SWR mock captures every invocation so we can assert on refreshInterval.
@@ -303,136 +306,7 @@ describe("Gap 2 — Active-run polling behavior", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Gap 2 — Status API route
-// ---------------------------------------------------------------------------
-
-// These tests require isolated mock setup — use a separate describe block.
-describe("Gap 2 — Status API route /api/background-agents/:agentId/status", () => {
-  // Mocks for the route module
-  type AuthResult =
-    | { ok: true; userId: string }
-    | { ok: false; response: Response };
-
-  let authResult: AuthResult = { ok: true, userId: "user-1" };
-
-  // We will stub listBackgroundAgentRuns to return a controlled set of runs
-  // for the agentId-scoped status query.
-  type MinimalRun = {
-    id: string;
-    agentId: string;
-    status: string;
-    outputUrl: string | null;
-    errorKind: string | null;
-    createdAt: Date;
-  };
-  let mockRuns: MinimalRun[] = [];
-
-  mock.module("server-only", () => ({}));
-
-  mock.module("@/app/api/sessions/_lib/session-context", () => ({
-    requireAuthenticatedUser: async () => authResult,
-  }));
-
-  mock.module("@/lib/background-agents/store", () => ({
-    listBackgroundAgentRuns: async () => mockRuns,
-    // Re-export everything else used by other tests via this mock
-    getOwnedBackgroundAgentWithTriggers: async () => null,
-    listRepoBackgroundAgents: async () => [],
-    listBackgroundAgentOutputs: async () => [],
-    updateBackgroundAgent: async () => null,
-    deleteBackgroundAgent: async () => false,
-    createBackgroundAgent: async () => { throw new Error("not mocked"); },
-    listBackgroundAgents: async () => [],
-  }));
-
-  const statusRouteModulePromise = import(
-    "@/app/api/background-agents/[agentId]/status/route"
-  );
-
-  function routeContext(agentId = "agent-1") {
-    return { params: Promise.resolve({ agentId }) };
-  }
-
-  beforeEach(() => {
-    authResult = { ok: true, userId: "user-1" };
-    mockRuns = [];
-  });
-
-  test("BT-167-G2-005: GET requires authentication", async () => {
-    authResult = {
-      ok: false,
-      response: Response.json({ error: "Not authenticated" }, { status: 401 }),
-    };
-    const { GET } = await statusRouteModulePromise;
-
-    const response = await GET(
-      new Request("http://localhost/api/background-agents/agent-1/status"),
-      routeContext(),
-    );
-
-    expect(response.status).toBe(401);
-  });
-
-  test("BT-167-G2-006: GET returns latest run status fields for an owned agent", async () => {
-    mockRuns = [
-      {
-        id: "run-latest",
-        agentId: "agent-1",
-        status: "running",
-        outputUrl: null,
-        errorKind: null,
-        createdAt: new Date("2026-06-01T12:00:00Z"),
-      },
-      {
-        id: "run-older",
-        agentId: "agent-1",
-        status: "succeeded",
-        outputUrl: "https://github.com/acme/widgets/pull/1",
-        errorKind: null,
-        createdAt: new Date("2026-06-01T11:00:00Z"),
-      },
-    ];
-
-    const { GET } = await statusRouteModulePromise;
-
-    const response = await GET(
-      new Request("http://localhost/api/background-agents/agent-1/status"),
-      routeContext("agent-1"),
-    );
-
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      latestRunId: string | null;
-      latestRunStatus: string | null;
-      latestOutputUrl: string | null;
-    };
-    // Returns the most recent run
-    expect(body.latestRunId).toBe("run-latest");
-    expect(body.latestRunStatus).toBe("running");
-    // outputUrl from most recent run (null here)
-    expect(body.latestOutputUrl).toBeNull();
-  });
-
-  test("BT-167-G2-007: GET returns null fields when no runs exist for the agent", async () => {
-    // mockRuns is empty — no runs for this agent
-    mockRuns = [];
-
-    const { GET } = await statusRouteModulePromise;
-
-    const response = await GET(
-      new Request("http://localhost/api/background-agents/agent-1/status"),
-      routeContext("agent-1"),
-    );
-
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as {
-      latestRunId: string | null;
-      latestRunStatus: string | null;
-      latestOutputUrl: string | null;
-    };
-    expect(body.latestRunId).toBeNull();
-    expect(body.latestRunStatus).toBeNull();
-    expect(body.latestOutputUrl).toBeNull();
-  });
-});
+// Note: Status API route tests (BT-167-G2-005..007) are in
+// apps/web/app/api/background-agents/[agentId]/status/route.test.ts
+// to avoid module-mock cross-contamination when this file runs alongside
+// other tests that mock the same modules differently.

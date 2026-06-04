@@ -1,9 +1,10 @@
 "use client";
 
-import { Play, Pause, RotateCcw, ExternalLink } from "lucide-react";
+import { Play, Pause, RotateCcw, ExternalLink, Pencil, List } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
@@ -23,9 +24,45 @@ type AgentRunViewModel = {
     | "cancelled";
   errorKind: string | null;
   errorMessage: string | null;
+  outputUrl: string | null;
   resultSummary: RunSummary | null | undefined;
   createdAt: Date;
 };
+
+// ---- Status polling ---------------------------------------------------------
+
+type StatusResponse = {
+  latestRunId: string | null;
+  latestRunStatus: string | null;
+  latestOutputUrl: string | null;
+};
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error("Failed to load status");
+  }
+  return (await response.json()) as T;
+}
+
+/**
+ * Polls /api/background-agents/:agentId/status only when the latest run is
+ * active (running or queued). Returns null data when polling is not needed.
+ */
+function useAgentStatusPolling(
+  agentId: string,
+  isActive: boolean,
+): StatusResponse | null {
+  const { data } = useSWR<StatusResponse>(
+    `/api/background-agents/${agentId}/status`,
+    fetchJson,
+    {
+      refreshInterval: isActive ? 4000 : 0,
+      revalidateOnFocus: false,
+    },
+  );
+  return data ?? null;
+}
 
 type AgentCardProps = {
   agent: BackgroundAgentWithTriggers;
@@ -114,6 +151,16 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  const isActive =
+    latestRun?.status === "running" || latestRun?.status === "queued";
+
+  // Poll for live status only when a run is active — no polling for idle agents.
+  const polledStatus = useAgentStatusPolling(agent.id, isActive);
+
+  // Use polled outputUrl if available, fall back to the server-rendered prop.
+  const effectiveOutputUrl =
+    polledStatus?.latestOutputUrl ?? latestRun?.outputUrl ?? null;
 
   const cardStatus = deriveCardStatus(agent, latestRun);
   const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
@@ -291,10 +338,37 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
           </Button>
         )}
 
+        {/* Edit — links to agent detail/spec page (reuses spec editor on that page) */}
         <Button variant="ghost" size="sm" asChild>
-          <Link href={detailHref}>View details</Link>
+          <Link href={detailHref}>
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Link>
+        </Button>
+
+        {/* View runs — links to the recent-runs section on the detail page */}
+        <Button variant="ghost" size="sm" asChild>
+          <Link href={`${detailHref}#runs`}>
+            <List className="h-3.5 w-3.5" />
+            View runs
+          </Link>
         </Button>
       </div>
+
+      {/* Latest output — rendered below controls, only when a URL exists */}
+      {effectiveOutputUrl && (
+        <div className="mt-2">
+          <a
+            href={effectiveOutputUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          >
+            Latest output
+            <ExternalLink className="h-3 w-3" />
+          </a>
+        </div>
+      )}
 
       {message && <p className="mt-2 text-xs text-destructive">{message}</p>}
     </div>
