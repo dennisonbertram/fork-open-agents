@@ -38,24 +38,46 @@ export default async function RepoDashboardPage({
   }
 
   const { owner, repo } = await params;
-  const [agents, runs, dashboardData] = await Promise.all([
-    listRepoBackgroundAgents({
-      userId: session.user.id,
-      repoOwner: owner,
-      repoName: repo,
-    }),
-    listBackgroundAgentRuns({
-      userId: session.user.id,
-      repoOwner: owner,
-      repoName: repo,
-      limit: 50,
-    }),
-    getRepoDashboardData({
-      userId: session.user.id,
-      owner,
-      repo,
-    }),
-  ]);
+
+  // Fetch all data sources in parallel with independent failure isolation.
+  // A throw in agents/runs/dashboard must never break the entire page render.
+  const [agentsResult, runsResult, dashboardDataResult] =
+    await Promise.allSettled([
+      listRepoBackgroundAgents({
+        userId: session.user.id,
+        repoOwner: owner,
+        repoName: repo,
+      }),
+      listBackgroundAgentRuns({
+        userId: session.user.id,
+        repoOwner: owner,
+        repoName: repo,
+        limit: 50,
+      }),
+      getRepoDashboardData({
+        userId: session.user.id,
+        owner,
+        repo,
+      }),
+    ]);
+
+  const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
+  const runs = runsResult.status === "fulfilled" ? runsResult.value : [];
+
+  const dashboardData =
+    dashboardDataResult.status === "fulfilled"
+      ? dashboardDataResult.value
+      : {
+          prSummary: { ok: false, errorKind: "provider_unavailable" } as const,
+          issueSummary: {
+            ok: false,
+            errorKind: "provider_unavailable",
+          } as const,
+          actionsSummary: {
+            ok: false,
+            errorKind: "provider_unavailable",
+          } as const,
+        };
 
   const { prSummary, issueSummary, actionsSummary } = dashboardData;
 

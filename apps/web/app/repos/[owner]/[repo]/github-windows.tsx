@@ -40,6 +40,8 @@ function errorMessage(errorKind: string): string {
       return "Could not load data from GitHub. This may be a temporary outage.";
     case "repo_access_denied":
       return "Access denied to this repository.";
+    case "invalid_repo":
+      return "Repository not found or does not exist.";
     default:
       return "GitHub data could not be loaded.";
   }

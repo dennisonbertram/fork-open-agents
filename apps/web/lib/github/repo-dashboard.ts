@@ -107,9 +107,41 @@ function classifyGitHubError(error: unknown): DashboardErrorKind {
     return "unknown_dashboard_failure";
   }
 
+  // Check rate-limit signals BEFORE mapping 403 to repo_access_denied.
+  // GitHub returns 403 for secondary rate limits too.
+  const message =
+    "message" in error && typeof error.message === "string"
+      ? error.message.toLowerCase()
+      : "";
+
+  if (message.includes("rate limit") || message.includes("rate limited")) {
+    return "provider_rate_limited";
+  }
+
+  // Check headers for rate-limit signals (x-ratelimit-remaining: 0)
+  const headers =
+    "response" in error &&
+    error.response &&
+    typeof error.response === "object" &&
+    "headers" in error.response
+      ? (error.response as { headers?: Record<string, string> }).headers
+      : null;
+
+  if (headers) {
+    const remaining = headers["x-ratelimit-remaining"];
+    const retryAfter = headers["retry-after"];
+    if (remaining === "0" || retryAfter) {
+      return "provider_rate_limited";
+    }
+  }
+
   const httpStatus = getHttpStatus(error);
 
-  if (httpStatus === 401 || httpStatus === 403) {
+  if (httpStatus === 401) {
+    return "repo_access_denied";
+  }
+
+  if (httpStatus === 403) {
     return "repo_access_denied";
   }
 
@@ -123,15 +155,6 @@ function classifyGitHubError(error: unknown): DashboardErrorKind {
 
   if (httpStatus && httpStatus >= 500) {
     return "provider_unavailable";
-  }
-
-  const message =
-    "message" in error && typeof error.message === "string"
-      ? error.message.toLowerCase()
-      : "";
-
-  if (message.includes("rate limit") || message.includes("rate limited")) {
-    return "provider_rate_limited";
   }
 
   return "provider_unavailable";
@@ -156,6 +179,49 @@ function getHttpStatus(error: unknown): number | null {
   return null;
 }
 
+// ---- PR check-status rollup -----------------------------------------------
+
+function resolveChecksStatus(
+  checkRuns: Array<{ status: string; conclusion: string | null }>,
+): "passing" | "failing" | "pending" | "unknown" {
+  if (checkRuns.length === 0) {
+    return "unknown";
+  }
+
+  // If any check is in progress, status is pending
+  const hasPending = checkRuns.some(
+    (c) => c.status !== "completed",
+  );
+  if (hasPending) {
+    return "pending";
+  }
+
+  const failConclusions = new Set([
+    "failure",
+    "cancelled",
+    "action_required",
+    "timed_out",
+    "startup_failure",
+  ]);
+
+  const hasFailing = checkRuns.some(
+    (c) => c.conclusion && failConclusions.has(c.conclusion),
+  );
+  if (hasFailing) {
+    return "failing";
+  }
+
+  const successConclusions = new Set(["success", "neutral", "skipped"]);
+  const allSuccess = checkRuns.every(
+    (c) => c.conclusion && successConclusions.has(c.conclusion),
+  );
+  if (allSuccess) {
+    return "passing";
+  }
+
+  return "unknown";
+}
+
 // ---- PR fetcher -----------------------------------------------------------
 
 async function fetchPrSummary(
@@ -173,16 +239,33 @@ async function fetchPrSummary(
       per_page: PR_LIMIT,
     });
 
-    const prs: PrItem[] = response.data.slice(0, PR_LIMIT).map((pr) => ({
-      number: pr.number,
-      title: pr.title,
-      isDraft: Boolean(pr.draft),
-      author: pr.user?.login ?? null,
-      baseBranch: pr.base.ref,
-      updatedAt: pr.updated_at,
-      checksStatus: "unknown" as const,
-      url: pr.html_url,
-    }));
+    const prs: PrItem[] = await Promise.all(
+      response.data.slice(0, PR_LIMIT).map(async (pr) => {
+        let checksStatus: PrItem["checksStatus"] = "unknown";
+        try {
+          const checksResponse = await octokit.rest.checks.listForRef({
+            owner,
+            repo,
+            ref: pr.head.sha,
+            per_page: 100,
+          });
+          checksStatus = resolveChecksStatus(checksResponse.data.check_runs);
+        } catch {
+          // check fetch failure is non-fatal — fall back to "unknown"
+        }
+
+        return {
+          number: pr.number,
+          title: pr.title,
+          isDraft: Boolean(pr.draft),
+          author: pr.user?.login ?? null,
+          baseBranch: pr.base.ref,
+          updatedAt: pr.updated_at,
+          checksStatus,
+          url: pr.html_url,
+        };
+      }),
+    );
 
     return { ok: true, prs };
   } catch (error: unknown) {
@@ -198,7 +281,8 @@ async function fetchIssueSummary(
   repo: string,
 ): Promise<IssueSummary> {
   try {
-    const response = await octokit.rest.issues.listForRepo({
+    // Fetch the bounded page for recent display
+    const pageResponse = await octokit.rest.issues.listForRepo({
       owner,
       repo,
       state: "open",
@@ -208,7 +292,7 @@ async function fetchIssueSummary(
     });
 
     // GitHub issues API returns PRs too — filter them out
-    const issueItems = response.data.filter((item) => !item.pull_request);
+    const issueItems = pageResponse.data.filter((item) => !item.pull_request);
 
     const recent: IssueItem[] = issueItems
       .slice(0, ISSUE_LIMIT)
@@ -224,9 +308,24 @@ async function fetchIssueSummary(
         url: issue.html_url,
       }));
 
+    // Get the TRUE open-issue count via a bounded search call.
+    // This avoids the bug where totalOpen == recent.length when the repo
+    // has more than ISSUE_LIMIT open issues or when PRs dominate the page.
+    let totalOpen = recent.length;
+    try {
+      const searchResponse = await octokit.rest.search.issuesAndPullRequests({
+        q: `repo:${owner}/${repo} is:issue is:open`,
+        per_page: 1,
+      });
+      totalOpen = searchResponse.data.total_count;
+    } catch {
+      // Search API failure is non-fatal — fall back to recent.length as a floor
+      totalOpen = recent.length;
+    }
+
     return {
       ok: true,
-      totalOpen: recent.length,
+      totalOpen,
       recent,
     };
   } catch (error: unknown) {

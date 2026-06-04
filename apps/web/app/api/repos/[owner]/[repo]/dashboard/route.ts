@@ -9,10 +9,23 @@ import {
 import { getBackgroundAgentReadinessWithGitHubAppMetadata } from "@/lib/background-agents/readiness";
 import { getBackgroundAgentRepoReadiness } from "@/lib/background-agents/repo-readiness";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
+import type { DashboardErrorKind, PrSummary, IssueSummary, ActionsSummary } from "@/lib/github/repo-dashboard";
 
 type RouteContext = {
   params: Promise<{ owner: string; repo: string }>;
 };
+
+/**
+ * Map a BackgroundAgentRepoReadiness denial reason to a DashboardErrorKind
+ * so GitHub windows can show the correct setup state.
+ */
+function repoReadinessToDashboardErrorKind(
+  reason: string | null,
+): DashboardErrorKind | null {
+  if (reason === "no_installation") return "installation_missing";
+  if (reason === "app_no_access") return "app_no_access";
+  return null;
+}
 
 export async function GET(_request: Request, context: RouteContext) {
   const authResult = await requireAuthenticatedUser();
@@ -40,27 +53,73 @@ export async function GET(_request: Request, context: RouteContext) {
   const startMs = Date.now();
 
   try {
-    // Fetch all data in parallel — GitHub windows, local agents, readiness
-    const [dashboardData, agents, runs, readiness, repoReadiness] =
-      await Promise.all([
-        getRepoDashboardData({ userId, owner, repo }),
-        listRepoBackgroundAgents({ userId, repoOwner: owner, repoName: repo }),
-        listBackgroundAgentRuns({
-          userId,
-          repoOwner: owner,
-          repoName: repo,
-          limit: 20,
-        }),
-        getBackgroundAgentReadinessWithGitHubAppMetadata(),
-        getBackgroundAgentRepoReadiness({
-          userId,
-          repoOwner: owner,
-          repoName: repo,
-          requiredUserPermission: "read",
-        }),
-      ]);
+    // Fetch all data sources in parallel with independent failure isolation.
+    // GitHub dashboard data, local agents, runs, and readiness checks must
+    // never cascade — a failure in one must not block the others.
+    const [
+      dashboardDataResult,
+      agentsResult,
+      runsResult,
+      readinessResult,
+      repoReadinessResult,
+    ] = await Promise.allSettled([
+      getRepoDashboardData({ userId, owner, repo }),
+      listRepoBackgroundAgents({ userId, repoOwner: owner, repoName: repo }),
+      listBackgroundAgentRuns({
+        userId,
+        repoOwner: owner,
+        repoName: repo,
+        limit: 20,
+      }),
+      getBackgroundAgentReadinessWithGitHubAppMetadata(),
+      getBackgroundAgentRepoReadiness({
+        userId,
+        repoOwner: owner,
+        repoName: repo,
+        requiredUserPermission: "read",
+      }),
+    ]);
 
-    const { prSummary, issueSummary, actionsSummary } = dashboardData;
+    // Extract dashboard data (GitHub windows) with safe fallbacks
+    const dashboardData =
+      dashboardDataResult.status === "fulfilled"
+        ? dashboardDataResult.value
+        : {
+            prSummary: { ok: false, errorKind: "provider_unavailable" } as const,
+            issueSummary: { ok: false, errorKind: "provider_unavailable" } as const,
+            actionsSummary: { ok: false, errorKind: "provider_unavailable" } as const,
+          };
+
+    let { prSummary, issueSummary, actionsSummary } = dashboardData;
+
+    // BLOCKER 2: If repo readiness reveals App coverage is missing, override
+    // the GitHub window error kinds so we show the correct setup state
+    // instead of presenting OAuth-token data as if it were App-verified.
+    if (repoReadinessResult.status === "fulfilled") {
+      const repoReadiness = repoReadinessResult.value;
+      const appErrorKind = repoReadinessToDashboardErrorKind(
+        repoReadiness.reason,
+      );
+      if (appErrorKind !== null) {
+        const override = { ok: false as const, errorKind: appErrorKind };
+        prSummary = override as PrSummary;
+        issueSummary = override as IssueSummary;
+        actionsSummary = override as ActionsSummary;
+      }
+    }
+
+    // Safe fallbacks for local data sources
+    const agents =
+      agentsResult.status === "fulfilled" ? agentsResult.value : [];
+    const runs = runsResult.status === "fulfilled" ? runsResult.value : [];
+    const readiness =
+      readinessResult.status === "fulfilled"
+        ? readinessResult.value
+        : { ready: false, checks: [], missing: [] };
+    const repoReadiness =
+      repoReadinessResult.status === "fulfilled"
+        ? repoReadinessResult.value
+        : null;
 
     // Count partial failures for observability
     const partialFailureCount = [
@@ -146,10 +205,7 @@ export async function GET(_request: Request, context: RouteContext) {
     });
   } catch (error: unknown) {
     const latencyMs = Date.now() - startMs;
-    const errorKind =
-      error instanceof Error && error.message === "Not authenticated"
-        ? "unknown_dashboard_failure"
-        : "unknown_dashboard_failure";
+    const errorKind: DashboardErrorKind = "unknown_dashboard_failure";
 
     // Structured event: fetch failed
     console.error(
