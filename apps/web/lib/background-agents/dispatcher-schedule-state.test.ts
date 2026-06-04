@@ -1,0 +1,226 @@
+/**
+ * Tests for persisted schedule state advancement in dispatchScheduledBackgroundAgents.
+ * BT-003: Enabled+due trigger → exactly ONE run created; schedule state advances.
+ * BT-004: Duplicate/concurrent dispatch → duplicate prevented; next_run_at advances.
+ * BT-005: Disabled / not-due / invalid / repo-disallowed → skip reason recorded.
+ * BT-006: Failed run → schedule state still advances (no wedge).
+ */
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { BackgroundAgentWithTriggers } from "./store";
+
+mock.module("server-only", () => ({}));
+
+const advanceTriggerScheduleState = mock(async () => undefined);
+const recordTriggerSkipReason = mock(async () => undefined);
+
+let workflowRunId: string | null = "workflow-run-1";
+const start = mock(async () => ({ runId: workflowRunId }));
+
+const createRunForTriggerMock = mock(async () => ({
+  created: true,
+  run: { id: "run-schedule-1" },
+}));
+const recordBackgroundAgentEventMock = mock(async () => undefined);
+const listEnabledScheduleTriggersMock = mock(async () => scheduleRows);
+const updateBackgroundAgentRunStatusMock = mock(async () => undefined);
+
+let scheduleRows: Array<{
+  agent: BackgroundAgentWithTriggers;
+  trigger: BackgroundAgentWithTriggers["triggers"][number];
+}> = [];
+
+mock.module("workflow/api", () => ({ start }));
+mock.module("@/app/workflows/background-agent", () => ({
+  runBackgroundAgentWorkflow: {},
+}));
+
+mock.module("./store", () => ({
+  createRunForTrigger: createRunForTriggerMock,
+  getOwnedBackgroundAgentWithTriggers: async () => null,
+  getWebhookTriggerByPublicId: async () => null,
+  listEnabledScheduleTriggers: listEnabledScheduleTriggersMock,
+  listMatchingTriggersForEvent: async () => [],
+  recordBackgroundAgentEvent: recordBackgroundAgentEventMock,
+  updateBackgroundAgentRunStatus: updateBackgroundAgentRunStatusMock,
+  advanceTriggerScheduleState,
+  recordTriggerSkipReason,
+}));
+
+const dispatcherModulePromise = import("./dispatcher");
+
+const baseAgent: BackgroundAgentWithTriggers = {
+  id: "agent-sched",
+  userId: "user-sched",
+  name: "Schedule test agent",
+  repoOwner: "acme",
+  repoName: "scheduler",
+  description: null,
+  status: "enabled",
+  instructions: "Run schedule checks.",
+  permissions: {},
+  outputMode: "none",
+  checkCommand: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  triggers: [],
+};
+
+const scheduleTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
+  id: "trigger-sched-1",
+  agentId: "agent-sched",
+  userId: "user-sched",
+  name: "Every minute",
+  kind: "schedule.cron",
+  status: "enabled",
+  conditions: {},
+  schedule: "* * * * *",
+  webhookPublicId: null,
+  webhookSecretHash: null,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  lastRunAt: null,
+  nextRunAt: null,
+  lastSkipReason: null,
+};
+
+function resetMocks() {
+  process.env.BACKGROUND_AGENTS_ENABLED = "true";
+  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  workflowRunId = "workflow-run-1";
+  scheduleRows = [];
+  start.mockClear();
+  start.mockImplementation(async () => ({ runId: workflowRunId }));
+  createRunForTriggerMock.mockClear();
+  createRunForTriggerMock.mockImplementation(async () => ({
+    created: true,
+    run: { id: "run-schedule-1" },
+  }));
+  recordBackgroundAgentEventMock.mockClear();
+  updateBackgroundAgentRunStatusMock.mockClear();
+  listEnabledScheduleTriggersMock.mockClear();
+  listEnabledScheduleTriggersMock.mockImplementation(async () => scheduleRows);
+  advanceTriggerScheduleState.mockClear();
+  recordTriggerSkipReason.mockClear();
+}
+
+describe("dispatchScheduledBackgroundAgents — persisted schedule state", () => {
+  beforeEach(resetMocks);
+
+  test("BT-003: advances schedule state after exactly one run is created", async () => {
+    scheduleRows = [{ agent: baseAgent, trigger: scheduleTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    const now = new Date("2026-06-01T09:00:00.000Z");
+
+    await dispatchScheduledBackgroundAgents({ now, requestId: "req-state-1" });
+
+    expect(createRunForTriggerMock).toHaveBeenCalledTimes(1);
+    // BT-003: schedule state must be advanced after a run is created
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-sched-1",
+        lastRunAt: now,
+      }),
+    );
+  });
+
+  test("BT-004: advances next_run_at even on duplicate dispatch (no double-start)", async () => {
+    scheduleRows = [{ agent: baseAgent, trigger: scheduleTrigger }];
+    // Simulate a duplicate — run already existed
+    createRunForTriggerMock.mockImplementationOnce(async () => ({
+      created: false,
+      run: { id: "run-existing" },
+    }));
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    const now = new Date("2026-06-01T09:00:00.000Z");
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now,
+      requestId: "req-dup",
+    });
+
+    expect(result.duplicates).toBe(1);
+    expect(result.created).toBe(0);
+    // Workflow must NOT be started again
+    expect(start).not.toHaveBeenCalled();
+    // BT-004: next_run_at still advances even on duplicate
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-sched-1",
+        lastRunAt: now,
+      }),
+    );
+  });
+
+  test("BT-005: records skip reason when trigger has invalid schedule", async () => {
+    const invalidTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-invalid",
+      schedule: "not a cron expression",
+    };
+    // The dispatcher itself filters by scheduleMatchesNow — invalid schedule
+    // won't match, so the row won't enter the dispatch loop.
+    // We test the skip-reason recording by providing a trigger that
+    // was fetched but fails validation in the dispatcher.
+    // For this test: rows returns the trigger, but scheduleMatchesNow returns false
+    scheduleRows = [{ agent: baseAgent, trigger: invalidTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-invalid",
+    });
+
+    // No run created for invalid schedule
+    expect(createRunForTriggerMock).not.toHaveBeenCalled();
+    // BT-005: skip reason should be recorded for invalid schedule
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-invalid",
+        skipReason: expect.stringContaining("schedule"),
+      }),
+    );
+  });
+
+  test("BT-005: records skip reason when repo is not in allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
+    scheduleRows = [{ agent: baseAgent, trigger: scheduleTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-allowlist",
+    });
+
+    expect(createRunForTriggerMock).not.toHaveBeenCalled();
+    // BT-005: skip reason for repo not allowed
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-sched-1",
+        skipReason: expect.stringContaining("repo"),
+      }),
+    );
+  });
+
+  test("BT-006: schedule state advances even when workflow start fails (no wedge)", async () => {
+    scheduleRows = [{ agent: baseAgent, trigger: scheduleTrigger }];
+    workflowRunId = null; // simulate workflow start failure
+    start.mockImplementation(async () => ({ runId: null }));
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    const now = new Date("2026-06-01T09:00:00.000Z");
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now,
+      requestId: "req-fail",
+    });
+
+    // Run was created even though workflow start failed
+    expect(result.created).toBe(1);
+    // BT-006: schedule state must still advance
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-sched-1",
+        lastRunAt: now,
+      }),
+    );
+  });
+});
