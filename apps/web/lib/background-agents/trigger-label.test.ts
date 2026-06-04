@@ -98,8 +98,11 @@ describe("formatTriggerLabel", () => {
   });
 
   // BT-168-LABEL-011
+  // Deployment status is stored in conditions.actions (normalizer sets event.action =
+  // deployment state; buildConditions routes conditionSeverities → conditions.actions
+  // for github.deployment_status so the matcher's conditions.actions check fires).
   test("BT-168-LABEL-011: Deployment trigger with status condition includes status", () => {
-    const conditions: TriggerConditions = { severities: ["success"] };
+    const conditions: TriggerConditions = { actions: ["success"] };
     const label = formatTriggerLabel("github.deployment_status", conditions);
     expect(label).toBe("On deployment success");
   });
@@ -108,7 +111,7 @@ describe("formatTriggerLabel", () => {
   test("BT-168-LABEL-012: Deployment trigger with env + status combines both", () => {
     const conditions: TriggerConditions = {
       environments: ["production"],
-      severities: ["success"],
+      actions: ["success"],
     };
     const label = formatTriggerLabel("github.deployment_status", conditions);
     expect(label).toBe("On deployment success to production");

@@ -82,17 +82,19 @@ function formatIssueLabel(conditions: TriggerConditions): string {
 function formatDeploymentLabel(conditions: TriggerConditions): string {
   const hasEnvironments =
     conditions.environments && conditions.environments.length > 0;
-  const hasSeverities =
-    conditions.severities && conditions.severities.length > 0;
+  // Deployment status is stored in conditions.actions (the normalizer sets
+  // event.action = state and the matcher checks conditions.actions).
+  // The UI "Statuses" field (conditionSeverities) writes here via buildConditions.
+  const hasStatuses = conditions.actions && conditions.actions.length > 0;
 
-  if (!hasEnvironments && !hasSeverities) {
+  if (!hasEnvironments && !hasStatuses) {
     return "On deployment";
   }
 
   const parts: string[] = ["On deployment"];
 
-  if (hasSeverities) {
-    parts.push(conditions.severities![0]!);
+  if (hasStatuses) {
+    parts.push(conditions.actions![0]!);
   }
 
   if (hasEnvironments) {

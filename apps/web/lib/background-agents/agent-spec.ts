@@ -141,6 +141,18 @@ function buildConditions(form: FormState): TriggerConditions {
   const labels = splitConditionList(form.conditionLabels);
   const environments = splitConditionList(form.conditionEnvironments);
   const severities = splitConditionList(form.conditionSeverities);
+
+  // For deployment_status triggers, the normalizer sets event.action = deployment
+  // state ("success", "failure", etc.) and never sets event.severity. Route the
+  // "Statuses" UI field (conditionSeverities) into conditions.actions so the
+  // matcher's conditions.actions check against event.action actually fires.
+  if (form.triggerKind === "github.deployment_status") {
+    return {
+      ...(severities ? { actions: severities } : {}),
+      ...(environments ? { environments } : {}),
+    };
+  }
+
   return {
     ...(actions ? { actions } : {}),
     ...(branches ? { branches } : {}),
@@ -185,17 +197,34 @@ export function buildAgentPayload(form: FormState) {
 export function buildFormFromAgent(agent: BackgroundAgent): FormState {
   const trigger = agent.triggers[0];
   const conditions = trigger?.conditions ?? {};
+  const triggerKind = trigger?.kind ?? "github.pull_request";
+
+  // For deployment_status triggers, the status was stored in conditions.actions
+  // (see buildConditions). Restore it into conditionSeverities so the UI shows
+  // the value in the "Statuses" field where the user originally entered it.
+  const conditionSeverities =
+    triggerKind === "github.deployment_status"
+      ? joinConditionList(conditions.actions)
+      : joinConditionList(conditions.severities);
+
+  // For deployment_status, conditionActions is driven by conditionSeverities, so
+  // leave it empty to avoid showing the same value in two fields.
+  const conditionActions =
+    triggerKind === "github.deployment_status"
+      ? ""
+      : joinConditionList(conditions.actions);
+
   return {
     name: agent.name,
     repoOwner: agent.repoOwner,
     repoName: agent.repoName,
-    triggerKind: trigger?.kind ?? "github.pull_request",
+    triggerKind,
     schedule: trigger?.schedule ?? "",
-    conditionActions: joinConditionList(conditions.actions),
+    conditionActions,
     conditionBranches: joinConditionList(conditions.branches),
     conditionLabels: joinConditionList(conditions.labels),
     conditionEnvironments: joinConditionList(conditions.environments),
-    conditionSeverities: joinConditionList(conditions.severities),
+    conditionSeverities,
     instructions: agent.instructions,
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",

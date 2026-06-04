@@ -50,9 +50,11 @@ describe("formatTriggerLabel — regression (TASK-168)", () => {
   });
 
   test("REG-168-03: Deployment trigger with environment and status shows both", () => {
+    // Deployment status is stored in conditions.actions (buildConditions routes
+    // conditionSeverities → conditions.actions for github.deployment_status).
     const conditions: TriggerConditions = {
       environments: ["production"],
-      severities: ["success"],
+      actions: ["success"],
     };
     const label = formatTriggerLabel("github.deployment_status", conditions);
 
