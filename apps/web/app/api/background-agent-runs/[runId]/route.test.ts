@@ -224,12 +224,16 @@ describe("GET /api/background-agent-runs/[runId]", () => {
       ],
       next: [],
     };
+    const prevRow = runRow as {
+      run: Record<string, unknown>;
+      agent: Record<string, unknown>;
+    };
     runRow = {
       run: {
-        ...(runRow as Record<string, unknown>)!.run,
+        ...prevRow.run,
         resultSummary,
       },
-      agent: (runRow as Record<string, unknown>)!.agent,
+      agent: prevRow.agent,
     };
     const { GET } = await routeModulePromise;
 

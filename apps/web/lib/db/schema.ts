@@ -988,6 +988,10 @@ export const backgroundAgentRuns = pgTable(
       .$type<BackgroundAgentPayloadSummary>()
       .notNull()
       .default({}),
+    resultSummary:
+      jsonb("result_summary").$type<
+        import("@/lib/background-agents/run-summary").RunSummary
+      >(),
     requestId: text("request_id"),
     workflowRunId: text("workflow_run_id"),
     startedAt: timestamp("started_at"),

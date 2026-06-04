@@ -358,6 +358,13 @@
       "when": 1780411521636,
       "tag": "0050_yummy_jackpot",
       "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1780552990126,
+      "tag": "0051_black_blockbuster",
+      "breakpoints": true
     }
   ]
 }

@@ -34,10 +34,17 @@ import { getGitHubAppUserToken } from "@/lib/github/token";
 import { getGitHubUserProfile } from "@/lib/github/users";
 import {
   getBackgroundAgentRunWithAgent,
+  listBackgroundAgentEvents,
+  listBackgroundAgentOutputs,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
 } from "./store";
+import { buildRunSummary } from "./run-summary";
+import {
+  persistRunSummary,
+  recordSummaryFailedEvent,
+} from "./run-summary-persist";
 import { buildBackgroundCommandObservation } from "./runtime-observability";
 import {
   buildBackgroundAgentMutationPrompt,
@@ -99,6 +106,55 @@ async function recordFailure(params: {
     sandboxName: params.sandboxName ?? null,
     errorKind: params.errorKind,
   });
+
+  // Summary generation must never change the run status.
+  try {
+    await buildAndPersistRunSummary({
+      runId: params.runId,
+      agentId: params.agentId,
+      userId: params.userId,
+    });
+  } catch (summaryError) {
+    try {
+      await recordSummaryFailedEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        error: summaryError,
+      });
+    } catch {
+      // Best-effort; do not re-throw.
+    }
+  }
+}
+
+/**
+ * Builds and persists a run summary at a terminal path.
+ * MUST be wrapped in try/catch by the caller — summary failure must NOT
+ * affect the run's terminal status.
+ */
+async function buildAndPersistRunSummary(params: {
+  runId: string;
+  agentId: string | null;
+  userId: string;
+}) {
+  const [freshRun, events, outputs] = await Promise.all([
+    getBackgroundAgentRunWithAgent(params.runId),
+    listBackgroundAgentEvents(params.runId),
+    listBackgroundAgentOutputs(params.runId),
+  ]);
+
+  if (!freshRun) {
+    return;
+  }
+
+  const summary = buildRunSummary({
+    run: freshRun.run,
+    events,
+    outputs,
+  });
+
+  await persistRunSummary({ runId: params.runId, summary });
 }
 
 async function execObservedCommand(params: {
@@ -828,6 +884,26 @@ export async function executeBackgroundAgentRun(params: {
         requestId: run.requestId,
         sandboxName,
       });
+
+      // Summary must not affect run status on failure.
+      try {
+        await buildAndPersistRunSummary({
+          runId: run.id,
+          agentId: run.agentId,
+          userId: run.userId,
+        });
+      } catch (summaryError) {
+        try {
+          await recordSummaryFailedEvent({
+            runId: run.id,
+            agentId: run.agentId,
+            userId: run.userId,
+            error: summaryError,
+          });
+        } catch {
+          // Best-effort; do not re-throw.
+        }
+      }
       return;
     } catch (error) {
       await recordBackgroundAgentOutput({
@@ -876,4 +952,24 @@ export async function executeBackgroundAgentRun(params: {
     requestId: run.requestId,
     sandboxName,
   });
+
+  // Summary must not affect run status on failure.
+  try {
+    await buildAndPersistRunSummary({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+    });
+  } catch (summaryError) {
+    try {
+      await recordSummaryFailedEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        error: summaryError,
+      });
+    } catch {
+      // Best-effort; do not re-throw.
+    }
+  }
 }

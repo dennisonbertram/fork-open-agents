@@ -70,7 +70,9 @@ function makeCheckEvent(success: boolean): MinimalEvent {
       : "background-agent.check.completed",
     status: success ? "succeeded" : "failed",
     level: success ? "info" : "warn",
-    summary: success ? "Command passed: bun --bun run ci" : "Command failed: bun --bun run ci",
+    summary: success
+      ? "Command passed: bun --bun run ci"
+      : "Command failed: bun --bun run ci",
     errorKind: success ? null : "checks_failed",
     payload: { command: "bun --bun run ci" },
   };
@@ -172,7 +174,11 @@ describe("buildRunSummary", () => {
 
     expect(summary.headline.length).toBeGreaterThan(0);
     // Headline or checked/changed must explicitly communicate no output
-    const combined = [summary.headline, ...summary.changed, ...summary.next].join(" ");
+    const combined = [
+      summary.headline,
+      ...summary.changed,
+      ...summary.next,
+    ].join(" ");
     expect(combined.toLowerCase()).toMatch(/no output|no changes/);
   });
 
