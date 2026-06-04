@@ -40,6 +40,16 @@ mock.module("@/lib/background-agents/store", () => ({
   listBackgroundAgentRuns,
 }));
 
+// Mock GitHub repo-dashboard helper — returns empty/connected defaults so
+// the existing #161 tests remain focused on local data and shell rendering.
+mock.module("@/lib/github/repo-dashboard", () => ({
+  getRepoDashboardData: async () => ({
+    prSummary: { ok: true, prs: [] },
+    issueSummary: { ok: true, totalOpen: 0, recent: [] },
+    actionsSummary: { ok: true, latestStatus: "passing", recentRuns: [] },
+  }),
+}));
+
 // Lazy-import the page after mocks are wired.
 const pageModulePromise = import("./page");
 
@@ -231,8 +241,11 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("No runs recorded");
   });
 
-  // BT-006: placeholder windows for PR/Issues/Actions indicate not-yet-available
-  test("BT-006: PR, Issues, and Actions windows show unavailable placeholder state", async () => {
+  // BT-006: GitHub signal windows are rendered (PR/Issues/Actions)
+  // Updated in #162: the windows now render live GitHub data (or empty/error states)
+  // rather than placeholder messages. With the mock returning empty connected state,
+  // each window shows its empty state copy.
+  test("BT-006: PR, Issues, and Actions windows are rendered in the dashboard", async () => {
     const { default: RepoDashboardPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
@@ -241,15 +254,12 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    // Each placeholder window should signal it's not connected yet
-    // (exact copy is implementation detail, but all three must be present)
+    // All three window headings must be present
     expect(html).toContain("Pull Requests");
     expect(html).toContain("Issues");
     expect(html).toContain("Actions");
-    // At least one unavailability signal
-    expect(html).toMatch(
-      /not available|coming soon|unavailable|not connected/i,
-    );
+    // With empty connected mock, each window shows an empty state
+    expect(html).toMatch(/no open|no workflow|no runs/i);
   });
 
   // BT-007: link to GitHub repo present in header

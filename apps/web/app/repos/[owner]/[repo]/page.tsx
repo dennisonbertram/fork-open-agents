@@ -7,13 +7,18 @@ import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
+import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
 import { getServerSession } from "@/lib/session/get-server-session";
 import {
   OverviewWindow,
   AgentsWindow,
   ActivityWindow,
-  PlaceholderWindow,
 } from "./dashboard-windows";
+import {
+  PullRequestsWindow,
+  IssuesWindow,
+  ActionsWindow,
+} from "./github-windows";
 
 export const metadata: Metadata = {
   title: "Repo dashboard",
@@ -33,7 +38,7 @@ export default async function RepoDashboardPage({
   }
 
   const { owner, repo } = await params;
-  const [agents, runs] = await Promise.all([
+  const [agents, runs, dashboardData] = await Promise.all([
     listRepoBackgroundAgents({
       userId: session.user.id,
       repoOwner: owner,
@@ -45,7 +50,14 @@ export default async function RepoDashboardPage({
       repoName: repo,
       limit: 50,
     }),
+    getRepoDashboardData({
+      userId: session.user.id,
+      owner,
+      repo,
+    }),
   ]);
+
+  const { prSummary, issueSummary, actionsSummary } = dashboardData;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -89,9 +101,9 @@ export default async function RepoDashboardPage({
           />
 
           <div className="grid gap-4 md:grid-cols-3">
-            <PlaceholderWindow label="Pull Requests" />
-            <PlaceholderWindow label="Issues" />
-            <PlaceholderWindow label="Actions" />
+            <PullRequestsWindow summary={prSummary} owner={owner} repo={repo} />
+            <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
+            <ActionsWindow summary={actionsSummary} owner={owner} repo={repo} />
           </div>
 
           <AgentsWindow agents={agents} />

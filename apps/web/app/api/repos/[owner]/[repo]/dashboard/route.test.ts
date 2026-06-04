@@ -13,15 +13,26 @@ let authResult: AuthResult = { ok: true, userId: "user-1" };
 // ---- mutable dashboard data state ----------------------------------------
 
 type MockPrSummary =
-  | { ok: true; prs: Array<{ number: number; title: string; isDraft: boolean }> }
+  | {
+      ok: true;
+      prs: Array<{ number: number; title: string; isDraft: boolean }>;
+    }
   | { ok: false; errorKind: string };
 
 type MockIssueSummary =
-  | { ok: true; totalOpen: number; recent: Array<{ number: number; title: string }> }
+  | {
+      ok: true;
+      totalOpen: number;
+      recent: Array<{ number: number; title: string }>;
+    }
   | { ok: false; errorKind: string };
 
 type MockActionsSummary =
-  | { ok: true; latestStatus: "passing" | "failing" | "pending"; recentRuns: Array<{ name: string; conclusion: string | null }> }
+  | {
+      ok: true;
+      latestStatus: "passing" | "failing" | "pending";
+      recentRuns: Array<{ name: string; conclusion: string | null }>;
+    }
   | { ok: false; errorKind: string };
 
 let mockPrSummary: MockPrSummary = {
@@ -107,9 +118,7 @@ describe("GET /api/repos/[owner]/[repo]/dashboard", () => {
 
     const { GET } = await routeModulePromise;
     const response = await GET(
-      new Request(
-        "http://localhost/api/repos/acme/widgets/dashboard",
-      ),
+      new Request("http://localhost/api/repos/acme/widgets/dashboard"),
       { params: Promise.resolve({ owner: "acme", repo: "widgets" }) },
     );
 

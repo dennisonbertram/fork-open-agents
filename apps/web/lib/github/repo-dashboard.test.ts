@@ -46,9 +46,19 @@ let mockWorkflowRunsError: Error | null = null;
 let mockUserOctokit: {
   rest: {
     pulls: { list: (_args: unknown) => Promise<OctokitResponse<MockPr[]>> };
-    issues: { listForRepo: (_args: unknown) => Promise<OctokitResponse<MockIssue[]>> };
-    actions: { listWorkflowRunsForRepo: (_args: unknown) => Promise<OctokitResponse<{ workflow_runs: MockWorkflowRun[] }>> };
-    checks: { listForRef: (_args: unknown) => Promise<OctokitResponse<{ check_runs: MockCheckRun[] }>> };
+    issues: {
+      listForRepo: (_args: unknown) => Promise<OctokitResponse<MockIssue[]>>;
+    };
+    actions: {
+      listWorkflowRunsForRepo: (
+        _args: unknown,
+      ) => Promise<OctokitResponse<{ workflow_runs: MockWorkflowRun[] }>>;
+    };
+    checks: {
+      listForRef: (
+        _args: unknown,
+      ) => Promise<OctokitResponse<{ check_runs: MockCheckRun[] }>>;
+    };
   };
 } | null = null;
 
@@ -75,13 +85,17 @@ function makeMockOctokit() {
         },
       },
       actions: {
-        listWorkflowRunsForRepo: async (): Promise<OctokitResponse<{ workflow_runs: MockWorkflowRun[] }>> => {
+        listWorkflowRunsForRepo: async (): Promise<
+          OctokitResponse<{ workflow_runs: MockWorkflowRun[] }>
+        > => {
           if (mockWorkflowRunsError) throw mockWorkflowRunsError;
           return { data: { workflow_runs: mockWorkflowRuns } };
         },
       },
       checks: {
-        listForRef: async (): Promise<OctokitResponse<{ check_runs: MockCheckRun[] }>> => {
+        listForRef: async (): Promise<
+          OctokitResponse<{ check_runs: MockCheckRun[] }>
+        > => {
           return { data: { check_runs: mockCheckRuns } };
         },
       },
@@ -227,7 +241,9 @@ describe("getRepoDashboardData", () => {
         title: "This is actually a PR",
         labels: [],
         updated_at: new Date().toISOString(),
-        pull_request: { url: "https://api.github.com/repos/acme/widgets/pulls/2" },
+        pull_request: {
+          url: "https://api.github.com/repos/acme/widgets/pulls/2",
+        },
       },
     ];
 
@@ -254,7 +270,12 @@ describe("getRepoDashboardData", () => {
     Object.assign(mockPrListError, { status: 429 });
 
     mockIssueList = [
-      { number: 5, title: "Bug", labels: [], updated_at: new Date().toISOString() },
+      {
+        number: 5,
+        title: "Bug",
+        labels: [],
+        updated_at: new Date().toISOString(),
+      },
     ];
 
     const { getRepoDashboardData } = await helperModulePromise;
