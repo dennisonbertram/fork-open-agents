@@ -159,8 +159,7 @@ describe("RepoDashboardPage", () => {
   test("REDACT-001: agent instructions beyond 140 chars are truncated server-side and secret marker is not in DOM", async () => {
     const secretSuffix = "SECRET_MARKER_DO_NOT_RENDER";
     // Build a 200-char instruction with the secret marker placed after the 140-char cap
-    const longInstructions =
-      "A".repeat(150) + secretSuffix + "B".repeat(24);
+    const longInstructions = "A".repeat(150) + secretSuffix + "B".repeat(24);
     repoAgents = [
       {
         id: "agent-secret",
