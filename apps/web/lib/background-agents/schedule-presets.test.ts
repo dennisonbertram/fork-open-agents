@@ -125,27 +125,35 @@ describe("validateSchedule", () => {
   test("BT-002: returns valid:false with error for free-text schedule", () => {
     const result = validateSchedule("every morning");
     expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
-    expect(result.error!.length).toBeGreaterThan(0);
+    if (!result.valid) {
+      expect(result.error).toBeDefined();
+      expect(result.error.length).toBeGreaterThan(0);
+    }
   });
 
   test("BT-002: returns valid:false with error for 6-field cron (seconds not supported)", () => {
     const result = validateSchedule("0 0 9 * * 1-5");
     expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
+    if (!result.valid) {
+      expect(result.error).toBeDefined();
+    }
   });
 
   test("BT-002: returns valid:false with error for out-of-range field", () => {
     const result = validateSchedule("60 9 * * *"); // minute 60 invalid
     expect(result.valid).toBe(false);
-    expect(result.error).toBeDefined();
+    if (!result.valid) {
+      expect(result.error).toBeDefined();
+    }
   });
 
   test("BT-002: error message names the supported grammar", () => {
     const result = validateSchedule("nope");
     expect(result.valid).toBe(false);
     // Should mention the supported formats
-    expect(result.error).toMatch(/@hourly|@daily|@weekly|5-field|cron/i);
+    if (!result.valid) {
+      expect(result.error).toMatch(/@hourly|@daily|@weekly|5-field|cron/i);
+    }
   });
 
   test("BT-002: returns valid:false for empty string", () => {

@@ -165,7 +165,7 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
     scheduleRows = [{ agent: baseAgent, trigger: invalidTrigger }];
     const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
 
-    const result = await dispatchScheduledBackgroundAgents({
+    await dispatchScheduledBackgroundAgents({
       now: new Date("2026-06-01T09:00:00.000Z"),
       requestId: "req-invalid",
     });
