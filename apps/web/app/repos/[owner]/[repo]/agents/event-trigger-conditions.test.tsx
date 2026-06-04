@@ -194,7 +194,11 @@ describe("buildAgentPayload — event trigger conditions", () => {
     expect(trigger?.conditions?.severities).toBeUndefined();
   });
 
-  test("BT-168-COND-008: Deployment trigger conditions (environments, severities) appear in payload", async () => {
+  // Note: conditionSeverities (the "Statuses" UI field) is routed to conditions.actions
+  // for deployment_status triggers, because the normalizer sets event.action = deployment
+  // state and the matcher checks conditions.actions against event.action. Using
+  // conditions.severities would silently never fire since event.severity is never set.
+  test("BT-168-COND-008: Deployment trigger conditions (environments, statuses) appear in payload — statuses in conditions.actions", async () => {
     const { buildAgentPayload } =
       await import("@/lib/background-agents/agent-spec");
 
@@ -217,8 +221,10 @@ describe("buildAgentPayload — event trigger conditions", () => {
 
     const trigger = payload.triggers[0];
     expect(trigger?.conditions?.environments).toEqual(["production"]);
-    expect(trigger?.conditions?.severities).toEqual(["success"]);
-    expect(trigger?.conditions?.actions).toBeUndefined();
+    // Deployment "Statuses" (conditionSeverities) routes to conditions.actions so the
+    // matcher's conditions.actions check against event.action ("success"/"failure") fires.
+    expect(trigger?.conditions?.actions).toEqual(["success"]);
+    expect(trigger?.conditions?.severities).toBeUndefined();
     expect(trigger?.conditions?.branches).toBeUndefined();
     expect(trigger?.conditions?.labels).toBeUndefined();
   });

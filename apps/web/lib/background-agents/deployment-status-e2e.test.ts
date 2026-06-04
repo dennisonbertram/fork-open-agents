@@ -14,9 +14,25 @@
  *
  * BT-168-DS-004: formatTriggerLabel for deployment with a status reads from the SAME
  *   field that buildAgentPayload writes, producing "On deployment success to production".
+ *
+ * REG-168-DS-001: conditionSeverities written by buildAgentPayload for deployment_status
+ *   must land in conditions.actions (not conditions.severities). If the routing is
+ *   reverted, this test fails because triggerMatchesEvent would return false.
+ *
+ * REG-168-DS-002: buildFormFromAgent round-trips a deployment status correctly —
+ *   if a stored agent has conditions.actions = ["success"], restoring to a FormState
+ *   via buildFormFromAgent must set conditionSeverities = "success" (not conditionActions).
+ *
+ * REG-168-DS-003: PR and issue trigger conditions are unaffected — their conditionActions
+ *   still maps to conditions.actions and is separate from the deployment path.
  */
 import { describe, expect, test } from "bun:test";
-import { buildAgentPayload, type FormState } from "./agent-spec";
+import {
+  buildAgentPayload,
+  buildFormFromAgent,
+  type FormState,
+  type BackgroundAgent,
+} from "./agent-spec";
 import { triggerMatchesEvent } from "./matching";
 import { formatTriggerLabel } from "./trigger-label";
 import type { NormalizedBackgroundTriggerEvent } from "./types";
@@ -69,7 +85,10 @@ describe("deployment-status trigger end-to-end: UI → payload → matcher (TASK
     const payload = buildAgentPayload(form);
     const trigger = payload.triggers[0]!;
 
-    const matches = triggerMatchesEvent({ conditions: trigger.conditions }, successEvent);
+    const matches = triggerMatchesEvent(
+      { conditions: trigger.conditions },
+      successEvent,
+    );
 
     expect(matches).toBe(true);
   });
@@ -80,7 +99,10 @@ describe("deployment-status trigger end-to-end: UI → payload → matcher (TASK
     const payload = buildAgentPayload(form);
     const trigger = payload.triggers[0]!;
 
-    const matches = triggerMatchesEvent({ conditions: trigger.conditions }, failureEvent);
+    const matches = triggerMatchesEvent(
+      { conditions: trigger.conditions },
+      failureEvent,
+    );
 
     expect(matches).toBe(false);
   });
@@ -91,8 +113,12 @@ describe("deployment-status trigger end-to-end: UI → payload → matcher (TASK
     const payload = buildAgentPayload(form);
     const trigger = payload.triggers[0]!;
 
-    expect(triggerMatchesEvent({ conditions: trigger.conditions }, successEvent)).toBe(true);
-    expect(triggerMatchesEvent({ conditions: trigger.conditions }, failureEvent)).toBe(true);
+    expect(
+      triggerMatchesEvent({ conditions: trigger.conditions }, successEvent),
+    ).toBe(true);
+    expect(
+      triggerMatchesEvent({ conditions: trigger.conditions }, failureEvent),
+    ).toBe(true);
   });
 
   // BT-168-DS-004: label helper reads from the same field that buildAgentPayload writes
@@ -105,10 +131,104 @@ describe("deployment-status trigger end-to-end: UI → payload → matcher (TASK
     const trigger = payload.triggers[0]!;
 
     // The label must include "success" and "production"
-    const label = formatTriggerLabel("github.deployment_status", trigger.conditions ?? {});
+    const label = formatTriggerLabel(
+      "github.deployment_status",
+      trigger.conditions ?? {},
+    );
 
     expect(label).toContain("success");
     expect(label).toContain("production");
     expect(label).toMatch(/^On deployment/);
+  });
+});
+
+describe("deployment-status trigger regression (TASK-168 bugfix)", () => {
+  // REG-168-DS-001: verifies conditions.actions receives the status — if the routing
+  // is reverted to conditions.severities the triggerMatchesEvent call returns false.
+  test("REG-168-DS-001: buildAgentPayload writes deployment status to conditions.actions, not conditions.severities", () => {
+    const form = makeDeploymentForm({ conditionSeverities: "failure" });
+    const payload = buildAgentPayload(form);
+    const trigger = payload.triggers[0]!;
+
+    // conditions.actions must contain the status ("failure")
+    expect(trigger.conditions?.actions).toEqual(["failure"]);
+    // conditions.severities must NOT be set for deployment triggers
+    expect(trigger.conditions?.severities).toBeUndefined();
+
+    // And the matcher must fire correctly end-to-end
+    const failDeployEvent: NormalizedBackgroundTriggerEvent = {
+      source: "github",
+      kind: "github.deployment_status",
+      externalId: "deployment_status:99:failure",
+      repoOwner: "acme",
+      repoName: "widgets",
+      action: "failure",
+      environment: "staging",
+    };
+    expect(
+      triggerMatchesEvent({ conditions: trigger.conditions }, failDeployEvent),
+    ).toBe(true);
+  });
+
+  // REG-168-DS-002: round-trip test — a stored agent with conditions.actions=["success"]
+  // must be restored to FormState.conditionSeverities = "success" by buildFormFromAgent.
+  test("REG-168-DS-002: buildFormFromAgent restores deployment status into conditionSeverities from conditions.actions", () => {
+    const storedAgent: BackgroundAgent = {
+      id: "agent-1",
+      name: "Deploy watcher",
+      description: null,
+      status: "enabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "React to deployments.",
+      outputMode: "none",
+      checkCommand: null,
+      triggers: [
+        {
+          id: "trigger-1",
+          name: "Deployment status",
+          kind: "github.deployment_status",
+          status: "enabled",
+          conditions: { actions: ["success"], environments: ["production"] },
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+    };
+
+    const form = buildFormFromAgent(storedAgent);
+
+    // conditionSeverities must hold the status value (from conditions.actions)
+    expect(form.conditionSeverities).toBe("success");
+    // conditionActions must be empty (deployment statuses come from conditionSeverities)
+    expect(form.conditionActions).toBe("");
+    // environments round-trip correctly
+    expect(form.conditionEnvironments).toBe("production");
+  });
+
+  // REG-168-DS-003: PR trigger must not be affected by the deployment routing fix.
+  test("REG-168-DS-003: PR trigger conditions.actions still comes from conditionActions (not conditionSeverities)", () => {
+    const prForm: FormState = {
+      name: "PR watcher",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "opened, synchronize",
+      conditionBranches: "main",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Review PRs.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: true,
+    };
+    const payload = buildAgentPayload(prForm);
+    const trigger = payload.triggers[0]!;
+
+    expect(trigger.conditions?.actions).toEqual(["opened", "synchronize"]);
+    expect(trigger.conditions?.branches).toEqual(["main"]);
+    expect(trigger.conditions?.severities).toBeUndefined();
   });
 });
