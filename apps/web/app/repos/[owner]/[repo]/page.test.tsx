@@ -148,10 +148,74 @@ describe("RepoDashboardPage", () => {
 
     // Agent data visible
     expect(html).toContain("Deploy smoke");
+    // Short instruction is under the 140-char cap — rendered as-is (no ellipsis)
     expect(html).toContain("Run smoke checks after deployments.");
-    // Run data visible
+    // Run data visible — short title is under the 120-char cap
     expect(html).toContain("Production deployment succeeded");
     expect(html).toContain("/background-runs/run-1");
+  });
+
+  // REDACT-001: long agent instructions must be server-side truncated — full body must NOT reach the DOM
+  test("REDACT-001: agent instructions beyond 140 chars are truncated server-side and secret marker is not in DOM", async () => {
+    const secretSuffix = "SECRET_MARKER_DO_NOT_RENDER";
+    // Build a 200-char instruction with the secret marker placed after the 140-char cap
+    const longInstructions =
+      "A".repeat(150) + secretSuffix + "B".repeat(24);
+    repoAgents = [
+      {
+        id: "agent-secret",
+        name: "Secret agent",
+        status: "enabled",
+        instructions: longInstructions,
+        triggers: [],
+      },
+    ];
+    repoRuns = [];
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    // The secret marker lives past position 140 — it must not appear in rendered HTML
+    expect(html).not.toContain(secretSuffix);
+    // The truncated preview (first 140 chars + ellipsis) must be present
+    expect(html).toContain("A".repeat(140) + "…");
+  });
+
+  // REDACT-002: long run payload summaries must be server-side truncated — full body must NOT reach the DOM
+  test("REDACT-002: run payload summary beyond 120 chars is truncated server-side and secret marker is not in DOM", async () => {
+    const secretSuffix = "SECRET_MARKER_DO_NOT_RENDER";
+    // Build a 200-char title with the secret marker placed after the 120-char cap
+    const longTitle = "B".repeat(130) + secretSuffix + "C".repeat(40);
+    repoAgents = [];
+    repoRuns = [
+      {
+        id: "run-secret",
+        triggerKind: "github.push",
+        status: "running",
+        payloadSummary: { title: longTitle },
+        externalId: "ext-secret",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-06-01T00:00:00.000Z"),
+      },
+    ];
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    // The secret marker lives past position 120 — it must not appear in rendered HTML
+    expect(html).not.toContain(secretSuffix);
+    // The truncated preview (first 120 chars + ellipsis) must be present
+    expect(html).toContain("B".repeat(120) + "…");
   });
 
   // BT-005: empty states when no agents or runs
