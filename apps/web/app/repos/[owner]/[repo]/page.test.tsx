@@ -214,4 +214,122 @@ describe("RepoDashboardPage", () => {
 
     expect(html).toContain("/settings/background-agents");
   });
+
+  // REGRESSION-001: dashboard still renders when an agent has multiple triggers
+  test("REGRESSION-001: dashboard renders correctly with multiple agents and triggers", async () => {
+    repoAgents = [
+      {
+        id: "agent-a",
+        name: "CI watcher",
+        status: "enabled",
+        instructions: "Watch CI runs.",
+        triggers: [
+          { id: "t-1", kind: "github.check_run" },
+          { id: "t-2", kind: "github.push" },
+          { id: "t-3", kind: "schedule.cron" },
+        ],
+      },
+      {
+        id: "agent-b",
+        name: "PR reviewer",
+        status: "disabled",
+        instructions: "Review PRs automatically.",
+        triggers: [{ id: "t-4", kind: "github.pull_request" }],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-x",
+        triggerKind: "github.check_run",
+        status: "running",
+        payloadSummary: { title: "CI check run" },
+        externalId: "ext-x",
+        sha: "deadbeef",
+        ref: null,
+        branch: "main",
+        createdAt: new Date("2026-06-01T10:00:00.000Z"),
+      },
+      {
+        id: "run-y",
+        triggerKind: "github.push",
+        status: "failed",
+        payloadSummary: { message: "Push to feature branch" },
+        externalId: "ext-y",
+        sha: null,
+        ref: null,
+        branch: "feature/xyz",
+        createdAt: new Date("2026-06-01T09:00:00.000Z"),
+      },
+    ];
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "org", repo: "myrepo" }),
+      }),
+    );
+
+    // All agents rendered
+    expect(html).toContain("CI watcher");
+    expect(html).toContain("PR reviewer");
+    // Disabled status chip text
+    expect(html).toContain("disabled");
+    // All triggers rendered
+    expect(html).toContain("github.check_run");
+    expect(html).toContain("github.push");
+    expect(html).toContain("schedule.cron");
+    expect(html).toContain("github.pull_request");
+    // Both runs rendered
+    expect(html).toContain("/background-runs/run-x");
+    expect(html).toContain("/background-runs/run-y");
+    expect(html).toContain("CI check run");
+    expect(html).toContain("Push to feature branch");
+    // Status chips are text-based, not color-only
+    expect(html).toContain("running");
+    expect(html).toContain("failed");
+  });
+
+  // REGRESSION-002: overview counts reflect actual agent and run totals
+  test("REGRESSION-002: Overview window shows correct agent and run counts", async () => {
+    repoAgents = [
+      {
+        id: "a1",
+        name: "Agent 1",
+        status: "enabled",
+        instructions: "instructions",
+        triggers: [],
+      },
+      {
+        id: "a2",
+        name: "Agent 2",
+        status: "disabled",
+        instructions: "instructions",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "r1",
+        triggerKind: "schedule.cron",
+        status: "succeeded",
+        payloadSummary: {},
+        externalId: "e1",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date(),
+      },
+    ];
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "myorg", repo: "myrepo" }),
+      }),
+    );
+
+    // Count 2 agents and 1 run — these numbers should appear in the Overview window
+    expect(html).toContain(">2<");
+    expect(html).toContain(">1<");
+  });
 });
