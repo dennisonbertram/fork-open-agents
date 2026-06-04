@@ -110,6 +110,7 @@ type AgentRun = {
     | "cancelled";
   errorKind: string | null;
   errorMessage: string | null;
+  outputUrl: string | null;
   resultSummary:
     | {
         headline: string;
@@ -130,6 +131,7 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
     status: "succeeded",
     errorKind: null,
     errorMessage: null,
+    outputUrl: null,
     resultSummary: {
       headline: "Run succeeded",
       checked: [],

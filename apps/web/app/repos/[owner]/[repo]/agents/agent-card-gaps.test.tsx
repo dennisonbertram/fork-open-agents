@@ -44,7 +44,11 @@ mock.module("next/navigation", () => ({
 
 // The SWR mock captures every invocation so we can assert on refreshInterval.
 mock.module("swr", () => ({
-  default: (key: unknown, _fetcher: unknown, options: Record<string, unknown> | undefined) => {
+  default: (
+    key: unknown,
+    _fetcher: unknown,
+    options: Record<string, unknown> | undefined,
+  ) => {
     swrCalls.push({ key, options });
     return {
       data: undefined,
@@ -57,7 +61,13 @@ mock.module("swr", () => ({
 
 const globalFetch = mock(async (_url: string, _opts?: unknown) => ({
   ok: true,
-  json: async () => ({ runIds: ["run-new"], enabled: true, matched: 1, created: 1, duplicates: 0 }),
+  json: async () => ({
+    runIds: ["run-new"],
+    enabled: true,
+    matched: 1,
+    created: 1,
+    duplicates: 0,
+  }),
 }));
 // @ts-expect-error — override global fetch for test
 global.fetch = globalFetch;
@@ -68,7 +78,13 @@ global.fetch = globalFetch;
 
 type AgentRun = {
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "skipped" | "cancelled";
+  status:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "cancelled";
   errorKind: string | null;
   errorMessage: string | null;
   outputUrl: string | null;
@@ -199,7 +215,12 @@ describe("Gap 1 — AgentCard missing controls", () => {
     });
 
     const html = renderToStaticMarkup(
-      <AgentCard agent={agent} latestRun={latestRun} owner="acme" repo="widgets" />,
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
     );
 
     // Must contain a "Latest output" label and the outputUrl
@@ -213,7 +234,12 @@ describe("Gap 1 — AgentCard missing controls", () => {
     const latestRun = makeRun({ status: "succeeded", outputUrl: null });
 
     const html = renderToStaticMarkup(
-      <AgentCard agent={agent} latestRun={latestRun} owner="acme" repo="widgets" />,
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
     );
 
     // Must NOT render a dead "Latest output" link or placeholder
@@ -250,12 +276,19 @@ describe("Gap 2 — Active-run polling behavior", () => {
     const latestRun = makeRun({ id: "run-active", status: "running" });
 
     renderToStaticMarkup(
-      <AgentCard agent={agent} latestRun={latestRun} owner="acme" repo="widgets" />,
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
     );
 
     // At least one useSWR invocation with a numeric refreshInterval > 0
     const pollingCall = swrCalls.find(
-      (c) => typeof c.options?.refreshInterval === "number" && (c.options.refreshInterval as number) > 0,
+      (c) =>
+        typeof c.options?.refreshInterval === "number" &&
+        (c.options.refreshInterval as number) > 0,
     );
     expect(pollingCall).not.toBeUndefined();
   });
@@ -266,11 +299,18 @@ describe("Gap 2 — Active-run polling behavior", () => {
     const latestRun = makeRun({ id: "run-q", status: "queued" });
 
     renderToStaticMarkup(
-      <AgentCard agent={agent} latestRun={latestRun} owner="acme" repo="widgets" />,
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
     );
 
     const pollingCall = swrCalls.find(
-      (c) => typeof c.options?.refreshInterval === "number" && (c.options.refreshInterval as number) > 0,
+      (c) =>
+        typeof c.options?.refreshInterval === "number" &&
+        (c.options.refreshInterval as number) > 0,
     );
     expect(pollingCall).not.toBeUndefined();
   });
@@ -281,12 +321,19 @@ describe("Gap 2 — Active-run polling behavior", () => {
     const latestRun = makeRun({ id: "run-done", status: "succeeded" });
 
     renderToStaticMarkup(
-      <AgentCard agent={agent} latestRun={latestRun} owner="acme" repo="widgets" />,
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
     );
 
     // No useSWR call should have a positive refreshInterval
     const pollingCall = swrCalls.find(
-      (c) => typeof c.options?.refreshInterval === "number" && (c.options.refreshInterval as number) > 0,
+      (c) =>
+        typeof c.options?.refreshInterval === "number" &&
+        (c.options.refreshInterval as number) > 0,
     );
     expect(pollingCall).toBeUndefined();
   });
@@ -300,7 +347,9 @@ describe("Gap 2 — Active-run polling behavior", () => {
     );
 
     const pollingCall = swrCalls.find(
-      (c) => typeof c.options?.refreshInterval === "number" && (c.options.refreshInterval as number) > 0,
+      (c) =>
+        typeof c.options?.refreshInterval === "number" &&
+        (c.options.refreshInterval as number) > 0,
     );
     expect(pollingCall).toBeUndefined();
   });

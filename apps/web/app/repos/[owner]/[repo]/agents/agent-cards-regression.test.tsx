@@ -79,6 +79,7 @@ type AgentRunViewModel = {
     | "cancelled";
   errorKind: string | null;
   errorMessage: string | null;
+  outputUrl: string | null;
   resultSummary:
     | {
         headline: string;
@@ -176,6 +177,7 @@ describe("Regression: pause does not delete configuration", () => {
       status: "succeeded",
       errorKind: null,
       errorMessage: null,
+      outputUrl: null,
       resultSummary: {
         headline: "Run succeeded — no output created",
         checked: [],
