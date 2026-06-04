@@ -9,6 +9,7 @@ import {
 } from "@/lib/background-agents/store";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
+import { RepoAgentsDashboard } from "./repo-agents-dashboard";
 
 type RepoAgentsPageProps = {
   params: Promise<{ owner: string; repo: string }>;
@@ -81,12 +82,15 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
               {owner}/{repo}
             </p>
           </div>
-          <Button asChild variant="outline">
-            <Link href="/settings/background-agents">
-              <Bot className="h-4 w-4" />
-              Settings
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <RepoAgentsDashboard owner={owner} repo={repo} />
+            <Button asChild variant="outline">
+              <Link href="/settings/background-agents">
+                <Bot className="h-4 w-4" />
+                Settings
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <section className="rounded-md border border-border">

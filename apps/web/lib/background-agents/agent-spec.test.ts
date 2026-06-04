@@ -53,7 +53,9 @@ describe("buildAgentPayload", () => {
   }
 
   test("BT-004: payload is repo-scoped to the form owner/name", () => {
-    const payload = buildAgentPayload(makeForm({ repoOwner: "acme", repoName: "widgets" }));
+    const payload = buildAgentPayload(
+      makeForm({ repoOwner: "acme", repoName: "widgets" }),
+    );
 
     expect(payload.repoOwner).toBe("acme");
     expect(payload.repoName).toBe("widgets");
@@ -99,7 +101,9 @@ describe("buildAgentPayload", () => {
     );
     expect(schedulePayload.triggers[0]?.schedule).toBe("@hourly");
 
-    const prPayload = buildAgentPayload(makeForm({ triggerKind: "github.pull_request" }));
+    const prPayload = buildAgentPayload(
+      makeForm({ triggerKind: "github.pull_request" }),
+    );
     expect(prPayload.triggers[0]?.schedule).toBeNull();
   });
 });

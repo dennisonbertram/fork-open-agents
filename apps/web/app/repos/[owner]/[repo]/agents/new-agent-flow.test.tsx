@@ -172,9 +172,9 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("write");
     // Should mention PR creation or pull requests
     const lowerHtml = html.toLowerCase();
-    expect(
-      lowerHtml.includes("pull request") || lowerHtml.includes("pr"),
-    ).toBe(true);
+    expect(lowerHtml.includes("pull request") || lowerHtml.includes("pr")).toBe(
+      true,
+    );
   });
 
   test("BT-027: no auto-merge controls anywhere in the spec editor", async () => {

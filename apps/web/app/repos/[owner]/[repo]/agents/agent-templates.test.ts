@@ -46,26 +46,35 @@ describe("AGENT_TEMPLATES", () => {
   });
 
   test("BT-015: PR Backlog Maintainer uses pull_request trigger", () => {
-    const template = AGENT_TEMPLATES.find((t) => t.name === "PR Backlog Maintainer");
+    const template = AGENT_TEMPLATES.find(
+      (t) => t.name === "PR Backlog Maintainer",
+    );
     expect(template).toBeDefined();
     expect(template?.triggerKind).toBe("github.pull_request");
   });
 
   test("BT-016: Failing Checks Fixer uses deployment_status or pull_request trigger", () => {
-    const template = AGENT_TEMPLATES.find((t) => t.name === "Failing Checks Fixer");
+    const template = AGENT_TEMPLATES.find(
+      (t) => t.name === "Failing Checks Fixer",
+    );
     expect(template).toBeDefined();
+    if (!template) throw new Error("template not found");
     const validTriggers = ["github.deployment_status", "github.pull_request"];
-    expect(validTriggers).toContain(template?.triggerKind);
+    expect(validTriggers).toContain(template.triggerKind);
   });
 
   test("BT-017: Issue Triage Agent uses github.issue trigger", () => {
-    const template = AGENT_TEMPLATES.find((t) => t.name === "Issue Triage Agent");
+    const template = AGENT_TEMPLATES.find(
+      (t) => t.name === "Issue Triage Agent",
+    );
     expect(template).toBeDefined();
     expect(template?.triggerKind).toBe("github.issue");
   });
 
   test("BT-018: Release Notes Agent uses schedule.cron trigger", () => {
-    const template = AGENT_TEMPLATES.find((t) => t.name === "Release Notes Agent");
+    const template = AGENT_TEMPLATES.find(
+      (t) => t.name === "Release Notes Agent",
+    );
     expect(template).toBeDefined();
     expect(template?.triggerKind).toBe("schedule.cron");
   });
