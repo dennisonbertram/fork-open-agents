@@ -259,4 +259,116 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("No outputs recorded.");
     expect(html).not.toContain("Refreshing");
   });
+
+  // BT-168-RD-001: PR event-triggered run shows PR number in event context strip
+  test("BT-168-RD-001: PR event-triggered run shows PR number, action, actor, and external ID in event context", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      run: {
+        ...detailData().run,
+        triggerKind: "github.pull_request",
+        source: "github",
+        prNumber: 42,
+        issueNumber: null,
+        deploymentUrl: null,
+        externalId: "pull_request:9999:opened:abc123",
+        branch: "main",
+        actor: "octocat",
+        action: "opened",
+      } as Parameters<typeof detailData>[0]["run"] & {
+        actor?: string;
+        action?: string;
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // Trigger kind visible
+    expect(html).toContain("github.pull_request");
+    // PR number visible
+    expect(html).toContain("PR #42");
+    // External event ID visible in debug section
+    expect(html).toContain("pull_request:9999:opened:abc123");
+  });
+
+  // BT-168-RD-002: Issue event-triggered run shows issue number in event context
+  test("BT-168-RD-002: issue event run shows issue number and external ID", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      run: {
+        ...detailData().run,
+        triggerKind: "github.issue",
+        source: "github",
+        prNumber: null,
+        issueNumber: 17,
+        deploymentUrl: null,
+        externalId: "issue:555:labeled",
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // Trigger kind visible
+    expect(html).toContain("github.issue");
+    // Issue number visible in trigger target
+    expect(html).toContain("Issue #17");
+    // External ID visible
+    expect(html).toContain("issue:555:labeled");
+  });
+
+  // BT-168-RD-003: Deployment event run shows deployment URL and external ID
+  test("BT-168-RD-003: deployment event run shows deployment URL and external ID", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      run: {
+        ...detailData().run,
+        triggerKind: "github.deployment_status",
+        source: "github",
+        prNumber: null,
+        issueNumber: null,
+        deploymentUrl: "https://myapp-preview.vercel.app",
+        externalId: "deployment_status:77:success",
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // Trigger kind visible
+    expect(html).toContain("github.deployment_status");
+    // Deployment URL visible as trigger target
+    expect(html).toContain("https://myapp-preview.vercel.app");
+    // External ID visible
+    expect(html).toContain("deployment_status:77:success");
+  });
+
+  // BT-168-RD-004: Event context section shows trigger kind label
+  test("BT-168-RD-004: run detail renders Event context section with trigger kind", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      run: {
+        ...detailData().run,
+        triggerKind: "github.pull_request",
+        prNumber: 7,
+      },
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // The "Event context" section heading should be present
+    expect(html).toContain("Event context");
+    // Trigger kind shown
+    expect(html).toContain("github.pull_request");
+  });
 });
