@@ -151,9 +151,7 @@ let createRunResult: { created: boolean; run: { id: string } } = {
   created: true,
   run: { id: "run-new" },
 };
-const createRunForTrigger = mock(
-  async (_params: unknown) => createRunResult,
-);
+const createRunForTrigger = mock(async (_params: unknown) => createRunResult);
 const recordBackgroundAgentEvent = mock(async () => undefined);
 const updateBackgroundAgentRunStatus = mock(async () => undefined);
 let matchingRows: Array<{

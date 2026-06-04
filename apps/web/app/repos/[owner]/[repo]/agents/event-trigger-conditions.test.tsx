@@ -137,9 +137,8 @@ describe("AgentSpecEditor — event trigger condition fields", () => {
 // These test buildAgentPayload handles conditions correctly for each trigger type
 describe("buildAgentPayload — event trigger conditions", () => {
   test("BT-168-COND-006: PR trigger conditions (actions, branches, labels) appear in payload", async () => {
-    const { buildAgentPayload } = await import(
-      "@/lib/background-agents/agent-spec"
-    );
+    const { buildAgentPayload } =
+      await import("@/lib/background-agents/agent-spec");
 
     const payload = buildAgentPayload({
       name: "PR Agent",
@@ -167,9 +166,8 @@ describe("buildAgentPayload — event trigger conditions", () => {
   });
 
   test("BT-168-COND-007: Issue trigger conditions (actions, labels) appear in payload", async () => {
-    const { buildAgentPayload } = await import(
-      "@/lib/background-agents/agent-spec"
-    );
+    const { buildAgentPayload } =
+      await import("@/lib/background-agents/agent-spec");
 
     const payload = buildAgentPayload({
       name: "Issue Agent",
@@ -197,9 +195,8 @@ describe("buildAgentPayload — event trigger conditions", () => {
   });
 
   test("BT-168-COND-008: Deployment trigger conditions (environments, severities) appear in payload", async () => {
-    const { buildAgentPayload } = await import(
-      "@/lib/background-agents/agent-spec"
-    );
+    const { buildAgentPayload } =
+      await import("@/lib/background-agents/agent-spec");
 
     const payload = buildAgentPayload({
       name: "Deploy Agent",
