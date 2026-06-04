@@ -3,6 +3,11 @@ import Link from "next/link";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import type { BackgroundAgentRun } from "@/lib/db/schema";
 import { DashboardStatusPill } from "./dashboard-status-pill";
+import {
+  INSTRUCTION_PREVIEW_CAP,
+  SUMMARY_PREVIEW_CAP,
+  truncatePreview,
+} from "./truncate-preview";
 
 // Type aliases for consumers of these window components.
 export type DashboardRun = BackgroundAgentRun;
@@ -115,7 +120,7 @@ export function AgentsWindow({ agents }: AgentsWindowProps) {
                   <DashboardStatusPill status={agent.status} />
                 </div>
                 <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                  {agent.instructions}
+                  {truncatePreview(agent.instructions, INSTRUCTION_PREVIEW_CAP)}
                 </p>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -172,9 +177,12 @@ export function ActivityWindow({ runs }: ActivityWindowProps) {
                   <DashboardStatusPill status={run.status} />
                 </div>
                 <p className="mt-1 truncate text-sm">
-                  {run.payloadSummary.title ??
-                    run.payloadSummary.message ??
-                    run.externalId}
+                  {truncatePreview(
+                    run.payloadSummary.title ??
+                      run.payloadSummary.message ??
+                      run.externalId,
+                    SUMMARY_PREVIEW_CAP,
+                  )}
                 </p>
                 <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
                   {run.sha ?? run.ref ?? run.branch ?? "no ref"}
