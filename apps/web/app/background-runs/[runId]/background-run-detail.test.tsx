@@ -131,6 +131,91 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("ready_pr");
   });
 
+  // BT-UI-001: summary section renders above timeline when summary is present (#163)
+  test("BT-UI-001: summary section renders above raw timeline when resultSummary present", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+    const dataWithSummary = {
+      ...detailData(),
+      run: {
+        ...detailData().run,
+        resultSummary: {
+          headline: "Run succeeded — created ready_pr #42",
+          checked: ["bun --bun run ci passed"],
+          changed: [],
+          blocked: [],
+          artifacts: [
+            {
+              kind: "ready_pr",
+              label: "PR #42",
+              url: "https://github.com/acme/widgets/pull/42",
+              prNumber: 42,
+            },
+          ],
+          next: [],
+        },
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={dataWithSummary} />,
+    );
+
+    // Summary section must exist
+    expect(html).toContain("Run summary");
+    expect(html).toContain("Run succeeded — created ready_pr #42");
+    // Summary must appear before (earlier position in HTML) the raw timeline
+    const summaryPos = html.indexOf("Run summary");
+    const timelinePos = html.indexOf("Live timeline");
+    expect(summaryPos).toBeGreaterThanOrEqual(0);
+    expect(timelinePos).toBeGreaterThan(summaryPos);
+  });
+
+  // BT-UI-002: summary section is absent / gracefully absent when no summary (#163)
+  test("BT-UI-002: no summary section when resultSummary is null", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={detailData()} />,
+    );
+
+    // "Summary unavailable" shown or summary section absent — either is acceptable
+    // but we must NOT show a null/undefined dump
+    expect(html).not.toContain("[object Object]");
+    expect(html).not.toContain("undefined");
+  });
+
+  // BT-UI-003: failed run with summary shows blocked section (#163)
+  test("BT-UI-003: failed run summary shows blocked section", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+    const failedWithSummary = {
+      ...detailData(),
+      run: {
+        ...detailData().run,
+        status: "failed" as const,
+        errorKind: "checks_failed",
+        errorMessage: "Required background-agent check failed.",
+        finishedAt: "2026-05-27T12:03:00.000Z",
+        resultSummary: {
+          headline: "Run failed — checks_failed",
+          checked: [],
+          changed: [],
+          blocked: ["checks_failed: Required background-agent check failed."],
+          artifacts: [],
+          next: ["Fix CI and re-trigger"],
+        },
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={failedWithSummary} />,
+    );
+
+    expect(html).toContain("Run summary");
+    expect(html).toContain("Run failed — checks_failed");
+    expect(html).toContain("Blocked");
+    expect(html).toContain("checks_failed");
+  });
+
   test("renders typed failure evidence when a run fails", async () => {
     const { BackgroundRunDetail } = await componentModulePromise;
 
