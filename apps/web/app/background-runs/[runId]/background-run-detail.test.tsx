@@ -264,9 +264,11 @@ describe("BackgroundRunDetail", () => {
   test("BT-168-RD-001: PR event-triggered run shows PR number, action, actor, and external ID in event context", async () => {
     const { BackgroundRunDetail } = await componentModulePromise;
 
-    const data = detailData({
+    const base = detailData();
+    const data: BackgroundRunDetailData = {
+      ...base,
       run: {
-        ...detailData().run,
+        ...base.run,
         triggerKind: "github.pull_request",
         source: "github",
         prNumber: 42,
@@ -274,13 +276,8 @@ describe("BackgroundRunDetail", () => {
         deploymentUrl: null,
         externalId: "pull_request:9999:opened:abc123",
         branch: "main",
-        actor: "octocat",
-        action: "opened",
-      } as Parameters<typeof detailData>[0]["run"] & {
-        actor?: string;
-        action?: string;
       },
-    });
+    };
 
     const html = renderToStaticMarkup(
       <BackgroundRunDetail initialData={data} />,

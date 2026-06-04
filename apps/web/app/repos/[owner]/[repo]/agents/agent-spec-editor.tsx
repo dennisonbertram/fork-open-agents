@@ -24,6 +24,7 @@ import {
 } from "@/lib/background-agents/agent-spec";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePreview, ScheduleValidationMessage } from "./schedule-preview";
+import { EventTriggerConditions } from "./event-trigger-conditions";
 
 type AgentSpecEditorProps = {
   repoOwner: string;
@@ -36,6 +37,11 @@ type AgentSpecEditorProps = {
   initialCheckCommand: string;
   initialEnabled: boolean;
   initialSchedule?: string;
+  initialConditionActions?: string;
+  initialConditionBranches?: string;
+  initialConditionLabels?: string;
+  initialConditionEnvironments?: string;
+  initialConditionSeverities?: string;
   onSave: (
     payload: ReturnType<typeof buildAgentPayload>,
   ) => void | Promise<void>;
@@ -62,6 +68,11 @@ export function AgentSpecEditor({
   initialCheckCommand,
   initialEnabled,
   initialSchedule = "",
+  initialConditionActions = "",
+  initialConditionBranches = "",
+  initialConditionLabels = "",
+  initialConditionEnvironments = "",
+  initialConditionSeverities = "",
   onSave,
   onRunTest,
 }: AgentSpecEditorProps) {
@@ -69,6 +80,21 @@ export function AgentSpecEditor({
   const [triggerKind, setTriggerKind] =
     useState<TriggerKind>(initialTriggerKind);
   const [schedule, setSchedule] = useState(initialSchedule);
+  const [conditionActions, setConditionActions] = useState(
+    initialConditionActions,
+  );
+  const [conditionBranches, setConditionBranches] = useState(
+    initialConditionBranches,
+  );
+  const [conditionLabels, setConditionLabels] = useState(
+    initialConditionLabels,
+  );
+  const [conditionEnvironments, setConditionEnvironments] = useState(
+    initialConditionEnvironments,
+  );
+  const [conditionSeverities, setConditionSeverities] = useState(
+    initialConditionSeverities,
+  );
   const [instructions, setInstructions] = useState(initialInstructions);
   const [outputMode, setOutputMode] = useState<OutputMode>(initialOutputMode);
   const [checkCommand, setCheckCommand] = useState(initialCheckCommand);
@@ -96,11 +122,11 @@ export function AgentSpecEditor({
       repoName,
       triggerKind,
       schedule,
-      conditionActions: "",
-      conditionBranches: "",
-      conditionLabels: "",
-      conditionEnvironments: "",
-      conditionSeverities: "",
+      conditionActions,
+      conditionBranches,
+      conditionLabels,
+      conditionEnvironments,
+      conditionSeverities,
       instructions,
       outputMode,
       checkCommand,
@@ -188,6 +214,19 @@ export function AgentSpecEditor({
             <SchedulePreview schedule={schedule} fromDate={new Date()} />
           </div>
         )}
+        <EventTriggerConditions
+          triggerKind={triggerKind}
+          conditionActions={conditionActions}
+          conditionBranches={conditionBranches}
+          conditionLabels={conditionLabels}
+          conditionEnvironments={conditionEnvironments}
+          conditionSeverities={conditionSeverities}
+          onConditionActionsChange={setConditionActions}
+          onConditionBranchesChange={setConditionBranches}
+          onConditionLabelsChange={setConditionLabels}
+          onConditionEnvironmentsChange={setConditionEnvironments}
+          onConditionSeveritiesChange={setConditionSeverities}
+        />
       </section>
 
       {/* Instructions section */}

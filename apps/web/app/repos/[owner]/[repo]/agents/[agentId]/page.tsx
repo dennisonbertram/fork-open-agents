@@ -10,6 +10,8 @@ import {
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
+import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
+import type { TriggerKind } from "@/lib/background-agents/agent-spec";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -192,43 +194,84 @@ export default async function AgentDetailPage({
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {agent.triggers.map((trigger) => (
-                <div key={trigger.id} className="px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      {trigger.kind}
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      {trigger.name}
-                    </span>
-                    <span
-                      className={cn(
-                        "inline-flex h-4 items-center rounded-full border px-1 text-[9px] font-medium",
-                        trigger.status === "enabled"
-                          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                          : "border-border bg-muted/40 text-muted-foreground",
-                      )}
-                    >
-                      {trigger.status}
-                    </span>
+              {agent.triggers.map((trigger) => {
+                const knownKinds: TriggerKind[] = [
+                  "github.pull_request",
+                  "github.issue",
+                  "github.deployment_status",
+                  "schedule.cron",
+                  "webhook.error",
+                ];
+                const isKnown = knownKinds.includes(
+                  trigger.kind as TriggerKind,
+                );
+                const readableLabel = isKnown
+                  ? formatTriggerLabel(
+                      trigger.kind as TriggerKind,
+                      (trigger.conditions as Record<string, string[]>) ?? {},
+                    )
+                  : trigger.name;
+
+                // Render non-empty conditions
+                const conditions = (trigger.conditions ?? {}) as Record<
+                  string,
+                  string[] | undefined
+                >;
+                const conditionEntries = Object.entries(conditions).filter(
+                  ([, v]) => v && v.length > 0,
+                );
+
+                return (
+                  <div key={trigger.id} className="px-4 py-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                        {trigger.kind}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {readableLabel}
+                      </span>
+                      <span
+                        className={cn(
+                          "inline-flex h-4 items-center rounded-full border px-1 text-[9px] font-medium",
+                          trigger.status === "enabled"
+                            ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                            : "border-border bg-muted/40 text-muted-foreground",
+                        )}
+                      >
+                        {trigger.status}
+                      </span>
+                    </div>
+                    {conditionEntries.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+                        {conditionEntries.map(([key, values]) => (
+                          <p
+                            key={key}
+                            className="text-[11px] text-muted-foreground"
+                          >
+                            <span className="font-mono">{key}:</span>{" "}
+                            {values?.join(", ")}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {trigger.schedule && (
+                      <p className="mt-1 font-mono text-xs text-muted-foreground">
+                        Schedule: {trigger.schedule}
+                      </p>
+                    )}
+                    {trigger.lastRunAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Last run: {formatDate(trigger.lastRunAt)}
+                      </p>
+                    )}
+                    {trigger.nextRunAt && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Next run: {formatDate(trigger.nextRunAt)}
+                      </p>
+                    )}
                   </div>
-                  {trigger.schedule && (
-                    <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      Schedule: {trigger.schedule}
-                    </p>
-                  )}
-                  {trigger.lastRunAt && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Last run: {formatDate(trigger.lastRunAt)}
-                    </p>
-                  )}
-                  {trigger.nextRunAt && (
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Next run: {formatDate(trigger.nextRunAt)}
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { cn } from "@/lib/utils";
+import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
+import type { TriggerKind } from "@/lib/background-agents/agent-spec";
 import { AgentScheduleCard } from "./agent-schedule-card";
 
 // ---- Types ------------------------------------------------------------------
@@ -140,10 +142,31 @@ function StatusPill({ status }: { status: CardStatus }) {
   );
 }
 
-function TriggerLabel({ kind }: { kind: string }) {
+function TriggerLabel({
+  kind,
+  conditions,
+}: {
+  kind: string;
+  conditions?: Record<string, string[]>;
+}) {
+  const isKnownKind = [
+    "github.pull_request",
+    "github.issue",
+    "github.deployment_status",
+    "schedule.cron",
+    "webhook.error",
+  ].includes(kind);
+
+  const label = isKnownKind
+    ? formatTriggerLabel(kind as TriggerKind, conditions ?? {})
+    : kind;
+
   return (
-    <span className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {kind}
+    <span
+      className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+      title={kind}
+    >
+      {label}
     </span>
   );
 }
@@ -257,7 +280,13 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
       {agent.triggers.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-1">
           {agent.triggers.map((trigger) => (
-            <TriggerLabel key={trigger.id} kind={trigger.kind} />
+            <TriggerLabel
+              key={trigger.id}
+              kind={trigger.kind}
+              conditions={
+                trigger.conditions as Record<string, string[]> | undefined
+              }
+            />
           ))}
         </div>
       )}

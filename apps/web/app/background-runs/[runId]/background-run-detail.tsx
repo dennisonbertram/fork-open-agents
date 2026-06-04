@@ -402,6 +402,64 @@ export function BackgroundRunDetail({
           {runCost && <ProofItem label="Cost" value={runCost} />}
         </section>
 
+        <section className="rounded-md border border-border">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-medium">Event context</h2>
+          </div>
+          <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Trigger kind
+              </p>
+              <p className="mt-1 font-mono text-xs">{run.triggerKind}</p>
+            </div>
+            {run.prNumber !== null && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Pull request
+                </p>
+                <p className="mt-1 font-mono text-xs">PR #{run.prNumber}</p>
+              </div>
+            )}
+            {run.issueNumber !== null && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Issue
+                </p>
+                <p className="mt-1 font-mono text-xs">
+                  Issue #{run.issueNumber}
+                </p>
+              </div>
+            )}
+            {run.deploymentUrl && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Deployment URL
+                </p>
+                <p className="mt-1 truncate font-mono text-xs">
+                  {run.deploymentUrl}
+                </p>
+              </div>
+            )}
+            {run.branch && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Branch
+                </p>
+                <p className="mt-1 font-mono text-xs">{run.branch}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                External event ID
+              </p>
+              <p className="mt-1 truncate font-mono text-xs">
+                {run.externalId}
+              </p>
+            </div>
+          </div>
+        </section>
+
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {run.resultSummary ? (
