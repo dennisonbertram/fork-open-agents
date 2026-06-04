@@ -18,9 +18,6 @@ const redirect = mock((_path: string) => {
 const push = mock((_url: string) => undefined);
 const mutate = mock(async () => undefined);
 
-// Track how many times useSWR is invoked with a refreshInterval
-let swrCallsWithRefreshInterval = 0;
-
 let agentsSwrData: unknown = undefined;
 let readinessSwrData: unknown = undefined;
 
@@ -30,17 +27,15 @@ mock.module("next/navigation", () => ({
 }));
 
 mock.module("swr", () => ({
-  default: (_key: unknown, _fetcher?: unknown, opts?: { refreshInterval?: number }) => {
-    if (opts?.refreshInterval && opts.refreshInterval > 0) {
-      swrCallsWithRefreshInterval++;
-    }
-    return {
-      data: typeof _key === "string" && _key.includes("readiness") ? readinessSwrData : agentsSwrData,
-      error: null,
-      isLoading: false,
-      mutate,
-    };
-  },
+  default: (_key: unknown) => ({
+    data:
+      typeof _key === "string" && _key.includes("readiness")
+        ? readinessSwrData
+        : agentsSwrData,
+    error: null,
+    isLoading: false,
+    mutate,
+  }),
 }));
 
 let sessionUserId = "user-1";
@@ -68,7 +63,6 @@ describe("Agents page with agent cards", () => {
     repoRuns = [];
     agentsSwrData = undefined;
     readinessSwrData = undefined;
-    swrCallsWithRefreshInterval = 0;
     push.mockClear();
     mutate.mockClear();
     redirect.mockClear();

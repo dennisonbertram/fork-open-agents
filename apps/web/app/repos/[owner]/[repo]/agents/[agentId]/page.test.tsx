@@ -121,7 +121,14 @@ describe("AgentDetailPage", () => {
           checked: ["Smoke tests passed"],
           changed: [],
           blocked: [],
-          artifacts: [{ kind: "comment", label: "comment", url: "https://github.com/acme/widgets/issues/1#comment-1", prNumber: null }],
+          artifacts: [
+            {
+              kind: "comment",
+              label: "comment",
+              url: "https://github.com/acme/widgets/issues/1#comment-1",
+              prNumber: null,
+            },
+          ],
           next: [],
         },
         requestId: null,
@@ -139,7 +146,11 @@ describe("AgentDetailPage", () => {
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 
@@ -160,7 +171,11 @@ describe("AgentDetailPage", () => {
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 
@@ -177,7 +192,11 @@ describe("AgentDetailPage", () => {
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 
@@ -189,7 +208,11 @@ describe("AgentDetailPage", () => {
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 
@@ -200,12 +223,19 @@ describe("AgentDetailPage", () => {
   });
 
   test("BT-167-014: shows current state as 'Paused' when agent is disabled", async () => {
-    mockAgent = { ...(mockAgent as Record<string, unknown>), status: "disabled" };
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      status: "disabled",
+    };
     const { default: AgentDetailPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 
@@ -218,7 +248,11 @@ describe("AgentDetailPage", () => {
 
     await expect(
       AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     ).rejects.toThrow("redirect");
 
@@ -231,7 +265,11 @@ describe("AgentDetailPage", () => {
 
     await expect(
       AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "missing-agent" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "missing-agent",
+        }),
       }),
     ).rejects.toThrow("redirect");
 
@@ -243,7 +281,11 @@ describe("AgentDetailPage", () => {
 
     const html = renderToStaticMarkup(
       await AgentDetailPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets", agentId: "agent-1" }),
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
       }),
     );
 

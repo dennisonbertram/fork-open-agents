@@ -17,6 +17,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
+import type { RunSummaryArtifact } from "@/lib/background-agents/run-summary";
 
 // --- Mocks -------------------------------------------------------------------
 
@@ -30,7 +31,13 @@ let fetchResult: {
   json: () => Promise<unknown>;
 } = {
   ok: true,
-  json: async () => ({ runIds: ["run-123"], enabled: true, matched: 1, created: 1, duplicates: 0 }),
+  json: async () => ({
+    runIds: ["run-123"],
+    enabled: true,
+    matched: 1,
+    created: 1,
+    duplicates: 0,
+  }),
 };
 
 mock.module("next/navigation", () => ({
@@ -47,12 +54,14 @@ mock.module("swr", () => ({
 }));
 
 const globalFetch = mock(async (_url: string, _opts?: unknown) => fetchResult);
-// @ts-ignore — override global fetch for test
+// @ts-expect-error — override global fetch for test
 global.fetch = globalFetch;
 
 // --- Helpers -----------------------------------------------------------------
 
-function makeAgent(overrides: Partial<BackgroundAgentWithTriggers> = {}): BackgroundAgentWithTriggers {
+function makeAgent(
+  overrides: Partial<BackgroundAgentWithTriggers> = {},
+): BackgroundAgentWithTriggers {
   return {
     id: "agent-1",
     userId: "user-1",
@@ -92,10 +101,26 @@ function makeAgent(overrides: Partial<BackgroundAgentWithTriggers> = {}): Backgr
 
 type AgentRun = {
   id: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "skipped" | "cancelled";
+  status:
+    | "queued"
+    | "running"
+    | "succeeded"
+    | "failed"
+    | "skipped"
+    | "cancelled";
   errorKind: string | null;
   errorMessage: string | null;
-  resultSummary: { headline: string; checked: string[]; changed: string[]; blocked: string[]; artifacts: unknown[]; next: string[] } | null | undefined;
+  resultSummary:
+    | {
+        headline: string;
+        checked: string[];
+        changed: string[];
+        blocked: string[];
+        artifacts: RunSummaryArtifact[];
+        next: string[];
+      }
+    | null
+    | undefined;
   createdAt: Date;
 };
 
@@ -105,7 +130,14 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
     status: "succeeded",
     errorKind: null,
     errorMessage: null,
-    resultSummary: { headline: "Run succeeded", checked: [], changed: [], blocked: [], artifacts: [], next: [] },
+    resultSummary: {
+      headline: "Run succeeded",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+    },
     createdAt: new Date("2026-06-01"),
     ...overrides,
   };
@@ -124,7 +156,13 @@ describe("AgentCard — status matrix", () => {
     globalFetch.mockClear();
     fetchResult = {
       ok: true,
-      json: async () => ({ runIds: ["run-123"], enabled: true, matched: 1, created: 1, duplicates: 0 }),
+      json: async () => ({
+        runIds: ["run-123"],
+        enabled: true,
+        matched: 1,
+        created: 1,
+        duplicates: 0,
+      }),
     };
   });
 
@@ -133,12 +171,7 @@ describe("AgentCard — status matrix", () => {
     const agent = makeAgent();
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html.toLowerCase()).toContain("never run");
@@ -199,12 +232,7 @@ describe("AgentCard — status matrix", () => {
     const agent = makeAgent({ status: "disabled" });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html.toLowerCase()).toContain("paused");
@@ -218,12 +246,7 @@ describe("AgentCard — status matrix", () => {
     const agent = makeAgent({ status: "enabled" });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html).toContain("Run now");
@@ -234,12 +257,7 @@ describe("AgentCard — status matrix", () => {
     const agent = makeAgent({ status: "enabled" });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html).toContain("Pause");
@@ -270,12 +288,7 @@ describe("AgentCard — status matrix", () => {
     });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     // Schedule trigger kind is shown
@@ -289,12 +302,7 @@ describe("AgentCard — status matrix", () => {
     const agent = makeAgent({ id: "agent-42" });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     // Should link to the agent detail page
@@ -338,12 +346,7 @@ describe("AgentCard — name, purpose, trigger label", () => {
     });
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html).toContain("PR Triage Bot");
@@ -355,12 +358,7 @@ describe("AgentCard — name, purpose, trigger label", () => {
     const agent = makeAgent();
 
     const html = renderToStaticMarkup(
-      <AgentCard
-        agent={agent}
-        latestRun={null}
-        owner="acme"
-        repo="widgets"
-      />,
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
 
     expect(html).toContain("deployment");
