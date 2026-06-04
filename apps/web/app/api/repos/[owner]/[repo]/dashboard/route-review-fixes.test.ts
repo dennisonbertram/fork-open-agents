@@ -16,11 +16,18 @@ type AuthResult =
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 
 type MockPrSummary =
-  | { ok: true; prs: Array<{ number: number; title: string; isDraft: boolean }> }
+  | {
+      ok: true;
+      prs: Array<{ number: number; title: string; isDraft: boolean }>;
+    }
   | { ok: false; errorKind: string };
 
 type MockIssueSummary =
-  | { ok: true; totalOpen: number; recent: Array<{ number: number; title: string }> }
+  | {
+      ok: true;
+      totalOpen: number;
+      recent: Array<{ number: number; title: string }>;
+    }
   | { ok: false; errorKind: string };
 
 type MockActionsSummary =

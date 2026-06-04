@@ -189,9 +189,7 @@ function resolveChecksStatus(
   }
 
   // If any check is in progress, status is pending
-  const hasPending = checkRuns.some(
-    (c) => c.status !== "completed",
-  );
+  const hasPending = checkRuns.some((c) => c.status !== "completed");
   if (hasPending) {
     return "pending";
   }

@@ -9,7 +9,12 @@ import {
 import { getBackgroundAgentReadinessWithGitHubAppMetadata } from "@/lib/background-agents/readiness";
 import { getBackgroundAgentRepoReadiness } from "@/lib/background-agents/repo-readiness";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
-import type { DashboardErrorKind, PrSummary, IssueSummary, ActionsSummary } from "@/lib/github/repo-dashboard";
+import type {
+  DashboardErrorKind,
+  PrSummary,
+  IssueSummary,
+  ActionsSummary,
+} from "@/lib/github/repo-dashboard";
 
 type RouteContext = {
   params: Promise<{ owner: string; repo: string }>;
@@ -85,9 +90,18 @@ export async function GET(_request: Request, context: RouteContext) {
       dashboardDataResult.status === "fulfilled"
         ? dashboardDataResult.value
         : {
-            prSummary: { ok: false, errorKind: "provider_unavailable" } as const,
-            issueSummary: { ok: false, errorKind: "provider_unavailable" } as const,
-            actionsSummary: { ok: false, errorKind: "provider_unavailable" } as const,
+            prSummary: {
+              ok: false,
+              errorKind: "provider_unavailable",
+            } as const,
+            issueSummary: {
+              ok: false,
+              errorKind: "provider_unavailable",
+            } as const,
+            actionsSummary: {
+              ok: false,
+              errorKind: "provider_unavailable",
+            } as const,
           };
 
     let { prSummary, issueSummary, actionsSummary } = dashboardData;
@@ -203,7 +217,7 @@ export async function GET(_request: Request, context: RouteContext) {
       readiness,
       repoReadiness,
     });
-  } catch (error: unknown) {
+  } catch {
     const latencyMs = Date.now() - startMs;
     const errorKind: DashboardErrorKind = "unknown_dashboard_failure";
 

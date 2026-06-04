@@ -184,7 +184,9 @@ describe("Helper review-fix: BLOCKER 3 — true open issue count", () => {
     });
 
     if (!result.issueSummary.ok) {
-      throw new Error(`Expected ok issueSummary, got ${result.issueSummary.errorKind}`);
+      throw new Error(
+        `Expected ok issueSummary, got ${result.issueSummary.errorKind}`,
+      );
     }
 
     // Must show the TRUE count, not recent.length
@@ -283,7 +285,9 @@ describe("Helper review-fix: BLOCKER 4 — real PR checksStatus", () => {
     });
 
     if (!result.prSummary.ok) {
-      throw new Error(`Expected ok prSummary, got ${result.prSummary.errorKind}`);
+      throw new Error(
+        `Expected ok prSummary, got ${result.prSummary.errorKind}`,
+      );
     }
 
     const pr = result.prSummary.prs[0];

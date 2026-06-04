@@ -23,6 +23,8 @@ describe("github-windows review-fix: LOW — invalid_repo error copy", () => {
     // After fix: should mention "not found" or "does not exist"
     expect(html).toMatch(/not found|does not exist|invalid|repo/i);
     // Must NOT only show the generic fallback message
-    expect(html).not.toBe(expect.stringContaining("GitHub data could not be loaded."));
+    expect(html).not.toBe(
+      expect.stringContaining("GitHub data could not be loaded."),
+    );
   });
 });

@@ -36,7 +36,18 @@ mock.module("@/lib/github/repo-dashboard", () => ({
   getRepoDashboardData: async () => ({
     prSummary: {
       ok: true,
-      prs: [{ number: 3, title: "Important PR", isDraft: false, author: "alice", baseBranch: "main", updatedAt: new Date().toISOString(), checksStatus: "passing", url: "https://github.com/acme/widgets/pull/3" }],
+      prs: [
+        {
+          number: 3,
+          title: "Important PR",
+          isDraft: false,
+          author: "alice",
+          baseBranch: "main",
+          updatedAt: new Date().toISOString(),
+          checksStatus: "passing",
+          url: "https://github.com/acme/widgets/pull/3",
+        },
+      ],
     },
     issueSummary: { ok: true, totalOpen: 5, recent: [] },
     actionsSummary: { ok: true, latestStatus: "passing", recentRuns: [] },
