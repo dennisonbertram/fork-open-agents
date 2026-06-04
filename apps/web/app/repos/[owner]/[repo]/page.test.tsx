@@ -184,7 +184,9 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("Issues");
     expect(html).toContain("Actions");
     // At least one unavailability signal
-    expect(html).toMatch(/not available|coming soon|unavailable|not connected/i);
+    expect(html).toMatch(
+      /not available|coming soon|unavailable|not connected/i,
+    );
   });
 
   // BT-007: link to GitHub repo present in header

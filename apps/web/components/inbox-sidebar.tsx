@@ -5,6 +5,7 @@ import {
   ChevronDown,
   CircleDashed,
   FolderGit2,
+  LayoutDashboard,
   MessageSquare,
   GitBranch,
   GitMerge,
@@ -1112,6 +1113,21 @@ export function InboxSidebar({
                         <span
                           className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
                         >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Link
+                                href={`/repos/${groupRepoOwner}/${groupRepoName}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                aria-label={`Open repo dashboard for ${group.label}`}
+                              >
+                                <LayoutDashboard className="h-3 w-3" />
+                              </Link>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              Repo dashboard
+                            </TooltipContent>
+                          </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <button
