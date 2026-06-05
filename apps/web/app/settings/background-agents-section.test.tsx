@@ -329,6 +329,8 @@ describe("BackgroundAgentsSection", () => {
   });
 
   test("builds edit form state and update payloads for existing agents", async () => {
+    // Realistic stored deployment agent: status is in conditions.actions (not
+    // conditions.severities) because the normalizer sets event.action = deployment state.
     const form = buildFormFromAgent({
       id: "agent-1",
       name: "Deploy smoke",
@@ -347,10 +349,7 @@ describe("BackgroundAgentsSection", () => {
           status: "enabled",
           conditions: {
             actions: ["success"],
-            branches: ["main", "release/*"],
-            labels: ["smoke"],
             environments: ["production"],
-            severities: ["critical"],
           },
           schedule: null,
           webhookPublicId: null,
@@ -358,23 +357,23 @@ describe("BackgroundAgentsSection", () => {
       ],
     });
 
+    // buildFormFromAgent restores conditions.actions → conditionSeverities for
+    // deployment triggers, and leaves conditionActions empty.
     expect(form).toMatchObject({
       name: "Deploy smoke",
       enabled: false,
       triggerKind: "github.deployment_status",
-      conditionActions: "success",
-      conditionBranches: "main, release/*",
-      conditionLabels: "smoke",
+      conditionActions: "",
       conditionEnvironments: "production",
-      conditionSeverities: "critical",
+      conditionSeverities: "success",
       outputMode: "ready_pr",
     });
 
+    // Simulate the user updating the status filter in the editor
     const payload = buildAgentPayload({
       ...form,
       enabled: true,
-      conditionActions: "success, failure",
-      conditionLabels: "smoke, regression",
+      conditionSeverities: "success, failure",
     });
 
     expect(payload.status).toBe("enabled");
@@ -383,11 +382,9 @@ describe("BackgroundAgentsSection", () => {
     expect(payload.triggers[0]).toMatchObject({
       kind: "github.deployment_status",
       conditions: {
+        // conditionSeverities routes to conditions.actions for deployment
         actions: ["success", "failure"],
-        branches: ["main", "release/*"],
-        labels: ["smoke", "regression"],
         environments: ["production"],
-        severities: ["critical"],
       },
     });
   });

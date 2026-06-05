@@ -10,6 +10,8 @@ import {
 import Link from "next/link";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import type { RunSummary } from "@/lib/background-agents/run-summary";
+import { RunSummarySection } from "./run-summary-section";
 
 type SerializedBackgroundRun = {
   id: string;
@@ -36,6 +38,7 @@ type SerializedBackgroundRun = {
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
+  resultSummary?: RunSummary | null;
 };
 
 type SerializedBackgroundAgent = {
@@ -399,66 +402,129 @@ export function BackgroundRunDetail({
           {runCost && <ProofItem label="Cost" value={runCost} />}
         </section>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <section className="rounded-md border border-border">
-            <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-              <h2 className="text-sm font-medium">Live timeline</h2>
-              {(run.status === "queued" || run.status === "running") && (
-                <span className="text-xs text-muted-foreground">
-                  Refreshing
-                </span>
-              )}
+        <section className="rounded-md border border-border">
+          <div className="border-b border-border px-4 py-3">
+            <h2 className="text-sm font-medium">Event context</h2>
+          </div>
+          <div className="grid gap-3 px-4 py-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Trigger kind
+              </p>
+              <p className="mt-1 font-mono text-xs">{run.triggerKind}</p>
             </div>
-            {events.length === 0 ? (
-              <div className="p-8 text-center text-sm text-muted-foreground">
-                No events recorded.
-              </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {events.map((event) => (
-                  <div key={event.id} className="grid gap-3 px-4 py-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {event.summary ?? event.eventName}
-                        </p>
-                        <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                          {event.eventName}
-                        </p>
-                      </div>
-                      <StatusPill status={event.status} />
-                    </div>
-                    <CommandOutput event={event} />
-                    <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                      <Clock3 className="h-3 w-3" />
-                      <span>{formatDate(event.createdAt)}</span>
-                      {event.workflowRunId && (
-                        <span className="font-mono">
-                          workflow {event.workflowRunId}
-                        </span>
-                      )}
-                      {event.requestId && (
-                        <span className="font-mono">
-                          request {event.requestId}
-                        </span>
-                      )}
-                      {event.sandboxName && (
-                        <span className="font-mono">
-                          sandbox {event.sandboxName}
-                        </span>
-                      )}
-                      <span className="font-mono">
-                        redaction {event.redactionStatus}
-                      </span>
-                      {event.errorKind && (
-                        <span className="font-mono">{event.errorKind}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+            {run.prNumber !== null && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Pull request
+                </p>
+                <p className="mt-1 font-mono text-xs">PR #{run.prNumber}</p>
               </div>
             )}
-          </section>
+            {run.issueNumber !== null && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Issue
+                </p>
+                <p className="mt-1 font-mono text-xs">
+                  Issue #{run.issueNumber}
+                </p>
+              </div>
+            )}
+            {run.deploymentUrl && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Deployment URL
+                </p>
+                <p className="mt-1 truncate font-mono text-xs">
+                  {run.deploymentUrl}
+                </p>
+              </div>
+            )}
+            {run.branch && (
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Branch
+                </p>
+                <p className="mt-1 font-mono text-xs">{run.branch}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                External event ID
+              </p>
+              <p className="mt-1 truncate font-mono text-xs">
+                {run.externalId}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="space-y-6">
+            {run.resultSummary ? (
+              <RunSummarySection summary={run.resultSummary} />
+            ) : null}
+            <section className="rounded-md border border-border">
+              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+                <h2 className="text-sm font-medium">Live timeline</h2>
+                {(run.status === "queued" || run.status === "running") && (
+                  <span className="text-xs text-muted-foreground">
+                    Refreshing
+                  </span>
+                )}
+              </div>
+              {events.length === 0 ? (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  No events recorded.
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {events.map((event) => (
+                    <div key={event.id} className="grid gap-3 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {event.summary ?? event.eventName}
+                          </p>
+                          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
+                            {event.eventName}
+                          </p>
+                        </div>
+                        <StatusPill status={event.status} />
+                      </div>
+                      <CommandOutput event={event} />
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
+                        <Clock3 className="h-3 w-3" />
+                        <span>{formatDate(event.createdAt)}</span>
+                        {event.workflowRunId && (
+                          <span className="font-mono">
+                            workflow {event.workflowRunId}
+                          </span>
+                        )}
+                        {event.requestId && (
+                          <span className="font-mono">
+                            request {event.requestId}
+                          </span>
+                        )}
+                        {event.sandboxName && (
+                          <span className="font-mono">
+                            sandbox {event.sandboxName}
+                          </span>
+                        )}
+                        <span className="font-mono">
+                          redaction {event.redactionStatus}
+                        </span>
+                        {event.errorKind && (
+                          <span className="font-mono">{event.errorKind}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
 
           <aside className="space-y-6">
             <section className="rounded-md border border-border">

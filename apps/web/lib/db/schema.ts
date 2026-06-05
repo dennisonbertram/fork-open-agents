@@ -883,6 +883,9 @@ export const backgroundAgentTriggers = pgTable(
     schedule: text("schedule"),
     webhookPublicId: text("webhook_public_id"),
     webhookSecretHash: text("webhook_secret_hash"),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    lastSkipReason: text("last_skip_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -988,6 +991,10 @@ export const backgroundAgentRuns = pgTable(
       .$type<BackgroundAgentPayloadSummary>()
       .notNull()
       .default({}),
+    resultSummary:
+      jsonb("result_summary").$type<
+        import("@/lib/background-agents/run-summary").RunSummary
+      >(),
     requestId: text("request_id"),
     workflowRunId: text("workflow_run_id"),
     startedAt: timestamp("started_at"),
