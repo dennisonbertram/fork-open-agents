@@ -883,6 +883,9 @@ export const backgroundAgentTriggers = pgTable(
     schedule: text("schedule"),
     webhookPublicId: text("webhook_public_id"),
     webhookSecretHash: text("webhook_secret_hash"),
+    lastRunAt: timestamp("last_run_at"),
+    nextRunAt: timestamp("next_run_at"),
+    lastSkipReason: text("last_skip_reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -988,6 +991,10 @@ export const backgroundAgentRuns = pgTable(
       .$type<BackgroundAgentPayloadSummary>()
       .notNull()
       .default({}),
+    resultSummary:
+      jsonb("result_summary").$type<
+        import("@/lib/background-agents/run-summary").RunSummary
+      >(),
     requestId: text("request_id"),
     workflowRunId: text("workflow_run_id"),
     startedAt: timestamp("started_at"),
@@ -1272,6 +1279,45 @@ export type WorkflowRun = typeof workflowRuns.$inferSelect;
 export type NewWorkflowRun = typeof workflowRuns.$inferInsert;
 export type WorkflowRunStep = typeof workflowRunSteps.$inferSelect;
 export type NewWorkflowRunStep = typeof workflowRunSteps.$inferInsert;
+
+// ── Immutable workflow input snapshot (one per run, written at run-start) ──
+// Stores validated input values with sensitive fields redacted as "[REDACTED]".
+// See issue #46 for rationale (Option B — separate table, not columns on workflowRuns).
+//
+// FIX 2 (issue #46): The FK to workflow_runs.id has been intentionally dropped.
+// The snapshot is persisted AFTER start(runAgentWorkflow, ...) using the REAL
+// run.runId. Because workflow_runs rows are written at run-FINISH (via
+// recordWorkflowRun), the parent row does not yet exist at persist time — a hard
+// FK would cause a Postgres FK violation. The workflowRunId is kept as a plain
+// indexed text column (application-level reference). ON DELETE CASCADE behavior
+// is intentionally dropped; audit snapshots are retained even if the run row is
+// cleaned up. App-level cleanup (e.g. cascade via scheduled job) is a follow-up.
+export const workflowInputSnapshots = pgTable(
+  "workflow_input_snapshots",
+  {
+    id: text("id").primaryKey(),
+    // Plain text reference to the workflow run id (no FK — see note above).
+    workflowRunId: text("workflow_run_id").notNull(),
+    workflowId: text("workflow_id"),
+    schemaVersion: text("schema_version"),
+    // Validated input values; sensitive fields stored as "[REDACTED]" — never raw secrets.
+    inputValues: jsonb("input_values")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    persistedAt: timestamp("persisted_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_input_snapshots_run_id_idx").on(table.workflowRunId),
+    uniqueIndex("workflow_input_snapshots_run_id_unique").on(
+      table.workflowRunId,
+    ),
+  ],
+);
+
+export type WorkflowInputSnapshot = typeof workflowInputSnapshots.$inferSelect;
+export type NewWorkflowInputSnapshot =
+  typeof workflowInputSnapshots.$inferInsert;
 export type GitHubInstallation = typeof githubInstallations.$inferSelect;
 export type NewGitHubInstallation = typeof githubInstallations.$inferInsert;
 
@@ -1474,3 +1520,102 @@ export const usageEvents = pgTable("usage_events", {
 
 export type UsageEvent = typeof usageEvents.$inferSelect;
 export type NewUsageEvent = typeof usageEvents.$inferInsert;
+
+// ---------------------------------------------------------------------------
+// Goal ledger — issue #35
+//
+// Terminal statuses (complete, failed, canceled, archived) are statuses from
+// which no further progression is expected. Transition-validity enforcement
+// (preventing movement OUT of a terminal state) is deferred to issue #38.
+// ---------------------------------------------------------------------------
+
+export type WorkflowGoalPlan = {
+  steps: string[];
+};
+
+export const workflowGoals = pgTable(
+  "workflow_goals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // App-level reference only: goal rows are created at workflow start before
+    // workflow_runs rows are persisted at finish, so this cannot be an FK.
+    workflowRunId: text("workflow_run_id"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    objective: text("objective").notNull(),
+    // Status enum uses lowercase words to match existing codebase conventions
+    // (e.g. backgroundAgentRuns uses "queued", "running", "succeeded" etc.)
+    // Terminal statuses: complete, failed, canceled, archived
+    status: text("status", {
+      enum: [
+        "draft",
+        "planned",
+        "running",
+        "awaiting_input",
+        "blocked",
+        "validating",
+        "complete",
+        "failed",
+        "canceled",
+        "archived",
+      ],
+    })
+      .notNull()
+      .default("draft"),
+    plan: jsonb("plan").$type<WorkflowGoalPlan>(),
+    blockedReason: text("blocked_reason"),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_goals_user_created_idx").on(table.userId, table.createdAt),
+    index("workflow_goals_workflow_run_idx").on(table.workflowRunId),
+  ],
+);
+
+export const workflowGoalEvents = pgTable(
+  "workflow_goal_events",
+  {
+    id: text("id").primaryKey(),
+    goalId: text("goal_id")
+      .notNull()
+      .references(() => workflowGoals.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    eventType: text("event_type").notNull(),
+    summary: text("summary").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("workflow_goal_events_goal_seq_idx").on(
+      table.goalId,
+      table.sequence,
+    ),
+    index("workflow_goal_events_goal_created_idx").on(
+      table.goalId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type WorkflowGoal = typeof workflowGoals.$inferSelect;
+export type NewWorkflowGoal = typeof workflowGoals.$inferInsert;
+export type WorkflowGoalEvent = typeof workflowGoalEvents.$inferSelect;
+export type NewWorkflowGoalEvent = typeof workflowGoalEvents.$inferInsert;

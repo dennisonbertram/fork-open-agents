@@ -70,6 +70,7 @@ export default async function BackgroundRunPage({
       workflowRunId: run.workflowRunId,
       errorKind: run.errorKind,
       errorMessage: run.errorMessage,
+      resultSummary: run.resultSummary ?? null,
       createdAt: run.createdAt.toISOString(),
       startedAt: serializeDate(run.startedAt),
       finishedAt: serializeDate(run.finishedAt),

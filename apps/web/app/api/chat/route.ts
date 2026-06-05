@@ -31,6 +31,10 @@ import {
 import { parseChatRequestBody, requireChatIdentifiers } from "./_lib/request";
 import { runAgentWorkflow } from "@/app/workflows/chat";
 import { persistAssistantMessagesWithToolResults } from "./_lib/persist-tool-results";
+import {
+  validateWorkflowInputs,
+  persistWorkflowInputSnapshot,
+} from "@/lib/workflows/run-start";
 
 type WebAgentUIMessageChunk = InferUIMessageChunk<WebAgentUIMessage>;
 
@@ -100,7 +104,13 @@ export async function POST(req: Request) {
     return parsedBody.response;
   }
 
-  const { messages } = parsedBody.body;
+  const {
+    messages,
+    workflowId,
+    inputValues,
+    workflowSchema,
+    workflowSchemaVersion,
+  } = parsedBody.body;
 
   // 2. Require sessionId and chatId to ensure sandbox ownership verification
   const chatIdentifiers = requireChatIdentifiers(parsedBody.body);
@@ -226,7 +236,74 @@ export async function POST(req: Request) {
     }
   }
 
-  // Start the durable workflow
+  // ── Workflow input validation gate (#46 FIX 2) ───────────────────────────
+  // Architecture: validate BEFORE start(), persist AFTER start() with the REAL
+  // run.runId. This fixes two critical issues:
+  //   (a) FK violation: workflow_runs row doesn't exist at validate time
+  //   (b) run-id mismatch: using a pre-generated nanoid that never matches run.runId
+  //
+  // Flow:
+  //   1. VALIDATE (pure) — if invalid, return 422/403 and do NOT call start().
+  //   2. start(runAgentWorkflow, ...) → get run.runId.
+  //   3. PERSIST (best-effort) with workflowRunId = run.runId.
+  //      A persist failure here must NOT kill the already-started run.
+  //
+  // Backward compat: freeform chat runs (no workflowId) bypass this gate
+  // entirely and proceed directly to start(runAgentWorkflow, ...).
+  //
+  // Schema lookup: client-supplied workflowSchema (no #30 catalog yet).
+  let validatedWorkflowInput:
+    | { redactedValues: Record<string, unknown>; workflowId: string }
+    | undefined;
+
+  if (workflowId !== undefined && workflowId !== null && workflowId !== "") {
+    // Step 1: VALIDATE (pure — does not start the run)
+    const validationResult = await validateWorkflowInputs({
+      workflowId,
+      schema: workflowSchema,
+      schemaVersion: workflowSchemaVersion ?? null,
+      inputValues: (inputValues ?? {}) as Record<string, unknown>,
+      userId,
+    });
+
+    if (!validationResult.valid) {
+      switch (validationResult.errorKind) {
+        case "workflow_input_invalid":
+          return Response.json(
+            {
+              error: "Workflow input validation failed",
+              errorKind: validationResult.errorKind,
+              fieldErrors: validationResult.fieldErrors,
+            },
+            { status: 422 },
+          );
+        case "workflow_input_unauthorized":
+          return Response.json(
+            {
+              error: "Unauthorized to start this workflow run",
+              errorKind: validationResult.errorKind,
+            },
+            { status: 403 },
+          );
+        case "workflow_version_mismatch":
+          return Response.json(
+            {
+              error: "Workflow schema version mismatch",
+              errorKind: validationResult.errorKind,
+            },
+            { status: 409 },
+          );
+      }
+    }
+
+    // Stash the redacted values; we'll persist after start() with the real runId.
+    validatedWorkflowInput = {
+      redactedValues: validationResult.redactedValues,
+      workflowId,
+    };
+  }
+
+  // Step 2: Start the durable workflow (only reached after validation passes)
   const run = await start(runAgentWorkflow, [
     {
       messages,
@@ -239,6 +316,34 @@ export async function POST(req: Request) {
       maxSteps: 500,
     },
   ]);
+
+  // Step 3 (#46 FIX 2 + final-fix A): Best-effort persist of the redacted
+  // snapshot with the REAL run.runId (available only after start() returns).
+  // persistWorkflowInputSnapshot NEVER throws — it returns {success:false} on
+  // DB error. Branch on the returned result so persist failures are observable.
+  // A persist failure must NOT kill the already-started run.
+  // Log field keys / ids only — NEVER raw input values.
+  if (validatedWorkflowInput) {
+    const persistResult = await persistWorkflowInputSnapshot({
+      workflowRunId: run.runId,
+      workflowId: validatedWorkflowInput.workflowId,
+      schemaVersion: workflowSchemaVersion ?? null,
+      redactedValues: validatedWorkflowInput.redactedValues,
+      persistedAt: new Date(),
+    });
+
+    if (!persistResult.success) {
+      // Best-effort — do NOT fail the response after the run has started.
+      // Log ids/field-keys only; raw input values are NEVER logged.
+      console.warn(
+        "[chat/route] workflow input snapshot persist failed after run start",
+        {
+          workflowRunId: run.runId,
+          workflowId: validatedWorkflowInput.workflowId,
+        },
+      );
+    }
+  }
 
   // Idempotently claim the activeStreamId slot for the workflow we just
   // started. This succeeds both when the slot is still null and when the

@@ -3,11 +3,13 @@ import "server-only";
 import { start } from "workflow/api";
 import { runBackgroundAgentWorkflow } from "@/app/workflows/background-agent";
 import {
+  advanceTriggerScheduleState,
   createRunForTrigger,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
+  recordTriggerSkipReason,
   updateBackgroundAgentRunStatus,
   type BackgroundAgentWithTriggers,
 } from "./store";
@@ -20,6 +22,7 @@ import {
   isBackgroundAgentsEnabled,
 } from "./config";
 import { scheduleMatchesNow } from "./schedule";
+import { computeNextRuns } from "./schedule-presets";
 
 export type BackgroundDispatchResult = {
   enabled: boolean;
@@ -366,16 +369,39 @@ export async function dispatchScheduledBackgroundAgents(params?: {
   }
 
   const now = params?.now ?? new Date();
-  const rows = (await listEnabledScheduleTriggers()).filter(
-    ({ agent, trigger }) =>
-      scheduleMatchesNow(trigger.schedule, now) &&
-      isBackgroundAgentRepoAllowed(agent.repoOwner, agent.repoName),
-  );
+  const allRows = await listEnabledScheduleTriggers();
   let created = 0;
   let duplicates = 0;
   const runIds: string[] = [];
+  const matchedRows: typeof allRows = [];
 
-  for (const row of rows) {
+  // Separate rows into matched (will dispatch) and skipped (record skip reason)
+  for (const row of allRows) {
+    const repoAllowed = isBackgroundAgentRepoAllowed(
+      row.agent.repoOwner,
+      row.agent.repoName,
+    );
+    if (!repoAllowed) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: "repo not in allowlist",
+      });
+      continue;
+    }
+
+    const scheduleMatches = scheduleMatchesNow(row.trigger.schedule, now);
+    if (!scheduleMatches) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: "schedule did not match current time",
+      });
+      continue;
+    }
+
+    matchedRows.push(row);
+  }
+
+  for (const row of matchedRows) {
     const event: NormalizedBackgroundTriggerEvent = {
       source: "schedule" satisfies BackgroundAgentRunSource,
       kind: "schedule.cron",
@@ -392,6 +418,15 @@ export async function dispatchScheduledBackgroundAgents(params?: {
       requestId: params?.requestId ?? null,
     });
     runIds.push(result.run.id);
+
+    // Advance schedule state regardless of whether this was a duplicate.
+    // BT-006: a failed run must not wedge the schedule — advance unconditionally.
+    const nextRuns = computeNextRuns(row.trigger.schedule, now, 1);
+    await advanceTriggerScheduleState({
+      triggerId: row.trigger.id,
+      lastRunAt: now,
+      nextRunAt: nextRuns[0] ?? null,
+    });
 
     if (!result.created) {
       duplicates += 1;
@@ -426,7 +461,7 @@ export async function dispatchScheduledBackgroundAgents(params?: {
 
   return {
     enabled: true,
-    matched: rows.length,
+    matched: matchedRows.length,
     created,
     duplicates,
     runIds,

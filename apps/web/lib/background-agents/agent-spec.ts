@@ -1,0 +1,233 @@
+/**
+ * Shared agent spec logic — payload builder, form state, types, and helpers.
+ *
+ * Extracted from apps/web/app/settings/background-agents-form.ts so the
+ * repo-dashboard creation flow can reuse the same semantics.
+ * The settings form still imports from background-agents-form.ts which
+ * re-exports from here.
+ */
+
+export type TriggerKind =
+  | "github.pull_request"
+  | "github.deployment_status"
+  | "github.issue"
+  | "schedule.cron"
+  | "webhook.error";
+
+export type OutputMode =
+  | "comment"
+  | "ready_pr"
+  | "issue"
+  | "notification"
+  | "none";
+
+export type TriggerConditions = {
+  actions?: string[];
+  branches?: string[];
+  labels?: string[];
+  environments?: string[];
+  severities?: string[];
+};
+
+export type BackgroundAgentTrigger = {
+  id: string;
+  name: string;
+  kind: TriggerKind;
+  status: "enabled" | "disabled";
+  conditions?: TriggerConditions;
+  schedule: string | null;
+  webhookPublicId: string | null;
+};
+
+export type BackgroundAgent = {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "enabled" | "disabled";
+  repoOwner: string;
+  repoName: string;
+  instructions: string;
+  outputMode: OutputMode;
+  checkCommand: string | null;
+  triggers: BackgroundAgentTrigger[];
+};
+
+export type FormState = {
+  name: string;
+  repoOwner: string;
+  repoName: string;
+  triggerKind: TriggerKind;
+  schedule: string;
+  conditionActions: string;
+  conditionBranches: string;
+  conditionLabels: string;
+  conditionEnvironments: string;
+  conditionSeverities: string;
+  instructions: string;
+  outputMode: OutputMode;
+  checkCommand: string;
+  enabled: boolean;
+};
+
+export const defaultForm: FormState = {
+  name: "",
+  repoOwner: "",
+  repoName: "",
+  triggerKind: "github.pull_request",
+  schedule: "",
+  conditionActions: "",
+  conditionBranches: "",
+  conditionLabels: "",
+  conditionEnvironments: "",
+  conditionSeverities: "",
+  instructions: "",
+  outputMode: "none",
+  checkCommand: "",
+  enabled: false,
+};
+
+export const triggerLabels: Record<TriggerKind, string> = {
+  "github.pull_request": "Pull request",
+  "github.deployment_status": "Deployment status",
+  "github.issue": "Issue",
+  "schedule.cron": "Schedule",
+  "webhook.error": "Error webhook",
+};
+
+export const flowSteps = [
+  "Trigger",
+  "Conditions",
+  "Instructions",
+  "Permissions",
+  "Outputs",
+  "Test",
+];
+
+export const supportedOutputModes = [
+  "none",
+  "ready_pr",
+] as const satisfies readonly OutputMode[];
+
+/**
+ * Creates a blank FormState pre-scoped to the given repo.
+ * The agent starts disabled by default.
+ */
+export function buildRepoScopedDefaultForm(
+  repoOwner: string,
+  repoName: string,
+): FormState {
+  return {
+    ...defaultForm,
+    repoOwner,
+    repoName,
+  };
+}
+
+function splitConditionList(value: string) {
+  const items = value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
+function joinConditionList(value: string[] | undefined) {
+  return value?.join(", ") ?? "";
+}
+
+function buildConditions(form: FormState): TriggerConditions {
+  const actions = splitConditionList(form.conditionActions);
+  const branches = splitConditionList(form.conditionBranches);
+  const labels = splitConditionList(form.conditionLabels);
+  const environments = splitConditionList(form.conditionEnvironments);
+  const severities = splitConditionList(form.conditionSeverities);
+
+  // For deployment_status triggers, the normalizer sets event.action = deployment
+  // state ("success", "failure", etc.) and never sets event.severity. Route the
+  // "Statuses" UI field (conditionSeverities) into conditions.actions so the
+  // matcher's conditions.actions check against event.action actually fires.
+  if (form.triggerKind === "github.deployment_status") {
+    return {
+      ...(severities ? { actions: severities } : {}),
+      ...(environments ? { environments } : {}),
+    };
+  }
+
+  return {
+    ...(actions ? { actions } : {}),
+    ...(branches ? { branches } : {}),
+    ...(labels ? { labels } : {}),
+    ...(environments ? { environments } : {}),
+    ...(severities ? { severities } : {}),
+  };
+}
+
+export function buildAgentPayload(form: FormState) {
+  const conditions = buildConditions(form);
+  return {
+    name: form.name,
+    repoOwner: form.repoOwner,
+    repoName: form.repoName,
+    status: form.enabled ? "enabled" : "disabled",
+    instructions: form.instructions,
+    outputMode: form.outputMode,
+    checkCommand: form.checkCommand || null,
+    permissions: {
+      github: {
+        contents: form.outputMode === "ready_pr" ? "write" : "read",
+        pullRequests: form.outputMode === "ready_pr" ? "write" : "read",
+        issues: "read",
+        deployments: "read",
+        statuses: "read",
+        checks: "read",
+      },
+    },
+    triggers: [
+      {
+        name: triggerLabels[form.triggerKind],
+        kind: form.triggerKind,
+        status: "enabled",
+        conditions,
+        schedule: form.triggerKind === "schedule.cron" ? form.schedule : null,
+      },
+    ],
+  };
+}
+
+export function buildFormFromAgent(agent: BackgroundAgent): FormState {
+  const trigger = agent.triggers[0];
+  const conditions = trigger?.conditions ?? {};
+  const triggerKind = trigger?.kind ?? "github.pull_request";
+
+  // For deployment_status triggers, the status was stored in conditions.actions
+  // (see buildConditions). Restore it into conditionSeverities so the UI shows
+  // the value in the "Statuses" field where the user originally entered it.
+  const conditionSeverities =
+    triggerKind === "github.deployment_status"
+      ? joinConditionList(conditions.actions)
+      : joinConditionList(conditions.severities);
+
+  // For deployment_status, conditionActions is driven by conditionSeverities, so
+  // leave it empty to avoid showing the same value in two fields.
+  const conditionActions =
+    triggerKind === "github.deployment_status"
+      ? ""
+      : joinConditionList(conditions.actions);
+
+  return {
+    name: agent.name,
+    repoOwner: agent.repoOwner,
+    repoName: agent.repoName,
+    triggerKind,
+    schedule: trigger?.schedule ?? "",
+    conditionActions,
+    conditionBranches: joinConditionList(conditions.branches),
+    conditionLabels: joinConditionList(conditions.labels),
+    conditionEnvironments: joinConditionList(conditions.environments),
+    conditionSeverities,
+    instructions: agent.instructions,
+    outputMode: agent.outputMode,
+    checkCommand: agent.checkCommand ?? "",
+    enabled: agent.status === "enabled",
+  };
+}

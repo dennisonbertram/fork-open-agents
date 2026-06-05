@@ -28,6 +28,8 @@ const listMatchingTriggersForEvent = mock(async () => matchingRows);
 const getWebhookTriggerByPublicId = mock(async () => webhookRow);
 const listEnabledScheduleTriggers = mock(async () => scheduleRows);
 const updateBackgroundAgentRunStatus = mock(async () => undefined);
+const advanceTriggerScheduleState = mock(async () => undefined);
+const recordTriggerSkipReason = mock(async () => undefined);
 
 mock.module("workflow/api", () => ({ start }));
 
@@ -36,12 +38,14 @@ mock.module("@/app/workflows/background-agent", () => ({
 }));
 
 mock.module("./store", () => ({
+  advanceTriggerScheduleState,
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
+  recordTriggerSkipReason,
   updateBackgroundAgentRunStatus,
 }));
 
@@ -65,6 +69,9 @@ const agent: BackgroundAgentWithTriggers = {
       schedule: null,
       webhookPublicId: null,
       webhookSecretHash: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      lastSkipReason: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -79,6 +86,9 @@ const agent: BackgroundAgentWithTriggers = {
       schedule: null,
       webhookPublicId: null,
       webhookSecretHash: null,
+      lastRunAt: null,
+      nextRunAt: null,
+      lastSkipReason: null,
       createdAt: new Date(),
       updatedAt: new Date(),
     },
@@ -147,6 +157,8 @@ function resetDispatcherMocks() {
   listMatchingTriggersForEvent.mockClear();
   getWebhookTriggerByPublicId.mockClear();
   listEnabledScheduleTriggers.mockClear();
+  advanceTriggerScheduleState.mockClear();
+  recordTriggerSkipReason.mockClear();
 }
 
 describe("dispatchBackgroundTriggerEvent", () => {

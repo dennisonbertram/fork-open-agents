@@ -206,4 +206,64 @@ describe("GET /api/background-agent-runs/[runId]", () => {
       prNumber: 42,
     });
   });
+
+  // BT-API-001: run response includes resultSummary (#163)
+  test("BT-API-001: response includes resultSummary when run has one", async () => {
+    const resultSummary = {
+      headline: "Run succeeded — created ready_pr #42",
+      checked: ["bun --bun run ci passed"],
+      changed: [],
+      blocked: [],
+      artifacts: [
+        {
+          kind: "ready_pr",
+          label: "PR #42",
+          url: "https://github.com/acme/widgets/pull/42",
+          prNumber: 42,
+        },
+      ],
+      next: [],
+    };
+    const prevRow = runRow as {
+      run: Record<string, unknown>;
+      agent: Record<string, unknown>;
+    };
+    runRow = {
+      run: {
+        ...prevRow.run,
+        resultSummary,
+      },
+      agent: prevRow.agent,
+    };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs/run-1"),
+      context(),
+    );
+    const body = (await response.json()) as { run: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    // The run response must pass through resultSummary
+    expect(body.run.resultSummary).toBeDefined();
+    expect((body.run.resultSummary as Record<string, unknown>).headline).toBe(
+      "Run succeeded — created ready_pr #42",
+    );
+  });
+
+  // BT-API-002: resultSummary is null when not yet generated (#163)
+  test("BT-API-002: resultSummary is null when run has no summary", async () => {
+    // runRow already uses run without resultSummary field — beforeEach sets it
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs/run-1"),
+      context(),
+    );
+    const body = (await response.json()) as { run: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    // resultSummary should be null or undefined (not a non-null wrong value)
+    expect(body.run.resultSummary ?? null).toBeNull();
+  });
 });

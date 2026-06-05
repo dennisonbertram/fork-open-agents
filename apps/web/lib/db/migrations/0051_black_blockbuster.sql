@@ -1,0 +1,1 @@
+ALTER TABLE "background_agent_runs" ADD COLUMN "result_summary" jsonb;

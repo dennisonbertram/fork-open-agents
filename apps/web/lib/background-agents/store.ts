@@ -662,4 +662,33 @@ export async function listAgentsByIds(
   });
 }
 
+export async function advanceTriggerScheduleState(params: {
+  triggerId: string;
+  lastRunAt: Date;
+  nextRunAt: Date | null;
+}): Promise<void> {
+  await db
+    .update(backgroundAgentTriggers)
+    .set({
+      lastRunAt: params.lastRunAt,
+      nextRunAt: params.nextRunAt,
+      lastSkipReason: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
+export async function recordTriggerSkipReason(params: {
+  triggerId: string;
+  skipReason: string;
+}): Promise<void> {
+  await db
+    .update(backgroundAgentTriggers)
+    .set({
+      lastSkipReason: params.skipReason,
+      updatedAt: new Date(),
+    })
+    .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
 export { backgroundAgentToolGrants };

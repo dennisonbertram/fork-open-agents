@@ -2,6 +2,11 @@
 
 -
 
+Base branch:
+
+- [ ] Feature/integration PR targets `develop`
+- [ ] Production release/hotfix PR targets `main`
+
 ## Scope
 
 In scope:
@@ -47,8 +52,8 @@ Out of scope:
 - [ ] Preview smoke passed, or not applicable because:
 - [ ] Agent Browser Preview review completed, or not applicable because:
 - Agent Browser evidence:
-- [ ] Staging smoke required for this PR
-- Staging evidence, or reason deferred:
+- [ ] Dev smoke required for this PR
+- Dev evidence, or reason deferred:
 - Production smoke plan:
 - Rollback plan:
 
