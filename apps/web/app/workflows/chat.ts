@@ -285,6 +285,81 @@ async function emitWorkflowSessionEvent(
   await emitSessionEvent(input);
 }
 
+async function startGoalLedger(input: {
+  userId: string;
+  sessionId: string;
+  chatId: string;
+  workflowRunId: string;
+  objective: string;
+}): Promise<string | null> {
+  "use step";
+
+  const { recordGoalLedgerStart } =
+    await import("@/lib/workflows/goal-ledger-recorder");
+  return recordGoalLedgerStart(input);
+}
+
+async function appendGoalLedgerEvent(input: {
+  goalId: string;
+  userId: string;
+  eventType: import("@/lib/workflows/goal-ledger-recorder").GoalLedgerEventType;
+  summary: string;
+  payload?: Record<string, unknown>;
+}): Promise<void> {
+  "use step";
+
+  const { recordGoalLedgerEvent } =
+    await import("@/lib/workflows/goal-ledger-recorder");
+  await recordGoalLedgerEvent(input);
+}
+
+async function closeGoalLedger(input: {
+  goalId: string;
+  terminalStatus: "complete" | "canceled" | "failed" | "archived";
+}): Promise<void> {
+  "use step";
+
+  const { recordGoalLedgerClose } =
+    await import("@/lib/workflows/goal-ledger-recorder");
+  await recordGoalLedgerClose(input);
+}
+
+/**
+ * Validate a goal before closing as "complete".
+ *
+ * Uses "use step" so Workflow memoization applies on replay. This is the
+ * integration point for issue #38's evidence-validation requirement.
+ *
+ * NOTE: `requireEvidence` is always `false` today because goals are not yet
+ * linked to proof levels — so this call is a no-op in production. It WILL
+ * start enforcing when a future slice wires proof levels. The blocked branch
+ * is exercised by the chat integration test (forced mock).
+ */
+async function validateGoalForClose(input: {
+  goalId: string;
+  userId: string;
+  terminalStatus: string;
+}): Promise<{ ok: boolean; reason?: string }> {
+  "use step";
+
+  const { validateGoalCompletion } =
+    await import("@/lib/workflows/goal-validation");
+
+  // evidenceRefs: currently always [] — goals are not yet linked to evidence.
+  // requireEvidence: always false — proof level is not yet linked to goals.
+  const result = validateGoalCompletion({
+    status: input.terminalStatus,
+    evidenceRefs: [],
+    requireEvidence: false,
+  });
+
+  if (result.ok) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: result.reason };
+}
+
 async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
@@ -1107,6 +1182,8 @@ export async function runAgentWorkflow(options: Options) {
   let sandboxState: OpenAgentCallOptions["sandbox"]["state"] | undefined;
   let shouldRefreshCachedDiff = false;
   let runtimeMode: "classic" | "managed_runtime" | null = null;
+  // Goal ledger tracking — null until recordGoalLedgerStart resolves.
+  let goalLedgerId: string | null = null;
   let runtimeSandboxName: string | null = null;
   let managedRuntimeProfileId: string | null = null;
   let managedRuntimeProfileVersion: string | null = null;
@@ -1115,6 +1192,49 @@ export async function runAgentWorkflow(options: Options) {
   let inferenceProfileId: string | null = null;
   let inferenceProfileName: string | null = null;
   let inferenceProvider: string | null = null;
+
+  // FIX 2: Start the goal ledger early — before the sandbox/model Promise.all —
+  // so that setup-phase failures are still captured in the ledger (the finally
+  // block will close it with "failed" status even when setup throws). Guarded
+  // best-effort: a failure here must not crash the workflow.
+  try {
+    const lastUserMessage = options.messages.findLast((m) => m.role === "user");
+    const textPart = lastUserMessage?.parts.find((p) => p.type === "text");
+    const rawObjective =
+      typeof textPart === "object" &&
+      textPart !== null &&
+      "text" in textPart &&
+      typeof textPart.text === "string"
+        ? textPart.text.slice(0, 200)
+        : `Workflow run ${workflowRunId}`;
+    goalLedgerId = await startGoalLedger({
+      userId: options.userId,
+      sessionId: options.sessionId,
+      chatId: options.chatId,
+      workflowRunId,
+      objective: rawObjective,
+    });
+    // FIX 1: Record the "started" event immediately after the goal row is created.
+    if (goalLedgerId) {
+      try {
+        await appendGoalLedgerEvent({
+          goalId: goalLedgerId,
+          userId: options.userId,
+          eventType: "started",
+          summary: rawObjective || "Workflow run started",
+          payload: { workflowRunId },
+        });
+      } catch (startedErr: unknown) {
+        console.error(
+          "[chat] goal-ledger started event failed (non-fatal):",
+          startedErr,
+        );
+      }
+    }
+  } catch (err: unknown) {
+    console.error("[chat] goal-ledger start failed (non-fatal):", err);
+    goalLedgerId = null;
+  }
 
   try {
     const [runtime, modelRuntime, modelMessages] = await Promise.all([
@@ -1264,6 +1384,28 @@ export async function runAgentWorkflow(options: Options) {
         totalUsage = totalUsage
           ? addLanguageModelUsage(totalUsage, result.stepUsage)
           : result.stepUsage;
+      }
+
+      // FIX 1: Record a progress event for each completed agent step.
+      // Best-effort; never throws. runAgentStep's signature is unchanged.
+      if (goalLedgerId) {
+        try {
+          await appendGoalLedgerEvent({
+            goalId: goalLedgerId,
+            userId: options.userId,
+            eventType: "progress",
+            summary: `Step ${step + 1} completed`,
+            payload: {
+              stepNumber: step + 1,
+              finishReason: result.finishReason,
+            },
+          });
+        } catch (progressErr: unknown) {
+          console.error(
+            "[chat] goal-ledger progress event failed (non-fatal):",
+            progressErr,
+          );
+        }
       }
 
       const shouldContinue =
@@ -1675,6 +1817,68 @@ export async function runAgentWorkflow(options: Options) {
           finishReason: finalFinishReason ?? null,
         },
       });
+
+      // Record goal ledger final event + close. The call site is guarded so
+      // that any unexpected wrapper failure cannot crash the workflow.
+      if (goalLedgerId) {
+        try {
+          // FIX 4: Use the sanitized user-facing error message for the failed
+          // summary so the ledger does not store raw internal error text.
+          const finalSummary =
+            workflowStatus === "completed"
+              ? "Workflow completed successfully."
+              : workflowStatus === "aborted"
+                ? "Workflow was aborted."
+                : `Workflow failed: ${caughtError ? getUserFacingWorkflowErrorMessage(caughtError) : "unknown error"}`;
+          // Map workflow status to terminal goal status.
+          // workflowStatus values: "completed" | "aborted" | "failed"
+          // TERMINAL_GOAL_STATUSES values: "complete" | "canceled" | "failed" | "archived"
+          const terminalStatus =
+            workflowStatus === "completed"
+              ? "complete"
+              : workflowStatus === "aborted"
+                ? "canceled"
+                : "failed";
+          await appendGoalLedgerEvent({
+            goalId: goalLedgerId,
+            userId: options.userId,
+            eventType: "final",
+            summary: finalSummary,
+          });
+
+          // Issue #38: validate before closing as "complete". requireEvidence
+          // is false today (proof levels not yet linked to goals), so this is
+          // a no-op in production. The blocked branch is tested via forced mock.
+          const validation = await validateGoalForClose({
+            goalId: goalLedgerId,
+            userId: options.userId,
+            terminalStatus,
+          });
+
+          if (!validation.ok) {
+            // Validation failed — record a blocked event instead of closing.
+            // This branch is currently unreachable in production (requireEvidence=false)
+            // but is exercised by the integration test via a forced mock.
+            console.error(
+              `[chat] goal-ledger validation failed for goal "${goalLedgerId}": ${validation.reason ?? "validation_rule_failed"}`,
+            );
+            await appendGoalLedgerEvent({
+              goalId: goalLedgerId,
+              userId: options.userId,
+              eventType: "blocked",
+              summary: `Goal close blocked by validation: ${validation.reason ?? "validation_rule_failed"}`,
+              payload: { reason: validation.reason },
+            });
+          } else {
+            await closeGoalLedger({
+              goalId: goalLedgerId,
+              terminalStatus,
+            });
+          }
+        } catch (err: unknown) {
+          console.error("[chat] goal-ledger close failed (non-fatal):", err);
+        }
+      }
     }
   }
 

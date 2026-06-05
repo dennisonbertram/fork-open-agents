@@ -9,6 +9,9 @@ import {
 } from "@/lib/background-agents/store";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
+import type { BackgroundAgentRun } from "@/lib/db/schema";
+import { RepoAgentsDashboard } from "./repo-agents-dashboard";
+import { AgentCard } from "./agent-card";
 
 type RepoAgentsPageProps = {
   params: Promise<{ owner: string; repo: string }>;
@@ -50,6 +53,13 @@ function formatDate(value: Date | null) {
   }).format(value);
 }
 
+function findLatestRunForAgent(
+  agentId: string,
+  runs: BackgroundAgentRun[],
+): BackgroundAgentRun | null {
+  return runs.find((r) => r.agentId === agentId) ?? null;
+}
+
 export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
   const session = await getServerSession();
   if (!session?.user) {
@@ -81,56 +91,45 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
               {owner}/{repo}
             </p>
           </div>
-          <Button asChild variant="outline">
-            <Link href="/settings/background-agents">
-              <Bot className="h-4 w-4" />
-              Settings
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <RepoAgentsDashboard owner={owner} repo={repo} />
+            <Button asChild variant="outline">
+              <Link href="/settings/background-agents">
+                <Bot className="h-4 w-4" />
+                Settings
+              </Link>
+            </Button>
+          </div>
         </div>
 
-        <section className="rounded-md border border-border">
-          <div className="border-b border-border px-4 py-3">
+        {/* Configured agents — operational cards */}
+        <section>
+          <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-medium">Configured agents</h2>
           </div>
           {agents.length === 0 ? (
-            <div className="p-8 text-center text-sm text-muted-foreground">
+            <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
               No agents configured for this repository.
             </div>
           ) : (
-            <div className="divide-y divide-border">
-              {agents.map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium">
-                        {agent.name}
-                      </p>
-                      <StatusPill status={agent.status} />
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {agent.instructions}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {agent.triggers.map((trigger) => (
-                      <span
-                        key={trigger.id}
-                        className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                      >
-                        {trigger.kind}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+            <div className="grid gap-4 sm:grid-cols-2">
+              {agents.map((agent) => {
+                const latestRun = findLatestRunForAgent(agent.id, runs);
+                return (
+                  <AgentCard
+                    key={agent.id}
+                    agent={agent}
+                    latestRun={latestRun}
+                    owner={owner}
+                    repo={repo}
+                  />
+                );
+              })}
             </div>
           )}
         </section>
 
+        {/* Run history */}
         <section className="rounded-md border border-border">
           <div className="border-b border-border px-4 py-3">
             <h2 className="text-sm font-medium">Runs</h2>

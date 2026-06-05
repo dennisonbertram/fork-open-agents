@@ -133,6 +133,26 @@ export type RuntimeBrowserRunJson = {
   redactionStatus: string;
 };
 
+export type WorkflowGoalEventJson = {
+  id: string;
+  eventType: string;
+  summary: string;
+  sequence: number;
+  payload?: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type WorkflowGoalJson = {
+  id: string;
+  objective: string;
+  status: string;
+  blockedReason: string | null;
+  evidenceRefs: string[];
+  createdAt: string;
+  updatedAt: string;
+  events: WorkflowGoalEventJson[];
+};
+
 export type SessionObservabilityResponse = {
   runtimeMode: RuntimeMode;
   events: SessionEventJson[];
@@ -142,6 +162,7 @@ export type SessionObservabilityResponse = {
   directToolUse: ManagedRuntimeDirectToolUseJson;
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
+  workflowGoals: WorkflowGoalJson[];
 };
 
 export function useSessionObservability(params: {

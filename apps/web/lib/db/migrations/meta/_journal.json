@@ -337,6 +337,41 @@
       "when": 1779912424326,
       "tag": "0047_cheerful_thunderbolt_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1780321350828,
+      "tag": "0048_mighty_plazm",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1780322797343,
+      "tag": "0049_mature_lightspeed",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1780411521636,
+      "tag": "0050_yummy_jackpot",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1780552990126,
+      "tag": "0051_black_blockbuster",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1780554586616,
+      "tag": "0052_mighty_quicksilver",
+      "breakpoints": true
     }
   ]
 }

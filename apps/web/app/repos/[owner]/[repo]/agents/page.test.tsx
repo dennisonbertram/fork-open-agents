@@ -30,11 +30,23 @@ let repoRuns: Array<{
 const redirect = mock((_path: string) => {
   throw new Error("redirect");
 });
+const push = mock((_url: string) => undefined);
 const listRepoBackgroundAgents = mock(async () => repoAgents);
 const listBackgroundAgentRuns = mock(async () => repoRuns);
 
 mock.module("next/navigation", () => ({
   redirect,
+  useRouter: () => ({ push }),
+}));
+
+// swr is used by RepoAgentsDashboard (client component imported by page)
+mock.module("swr", () => ({
+  default: () => ({
+    data: undefined,
+    error: null,
+    isLoading: false,
+    mutate: async () => undefined,
+  }),
 }));
 
 mock.module("@/lib/session/get-server-session", () => ({

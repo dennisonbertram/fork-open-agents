@@ -210,11 +210,32 @@ const generate = mock(async () => ({
   },
 }));
 
+const listBackgroundAgentEvents = mock(async () => []);
+const listBackgroundAgentOutputs = mock(async () => []);
+
 mock.module("./store", () => ({
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
+  listBackgroundAgentEvents,
+  listBackgroundAgentOutputs,
+}));
+
+mock.module("./run-summary", () => ({
+  buildRunSummary: mock(() => ({
+    headline: "Run succeeded",
+    checked: [],
+    changed: [],
+    blocked: [],
+    artifacts: [],
+    next: [],
+  })),
+}));
+
+mock.module("./run-summary-persist", () => ({
+  persistRunSummary: mock(async () => undefined),
+  recordSummaryFailedEvent: mock(async () => undefined),
 }));
 
 mock.module("@open-agents/sandbox", () => ({
@@ -309,6 +330,7 @@ function buildRun(
     workflowRunId: null,
     startedAt: null,
     finishedAt: null,
+    resultSummary: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
