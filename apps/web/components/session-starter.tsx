@@ -92,6 +92,7 @@ export function SessionStarter({
     data: repoProjects,
     loading: repoProjectsLoading,
     error: repoProjectsError,
+    refresh: refreshVercelProjects,
   } = useVercelRepoProjects({
     enabled: shouldLoadVercelProjects,
     repoOwner: selectedOwner,
@@ -286,6 +287,11 @@ export function SessionStarter({
                 requiresVercelChoice={requiresVercelChoice}
                 vercelProjectChoice={vercelProjectChoice}
                 onVercelProjectChoiceChange={setVercelProjectChoice}
+                onRetry={
+                  repoProjectsError
+                    ? () => void refreshVercelProjects()
+                    : undefined
+                }
               />
             )}
           </div>

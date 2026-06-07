@@ -149,8 +149,14 @@ export function SessionsRouteShell({
   const handleRenameSession = useCallback(
     async (targetSessionId: string, title: string) => {
       await renameSession(targetSessionId, title);
+      // If the renamed session is the currently open one, refresh the server
+      // component so the layout shell (which reads initialSession.title) picks
+      // up the new title immediately.
+      if (targetSessionId === routeSessionId) {
+        router.refresh();
+      }
     },
-    [renameSession],
+    [renameSession, routeSessionId, router],
   );
 
   const handleArchiveSession = useCallback(
