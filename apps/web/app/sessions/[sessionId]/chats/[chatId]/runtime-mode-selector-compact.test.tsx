@@ -20,6 +20,20 @@ const profile: ManagedRuntimeProfileOption = {
   testedAt: null,
 };
 
+const sessionProfile: ManagedRuntimeProfileOption = {
+  id: "session-custom-profile",
+  version: "2026-05-23.2",
+  displayName: "My custom session profile",
+  description: "Session-scoped profile",
+  setupCommandCount: 1,
+  verificationCommandCount: 1,
+  expectedTools: ["bun"],
+  optionalTools: [],
+  defaultPorts: [3000],
+  source: "session",
+  testedAt: null,
+};
+
 describe("getRuntimeModeSummary", () => {
   test("explains the coordinator and managed worker path before sending", () => {
     const summary = getRuntimeModeSummary({
@@ -60,5 +74,46 @@ describe("RuntimeModeSelectorCompact", () => {
     expect(html).toContain("Managed");
     expect(html).toContain("Coordinator");
     expect(html).toContain("managed workers");
+  });
+
+  test("renders Manage-profile control when a session-source profile is selected", () => {
+    // BT-001: When a profile with source="session" is selected, a "Manage profile"
+    // button must appear in the dropdown so users can edit/re-test/delete it.
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorCompact
+        managedRuntimeProfileId={sessionProfile.id}
+        onManagedRuntimeProfileChange={() => {}}
+        onManagedProfileDeleted={async () => {}}
+        onManagedProfileSaved={() => {}}
+        onRuntimeModeChange={() => {}}
+        profiles={[sessionProfile]}
+        runtimeMode="managed_runtime"
+        selectedProfile={sessionProfile}
+        sessionId="session-abc123"
+      />,
+    );
+
+    expect(html).toContain("Manage profile");
+  });
+
+  test("does not render Manage-profile for built-in profiles (non-session source)", () => {
+    // BT-002: Built-in profiles cannot be edited, so the manager trigger should
+    // be absent (or show disabled "Built-in profile" text instead).
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorCompact
+        managedRuntimeProfileId={profile.id}
+        onManagedRuntimeProfileChange={() => {}}
+        onManagedProfileDeleted={async () => {}}
+        onManagedProfileSaved={() => {}}
+        onRuntimeModeChange={() => {}}
+        profiles={[profile]}
+        runtimeMode="managed_runtime"
+        selectedProfile={profile}
+        sessionId="session-abc123"
+      />,
+    );
+
+    // The manager is rendered but disabled/shows "Built-in profile" for non-session profiles
+    expect(html).not.toContain("Manage profile");
   });
 });
