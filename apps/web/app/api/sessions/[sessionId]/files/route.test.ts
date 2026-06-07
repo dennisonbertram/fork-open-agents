@@ -123,3 +123,74 @@ describe("file-tree paths dedup (regression, BT-005)", () => {
     expect(deduped.filter((v) => v === "repo/apps/web/public/.well-known/")).toHaveLength(1);
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION TESTS — would fail if the parseGitFiles fix is reverted
+// ---------------------------------------------------------------------------
+describe("parseGitFiles – regression suite", () => {
+  // REG-001: The original bug that caused the crash.
+  // If parseGitFiles reverts to naively emitting trailing-slash entries as
+  // non-directory files, this test catches it because the path would appear
+  // twice: once as isDirectory=true (synthesised) and once as isDirectory=false
+  // (raw entry). @pierre/trees then throws "Duplicate path".
+  test("REG-001 trailing-slash dir entry is isDirectory=true and appears exactly once", async () => {
+    const { parseGitFiles } = await import("./route");
+    const output = [
+      "apps/web/public/.well-known/apple-app-site-association",
+      "apps/web/public/.well-known/",
+    ].join("\n");
+
+    const suggestions = parseGitFiles(output);
+
+    // Must not have two entries for the same path
+    const values = suggestions.map((s) => s.value);
+    const unique = new Set(values);
+    expect(unique.size).toBe(values.length);
+
+    // The .well-known/ entry must be marked as a directory
+    const entry = suggestions.find(
+      (s) => s.value === "apps/web/public/.well-known/",
+    );
+    expect(entry).toBeDefined();
+    expect(entry?.isDirectory).toBe(true);
+  });
+
+  // REG-002: A standalone trailing-slash entry with no child files beneath it
+  // (e.g. an empty tracked directory) should still appear as a directory.
+  test("REG-002 standalone trailing-slash entry with no children is recorded as a directory", async () => {
+    const { parseGitFiles } = await import("./route");
+    const output = "apps/web/public/empty-dir/\n";
+
+    const suggestions = parseGitFiles(output);
+    const values = suggestions.map((s) => s.value);
+
+    // No duplicates
+    const unique = new Set(values);
+    expect(unique.size).toBe(values.length);
+
+    // The empty dir should be present and marked as a directory
+    const entry = suggestions.find(
+      (s) => s.value === "apps/web/public/empty-dir/",
+    );
+    expect(entry).toBeDefined();
+    expect(entry?.isDirectory).toBe(true);
+  });
+
+  // REG-003: Root-level file must still appear — the fix must not accidentally
+  // swallow top-level files.
+  test("REG-003 root-level files are not swallowed by the fix", async () => {
+    const { parseGitFiles } = await import("./route");
+    const output = [
+      "README.md",
+      "package.json",
+      "apps/web/index.ts",
+    ].join("\n");
+
+    const suggestions = parseGitFiles(output);
+    const values = suggestions.map((s) => s.value);
+
+    expect(values).toContain("README.md");
+    expect(values).toContain("package.json");
+    expect(values).toContain("apps/web/index.ts");
+  });
+});
