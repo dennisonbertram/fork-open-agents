@@ -11,8 +11,9 @@
  * empty, so callers can omit the field from the POST body entirely.
  */
 export function prepareSessionTitle(
-  _title: string | undefined,
+  title: string | undefined,
 ): string | undefined {
-  // Stub — implementation follows in the green commit.
-  return undefined;
+  if (!title) return undefined;
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
