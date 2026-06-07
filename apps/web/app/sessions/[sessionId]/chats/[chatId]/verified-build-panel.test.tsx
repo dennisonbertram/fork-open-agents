@@ -140,3 +140,80 @@ describe("VerifiedBuildPanel empty state", () => {
     expect(html).toContain("disabled");
   });
 });
+
+// ── Regression tests ──────────────────────────────────────────────────────────
+// These catch future breakage of the behaviors introduced in fix/issue-190.
+
+describe("Verified Build aria-label regression", () => {
+  // Regression: if aria-label is removed from VerifiedBuildHeaderButton,
+  // assistive technology cannot identify the Verified Build toggle button.
+  test("VerifiedBuildHeaderButton aria-label is present in both active and inactive states", async () => {
+    const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
+
+    const htmlInactive = renderToStaticMarkup(
+      <VerifiedBuildHeaderButton isActive={false} onClick={() => {}} />,
+    );
+    const htmlActive = renderToStaticMarkup(
+      <VerifiedBuildHeaderButton isActive={true} onClick={() => {}} />,
+    );
+
+    // aria-label must appear in both states — removing it from either state breaks a11y
+    expect(htmlInactive).toContain('aria-label="Verified Build"');
+    expect(htmlActive).toContain('aria-label="Verified Build"');
+  });
+
+  // Regression: VerifiedBuildHeaderButton must export the ShieldCheck icon markup.
+  // If the icon is removed the button becomes unrecognizable visually.
+  test("VerifiedBuildHeaderButton renders a ShieldCheck svg", async () => {
+    const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
+
+    const html = renderToStaticMarkup(
+      <VerifiedBuildHeaderButton isActive={false} onClick={() => {}} />,
+    );
+
+    // Lucide ShieldCheck renders as an svg with a path
+    expect(html).toContain("<svg");
+  });
+});
+
+describe("VerifiedBuildPanelEmpty regression", () => {
+  // Regression: when harness is disabled, the disabled message must never
+  // accidentally show the start button (which would call the disabled endpoint).
+  test("harnessEnabled=false never renders the Start Verified Build button", async () => {
+    const { VerifiedBuildPanelEmpty } = await verifiedBuildPanelModule;
+
+    // Even if latestUserMessageId is provided, no button appears when disabled
+    const html = renderToStaticMarkup(
+      <VerifiedBuildPanelEmpty
+        harnessEnabled={false}
+        sessionId="s"
+        chatId="c"
+        latestUserMessageId="msg_999"
+        onRunStarted={() => {}}
+      />,
+    );
+
+    expect(html).not.toContain("Start Verified Build");
+    expect(html).toContain("Verified Build is disabled");
+  });
+
+  // Regression: when harness is enabled but no message id, the button must
+  // be disabled. If the disabled guard is removed, a POST fires with a null id.
+  test("harnessEnabled=true with null latestUserMessageId renders a disabled button", async () => {
+    const { VerifiedBuildPanelEmpty } = await verifiedBuildPanelModule;
+
+    const html = renderToStaticMarkup(
+      <VerifiedBuildPanelEmpty
+        harnessEnabled={true}
+        sessionId="s"
+        chatId="c"
+        latestUserMessageId={null}
+        onRunStarted={() => {}}
+      />,
+    );
+
+    // Button must be present (so the user sees the action) but disabled
+    expect(html).toContain("Start Verified Build");
+    expect(html).toContain('disabled=""');
+  });
+});
