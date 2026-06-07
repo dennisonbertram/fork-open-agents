@@ -56,3 +56,61 @@ describe("SessionStarterVercelSyncSection - retry on error", () => {
     expect(html.toLowerCase()).not.toContain("retry");
   });
 });
+
+// REGRESSION: Vercel retry button must survive future refactors
+describe("SessionStarterVercelSyncSection - regression coverage", () => {
+  test("REGRESSION-001: Retry button text is rendered in compact row even when error message is long", () => {
+    // If the retry button were removed from the compact label, this fails.
+    const html = renderToStaticMarkup(
+      <SessionStarterVercelSyncSection
+        controlsDisabled={false}
+        isVercelLookupPending={false}
+        repoProjects={undefined}
+        repoProjectsError="A very detailed and long error message describing what went wrong"
+        requiresVercelChoice={false}
+        vercelProjectChoice={undefined}
+        onVercelProjectChoiceChange={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html.toLowerCase()).toContain("retry");
+    // The error message text itself must still be present (regression: button replacing message)
+    expect(html.toLowerCase()).toContain("could not load vercel projects");
+  });
+
+  test("REGRESSION-002: Retry button text is present in expanded error branch (requiresVercelChoice forces expand)", () => {
+    // If the retry button were dropped from the expanded panel, this fails.
+    const html = renderToStaticMarkup(
+      <SessionStarterVercelSyncSection
+        controlsDisabled={false}
+        isVercelLookupPending={false}
+        repoProjects={undefined}
+        repoProjectsError="Timeout"
+        requiresVercelChoice={true}
+        vercelProjectChoice={undefined}
+        onVercelProjectChoiceChange={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html.toLowerCase()).toContain("retry");
+    // Error text from prop must also appear (regression: prop ignored)
+    expect(html.toLowerCase()).toContain("timeout");
+  });
+
+  test("REGRESSION-003: no Retry button appears when there is no error (healthy state)", () => {
+    // Retry must not appear when projects loaded successfully.
+    const html = renderToStaticMarkup(
+      <SessionStarterVercelSyncSection
+        controlsDisabled={false}
+        isVercelLookupPending={false}
+        repoProjects={{ projects: [], selectedProjectId: null }}
+        repoProjectsError={null}
+        requiresVercelChoice={false}
+        vercelProjectChoice={null}
+        onVercelProjectChoiceChange={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    expect(html.toLowerCase()).not.toContain("retry");
+  });
+});
