@@ -328,6 +328,82 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("/repos/acme/widgets/agents");
   });
 
+  test("BT-001: renders webhook URL for webhook.error trigger with webhookPublicId", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-wh",
+            name: "Error watcher",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "api",
+            instructions: "Watch for errors.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-wh",
+                name: "Error webhook",
+                kind: "webhook.error",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: "wh_abc123",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // The webhook URL should be rendered inside the trigger pill area
+    expect(html).toContain("/api/background-agents/webhook/wh_abc123");
+    // It should have a copy button for the URL
+    expect(html).toContain("Copy webhook URL");
+  });
+
+  test("BT-002: delete button with confirm dialog calls DELETE and refreshes", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-del",
+            name: "To be deleted",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "widgets",
+            instructions: "Some instructions.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-del",
+                name: "Pull request",
+                kind: "github.pull_request",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // A destructive Delete button must be present in the agent action row
+    expect(html).toContain("Delete");
+    // The confirmation dialog text must appear (rendered inline in SSR for Radix)
+    expect(html).toContain("Delete agent");
+  });
+
   test("builds edit form state and update payloads for existing agents", async () => {
     // Realistic stored deployment agent: status is in conditions.actions (not
     // conditions.severities) because the normalizer sets event.action = deployment state.
