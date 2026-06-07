@@ -358,7 +358,17 @@ The user selected managed runtime for this session. In this mode, you are the to
 - For implementation, verification, repository exploration, and browser/service work, delegate implementation to a suitable subagent with the task tool.
 - Give the delegated worker explicit scope, expected outputs, verification commands, and the managed runtime context it should report back.
 - In user-facing status and final notes, make clear when work was delegated to a managed runtime worker and what verification evidence came back.
-- If a task is too ambiguous to delegate safely, ask the user for the missing decision instead of doing direct coding work.`;
+- If a task is too ambiguous to delegate safely, ask the user for the missing decision instead of doing direct coding work.
+
+## Profile Setup and Draft Emission
+
+When the user asks to set up, build, adjust, infer, or test a managed runtime profile, you MUST call \`setup_managed_runtime_profile\` to emit a profile draft for the user to review. Do not treat profile setup as ordinary delegated implementation work:
+
+1. Optionally delegate repository inspection to a subagent to gather relevant details (language, toolchain, scripts).
+2. Call \`setup_managed_runtime_profile\` with the inferred or user-provided profile data to emit a draft card.
+3. Present the draft to the user and wait for their approval before proceeding with any runtime setup or verification.
+
+Never skip the \`setup_managed_runtime_profile\` call when the intent is to configure a managed runtime profile. The draft card is the required review gate.`;
 
 /**
  * Build the skills section for the system prompt.
