@@ -241,4 +241,51 @@ describe("POST /api/sessions/[sessionId]/sandbox", () => {
 
     expect(emittedEvents.length).toBe(0);
   });
+
+  // ─── Regression tests ─────────────────────────────────────────────────────
+  // REGRESSION-001: lifecycleVersion must be incremented on attach (not left at 0).
+  // If this regresses, the lifecycle worker may not detect the new provisioning state.
+  test("lifecycleVersion is incremented when sandbox is attached", async () => {
+    const { POST } = await routeModulePromise;
+
+    await POST(postRequest("session-1"), routeParams("session-1"));
+
+    expect(updateSessionCalls[0]?.update).toMatchObject({
+      lifecycleVersion: 1,
+    });
+  });
+
+  // REGRESSION-002: Sandbox-free sessions must not silently skip the DB write.
+  // If updateSession is never called, provisioning state is never set.
+  test("updateSession is called exactly once for a sandbox-free session attach", async () => {
+    const { POST } = await routeModulePromise;
+
+    await POST(postRequest("session-1"), routeParams("session-1"));
+
+    expect(updateSessionCalls.length).toBe(1);
+    expect(updateSessionCalls[0]?.sessionId).toBe("session-1");
+  });
+
+  // REGRESSION-003: The response body must contain the updated session for the
+  // client to optimistically reflect provisioning state without a reload.
+  test("response body contains session with updated sandboxState after attach", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      postRequest("session-1"),
+      routeParams("session-1"),
+    );
+
+    const body = (await response.json()) as {
+      session?: Record<string, unknown>;
+      error?: string;
+    };
+
+    // Must not be an error response
+    expect(body.error).toBeUndefined();
+    // Must include the session object with provisioning state
+    expect(body.session).toBeDefined();
+    expect(body.session?.sandboxState).toMatchObject({ type: "vercel" });
+    expect(body.session?.lifecycleState).toBe("provisioning");
+  });
 });
