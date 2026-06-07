@@ -3,6 +3,7 @@ import type { ManagedRuntimeProfileOption } from "@/app/api/sessions/[sessionId]
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   RuntimeModeSelectorCompact,
+  RuntimeModeSelectorManageItem,
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
 
@@ -77,17 +78,18 @@ describe("RuntimeModeSelectorCompact", () => {
   });
 
   test("renders Manage-profile control when a session-source profile is selected", () => {
-    // BT-001: When a profile with source="session" is selected, a "Manage profile"
-    // button must appear in the dropdown so users can edit/re-test/delete it.
+    // BT-001: When a profile with source="session" is selected, the manage-item
+    // section must contain "Manage profile" so users can edit/re-test/delete it.
+    //
+    // Note: Radix DropdownMenuContent uses Presence (portal-gated rendering) and
+    // does NOT emit children via renderToStaticMarkup when the menu is closed.
+    // We test the extracted RuntimeModeSelectorManageItem presenter directly —
+    // the same pattern used by WorkflowPickerItems. The full compound component
+    // wires this in via RuntimeModeSelectorCompact (verified by typecheck + call-site audit).
     const html = renderToStaticMarkup(
-      <RuntimeModeSelectorCompact
-        managedRuntimeProfileId={sessionProfile.id}
-        onManagedRuntimeProfileChange={() => {}}
+      <RuntimeModeSelectorManageItem
         onManagedProfileDeleted={async () => {}}
         onManagedProfileSaved={() => {}}
-        onRuntimeModeChange={() => {}}
-        profiles={[sessionProfile]}
-        runtimeMode="managed_runtime"
         selectedProfile={sessionProfile}
         sessionId="session-abc123"
       />,
@@ -98,22 +100,19 @@ describe("RuntimeModeSelectorCompact", () => {
 
   test("does not render Manage-profile for built-in profiles (non-session source)", () => {
     // BT-002: Built-in profiles cannot be edited, so the manager trigger should
-    // be absent (or show disabled "Built-in profile" text instead).
+    // show "Built-in profile" instead of "Manage profile".
     const html = renderToStaticMarkup(
-      <RuntimeModeSelectorCompact
-        managedRuntimeProfileId={profile.id}
-        onManagedRuntimeProfileChange={() => {}}
+      <RuntimeModeSelectorManageItem
         onManagedProfileDeleted={async () => {}}
         onManagedProfileSaved={() => {}}
-        onRuntimeModeChange={() => {}}
-        profiles={[profile]}
-        runtimeMode="managed_runtime"
         selectedProfile={profile}
         sessionId="session-abc123"
       />,
     );
 
-    // The manager is rendered but disabled/shows "Built-in profile" for non-session profiles
+    // The manager is rendered but shows "Built-in profile" for non-session profiles,
+    // not "Manage profile"
     expect(html).not.toContain("Manage profile");
+    expect(html).toContain("Built-in profile");
   });
 });
