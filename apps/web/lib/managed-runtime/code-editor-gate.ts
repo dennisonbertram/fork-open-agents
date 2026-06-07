@@ -11,6 +11,13 @@ import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime
 export function getCodeEditorDisabledReason(
   profile: ManagedRuntimeProfile,
 ): string | null {
-  // TODO: implement
-  return null;
+  const hasCodeServer =
+    profile.expectedTools.includes("code-server") ||
+    profile.optionalTools.includes("code-server");
+
+  if (hasCodeServer) {
+    return null;
+  }
+
+  return "This runtime profile does not include the code editor.";
 }
