@@ -75,4 +75,51 @@ describe("getCodeEditorDisabledReason", () => {
     // The reason should mention the runtime profile or code editor
     expect(reason!.toLowerCase()).toMatch(/profile|editor/);
   });
+
+  // REGRESSION: a profile with an empty tool list should always disable the editor
+  test("regression: profile with empty expectedTools and optionalTools disables the editor", () => {
+    const profile = makeProfile({
+      id: "minimal-profile",
+      expectedTools: [],
+      optionalTools: [],
+    });
+
+    const reason = getCodeEditorDisabledReason(profile);
+
+    expect(reason).not.toBeNull();
+  });
+
+  // REGRESSION: adding code-server to expected tools flips the gate to allowed
+  test("regression: adding code-server to expectedTools enables the editor (null reason)", () => {
+    const profileWithout = makeProfile({
+      id: "no-code-server",
+      expectedTools: ["bun"],
+      optionalTools: [],
+    });
+    const profileWith = makeProfile({
+      id: "with-code-server",
+      expectedTools: ["bun", "code-server"],
+      optionalTools: [],
+    });
+
+    expect(getCodeEditorDisabledReason(profileWithout)).not.toBeNull();
+    expect(getCodeEditorDisabledReason(profileWith)).toBeNull();
+  });
+
+  // REGRESSION: bun and agent-browser together never satisfy the code-server check
+  test("regression: bun+agent-browser profile (the current default) never allows the editor", () => {
+    // This test will fail if someone accidentally adds code-server to web-bun-agent-browser
+    // or changes the gate logic to allow the editor without the tool declared.
+    const bunAgentBrowserProfile = makeProfile({
+      id: "web-bun-agent-browser",
+      expectedTools: ["bun", "agent-browser"],
+      optionalTools: ["node", "npm"],
+    });
+
+    const reason = getCodeEditorDisabledReason(bunAgentBrowserProfile);
+
+    // Reverting getCodeEditorDisabledReason to return null would break this.
+    expect(reason).not.toBeNull();
+    expect(reason).toBe("This runtime profile does not include the code editor.");
+  });
 });
