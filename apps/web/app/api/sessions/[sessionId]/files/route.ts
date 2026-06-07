@@ -35,15 +35,45 @@ function getPathDepth(suggestion: FileSuggestion): number {
 }
 
 /**
- * Parse git ls-files output and extract files and directories
+ * Parse git ls-files output and extract files and directories.
+ *
+ * Exported for unit testing.
+ *
+ * Edge case: git can emit entries that end with "/" (e.g. submodule paths or
+ * special tracked directories like "apps/web/public/.well-known/"). If we
+ * naively emit such an entry as a file AND separately synthesise the same
+ * path as a directory while processing its siblings, @pierre/trees throws
+ * "Duplicate path" and crashes the file-tree UI. We fix this by:
+ *   1. Skipping any raw entry that ends with "/" — it is already covered by
+ *      the directory synthesis loop when real files beneath it are processed.
+ *   2. Deduplicating all emitted values via a Set so no path can appear twice
+ *      regardless of how git orders its output.
  */
-function parseGitFiles(output: string): FileSuggestion[] {
+export function parseGitFiles(output: string): FileSuggestion[] {
   const results: FileSuggestion[] = [];
   const seenDirs = new Set<string>();
+  const seenValues = new Set<string>();
 
   const files = output.trim().split("\n").filter(Boolean);
 
   for (const file of files) {
+    // Skip raw entries that end with "/" — these are directory hints emitted by
+    // git for submodules or tracked empty dirs. The directory is already
+    // synthesised below when we encounter files nested inside it. Emitting it
+    // again as a non-directory entry creates a duplicate path.
+    if (file.endsWith("/")) {
+      // Still ensure the directory itself is recorded if we haven't seen it yet.
+      const dirKey = file.slice(0, -1);
+      if (!seenDirs.has(dirKey)) {
+        seenDirs.add(dirKey);
+        if (!seenValues.has(file)) {
+          seenValues.add(file);
+          results.push({ value: file, display: file, isDirectory: true });
+        }
+      }
+      continue;
+    }
+
     // Add parent directories
     const parts = file.split("/");
     let dirPath = "";
@@ -53,20 +83,27 @@ function parseGitFiles(output: string): FileSuggestion[] {
       dirPath = dirPath ? `${dirPath}/${part}` : part;
       if (!seenDirs.has(dirPath)) {
         seenDirs.add(dirPath);
-        results.push({
-          value: `${dirPath}/`,
-          display: `${dirPath}/`,
-          isDirectory: true,
-        });
+        const dirValue = `${dirPath}/`;
+        if (!seenValues.has(dirValue)) {
+          seenValues.add(dirValue);
+          results.push({
+            value: dirValue,
+            display: dirValue,
+            isDirectory: true,
+          });
+        }
       }
     }
 
-    // Add the file
-    results.push({
-      value: file,
-      display: file,
-      isDirectory: false,
-    });
+    // Add the file (guarded against duplicates in case git output has repeats)
+    if (!seenValues.has(file)) {
+      seenValues.add(file);
+      results.push({
+        value: file,
+        display: file,
+        isDirectory: false,
+      });
+    }
   }
 
   // Keep top-level paths first so files like README.md are always surfaced.

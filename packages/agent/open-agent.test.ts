@@ -114,4 +114,35 @@ describe("openAgent runtime tool policy", () => {
     expect(prompt).toContain("Do not directly edit files");
     expect(prompt).toContain("delegate implementation");
   });
+
+  test("instructs the coordinator to call setup_managed_runtime_profile to emit a draft when the user asks to set up or build a managed runtime profile", () => {
+    const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The prompt must name the tool so the model knows it exists and must call it
+    expect(prompt).toContain("setup_managed_runtime_profile");
+    // The prompt must make clear the coordinator should emit a draft for user review
+    expect(prompt).toContain("draft");
+  });
+
+  // REGRESSION: If the profile-draft routing rule is removed or weakened,
+  // these assertions catch it. They verify both that the tool is named as
+  // mandatory AND that the draft is the stated review gate — two orthogonal
+  // angles to the behavioral test above.
+  test("regression: profile draft rule is absent from classic-mode prompt so the rule is specific to managed-runtime mode", () => {
+    const classicPrompt = buildSystemPrompt({ runtimeMode: "classic" });
+    const managedPrompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The profile-draft section must NOT appear in classic mode (it is managed-runtime-only)
+    expect(classicPrompt).not.toContain("Profile Setup and Draft Emission");
+    // But it MUST appear in managed runtime mode
+    expect(managedPrompt).toContain("Profile Setup and Draft Emission");
+  });
+
+  test("regression: managed runtime prompt forbids skipping setup_managed_runtime_profile call for profile work", () => {
+    const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The prompt must explicitly prohibit skipping the tool call
+    expect(prompt).toContain("Never skip the");
+    expect(prompt).toContain("setup_managed_runtime_profile");
+  });
 });
