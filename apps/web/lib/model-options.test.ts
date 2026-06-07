@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ModelVariant } from "@/lib/model-variants";
 import {
   buildModelOptions,
+  filterAndSortModelOptions,
   getDefaultModelOptionId,
   groupByProvider,
   withMissingModelOption,
@@ -287,5 +288,147 @@ describe("model options", () => {
     ];
 
     expect(getDefaultModelOptionId(options)).toBe("openai/gpt-5");
+  });
+});
+
+describe("filterAndSortModelOptions", () => {
+  const allOptions = [
+    {
+      id: "anthropic/claude-opus-4",
+      label: "Claude Opus 4",
+      shortLabel: "Opus 4",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "anthropic/claude-sonnet-4",
+      label: "Claude Sonnet 4",
+      shortLabel: "Sonnet 4",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "openai/gpt-5",
+      label: "GPT-5",
+      shortLabel: "GPT-5",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "openai/gpt-4.1",
+      label: "GPT-4.1",
+      shortLabel: "GPT-4.1",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "google/gemini-2.5-pro",
+      label: "Gemini 2.5 Pro",
+      shortLabel: "2.5 Pro",
+      isVariant: false,
+      provider: "google",
+    },
+    {
+      id: "user-profile:profile-1:anthropic%2Fclaude-opus-4",
+      label: "Claude Opus 4",
+      shortLabel: "Opus 4",
+      isVariant: false,
+      provider: "user",
+      secondaryLabel: "My Key",
+    },
+  ];
+
+  // BT-001: provider filter restricts to that provider's models
+  test("BT-001: filters by provider when providerFilter is set", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "anthropic",
+      sort: "name",
+      search: "",
+    });
+    expect(result.every((o) => o.provider === "anthropic")).toBe(true);
+    expect(result).toHaveLength(2);
+  });
+
+  // BT-002: 'all' provider filter returns all options
+  test("BT-002: providerFilter 'all' returns all options (unsorted beyond sort)", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+    });
+    expect(result).toHaveLength(allOptions.length);
+  });
+
+  // BT-003: sort by name A-Z
+  test("BT-003: sorts options by name A-Z when sort=name", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+    });
+    const labels = result.map((o) => o.label);
+    const sorted = [...labels].sort((a, b) => a.localeCompare(b));
+    expect(labels).toEqual(sorted);
+  });
+
+  // BT-004: sort by provider groups providers alphabetically then by name within group
+  test("BT-004: sorts options by provider then name when sort=provider", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "provider",
+      search: "",
+    });
+    // Should be grouped: anthropic options come before google before openai before user
+    // (priority providers: user, anthropic, openai come first; then alphabetical)
+    const providers = result.map((o) => o.provider);
+    // user is priority first, then anthropic, then openai, then google
+    expect(providers.indexOf("user")).toBeLessThan(providers.indexOf("anthropic"));
+    expect(providers.indexOf("anthropic")).toBeLessThan(providers.indexOf("google"));
+  });
+
+  // BT-005: search filter matches label case-insensitively
+  test("BT-005: search filters by label case-insensitively", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "opus",
+    });
+    expect(result.every((o) => o.label.toLowerCase().includes("opus"))).toBe(
+      true,
+    );
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  // BT-006: empty search returns all (only filter/sort applies)
+  test("BT-006: empty search string returns all options after provider filter", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "openai",
+      sort: "name",
+      search: "",
+    });
+    expect(result).toHaveLength(2);
+    expect(result.every((o) => o.provider === "openai")).toBe(true);
+  });
+
+  // BT-007: user provider filter works for user-key options
+  test("BT-007: providerFilter=user returns only user-key models", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "user",
+      sort: "name",
+      search: "",
+    });
+    expect(result.every((o) => o.provider === "user")).toBe(true);
+    expect(result).toHaveLength(1);
+  });
+
+  // BT-008: combined provider filter + search
+  test("BT-008: applies both provider filter and search simultaneously", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "anthropic",
+      sort: "name",
+      search: "sonnet",
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("anthropic/claude-sonnet-4");
   });
 });
