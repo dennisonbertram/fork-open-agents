@@ -176,9 +176,7 @@ export function filterAndSortModelOptions(
 
   if (needle) {
     filtered = filtered.filter((o) => {
-      const haystack = [o.label, o.searchText ?? ""]
-        .join(" ")
-        .toLowerCase();
+      const haystack = [o.label, o.searchText ?? ""].join(" ").toLowerCase();
       return haystack.includes(needle);
     });
   }

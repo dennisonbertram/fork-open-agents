@@ -382,8 +382,12 @@ describe("filterAndSortModelOptions", () => {
     // (priority providers: user, anthropic, openai come first; then alphabetical)
     const providers = result.map((o) => o.provider);
     // user is priority first, then anthropic, then openai, then google
-    expect(providers.indexOf("user")).toBeLessThan(providers.indexOf("anthropic"));
-    expect(providers.indexOf("anthropic")).toBeLessThan(providers.indexOf("google"));
+    expect(providers.indexOf("user")).toBeLessThan(
+      providers.indexOf("anthropic"),
+    );
+    expect(providers.indexOf("anthropic")).toBeLessThan(
+      providers.indexOf("google"),
+    );
   });
 
   // BT-005: search filter matches label case-insensitively
@@ -460,7 +464,11 @@ describe("filterAndSortModelOptions — regression", () => {
 
   test("REG-001: does not mutate the original options array", () => {
     const original = [...options];
-    filterAndSortModelOptions(options, { providerFilter: "all", sort: "name", search: "" });
+    filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+    });
     expect(options).toEqual(original);
   });
 

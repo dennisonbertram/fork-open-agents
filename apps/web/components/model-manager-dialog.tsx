@@ -75,10 +75,14 @@ export function ModelManagerDialog({
     [enabledModelIds, onOpenChange],
   );
 
-  const providers = useMemo(() => deriveProviders(modelOptions), [modelOptions]);
+  const providers = useMemo(
+    () => deriveProviders(modelOptions),
+    [modelOptions],
+  );
 
   const visible = useMemo(
-    () => filterAndSortModelOptions(modelOptions, { providerFilter, sort, search }),
+    () =>
+      filterAndSortModelOptions(modelOptions, { providerFilter, sort, search }),
     [modelOptions, providerFilter, sort, search],
   );
 
@@ -141,7 +145,11 @@ export function ModelManagerDialog({
 
           {/* Provider filter */}
           <Select value={providerFilter} onValueChange={setProviderFilter}>
-            <SelectTrigger size="sm" aria-label="Filter by provider" className="w-[130px]">
+            <SelectTrigger
+              size="sm"
+              aria-label="Filter by provider"
+              className="w-[130px]"
+            >
               <SelectValue placeholder="All providers" />
             </SelectTrigger>
             <SelectContent>
@@ -155,8 +163,15 @@ export function ModelManagerDialog({
           </Select>
 
           {/* Sort */}
-          <Select value={sort} onValueChange={(v) => setSort(v as ModelSortKey)}>
-            <SelectTrigger size="sm" aria-label="Sort order" className="w-[110px]">
+          <Select
+            value={sort}
+            onValueChange={(v) => setSort(v as ModelSortKey)}
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Sort order"
+              className="w-[110px]"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
