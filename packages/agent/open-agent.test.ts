@@ -114,4 +114,13 @@ describe("openAgent runtime tool policy", () => {
     expect(prompt).toContain("Do not directly edit files");
     expect(prompt).toContain("delegate implementation");
   });
+
+  test("instructs the coordinator to call setup_managed_runtime_profile to emit a draft when the user asks to set up or build a managed runtime profile", () => {
+    const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The prompt must name the tool so the model knows it exists and must call it
+    expect(prompt).toContain("setup_managed_runtime_profile");
+    // The prompt must make clear the coordinator should emit a draft for user review
+    expect(prompt).toContain("draft");
+  });
 });
