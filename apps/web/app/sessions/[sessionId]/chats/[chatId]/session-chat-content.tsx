@@ -4724,6 +4724,17 @@ export function SessionChatContent({
                               managedRuntimeProfileId={
                                 session.managedRuntimeProfileId
                               }
+                              onManagedProfileDeleted={async (
+                                fallbackProfileId,
+                              ) => {
+                                await updateManagedRuntimeProfile(
+                                  fallbackProfileId,
+                                );
+                                await mutateManagedProfiles();
+                              }}
+                              onManagedProfileSaved={() => {
+                                void mutateManagedProfiles();
+                              }}
                               onManagedRuntimeProfileChange={(value) => {
                                 void updateManagedRuntimeProfile(value).catch(
                                   (error) => {
@@ -4745,6 +4756,7 @@ export function SessionChatContent({
                               profiles={managedRuntimeProfiles}
                               runtimeMode={session.runtimeMode}
                               selectedProfile={selectedManagedRuntimeProfile}
+                              sessionId={session.id}
                             />
                             <WorkflowPickerCompact
                               disabled={isArchived || isChatInFlight}
