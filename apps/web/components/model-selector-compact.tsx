@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, ChevronDown } from "lucide-react";
+import { CheckIcon, ChevronDown, Settings2Icon } from "lucide-react";
 import { type ModelOption, groupByProvider } from "@/lib/model-options";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ import {
   ProviderIcon,
   getProviderDisplayName,
 } from "@/components/provider-icons";
+import { ModelManagerDialog } from "@/components/model-manager-dialog";
 
 interface ModelSelectorCompactProps {
   value: string;
@@ -29,6 +30,10 @@ interface ModelSelectorCompactProps {
   onChange: (modelId: string) => void;
   disabled?: boolean;
   onCloseAutoFocus?: () => void;
+  /** Current shortlist (empty = show all). Pass to enable the gear/manage-models button. */
+  enabledModelIds?: string[];
+  /** Called with the new complete list when the user saves from the manage-models dialog. */
+  onSaveEnabledModelIds?: (ids: string[]) => Promise<void>;
 }
 
 export function ModelSelectorCompact({
@@ -37,9 +42,12 @@ export function ModelSelectorCompact({
   onChange,
   disabled = false,
   onCloseAutoFocus,
+  enabledModelIds,
+  onSaveEnabledModelIds,
 }: ModelSelectorCompactProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [manageOpen, setManageOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const focusSearchInput = useCallback(() => {
@@ -102,6 +110,7 @@ export function ModelSelectorCompact({
   const groups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
 
   return (
+    <>
     <Popover
       open={open}
       onOpenChange={(nextOpen) => {
@@ -143,12 +152,28 @@ export function ModelSelectorCompact({
         }}
       >
         <Command>
-          <CommandInput
-            ref={searchInputRef}
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Search models..."
-          />
+          <div className="flex items-center border-b">
+            <CommandInput
+              ref={searchInputRef}
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Search models..."
+              className="flex-1 border-0 focus-visible:ring-0"
+            />
+            {onSaveEnabledModelIds && (
+              <button
+                type="button"
+                aria-label="Manage models"
+                onClick={() => {
+                  setOpen(false);
+                  setManageOpen(true);
+                }}
+                className="mr-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <Settings2Icon className="size-3.5" />
+              </button>
+            )}
+          </div>
           <CommandList>
             <CommandEmpty>No models found.</CommandEmpty>
             {groups.map((group) => (
@@ -203,5 +228,15 @@ export function ModelSelectorCompact({
         </Command>
       </PopoverContent>
     </Popover>
+    {onSaveEnabledModelIds && (
+      <ModelManagerDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        modelOptions={modelOptions}
+        enabledModelIds={enabledModelIds ?? []}
+        onSave={onSaveEnabledModelIds}
+      />
+    )}
+    </>
   );
 }
