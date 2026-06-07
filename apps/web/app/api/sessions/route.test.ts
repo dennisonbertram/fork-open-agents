@@ -466,4 +466,50 @@ describe("/api/sessions POST vercel project linking", () => {
     expect(body.session.inferenceProfileId).toBe("inference-profile-1");
     expect(body.chat.inferenceProfileId).toBe("inference-profile-1");
   });
+
+  // Regression tests for issue #182 — session title from UI
+  test("regression #182: a non-empty title in the POST body is used instead of the random-city fallback", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        title: "  My Sprint Session  ",
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    // The session title must be the user-supplied value (trimmed), NOT "Oslo"
+    // which is what the mocked getRandomCityName returns.
+    expect(body.session.title).toBe("My Sprint Session");
+    expect(createCalls[0]).toMatchObject({ title: "My Sprint Session" });
+  });
+
+  test("regression #182: an empty title in the POST body falls back to the random-city name", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        title: "   ",
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    // Whitespace-only title must fall back to the random-city name.
+    expect(body.session.title).toBe("Oslo");
+    expect(createCalls[0]).toMatchObject({ title: "Oslo" });
+  });
 });
