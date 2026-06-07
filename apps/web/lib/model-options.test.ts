@@ -432,3 +432,82 @@ describe("filterAndSortModelOptions", () => {
     expect(result[0].id).toBe("anthropic/claude-sonnet-4");
   });
 });
+
+describe("filterAndSortModelOptions — regression", () => {
+  const options = [
+    {
+      id: "openai/gpt-5",
+      label: "GPT-5",
+      shortLabel: "GPT-5",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "anthropic/claude-opus-4",
+      label: "Claude Opus 4",
+      shortLabel: "Opus 4",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "google/gemini-2.5",
+      label: "Gemini 2.5",
+      shortLabel: "2.5",
+      isVariant: false,
+      provider: "google",
+    },
+  ];
+
+  test("REG-001: does not mutate the original options array", () => {
+    const original = [...options];
+    filterAndSortModelOptions(options, { providerFilter: "all", sort: "name", search: "" });
+    expect(options).toEqual(original);
+  });
+
+  test("REG-002: returns empty array (not null/undefined) when no models match", () => {
+    const result = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "name",
+      search: "zzz-no-match",
+    });
+    expect(Array.isArray(result)).toBe(true);
+    expect(result).toHaveLength(0);
+  });
+
+  test("REG-003: search is case-insensitive in both directions", () => {
+    const upper = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "name",
+      search: "GPT",
+    });
+    const lower = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "name",
+      search: "gpt",
+    });
+    expect(upper).toHaveLength(lower.length);
+    expect(upper.map((o) => o.id)).toEqual(lower.map((o) => o.id));
+  });
+
+  test("REG-004: provider sort keeps all models (no models lost on sort)", () => {
+    const result = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "provider",
+      search: "",
+    });
+    expect(result).toHaveLength(options.length);
+    const ids = new Set(result.map((o) => o.id));
+    for (const o of options) {
+      expect(ids.has(o.id)).toBe(true);
+    }
+  });
+
+  test("REG-005: providerFilter with unknown provider returns empty list (not all models)", () => {
+    const result = filterAndSortModelOptions(options, {
+      providerFilter: "mistral",
+      sort: "name",
+      search: "",
+    });
+    expect(result).toHaveLength(0);
+  });
+});
