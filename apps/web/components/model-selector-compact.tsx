@@ -181,47 +181,65 @@ export function ModelSelectorCompact({
                   key={group.provider}
                   heading={getProviderDisplayName(group.provider)}
                 >
-                  {group.options.map((option) => (
-                    <CommandItem
-                      key={option.id}
-                      value={`${option.label} ${option.id} ${
-                        option.secondaryLabel ?? ""
-                      } ${option.description ?? ""} ${option.searchText ?? ""}`}
-                      onSelect={() => handleSelect(option.id)}
-                      className="flex items-center"
-                    >
-                      <ProviderIcon
-                        provider={option.provider}
-                        className="mr-1.5 size-3.5 shrink-0 opacity-70"
-                      />
-                      <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                        <span className="min-w-0 truncate">
-                          {option.shortLabel}
+                  {group.options.map((option) => {
+                    const isUserModel = option.source === "user";
+                    return (
+                      <CommandItem
+                        key={option.id}
+                        value={`${option.label} ${option.id} ${
+                          option.secondaryLabel ?? ""
+                        } ${option.description ?? ""} ${option.searchText ?? ""}`}
+                        onSelect={() => handleSelect(option.id)}
+                        title={
+                          isUserModel && option.secondaryLabel
+                            ? `${option.shortLabel} — your key (${option.secondaryLabel})`
+                            : undefined
+                        }
+                        className="flex items-center"
+                      >
+                        <ProviderIcon
+                          provider={option.provider}
+                          className="mr-1.5 size-3.5 shrink-0 opacity-70"
+                        />
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="min-w-0 truncate">
+                            {option.shortLabel}
+                          </span>
+                          {/* Personal-provider (user-key) models: a small green dot
+                            instead of a competing "Personal …" label, so the full
+                            model name stays readable. */}
+                          {isUserModel && (
+                            <span
+                              className="size-1.5 shrink-0 rounded-full bg-emerald-500"
+                              aria-label="Your personal provider key"
+                              title="Uses your personal provider key"
+                            />
+                          )}
+                          {option.secondaryLabel && !isUserModel && (
+                            <span className="min-w-0 truncate text-xs text-muted-foreground">
+                              {option.secondaryLabel}
+                            </span>
+                          )}
                         </span>
-                        {option.secondaryLabel && (
-                          <span className="min-w-0 truncate text-xs text-muted-foreground">
-                            {option.secondaryLabel}
+                        {option.isVariant && (
+                          <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            variant
                           </span>
                         )}
-                      </span>
-                      {option.isVariant && (
-                        <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                          variant
-                        </span>
-                      )}
-                      {option.id === APP_DEFAULT_MODEL_ID && (
-                        <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                          default
-                        </span>
-                      )}
-                      <CheckIcon
-                        className={cn(
-                          "ml-auto size-4 shrink-0",
-                          value === option.id ? "opacity-100" : "opacity-0",
+                        {option.id === APP_DEFAULT_MODEL_ID && (
+                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                            default
+                          </span>
                         )}
-                      />
-                    </CommandItem>
-                  ))}
+                        <CheckIcon
+                          className={cn(
+                            "ml-auto size-4 shrink-0",
+                            value === option.id ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      </CommandItem>
+                    );
+                  })}
                 </CommandGroup>
               ))}
             </CommandList>
