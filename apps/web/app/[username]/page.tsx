@@ -31,15 +31,16 @@ export async function generateMetadata({
   const { username } = await params;
   const resolvedSearchParams = await searchParams;
   const date = getSingleSearchParam(resolvedSearchParams.date);
-  const profile = await getPublicUsageProfile(username, date);
+  const result = await getPublicUsageProfile(username, date);
 
-  if (!profile) {
+  if (result.status !== "ok") {
     return {
       title: "Public profile",
       description: "Public Open Agents usage profile.",
     };
   }
 
+  const { profile } = result;
   const displayName = profile.user.name?.trim() || profile.user.username;
   const dateQuery = profile.dateSelection.value
     ? `?date=${encodeURIComponent(profile.dateSelection.value)}`
@@ -119,6 +120,23 @@ function displayModelId(modelId: string): string {
   return slashIndex >= 0 ? modelId.slice(slashIndex + 1) : modelId;
 }
 
+// ── Profile-unavailable views ──────────────────────────────────────────────
+
+function ProfileDisabledView() {
+  return (
+    <main className="min-h-screen bg-background text-foreground">
+      <div className="mx-auto max-w-5xl px-6 py-8 pb-16 sm:py-12 sm:pb-20">
+        <div className="flex flex-col items-center justify-center py-24 text-center gap-3">
+          <h1 className="text-xl font-semibold">This profile is private</h1>
+          <p className="text-sm text-muted-foreground">
+            This user has not made their usage profile public.
+          </p>
+        </div>
+      </div>
+    </main>
+  );
+}
+
 // ── Main page ──────────────────────────────────────────────────────────────
 
 export default async function PublicUsagePage({
@@ -128,12 +146,17 @@ export default async function PublicUsagePage({
   const { username } = await params;
   const resolvedSearchParams = await searchParams;
   const date = getSingleSearchParam(resolvedSearchParams.date);
-  const profile = await getPublicUsageProfile(username, date);
+  const result = await getPublicUsageProfile(username, date);
 
-  if (!profile) {
+  if (result.status === "not_found") {
     notFound();
   }
 
+  if (result.status === "disabled") {
+    return <ProfileDisabledView />;
+  }
+
+  const { profile } = result;
   const displayName = profile.user.name?.trim() || profile.user.username;
   const publicProfilePath = `/u/${profile.user.username}`;
   const totalTokens = profile.totals.totalTokens;
