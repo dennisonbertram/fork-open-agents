@@ -19,10 +19,14 @@ export function FileTree({ files, repoName, onFileClick }: FileTreeProps) {
 
   const paths = useMemo(() => {
     const prefix = repoName ? `${repoName}/` : "";
-    return files.map((f) => {
+    const raw = files.map((f) => {
       const normalized = f.isDirectory ? f.value.replace(/\/?$/, "/") : f.value;
       return `${prefix}${normalized}`;
     });
+    // Deduplicate defensively: if parseGitFiles somehow emits a path twice
+    // (e.g. a trailing-slash git entry that was also synthesised as a dir),
+    // @pierre/trees will throw "Duplicate path" and crash the workspace.
+    return [...new Set(raw)];
   }, [files, repoName]);
 
   const handleSelectionChange = useCallback(

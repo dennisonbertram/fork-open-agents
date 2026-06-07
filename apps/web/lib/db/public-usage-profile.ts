@@ -199,16 +199,24 @@ interface PublicUsageUserCandidate {
   publicUsageEnabled: boolean | null;
 }
 
+type PickResult =
+  | { found: true; user: PublicUsageProfile["user"] }
+  | { found: false; reason: "not_found" | "disabled" };
+
 function pickPublicUsageUserCandidate(
   candidates: PublicUsageUserCandidate[],
   requestedUsername: string,
-): PublicUsageProfile["user"] | null {
+): PickResult {
+  if (candidates.length === 0) {
+    return { found: false, reason: "not_found" };
+  }
+
   const enabledCandidates = candidates.filter(
     (candidate) => candidate.publicUsageEnabled,
   );
 
   if (enabledCandidates.length === 0) {
-    return null;
+    return { found: false, reason: "disabled" };
   }
 
   const selectedCandidate = enabledCandidates.toSorted((a, b) => {
@@ -228,21 +236,31 @@ function pickPublicUsageUserCandidate(
     return a.id.localeCompare(b.id);
   })[0];
 
-  return selectedCandidate
-    ? {
-        id: selectedCandidate.id,
-        username: selectedCandidate.username,
-        name: selectedCandidate.name,
-        avatarUrl: selectedCandidate.avatarUrl,
-      }
-    : null;
+  if (!selectedCandidate) {
+    return { found: false, reason: "disabled" };
+  }
+
+  return {
+    found: true,
+    user: {
+      id: selectedCandidate.id,
+      username: selectedCandidate.username,
+      name: selectedCandidate.name,
+      avatarUrl: selectedCandidate.avatarUrl,
+    },
+  };
 }
+
+export type PublicUsageProfileResult =
+  | { status: "ok"; profile: PublicUsageProfile }
+  | { status: "disabled" }
+  | { status: "not_found" };
 
 export const getPublicUsageProfile = cache(
   async (
     username: string,
     dateValue: string | null,
-  ): Promise<PublicUsageProfile | null> => {
+  ): Promise<PublicUsageProfileResult> => {
     const normalizedUsername = username.trim().toLowerCase();
     const userCandidates = await db
       .select({
@@ -257,11 +275,13 @@ export const getPublicUsageProfile = cache(
       .leftJoin(userPreferences, eq(userPreferences.userId, users.id))
       .where(sql`lower(${users.username}) = ${normalizedUsername}`)
       .limit(10);
-    const user = pickPublicUsageUserCandidate(userCandidates, username);
+    const pickResult = pickPublicUsageUserCandidate(userCandidates, username);
 
-    if (!user) {
-      return null;
+    if (!pickResult.found) {
+      return { status: pickResult.reason };
     }
+
+    const { user } = pickResult;
 
     const parsedDate = parsePublicUsageDate(dateValue);
     const dateSelection = parsedDate.ok
@@ -278,16 +298,19 @@ export const getPublicUsageProfile = cache(
     const derived = buildPublicUsageProfileData({ usage, insights });
 
     return {
-      user,
-      dateSelection,
-      invalidDateError: parsedDate.ok ? null : parsedDate.error,
-      totals: derived.totals,
-      agentSplit: derived.agentSplit,
-      topModels: derived.topModels,
-      topRepositories: derived.topRepositories,
-      insights,
-      dailyActivity: derived.dailyActivity,
-      hasUsage: derived.hasUsage,
+      status: "ok",
+      profile: {
+        user,
+        dateSelection,
+        invalidDateError: parsedDate.ok ? null : parsedDate.error,
+        totals: derived.totals,
+        agentSplit: derived.agentSplit,
+        topModels: derived.topModels,
+        topRepositories: derived.topRepositories,
+        insights,
+        dailyActivity: derived.dailyActivity,
+        hasUsage: derived.hasUsage,
+      },
     };
   },
 );
