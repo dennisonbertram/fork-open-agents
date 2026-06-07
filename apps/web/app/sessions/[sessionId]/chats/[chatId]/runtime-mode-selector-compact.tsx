@@ -22,6 +22,7 @@ import {
   ManagedRuntimeProfileEvidenceBadge,
   getManagedRuntimeProfileEvidenceSummary,
 } from "./managed-runtime-profile-evidence-badge";
+import { ManagedRuntimeProfileManager } from "./managed-runtime-profile-manager";
 
 type RuntimeMode = "classic" | "managed_runtime";
 type ManagedRuntimeProfileOption =
@@ -50,16 +51,22 @@ export function RuntimeModeSelectorCompact({
   selectedProfile,
   profiles,
   disabled,
+  sessionId,
   onRuntimeModeChange,
   onManagedRuntimeProfileChange,
+  onManagedProfileSaved,
+  onManagedProfileDeleted,
 }: {
   runtimeMode: RuntimeMode;
   managedRuntimeProfileId: string;
   selectedProfile: ManagedRuntimeProfileOption | undefined;
   profiles: ManagedRuntimeProfileOption[];
   disabled?: boolean;
+  sessionId?: string;
   onRuntimeModeChange: (runtimeMode: RuntimeMode) => void;
   onManagedRuntimeProfileChange: (profileId: string) => void;
+  onManagedProfileSaved?: () => void;
+  onManagedProfileDeleted?: (fallbackProfileId: string) => Promise<void>;
 }) {
   const isManagedRuntime = runtimeMode === "managed_runtime";
   const summary = getRuntimeModeSummary({
@@ -151,7 +158,54 @@ export function RuntimeModeSelectorCompact({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        {sessionId ? (
+          <>
+            <DropdownMenuSeparator />
+            <div className="px-1 py-1">
+              <RuntimeModeSelectorManageItem
+                disabled={!selectedProfile}
+                onManagedProfileDeleted={
+                  onManagedProfileDeleted ?? (async () => undefined)
+                }
+                onManagedProfileSaved={
+                  onManagedProfileSaved ?? (() => undefined)
+                }
+                selectedProfile={selectedProfile}
+                sessionId={sessionId}
+              />
+            </div>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * The manage-profile section rendered inside the runtime selector dropdown.
+ * Exported separately so tests can render it directly — Radix DropdownMenuContent
+ * is portal-gated and not emitted by renderToStaticMarkup when closed.
+ */
+export function RuntimeModeSelectorManageItem({
+  sessionId,
+  selectedProfile,
+  disabled,
+  onManagedProfileSaved,
+  onManagedProfileDeleted,
+}: {
+  sessionId: string;
+  selectedProfile: ManagedRuntimeProfileOption | undefined;
+  disabled?: boolean;
+  onManagedProfileSaved: () => void;
+  onManagedProfileDeleted: (fallbackProfileId: string) => Promise<void>;
+}) {
+  return (
+    <ManagedRuntimeProfileManager
+      disabled={disabled ?? !selectedProfile}
+      onProfileDeleted={onManagedProfileDeleted}
+      onProfileSaved={onManagedProfileSaved}
+      profile={selectedProfile}
+      sessionId={sessionId}
+    />
   );
 }

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 
 type CreateSessionInput = {
+  title?: string;
   repoOwner?: string;
   repoName?: string;
   branch?: string;
