@@ -532,4 +532,53 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
       sandboxState: { type: "vercel" },
     });
   });
+
+  // REGRESSION-001: The API response body itself must reflect the null lifecycle for no-repo sessions
+  test("no-repo session response body has null lifecycleState and null sandboxState", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}));
+    const body = (await response.json()) as { session: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    // If the implementation regresses (back to hardcoded "provisioning"),
+    // these assertions will fail and catch the breakage.
+    expect(body.session.lifecycleState).toBeNull();
+    expect(body.session.sandboxState).toBeNull();
+  });
+
+  // REGRESSION-002: Partial repo input (only repoOwner, no repoName) also stays sandbox-free
+  test("session with repoOwner but no repoName does not enter provisioning", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({ repoOwner: "vercel" }),
+    );
+
+    expect(response.status).toBe(200);
+    // hasRepo requires BOTH repoOwner AND repoName; partial input must not trigger provisioning
+    expect(createCalls[0]?.lifecycleState).toBeNull();
+    expect(createCalls[0]?.sandboxState).toBeNull();
+  });
+
+  // REGRESSION-003: Repo-backed session response body confirms provisioning (catches accidental no-op)
+  test("repo-backed session response body has provisioning lifecycleState and vercel sandboxState", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as { session: Record<string, unknown> };
+
+    expect(response.status).toBe(200);
+    // If the implementation accidentally disabled provisioning for repo sessions,
+    // this catches it.
+    expect(body.session.lifecycleState).toBe("provisioning");
+    expect(body.session.sandboxState).toEqual({ type: "vercel" });
+  });
 });
