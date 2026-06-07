@@ -283,7 +283,11 @@ export function SessionStarter({
                 requiresVercelChoice={requiresVercelChoice}
                 vercelProjectChoice={vercelProjectChoice}
                 onVercelProjectChoiceChange={setVercelProjectChoice}
-                onRetry={repoProjectsError ? () => void refreshVercelProjects() : undefined}
+                onRetry={
+                  repoProjectsError
+                    ? () => void refreshVercelProjects()
+                    : undefined
+                }
               />
             )}
           </div>

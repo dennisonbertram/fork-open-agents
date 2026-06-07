@@ -3270,7 +3270,11 @@ export function SessionChatContent({
               goals={observabilityData?.workflowGoals ?? []}
             />
             {/* Sandbox provisioning status badge */}
-            {(isCreatingSandbox || isRestoringSnapshot || isServerRestoring || isHibernatingUi || isServerHibernated) && (
+            {(isCreatingSandbox ||
+              isRestoringSnapshot ||
+              isServerRestoring ||
+              isHibernatingUi ||
+              isServerHibernated) && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span
@@ -3288,7 +3292,10 @@ export function SessionChatContent({
                     <Loader2
                       className={cn(
                         "h-2.5 w-2.5 animate-spin",
-                        isCreatingSandbox || isRestoringSnapshot || isServerRestoring || isHibernatingUi
+                        isCreatingSandbox ||
+                          isRestoringSnapshot ||
+                          isServerRestoring ||
+                          isHibernatingUi
                           ? "text-amber-600 dark:text-amber-400"
                           : "text-muted-foreground/60",
                       )}
