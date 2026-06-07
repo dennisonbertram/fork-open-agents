@@ -24,8 +24,7 @@ export class FileTreeErrorBoundary extends React.Component<Props, State> {
   }
 
   static getDerivedStateFromError(error: unknown): State {
-    const message =
-      error instanceof Error ? error.message : "Unknown error";
+    const message = error instanceof Error ? error.message : "Unknown error";
     return { hasError: true, errorMessage: message };
   }
 

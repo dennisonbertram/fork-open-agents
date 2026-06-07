@@ -7,8 +7,14 @@ mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async () => ({}),
 }));
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
-  requireAuthenticatedUser: async () => ({ ok: false, response: new Response() }),
-  requireOwnedSessionWithSandboxGuard: async () => ({ ok: false, response: new Response() }),
+  requireAuthenticatedUser: async () => ({
+    ok: false,
+    response: new Response(),
+  }),
+  requireOwnedSessionWithSandboxGuard: async () => ({
+    ok: false,
+    response: new Response(),
+  }),
 }));
 mock.module("@/lib/db/sessions", () => ({
   updateSession: async () => undefined,
@@ -120,7 +126,9 @@ describe("file-tree paths dedup (regression, BT-005)", () => {
     const deduped = [...new Set(raw)];
 
     expect(deduped).toHaveLength(3);
-    expect(deduped.filter((v) => v === "repo/apps/web/public/.well-known/")).toHaveLength(1);
+    expect(
+      deduped.filter((v) => v === "repo/apps/web/public/.well-known/"),
+    ).toHaveLength(1);
   });
 });
 
@@ -180,11 +188,9 @@ describe("parseGitFiles – regression suite", () => {
   // swallow top-level files.
   test("REG-003 root-level files are not swallowed by the fix", async () => {
     const { parseGitFiles } = await import("./route");
-    const output = [
-      "README.md",
-      "package.json",
-      "apps/web/index.ts",
-    ].join("\n");
+    const output = ["README.md", "package.json", "apps/web/index.ts"].join(
+      "\n",
+    );
 
     const suggestions = parseGitFiles(output);
     const values = suggestions.map((s) => s.value);
