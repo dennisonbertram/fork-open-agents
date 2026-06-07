@@ -1224,7 +1224,7 @@ export function SessionChatContent({
     panelPortalRef,
     headerActionsRef,
   } = useGitPanel();
-  const { preferences } = useUserPreferences();
+  const { preferences, updatePreferences } = useUserPreferences();
   const openVerifiedBuildPanel = useCallback(() => {
     setRightPanelView("verified-build");
     setGitPanelOpen(true);
@@ -4733,6 +4733,12 @@ export function SessionChatContent({
                                 <ModelSelectorCompact
                                   value={selectedModelOptionId}
                                   modelOptions={modelOptions}
+                                  enabledModelIds={preferences?.enabledModelIds}
+                                  onSaveEnabledModelIds={async (ids) => {
+                                    await updatePreferences({
+                                      enabledModelIds: ids,
+                                    });
+                                  }}
                                   disabled={
                                     isChatInFlight ||
                                     isUpdatingModel ||
