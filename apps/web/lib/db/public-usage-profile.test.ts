@@ -382,7 +382,12 @@ describe("getPublicUsageProfile", () => {
     const result = await getPublicUsageProfile("all-time-user", "bad-value");
     const profile =
       result && (result as { status: string }).status === "ok"
-        ? (result as { status: "ok"; profile: { dateSelection: unknown; invalidDateError: unknown } }).profile
+        ? (
+            result as {
+              status: "ok";
+              profile: { dateSelection: unknown; invalidDateError: unknown };
+            }
+          ).profile
         : null;
 
     expect(profile?.dateSelection).toEqual({
@@ -523,7 +528,10 @@ describe("getPublicUsageProfile tagged result shape (regression)", () => {
     const result = await getPublicUsageProfile("active-user", null);
     expect((result as { status: string }).status).toBe("ok");
     // Data must be under .profile, not directly on result
-    const okResult = result as { status: "ok"; profile: { user: { id: string }; hasUsage: boolean } };
+    const okResult = result as {
+      status: "ok";
+      profile: { user: { id: string }; hasUsage: boolean };
+    };
     expect(okResult.profile).toBeDefined();
     expect(okResult.profile.user.id).toBe("user-ok-regression");
     // Legacy direct .user access on result must NOT work (no top-level .user)
