@@ -389,8 +389,10 @@ export async function POST(req: Request) {
           managedRuntimeProfileId ?? preferences.defaultManagedRuntimeProfileId,
         inferenceProfileId: preferences.defaultInferenceProfileId,
         globalSkillRefs: preferences.globalSkillRefs,
-        sandboxState: { type: sandboxType },
-        lifecycleState: "provisioning",
+        // No-repo (New Chat) sessions skip sandbox provisioning entirely.
+        // Repo-backed sessions still enter the provisioning lifecycle.
+        sandboxState: hasRepo ? { type: sandboxType } : null,
+        lifecycleState: hasRepo ? "provisioning" : null,
         lifecycleVersion: 0,
       },
       initialChat: {
