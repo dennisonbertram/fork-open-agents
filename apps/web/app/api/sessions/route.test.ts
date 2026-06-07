@@ -496,7 +496,9 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
 
     expect(response.status).toBe(200);
     // lifecycleState must NOT be "provisioning" for a sandbox-free session
-    expect(createCalls[0]).not.toMatchObject({ lifecycleState: "provisioning" });
+    expect(createCalls[0]).not.toMatchObject({
+      lifecycleState: "provisioning",
+    });
     // It should be null (no lifecycle) to avoid perpetual provisioning
     expect(createCalls[0]?.lifecycleState).toBeNull();
   });
@@ -538,7 +540,9 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     const { POST } = await routeModulePromise;
 
     const response = await POST(createJsonRequest({}));
-    const body = (await response.json()) as { session: Record<string, unknown> };
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
 
     expect(response.status).toBe(200);
     // If the implementation regresses (back to hardcoded "provisioning"),
@@ -551,9 +555,7 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
   test("session with repoOwner but no repoName does not enter provisioning", async () => {
     const { POST } = await routeModulePromise;
 
-    const response = await POST(
-      createJsonRequest({ repoOwner: "vercel" }),
-    );
+    const response = await POST(createJsonRequest({ repoOwner: "vercel" }));
 
     expect(response.status).toBe(200);
     // hasRepo requires BOTH repoOwner AND repoName; partial input must not trigger provisioning
@@ -573,7 +575,9 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
         cloneUrl: "https://github.com/vercel/open-agents",
       }),
     );
-    const body = (await response.json()) as { session: Record<string, unknown> };
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
 
     expect(response.status).toBe(200);
     // If the implementation accidentally disabled provisioning for repo sessions,
