@@ -328,6 +328,133 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("/repos/acme/widgets/agents");
   });
 
+  test("BT-001: renders webhook URL for webhook.error trigger with webhookPublicId", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-wh",
+            name: "Error watcher",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "api",
+            instructions: "Watch for errors.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-wh",
+                name: "Error webhook",
+                kind: "webhook.error",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: "wh_abc123",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // The webhook URL should be rendered inside the trigger pill area
+    expect(html).toContain("/api/background-agents/webhook/wh_abc123");
+    // It should have a copy button for the URL
+    expect(html).toContain("Copy webhook URL");
+  });
+
+  test("BT-002: delete button is rendered in the agent action row", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-del",
+            name: "To be deleted",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "widgets",
+            instructions: "Some instructions.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-del",
+                name: "Pull request",
+                kind: "github.pull_request",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // A destructive Delete button must be present in the agent action row
+    expect(html).toContain("Delete");
+    // The delete button should have an aria-label for accessibility
+    expect(html).toContain("Delete agent");
+  });
+
+  test("REG-001: webhook URL not shown when webhookPublicId is null (regression guard)", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-no-wh",
+            name: "No webhook",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "api",
+            instructions: "Watch for PRs.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-no-wh",
+                name: "Error webhook",
+                kind: "webhook.error",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Should NOT render any webhook path when webhookPublicId is null
+    expect(html).not.toContain("/api/background-agents/webhook/");
+    // Should NOT render the copy webhook URL button
+    expect(html).not.toContain("Copy webhook URL");
+  });
+
+  test("REG-002: delete button absent when agents list is empty (regression guard)", async () => {
+    agentsSwrState = {
+      data: { agents: [] },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Delete button should not appear when there are no agents
+    expect(html).not.toContain("Delete agent");
+    expect(html).toContain("No background agents yet.");
+  });
+
   test("builds edit form state and update payloads for existing agents", async () => {
     // Realistic stored deployment agent: status is in conditions.actions (not
     // conditions.severities) because the normalizer sets event.action = deployment state.

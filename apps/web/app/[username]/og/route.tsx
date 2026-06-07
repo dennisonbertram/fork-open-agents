@@ -13,12 +13,13 @@ export async function GET(request: Request, context: OgRouteContext) {
   const { searchParams } = new URL(request.url);
   const rawDate = searchParams.get("date") ?? "30d";
   const date = ["7d", "30d", "all"].includes(rawDate) ? rawDate : "30d";
-  const profile = await getPublicUsageProfile(username, date);
+  const result = await getPublicUsageProfile(username, date);
 
-  if (!profile) {
+  if (result.status !== "ok") {
     return new Response("Not found", { status: 404 });
   }
 
+  const { profile } = result;
   const displayName = profile.user.name?.trim() || profile.user.username;
   const topModel = profile.topModels[0];
   const topModelLabel = topModel ? displayModelId(topModel.modelId) : null;

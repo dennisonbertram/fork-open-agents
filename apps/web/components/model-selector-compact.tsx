@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CheckIcon, ChevronDown } from "lucide-react";
+import { CheckIcon, ChevronDown, Settings2Icon } from "lucide-react";
 import { type ModelOption, groupByProvider } from "@/lib/model-options";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ import {
   ProviderIcon,
   getProviderDisplayName,
 } from "@/components/provider-icons";
+import { ModelManagerDialog } from "@/components/model-manager-dialog";
 
 interface ModelSelectorCompactProps {
   value: string;
@@ -29,6 +30,10 @@ interface ModelSelectorCompactProps {
   onChange: (modelId: string) => void;
   disabled?: boolean;
   onCloseAutoFocus?: () => void;
+  /** Current shortlist (empty = show all). Pass to enable the gear/manage-models button. */
+  enabledModelIds?: string[];
+  /** Called with the new complete list when the user saves from the manage-models dialog. */
+  onSaveEnabledModelIds?: (ids: string[]) => Promise<void>;
 }
 
 export function ModelSelectorCompact({
@@ -37,9 +42,12 @@ export function ModelSelectorCompact({
   onChange,
   disabled = false,
   onCloseAutoFocus,
+  enabledModelIds,
+  onSaveEnabledModelIds,
 }: ModelSelectorCompactProps) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [manageOpen, setManageOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const focusSearchInput = useCallback(() => {
@@ -102,106 +110,151 @@ export function ModelSelectorCompact({
   const groups = useMemo(() => groupByProvider(modelOptions), [modelOptions]);
 
   return (
-    <Popover
-      open={open}
-      onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) {
-          setSearch("");
-        }
-      }}
-    >
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={disabled}
-          aria-label="Change model"
-          aria-keyshortcuts="Meta+Alt+/"
-          title={titleText}
-          className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60"
-        >
-          {selectedOption && (
-            <ProviderIcon
-              provider={selectedOption.provider}
-              className="size-3.5 shrink-0"
-            />
-          )}
-          <span className="max-w-[140px] truncate">{displayText}</span>
-          <ChevronDown className="h-3 w-3" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        className="w-64 p-0"
-        align="start"
-        onOpenAutoFocus={(event) => {
-          event.preventDefault();
-          focusSearchInput();
-        }}
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          onCloseAutoFocus?.();
+    <>
+      <Popover
+        open={open}
+        onOpenChange={(nextOpen) => {
+          setOpen(nextOpen);
+          if (!nextOpen) {
+            setSearch("");
+          }
         }}
       >
-        <Command>
-          <CommandInput
-            ref={searchInputRef}
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Search models..."
-          />
-          <CommandList>
-            <CommandEmpty>No models found.</CommandEmpty>
-            {groups.map((group) => (
-              <CommandGroup
-                key={group.provider}
-                heading={getProviderDisplayName(group.provider)}
-              >
-                {group.options.map((option) => (
-                  <CommandItem
-                    key={option.id}
-                    value={`${option.label} ${option.id} ${
-                      option.secondaryLabel ?? ""
-                    } ${option.description ?? ""} ${option.searchText ?? ""}`}
-                    onSelect={() => handleSelect(option.id)}
-                    className="flex items-center"
-                  >
-                    <ProviderIcon
-                      provider={option.provider}
-                      className="mr-1.5 size-3.5 shrink-0 opacity-70"
-                    />
-                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                      <span className="min-w-0 truncate">
-                        {option.shortLabel}
-                      </span>
-                      {option.secondaryLabel && (
-                        <span className="min-w-0 truncate text-xs text-muted-foreground">
-                          {option.secondaryLabel}
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            disabled={disabled}
+            aria-label="Change model"
+            aria-keyshortcuts="Meta+Alt+/"
+            title={titleText}
+            className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60"
+          >
+            {selectedOption && (
+              <ProviderIcon
+                provider={selectedOption.provider}
+                className="size-3.5 shrink-0"
+              />
+            )}
+            <span className="max-w-[140px] truncate">{displayText}</span>
+            <ChevronDown className="h-3 w-3" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          className="w-64 p-0"
+          align="start"
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            focusSearchInput();
+          }}
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            onCloseAutoFocus?.();
+          }}
+        >
+          <Command>
+            <div className="flex items-center border-b">
+              <CommandInput
+                ref={searchInputRef}
+                value={search}
+                onValueChange={setSearch}
+                placeholder="Search models..."
+                className="flex-1 border-0 focus-visible:ring-0"
+              />
+              {onSaveEnabledModelIds && (
+                <button
+                  type="button"
+                  aria-label="Manage models"
+                  onClick={() => {
+                    setOpen(false);
+                    setManageOpen(true);
+                  }}
+                  className="mr-1 flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <Settings2Icon className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <CommandList>
+              <CommandEmpty>No models found.</CommandEmpty>
+              {groups.map((group) => (
+                <CommandGroup
+                  key={group.provider}
+                  heading={getProviderDisplayName(group.provider)}
+                >
+                  {group.options.map((option) => {
+                    const isUserModel = option.source === "user";
+                    return (
+                      <CommandItem
+                        key={option.id}
+                        value={`${option.label} ${option.id} ${
+                          option.secondaryLabel ?? ""
+                        } ${option.description ?? ""} ${option.searchText ?? ""}`}
+                        onSelect={() => handleSelect(option.id)}
+                        title={
+                          isUserModel && option.secondaryLabel
+                            ? `${option.shortLabel} — your key (${option.secondaryLabel})`
+                            : undefined
+                        }
+                        className="flex items-center"
+                      >
+                        <ProviderIcon
+                          provider={option.provider}
+                          className="mr-1.5 size-3.5 shrink-0 opacity-70"
+                        />
+                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <span className="min-w-0 truncate">
+                            {option.shortLabel}
+                          </span>
+                          {/* Personal-provider (user-key) models: a small green dot
+                            instead of a competing "Personal …" label, so the full
+                            model name stays readable. */}
+                          {isUserModel && (
+                            <span
+                              className="size-1.5 shrink-0 rounded-full bg-emerald-500"
+                              aria-label="Your personal provider key"
+                              title="Uses your personal provider key"
+                            />
+                          )}
+                          {option.secondaryLabel && !isUserModel && (
+                            <span className="min-w-0 truncate text-xs text-muted-foreground">
+                              {option.secondaryLabel}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    {option.isVariant && (
-                      <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                        variant
-                      </span>
-                    )}
-                    {option.id === APP_DEFAULT_MODEL_ID && (
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        default
-                      </span>
-                    )}
-                    <CheckIcon
-                      className={cn(
-                        "ml-auto size-4 shrink-0",
-                        value === option.id ? "opacity-100" : "opacity-0",
-                      )}
-                    />
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            ))}
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+                        {option.isVariant && (
+                          <span className="ml-1.5 shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            variant
+                          </span>
+                        )}
+                        {option.id === APP_DEFAULT_MODEL_ID && (
+                          <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                            default
+                          </span>
+                        )}
+                        <CheckIcon
+                          className={cn(
+                            "ml-auto size-4 shrink-0",
+                            value === option.id ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {onSaveEnabledModelIds && (
+        <ModelManagerDialog
+          open={manageOpen}
+          onOpenChange={setManageOpen}
+          modelOptions={modelOptions}
+          enabledModelIds={enabledModelIds ?? []}
+          onSave={onSaveEnabledModelIds}
+        />
+      )}
+    </>
   );
 }
