@@ -32,12 +32,9 @@ mock.module("swr", () => ({
 
 // ── Stub out SSE hook (not needed for static render tests) ─────────────────
 
-mock.module(
-  "./hooks/use-verified-build-events",
-  () => ({
-    useVerifiedBuildEvents: () => [],
-  }),
-);
+mock.module("./hooks/use-verified-build-events", () => ({
+  useVerifiedBuildEvents: () => [],
+}));
 
 // ── Import components after mocks are in place ────────────────────────────
 
