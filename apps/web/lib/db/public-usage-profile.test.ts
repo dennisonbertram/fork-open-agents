@@ -281,17 +281,20 @@ describe("buildPublicUsageProfileData", () => {
 });
 
 describe("getPublicUsageProfile", () => {
-  test("returns null when the user does not exist", async () => {
+  // BT-001: not_found status when no user record exists
+  test("returns tagged not_found when the user does not exist", async () => {
     const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
 
     findPublicUsersByUsernameMock.mockImplementation(async () => []);
 
-    expect(await getPublicUsageProfile("missing-user", null)).toBeNull();
+    const result = await getPublicUsageProfile("missing-user", null);
+    expect(result).toEqual({ status: "not_found" });
     expect(getUsageHistoryMock).not.toHaveBeenCalled();
     expect(getUsageInsightsMock).not.toHaveBeenCalled();
   });
 
-  test("returns null when public usage is disabled", async () => {
+  // BT-002: disabled status when user exists but profile is private
+  test("returns tagged disabled when public usage is disabled", async () => {
     const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
 
     findPublicUsersByUsernameMock.mockImplementation(async () => [
@@ -305,9 +308,61 @@ describe("getPublicUsageProfile", () => {
       },
     ]);
 
-    expect(await getPublicUsageProfile("private-user", null)).toBeNull();
+    const result = await getPublicUsageProfile("private-user", null);
+    expect(result).toEqual({ status: "disabled" });
     expect(getUsageHistoryMock).not.toHaveBeenCalled();
     expect(getUsageInsightsMock).not.toHaveBeenCalled();
+  });
+
+  // BT-003: not_found and disabled are distinguishable (different statuses)
+  test("distinguishes not_found from disabled — statuses differ", async () => {
+    const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => []);
+    const notFoundResult = await getPublicUsageProfile("ghost", null);
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => [
+      {
+        id: "user-priv",
+        username: "private-user",
+        name: null,
+        avatarUrl: null,
+        lastLoginAt: null,
+        publicUsageEnabled: false,
+      },
+    ]);
+    const disabledResult = await getPublicUsageProfile("private-user", null);
+
+    // The two results must be different objects with different statuses
+    expect(notFoundResult).not.toEqual(disabledResult);
+    expect((notFoundResult as { status: string }).status).toBe("not_found");
+    expect((disabledResult as { status: string }).status).toBe("disabled");
+  });
+
+  // BT-004: ok status when profile is enabled
+  test("returns tagged ok with profile data when public usage is enabled", async () => {
+    const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => [
+      {
+        id: "user-pub",
+        username: "public-user",
+        name: "Public User",
+        avatarUrl: null,
+        lastLoginAt: new Date("2026-01-05T00:00:00.000Z"),
+        publicUsageEnabled: true,
+      },
+    ]);
+
+    const result = await getPublicUsageProfile("public-user", null);
+    // Result must be tagged ok and contain the profile
+    expect((result as { status: string }).status).toBe("ok");
+    expect(
+      (result as { status: string; profile: { user: { id: string } } }).profile
+        .user.id,
+    ).toBe("user-pub");
+    expect(getUsageHistoryMock).toHaveBeenCalled();
+    expect(getUsageInsightsMock).toHaveBeenCalled();
   });
 
   test("uses all-time queries when no valid date is provided", async () => {
@@ -324,7 +379,11 @@ describe("getPublicUsageProfile", () => {
       },
     ]);
 
-    const profile = await getPublicUsageProfile("all-time-user", "bad-value");
+    const result = await getPublicUsageProfile("all-time-user", "bad-value");
+    const profile =
+      result && (result as { status: string }).status === "ok"
+        ? (result as { status: "ok"; profile: { dateSelection: unknown; invalidDateError: unknown } }).profile
+        : null;
 
     expect(profile?.dateSelection).toEqual({
       kind: "all",
@@ -363,10 +422,22 @@ describe("getPublicUsageProfile", () => {
       },
     ]);
 
-    const profile = await getPublicUsageProfile(
+    const result = await getPublicUsageProfile(
       "RANGE-USER",
       "2026-01-01..2026-01-31",
     );
+    const profile =
+      result && (result as { status: string }).status === "ok"
+        ? (
+            result as {
+              status: "ok";
+              profile: {
+                user: unknown;
+                dateSelection: unknown;
+              };
+            }
+          ).profile
+        : null;
 
     expect(profile?.user).toEqual({
       id: "user-3",
