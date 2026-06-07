@@ -74,10 +74,9 @@ const routeModulePromise = import("./route");
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function postRequest(sessionId: string): Request {
-  return new Request(
-    `http://localhost/api/sessions/${sessionId}/sandbox`,
-    { method: "POST" },
-  );
+  return new Request(`http://localhost/api/sessions/${sessionId}/sandbox`, {
+    method: "POST",
+  });
 }
 
 function routeParams(sessionId: string) {
