@@ -116,3 +116,77 @@ describe("RuntimeModeSelectorCompact", () => {
     expect(html).toContain("Built-in profile");
   });
 });
+
+// ── Regression tests ──────────────────────────────────────────────────────────
+// These tests catch future breakage of the behaviors introduced in
+// fix: TASK-191 surface ManagedRuntimeProfileManager in RuntimeModeSelectorCompact.
+
+describe("RuntimeModeSelectorManageItem regression", () => {
+  // Regression: if RuntimeModeSelectorManageItem is removed or not exported,
+  // the Manage-profile path breaks completely — this catches both.
+  test("RuntimeModeSelectorManageItem is exported from the module", async () => {
+    const mod = await import("./runtime-mode-selector-compact");
+    expect(typeof mod.RuntimeModeSelectorManageItem).toBe("function");
+  });
+
+  // Regression: if the canManage guard in ManagedRuntimeProfileManager is changed
+  // to always return "Manage profile" regardless of source, BT-002 catches it.
+  // This regression test specifically ensures source="built_in" NEVER gets the
+  // editable trigger — even if the label computation changes.
+  test("built-in profile manager trigger is disabled, not absent", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorManageItem
+        onManagedProfileDeleted={async () => {}}
+        onManagedProfileSaved={() => {}}
+        selectedProfile={profile}
+        sessionId="session-abc123"
+      />,
+    );
+
+    // The button is present but disabled (cannot manage built-in profiles)
+    expect(html).toContain('disabled=""');
+    // The trigger label is "Built-in profile", NOT "Manage profile"
+    expect(html).toContain("Built-in profile");
+    expect(html).not.toContain("Manage profile");
+  });
+
+  // Regression: if sessionId prop is removed from RuntimeModeSelectorCompact,
+  // the manage-item section is silently dropped. This ensures the prop is accepted.
+  test("RuntimeModeSelectorCompact accepts sessionId without type error", () => {
+    // This is a compile-time contract test — if RuntimeModeSelectorCompact drops
+    // sessionId from its props, renderToStaticMarkup will throw or TS will fail.
+    expect(() =>
+      renderToStaticMarkup(
+        <RuntimeModeSelectorCompact
+          managedRuntimeProfileId={sessionProfile.id}
+          onManagedProfileDeleted={async () => {}}
+          onManagedProfileSaved={() => {}}
+          onManagedRuntimeProfileChange={() => {}}
+          onRuntimeModeChange={() => {}}
+          profiles={[sessionProfile]}
+          runtimeMode="managed_runtime"
+          selectedProfile={sessionProfile}
+          sessionId="session-abc123"
+        />,
+      ),
+    ).not.toThrow();
+  });
+
+  // Regression: session-source profile trigger must NOT be disabled when a profile
+  // is present. If `disabled` logic is inverted or sessionId check breaks, this fails.
+  test("session-source profile manager trigger is NOT disabled when profile is present", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorManageItem
+        onManagedProfileDeleted={async () => {}}
+        onManagedProfileSaved={() => {}}
+        selectedProfile={sessionProfile}
+        sessionId="session-abc123"
+      />,
+    );
+
+    expect(html).toContain("Manage profile");
+    // The trigger must NOT be disabled — session profiles are editable
+    // (disabled="" is how React renders disabled={true} in static markup)
+    expect(html).not.toContain('disabled=""');
+  });
+});
