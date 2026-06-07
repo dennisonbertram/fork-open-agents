@@ -338,8 +338,7 @@ export async function POST(_req: Request, context: RouteContext) {
       await releaseCodeServerLaunchLock(sandbox);
     }
   } catch (error) {
-    const detail =
-      error instanceof Error ? error.message : String(error);
+    const detail = error instanceof Error ? error.message : String(error);
     console.error("Failed to launch code editor:", error);
     return Response.json(
       { error: `Failed to launch code editor: ${detail}` },

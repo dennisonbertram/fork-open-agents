@@ -3,7 +3,9 @@ import { getCodeEditorDisabledReason } from "./code-editor-gate";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 
 function makeProfile(
-  overrides: Partial<Pick<ManagedRuntimeProfile, "id" | "expectedTools" | "optionalTools">>,
+  overrides: Partial<
+    Pick<ManagedRuntimeProfile, "id" | "expectedTools" | "optionalTools">
+  >,
 ): ManagedRuntimeProfile {
   return {
     id: "test-profile",
@@ -120,6 +122,8 @@ describe("getCodeEditorDisabledReason", () => {
 
     // Reverting getCodeEditorDisabledReason to return null would break this.
     expect(reason).not.toBeNull();
-    expect(reason).toBe("This runtime profile does not include the code editor.");
+    expect(reason).toBe(
+      "This runtime profile does not include the code editor.",
+    );
   });
 });
