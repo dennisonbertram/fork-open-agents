@@ -10,7 +10,7 @@ mock.module("botid/server", () => ({
   checkBotId: checkBotIdMock,
 }));
 
-const { checkBotProtection } = await import("./botid");
+const { checkBotProtection, botIdConfig } = await import("./botid");
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalTestAuth = process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
@@ -50,5 +50,14 @@ describe("checkBotProtection", () => {
       isBot: true,
     });
     expect(checkBotIdMock).toHaveBeenCalledTimes(1);
+  });
+
+  // Regression: this fork's production + preview deployments are served on
+  // *.vercel.app. If that host isn't allowlisted, BotID rejects the frontend
+  // origin and protected calls (e.g. POST /api/sessions) 403 for real users.
+  test("allowlists *.vercel.app so the fork's deploy domains pass BotID", () => {
+    expect(botIdConfig.advancedOptions.extraAllowedHosts).toContain(
+      "*.vercel.app",
+    );
   });
 });
