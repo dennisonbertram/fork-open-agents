@@ -366,7 +366,7 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("Copy webhook URL");
   });
 
-  test("BT-002: delete button with confirm dialog calls DELETE and refreshes", async () => {
+  test("BT-002: delete button is rendered in the agent action row", async () => {
     agentsSwrState = {
       data: {
         agents: [
@@ -400,8 +400,59 @@ describe("BackgroundAgentsSection", () => {
 
     // A destructive Delete button must be present in the agent action row
     expect(html).toContain("Delete");
-    // The confirmation dialog text must appear (rendered inline in SSR for Radix)
+    // The delete button should have an aria-label for accessibility
     expect(html).toContain("Delete agent");
+  });
+
+  test("REG-001: webhook URL not shown when webhookPublicId is null (regression guard)", async () => {
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-no-wh",
+            name: "No webhook",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "api",
+            instructions: "Watch for PRs.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-no-wh",
+                name: "Error webhook",
+                kind: "webhook.error",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Should NOT render any webhook path when webhookPublicId is null
+    expect(html).not.toContain("/api/background-agents/webhook/");
+    // Should NOT render the copy webhook URL button
+    expect(html).not.toContain("Copy webhook URL");
+  });
+
+  test("REG-002: delete button absent when agents list is empty (regression guard)", async () => {
+    agentsSwrState = {
+      data: { agents: [] },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Delete button should not appear when there are no agents
+    expect(html).not.toContain("Delete agent");
+    expect(html).toContain("No background agents yet.");
   });
 
   test("builds edit form state and update payloads for existing agents", async () => {
