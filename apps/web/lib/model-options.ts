@@ -147,6 +147,63 @@ export function groupByProvider(options: ModelOption[]): ModelGroup[] {
   }));
 }
 
+export type ModelSortKey = "name" | "provider";
+
+export interface ModelFilterOptions {
+  /** Provider key to filter by, or "all" to include every provider. */
+  providerFilter: string;
+  /** Sort order: "name" = A–Z by label, "provider" = priority-provider order then label. */
+  sort: ModelSortKey;
+  /** Case-insensitive substring to match against label (and searchText if present). */
+  search: string;
+}
+
+/**
+ * Pure helper used by the model-manager dialog to filter and sort a flat list
+ * of ModelOption objects.  No side-effects, safe to call in tests without DOM.
+ */
+export function filterAndSortModelOptions(
+  options: ModelOption[],
+  { providerFilter, sort, search }: ModelFilterOptions,
+): ModelOption[] {
+  const needle = search.trim().toLowerCase();
+
+  let filtered = options;
+
+  if (providerFilter !== "all") {
+    filtered = filtered.filter((o) => o.provider === providerFilter);
+  }
+
+  if (needle) {
+    filtered = filtered.filter((o) => {
+      const haystack = [o.label, o.searchText ?? ""].join(" ").toLowerCase();
+      return haystack.includes(needle);
+    });
+  }
+
+  if (sort === "name") {
+    filtered = [...filtered].sort((a, b) => a.label.localeCompare(b.label));
+  } else {
+    // sort === "provider": use priority-provider order, then alphabetical provider, then name
+    filtered = [...filtered].sort((a, b) => {
+      const aIdx = PRIORITY_PROVIDERS.indexOf(a.provider);
+      const bIdx = PRIORITY_PROVIDERS.indexOf(b.provider);
+      const provCmp =
+        aIdx !== -1 && bIdx !== -1
+          ? aIdx - bIdx
+          : aIdx !== -1
+            ? -1
+            : bIdx !== -1
+              ? 1
+              : a.provider.localeCompare(b.provider);
+      if (provCmp !== 0) return provCmp;
+      return a.label.localeCompare(b.label);
+    });
+  }
+
+  return filtered;
+}
+
 export function buildModelOptions(
   models: AvailableModel[],
   modelVariants: ModelVariant[],

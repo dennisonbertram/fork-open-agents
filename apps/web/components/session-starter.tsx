@@ -24,12 +24,14 @@ import {
   type SandboxType,
 } from "./sandbox-selector-compact";
 import { SessionStarterVercelSyncSection } from "./session-starter-vercel-sync-section";
+import { prepareSessionTitle } from "./session-starter-title";
 import { Switch } from "./ui/switch";
 
 type SessionMode = "empty" | "repo";
 
 interface SessionStarterProps {
   onSubmit: (session: {
+    title?: string;
     repoOwner?: string;
     repoName?: string;
     branch?: string;
@@ -49,6 +51,7 @@ export function SessionStarter({
   isLoading,
   lastRepo,
 }: SessionStarterProps) {
+  const [sessionTitle, setSessionTitle] = useState("");
   const [mode, setMode] = useState<SessionMode>(() =>
     lastRepo ? "repo" : "empty",
   );
@@ -89,6 +92,7 @@ export function SessionStarter({
     data: repoProjects,
     loading: repoProjectsLoading,
     error: repoProjectsError,
+    refresh: refreshVercelProjects,
   } = useVercelRepoProjects({
     enabled: shouldLoadVercelProjects,
     repoOwner: selectedOwner,
@@ -193,6 +197,7 @@ export function SessionStarter({
     }
 
     onSubmit({
+      title: prepareSessionTitle(sessionTitle),
       repoOwner: mode === "repo" ? selectedOwner || undefined : undefined,
       repoName: mode === "repo" ? selectedRepo || undefined : undefined,
       branch: mode === "repo" ? selectedBranch || undefined : undefined,
@@ -282,6 +287,11 @@ export function SessionStarter({
                 requiresVercelChoice={requiresVercelChoice}
                 vercelProjectChoice={vercelProjectChoice}
                 onVercelProjectChoiceChange={setVercelProjectChoice}
+                onRetry={
+                  repoProjectsError
+                    ? () => void refreshVercelProjects()
+                    : undefined
+                }
               />
             )}
           </div>
@@ -359,6 +369,18 @@ export function SessionStarter({
             </div>
           </div>
         )}
+
+        <input
+          type="text"
+          value={sessionTitle}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+            setSessionTitle(e.target.value)
+          }
+          placeholder="Session name (optional)"
+          disabled={controlsDisabled}
+          aria-label="Session name"
+          className="w-full rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:bg-neutral-900/60"
+        />
 
         <button
           type="button"

@@ -46,6 +46,7 @@ interface SessionStarterVercelSyncSectionProps {
   requiresVercelChoice: boolean;
   vercelProjectChoice: string | null | undefined;
   onVercelProjectChoiceChange: (value: string | null) => void;
+  onRetry?: () => void;
 }
 
 export function SessionStarterVercelSyncSection({
@@ -56,6 +57,7 @@ export function SessionStarterVercelSyncSection({
   requiresVercelChoice,
   vercelProjectChoice,
   onVercelProjectChoiceChange,
+  onRetry,
 }: SessionStarterVercelSyncSectionProps) {
   // Auto-expand when user needs to make a choice
   const [manualExpanded, setManualExpanded] = useState(false);
@@ -89,8 +91,20 @@ export function SessionStarterVercelSyncSection({
           <AlertCircleIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
         ),
         label: (
-          <span className="text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
             Could not load Vercel projects
+            {onRetry && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry();
+                }}
+                className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+              >
+                Retry
+              </button>
+            )}
           </span>
         ),
       };
@@ -184,9 +198,20 @@ export function SessionStarterVercelSyncSection({
         ) : repoProjectsError ? (
           <div className="flex items-start gap-2.5">
             <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {repoProjectsError}. Will fall back to any saved repo default.
-            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {repoProjectsError}. Will fall back to any saved repo default.
+              </p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="self-start rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           </div>
         ) : repoProjects?.projects.length === 0 ? (
           <div className="flex items-start gap-2.5">

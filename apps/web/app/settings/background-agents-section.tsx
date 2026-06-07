@@ -3,12 +3,14 @@
 import {
   Bot,
   CheckCircle2,
+  ClipboardCopy,
   ExternalLink,
   Pencil,
   Play,
   Plus,
   RefreshCw,
   Save,
+  Trash2,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -16,6 +18,15 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -176,6 +187,11 @@ export function BackgroundAgentsSection() {
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [testingAgentId, setTestingAgentId] = useState<string | null>(null);
+  const [deletingAgentId, setDeletingAgentId] = useState<string | null>(null);
+  const [deleteConfirmAgentId, setDeleteConfirmAgentId] = useState<
+    string | null
+  >(null);
+  const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const agents = data?.agents ?? [];
@@ -271,6 +287,44 @@ export function BackgroundAgentsSection() {
       );
     } finally {
       setTestingAgentId(null);
+    }
+  }
+
+  async function deleteAgent(agentId: string) {
+    setDeletingAgentId(agentId);
+    setMessage(null);
+    try {
+      const response = await fetch(`/api/background-agents/${agentId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        throw new Error("Failed to delete background agent");
+      }
+      setMessage("Background agent deleted.");
+      await mutate();
+    } catch (deleteError) {
+      setMessage(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete background agent",
+      );
+    } finally {
+      setDeletingAgentId(null);
+      setDeleteConfirmAgentId(null);
+    }
+  }
+
+  async function copyWebhookUrl(webhookPublicId: string) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const url = `${window.location.origin}/api/background-agents/webhook/${webhookPublicId}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedWebhookId(webhookPublicId);
+      window.setTimeout(() => setCopiedWebhookId(null), 1500);
+    } catch {
+      // clipboard write failed — ignore silently
     }
   }
 
@@ -668,6 +722,37 @@ export function BackgroundAgentsSection() {
                       </span>
                     ))}
                   </div>
+                  {agent.triggers.map((trigger) =>
+                    trigger.kind === "webhook.error" &&
+                    trigger.webhookPublicId ? (
+                      <div
+                        key={`webhook-url-${trigger.id}`}
+                        className="mt-2 flex items-center gap-1.5"
+                      >
+                        <Input
+                          readOnly
+                          value={`/api/background-agents/webhook/${trigger.webhookPublicId}`}
+                          className="h-6 font-mono text-[10px]"
+                          aria-label="Webhook URL"
+                        />
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-6 w-6 shrink-0"
+                          aria-label="Copy webhook URL"
+                          onClick={() =>
+                            void copyWebhookUrl(trigger.webhookPublicId ?? "")
+                          }
+                        >
+                          {copiedWebhookId === trigger.webhookPublicId ? (
+                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                          ) : (
+                            <ClipboardCopy className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                      </div>
+                    ) : null,
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -695,6 +780,47 @@ export function BackgroundAgentsSection() {
                       Repo
                     </Link>
                   </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    aria-label="Delete agent"
+                    disabled={deletingAgentId === agent.id}
+                    onClick={() => setDeleteConfirmAgentId(agent.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Delete
+                  </Button>
+                  <Dialog
+                    open={deleteConfirmAgentId === agent.id}
+                    onOpenChange={(open) => {
+                      if (!open) {
+                        setDeleteConfirmAgentId(null);
+                      }
+                    }}
+                  >
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Delete agent</DialogTitle>
+                        <DialogDescription>
+                          Are you sure you want to delete{" "}
+                          <strong>{agent.name}</strong>? This action cannot be
+                          undone.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <DialogFooter>
+                        <DialogClose asChild>
+                          <Button variant="outline">Cancel</Button>
+                        </DialogClose>
+                        <Button
+                          variant="destructive"
+                          disabled={deletingAgentId === agent.id}
+                          onClick={() => void deleteAgent(agent.id)}
+                        >
+                          Delete
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
                 </div>
               </div>
             ))}

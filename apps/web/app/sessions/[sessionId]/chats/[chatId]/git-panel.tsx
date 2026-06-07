@@ -76,6 +76,7 @@ import { useSessionFiles } from "@/hooks/use-session-files";
 import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status";
 import { useGitPanel } from "./git-panel-context";
 import { FileTree } from "./file-tree";
+import { FileTreeErrorBoundary } from "./file-tree-error-boundary";
 import { useSessionChatWorkspaceContext } from "./session-chat-context";
 
 /* ------------------------------------------------------------------ */
@@ -1957,11 +1958,13 @@ export function GitPanel(props: GitPanelProps) {
                 </div>
               </div>
             ) : sessionFiles && sessionFiles.length > 0 ? (
-              <FileTree
-                files={sessionFiles}
-                repoName={session.repoName}
-                onFileClick={(filePath) => openFileTab(filePath)}
-              />
+              <FileTreeErrorBoundary>
+                <FileTree
+                  files={sessionFiles}
+                  repoName={session.repoName}
+                  onFileClick={(filePath) => openFileTab(filePath)}
+                />
+              </FileTreeErrorBoundary>
             ) : (
               <div className="p-3">
                 <div className="flex w-full flex-col items-center gap-1.5 rounded-lg border border-dashed border-muted-foreground/25 py-8 text-center">
