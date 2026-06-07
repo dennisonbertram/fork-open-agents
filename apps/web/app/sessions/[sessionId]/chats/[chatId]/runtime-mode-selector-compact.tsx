@@ -167,7 +167,9 @@ export function RuntimeModeSelectorCompact({
                 onManagedProfileDeleted={
                   onManagedProfileDeleted ?? (async () => undefined)
                 }
-                onManagedProfileSaved={onManagedProfileSaved ?? (() => undefined)}
+                onManagedProfileSaved={
+                  onManagedProfileSaved ?? (() => undefined)
+                }
                 selectedProfile={selectedProfile}
                 sessionId={sessionId}
               />
