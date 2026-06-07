@@ -66,7 +66,6 @@ describe("SessionHeader ShieldCheck button", () => {
     // The VerifiedBuildHeaderButton must be exported as a pure component
     expect("VerifiedBuildHeaderButton" in mod).toBe(true);
 
-    // @ts-expect-error - dynamic module access
     const { VerifiedBuildHeaderButton } = mod;
     const html = renderToStaticMarkup(
       // Render with isActive=false (panel closed state)
