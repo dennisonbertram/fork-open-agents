@@ -3269,6 +3269,50 @@ export function SessionChatContent({
             <CompactGoalSummary
               goals={observabilityData?.workflowGoals ?? []}
             />
+            {/* Sandbox provisioning status badge */}
+            {(isCreatingSandbox || isRestoringSnapshot || isServerRestoring || isHibernatingUi || isServerHibernated) && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    className={cn(
+                      "hidden h-7 items-center gap-1 rounded-md border px-2 text-xs font-medium sm:inline-flex",
+                      isCreatingSandbox
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                        : isRestoringSnapshot || isServerRestoring
+                          ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                          : isHibernatingUi
+                            ? "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300"
+                            : "border-border bg-muted/40 text-muted-foreground",
+                    )}
+                  >
+                    <Loader2
+                      className={cn(
+                        "h-2.5 w-2.5 animate-spin",
+                        isCreatingSandbox || isRestoringSnapshot || isServerRestoring || isHibernatingUi
+                          ? "text-amber-600 dark:text-amber-400"
+                          : "text-muted-foreground/60",
+                      )}
+                    />
+                    {isCreatingSandbox
+                      ? "Provisioning"
+                      : isRestoringSnapshot || isServerRestoring
+                        ? "Restoring"
+                        : isHibernatingUi
+                          ? "Hibernating"
+                          : "Hibernated"}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {isCreatingSandbox
+                    ? "Sandbox is being provisioned"
+                    : isRestoringSnapshot || isServerRestoring
+                      ? "Sandbox is restoring from snapshot"
+                      : isHibernatingUi
+                        ? "Sandbox is hibernating"
+                        : "Sandbox is hibernated — wake it to resume"}
+                </TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <span
