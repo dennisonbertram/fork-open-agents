@@ -468,3 +468,65 @@ describe("getPublicUsageProfile", () => {
     });
   });
 });
+
+describe("getPublicUsageProfile tagged result shape (regression)", () => {
+  // REGRESSION: if the return type reverts to null|Profile, these checks fail
+  test("result always has a status field — never null or undefined", async () => {
+    const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => []);
+    const r1 = await getPublicUsageProfile("ghost", null);
+    expect(r1).not.toBeNull();
+    expect(r1).not.toBeUndefined();
+    expect(typeof (r1 as { status: unknown }).status).toBe("string");
+  });
+
+  // REGRESSION: privacy boundary — disabled user must not have usage data in result
+  test("disabled result carries no usage data — privacy boundary enforced", async () => {
+    const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => [
+      {
+        id: "user-priv-regression",
+        username: "secret-user",
+        name: "Secret",
+        avatarUrl: null,
+        lastLoginAt: null,
+        publicUsageEnabled: false,
+      },
+    ]);
+
+    const result = await getPublicUsageProfile("secret-user", null);
+    // Must be disabled, not ok — no profile data exposed
+    expect((result as { status: string }).status).toBe("disabled");
+    expect((result as Record<string, unknown>).profile).toBeUndefined();
+    // Usage queries must never be called for a disabled profile
+    expect(getUsageHistoryMock).not.toHaveBeenCalled();
+    expect(getUsageInsightsMock).not.toHaveBeenCalled();
+  });
+
+  // REGRESSION: ok result must wrap data under .profile, not at top level
+  test("ok result nests profile data under .profile key", async () => {
+    const { getPublicUsageProfile } = await publicUsageProfileModulePromise;
+
+    findPublicUsersByUsernameMock.mockImplementation(async () => [
+      {
+        id: "user-ok-regression",
+        username: "active-user",
+        name: null,
+        avatarUrl: null,
+        lastLoginAt: new Date("2026-03-01T00:00:00.000Z"),
+        publicUsageEnabled: true,
+      },
+    ]);
+
+    const result = await getPublicUsageProfile("active-user", null);
+    expect((result as { status: string }).status).toBe("ok");
+    // Data must be under .profile, not directly on result
+    const okResult = result as { status: "ok"; profile: { user: { id: string }; hasUsage: boolean } };
+    expect(okResult.profile).toBeDefined();
+    expect(okResult.profile.user.id).toBe("user-ok-regression");
+    // Legacy direct .user access on result must NOT work (no top-level .user)
+    expect((result as Record<string, unknown>).user).toBeUndefined();
+  });
+});
