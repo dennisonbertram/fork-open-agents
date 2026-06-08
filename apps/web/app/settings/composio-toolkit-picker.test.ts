@@ -4,7 +4,10 @@
  * without any DOM / React rendering.
  */
 import { describe, expect, test } from "bun:test";
-import { toggleSlug, mergeSelectedWithCatalog } from "./composio-toolkit-picker-helpers";
+import {
+  toggleSlug,
+  mergeSelectedWithCatalog,
+} from "./composio-toolkit-picker-helpers";
 import type { ComposioToolkitSummary } from "@/app/api/composio/toolkits/route";
 
 const FIXTURE_CATALOG: ComposioToolkitSummary[] = [
@@ -82,7 +85,10 @@ describe("mergeSelectedWithCatalog", () => {
   });
 
   test("marks catalog toolkits that are selected", () => {
-    const result = mergeSelectedWithCatalog(["gmail", "linear"], FIXTURE_CATALOG);
+    const result = mergeSelectedWithCatalog(
+      ["gmail", "linear"],
+      FIXTURE_CATALOG,
+    );
     const gmail = result.find((r) => r.slug === "gmail");
     const slack = result.find((r) => r.slug === "slack");
     const linear = result.find((r) => r.slug === "linear");
@@ -92,7 +98,10 @@ describe("mergeSelectedWithCatalog", () => {
   });
 
   test("unknown slugs (not in catalog) appear as extra entries at the start", () => {
-    const result = mergeSelectedWithCatalog(["webseerch", "gmail"], FIXTURE_CATALOG);
+    const result = mergeSelectedWithCatalog(
+      ["webseerch", "gmail"],
+      FIXTURE_CATALOG,
+    );
     // 'webseerch' is not in catalog — must still appear as an entry
     const unknown = result.find((r) => r.slug === "webseerch");
     expect(unknown).toBeDefined();
@@ -101,7 +110,10 @@ describe("mergeSelectedWithCatalog", () => {
   });
 
   test("unknown slug entry has no logo", () => {
-    const result = mergeSelectedWithCatalog(["not-a-real-tool"], FIXTURE_CATALOG);
+    const result = mergeSelectedWithCatalog(
+      ["not-a-real-tool"],
+      FIXTURE_CATALOG,
+    );
     const entry = result.find((r) => r.slug === "not-a-real-tool");
     expect(entry?.logo).toBeNull();
   });

@@ -34,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { mapComposioStatusToVerdict } from "./composio-status-verdict";
 import { ComposioToolCatalog } from "./composio-tool-catalog";
+import { ComposioToolkitPicker } from "./composio-toolkit-picker";
 
 /** Where users manage Composio toolkits, auth configs, and connected accounts. */
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
@@ -137,7 +138,9 @@ function ProfileEditor({
   onDeleted: () => void;
 }) {
   const [name, setName] = useState(profile.name);
-  const [toolkits, setToolkits] = useState(profile.toolkitSlugs.join(", "));
+  const [toolkitSlugs, setToolkitSlugs] = useState<string[]>(
+    profile.toolkitSlugs,
+  );
   const [authConfigs, setAuthConfigs] = useState(
     formatAuthConfigMap(profile.authConfigIdsByToolkit),
   );
@@ -155,7 +158,7 @@ function ProfileEditor({
 
   useEffect(() => {
     setName(profile.name);
-    setToolkits(profile.toolkitSlugs.join(", "));
+    setToolkitSlugs(profile.toolkitSlugs);
     setAuthConfigs(formatAuthConfigMap(profile.authConfigIdsByToolkit));
     setConnectedAccounts(
       formatConnectedAccountMap(profile.connectedAccountIdsByToolkit),
@@ -175,7 +178,7 @@ function ProfileEditor({
           profileId: profile.id,
           profile: {
             name,
-            toolkitSlugs: splitList(toolkits),
+            toolkitSlugs,
             authConfigIdsByToolkit: parseAuthConfigMap(authConfigs),
             connectedAccountIdsByToolkit:
               parseConnectedAccountMap(connectedAccounts),
@@ -242,16 +245,12 @@ function ProfileEditor({
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`composio-toolkits-${profile.id}`}>Tools</Label>
-          <Input
-            id={`composio-toolkits-${profile.id}`}
-            value={toolkits}
-            onChange={(event) => setToolkits(event.currentTarget.value)}
+          <Label>Tools</Label>
+          <ComposioToolkitPicker
+            selectedSlugs={toolkitSlugs}
+            onChange={setToolkitSlugs}
             disabled={isSaving}
           />
-          <FieldHelp>
-            Which tools this profile includes — e.g. github, linear, gmail.
-          </FieldHelp>
         </div>
       </div>
       <div className="border-t border-border/60 pt-3">
@@ -389,7 +388,7 @@ export function ComposioSection() {
     fetchComposioSettings,
   );
   const [newName, setNewName] = useState("");
-  const [newToolkits, setNewToolkits] = useState("");
+  const [newToolkitSlugs, setNewToolkitSlugs] = useState<string[]>([]);
   const [authConfigId, setAuthConfigId] = useState("");
   const [connectionAlias, setConnectionAlias] = useState("");
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
@@ -410,7 +409,7 @@ export function ComposioSection() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newName,
-          toolkitSlugs: splitList(newToolkits),
+          toolkitSlugs: newToolkitSlugs,
           authConfigIdsByToolkit: {},
           connectedAccountIdsByToolkit: {},
           workbenchEnabled: false,
@@ -424,7 +423,7 @@ export function ComposioSection() {
         throw new Error(body?.error ?? "Failed to create profile");
       }
       setNewName("");
-      setNewToolkits("");
+      setNewToolkitSlugs([]);
       await mutate();
     } catch (createError) {
       setActionError(
@@ -550,7 +549,7 @@ export function ComposioSection() {
       >
         <div className="space-y-3">
           <div className="grid gap-3 rounded-lg border border-dashed border-border/70 p-3">
-            <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
+            <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr]">
               <div className="grid gap-1.5">
                 <Label htmlFor="new-composio-profile-name">Name</Label>
                 <Input
@@ -562,20 +561,15 @@ export function ComposioSection() {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="new-composio-profile-toolkits">Tools</Label>
-                <Input
-                  id="new-composio-profile-toolkits"
-                  value={newToolkits}
-                  onChange={(event) =>
-                    setNewToolkits(event.currentTarget.value)
-                  }
-                  placeholder="github, linear"
+                <Label>Tools</Label>
+                <ComposioToolkitPicker
+                  selectedSlugs={newToolkitSlugs}
+                  onChange={setNewToolkitSlugs}
                   disabled={isSubmitting}
                 />
-                <FieldHelp>
-                  Which tools to include — e.g. github, linear, gmail.
-                </FieldHelp>
               </div>
+            </div>
+            <div className="flex justify-end">
               <Button
                 type="button"
                 onClick={createProfile}
@@ -583,7 +577,7 @@ export function ComposioSection() {
                   isSubmitting ||
                   !isComposioAvailable ||
                   !newName.trim() ||
-                  !newToolkits.trim()
+                  newToolkitSlugs.length === 0
                 }
               >
                 {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
