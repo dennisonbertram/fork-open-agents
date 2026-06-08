@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 // These tests will fail until direct-list-config.ts is implemented.
-const { buildComposioSessionConfigFromDirectList } = await import(
-  "./direct-list-config"
-);
+const { buildComposioSessionConfigFromDirectList } =
+  await import("./direct-list-config");
 
 describe("buildComposioSessionConfigFromDirectList", () => {
   test("BT-S1-001: builds a session config from slugs alone (no connected accounts)", () => {
@@ -41,7 +40,9 @@ describe("buildComposioSessionConfigFromDirectList", () => {
       workbench: { enable: false },
     });
     // gmail must NOT appear — it is not in the toolkit list
-    expect((config.connectedAccounts as Record<string, unknown>)?.gmail).toBeUndefined();
+    expect(
+      (config.connectedAccounts as Record<string, unknown>)?.gmail,
+    ).toBeUndefined();
   });
 
   test("BT-S1-003: normalizes slugs (trims whitespace, lowercases, deduplicates)", () => {
