@@ -4,6 +4,7 @@ import { Settings, Wrench } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
+import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import {
@@ -61,7 +62,7 @@ export function ComposioToolSelectorCompact({
       ? null
       : "No Composio profiles configured";
   const isDisabled = disabled || isLoading;
-  const label = selectedProfile?.name ?? "Off";
+  const activeToolkits = selectedProfile?.toolkitSlugs ?? [];
   const profileOptions =
     data?.profileOptions ??
     data?.profiles.map((profile) => ({
@@ -85,13 +86,22 @@ export function ComposioToolSelectorCompact({
           )}
         >
           <Wrench className="size-3.5 shrink-0" />
-          <span className="truncate">Tools: {label}</span>
+          <span className="truncate">
+            {selectedProfile
+              ? `Tools: ${summarizeChatTools(activeToolkits)}`
+              : "Tools: Off"}
+          </span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
+      <DropdownMenuContent align="start" className="w-72">
         <DropdownMenuLabel className="text-xs text-muted-foreground">
-          External tools
+          Tools this chat can use
         </DropdownMenuLabel>
+        {selectedProfile ? (
+          <p className="px-2 pb-1.5 text-xs text-foreground">
+            {summarizeChatTools(activeToolkits, 6)}
+          </p>
+        ) : null}
         {!hasProfiles ? (
           <div className="px-2 py-1.5 text-xs text-muted-foreground">
             No tool profiles yet.
@@ -119,12 +129,13 @@ export function ComposioToolSelectorCompact({
               disabled={!profile.available}
               title={profile.disabledReason ?? profile.name}
             >
-              <span className="min-w-0 truncate">{profile.name}</span>
-              {profile.disabledReason ? (
-                <span className="ml-auto max-w-[8rem] truncate text-[11px] text-muted-foreground">
-                  {profile.disabledReason}
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate">{profile.name}</span>
+                <span className="truncate text-[11px] text-muted-foreground">
+                  {profile.disabledReason ??
+                    summarizeChatTools(profile.toolkitSlugs, 4)}
                 </span>
-              ) : null}
+              </span>
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
