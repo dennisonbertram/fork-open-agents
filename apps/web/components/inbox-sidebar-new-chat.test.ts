@@ -4,10 +4,12 @@ import { buildSandboxFreeChatInput } from "./inbox-sidebar-new-chat";
 describe("buildSandboxFreeChatInput", () => {
   test("BT-001: returns input with no repo fields set", () => {
     const input = buildSandboxFreeChatInput();
-    expect(input.repoOwner).toBeUndefined();
-    expect(input.repoName).toBeUndefined();
-    expect(input.cloneUrl).toBeUndefined();
-    expect(input.branch).toBeUndefined();
+    // Accessing via index signature to avoid TS errors on known-absent keys
+    const asRecord = input as Record<string, unknown>;
+    expect(asRecord["repoOwner"]).toBeUndefined();
+    expect(asRecord["repoName"]).toBeUndefined();
+    expect(asRecord["cloneUrl"]).toBeUndefined();
+    expect(asRecord["branch"]).toBeUndefined();
   });
 
   test("BT-002: autoCommitPush and autoCreatePr are false so no git automation is triggered", () => {
@@ -26,7 +28,7 @@ describe("buildSandboxFreeChatInput", () => {
     expect(input.sandboxType).toBe("vercel");
   });
 
-  test("BT-005: returned object has no extraneous repo keys", () => {
+  test("BT-005: returned object has no extraneous repo keys at runtime", () => {
     const input = buildSandboxFreeChatInput();
     const keys = Object.keys(input);
     expect(keys).not.toContain("repoOwner");

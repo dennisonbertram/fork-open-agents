@@ -12,6 +12,7 @@ import {
   useTransition,
 } from "react";
 import { InboxSidebar } from "@/components/inbox-sidebar";
+import { buildSandboxFreeChatInput } from "@/components/inbox-sidebar-new-chat";
 import { NewSessionDialog } from "@/components/new-session-dialog";
 import {
   Sidebar,
@@ -229,6 +230,19 @@ export function SessionsRouteShell({
     [createSession, preferences, router],
   );
 
+  const handleCreateSandboxFreeChat = useCallback(async () => {
+    try {
+      const { session: created, chat } = await createSession(
+        buildSandboxFreeChatInput(),
+      );
+      router.push(`/sessions/${created.id}/chats/${chat.id}`, {
+        scroll: false,
+      });
+    } catch (error) {
+      console.error("Failed to create sandbox-free chat:", error);
+    }
+  }, [createSession, router]);
+
   useEffect(() => {
     if (
       optimisticActiveSessionId &&
@@ -277,6 +291,7 @@ export function SessionsRouteShell({
               onArchiveSession={handleArchiveSession}
               onUnarchiveSession={handleUnarchiveSession}
               onOpenNewSession={openNewSessionDialog}
+              onCreateSandboxFreeChat={handleCreateSandboxFreeChat}
               onCreateSessionForRepo={handleCreateSessionForRepo}
               onCreateSessionFromBranch={handleCreateSessionFromBranch}
               initialUser={currentUser}

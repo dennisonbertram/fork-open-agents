@@ -65,6 +65,7 @@ type InboxSidebarProps = {
   onArchiveSession: (sessionId: string) => Promise<void>;
   onUnarchiveSession: (sessionId: string) => Promise<void>;
   onOpenNewSession: () => void;
+  onCreateSandboxFreeChat: () => Promise<void>;
   onCreateSessionForRepo: (repoOwner: string, repoName: string) => void;
   onCreateSessionFromBranch: (
     repoOwner: string,
@@ -692,6 +693,7 @@ export function InboxSidebar({
   onArchiveSession,
   onUnarchiveSession,
   onOpenNewSession,
+  onCreateSandboxFreeChat,
   onCreateSessionForRepo,
   onCreateSessionFromBranch,
   initialUser,
@@ -722,6 +724,8 @@ export function InboxSidebar({
     label: string;
   } | null>(null);
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
+  const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
+    useState(false);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
 
@@ -935,6 +939,22 @@ export function InboxSidebar({
   const handleRetryArchivedSessions = useCallback(() => {
     void fetchArchivedSessionsPage({ offset: 0, replace: true });
   }, [fetchArchivedSessionsPage]);
+
+  const handleCreateSandboxFreeChat = useCallback(async () => {
+    if (isCreatingSandboxFreeChat) return;
+    setIsCreatingSandboxFreeChat(true);
+    try {
+      await onCreateSandboxFreeChat();
+      if (isMobile) setOpenMobile(false);
+    } finally {
+      setIsCreatingSandboxFreeChat(false);
+    }
+  }, [
+    isCreatingSandboxFreeChat,
+    isMobile,
+    onCreateSandboxFreeChat,
+    setOpenMobile,
+  ]);
 
   const handleCreateForRepo = useCallback(
     (owner: string, repo: string) => {
@@ -1193,7 +1213,35 @@ export function InboxSidebar({
                             </TooltipContent>
                           </Tooltip>
                         </span>
-                      ) : null}
+                      ) : (
+                        <span
+                          className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isCreatingSandboxFreeChat}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleCreateSandboxFreeChat();
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label="New chat"
+                              >
+                                {isCreatingSandboxFreeChat ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Plus className="h-3 w-3" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              New chat
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                      )}
                     </div>
                     <div
                       id={groupContentId}
