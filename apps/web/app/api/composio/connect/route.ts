@@ -1,12 +1,16 @@
 import { z } from "zod";
 import { getComposioClient } from "@/lib/composio/client";
+import {
+  type ManagedAuthConfigClient,
+  resolveManagedAuthConfigId,
+} from "@/lib/composio/managed-auth-config";
 import { toComposioUserId } from "@/lib/composio/user-id";
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 
 /**
- * Accept either toolkitSlug (preferred — one-click managed OAuth via
- * toolkits.authorize) or authConfigId (advanced escape hatch for custom OAuth
- * apps). At least one of the two must be present.
+ * Accept either toolkitSlug (preferred — one-click managed OAuth) or
+ * authConfigId (advanced escape hatch for custom OAuth apps). At least one of
+ * the two must be present.
  */
 const connectRequestSchema = z
   .object({
@@ -44,24 +48,19 @@ export async function POST(req: Request) {
     const client = getComposioClient();
     const composioUserId = toComposioUserId(authResult.userId);
 
-    if (parsed.data.toolkitSlug) {
-      // Preferred path: one-click OAuth via toolkits.authorize
-      // Composio auto-creates or selects a managed auth config — no authConfigId needed
-      const connectionRequest = await client.toolkits.authorize(
-        composioUserId,
-        parsed.data.toolkitSlug,
-      );
+    // For a toolkit slug, resolve (or create) a Composio-managed auth config and
+    // use connectedAccounts.link — the toolkit authorize/initiate path was
+    // deprecated by Composio for managed OAuth and now returns 400.
+    const authConfigId = parsed.data.toolkitSlug
+      ? await resolveManagedAuthConfigId(
+          client as unknown as ManagedAuthConfigClient,
+          parsed.data.toolkitSlug,
+        )
+      : (parsed.data.authConfigId as string);
 
-      return Response.json({
-        id: connectionRequest.id,
-        redirectUrl: connectionRequest.redirectUrl,
-      });
-    }
-
-    // Advanced escape hatch: caller provides explicit authConfigId
     const connectionRequest = await client.connectedAccounts.link(
       composioUserId,
-      parsed.data.authConfigId as string,
+      authConfigId,
       {
         ...(parsed.data.alias ? { alias: parsed.data.alias } : {}),
         ...(parsed.data.callbackUrl

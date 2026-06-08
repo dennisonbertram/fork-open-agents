@@ -24,10 +24,16 @@ const link = mock(
   }),
 );
 
-const authorize = mock(async (_userId: string, _toolkitSlug: string) => ({
-  id: "connection-request-2",
-  redirectUrl: "https://composio.dev/oauth/gmail",
-}));
+const authConfigsList = mock(
+  async (_query: { toolkit: string; isComposioManaged?: boolean }) => ({
+    items: [] as Array<{ id?: string | null }>,
+  }),
+);
+const authConfigsCreate = mock(
+  async (_toolkit: string, _options: { type: string }) => ({
+    id: "ac_gmail_managed",
+  }),
+);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -42,8 +48,9 @@ mock.module("@/lib/composio/client", () => ({
     connectedAccounts: {
       link,
     },
-    toolkits: {
-      authorize,
+    authConfigs: {
+      list: authConfigsList,
+      create: authConfigsCreate,
     },
   }),
 }));
@@ -62,7 +69,8 @@ describe("/api/composio/connect", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     link.mockClear();
-    authorize.mockClear();
+    authConfigsList.mockClear();
+    authConfigsCreate.mockClear();
   });
 
   test("requires authentication", async () => {
@@ -76,7 +84,6 @@ describe("/api/composio/connect", () => {
 
     expect(response.status).toBe(401);
     expect(link).not.toHaveBeenCalled();
-    expect(authorize).not.toHaveBeenCalled();
   });
 
   test("creates a Composio-managed connection link via authConfigId (legacy path)", async () => {
@@ -99,14 +106,14 @@ describe("/api/composio/connect", () => {
       alias: "github-work",
       callbackUrl: "https://open-agents.dev/settings/composio",
     });
-    expect(authorize).not.toHaveBeenCalled();
+    expect(authConfigsCreate).not.toHaveBeenCalled();
     expect(body).toEqual({
       id: "connection-request-1",
       redirectUrl: "https://composio.dev/connect/request-1",
     });
   });
 
-  test("creates connection via toolkitSlug (preferred one-click path)", async () => {
+  test("toolkitSlug: resolves a managed auth config, then links (no deprecated authorize path)", async () => {
     const { POST } = await routeModulePromise;
 
     const response = await POST(post({ toolkitSlug: "gmail" }));
@@ -116,24 +123,38 @@ describe("/api/composio/connect", () => {
     };
 
     expect(response.status).toBe(200);
-    expect(authorize).toHaveBeenCalledWith("open_agents_user_user-1", "gmail");
-    expect(link).not.toHaveBeenCalled();
+    // empty list → create a managed auth config, then link with its id
+    expect(authConfigsList).toHaveBeenCalledWith({
+      toolkit: "gmail",
+      isComposioManaged: true,
+    });
+    expect(authConfigsCreate).toHaveBeenCalledWith("gmail", {
+      type: "use_composio_managed_auth",
+    });
+    expect(link).toHaveBeenCalledWith(
+      "open_agents_user_user-1",
+      "ac_gmail_managed",
+      {},
+    );
     expect(body).toEqual({
-      id: "connection-request-2",
-      redirectUrl: "https://composio.dev/oauth/gmail",
+      id: "connection-request-1",
+      redirectUrl: "https://composio.dev/connect/request-1",
     });
   });
 
-  test("toolkitSlug takes priority when both toolkitSlug and authConfigId are provided", async () => {
+  test("toolkitSlug: reuses an existing managed auth config", async () => {
+    authConfigsList.mockResolvedValueOnce({ items: [{ id: "ac_existing" }] });
     const { POST } = await routeModulePromise;
 
-    const response = await POST(
-      post({ toolkitSlug: "gmail", authConfigId: "auth-1" }),
-    );
+    const response = await POST(post({ toolkitSlug: "notion" }));
 
     expect(response.status).toBe(200);
-    expect(authorize).toHaveBeenCalledWith("open_agents_user_user-1", "gmail");
-    expect(link).not.toHaveBeenCalled();
+    expect(authConfigsCreate).not.toHaveBeenCalled();
+    expect(link).toHaveBeenCalledWith(
+      "open_agents_user_user-1",
+      "ac_existing",
+      {},
+    );
   });
 
   test("rejects when neither toolkitSlug nor authConfigId is provided", async () => {
@@ -143,7 +164,6 @@ describe("/api/composio/connect", () => {
 
     expect(response.status).toBe(400);
     expect(link).not.toHaveBeenCalled();
-    expect(authorize).not.toHaveBeenCalled();
   });
 
   test("rejects invalid connect payloads (empty authConfigId)", async () => {
