@@ -223,3 +223,59 @@ describe("chat-only tool policy (sandbox-free)", () => {
     expect(chatToolKeys).toEqual([...CHAT_ONLY_TOOL_NAMES]);
   });
 });
+
+// REGRESSION tests: catch future breakage of the chat-only policy from different angles
+describe("regression: chat-only tool policy stability", () => {
+  // REGRESSION-001: classic mode (with sandbox) must still get the FULL tool set.
+  // If the sandboxFree guard accidentally activates for non-free sessions, this fails.
+  test("classic mode without sandboxFree flag still receives the full tool set", () => {
+    const classicTools = getRuntimeModeToolPolicy("classic");
+    const classicToolNames = Object.keys(classicTools);
+
+    expect(classicToolNames).toContain("bash");
+    expect(classicToolNames).toContain("read");
+    expect(classicToolNames).toContain("write");
+    expect(classicToolNames).toContain("edit");
+    expect(classicToolNames).toContain("task");
+    expect(classicToolNames).toContain("grep");
+    expect(classicToolNames).toContain("glob");
+    // Must equal the full tool set
+    expect(classicToolNames).toEqual([...OPEN_AGENT_TOOL_NAMES]);
+  });
+
+  // REGRESSION-002: CHAT_ONLY_TOOL_NAMES must be a strict subset of OPEN_AGENT_TOOL_NAMES.
+  // If a new tool is added to CHAT_ONLY_TOOL_NAMES that does not exist in the agent,
+  // this test catches a typo or stale reference.
+  test("every name in CHAT_ONLY_TOOL_NAMES is a valid agent tool name", () => {
+    for (const name of CHAT_ONLY_TOOL_NAMES) {
+      expect(OPEN_AGENT_TOOL_NAMES).toContain(name);
+    }
+  });
+
+  // REGRESSION-003: sandbox-free prompt section must NOT appear in managed_runtime mode.
+  // The two prompt overlays are orthogonal; mixing them would be confusing.
+  test("sandbox-free prompt section does not appear in managed_runtime mode prompt", () => {
+    const managedPrompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The managed runtime prompt must not mix in the sandbox-free notice.
+    expect(managedPrompt).not.toContain("no code-execution environment");
+  });
+
+  // REGRESSION-004: sandbox-free prompt section must NOT appear in a normal classic prompt.
+  test("sandbox-free prompt section does not appear in normal classic-mode prompt", () => {
+    const classicPrompt = buildSystemPrompt({ runtimeMode: "classic" });
+
+    expect(classicPrompt).not.toContain("no code-execution environment");
+  });
+
+  // REGRESSION-005: sandboxFree=false is identical to the default (no flag) for classic mode.
+  // Ensures that explicitly passing false does not accidentally trigger the restriction.
+  test("sandboxFree:false produces the same tool set as omitting the flag in classic mode", () => {
+    const withFalse = Object.keys(
+      getRuntimeModeToolPolicy("classic", undefined, { sandboxFree: false }),
+    );
+    const withOmitted = Object.keys(getRuntimeModeToolPolicy("classic"));
+
+    expect(withFalse).toEqual(withOmitted);
+  });
+});
