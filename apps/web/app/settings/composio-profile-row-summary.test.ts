@@ -29,16 +29,27 @@ describe("profileRowSummary", () => {
   });
 
   test("BT-002 returns matched logo entries for toolkits present in catalog", () => {
-    const catalog = [toolkit("github", "https://cdn/github.png"), toolkit("slack", "https://cdn/slack.png")];
+    const catalog = [
+      toolkit("github", "https://cdn/github.png"),
+      toolkit("slack", "https://cdn/slack.png"),
+    ];
     const result = profileRowSummary(["github", "slack"], catalog);
     expect(result.logos).toHaveLength(2);
-    expect(result.logos[0]).toMatchObject({ slug: "github", logo: "https://cdn/github.png" });
-    expect(result.logos[1]).toMatchObject({ slug: "slack", logo: "https://cdn/slack.png" });
+    expect(result.logos[0]).toMatchObject({
+      slug: "github",
+      logo: "https://cdn/github.png",
+    });
+    expect(result.logos[1]).toMatchObject({
+      slug: "slack",
+      logo: "https://cdn/slack.png",
+    });
     expect(result.overflow).toBe(0);
   });
 
   test("BT-003 caps visible logos at MAX_VISIBLE_LOGOS (5) and sets overflow to remainder", () => {
-    const catalog = ["a", "b", "c", "d", "e", "f", "g"].map((s) => toolkit(s, `https://cdn/${s}.png`));
+    const catalog = ["a", "b", "c", "d", "e", "f", "g"].map((s) =>
+      toolkit(s, `https://cdn/${s}.png`),
+    );
     const slugs = ["a", "b", "c", "d", "e", "f", "g"];
     const result = profileRowSummary(slugs, catalog);
     expect(result.logos).toHaveLength(MAX_VISIBLE_LOGOS);
@@ -56,7 +67,9 @@ describe("profileRowSummary", () => {
   });
 
   test("BT-005 exactly MAX_VISIBLE_LOGOS toolkits → overflow is zero", () => {
-    const catalog = ["a", "b", "c", "d", "e"].map((s) => toolkit(s, `https://cdn/${s}.png`));
+    const catalog = ["a", "b", "c", "d", "e"].map((s) =>
+      toolkit(s, `https://cdn/${s}.png`),
+    );
     const result = profileRowSummary(["a", "b", "c", "d", "e"], catalog);
     expect(result.logos).toHaveLength(MAX_VISIBLE_LOGOS);
     expect(result.overflow).toBe(0);
