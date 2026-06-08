@@ -384,4 +384,87 @@ describe("resolveChatSandboxRuntime", () => {
       }
     });
   });
+
+  describe("regression: sandbox-free guard is never bypassed", () => {
+    test("REG-001: connectSandbox is not called even when other session fields are set (userId, title, runtimeMode)", async () => {
+      // This regression catches a revert of the sandboxState=null guard. If the
+      // early return is removed, connectSandbox would be called regardless of
+      // sandboxState.
+      const session = makeSandboxFreeSession({
+        id: "session-full-fields",
+        title: "A legitimate chat with no sandbox",
+        runtimeMode: "classic",
+        repoOwner: null,
+        repoName: null,
+        cloneUrl: null,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-reg-1",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(0);
+    });
+
+    test("REG-002: sandbox-free runtime has null sandboxState and correct mode discriminant", async () => {
+      // If someone changes the return shape of the early return branch (e.g.
+      // fabricates a SandboxState instead of returning null), this fails.
+      const session = makeSandboxFreeSession({ id: "session-shape-check" });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-reg-2",
+      });
+
+      expect(result.mode).toBe("sandbox-free");
+      expect(result.sandboxState).toBeNull();
+      // Skills should be an empty array (no sandbox to load skills from)
+      expect(result.skills).toEqual([]);
+      // Common fields must be present
+      expect(typeof result.sessionTitle).toBe("string");
+      expect(typeof result.runtimeMode).toBe("string");
+    });
+
+    test("REG-003: auth checks execute before the sandbox-free early return", async () => {
+      // If the sandbox-free guard is moved BEFORE auth checks, an unauthorized
+      // user could get a sandbox-free runtime without being rejected.
+      const session = makeSandboxFreeSession({ id: "session-auth-order" });
+      testSessionById[session.id] = session;
+
+      // User ID does NOT match session.userId
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "attacker",
+          sessionId: session.id,
+          assistantId: "asst-reg-3",
+        }),
+      ).rejects.toThrow("Unauthorized");
+
+      expect(connectSandboxSpy).not.toHaveBeenCalled();
+    });
+
+    test("REG-004: archived sandbox-free session is still rejected before returning sandbox-free runtime", async () => {
+      // Ensures archived check runs before early return for sandbox-free sessions.
+      const session = makeSandboxFreeSession({
+        id: "session-archived-free",
+        status: "archived",
+      });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-reg-4",
+        }),
+      ).rejects.toThrow("Session is archived");
+
+      expect(connectSandboxSpy).not.toHaveBeenCalled();
+    });
+  });
 });
