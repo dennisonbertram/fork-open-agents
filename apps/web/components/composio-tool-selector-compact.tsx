@@ -9,15 +9,10 @@ import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface ComposioToolSelectorCompactProps {
   selection: ChatComposioSelection;
@@ -81,9 +76,13 @@ export function ComposioToolSelectorCompact({
     })) ??
     [];
 
+  const activeProfileId = hasDirectSlugs
+    ? ""
+    : (selection.mainProfileId ?? "off");
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           type="button"
           disabled={isDisabled}
@@ -101,14 +100,17 @@ export function ComposioToolSelectorCompact({
               : "Tools: Off"}
           </span>
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[360px] max-h-[480px] overflow-y-auto p-3"
+      >
+        <p className="mb-2 text-xs font-semibold text-foreground">
           Tools this chat can use
-        </DropdownMenuLabel>
+        </p>
 
         {/* Direct toolkit picker — "Choose specific tools" */}
-        <div className="px-2 pb-1.5">
+        <div className="mb-3">
           <p className="mb-1.5 text-xs font-medium text-foreground">
             Choose specific tools
           </p>
@@ -131,59 +133,76 @@ export function ComposioToolSelectorCompact({
         {/* Saved profiles — alternative to direct picker */}
         {hasProfiles ? (
           <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-xs text-muted-foreground">
+            <div className="my-2 border-t border-border/60" />
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
               Or use a saved profile
-            </DropdownMenuLabel>
+            </p>
+            {isUnavailable ? (
+              <div className="mb-2 text-xs text-destructive">
+                {data?.status.message ?? "Composio is unavailable."}
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              {/* "Off" option */}
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({
+                    ...selection,
+                    mainProfileId: null,
+                    directToolkitSlugs: [],
+                  });
+                }}
+                className={cn(
+                  "w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
+                  activeProfileId === "off" &&
+                    "bg-accent text-accent-foreground",
+                )}
+              >
+                Off
+              </button>
+              {profileOptions.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  disabled={!profile.available}
+                  title={profile.disabledReason ?? profile.name}
+                  onClick={() => {
+                    onChange({
+                      ...selection,
+                      mainProfileId: profile.id,
+                      directToolkitSlugs: [],
+                    });
+                  }}
+                  className={cn(
+                    "w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50",
+                    activeProfileId === profile.id &&
+                      "bg-accent text-accent-foreground",
+                  )}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{profile.name}</span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {profile.disabledReason ??
+                        summarizeChatTools(profile.toolkitSlugs, 4)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
           </>
         ) : null}
 
-        {isUnavailable ? (
-          <div className="px-2 py-1.5 text-xs text-destructive">
-            {data?.status.message ?? "Composio is unavailable."}
-          </div>
-        ) : null}
-
-        {hasProfiles ? (
-          <DropdownMenuRadioGroup
-            value={hasDirectSlugs ? "" : (selection.mainProfileId ?? "off")}
-            onValueChange={(value) => {
-              onChange({
-                ...selection,
-                mainProfileId: value === "off" ? null : value,
-                // Selecting a profile clears the direct list
-                directToolkitSlugs: [],
-              });
-            }}
+        <div className="mt-3 border-t border-border/60 pt-2">
+          <Link
+            href="/settings/composio"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
           >
-            <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
-            {profileOptions.map((profile) => (
-              <DropdownMenuRadioItem
-                key={profile.id}
-                value={profile.id}
-                disabled={!profile.available}
-                title={profile.disabledReason ?? profile.name}
-              >
-                <span className="flex min-w-0 flex-col">
-                  <span className="truncate">{profile.name}</span>
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {profile.disabledReason ??
-                      summarizeChatTools(profile.toolkitSlugs, 4)}
-                  </span>
-                </span>
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        ) : null}
-
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/settings/composio">
-            <Settings className="size-4" />
+            <Settings className="size-3.5" />
             Manage Composio
           </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

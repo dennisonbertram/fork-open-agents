@@ -531,20 +531,15 @@ export function ComposioSection() {
       />
 
       <SettingsSection
-        title="Browse & connect tools"
-        description="Find an app, connect it once, then add it to a tool profile your agent uses in chat."
+        title="Connect tools"
+        description="Connect the apps your agents can use. Search for an app, connect it once, and it stays pinned here."
       >
         <ComposioToolCatalog />
-        <p className="mt-4 text-xs text-muted-foreground">
-          Once you connect an account, add its toolkit slug to a{" "}
-          <span className="font-medium text-foreground">Tool profile</span>{" "}
-          below to make it available to your agents.
-        </p>
       </SettingsSection>
 
       <SettingsSection
         title="Tool profiles"
-        description="Group the external tools an agent can use, then pick a profile from the chat toolbar to switch them on."
+        description="Named bundles of connected tools. Assign a profile to an agent below (Main, Explorer, …) so different agents get different tools — or pick tools directly in a chat."
         learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
       >
         <div className="space-y-3">

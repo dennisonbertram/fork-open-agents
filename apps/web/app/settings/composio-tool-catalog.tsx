@@ -11,13 +11,18 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { filterToolkits } from "./composio-catalog-filter";
+import {
+  POPULAR_TOOLKIT_SLUGS,
+  selectSuggestedToolkits,
+} from "./composio-catalog-suggested";
 
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
-/** Maximum cards rendered when no search query is active. */
-const UNFILTERED_LIMIT = 60;
 /** Maximum cards rendered when a search query is active. */
-const FILTERED_LIMIT = 100;
+const FILTERED_LIMIT = 30;
+
+/** Maximum suggested (not-yet-connected popular) toolkits to show. */
+const SUGGESTED_LIMIT = 4;
 
 async function jsonFetcher<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -127,6 +132,54 @@ function ToolkitCard({
   );
 }
 
+interface ToolkitGroupProps {
+  label: string;
+  toolkits: Array<{
+    slug: string;
+    name: string;
+    description: string | null;
+    logo: string | null;
+    managedAuth: boolean;
+    noAuth: boolean;
+  }>;
+  connectedSlugs: Set<string>;
+  connectingSlug: string | null;
+  onConnect: (slug: string) => Promise<void>;
+}
+
+function ToolkitGroup({
+  label,
+  toolkits,
+  connectedSlugs,
+  connectingSlug,
+  onConnect,
+}: ToolkitGroupProps) {
+  if (toolkits.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </h3>
+      <div className={cn("grid gap-3 sm:grid-cols-2 md:grid-cols-3")}>
+        {toolkits.map((toolkit) => (
+          <ToolkitCard
+            key={toolkit.slug}
+            slug={toolkit.slug}
+            name={toolkit.name}
+            description={toolkit.description}
+            logo={toolkit.logo}
+            managedAuth={toolkit.managedAuth}
+            noAuth={toolkit.noAuth}
+            isConnected={connectedSlugs.has(toolkit.slug)}
+            onConnect={onConnect}
+            isConnecting={connectingSlug === toolkit.slug}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ComposioToolCatalog() {
   const [query, setQuery] = useState("");
   const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
@@ -154,11 +207,7 @@ export function ComposioToolCatalog() {
     (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
   );
 
-  const filtered = filterToolkits(allToolkits, query);
   const isSearching = query.trim().length > 0;
-  const limit = isSearching ? FILTERED_LIMIT : UNFILTERED_LIMIT;
-  const visible = filtered.slice(0, limit);
-  const hiddenCount = filtered.length - visible.length;
 
   async function handleConnect(slug: string) {
     setConnectingSlug(slug);
@@ -189,6 +238,26 @@ export function ComposioToolCatalog() {
     }
   }
 
+  // Build the "connected" (pinned) group: cross-reference catalog by slug
+  const catalogBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
+  const connectedToolkits = Array.from(connectedSlugs).flatMap((slug) => {
+    const entry = catalogBySlug.get(slug);
+    return entry ? [entry] : [];
+  });
+
+  // Build the "suggested" group: at most SUGGESTED_LIMIT popular, not-yet-connected
+  const suggestedToolkits = selectSuggestedToolkits(
+    allToolkits,
+    connectedSlugs,
+    POPULAR_TOOLKIT_SLUGS,
+    SUGGESTED_LIMIT,
+  );
+
+  // Search view
+  const filtered = isSearching ? filterToolkits(allToolkits, query) : [];
+  const visible = filtered.slice(0, FILTERED_LIMIT);
+  const hiddenCount = filtered.length - visible.length;
+
   return (
     <div className="space-y-4">
       <div className="relative">
@@ -208,41 +277,70 @@ export function ComposioToolCatalog() {
             <ToolkitCardSkeleton key={i} />
           ))}
         </div>
-      ) : filtered.length === 0 && isSearching ? (
-        <p className="text-sm text-muted-foreground py-4 text-center">
-          No tools found matching{" "}
-          <span className="font-medium text-foreground">
-            &ldquo;{query}&rdquo;
-          </span>
-          . Try a different name or keyword.
-        </p>
+      ) : isSearching ? (
+        /* Search view */
+        <>
+          {visible.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">
+              No tools found matching{" "}
+              <span className="font-medium text-foreground">
+                &ldquo;{query}&rdquo;
+              </span>
+              . Try a different name or keyword.
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {`Showing ${visible.length} of ${filtered.length} matching tools`}
+                {hiddenCount > 0 ? " — refine your search to see all" : ""}
+              </p>
+              <div className={cn("grid gap-3 sm:grid-cols-2 md:grid-cols-3")}>
+                {visible.map((toolkit) => (
+                  <ToolkitCard
+                    key={toolkit.slug}
+                    slug={toolkit.slug}
+                    name={toolkit.name}
+                    description={toolkit.description}
+                    logo={toolkit.logo}
+                    managedAuth={toolkit.managedAuth}
+                    noAuth={toolkit.noAuth}
+                    isConnected={connectedSlugs.has(toolkit.slug)}
+                    onConnect={handleConnect}
+                    isConnecting={connectingSlug === toolkit.slug}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </>
       ) : (
+        /* Default view: pinned connected + suggestions */
         <>
           <p className="text-xs text-muted-foreground">
-            {isSearching
-              ? `Showing ${visible.length} of ${filtered.length} matching tools`
-              : `Showing ${visible.length} of ${allToolkits.length} tools`}
-            {hiddenCount > 0 && !isSearching
-              ? " — search to find more"
-              : hiddenCount > 0
-                ? ` — refine your search to see all`
-                : ""}
+            Showing your connected tools and a few suggestions — search to find
+            any of 1000+.
           </p>
-          <div className={cn("grid gap-3 sm:grid-cols-2 md:grid-cols-3")}>
-            {visible.map((toolkit) => (
-              <ToolkitCard
-                key={toolkit.slug}
-                slug={toolkit.slug}
-                name={toolkit.name}
-                description={toolkit.description}
-                logo={toolkit.logo}
-                managedAuth={toolkit.managedAuth}
-                noAuth={toolkit.noAuth}
-                isConnected={connectedSlugs.has(toolkit.slug)}
-                onConnect={handleConnect}
-                isConnecting={connectingSlug === toolkit.slug}
-              />
-            ))}
+          <div className="space-y-4">
+            <ToolkitGroup
+              label="Connected"
+              toolkits={connectedToolkits}
+              connectedSlugs={connectedSlugs}
+              connectingSlug={connectingSlug}
+              onConnect={handleConnect}
+            />
+            <ToolkitGroup
+              label="Suggested"
+              toolkits={suggestedToolkits}
+              connectedSlugs={connectedSlugs}
+              connectingSlug={connectingSlug}
+              onConnect={handleConnect}
+            />
+            {connectedToolkits.length === 0 &&
+            suggestedToolkits.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No tools found. Search above to connect an app.
+              </p>
+            ) : null}
           </div>
         </>
       )}
