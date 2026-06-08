@@ -33,6 +33,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { mapComposioStatusToVerdict } from "./composio-status-verdict";
+import { ComposioToolCatalog } from "./composio-tool-catalog";
 
 /** Where users manage Composio toolkits, auth configs, and connected accounts. */
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
@@ -529,6 +530,18 @@ export function ComposioSection() {
         onRefresh={checkConnection}
         refreshing={isSubmitting}
       />
+
+      <SettingsSection
+        title="Browse & connect tools"
+        description="Find an app, connect it once, then add it to a tool profile your agent uses in chat."
+      >
+        <ComposioToolCatalog />
+        <p className="mt-4 text-xs text-muted-foreground">
+          Once you connect an account, add its toolkit slug to a{" "}
+          <span className="font-medium text-foreground">Tool profile</span>{" "}
+          below to make it available to your agents.
+        </p>
+      </SettingsSection>
 
       <SettingsSection
         title="Tool profiles"

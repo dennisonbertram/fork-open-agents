@@ -3,11 +3,21 @@ import { getComposioClient } from "@/lib/composio/client";
 import { toComposioUserId } from "@/lib/composio/user-id";
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 
-const connectRequestSchema = z.object({
-  authConfigId: z.string().trim().min(1),
-  alias: z.string().trim().min(1).max(80).optional(),
-  callbackUrl: z.url().optional(),
-});
+/**
+ * Accept either toolkitSlug (preferred — one-click managed OAuth via
+ * toolkits.authorize) or authConfigId (advanced escape hatch for custom OAuth
+ * apps). At least one of the two must be present.
+ */
+const connectRequestSchema = z
+  .object({
+    toolkitSlug: z.string().trim().min(1).optional(),
+    authConfigId: z.string().trim().min(1).optional(),
+    alias: z.string().trim().min(1).max(80).optional(),
+    callbackUrl: z.url().optional(),
+  })
+  .refine((data) => Boolean(data.toolkitSlug) || Boolean(data.authConfigId), {
+    message: "Either toolkitSlug or authConfigId must be provided",
+  });
 
 export async function POST(req: Request) {
   const authResult = await requireAuthenticatedUser();
@@ -32,9 +42,26 @@ export async function POST(req: Request) {
 
   try {
     const client = getComposioClient();
+    const composioUserId = toComposioUserId(authResult.userId);
+
+    if (parsed.data.toolkitSlug) {
+      // Preferred path: one-click OAuth via toolkits.authorize
+      // Composio auto-creates or selects a managed auth config — no authConfigId needed
+      const connectionRequest = await client.toolkits.authorize(
+        composioUserId,
+        parsed.data.toolkitSlug,
+      );
+
+      return Response.json({
+        id: connectionRequest.id,
+        redirectUrl: connectionRequest.redirectUrl,
+      });
+    }
+
+    // Advanced escape hatch: caller provides explicit authConfigId
     const connectionRequest = await client.connectedAccounts.link(
-      toComposioUserId(authResult.userId),
-      parsed.data.authConfigId,
+      composioUserId,
+      parsed.data.authConfigId as string,
       {
         ...(parsed.data.alias ? { alias: parsed.data.alias } : {}),
         ...(parsed.data.callbackUrl
