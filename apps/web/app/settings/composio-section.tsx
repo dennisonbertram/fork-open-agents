@@ -985,8 +985,8 @@ export function ComposioSection() {
               <span className="font-medium text-foreground">
                 Chat override:
               </span>{" "}
-              when on, an individual chat can change that agent's tools for the
-              conversation; your saved default stays. Turn it off to lock the
+              when on, an individual chat can change that agent&apos;s tools for
+              the conversation; your saved default stays. Turn it off to lock the
               default.
             </p>
 
