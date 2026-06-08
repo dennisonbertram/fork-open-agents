@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CheckCircle2, Search, X } from "lucide-react";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
@@ -13,9 +13,7 @@ import {
   mergeSelectedWithCatalog,
   toggleSlug,
 } from "./composio-toolkit-picker-helpers";
-
-/** Maximum toolkit rows shown when no query is active. */
-const UNFILTERED_LIMIT = 50;
+import { shouldShowResults } from "./composio-section-helpers";
 
 export interface ComposioToolkitPickerProps {
   /** Currently selected toolkit slugs. Parent owns persistence. */
@@ -52,6 +50,8 @@ export function ComposioToolkitPicker({
   disabled = false,
 }: ComposioToolkitPickerProps) {
   const [query, setQuery] = useState("");
+  const [isFocused, setIsFocused] = useState(false);
+  const resultsRef = useRef<HTMLDivElement>(null);
 
   const { data: toolkitsData, isLoading: toolkitsLoading } =
     useSWR<ComposioToolkitsResponse>(
@@ -71,49 +71,58 @@ export function ComposioToolkitPicker({
 
   // Build catalog entries filtered by search query
   const filtered = filterToolkits(allToolkits, query);
-  const isSearching = query.trim().length > 0;
-  const visibleCatalog = isSearching
-    ? filtered
-    : filtered.slice(0, UNFILTERED_LIMIT);
-  const hiddenCount = filtered.length - visibleCatalog.length;
 
   // Merge: unknown (legacy) slugs + catalog entries
   const allEntries = mergeSelectedWithCatalog(selectedSlugs, allToolkits);
 
-  // For the result list: use merged entries for catalog so selected state is in sync,
-  // but only show unknown entries + filtered catalog entries
-  const filteredSelected = new Set(
-    mergeSelectedWithCatalog(selectedSlugs, filtered).map((e) => e.slug),
-  );
+  // For the result list: show all filtered catalog entries + unknown (legacy) entries
   const unknownEntries = allEntries.filter((e) => e.unknown);
-  const catalogRows = allEntries.filter(
-    (e) => !e.unknown && filteredSelected.has(e.slug),
+  const catalogRows = mergeSelectedWithCatalog(selectedSlugs, filtered).filter(
+    (e) => !e.unknown,
   );
 
-  // When no search, only show the first UNFILTERED_LIMIT catalog rows
-  // but always show all unknown (selected) entries first
-  const catalogVisible = isSearching
-    ? catalogRows
-    : catalogRows.slice(0, UNFILTERED_LIMIT);
-
-  const visibleRows = [...unknownEntries, ...catalogVisible];
-  const resultCount = visibleRows.length;
-
-  function handleToggle(slug: string) {
-    if (disabled) return;
-    onChange(toggleSlug(selectedSlugs, slug));
-  }
-
-  function handleRemoveChip(slug: string) {
-    if (disabled) return;
-    onChange(selectedSlugs.filter((s) => s !== slug));
-  }
+  const visibleRows = [...unknownEntries, ...catalogRows];
 
   // Build selected chips from allEntries so we always have catalog metadata
   const selectedEntries = allEntries.filter((e) => e.selected);
 
+  const showResults = shouldShowResults(isFocused, query);
+
+  const handleToggle = useCallback(
+    (slug: string) => {
+      if (disabled) return;
+      onChange(toggleSlug(selectedSlugs, slug));
+    },
+    [disabled, onChange, selectedSlugs],
+  );
+
+  const handleRemoveChip = useCallback(
+    (slug: string) => {
+      if (disabled) return;
+      onChange(selectedSlugs.filter((s) => s !== slug));
+    },
+    [disabled, onChange, selectedSlugs],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === "Escape") {
+        setIsFocused(false);
+        setQuery("");
+        e.currentTarget.blur();
+      }
+    },
+    [],
+  );
+
+  // Use onMouseDown preventDefault on result rows so the click registers
+  // before the input's onBlur fires, keeping the dropdown open for the click.
+  const handleResultMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+  }, []);
+
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {/* Selected chips */}
       {selectedEntries.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -156,14 +165,17 @@ export function ComposioToolkitPicker({
         </div>
       )}
 
-      {/* Search input */}
+      {/* Search input + dropdown results anchored below */}
       <div className="relative">
         <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
-          placeholder="Search tools — Gmail, Slack, Notion…"
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          onKeyDown={handleKeyDown}
+          placeholder="Add a tool — search Gmail, Slack…"
           disabled={disabled}
           className={cn(
             "h-8 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm",
@@ -171,126 +183,124 @@ export function ComposioToolkitPicker({
             "disabled:cursor-not-allowed disabled:opacity-50",
           )}
           aria-label="Search tools"
+          aria-autocomplete="list"
+          aria-controls="toolkit-picker-results"
         />
-      </div>
 
-      {/* Result list */}
-      <div
-        className={cn(
-          "max-h-48 overflow-y-auto rounded-md border border-border/60 bg-card",
-          toolkitsLoading && "p-2",
-        )}
-      >
-        {toolkitsLoading ? (
-          <div className="space-y-1 p-1">
-            {Array.from({ length: 5 }, (_, i) => (
-              <ToolkitRowSkeleton key={i} />
-            ))}
-          </div>
-        ) : visibleRows.length === 0 && isSearching ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">
-            No tools matching &ldquo;{query}&rdquo;
-          </p>
-        ) : visibleRows.length === 0 ? (
-          <p className="py-4 text-center text-xs text-muted-foreground">
-            No tools available
-          </p>
-        ) : (
-          <div className="p-1">
-            {visibleRows.map((entry) => {
-              const isConnected = connectedSlugs.has(entry.slug);
-              return (
-                <button
-                  key={entry.slug}
-                  type="button"
-                  onClick={() => handleToggle(entry.slug)}
-                  disabled={disabled}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
-                    "hover:bg-accent hover:text-accent-foreground",
-                    "disabled:cursor-not-allowed disabled:opacity-50",
-                    entry.selected && "bg-accent/50",
-                  )}
-                >
-                  {/* Logo or initials */}
-                  {entry.logo && !entry.unknown ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
-                    <img
-                      src={entry.logo}
-                      alt=""
-                      width={16}
-                      height={16}
-                      referrerPolicy="no-referrer"
-                      className="h-4 w-4 rounded-sm object-contain shrink-0"
-                    />
-                  ) : (
-                    <div className="h-4 w-4 rounded-sm bg-muted shrink-0 flex items-center justify-center">
-                      <span className="text-[9px] font-medium text-muted-foreground uppercase">
-                        {prettifyToolkitSlug(entry.slug).slice(0, 2)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Name */}
-                  <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-
-                  {/* Unknown hint */}
-                  {entry.unknown ? (
-                    <span className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400">
-                      unknown
-                    </span>
-                  ) : null}
-
-                  {/* Connected badge */}
-                  {isConnected && !entry.unknown ? (
-                    <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Connected
-                    </span>
-                  ) : null}
-
-                  {/* Checkbox visual */}
-                  <span
-                    className={cn(
-                      "ml-auto h-4 w-4 shrink-0 rounded border",
-                      entry.selected
-                        ? "border-primary bg-primary text-primary-foreground flex items-center justify-center"
-                        : "border-border",
-                    )}
-                    aria-hidden="true"
-                  >
-                    {entry.selected && (
-                      <svg
-                        viewBox="0 0 8 8"
-                        className="h-2.5 w-2.5 fill-current"
-                      >
-                        <path
-                          d="M1 4l2 2 4-4"
-                          stroke="currentColor"
-                          strokeWidth="1.5"
-                          fill="none"
+        {/* Dropdown results — only rendered when focused or query active */}
+        {showResults && (
+          <div
+            ref={resultsRef}
+            id="toolkit-picker-results"
+            role="listbox"
+            aria-label="Tool search results"
+            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-md"
+            onMouseDown={handleResultMouseDown}
+          >
+            {toolkitsLoading ? (
+              <div className="space-y-1 p-1">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <ToolkitRowSkeleton key={i} />
+                ))}
+              </div>
+            ) : visibleRows.length === 0 && query.trim().length > 0 ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                No tools matching &ldquo;{query}&rdquo;
+              </p>
+            ) : visibleRows.length === 0 ? (
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                No tools available
+              </p>
+            ) : (
+              <div className="p-1">
+                {visibleRows.map((entry) => {
+                  const isConnected = connectedSlugs.has(entry.slug);
+                  return (
+                    <button
+                      key={entry.slug}
+                      type="button"
+                      role="option"
+                      aria-selected={entry.selected}
+                      onClick={() => handleToggle(entry.slug)}
+                      disabled={disabled}
+                      className={cn(
+                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        "disabled:cursor-not-allowed disabled:opacity-50",
+                        entry.selected && "bg-accent/50",
+                      )}
+                    >
+                      {/* Logo or initials */}
+                      {entry.logo && !entry.unknown ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
+                        <img
+                          src={entry.logo}
+                          alt=""
+                          width={16}
+                          height={16}
+                          referrerPolicy="no-referrer"
+                          className="h-4 w-4 rounded-sm object-contain shrink-0"
                         />
-                      </svg>
-                    )}
-                  </span>
-                </button>
-              );
-            })}
+                      ) : (
+                        <div className="h-4 w-4 rounded-sm bg-muted shrink-0 flex items-center justify-center">
+                          <span className="text-[9px] font-medium text-muted-foreground uppercase">
+                            {prettifyToolkitSlug(entry.slug).slice(0, 2)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Name */}
+                      <span className="min-w-0 flex-1 truncate">
+                        {entry.name}
+                      </span>
+
+                      {/* Unknown hint */}
+                      {entry.unknown ? (
+                        <span className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400">
+                          unknown
+                        </span>
+                      ) : null}
+
+                      {/* Connected badge */}
+                      {isConnected && !entry.unknown ? (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                          <CheckCircle2 className="h-3 w-3" />
+                          Connected
+                        </span>
+                      ) : null}
+
+                      {/* Checkbox visual */}
+                      <span
+                        className={cn(
+                          "ml-auto h-4 w-4 shrink-0 rounded border",
+                          entry.selected
+                            ? "border-primary bg-primary text-primary-foreground flex items-center justify-center"
+                            : "border-border",
+                        )}
+                        aria-hidden="true"
+                      >
+                        {entry.selected && (
+                          <svg
+                            viewBox="0 0 8 8"
+                            className="h-2.5 w-2.5 fill-current"
+                          >
+                            <path
+                              d="M1 4l2 2 4-4"
+                              stroke="currentColor"
+                              strokeWidth="1.5"
+                              fill="none"
+                            />
+                          </svg>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
       </div>
-
-      {/* Result count */}
-      {!toolkitsLoading && allToolkits.length > 0 ? (
-        <p className="text-[11px] text-muted-foreground">
-          {isSearching
-            ? `${resultCount} result${resultCount === 1 ? "" : "s"} for "${query}"`
-            : `Showing ${resultCount} of ${allToolkits.length} tools${hiddenCount > 0 ? " — search to find more" : ""}`}
-          {selectedSlugs.length > 0
-            ? ` · ${selectedSlugs.length} selected`
-            : ""}
-        </p>
-      ) : null}
     </div>
   );
 }

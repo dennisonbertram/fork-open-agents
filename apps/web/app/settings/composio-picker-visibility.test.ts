@@ -67,23 +67,19 @@ describe("BT-224B-005: shouldShowMainDefaultTip — false when no profiles exist
 
 describe("BT-224B-006: shouldShowMainDefaultTip — false when main already has a profile", () => {
   test("returns false when profiles exist and main has a defaultProfileId", () => {
-    expect(
-      shouldShowMainDefaultTip([{ id: "p1" }], "p1"),
-    ).toBe(false);
+    expect(shouldShowMainDefaultTip([{ id: "p1" }], "p1")).toBe(false);
   });
 });
 
 describe("BT-224B-007: shouldShowMainDefaultTip — true when profiles exist and main is null", () => {
   test("returns true when at least one profile exists and mainDefaultProfileId is null", () => {
-    expect(
-      shouldShowMainDefaultTip([{ id: "p1" }], null),
-    ).toBe(true);
+    expect(shouldShowMainDefaultTip([{ id: "p1" }], null)).toBe(true);
   });
 
   test("returns true when multiple profiles exist and main is null", () => {
-    expect(
-      shouldShowMainDefaultTip([{ id: "p1" }, { id: "p2" }], null),
-    ).toBe(true);
+    expect(shouldShowMainDefaultTip([{ id: "p1" }, { id: "p2" }], null)).toBe(
+      true,
+    );
   });
 });
 

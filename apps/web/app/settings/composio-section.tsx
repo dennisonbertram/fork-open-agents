@@ -35,6 +35,10 @@ import { cn } from "@/lib/utils";
 import { mapComposioStatusToVerdict } from "./composio-status-verdict";
 import { ComposioToolCatalog } from "./composio-tool-catalog";
 import { ComposioToolkitPicker } from "./composio-toolkit-picker";
+import {
+  shouldShowMainDefaultTip,
+  AGENT_ROLE_DESCRIPTIONS,
+} from "./composio-section-helpers";
 
 /** Where users manage Composio toolkits, auth configs, and connected accounts. */
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
@@ -245,7 +249,7 @@ function ProfileEditor({
         className="h-7 text-sm"
       />
 
-      {/* Tool picker */}
+      {/* Tool picker — search-driven, compact */}
       <ComposioToolkitPicker
         selectedSlugs={toolkitSlugs}
         onChange={setToolkitSlugs}
@@ -409,6 +413,7 @@ export function ComposioSection() {
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bringYourOwnAuthOpen, setBringYourOwnAuthOpen] = useState(false);
 
   const profiles = data?.profiles ?? [];
   const defaults = data?.defaults;
@@ -534,6 +539,10 @@ export function ComposioSection() {
 
   const verdict = mapComposioStatusToVerdict(status);
 
+  // Tip: show when profiles exist but Main has no default
+  const mainDefaultProfileId = defaults?.main.defaultProfileId ?? null;
+  const showMainTip = shouldShowMainDefaultTip(profiles, mainDefaultProfileId);
+
   return (
     <div className="space-y-6">
       <ReadinessVerdict
@@ -614,125 +623,191 @@ export function ComposioSection() {
         </div>
       </SettingsSection>
 
+      {/* Agent defaults — compact one-row cards */}
       <SettingsSection
         title="Agent defaults"
-        description="Which tool profile each agent uses by default. You can still switch tools per chat."
+        description="Which tools each agent role uses when a chat hasn't picked its own. 'Off' means that agent starts with no external tools."
       >
         {defaults ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {COMPOSIO_AGENT_KEYS.map((agentKey) => (
-              <div
-                key={agentKey}
-                className="grid gap-3 rounded-lg border border-border/70 p-3"
-              >
-                <Label>{AGENT_LABELS[agentKey]}</Label>
-                <Select
-                  value={defaults[agentKey].defaultProfileId ?? "off"}
-                  disabled={isSubmitting || !isComposioAvailable}
-                  onValueChange={(value) => {
-                    void updateDefaults({
-                      ...defaults,
-                      [agentKey]: {
-                        ...defaults[agentKey],
-                        defaultProfileId: value === "off" ? null : value,
-                      },
-                    });
-                  }}
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              {COMPOSIO_AGENT_KEYS.map((agentKey) => (
+                <div
+                  key={agentKey}
+                  className="flex items-center gap-3 rounded-lg border border-border/70 px-3 py-2"
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a profile" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="off">Off</SelectItem>
-                    {profiles.map((profile) => (
-                      <SelectItem key={profile.id} value={profile.id}>
-                        {profile.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <div className="flex items-center justify-between gap-3 text-sm">
-                  <Label htmlFor={`composio-agent-chat-override-${agentKey}`}>
-                    Allow chat override
-                  </Label>
-                  <Switch
-                    id={`composio-agent-chat-override-${agentKey}`}
-                    checked={defaults[agentKey].allowChatOverride}
-                    disabled={isSubmitting}
-                    onCheckedChange={(checked) => {
+                  {/* Agent label + description */}
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">
+                      {AGENT_LABELS[agentKey]}
+                    </span>
+                    <span className="ml-2 text-xs text-muted-foreground">
+                      {AGENT_ROLE_DESCRIPTIONS[agentKey]}
+                    </span>
+                  </div>
+
+                  {/* Profile select */}
+                  <Select
+                    value={defaults[agentKey].defaultProfileId ?? "off"}
+                    disabled={isSubmitting || !isComposioAvailable}
+                    onValueChange={(value) => {
                       void updateDefaults({
                         ...defaults,
                         [agentKey]: {
                           ...defaults[agentKey],
-                          allowChatOverride: checked,
+                          defaultProfileId: value === "off" ? null : value,
                         },
                       });
                     }}
-                  />
+                  >
+                    <SelectTrigger className="h-7 w-36 text-xs">
+                      <SelectValue placeholder="Select a profile" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="off">Off</SelectItem>
+                      {profiles.map((profile) => (
+                        <SelectItem key={profile.id} value={profile.id}>
+                          {profile.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* Allow chat override toggle */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                      Chat override
+                    </span>
+                    <Switch
+                      id={`composio-agent-chat-override-${agentKey}`}
+                      checked={defaults[agentKey].allowChatOverride}
+                      disabled={isSubmitting}
+                      onCheckedChange={(checked) => {
+                        void updateDefaults({
+                          ...defaults,
+                          [agentKey]: {
+                            ...defaults[agentKey],
+                            allowChatOverride: checked,
+                          },
+                        });
+                      }}
+                      aria-label={`Allow chat override for ${AGENT_LABELS[agentKey]}`}
+                    />
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
+
+            {/* Tip: suggest setting Main's default when profiles exist */}
+            {showMainTip && (
+              <p className="text-xs text-muted-foreground rounded-md border border-border/50 bg-muted/40 px-3 py-2">
+                Tip: set a default profile for Main so new chats start with
+                tools.
+              </p>
+            )}
           </div>
         ) : null}
       </SettingsSection>
 
+      {/* Bring your own auth — demoted to a closed disclosure */}
       <SettingsSection
-        title="Connect an account"
-        description="Link an external account so its tools can sign in. Most setups don't need this — only use it when a tool asks you to connect."
-        learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
+        title="Bring your own auth (advanced)"
+        description="Most people don't need this. Use Connect tools above to connect apps in one click."
+        learnMore={{
+          href: COMPOSIO_DASHBOARD_URL,
+          label: "Open Composio dashboard",
+        }}
       >
-        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-          <div className="grid gap-1.5">
-            <Label htmlFor="composio-auth-config-id">Auth config ID</Label>
-            <Input
-              id="composio-auth-config-id"
-              value={authConfigId}
-              onChange={(event) => setAuthConfigId(event.currentTarget.value)}
-              placeholder="ac_..."
-              disabled={isSubmitting || !isComposioAvailable}
-              className="font-mono text-xs"
-            />
-            <FieldHelp>From your Composio dashboard.</FieldHelp>
-          </div>
-          <div className="grid gap-1.5">
-            <Label htmlFor="composio-alias">Alias</Label>
-            <Input
-              id="composio-alias"
-              value={connectionAlias}
-              onChange={(event) =>
-                setConnectionAlias(event.currentTarget.value)
-              }
-              placeholder="work-gmail"
-              disabled={isSubmitting || !isComposioAvailable}
-            />
-            <FieldHelp>An optional friendly name.</FieldHelp>
-          </div>
-          <Button
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Use this only if you&apos;re bringing your own OAuth app — paste its
+            Auth config ID from the{" "}
+            <a
+              href={COMPOSIO_DASHBOARD_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-0.5 text-foreground underline-offset-2 hover:underline"
+            >
+              Composio dashboard
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            .
+          </p>
+
+          {/* Closed-by-default disclosure */}
+          <button
             type="button"
-            variant="outline"
-            onClick={createConnectionLink}
-            disabled={
-              isSubmitting || !isComposioAvailable || !authConfigId.trim()
-            }
+            onClick={() => setBringYourOwnAuthOpen((v) => !v)}
+            aria-expanded={bringYourOwnAuthOpen}
+            className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            {isSubmitting ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <ExternalLink />
-            )}
-            Connect
-          </Button>
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                bringYourOwnAuthOpen && "rotate-180",
+              )}
+            />
+            Advanced — bring your own auth config
+          </button>
+
+          {bringYourOwnAuthOpen && (
+            <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end border-t border-border/60 pt-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="composio-auth-config-id">Auth config ID</Label>
+                <Input
+                  id="composio-auth-config-id"
+                  value={authConfigId}
+                  onChange={(event) =>
+                    setAuthConfigId(event.currentTarget.value)
+                  }
+                  placeholder="ac_..."
+                  disabled={isSubmitting || !isComposioAvailable}
+                  className="font-mono text-xs"
+                />
+                <FieldHelp>From your Composio dashboard.</FieldHelp>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="composio-alias">Alias</Label>
+                <Input
+                  id="composio-alias"
+                  value={connectionAlias}
+                  onChange={(event) =>
+                    setConnectionAlias(event.currentTarget.value)
+                  }
+                  placeholder="work-gmail"
+                  disabled={isSubmitting || !isComposioAvailable}
+                />
+                <FieldHelp>An optional friendly name.</FieldHelp>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={createConnectionLink}
+                disabled={
+                  isSubmitting || !isComposioAvailable || !authConfigId.trim()
+                }
+              >
+                {isSubmitting ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <ExternalLink />
+                )}
+                Connect
+              </Button>
+            </div>
+          )}
+
+          {connectionUrl ? (
+            <a
+              href={connectionUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-block truncate text-sm text-primary underline"
+            >
+              Open Composio connection link
+            </a>
+          ) : null}
         </div>
-        {connectionUrl ? (
-          <a
-            href={connectionUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-block truncate text-sm text-primary underline"
-          >
-            Open Composio connection link
-          </a>
-        ) : null}
       </SettingsSection>
     </div>
   );

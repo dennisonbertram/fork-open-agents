@@ -1,8 +1,6 @@
 /**
  * Pure helper functions for Composio section UX logic.
  * Extracted so they can be unit-tested independently of React.
- *
- * STUB — will be replaced by real implementation after tests confirm red state.
  */
 import type { ComposioAgentKey } from "@/lib/composio/types";
 
@@ -12,11 +10,11 @@ import type { ComposioAgentKey } from "@/lib/composio/types";
  * Rules:
  * - Visible when the input is focused (user is actively interacting)
  * - Visible when the query has non-whitespace content (results are relevant)
- * - Hidden otherwise (collapsed by default)
+ * - Hidden otherwise (collapsed by default — no always-open scroll box)
  */
-export function shouldShowResults(_isFocused: boolean, _query: string): boolean {
-  // STUB: always returns false so tests fail for the right behavioral reason
-  return false;
+export function shouldShowResults(isFocused: boolean, query: string): boolean {
+  if (isFocused) return true;
+  return query.trim().length > 0;
 }
 
 /**
@@ -30,8 +28,7 @@ export function shouldShowMainDefaultTip(
   profiles: ReadonlyArray<{ id: string }>,
   mainDefaultProfileId: string | null,
 ): boolean {
-  // STUB: always returns false so tests fail for the right behavioral reason
-  return false;
+  return profiles.length > 0 && mainDefaultProfileId === null;
 }
 
 /**
@@ -39,8 +36,9 @@ export function shouldShowMainDefaultTip(
  * the compact agent defaults row.
  */
 export const AGENT_ROLE_DESCRIPTIONS: Record<ComposioAgentKey, string> = {
-  main: "",
-  explorer: "",
-  executor: "",
-  design: "",
+  main: "The main chat agent — handles top-level tasks and conversations.",
+  explorer: "Subagent that researches and maps out solutions before acting.",
+  executor:
+    "Subagent that carries out concrete actions (file edits, API calls).",
+  design: "Subagent focused on design-related tasks and visual output.",
 };
