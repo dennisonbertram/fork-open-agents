@@ -5,6 +5,7 @@ import { CheckCircle2, Search, X } from "lucide-react";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
 import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { prettifyToolkitSlug } from "@/lib/composio/chat-tool-summary";
@@ -14,6 +15,10 @@ import {
   toggleSlug,
 } from "./composio-toolkit-picker-helpers";
 import { shouldShowResults } from "./composio-section-helpers";
+import {
+  selectableToolkits,
+  type ToolkitSource,
+} from "./composio-selectable-toolkits";
 
 export interface ComposioToolkitPickerProps {
   /** Currently selected toolkit slugs. Parent owns persistence. */
@@ -22,6 +27,12 @@ export interface ComposioToolkitPickerProps {
   onChange: (slugs: string[]) => void;
   /** Disable all interaction while parent is saving. */
   disabled?: boolean;
+  /**
+   * Controls which toolkits are offered in the dropdown:
+   * - "connected" (default): only tools the user has connected + noAuth tools.
+   * - "all": the full 1000+ toolkit catalog.
+   */
+  source?: ToolkitSource;
   /** Reserved for future repo-level filtering. */
   repoOwner?: string | null;
   repoName?: string | null;
@@ -48,6 +59,7 @@ export function ComposioToolkitPicker({
   selectedSlugs,
   onChange,
   disabled = false,
+  source = "connected",
 }: ComposioToolkitPickerProps) {
   const [query, setQuery] = useState("");
   const [isFocused, setIsFocused] = useState(false);
@@ -69,14 +81,25 @@ export function ComposioToolkitPicker({
     (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
   );
 
-  // Build catalog entries filtered by search query
-  const filtered = filterToolkits(allToolkits, query);
+  // Derive the selectable set according to source mode
+  const selectable = selectableToolkits({
+    catalog: allToolkits,
+    connectedSlugs,
+    source,
+  });
 
-  // Merge: unknown (legacy) slugs + catalog entries
+  // Build catalog entries filtered by search query — applied over the selectable set
+  const filtered = filterToolkits(selectable, query);
+
+  // Merge: unknown (legacy) slugs + catalog entries from the full catalog
+  // (so selected chips always show correct metadata even in connected mode)
   const allEntries = mergeSelectedWithCatalog(selectedSlugs, allToolkits);
 
-  // For the result list: show all filtered catalog entries + unknown (legacy) entries
-  const unknownEntries = allEntries.filter((e) => e.unknown);
+  // For the result list: show filtered selectable entries + unknown (legacy) entries
+  const unknownEntries = mergeSelectedWithCatalog(
+    selectedSlugs,
+    allToolkits,
+  ).filter((e) => e.unknown);
   const catalogRows = mergeSelectedWithCatalog(selectedSlugs, filtered).filter(
     (e) => !e.unknown,
   );
@@ -87,6 +110,10 @@ export function ComposioToolkitPicker({
   const selectedEntries = allEntries.filter((e) => e.selected);
 
   const showResults = shouldShowResults(isFocused, query);
+
+  // Empty-connected state: source=connected, data loaded, nothing selectable (no connected, no noAuth)
+  const isConnectedModeEmpty =
+    source === "connected" && !toolkitsLoading && selectable.length === 0;
 
   const handleToggle = useCallback(
     (slug: string) => {
@@ -167,8 +194,9 @@ export function ComposioToolkitPicker({
 
       {/* Search input + dropdown results anchored below */}
       <div className="relative">
-        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground pointer-events-none" />
-        <input
+        {/* Icon — matches composio-tool-catalog.tsx exactly */}
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+        <Input
           type="text"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
@@ -177,11 +205,7 @@ export function ComposioToolkitPicker({
           onKeyDown={handleKeyDown}
           placeholder="Add a tool — search Gmail, Slack…"
           disabled={disabled}
-          className={cn(
-            "h-8 w-full rounded-md border border-input bg-transparent pl-8 pr-3 text-sm",
-            "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            "disabled:cursor-not-allowed disabled:opacity-50",
-          )}
+          className="pl-9"
           aria-label="Search tools"
           aria-autocomplete="list"
           aria-controls="toolkit-picker-results"
@@ -203,6 +227,14 @@ export function ComposioToolkitPicker({
                   <ToolkitRowSkeleton key={i} />
                 ))}
               </div>
+            ) : isConnectedModeEmpty ? (
+              <p className="py-4 px-3 text-center text-xs text-muted-foreground">
+                No connected tools yet — connect apps in{" "}
+                <strong className="font-medium text-foreground">
+                  Connect tools
+                </strong>{" "}
+                above first.
+              </p>
             ) : visibleRows.length === 0 && query.trim().length > 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">
                 No tools matching &ldquo;{query}&rdquo;

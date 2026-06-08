@@ -237,8 +237,8 @@ function ProfileEditor({
   }
 
   return (
-    <div className="grid gap-2 rounded-lg border border-border/70 p-3">
-      {/* Name */}
+    <div className="grid gap-1.5 rounded-lg border border-border/70 p-3">
+      {/* Name — compact, not full-width */}
       <Input
         id={`composio-name-${profile.id}`}
         value={name}
@@ -246,7 +246,7 @@ function ProfileEditor({
         placeholder="Profile name"
         disabled={isSaving}
         aria-label="Profile name"
-        className="h-7 text-sm"
+        className="h-7 text-sm max-w-xs"
       />
 
       {/* Tool picker — search-driven, compact */}
@@ -567,7 +567,7 @@ export function ComposioSection() {
         learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
       >
         <div className="space-y-3">
-          <div className="grid gap-2 rounded-lg border border-dashed border-border/70 p-3">
+          <div className="grid gap-1.5 rounded-lg border border-dashed border-border/70 p-3">
             <Input
               id="new-composio-profile-name"
               value={newName}
@@ -575,7 +575,7 @@ export function ComposioSection() {
               placeholder="Profile name (e.g. GitHub)"
               disabled={isSubmitting}
               aria-label="New profile name"
-              className="h-7 text-sm"
+              className="h-7 text-sm max-w-xs"
             />
             <ComposioToolkitPicker
               selectedSlugs={newToolkitSlugs}

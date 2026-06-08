@@ -27,6 +27,24 @@ export function selectableToolkits({
   connectedSlugs,
   source = "connected",
 }: SelectableToolkitsOptions): ComposioToolkitSummary[] {
-  // This stub always returns empty — tests should fail until implementation lands.
-  return [];
+  if (source === "all") {
+    return catalog;
+  }
+
+  // "connected" mode: include noAuth toolkits + toolkits the user has connected.
+  // Preserve catalog order; use a seen-set to prevent duplicates when a noAuth
+  // toolkit is also in connectedSlugs.
+  const seen = new Set<string>();
+  const result: ComposioToolkitSummary[] = [];
+
+  for (const toolkit of catalog) {
+    if (toolkit.noAuth || connectedSlugs.has(toolkit.slug)) {
+      if (!seen.has(toolkit.slug)) {
+        seen.add(toolkit.slug);
+        result.push(toolkit);
+      }
+    }
+  }
+
+  return result;
 }
