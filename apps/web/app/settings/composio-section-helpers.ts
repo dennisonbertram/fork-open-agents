@@ -4,6 +4,57 @@
  */
 import type { ComposioAgentKey } from "@/lib/composio/types";
 
+// ── profileRowSummary ──────────────────────────────────────────────────────
+
+/** Maximum number of logos shown in the collapsed profile row before overflow. */
+export const MAX_VISIBLE_LOGOS = 5;
+
+/** A single logo entry for the collapsed profile row. */
+export interface ProfileLogoEntry {
+  slug: string;
+  /** Display name — from catalog when available, otherwise prettified slug. */
+  name: string;
+  /** Remote logo URL, or null when the toolkit has no logo / is unknown. */
+  logo: string | null;
+}
+
+/** Minimal catalog shape required by the helper. */
+interface CatalogEntry {
+  slug: string;
+  name: string;
+  logo: string | null;
+}
+
+/**
+ * Derive the visible logo strip + overflow count for a collapsed profile row.
+ *
+ * - Returns up to MAX_VISIBLE_LOGOS entries from the profile's toolkit slugs.
+ * - Entries absent from the catalog fall back to a null logo and the raw slug
+ *   as the name.
+ * - `overflow` is the number of toolkits that exceed the visible cap.
+ */
+export function profileRowSummary(
+  toolkitSlugs: string[],
+  catalog: CatalogEntry[],
+): { logos: ProfileLogoEntry[]; overflow: number } {
+  const bySlug = new Map<string, CatalogEntry>(catalog.map((t) => [t.slug, t]));
+
+  const logos: ProfileLogoEntry[] = toolkitSlugs
+    .slice(0, MAX_VISIBLE_LOGOS)
+    .map((slug) => {
+      const entry = bySlug.get(slug);
+      return {
+        slug,
+        name: entry?.name ?? slug,
+        logo: entry?.logo ?? null,
+      };
+    });
+
+  const overflow = Math.max(0, toolkitSlugs.length - MAX_VISIBLE_LOGOS);
+
+  return { logos, overflow };
+}
+
 /**
  * Determines whether the toolkit search results dropdown should be visible.
  *

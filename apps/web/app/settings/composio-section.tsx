@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ExternalLink,
   Loader2,
+  Pencil,
   Plus,
-  Save,
   Trash2,
 } from "lucide-react";
 import useSWR from "swr";
@@ -37,6 +37,7 @@ import { ComposioToolCatalog } from "./composio-tool-catalog";
 import { ComposioToolkitPicker } from "./composio-toolkit-picker";
 import {
   shouldShowMainDefaultTip,
+  profileRowSummary,
   AGENT_ROLE_DESCRIPTIONS,
 } from "./composio-section-helpers";
 
@@ -132,15 +133,76 @@ export function ComposioSectionSkeleton() {
   );
 }
 
-function ProfileEditor({
-  profile,
-  onSaved,
-  onDeleted,
-}: {
+// ── Logo strip (collapsed row) ────────────────────────────────────────────
+
+interface LogoStripProps {
+  toolkitSlugs: string[];
+  /** Optional catalog lookup for logo URLs. When absent, all logos are null. */
+  catalog?: Array<{ slug: string; name: string; logo: string | null }>;
+}
+
+function LogoStrip({ toolkitSlugs, catalog = [] }: LogoStripProps) {
+  const { logos, overflow } = profileRowSummary(toolkitSlugs, catalog);
+
+  if (logos.length === 0) {
+    return (
+      <span className="text-xs text-muted-foreground italic">No tools yet</span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-0.5">
+      {logos.map((entry) =>
+        entry.logo ? (
+          // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
+          <img
+            key={entry.slug}
+            src={entry.logo}
+            alt={entry.name}
+            width={16}
+            height={16}
+            referrerPolicy="no-referrer"
+            title={entry.name}
+            className="h-4 w-4 rounded object-contain"
+          />
+        ) : (
+          <span
+            key={entry.slug}
+            title={entry.name}
+            className="inline-flex h-4 w-4 items-center justify-center rounded bg-muted"
+          >
+            <span className="text-[9px] font-medium uppercase text-muted-foreground">
+              {entry.name.slice(0, 2)}
+            </span>
+          </span>
+        ),
+      )}
+      {overflow > 0 ? (
+        <span className="ml-0.5 text-xs text-muted-foreground">
+          +{overflow}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+// ── Inline profile editor (expanded state) ───────────────────────────────
+
+interface ProfileEditorProps {
   profile: Profile;
+  isNew?: boolean;
   onSaved: () => void;
   onDeleted: () => void;
-}) {
+  onCancel: () => void;
+}
+
+function ProfileEditor({
+  profile,
+  isNew = false,
+  onSaved,
+  onDeleted,
+  onCancel,
+}: ProfileEditorProps) {
   const [name, setName] = useState(profile.name);
   const [toolkitSlugs, setToolkitSlugs] = useState<string[]>(
     profile.toolkitSlugs,
@@ -159,28 +221,35 @@ function ProfileEditor({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus name on mount
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
 
   useEffect(() => {
-    setName(profile.name);
-    setToolkitSlugs(profile.toolkitSlugs);
-    setAuthConfigs(formatAuthConfigMap(profile.authConfigIdsByToolkit));
-    setConnectedAccounts(
-      formatConnectedAccountMap(profile.connectedAccountIdsByToolkit),
-    );
-    setWorkbenchEnabled(profile.workbenchEnabled);
-    setAllowInChatConnectionManagement(profile.allowInChatConnectionManagement);
-  }, [profile]);
+    if (!isNew) {
+      setName(profile.name);
+      setToolkitSlugs(profile.toolkitSlugs);
+      setAuthConfigs(formatAuthConfigMap(profile.authConfigIdsByToolkit));
+      setConnectedAccounts(
+        formatConnectedAccountMap(profile.connectedAccountIdsByToolkit),
+      );
+      setWorkbenchEnabled(profile.workbenchEnabled);
+      setAllowInChatConnectionManagement(
+        profile.allowInChatConnectionManagement,
+      );
+    }
+  }, [profile, isNew]);
 
   async function saveProfile() {
     setIsSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/settings/composio", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          profileId: profile.id,
-          profile: {
+      const method = isNew ? "POST" : "PATCH";
+      const requestBody = isNew
+        ? {
             name,
             toolkitSlugs,
             authConfigIdsByToolkit: parseAuthConfigMap(authConfigs),
@@ -188,8 +257,23 @@ function ProfileEditor({
               parseConnectedAccountMap(connectedAccounts),
             workbenchEnabled,
             allowInChatConnectionManagement,
-          },
-        }),
+          }
+        : {
+            profileId: profile.id,
+            profile: {
+              name,
+              toolkitSlugs,
+              authConfigIdsByToolkit: parseAuthConfigMap(authConfigs),
+              connectedAccountIdsByToolkit:
+                parseConnectedAccountMap(connectedAccounts),
+              workbenchEnabled,
+              allowInChatConnectionManagement,
+            },
+          };
+      const response = await fetch("/api/settings/composio", {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
       });
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as {
@@ -210,6 +294,10 @@ function ProfileEditor({
   }
 
   async function deleteProfile() {
+    if (isNew) {
+      onCancel();
+      return;
+    }
     setIsSaving(true);
     setError(null);
     try {
@@ -237,9 +325,10 @@ function ProfileEditor({
   }
 
   return (
-    <div className="grid gap-1.5 rounded-lg border border-border/70 p-3">
+    <div className="px-3 pb-3 pt-2 grid gap-2">
       {/* Name — compact, not full-width */}
       <Input
+        ref={nameRef}
         id={`composio-name-${profile.id}`}
         value={name}
         onChange={(event) => setName(event.currentTarget.value)}
@@ -371,18 +460,27 @@ function ProfileEditor({
         ) : null}
       </div>
 
-      {/* Action row: Save + Delete */}
-      <div className="flex items-center justify-end gap-2 pt-1">
+      {/* Action row: Save + Cancel + Delete */}
+      <div className="flex items-center gap-2 pt-1">
         <Button
           type="button"
-          variant="outline"
           size="sm"
           onClick={saveProfile}
+          disabled={isSaving || !name.trim()}
+          className="h-7 text-xs"
+        >
+          {isSaving ? <Loader2 className="animate-spin" /> : null}
+          Save
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onCancel}
           disabled={isSaving}
           className="h-7 text-xs"
         >
-          {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
-          Save
+          Cancel
         </Button>
         <Button
           type="button"
@@ -390,8 +488,8 @@ function ProfileEditor({
           size="icon-sm"
           onClick={deleteProfile}
           disabled={isSaving}
-          aria-label={`Delete ${profile.name}`}
-          className="text-muted-foreground hover:text-destructive"
+          aria-label={`Delete ${profile.name || "profile"}`}
+          className="ml-auto text-muted-foreground hover:text-destructive"
         >
           <Trash2 />
         </Button>
@@ -401,13 +499,165 @@ function ProfileEditor({
   );
 }
 
+// ── Collapsed profile row ─────────────────────────────────────────────────
+
+interface ProfileListRowProps {
+  profile: Profile;
+  isExpanded: boolean;
+  catalog: Array<{ slug: string; name: string; logo: string | null }>;
+  onExpand: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+  onCollapse: () => void;
+}
+
+function ProfileListRow({
+  profile,
+  isExpanded,
+  catalog,
+  onExpand,
+  onSaved,
+  onDeleted,
+  onCollapse,
+}: ProfileListRowProps) {
+  const toolCount = profile.toolkitSlugs.length;
+
+  return (
+    <div>
+      {/* Collapsed row */}
+      {!isExpanded ? (
+        <div className="group flex items-center hover:bg-muted/30">
+          {/* Main expand button — spans name + logos + count */}
+          <button
+            type="button"
+            className="flex flex-1 min-w-0 items-center gap-3 px-3 py-2.5 text-left"
+            onClick={onExpand}
+            aria-expanded={false}
+            aria-label={`Edit profile ${profile.name}`}
+          >
+            {/* Name */}
+            <span className="text-sm font-medium shrink-0">{profile.name}</span>
+
+            {/* Logo strip */}
+            <span className="flex-1 min-w-0">
+              <LogoStrip
+                toolkitSlugs={profile.toolkitSlugs}
+                catalog={catalog}
+              />
+            </span>
+
+            {/* Tool count */}
+            <span className="text-xs text-muted-foreground shrink-0">
+              {toolCount === 0
+                ? "No tools"
+                : toolCount === 1
+                  ? "1 tool"
+                  : `${toolCount} tools`}
+            </span>
+          </button>
+
+          {/* Action buttons — always rendered, visible on row hover/focus */}
+          <span className="flex items-center gap-1 pr-2 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 shrink-0 transition-opacity">
+            <button
+              type="button"
+              aria-label={`Edit ${profile.name}`}
+              onClick={onExpand}
+              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-accent"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <DeleteProfileButton profile={profile} onDeleted={onDeleted} />
+          </span>
+        </div>
+      ) : (
+        /* Expanded editor inline */
+        <ProfileEditor
+          profile={profile}
+          onSaved={() => {
+            onSaved();
+            onCollapse();
+          }}
+          onDeleted={onDeleted}
+          onCancel={onCollapse}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Quick delete button for collapsed row ────────────────────────────────
+
+interface DeleteProfileButtonProps {
+  profile: Profile;
+  onDeleted: () => void;
+}
+
+function DeleteProfileButton({ profile, onDeleted }: DeleteProfileButtonProps) {
+  const [isPending, setIsPending] = useState(false);
+
+  async function handleDelete(e: React.MouseEvent) {
+    e.stopPropagation();
+    setIsPending(true);
+    try {
+      const response = await fetch("/api/settings/composio", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId: profile.id }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(body?.error ?? "Failed to delete profile");
+      }
+      onDeleted();
+    } catch {
+      // Ignore — user can retry from expanded editor
+    } finally {
+      setIsPending(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      aria-label={`Delete ${profile.name}`}
+      onClick={handleDelete}
+      disabled={isPending}
+      className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {isPending ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <Trash2 className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+// ── "New profile" pending row (expanded immediately) ─────────────────────
+
+/** A blank profile stub used for the add-new flow. */
+const NEW_PROFILE_STUB: Profile = {
+  id: "__new__",
+  userId: "",
+  name: "",
+  toolkitSlugs: [],
+  authConfigIdsByToolkit: {},
+  connectedAccountIdsByToolkit: {},
+  workbenchEnabled: false,
+  allowInChatConnectionManagement: false,
+  createdAt: new Date(0),
+  updatedAt: new Date(0),
+};
+
+// ── Main ComposioSection ───────────────────────────────────────────────────
+
 export function ComposioSection() {
   const { data, error, isLoading, mutate } = useSWR(
     "/api/settings/composio",
     fetchComposioSettings,
   );
-  const [newName, setNewName] = useState("");
-  const [newToolkitSlugs, setNewToolkitSlugs] = useState<string[]>([]);
   const [authConfigId, setAuthConfigId] = useState("");
   const [connectionAlias, setConnectionAlias] = useState("");
   const [connectionUrl, setConnectionUrl] = useState<string | null>(null);
@@ -415,46 +665,46 @@ export function ComposioSection() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [bringYourOwnAuthOpen, setBringYourOwnAuthOpen] = useState(false);
 
+  // Which profile row is currently expanded: a profile.id string, or "__new__" for the add form
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
   const profiles = data?.profiles ?? [];
   const defaults = data?.defaults;
   const status = data?.status;
   const isComposioAvailable = status?.configured && status.available;
 
-  async function createProfile() {
-    setIsSubmitting(true);
-    setActionError(null);
-    try {
-      const response = await fetch("/api/settings/composio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: newName,
-          toolkitSlugs: newToolkitSlugs,
-          authConfigIdsByToolkit: {},
-          connectedAccountIdsByToolkit: {},
-          workbenchEnabled: false,
-          allowInChatConnectionManagement: false,
-        }),
+  // Build a minimal catalog from the toolkit picker's SWR data is not
+  // available here, so the logo strip uses whatever catalog the SWR toolkit
+  // call returns. We derive a catalog stub from profile data itself when
+  // toolkits API data is not available — logos will appear once the SWR
+  // data lands in the picker's own cache, but we fetch it here for the strip.
+  const [toolkitCatalog, setToolkitCatalog] = useState<
+    Array<{ slug: string; name: string; logo: string | null }>
+  >([]);
+
+  useEffect(() => {
+    // Fetch toolkits for the logo strip (best-effort, not blocking)
+    fetch("/api/composio/toolkits")
+      .then((res) => (res.ok ? res.json() : null))
+      .then(
+        (
+          body: {
+            toolkits: Array<{
+              slug: string;
+              name: string;
+              logo: string | null;
+            }>;
+          } | null,
+        ) => {
+          if (body?.toolkits) {
+            setToolkitCatalog(body.toolkits);
+          }
+        },
+      )
+      .catch(() => {
+        // Best-effort — logo strip degrades gracefully to initials
       });
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as {
-          error?: string;
-        } | null;
-        throw new Error(body?.error ?? "Failed to create profile");
-      }
-      setNewName("");
-      setNewToolkitSlugs([]);
-      await mutate();
-    } catch (createError) {
-      setActionError(
-        createError instanceof Error
-          ? createError.message
-          : "Failed to create profile",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
+  }, []);
 
   async function checkConnection() {
     setIsSubmitting(true);
@@ -543,6 +793,8 @@ export function ComposioSection() {
   const mainDefaultProfileId = defaults?.main.defaultProfileId ?? null;
   const showMainTip = shouldShowMainDefaultTip(profiles, mainDefaultProfileId);
 
+  const isAddingNew = expandedId === "__new__";
+
   return (
     <div className="space-y-6">
       <ReadinessVerdict
@@ -561,65 +813,93 @@ export function ComposioSection() {
         <ComposioToolCatalog />
       </SettingsSection>
 
+      {/* ── Tool profiles: single bordered panel ─────────────────────── */}
       <SettingsSection
         title="Tool profiles"
         description="Named bundles of connected tools. Assign a profile to an agent below (Main, Explorer, …) so different agents get different tools — or pick tools directly in a chat."
         learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
       >
-        <div className="space-y-3">
-          <div className="grid gap-1.5 rounded-lg border border-dashed border-border/70 p-3">
-            <Input
-              id="new-composio-profile-name"
-              value={newName}
-              onChange={(event) => setNewName(event.currentTarget.value)}
-              placeholder="Profile name (e.g. GitHub)"
-              disabled={isSubmitting}
-              aria-label="New profile name"
-              className="h-7 text-sm max-w-xs"
-            />
-            <ComposioToolkitPicker
-              selectedSlugs={newToolkitSlugs}
-              onChange={setNewToolkitSlugs}
-              disabled={isSubmitting}
-            />
-            <div className="flex items-center justify-end pt-1">
-              <Button
-                type="button"
-                size="sm"
-                onClick={createProfile}
-                disabled={
-                  isSubmitting ||
-                  !isComposioAvailable ||
-                  !newName.trim() ||
-                  newToolkitSlugs.length === 0
-                }
-                className="h-7 text-xs"
-              >
-                {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
-                Add profile
-              </Button>
-            </div>
-            {actionError ? (
-              <p className="text-sm text-destructive">{actionError}</p>
-            ) : null}
-          </div>
-          {profiles.length > 0 ? (
-            <div className="space-y-3">
+        <div className="rounded-lg border border-border/70 overflow-hidden">
+          {/* Existing profile rows */}
+          {profiles.length > 0 || isAddingNew ? (
+            <div className="divide-y divide-border/60">
               {profiles.map((profile) => (
-                <ProfileEditor
+                <ProfileListRow
                   key={profile.id}
                   profile={profile}
-                  onSaved={() => void mutate()}
-                  onDeleted={() => void mutate()}
+                  isExpanded={expandedId === profile.id}
+                  catalog={toolkitCatalog}
+                  onExpand={() =>
+                    setExpandedId((prev) =>
+                      prev === profile.id ? null : profile.id,
+                    )
+                  }
+                  onCollapse={() => setExpandedId(null)}
+                  onSaved={() => {
+                    void mutate();
+                    setExpandedId(null);
+                  }}
+                  onDeleted={() => {
+                    void mutate();
+                    setExpandedId(null);
+                  }}
                 />
               ))}
+
+              {/* New profile row — expanded editor at bottom of list */}
+              {isAddingNew ? (
+                <div>
+                  <div className="px-3 py-2 border-b border-border/60 bg-muted/20">
+                    <span className="text-xs text-muted-foreground font-medium">
+                      New profile
+                    </span>
+                  </div>
+                  <ProfileEditor
+                    profile={NEW_PROFILE_STUB}
+                    isNew
+                    onSaved={() => {
+                      void mutate();
+                      setExpandedId(null);
+                    }}
+                    onDeleted={() => setExpandedId(null)}
+                    onCancel={() => setExpandedId(null)}
+                  />
+                </div>
+              ) : null}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              No tool profiles yet. Add one above, then pick it from the chat
-              toolbar to give your agent those tools.
+            /* Empty state — no profiles yet */
+            <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+              No tool profiles yet. Create one to bundle tools for an agent.
             </p>
           )}
+
+          {/* "New profile" button — always at bottom of panel */}
+          {!isAddingNew ? (
+            <div
+              className={cn(
+                "border-t border-border/60",
+                profiles.length === 0 && "border-t-0",
+              )}
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  if (!isComposioAvailable) return;
+                  setExpandedId("__new__");
+                }}
+                disabled={!isComposioAvailable}
+                className={cn(
+                  "flex w-full items-center gap-1.5 px-3 py-2 text-xs font-medium",
+                  "text-muted-foreground hover:text-foreground hover:bg-muted/30",
+                  "disabled:cursor-not-allowed disabled:opacity-50 transition-colors",
+                )}
+              >
+                <Plus className="h-3.5 w-3.5" />
+                New profile
+              </button>
+            </div>
+          ) : null}
         </div>
       </SettingsSection>
 
@@ -809,6 +1089,10 @@ export function ComposioSection() {
           ) : null}
         </div>
       </SettingsSection>
+
+      {actionError ? (
+        <p className="text-sm text-destructive">{actionError}</p>
+      ) : null}
     </div>
   );
 }
