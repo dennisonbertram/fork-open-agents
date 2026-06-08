@@ -906,7 +906,7 @@ export function ComposioSection() {
       {/* Agent defaults — compact one-row cards */}
       <SettingsSection
         title="Agent defaults"
-        description="Which tools each agent role uses when a chat hasn't picked its own. 'Off' means that agent starts with no external tools."
+        description="Pick the tools each agent starts with when a chat hasn't chosen its own. Main is your chat agent; Explorer and Executor are subagents it spawns for bigger tasks; Design handles design work. 'Off' means that agent gets no external tools."
       >
         {defaults ? (
           <div className="space-y-3">
@@ -955,7 +955,10 @@ export function ComposioSection() {
 
                   {/* Allow chat override toggle */}
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-xs text-muted-foreground hidden sm:inline">
+                    <span
+                      className="hidden text-xs text-muted-foreground sm:inline"
+                      title="When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default."
+                    >
                       Chat override
                     </span>
                     <Switch
@@ -977,6 +980,15 @@ export function ComposioSection() {
                 </div>
               ))}
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Chat override:
+              </span>{" "}
+              when on, an individual chat can change that agent's tools for the
+              conversation; your saved default stays. Turn it off to lock the
+              default.
+            </p>
 
             {/* Tip: suggest setting Main's default when profiles exist */}
             {showMainTip && (
