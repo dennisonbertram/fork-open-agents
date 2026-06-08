@@ -1,4 +1,5 @@
-import { describe, expect, test, mock, beforeEach, afterEach } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import { normalizeChatComposioSelection } from "./types";
 
 /**
  * Tests for the direct-list branch inside resolveComposioToolsForChat.
@@ -23,14 +24,15 @@ mock.module("server-only", () => ({}));
 mock.module("@/lib/db/composio", () => ({
   getChatComposioSelection: (v: unknown) => {
     // passthrough — use real normalizer so types are correct
-    const { normalizeChatComposioSelection } = require("./types");
     return normalizeChatComposioSelection(v);
   },
   getComposioAgentSession: () => Promise.resolve(null),
-  upsertComposioAgentSession: (_data: unknown) => Promise.resolve({ id: "sess-row-1" }),
+  upsertComposioAgentSession: (_data: unknown) =>
+    Promise.resolve({ id: "sess-row-1" }),
   touchComposioAgentSession: (_id: string) => Promise.resolve(),
   getComposioToolProfile: () => Promise.resolve(null),
-  isComposioProfileAllowedForRepository: () => Promise.resolve({ allowed: true }),
+  isComposioProfileAllowedForRepository: () =>
+    Promise.resolve({ allowed: true }),
 }));
 
 mock.module("@/lib/db/sessions", () => ({
@@ -100,7 +102,6 @@ describe("resolveComposioToolsForChat — direct-list branch", () => {
 
     mock.module("@/lib/db/composio", () => ({
       getChatComposioSelection: (v: unknown) => {
-        const { normalizeChatComposioSelection } = require("./types");
         return normalizeChatComposioSelection(v);
       },
       getComposioAgentSession: () => Promise.resolve(null),
@@ -119,6 +120,8 @@ describe("resolveComposioToolsForChat — direct-list branch", () => {
 
     expect(capturedUpsertData).not.toBeNull();
     // profileId must be synthetic "direct" (not a DB profile UUID)
-    expect((capturedUpsertData as Record<string, unknown>).profileId).toBe("direct");
+    expect((capturedUpsertData as Record<string, unknown>).profileId).toBe(
+      "direct",
+    );
   });
 });
