@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  ChevronDown,
   ExternalLink,
   Loader2,
   Plus,
-  RefreshCw,
   Save,
   Trash2,
 } from "lucide-react";
@@ -19,6 +19,7 @@ import { COMPOSIO_AGENT_KEYS } from "@/lib/composio/types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   Select,
   SelectContent,
@@ -26,9 +27,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SettingsSection } from "@/components/ui/settings-section";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
+import { mapComposioStatusToVerdict } from "./composio-status-verdict";
+
+/** Where users manage Composio toolkits, auth configs, and connected accounts. */
+const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
 type Profile = ComposioSettingsResponse["profiles"][number];
 
@@ -100,14 +107,6 @@ function parseConnectedAccountMap(value: string): Record<string, string[]> {
   return next;
 }
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-      {children}
-    </h3>
-  );
-}
-
 function FieldHelp({ children }: { children: React.ReactNode }) {
   return <p className="text-xs text-muted-foreground">{children}</p>;
 }
@@ -149,6 +148,7 @@ function ProfileEditor({
   );
   const [allowInChatConnectionManagement, setAllowInChatConnectionManagement] =
     useState(profile.allowInChatConnectionManagement);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -241,9 +241,7 @@ function ProfileEditor({
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor={`composio-toolkits-${profile.id}`}>
-            Toolkit slugs
-          </Label>
+          <Label htmlFor={`composio-toolkits-${profile.id}`}>Tools</Label>
           <Input
             id={`composio-toolkits-${profile.id}`}
             value={toolkits}
@@ -251,45 +249,78 @@ function ProfileEditor({
             disabled={isSaving}
           />
           <FieldHelp>
-            Comma-separated Composio toolkit IDs, for example github, linear, or
-            hackernews.
+            Which tools this profile includes — e.g. github, linear, gmail.
           </FieldHelp>
         </div>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
-        <div className="grid gap-1.5">
-          <Label htmlFor={`composio-auth-${profile.id}`}>Auth config IDs</Label>
-          <Textarea
-            id={`composio-auth-${profile.id}`}
-            value={authConfigs}
-            onChange={(event) => setAuthConfigs(event.currentTarget.value)}
-            placeholder="gmail=ac_..."
-            disabled={isSaving}
-            className="min-h-20 font-mono text-xs"
+      <div className="border-t border-border/60 pt-3">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((value) => !value)}
+          aria-expanded={advancedOpen}
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              advancedOpen && "rotate-180",
+            )}
           />
-          <FieldHelp>
-            Optional toolkit to auth config mapping from Composio, one per line.
-          </FieldHelp>
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor={`composio-accounts-${profile.id}`}>
-            Connected account IDs
-          </Label>
-          <Textarea
-            id={`composio-accounts-${profile.id}`}
-            value={connectedAccounts}
-            onChange={(event) =>
-              setConnectedAccounts(event.currentTarget.value)
-            }
-            placeholder="gmail=ca_..."
-            disabled={isSaving}
-            className="min-h-20 font-mono text-xs"
-          />
-          <FieldHelp>
-            Optional toolkit to connected account IDs when a toolkit should use
-            specific accounts.
-          </FieldHelp>
-        </div>
+          Advanced — specific accounts
+        </button>
+        {advancedOpen ? (
+          <>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Most tools work with just the toolkit names above. Only set these
+              if a tool must use a specific connected account.{" "}
+              <a
+                href={COMPOSIO_DASHBOARD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-0.5 text-foreground underline-offset-2 hover:underline"
+              >
+                Find these IDs in Composio
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="grid gap-1.5">
+                <Label htmlFor={`composio-auth-${profile.id}`}>
+                  Auth config IDs
+                </Label>
+                <Textarea
+                  id={`composio-auth-${profile.id}`}
+                  value={authConfigs}
+                  onChange={(event) =>
+                    setAuthConfigs(event.currentTarget.value)
+                  }
+                  placeholder="gmail=ac_..."
+                  disabled={isSaving}
+                  className="min-h-20 font-mono text-xs"
+                />
+                <FieldHelp>One per line, as toolkit=auth_config_id.</FieldHelp>
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor={`composio-accounts-${profile.id}`}>
+                  Connected account IDs
+                </Label>
+                <Textarea
+                  id={`composio-accounts-${profile.id}`}
+                  value={connectedAccounts}
+                  onChange={(event) =>
+                    setConnectedAccounts(event.currentTarget.value)
+                  }
+                  placeholder="gmail=ca_..."
+                  disabled={isSaving}
+                  className="min-h-20 font-mono text-xs"
+                />
+                <FieldHelp>
+                  One per line, as toolkit=connected_account_id.
+                </FieldHelp>
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-4">
@@ -368,14 +399,6 @@ export function ComposioSection() {
   const defaults = data?.defaults;
   const status = data?.status;
   const isComposioAvailable = status?.configured && status.available;
-
-  const statusText = useMemo(() => {
-    if (!status) return "Checking Composio...";
-    if (!status.configured) return "Not configured";
-    if (status.available) return "Configured";
-    if (status.reason === "invalid_api_key") return "Invalid API key";
-    return "Connection check failed";
-  }, [status]);
 
   async function createProfile() {
     setIsSubmitting(true);
@@ -494,122 +517,94 @@ export function ComposioSection() {
     );
   }
 
+  const verdict = mapComposioStatusToVerdict(status);
+
   return (
-    <div className="space-y-8">
-      <div className="space-y-4">
-        <SectionHeader>Status</SectionHeader>
-        <div className="rounded-lg border border-border/70 p-3">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-medium">{statusText}</p>
-              <p className="text-pretty text-xs text-muted-foreground">
-                {status?.message ??
-                  "External account credentials remain in Composio. Open Agents stores profile selection, toolkit slugs, account IDs, and session IDs only."}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-2">
-              <code className="rounded bg-muted px-2 py-1 text-xs">
-                COMPOSIO_API_KEY
-              </code>
+    <div className="space-y-6">
+      <ReadinessVerdict
+        status={verdict.status}
+        headline={verdict.headline}
+        subtext={verdict.subtext}
+        checks={verdict.checks}
+        onRefresh={checkConnection}
+        refreshing={isSubmitting}
+      />
+
+      <SettingsSection
+        title="Tool profiles"
+        description="Group the external tools an agent can use, then pick a profile from the chat toolbar to switch them on."
+        learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
+      >
+        <div className="space-y-3">
+          <div className="grid gap-3 rounded-lg border border-dashed border-border/70 p-3">
+            <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
+              <div className="grid gap-1.5">
+                <Label htmlFor="new-composio-profile-name">Name</Label>
+                <Input
+                  id="new-composio-profile-name"
+                  value={newName}
+                  onChange={(event) => setNewName(event.currentTarget.value)}
+                  placeholder="GitHub"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="new-composio-profile-toolkits">Tools</Label>
+                <Input
+                  id="new-composio-profile-toolkits"
+                  value={newToolkits}
+                  onChange={(event) =>
+                    setNewToolkits(event.currentTarget.value)
+                  }
+                  placeholder="github, linear"
+                  disabled={isSubmitting}
+                />
+                <FieldHelp>
+                  Which tools to include — e.g. github, linear, gmail.
+                </FieldHelp>
+              </div>
               <Button
                 type="button"
-                variant="outline"
-                size="sm"
-                onClick={checkConnection}
-                disabled={isSubmitting}
+                onClick={createProfile}
+                disabled={
+                  isSubmitting ||
+                  !isComposioAvailable ||
+                  !newName.trim() ||
+                  !newToolkits.trim()
+                }
               >
-                {isSubmitting ? (
-                  <Loader2 className="animate-spin" />
-                ) : (
-                  <RefreshCw />
-                )}
-                Check
+                {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
+                Add
               </Button>
             </div>
+            {actionError ? (
+              <p className="text-sm text-destructive">{actionError}</p>
+            ) : null}
           </div>
-        </div>
-      </div>
-
-      <div className="border-t border-border/50" />
-
-      <div className="space-y-4">
-        <SectionHeader>Profiles</SectionHeader>
-        <div className="grid gap-3 rounded-lg border border-dashed border-border/70 p-3">
-          <div className="grid gap-2 sm:grid-cols-[1fr_1.4fr_auto] sm:items-end">
-            <div className="grid gap-1.5">
-              <Label htmlFor="new-composio-profile-name">Name</Label>
-              <Input
-                id="new-composio-profile-name"
-                value={newName}
-                onChange={(event) => setNewName(event.currentTarget.value)}
-                placeholder="GitHub"
-                disabled={isSubmitting}
-              />
+          {profiles.length > 0 ? (
+            <div className="space-y-3">
+              {profiles.map((profile) => (
+                <ProfileEditor
+                  key={profile.id}
+                  profile={profile}
+                  onSaved={() => void mutate()}
+                  onDeleted={() => void mutate()}
+                />
+              ))}
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="new-composio-profile-toolkits">
-                Toolkit slugs
-              </Label>
-              <Input
-                id="new-composio-profile-toolkits"
-                value={newToolkits}
-                onChange={(event) => setNewToolkits(event.currentTarget.value)}
-                placeholder="github, linear"
-                disabled={isSubmitting}
-              />
-              <FieldHelp>
-                Use Composio toolkit slugs. Add account IDs only for tools that
-                need a specific connection.
-              </FieldHelp>
-            </div>
-            <Button
-              type="button"
-              onClick={createProfile}
-              disabled={
-                isSubmitting ||
-                !isComposioAvailable ||
-                !newName.trim() ||
-                !newToolkits.trim()
-              }
-            >
-              {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
-              Add
-            </Button>
-          </div>
-          {actionError ? (
-            <p className="text-sm text-destructive">{actionError}</p>
-          ) : null}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No tool profiles yet. Add one above, then pick it from the chat
+              toolbar to give your agent those tools.
+            </p>
+          )}
         </div>
-        {profiles.length > 0 ? (
-          <div className="space-y-3">
-            {profiles.map((profile) => (
-              <ProfileEditor
-                key={profile.id}
-                profile={profile}
-                onSaved={() => void mutate()}
-                onDeleted={() => void mutate()}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-border/70 p-3 text-sm text-muted-foreground">
-            No Composio profiles configured yet. Add a profile with toolkit
-            slugs, select it from the chat toolbar, and connect accounts only
-            when a toolkit requires authentication.
-          </div>
-        )}
-      </div>
+      </SettingsSection>
 
-      <div className="border-t border-border/50" />
-
-      <div className="space-y-4">
-        <div className="space-y-1">
-          <SectionHeader>Global Agent Defaults</SectionHeader>
-          <FieldHelp>
-            These defaults apply across your account. Repository/workspace
-            access rules live beside each repo in the sessions sidebar.
-          </FieldHelp>
-        </div>
+      <SettingsSection
+        title="Agent defaults"
+        description="Which tool profile each agent uses by default. You can still switch tools per chat."
+      >
         {defaults ? (
           <div className="grid gap-3 sm:grid-cols-2">
             {COMPOSIO_AGENT_KEYS.map((agentKey) => (
@@ -666,70 +661,66 @@ export function ComposioSection() {
             ))}
           </div>
         ) : null}
-      </div>
+      </SettingsSection>
 
-      <div className="border-t border-border/50" />
-
-      <div className="space-y-4">
-        <SectionHeader>Connections</SectionHeader>
-        <div className="grid gap-3 rounded-lg border border-border/70 p-3">
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
-            <div className="grid gap-1.5">
-              <Label htmlFor="composio-auth-config-id">Auth config ID</Label>
-              <Input
-                id="composio-auth-config-id"
-                value={authConfigId}
-                onChange={(event) => setAuthConfigId(event.currentTarget.value)}
-                placeholder="ac_..."
-                disabled={isSubmitting || !isComposioAvailable}
-              />
-              <FieldHelp>
-                Auth config IDs come from Composio connection settings.
-              </FieldHelp>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="composio-alias">Alias</Label>
-              <Input
-                id="composio-alias"
-                value={connectionAlias}
-                onChange={(event) =>
-                  setConnectionAlias(event.currentTarget.value)
-                }
-                placeholder="work-gmail"
-                disabled={isSubmitting || !isComposioAvailable}
-              />
-              <FieldHelp>
-                Optional readable name for the connected account.
-              </FieldHelp>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={createConnectionLink}
-              disabled={
-                isSubmitting || !isComposioAvailable || !authConfigId.trim()
-              }
-            >
-              {isSubmitting ? (
-                <Loader2 className="animate-spin" />
-              ) : (
-                <ExternalLink />
-              )}
-              Connect
-            </Button>
+      <SettingsSection
+        title="Connect an account"
+        description="Link an external account so its tools can sign in. Most setups don't need this — only use it when a tool asks you to connect."
+        learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
+      >
+        <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <div className="grid gap-1.5">
+            <Label htmlFor="composio-auth-config-id">Auth config ID</Label>
+            <Input
+              id="composio-auth-config-id"
+              value={authConfigId}
+              onChange={(event) => setAuthConfigId(event.currentTarget.value)}
+              placeholder="ac_..."
+              disabled={isSubmitting || !isComposioAvailable}
+              className="font-mono text-xs"
+            />
+            <FieldHelp>From your Composio dashboard.</FieldHelp>
           </div>
-          {connectionUrl ? (
-            <a
-              href={connectionUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="truncate text-sm text-primary underline"
-            >
-              Open Composio connection link
-            </a>
-          ) : null}
+          <div className="grid gap-1.5">
+            <Label htmlFor="composio-alias">Alias</Label>
+            <Input
+              id="composio-alias"
+              value={connectionAlias}
+              onChange={(event) =>
+                setConnectionAlias(event.currentTarget.value)
+              }
+              placeholder="work-gmail"
+              disabled={isSubmitting || !isComposioAvailable}
+            />
+            <FieldHelp>An optional friendly name.</FieldHelp>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={createConnectionLink}
+            disabled={
+              isSubmitting || !isComposioAvailable || !authConfigId.trim()
+            }
+          >
+            {isSubmitting ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <ExternalLink />
+            )}
+            Connect
+          </Button>
         </div>
-      </div>
+        {connectionUrl ? (
+          <a
+            href={connectionUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-block truncate text-sm text-primary underline"
+          >
+            Open Composio connection link
+          </a>
+        ) : null}
+      </SettingsSection>
     </div>
   );
 }
