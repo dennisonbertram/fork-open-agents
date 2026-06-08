@@ -986,8 +986,8 @@ export function ComposioSection() {
                 Chat override:
               </span>{" "}
               when on, an individual chat can change that agent&apos;s tools for
-              the conversation; your saved default stays. Turn it off to lock the
-              default.
+              the conversation; your saved default stays. Turn it off to lock
+              the default.
             </p>
 
             {/* Tip: suggest setting Main's default when profiles exist */}
