@@ -20,6 +20,8 @@ export type ComposioAgentDefaults = Record<
 export type ChatComposioSelection = {
   mainProfileId: string | null;
   agentProfileOverrides?: Partial<Record<ComposioAgentKey, string | null>>;
+  /** When non-empty, bypasses profile resolution entirely (one-wins). */
+  directToolkitSlugs?: string[];
 };
 
 export type RepositoryComposioSettingsValues = {
@@ -117,6 +119,7 @@ export const chatComposioSelectionInputSchema = z
   .object({
     mainProfileId: z.string().min(1).nullable().default(null),
     agentProfileOverrides: composioAgentProfileOverridesInputSchema.optional(),
+    directToolkitSlugs: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -295,6 +298,19 @@ export function normalizeChatComposioSelection(
   const overrides = isRecord(parsed.data.agentProfileOverrides)
     ? parsed.data.agentProfileOverrides
     : undefined;
+
+  // One-wins rule: normalize the direct list; if non-empty it wins over the profile.
+  const directSlugs = normalizeComposioToolkitSlugs(
+    parsed.data.directToolkitSlugs ?? [],
+  );
+
+  if (directSlugs.length > 0) {
+    return {
+      mainProfileId: null,
+      ...(overrides ? { agentProfileOverrides: overrides } : {}),
+      directToolkitSlugs: directSlugs,
+    };
+  }
 
   return {
     mainProfileId: parsed.data.mainProfileId ?? null,

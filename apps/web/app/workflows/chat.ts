@@ -2009,16 +2009,18 @@ const runAgentStep = async (
           actorType: "coordinator",
           eventName: "composio.profile.selected",
           status: "succeeded",
-          summary: `Using Composio profile: ${composioResult.profile.name}.`,
+          summary: composioResult.profile
+            ? `Using Composio profile: ${composioResult.profile.name}.`
+            : `Using Composio direct toolkit list.`,
           requestId,
           workflowRunId,
           sandboxName: stepSandboxName,
           managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
           payload: {
             stepNumber,
-            profileId: composioResult.profile.id,
-            profileName: composioResult.profile.name,
-            toolkitSlugs: composioResult.profile.toolkitSlugs,
+            profileId: composioResult.profile?.id ?? null,
+            profileName: composioResult.profile?.name ?? null,
+            toolkitSlugs: composioResult.profile?.toolkitSlugs ?? null,
             configHash: composioResult.configHash,
             composioSessionId: composioResult.composioSessionId,
             toolCount: Object.keys(composioResult.tools).length,
@@ -2043,7 +2045,7 @@ const runAgentStep = async (
           managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
           payload: {
             stepNumber,
-            profileId: composioResult.profile.id,
+            profileId: composioResult.profile?.id ?? null,
             configHash: composioResult.configHash,
             composioSessionId: composioResult.composioSessionId,
           },
