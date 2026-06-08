@@ -1342,13 +1342,14 @@ export async function runAgentWorkflow(options: Options) {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
       runtimeMode: runtime.runtimeMode,
+      // Signal to the agent that there is no sandbox VM; the tool policy will
+      // exclude all sandbox-dependent tools (file/bash/exec/edit/task).
+      sandboxFree: runtime.mode === "sandbox-free",
       ...(managedRuntimeAgentContext
         ? { managedRuntime: managedRuntimeAgentContext }
         : {}),
       // For sandbox-free sessions there is no VM. Provide a minimal stub so
-      // the agent can still build a system prompt and respond as a plain chat.
-      // Sandbox-backed tools (file/bash/exec) will not be invoked in a text-only
-      // conversation; a deeper agent-package change is needed to fully gate them.
+      // the agent can build a system prompt and respond as a plain chat.
       sandbox:
         runtime.mode === "sandbox"
           ? {
