@@ -999,24 +999,49 @@ export function InboxSidebar({
   return (
     <>
       <div className="border-b border-border p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center px-2 py-1.5 text-sm text-primary">
-            <span>Sessions</span>
-          </div>
+        <div className="mb-3 flex items-center gap-1.5">
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
+            variant="default"
+            size="sm"
+            disabled={isCreatingSandboxFreeChat}
             onClick={() => {
               if (isMobile) {
                 setOpenMobile(false);
               }
-              onOpenNewSession();
+              void handleCreateSandboxFreeChat();
             }}
-            className="h-7 w-7"
+            className="h-8 flex-1 justify-start gap-2"
           >
-            <Plus className="h-4 w-4" />
+            {isCreatingSandboxFreeChat ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            New chat
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  if (isMobile) {
+                    setOpenMobile(false);
+                  }
+                  onOpenNewSession();
+                }}
+                className="h-8 w-8 shrink-0"
+                aria-label="New session with a repository"
+              >
+                <FolderGit2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              New session with a repository
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="flex gap-1">
