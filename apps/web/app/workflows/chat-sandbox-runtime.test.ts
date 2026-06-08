@@ -23,7 +23,6 @@ const ACTIVE_SANDBOX_STATE: SandboxState = {
   sandboxName: "session_existing-session",
   sandboxId: "sbx_existing",
   expiresAt: Date.now() + 60_000,
-  status: "running",
 };
 
 const fakeSandbox: FakeSandbox = {
@@ -31,7 +30,13 @@ const fakeSandbox: FakeSandbox = {
   currentBranch: "main",
   environmentDetails: "test env",
   getState: () => ACTIVE_SANDBOX_STATE,
-  exec: async () => ({ success: true, exitCode: 0, stdout: "", stderr: "" }),
+  exec: async () => ({
+    success: true,
+    exitCode: 0,
+    stdout: "",
+    stderr: "",
+    truncated: false,
+  }),
 };
 
 const connectSandboxSpy = mock(async () => fakeSandbox as unknown as Sandbox);
@@ -55,8 +60,7 @@ mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
 }));
 
 mock.module("workflow", () => ({
-  getWritable: () =>
-    new WritableStream({ write() {} }),
+  getWritable: () => new WritableStream({ write() {} }),
 }));
 
 mock.module("@/lib/db/sessions", () => ({

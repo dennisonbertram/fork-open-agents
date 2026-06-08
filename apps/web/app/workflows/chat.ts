@@ -66,7 +66,10 @@ import {
   type ManagedRuntimeWorkerSnapshot,
 } from "@/lib/observability/managed-runtime-workers";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
-import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
+import {
+  resolveChatSandboxRuntime,
+  type SandboxBackedRuntime,
+} from "./chat-sandbox-runtime";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
 
@@ -745,9 +748,7 @@ function buildRuntimeProofData(params: {
   workflowRunId: string;
   workflowStatus: WorkflowRunStatus;
   sandboxName: string | null;
-  managedRuntime: NonNullable<
-    Awaited<ReturnType<typeof resolveChatSandboxRuntime>>["managedRuntime"]
-  >;
+  managedRuntime: NonNullable<SandboxBackedRuntime["managedRuntime"]>;
   assistantParts: WebAgentUIMessage["parts"];
   artifacts: RuntimeProofArtifacts;
 }): WebAgentRuntimeProofData {
@@ -1262,11 +1263,25 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
     runtimeMode = runtime.runtimeMode;
-    runtimeSandboxName = runtime.sandboxState.sandboxName ?? null;
-    managedRuntimeProfileId = runtime.managedRuntime?.profileId ?? null;
+    // sandboxState is null for sandbox-free sessions; keep as undefined so
+    // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
+    // sandbox-specific work correctly.
+    runtimeSandboxName =
+      runtime.mode === "sandbox"
+        ? (runtime.sandboxState.sandboxName ?? null)
+        : null;
+    managedRuntimeProfileId =
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileId ?? null)
+        : null;
     managedRuntimeProfileVersion =
-      runtime.managedRuntime?.profileVersion ?? null;
-    managedRuntimeProfileRunId = runtime.managedRuntime?.profileRunId ?? null;
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileVersion ?? null)
+        : null;
+    managedRuntimeProfileRunId =
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileRunId ?? null)
+        : null;
     await emitSessionEvent({
       sessionId: options.sessionId,
       chatId: options.chatId,
@@ -1286,9 +1301,12 @@ export async function runAgentWorkflow(options: Options) {
       payload: {
         runtimeMode: runtime.runtimeMode,
         sandboxName: runtimeSandboxName,
-        workingDirectory: runtime.workingDirectory,
-        currentBranch: runtime.currentBranch,
-        managedRuntime: runtime.managedRuntime ?? null,
+        workingDirectory:
+          runtime.mode === "sandbox" ? runtime.workingDirectory : null,
+        currentBranch:
+          runtime.mode === "sandbox" ? runtime.currentBranch : null,
+        managedRuntime:
+          runtime.mode === "sandbox" ? (runtime.managedRuntime ?? null) : null,
         selectedModelId,
         modelId,
         inferenceRoute,
@@ -1314,10 +1332,12 @@ export async function runAgentWorkflow(options: Options) {
     };
 
     const managedRuntimeAgentContext =
-      runtime.managedRuntime ??
-      (runtime.runtimeMode === "managed_runtime"
-        ? { sandboxName: runtime.sandboxState.sandboxName }
-        : undefined);
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime ??
+          (runtime.runtimeMode === "managed_runtime"
+            ? { sandboxName: runtime.sandboxState.sandboxName }
+            : undefined))
+        : undefined;
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
@@ -1325,15 +1345,26 @@ export async function runAgentWorkflow(options: Options) {
       ...(managedRuntimeAgentContext
         ? { managedRuntime: managedRuntimeAgentContext }
         : {}),
-      sandbox: {
-        state: runtime.sandboxState,
-        workingDirectory: runtime.workingDirectory,
-        currentBranch: runtime.currentBranch,
-        environmentDetails: runtime.environmentDetails,
-      },
+      // For sandbox-free sessions there is no VM. Provide a minimal stub so
+      // the agent can still build a system prompt and respond as a plain chat.
+      // Sandbox-backed tools (file/bash/exec) will not be invoked in a text-only
+      // conversation; a deeper agent-package change is needed to fully gate them.
+      sandbox:
+        runtime.mode === "sandbox"
+          ? {
+              state: runtime.sandboxState,
+              workingDirectory: runtime.workingDirectory,
+              currentBranch: runtime.currentBranch,
+              environmentDetails: runtime.environmentDetails,
+            }
+          : {
+              state: {} as import("@open-agents/sandbox").SandboxState,
+              workingDirectory: "/",
+            },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
     };
-    sandboxState = runtime.sandboxState;
+    sandboxState =
+      runtime.mode === "sandbox" ? runtime.sandboxState : undefined;
 
     for (
       let step = 0;
@@ -1468,8 +1499,11 @@ export async function runAgentWorkflow(options: Options) {
       repoName != null;
 
     if (canAutoCommit) {
+      // sandboxState is guaranteed non-null by the canAutoCommit guard above.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const resolvedSandboxState = sandboxState!;
       const hasAutoCommitChanges = await hasAutoCommitChangesStep({
-        sandboxState,
+        sandboxState: resolvedSandboxState,
       });
 
       if (hasAutoCommitChanges) {
@@ -1504,7 +1538,7 @@ export async function runAgentWorkflow(options: Options) {
           sessionTitle: runtime.sessionTitle,
           repoOwner,
           repoName,
-          sandboxState,
+          sandboxState: resolvedSandboxState,
         });
 
         const resolvedCommitPart: WebAgentCommitDataPart = {
@@ -1599,7 +1633,9 @@ export async function runAgentWorkflow(options: Options) {
           sessionTitle: runtime.sessionTitle,
           repoOwner,
           repoName,
-          sandboxState,
+          // sandboxState is guaranteed non-null by the canAutoCommit guard.
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          sandboxState: sandboxState!,
         });
 
         const resolvedPrPart: WebAgentPrDataPart = {
@@ -1692,7 +1728,11 @@ export async function runAgentWorkflow(options: Options) {
         ? "failed"
         : "completed";
 
-    if (runtime.runtimeMode === "managed_runtime" && runtime.managedRuntime) {
+    if (
+      runtime.mode === "sandbox" &&
+      runtime.runtimeMode === "managed_runtime" &&
+      runtime.managedRuntime
+    ) {
       const runtimeProofArtifacts = await collectRuntimeProofArtifacts({
         sessionId: options.sessionId,
         chatId: options.chatId,
