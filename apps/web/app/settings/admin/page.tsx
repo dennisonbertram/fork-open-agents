@@ -13,22 +13,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  SettingsPageHeader,
+  SettingsSection,
+} from "@/components/ui/settings-section";
 import { useSession } from "@/hooks/use-session";
 import {
   revokeAllGitHubTokens,
   revokeAllVercelTokens,
 } from "@/lib/admin/actions";
-
-function NotFoundState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-24 text-center">
-      <p className="text-4xl font-bold">404</p>
-      <p className="mt-2 text-sm text-muted-foreground">
-        This page could not be found.
-      </p>
-    </div>
-  );
-}
+import { AdminAccessGate } from "./admin-access-gate";
 
 function AdminPageContent() {
   const [revokeTarget, setRevokeTarget] = useState<"github" | "vercel" | null>(
@@ -74,28 +68,26 @@ function AdminPageContent() {
 
   return (
     <>
-      <h1 className="text-2xl font-semibold">Admin</h1>
+      <SettingsPageHeader
+        title="Admin"
+        description="Operator tools for managing tokens and access across the workspace."
+      />
 
-      <div className="rounded-lg border border-red-500/30 bg-red-500/5">
-        <div className="border-b border-red-500/20 px-5 py-4">
-          <h2 className="text-base font-semibold text-red-400">
-            Destructive Actions
-          </h2>
-          <p className="mt-1 text-sm text-red-400/70">
-            These actions cannot be undone, proceed with caution.
-          </p>
-        </div>
-
-        <div className="divide-y divide-red-500/20">
+      <SettingsSection
+        title="Danger zone"
+        description="These actions affect everyone and can't be undone. Proceed with caution."
+        tone="danger"
+      >
+        <div className="-mx-1 divide-y divide-destructive/15">
           {/* Revoke Vercel tokens */}
-          <div className="flex items-center justify-between gap-4 px-5 py-4">
-            <p className="text-sm text-red-400/80">
+          <div className="flex items-center justify-between gap-4 px-1 py-3">
+            <p className="text-sm text-muted-foreground">
               Invalidate all user sessions by revoking all Vercel tokens.
             </p>
             <Button
               variant="outline"
               size="sm"
-              className="shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10"
               onClick={() => setRevokeTarget("vercel")}
             >
               Revoke
@@ -103,22 +95,22 @@ function AdminPageContent() {
           </div>
 
           {/* Revoke GitHub tokens */}
-          <div className="flex items-center justify-between gap-4 px-5 py-4">
-            <p className="text-sm text-red-400/80">
+          <div className="flex items-center justify-between gap-4 px-1 py-3">
+            <p className="text-sm text-muted-foreground">
               Force all users to reconnect GitHub by revoking all GitHub tokens
               and installations.
             </p>
             <Button
               variant="outline"
               size="sm"
-              className="shrink-0 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+              className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10"
               onClick={() => setRevokeTarget("github")}
             >
               Revoke
             </Button>
           </div>
         </div>
-      </div>
+      </SettingsSection>
 
       {/* Confirmation dialog */}
       <Dialog
@@ -178,7 +170,7 @@ export default function AdminPage() {
   }
 
   if (!isAdmin) {
-    return <NotFoundState />;
+    return <AdminAccessGate />;
   }
 
   return <AdminPageContent />;
