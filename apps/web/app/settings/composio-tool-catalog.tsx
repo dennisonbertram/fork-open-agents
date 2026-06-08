@@ -9,7 +9,6 @@ import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import { filterToolkits } from "./composio-catalog-filter";
 import {
   POPULAR_TOOLKIT_SLUGS,
@@ -160,7 +159,7 @@ function ToolkitGroup({
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </h3>
-      <div className={cn("grid gap-3 sm:grid-cols-2 md:grid-cols-3")}>
+      <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
         {toolkits.map((toolkit) => (
           <ToolkitCard
             key={toolkit.slug}
@@ -259,7 +258,8 @@ export function ComposioToolCatalog() {
   const hiddenCount = filtered.length - visible.length;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
+      {/* Search input — stays fixed above the scroll area */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
         <Input
@@ -271,56 +271,57 @@ export function ComposioToolCatalog() {
         />
       </div>
 
-      {toolkitsLoading ? (
-        <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
-          {Array.from({ length: 6 }, (_, i) => (
-            <ToolkitCardSkeleton key={i} />
-          ))}
-        </div>
-      ) : isSearching ? (
-        /* Search view */
-        <>
-          {visible.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No tools found matching{" "}
-              <span className="font-medium text-foreground">
-                &ldquo;{query}&rdquo;
-              </span>
-              . Try a different name or keyword.
-            </p>
-          ) : (
-            <>
-              <p className="text-xs text-muted-foreground">
-                {`Showing ${visible.length} of ${filtered.length} matching tools`}
-                {hiddenCount > 0 ? " — refine your search to see all" : ""}
+      {/* Scrollable tool list — capped at ~10 rows so the section never grows the page */}
+      <div className="max-h-[360px] overflow-y-auto rounded-lg border border-border/60 p-3">
+        {toolkitsLoading ? (
+          <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+            {Array.from({ length: 6 }, (_, i) => (
+              <ToolkitCardSkeleton key={i} />
+            ))}
+          </div>
+        ) : isSearching ? (
+          /* Search view */
+          <>
+            {visible.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                No tools found matching{" "}
+                <span className="font-medium text-foreground">
+                  &ldquo;{query}&rdquo;
+                </span>
+                . Try a different name or keyword.
               </p>
-              <div className={cn("grid gap-3 sm:grid-cols-2 md:grid-cols-3")}>
-                {visible.map((toolkit) => (
-                  <ToolkitCard
-                    key={toolkit.slug}
-                    slug={toolkit.slug}
-                    name={toolkit.name}
-                    description={toolkit.description}
-                    logo={toolkit.logo}
-                    managedAuth={toolkit.managedAuth}
-                    noAuth={toolkit.noAuth}
-                    isConnected={connectedSlugs.has(toolkit.slug)}
-                    onConnect={handleConnect}
-                    isConnecting={connectingSlug === toolkit.slug}
-                  />
-                ))}
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {`Showing ${visible.length} of ${filtered.length} matching tools`}
+                  {hiddenCount > 0 ? " — refine your search to see all" : ""}
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
+                  {visible.map((toolkit) => (
+                    <ToolkitCard
+                      key={toolkit.slug}
+                      slug={toolkit.slug}
+                      name={toolkit.name}
+                      description={toolkit.description}
+                      logo={toolkit.logo}
+                      managedAuth={toolkit.managedAuth}
+                      noAuth={toolkit.noAuth}
+                      isConnected={connectedSlugs.has(toolkit.slug)}
+                      onConnect={handleConnect}
+                      isConnecting={connectingSlug === toolkit.slug}
+                    />
+                  ))}
+                </div>
               </div>
-            </>
-          )}
-        </>
-      ) : (
-        /* Default view: pinned connected + suggestions */
-        <>
-          <p className="text-xs text-muted-foreground">
-            Showing your connected tools and a few suggestions — search to find
-            any of 1000+.
-          </p>
+            )}
+          </>
+        ) : (
+          /* Default view: pinned connected + suggestions */
           <div className="space-y-4">
+            <p className="text-xs text-muted-foreground">
+              Showing your connected tools and a few suggestions — search to
+              find any of 1000+.
+            </p>
             <ToolkitGroup
               label="Connected"
               toolkits={connectedToolkits}
@@ -342,8 +343,8 @@ export function ComposioToolCatalog() {
               </p>
             ) : null}
           </div>
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -233,27 +233,27 @@ function ProfileEditor({
   }
 
   return (
-    <div className="grid gap-3 rounded-lg border border-border/70 p-3">
-      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
-        <div className="grid gap-1.5">
-          <Label htmlFor={`composio-name-${profile.id}`}>Name</Label>
-          <Input
-            id={`composio-name-${profile.id}`}
-            value={name}
-            onChange={(event) => setName(event.currentTarget.value)}
-            disabled={isSaving}
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label>Tools</Label>
-          <ComposioToolkitPicker
-            selectedSlugs={toolkitSlugs}
-            onChange={setToolkitSlugs}
-            disabled={isSaving}
-          />
-        </div>
-      </div>
-      <div className="border-t border-border/60 pt-3">
+    <div className="grid gap-2 rounded-lg border border-border/70 p-3">
+      {/* Name */}
+      <Input
+        id={`composio-name-${profile.id}`}
+        value={name}
+        onChange={(event) => setName(event.currentTarget.value)}
+        placeholder="Profile name"
+        disabled={isSaving}
+        aria-label="Profile name"
+        className="h-7 text-sm"
+      />
+
+      {/* Tool picker */}
+      <ComposioToolkitPicker
+        selectedSlugs={toolkitSlugs}
+        onChange={setToolkitSlugs}
+        disabled={isSaving}
+      />
+
+      {/* Advanced disclosure — closed by default */}
+      <div className="border-t border-border/60 pt-2">
         <button
           type="button"
           onClick={() => setAdvancedOpen((value) => !value)}
@@ -266,13 +266,51 @@ function ProfileEditor({
               advancedOpen && "rotate-180",
             )}
           />
-          Advanced — specific accounts
+          Advanced
         </button>
         {advancedOpen ? (
-          <>
-            <p className="mt-2 text-xs text-muted-foreground">
-              Most tools work with just the toolkit names above. Only set these
-              if a tool must use a specific connected account.{" "}
+          <div className="mt-2 grid gap-3">
+            {/* Workbench + In-chat toggles */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-sm">
+                <Switch
+                  id={`composio-workbench-${profile.id}`}
+                  checked={workbenchEnabled}
+                  onCheckedChange={setWorkbenchEnabled}
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor={`composio-workbench-${profile.id}`}
+                  className="text-xs"
+                >
+                  Workbench
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  Include Composio hosted workbench tools.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 text-sm">
+                <Switch
+                  id={`composio-in-chat-management-${profile.id}`}
+                  checked={allowInChatConnectionManagement}
+                  onCheckedChange={setAllowInChatConnectionManagement}
+                  disabled={isSaving}
+                />
+                <Label
+                  htmlFor={`composio-in-chat-management-${profile.id}`}
+                  className="text-xs"
+                >
+                  In-chat connection tools
+                </Label>
+                <span className="text-xs text-muted-foreground">
+                  Let agents create account connection links during a run.
+                </span>
+              </div>
+            </div>
+
+            {/* Specific account IDs */}
+            <p className="text-xs text-muted-foreground">
+              Only set these if a tool must use a specific connected account.{" "}
               <a
                 href={COMPOSIO_DASHBOARD_URL}
                 target="_blank"
@@ -283,9 +321,12 @@ function ProfileEditor({
                 <ExternalLink className="h-3 w-3" />
               </a>
             </p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               <div className="grid gap-1.5">
-                <Label htmlFor={`composio-auth-${profile.id}`}>
+                <Label
+                  htmlFor={`composio-auth-${profile.id}`}
+                  className="text-xs"
+                >
                   Auth config IDs
                 </Label>
                 <Textarea
@@ -301,7 +342,10 @@ function ProfileEditor({
                 <FieldHelp>One per line, as toolkit=auth_config_id.</FieldHelp>
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor={`composio-accounts-${profile.id}`}>
+                <Label
+                  htmlFor={`composio-accounts-${profile.id}`}
+                  className="text-xs"
+                >
                   Connected account IDs
                 </Label>
                 <Textarea
@@ -319,63 +363,34 @@ function ProfileEditor({
                 </FieldHelp>
               </div>
             </div>
-          </>
+          </div>
         ) : null}
       </div>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-4">
-          <div className="flex items-center gap-2 text-sm">
-            <Switch
-              id={`composio-workbench-${profile.id}`}
-              checked={workbenchEnabled}
-              onCheckedChange={setWorkbenchEnabled}
-              disabled={isSaving}
-            />
-            <Label htmlFor={`composio-workbench-${profile.id}`}>
-              Workbench
-            </Label>
-            <span className="text-xs text-muted-foreground">
-              Include Composio hosted workbench tools.
-            </span>
-          </div>
-          <div className="flex items-center gap-2 text-sm">
-            <Switch
-              id={`composio-in-chat-management-${profile.id}`}
-              checked={allowInChatConnectionManagement}
-              onCheckedChange={setAllowInChatConnectionManagement}
-              disabled={isSaving}
-            />
-            <Label htmlFor={`composio-in-chat-management-${profile.id}`}>
-              In-chat connection tools
-            </Label>
-            <span className="text-xs text-muted-foreground">
-              Let agents create account connection links during a run.
-            </span>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={saveProfile}
-            disabled={isSaving}
-          >
-            {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
-            Save
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            onClick={deleteProfile}
-            disabled={isSaving}
-            aria-label={`Delete ${profile.name}`}
-            className="text-muted-foreground hover:text-destructive"
-          >
-            <Trash2 />
-          </Button>
-        </div>
+
+      {/* Action row: Save + Delete */}
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={saveProfile}
+          disabled={isSaving}
+          className="h-7 text-xs"
+        >
+          {isSaving ? <Loader2 className="animate-spin" /> : <Save />}
+          Save
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={deleteProfile}
+          disabled={isSaving}
+          aria-label={`Delete ${profile.name}`}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 />
+        </Button>
       </div>
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
@@ -543,30 +558,25 @@ export function ComposioSection() {
         learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
       >
         <div className="space-y-3">
-          <div className="grid gap-3 rounded-lg border border-dashed border-border/70 p-3">
-            <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr]">
-              <div className="grid gap-1.5">
-                <Label htmlFor="new-composio-profile-name">Name</Label>
-                <Input
-                  id="new-composio-profile-name"
-                  value={newName}
-                  onChange={(event) => setNewName(event.currentTarget.value)}
-                  placeholder="GitHub"
-                  disabled={isSubmitting}
-                />
-              </div>
-              <div className="grid gap-1.5">
-                <Label>Tools</Label>
-                <ComposioToolkitPicker
-                  selectedSlugs={newToolkitSlugs}
-                  onChange={setNewToolkitSlugs}
-                  disabled={isSubmitting}
-                />
-              </div>
-            </div>
-            <div className="flex justify-end">
+          <div className="grid gap-2 rounded-lg border border-dashed border-border/70 p-3">
+            <Input
+              id="new-composio-profile-name"
+              value={newName}
+              onChange={(event) => setNewName(event.currentTarget.value)}
+              placeholder="Profile name (e.g. GitHub)"
+              disabled={isSubmitting}
+              aria-label="New profile name"
+              className="h-7 text-sm"
+            />
+            <ComposioToolkitPicker
+              selectedSlugs={newToolkitSlugs}
+              onChange={setNewToolkitSlugs}
+              disabled={isSubmitting}
+            />
+            <div className="flex items-center justify-end pt-1">
               <Button
                 type="button"
+                size="sm"
                 onClick={createProfile}
                 disabled={
                   isSubmitting ||
@@ -574,9 +584,10 @@ export function ComposioSection() {
                   !newName.trim() ||
                   newToolkitSlugs.length === 0
                 }
+                className="h-7 text-xs"
               >
                 {isSubmitting ? <Loader2 className="animate-spin" /> : <Plus />}
-                Add
+                Add profile
               </Button>
             </div>
             {actionError ? (
