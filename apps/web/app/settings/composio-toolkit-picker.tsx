@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Search, X } from "lucide-react";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
@@ -14,7 +14,6 @@ import {
   mergeSelectedWithCatalog,
   toggleSlug,
 } from "./composio-toolkit-picker-helpers";
-import { shouldShowResults } from "./composio-section-helpers";
 import {
   selectableToolkits,
   type ToolkitSource,
@@ -62,8 +61,23 @@ export function ComposioToolkitPicker({
   source = "connected",
 }: ComposioToolkitPickerProps) {
   const [query, setQuery] = useState("");
-  const [isFocused, setIsFocused] = useState(false);
   const resultsRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close the results (clear the query) when clicking anywhere outside the
+  // picker, so the Save/Cancel buttons below are always reachable.
+  useEffect(() => {
+    if (query.trim().length === 0) {
+      return;
+    }
+    function onPointerDown(event: PointerEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setQuery("");
+      }
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [query]);
 
   const { data: toolkitsData, isLoading: toolkitsLoading } =
     useSWR<ComposioToolkitsResponse>(
@@ -80,6 +94,23 @@ export function ComposioToolkitPicker({
   const connectedSlugs = new Set(
     (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
   );
+  const toolkitBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
+
+  /**
+   * A selected tool "needs connection" when it's a real catalog toolkit that
+   * requires auth (not noAuth) and the user has NOT connected an account for it.
+   * Such chips are flagged so it's clear why a tool won't work yet.
+   */
+  const needsConnection = (slug: string, unknown: boolean): boolean => {
+    if (unknown) {
+      return false;
+    }
+    const tk = toolkitBySlug.get(slug);
+    if (!tk) {
+      return false;
+    }
+    return !tk.noAuth && !connectedSlugs.has(slug);
+  };
 
   // Derive the selectable set according to source mode
   const selectable = selectableToolkits({
@@ -109,7 +140,9 @@ export function ComposioToolkitPicker({
   // Build selected chips from allEntries so we always have catalog metadata
   const selectedEntries = allEntries.filter((e) => e.selected);
 
-  const showResults = shouldShowResults(isFocused, query);
+  // Search-driven: results appear only while typing, so an empty field never
+  // covers the Save button below the picker.
+  const showResults = query.trim().length > 0;
 
   // Empty-connected state: source=connected, data loaded, nothing selectable (no connected, no noAuth)
   const isConnectedModeEmpty =
@@ -119,6 +152,9 @@ export function ComposioToolkitPicker({
     (slug: string) => {
       if (disabled) return;
       onChange(toggleSlug(selectedSlugs, slug));
+      // Clear the search so the results dropdown closes after a pick, keeping
+      // the Save button (below the picker) reachable. Re-type to add more.
+      setQuery("");
     },
     [disabled, onChange, selectedSlugs],
   );
@@ -134,7 +170,6 @@ export function ComposioToolkitPicker({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Escape") {
-        setIsFocused(false);
         setQuery("");
         e.currentTarget.blur();
       }
@@ -149,46 +184,64 @@ export function ComposioToolkitPicker({
   }, []);
 
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5" ref={containerRef}>
       {/* Selected chips */}
       {selectedEntries.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          {selectedEntries.map((entry) => (
-            <span
-              key={entry.slug}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
-                entry.unknown
-                  ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
-                  : "border-border bg-muted text-foreground",
-              )}
-            >
-              {entry.logo && !entry.unknown ? (
-                // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
-                <img
-                  src={entry.logo}
-                  alt=""
-                  width={12}
-                  height={12}
-                  referrerPolicy="no-referrer"
-                  className="h-3 w-3 rounded-sm object-contain shrink-0"
-                />
-              ) : null}
-              {entry.name}
-              {entry.unknown && (
-                <span className="opacity-60 text-[10px]">(unknown)</span>
-              )}
-              <button
-                type="button"
-                onClick={() => handleRemoveChip(entry.slug)}
-                disabled={disabled}
-                aria-label={`Remove ${entry.name}`}
-                className="ml-0.5 rounded-full hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+          {selectedEntries.map((entry) => {
+            const unconnected = needsConnection(
+              entry.slug,
+              entry.unknown ?? false,
+            );
+            const flagged = entry.unknown || unconnected;
+            return (
+              <span
+                key={entry.slug}
+                title={
+                  entry.unknown
+                    ? "This tool isn't in the Composio catalog."
+                    : unconnected
+                      ? "Not connected — connect it in Connect tools above, or it won't work."
+                      : undefined
+                }
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
+                  flagged
+                    ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400"
+                    : "border-border bg-muted text-foreground",
+                )}
               >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
+                {entry.logo && !entry.unknown ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
+                  <img
+                    src={entry.logo}
+                    alt=""
+                    width={12}
+                    height={12}
+                    referrerPolicy="no-referrer"
+                    className="h-3 w-3 rounded-sm object-contain shrink-0"
+                  />
+                ) : null}
+                {entry.name}
+                {entry.unknown ? (
+                  <span className="opacity-60 text-[10px]">(unknown)</span>
+                ) : unconnected ? (
+                  <span className="text-[10px] opacity-80">
+                    · not connected
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => handleRemoveChip(entry.slug)}
+                  disabled={disabled}
+                  aria-label={`Remove ${entry.name}`}
+                  className="ml-0.5 rounded-full hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 
@@ -200,8 +253,6 @@ export function ComposioToolkitPicker({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.currentTarget.value)}
-          onFocus={() => setIsFocused(true)}
-          onBlur={() => setIsFocused(false)}
           onKeyDown={handleKeyDown}
           placeholder="Add a tool — search Gmail, Slack…"
           disabled={disabled}
