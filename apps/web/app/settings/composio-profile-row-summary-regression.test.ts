@@ -20,10 +20,13 @@ describe("profileRowSummary — regression", () => {
   });
 
   test("REGRESSION-002 overflow is never negative — even when slugs < MAX_VISIBLE_LOGOS", () => {
-    const result = profileRowSummary(["a", "b"], [
-      { slug: "a", name: "A", logo: null },
-      { slug: "b", name: "B", logo: null },
-    ]);
+    const result = profileRowSummary(
+      ["a", "b"],
+      [
+        { slug: "a", name: "A", logo: null },
+        { slug: "b", name: "B", logo: null },
+      ],
+    );
     expect(result.overflow).toBeGreaterThanOrEqual(0);
   });
 
@@ -37,9 +40,10 @@ describe("profileRowSummary — regression", () => {
   test("REGRESSION-004 a toolkit with logo URL present in catalog exposes the logo URL in logos", () => {
     // Ensures the logo field is not accidentally dropped or nulled by the helper.
     const logo = "https://cdn.example.com/github.png";
-    const result = profileRowSummary(["github"], [
-      { slug: "github", name: "GitHub", logo },
-    ]);
+    const result = profileRowSummary(
+      ["github"],
+      [{ slug: "github", name: "GitHub", logo }],
+    );
     expect(result.logos[0]?.logo).toBe(logo);
   });
 
