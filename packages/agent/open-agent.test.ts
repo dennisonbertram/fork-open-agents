@@ -46,7 +46,9 @@ mock.module("ai", () => {
 const {
   getOpenAgentToolsForRuntimeMode,
   getRuntimeModeToolPolicy,
+  getChatOnlyTools,
   MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  CHAT_ONLY_TOOL_NAMES,
   OPEN_AGENT_TOOL_NAMES,
 } = await import("./open-agent");
 const { buildSystemPrompt } = await import("./system-prompt");
@@ -144,5 +146,80 @@ describe("openAgent runtime tool policy", () => {
     // The prompt must explicitly prohibit skipping the tool call
     expect(prompt).toContain("Never skip the");
     expect(prompt).toContain("setup_managed_runtime_profile");
+  });
+});
+
+// BT-001, BT-002, BT-003: chat-only tool policy for sandbox-free sessions
+describe("chat-only tool policy (sandbox-free)", () => {
+  // BT-001: getChatOnlyTools excludes every sandbox-dependent tool
+  test("getChatOnlyTools excludes file/bash/exec/edit/task/grep/glob tools", () => {
+    const chatTools = Object.keys(getChatOnlyTools());
+
+    expect(chatTools).not.toContain("bash");
+    expect(chatTools).not.toContain("read");
+    expect(chatTools).not.toContain("write");
+    expect(chatTools).not.toContain("edit");
+    expect(chatTools).not.toContain("grep");
+    expect(chatTools).not.toContain("glob");
+    expect(chatTools).not.toContain("task");
+    expect(chatTools).not.toContain("setup_managed_runtime_profile");
+  });
+
+  // BT-002: getChatOnlyTools keeps safe non-sandbox tools
+  test("getChatOnlyTools keeps web_fetch, ask_user_question, skill, todo_write", () => {
+    const chatTools = Object.keys(getChatOnlyTools());
+
+    expect(chatTools).toContain("web_fetch");
+    expect(chatTools).toContain("ask_user_question");
+    expect(chatTools).toContain("skill");
+    expect(chatTools).toContain("todo_write");
+  });
+
+  // BT-003: getRuntimeModeToolPolicy with sandboxFree=true returns chat-only tools
+  test("getRuntimeModeToolPolicy with sandboxFree:true returns only chat-safe tools", () => {
+    const filteredTools = getRuntimeModeToolPolicy("classic", undefined, {
+      sandboxFree: true,
+    });
+    const toolNames = Object.keys(filteredTools);
+
+    expect(toolNames).toEqual([...CHAT_ONLY_TOOL_NAMES]);
+    expect(toolNames).not.toContain("bash");
+    expect(toolNames).not.toContain("read");
+    expect(toolNames).not.toContain("write");
+    expect(toolNames).not.toContain("edit");
+    expect(toolNames).not.toContain("task");
+  });
+
+  // BT-004: Composio tools (caller-provided) pass through in sandbox-free mode
+  test("caller-provided Composio tools are kept in sandbox-free mode", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_LIST_ISSUES" };
+    const filteredTools = getRuntimeModeToolPolicy(
+      "classic",
+      {
+        COMPOSIO_GITHUB_LIST_ISSUES: composioTool,
+      } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1],
+      { sandboxFree: true },
+    );
+
+    expect(filteredTools.COMPOSIO_GITHUB_LIST_ISSUES as unknown).toBe(
+      composioTool,
+    );
+    // Sandbox tools must still be absent
+    expect(Object.keys(filteredTools)).not.toContain("bash");
+    expect(Object.keys(filteredTools)).not.toContain("read");
+  });
+
+  // BT-005: system prompt for sandbox-free mode tells the agent it has no code-execution environment
+  test("buildSystemPrompt with sandboxFree:true informs the agent it has no sandbox", () => {
+    const prompt = buildSystemPrompt({ sandboxFree: true });
+
+    expect(prompt).toContain("no code-execution environment");
+  });
+
+  // BT-006: CHAT_ONLY_TOOL_NAMES is exported and matches getChatOnlyTools keys
+  test("CHAT_ONLY_TOOL_NAMES matches the keys returned by getChatOnlyTools", () => {
+    const chatToolKeys = Object.keys(getChatOnlyTools());
+
+    expect(chatToolKeys).toEqual([...CHAT_ONLY_TOOL_NAMES]);
   });
 });
