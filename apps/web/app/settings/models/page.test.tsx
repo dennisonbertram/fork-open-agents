@@ -6,7 +6,9 @@ mock.module("../preferences-section", () => ({
   PreferencesSection: () => <div>PREFERENCES_SECTION_STUB</div>,
   PreferencesSectionSkeleton: () => <div>PREFERENCES_SKELETON_STUB</div>,
   ModelPreferencesSection: () => <div>MODEL_PREFERENCES_SECTION_STUB</div>,
-  ModelPreferencesSectionSkeleton: () => <div>MODEL_PREFERENCES_SKELETON_STUB</div>,
+  ModelPreferencesSectionSkeleton: () => (
+    <div>MODEL_PREFERENCES_SKELETON_STUB</div>
+  ),
 }));
 
 mock.module("../inference-profiles-section", () => ({
@@ -28,5 +30,21 @@ describe("Models page", () => {
     expect(html).toContain("MODEL_PREFERENCES_SECTION_STUB");
     expect(html).toContain("INFERENCE_PROFILES_SECTION_STUB");
     expect(html).toContain("MODEL_VARIANTS_SECTION_STUB");
+  });
+
+  test("regression: uses shared SettingsPageHeader, not the old inline h1+p block", async () => {
+    const { default: ModelsPage } = await import("./page");
+    const html = renderToStaticMarkup(<ModelsPage />);
+    // SettingsPageHeader renders a <header> element wrapping the title+description.
+    // The old implementation used a bare div > h1 + p block without a <header> element.
+    expect(html).toContain("<header");
+    // The old copy "Set your default models and create named variants..." must not appear.
+    expect(html).not.toContain(
+      "Set your default models and create named variants with provider-",
+    );
+    // The new copy-deck description must appear instead.
+    expect(html).toContain(
+      "Pick the models your agents use and create named setups for specific jobs.",
+    );
   });
 });

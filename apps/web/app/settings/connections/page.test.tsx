@@ -21,4 +21,14 @@ describe("Connections page", () => {
       "Link the accounts Open Agents uses to act on your behalf.",
     );
   });
+
+  test("regression: uses shared SettingsPageHeader wrapper, not a bare inline h1", async () => {
+    const { default: ConnectionsPage } = await import("./page");
+    const html = renderToStaticMarkup(<ConnectionsPage />);
+    // SettingsPageHeader renders a <header> element; a bare h1 would not produce one.
+    expect(html).toContain("<header");
+    expect(html).toContain(
+      "Link the accounts Open Agents uses to act on your behalf.",
+    );
+  });
 });
