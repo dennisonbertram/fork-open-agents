@@ -42,8 +42,7 @@ mock.module("@/lib/db/sessions", () => ({
         directToolkitSlugs: ["github", "linear"],
       },
     }),
-  getSessionById: () =>
-    Promise.resolve({ repoOwner: null, repoName: null }),
+  getSessionById: () => Promise.resolve({ repoOwner: null, repoName: null }),
 }));
 
 mock.module("@/lib/composio/config", () => ({
@@ -94,9 +93,13 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
     let touchCalled = false;
 
     mock.module("@/lib/db/composio", () => ({
-      getChatComposioSelection: (v: unknown) => normalizeChatComposioSelection(v),
+      getChatComposioSelection: (v: unknown) =>
+        normalizeChatComposioSelection(v),
       getComposioAgentSession: () =>
-        Promise.resolve({ id: "row-hit", composioSessionId: fakeComposioSessionId }),
+        Promise.resolve({
+          id: "row-hit",
+          composioSessionId: fakeComposioSessionId,
+        }),
       upsertComposioAgentSession: () => {
         throw new Error("upsert must not be called on a cache hit");
       },
@@ -109,7 +112,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
         Promise.resolve({ allowed: true }),
     }));
 
-    const { resolveComposioToolsForChat: resolveHit } = await import("./session");
+    const { resolveComposioToolsForChat: resolveHit } =
+      await import("./session");
 
     const result = await resolveHit({
       userId: "user-reg-2",
@@ -127,7 +131,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
   test("REGRESSION-003: non-main agentKey skips direct-list and returns off", async () => {
     // Chat has directToolkitSlugs but agentKey=executor → no profile → off
     mock.module("@/lib/db/composio", () => ({
-      getChatComposioSelection: (v: unknown) => normalizeChatComposioSelection(v),
+      getChatComposioSelection: (v: unknown) =>
+        normalizeChatComposioSelection(v),
       getComposioAgentSession: () => Promise.resolve(null),
       upsertComposioAgentSession: () => Promise.resolve({ id: "row-1" }),
       touchComposioAgentSession: () => Promise.resolve(),
@@ -136,9 +141,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
         Promise.resolve({ allowed: true }),
     }));
 
-    const { resolveComposioToolsForChat: resolveExecutor } = await import(
-      "./session"
-    );
+    const { resolveComposioToolsForChat: resolveExecutor } =
+      await import("./session");
 
     const result = await resolveExecutor({
       userId: "user-reg-3",
@@ -152,7 +156,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
 
   test("REGRESSION-004: managed_runtime with directSlugs throws ComposioSetupError", async () => {
     mock.module("@/lib/db/composio", () => ({
-      getChatComposioSelection: (v: unknown) => normalizeChatComposioSelection(v),
+      getChatComposioSelection: (v: unknown) =>
+        normalizeChatComposioSelection(v),
       getComposioAgentSession: () => Promise.resolve(null),
       upsertComposioAgentSession: () => Promise.resolve({ id: "row-1" }),
       touchComposioAgentSession: () => Promise.resolve(),

@@ -18,12 +18,9 @@ import {
   buildComposioSessionConfig,
   getComposioProfileConfigHash,
 } from "./session-config";
-import {
-  buildComposioSessionConfigFromDirectList,
-  hashDirectConfig,
-} from "./direct-list-config";
 import { toComposioUserId } from "./user-id";
 import { getComposioUserFacingError } from "./errors";
+import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
 
 export {
   buildComposioSessionConfig,
@@ -161,7 +158,6 @@ export async function resolveComposioToolsForChat(params: {
     }
 
     const composio = getComposioClient();
-    const configHash = hashDirectConfig(directSlugs);
     const syntheticProfileId = "direct";
     const agentKey = params.agentKey ?? "main";
 
@@ -172,53 +168,30 @@ export async function resolveComposioToolsForChat(params: {
     );
 
     try {
-      const existingSession = await getComposioAgentSession({
+      return await resolveComposioToolsForToolkitList({
         userId: params.userId,
-        chatId: params.chatId,
-        agentKey,
-        profileId: syntheticProfileId,
-        configHash,
-      });
-
-      if (existingSession) {
-        const session = await composio.use(existingSession.composioSessionId);
-        const tools = await session.tools();
-        await touchComposioAgentSession(existingSession.id);
-        return {
-          status: "ready",
-          tools,
-          profile: null,
-          composioSessionId: existingSession.composioSessionId,
-          configHash,
-          reusedSession: true,
-        };
-      }
-
-      const sessionConfig = buildComposioSessionConfigFromDirectList({
-        toolkitSlugs: directSlugs,
+        slugs: directSlugs,
+        composio,
         connectedAccountIdsByToolkit,
+        getCachedSession: (configHash) =>
+          getComposioAgentSession({
+            userId: params.userId,
+            chatId: params.chatId,
+            agentKey,
+            profileId: syntheticProfileId,
+            configHash,
+          }),
+        upsertSession: ({ composioSessionId, configHash }) =>
+          upsertComposioAgentSession({
+            userId: params.userId,
+            chatId: params.chatId,
+            agentKey,
+            profileId: syntheticProfileId,
+            configHash,
+            composioSessionId,
+          }),
+        touchSession: (id) => touchComposioAgentSession(id),
       });
-      const session = await composio.create(
-        toComposioUserId(params.userId),
-        sessionConfig,
-      );
-      const tools = await session.tools();
-      await upsertComposioAgentSession({
-        userId: params.userId,
-        chatId: params.chatId,
-        agentKey,
-        profileId: syntheticProfileId,
-        configHash,
-        composioSessionId: session.sessionId,
-      });
-      return {
-        status: "ready",
-        tools,
-        profile: null,
-        composioSessionId: session.sessionId,
-        configHash,
-        reusedSession: false,
-      };
     } catch (error) {
       throw toSetupError(error);
     }

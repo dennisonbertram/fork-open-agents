@@ -12,16 +12,20 @@
  *   different slug sets produce different hashes.
  */
 
+import type { ToolSet } from "ai";
 import { describe, expect, mock, test } from "bun:test";
 
 // Must stub server-only before importing the module under test.
 mock.module("server-only", () => ({}));
 
-const fakeTools = { github_get_repo: { description: "get a repo" } };
+// Cast to ToolSet so the fake passes typecheck without importing the full SDK shape.
+const fakeTools = {
+  github_get_repo: { description: "get a repo" },
+} as unknown as ToolSet;
 const fakeComposioSessionId = "composio-test-session-id";
 
 const fakeComposio = {
-  create: (_userId: string, _config: unknown) =>
+  create: (_userId: string, _config: never) =>
     Promise.resolve({
       sessionId: fakeComposioSessionId,
       tools: () => Promise.resolve(fakeTools),
@@ -48,9 +52,8 @@ describe("resolveComposioToolsForToolkitList", () => {
 
     const cachedRow = { id: "row-1", composioSessionId: fakeComposioSessionId };
 
-    const { resolveComposioToolsForToolkitList } = await import(
-      "./resolve-toolkit-list"
-    );
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
 
     const result = await resolveComposioToolsForToolkitList({
       userId,
@@ -82,9 +85,8 @@ describe("resolveComposioToolsForToolkitList", () => {
     let upsertData: unknown = null;
     let touchCalled = false;
 
-    const { resolveComposioToolsForToolkitList } = await import(
-      "./resolve-toolkit-list"
-    );
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
 
     const result = await resolveComposioToolsForToolkitList({
       userId,
@@ -111,15 +113,14 @@ describe("resolveComposioToolsForToolkitList", () => {
     expect(touchCalled).toBe(false);
     expect(upsertData).not.toBeNull();
     // The upsert must carry the composio session id
-    expect(
-      (upsertData as Record<string, unknown>).composioSessionId,
-    ).toBe(fakeComposioSessionId);
+    expect((upsertData as Record<string, unknown>).composioSessionId).toBe(
+      fakeComposioSessionId,
+    );
   });
 
   test("BT-RTL-003: empty slugs — returns status off immediately", async () => {
-    const { resolveComposioToolsForToolkitList } = await import(
-      "./resolve-toolkit-list"
-    );
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
 
     const result = await resolveComposioToolsForToolkitList({
       userId,
@@ -141,9 +142,8 @@ describe("resolveComposioToolsForToolkitList", () => {
   });
 
   test("BT-RTL-004: configHash is stable and order-independent", async () => {
-    const { resolveComposioToolsForToolkitList: resolve } = await import(
-      "./resolve-toolkit-list"
-    );
+    const { resolveComposioToolsForToolkitList: resolve } =
+      await import("./resolve-toolkit-list");
 
     // Capture the configHash by intercepting getCachedSession (receives configHash
     // via the injected call); easier to import hashDirectConfig directly
