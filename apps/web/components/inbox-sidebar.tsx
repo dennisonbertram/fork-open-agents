@@ -12,6 +12,7 @@ import {
   GitPullRequest,
   Loader2,
   Monitor,
+  PanelLeftClose,
   Pencil,
   Plus,
   Settings,
@@ -702,7 +703,7 @@ export function InboxSidebar({
   const { session } = useSession();
   const { rank: leaderboardRank, loading: leaderboardLoading } =
     useLeaderboardRank();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionWithUnread[]>(
     [],
@@ -1000,6 +1001,23 @@ export function InboxSidebar({
     <>
       <div className="border-b border-border p-3">
         <div className="mb-3 flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Collapse panel"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              Collapse panel
+            </TooltipContent>
+          </Tooltip>
           <Button
             type="button"
             variant="default"
@@ -1011,7 +1029,7 @@ export function InboxSidebar({
               }
               void handleCreateSandboxFreeChat();
             }}
-            className="h-8 flex-1 justify-start gap-2"
+            className="h-8 flex-1 justify-center gap-2"
           >
             {isCreatingSandboxFreeChat ? (
               <Loader2 className="h-4 w-4 animate-spin" />
