@@ -289,7 +289,9 @@ describe("BackgroundAgentsSection", () => {
       },
     };
     const configuredHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
-    expect(configuredHtml).toContain("github.pull_request");
+    // Trigger kind is now humanized in run history: "Pull request" not raw "github.pull_request"
+    expect(configuredHtml).toContain("Pull request");
+    expect(configuredHtml).not.toContain("github.pull_request");
     expect(configuredHtml).toContain("acme/widgets");
     expect(configuredHtml).toContain("PR #42");
     expect(configuredHtml).toContain("/background-runs/run-1");
