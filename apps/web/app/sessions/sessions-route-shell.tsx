@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelLeft, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -22,13 +22,8 @@ import {
   SidebarContent,
   SidebarInset,
   SidebarProvider,
-  useSidebar,
+  SidebarRail,
 } from "@/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useBackgroundChatNotifications } from "@/hooks/use-background-chat-notifications";
 import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -56,11 +51,7 @@ const RouteContentShell = memo(function RouteContentShell({
 }: {
   children: ReactNode;
 }) {
-  const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const { target, closeWorkspaceSettings } = useWorkspaceSettings();
-  // The sidebar is offcanvas, so when hidden there is nothing in the panel to
-  // reopen it with — surface a persistent control in the content area.
-  const sidebarHidden = isMobile ? !openMobile : state === "collapsed";
 
   useEffect(() => {
     if (!target) {
@@ -77,27 +68,6 @@ const RouteContentShell = memo(function RouteContentShell({
 
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      {sidebarHidden ? (
-        <div className="flex shrink-0 items-center border-b border-border/60 px-2 py-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={toggleSidebar}
-                className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                aria-label="Open panel"
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right" sideOffset={4}>
-              Open panel
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      ) : null}
       {children}
       {target ? (
         <div
@@ -393,7 +363,8 @@ export function SessionsRouteShell({
             } as CSSProperties
           }
         >
-          <Sidebar collapsible="offcanvas" className="border-r border-border">
+          <Sidebar collapsible="icon" className="border-r border-border">
+            <SidebarRail />
             <SidebarContent className="bg-muted/20">
               <InboxSidebar
                 sessions={sessions}

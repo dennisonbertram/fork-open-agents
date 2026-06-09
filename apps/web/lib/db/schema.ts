@@ -884,6 +884,16 @@ export const backgroundAgents = pgTable(
       .notNull()
       .default("none"),
     checkCommand: text("check_command"),
+    /**
+     * Composio toolkit slugs this agent is allowed to use.
+     * Empty array (default) = no Composio tools = pre-Phase-5 behavior.
+     * Populated slugs are resolved at run time via resolveComposioToolsForBgRun,
+     * gated by enabled backgroundAgentToolGrants and repo policy.
+     */
+    composioToolkitSlugs: jsonb("composio_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
