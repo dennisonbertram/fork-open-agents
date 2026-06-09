@@ -692,3 +692,46 @@ export async function recordTriggerSkipReason(params: {
 }
 
 export { backgroundAgentToolGrants };
+
+/**
+ * Returns all enabled Composio tool grants for a given background agent.
+ * An enabled grant means the agent is authorized to use the linked Composio
+ * profile for that role/phase combination.
+ *
+ * Used by the executor to gate Composio tool resolution: if no enabled grants
+ * exist, the agent gets no Composio tools (pre-Phase-5 behavior).
+ */
+export async function listEnabledToolGrantsForAgent(
+  agentId: string,
+): Promise<
+  Array<
+    Pick<
+      typeof backgroundAgentToolGrants.$inferSelect,
+      | "id"
+      | "agentId"
+      | "userId"
+      | "provider"
+      | "profileId"
+      | "agentRole"
+      | "phase"
+      | "status"
+    >
+  >
+> {
+  return db.query.backgroundAgentToolGrants.findMany({
+    where: and(
+      eq(backgroundAgentToolGrants.agentId, agentId),
+      eq(backgroundAgentToolGrants.status, "enabled"),
+    ),
+    columns: {
+      id: true,
+      agentId: true,
+      userId: true,
+      provider: true,
+      profileId: true,
+      agentRole: true,
+      phase: true,
+      status: true,
+    },
+  });
+}
