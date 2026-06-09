@@ -7,6 +7,7 @@ import {
   Cable,
   ShieldAlert,
   SlidersHorizontal,
+  Sparkles,
   Trophy,
   User,
   Users,
@@ -72,6 +73,12 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         label: "Composio",
         href: "/settings/composio",
         icon: Blocks,
+      },
+      {
+        id: "skills",
+        label: "Skills",
+        href: "/settings/skills",
+        icon: Sparkles,
       },
       {
         id: "background-agents",
