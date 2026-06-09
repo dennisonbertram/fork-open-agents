@@ -7,7 +7,14 @@ import { describe, expect, test } from "bun:test";
 import {
   buildAgentPayload,
   buildRepoScopedDefaultForm,
+  conditionFieldLabel,
+  describeOutputModePermissions,
+  fieldsForTrigger,
+  isStepValid,
+  outputModeLabel,
+  type ConditionField,
   type FormState,
+  type StepId,
 } from "./agent-spec";
 
 describe("buildRepoScopedDefaultForm", () => {
@@ -105,5 +112,221 @@ describe("buildAgentPayload", () => {
       makeForm({ triggerKind: "github.pull_request" }),
     );
     expect(prPayload.triggers[0]?.schedule).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 1 — isStepValid
+// ---------------------------------------------------------------------------
+
+describe("isStepValid", () => {
+  function makeForm(overrides: Partial<FormState> = {}): FormState {
+    return {
+      name: "Test Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Do something.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      ...overrides,
+    };
+  }
+
+  test("BT-011: trigger step invalid when name is empty", () => {
+    const step: StepId = "trigger";
+    expect(isStepValid(makeForm({ name: "" }), step)).toBe(false);
+  });
+
+  test("BT-012: trigger step invalid when repoOwner is empty", () => {
+    const step: StepId = "trigger";
+    expect(isStepValid(makeForm({ repoOwner: "" }), step)).toBe(false);
+  });
+
+  test("BT-013: trigger step valid when name, repoOwner, and repoName are all present", () => {
+    const step: StepId = "trigger";
+    expect(isStepValid(makeForm(), step)).toBe(true);
+  });
+
+  test("BT-014: conditions step invalid for schedule.cron with empty schedule", () => {
+    const step: StepId = "conditions";
+    expect(
+      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "" }), step),
+    ).toBe(false);
+  });
+
+  test("BT-015: conditions step invalid for schedule.cron with malformed cron '* * *'", () => {
+    const step: StepId = "conditions";
+    expect(
+      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "* * *" }), step),
+    ).toBe(false);
+  });
+
+  test("BT-016: conditions step valid for schedule.cron with @hourly", () => {
+    const step: StepId = "conditions";
+    expect(
+      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "@hourly" }), step),
+    ).toBe(true);
+  });
+
+  test("BT-017: conditions step always valid for non-cron triggers", () => {
+    const step: StepId = "conditions";
+    expect(isStepValid(makeForm({ triggerKind: "github.pull_request" }), step)).toBe(true);
+    expect(isStepValid(makeForm({ triggerKind: "github.issue" }), step)).toBe(true);
+    expect(isStepValid(makeForm({ triggerKind: "github.deployment_status" }), step)).toBe(true);
+    expect(isStepValid(makeForm({ triggerKind: "webhook.error" }), step)).toBe(true);
+  });
+
+  test("BT-018: instructions step invalid when instructions is empty", () => {
+    const step: StepId = "instructions";
+    expect(isStepValid(makeForm({ instructions: "" }), step)).toBe(false);
+  });
+
+  test("BT-019: test step invalid when a required upstream step is invalid", () => {
+    const step: StepId = "test";
+    // Missing name makes trigger step fail, so test step fails
+    expect(isStepValid(makeForm({ name: "" }), step)).toBe(false);
+    // Missing instructions makes instructions step fail, so test step fails
+    expect(isStepValid(makeForm({ instructions: "" }), step)).toBe(false);
+  });
+
+  test("BT-020: test step valid when all required fields are present", () => {
+    const step: StepId = "test";
+    expect(isStepValid(makeForm(), step)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 2 — fieldsForTrigger
+// ---------------------------------------------------------------------------
+
+describe("fieldsForTrigger", () => {
+  test("BT-021: pull_request trigger includes actions, branches, labels; excludes environments, statuses", () => {
+    const fields = fieldsForTrigger("github.pull_request");
+    const fieldArr = [...fields] as ConditionField[];
+    expect(fields.has("actions")).toBe(true);
+    expect(fields.has("branches")).toBe(true);
+    expect(fields.has("labels")).toBe(true);
+    expect(fields.has("environments")).toBe(false);
+    expect(fields.has("statuses")).toBe(false);
+    expect(fieldArr.length).toBe(3);
+  });
+
+  test("BT-022: issue trigger includes actions and labels; excludes branches, environments, statuses", () => {
+    const fields = fieldsForTrigger("github.issue");
+    expect(fields.has("actions")).toBe(true);
+    expect(fields.has("labels")).toBe(true);
+    expect(fields.has("branches")).toBe(false);
+    expect(fields.has("environments")).toBe(false);
+    expect(fields.has("statuses")).toBe(false);
+  });
+
+  test("BT-023: deployment_status trigger includes environments and statuses; excludes actions, branches, labels", () => {
+    const fields = fieldsForTrigger("github.deployment_status");
+    expect(fields.has("environments")).toBe(true);
+    expect(fields.has("statuses")).toBe(true);
+    expect(fields.has("actions")).toBe(false);
+    expect(fields.has("branches")).toBe(false);
+    expect(fields.has("labels")).toBe(false);
+  });
+
+  test("BT-024: schedule.cron trigger returns empty set (no condition fields)", () => {
+    const fields = fieldsForTrigger("schedule.cron");
+    expect(fields.size).toBe(0);
+  });
+
+  test("BT-025: webhook.error trigger includes statuses (severity); excludes actions, branches, labels, environments", () => {
+    const fields = fieldsForTrigger("webhook.error");
+    expect(fields.has("statuses")).toBe(true);
+    expect(fields.has("actions")).toBe(false);
+    expect(fields.has("branches")).toBe(false);
+    expect(fields.has("labels")).toBe(false);
+    expect(fields.has("environments")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 3 — conditionFieldLabel
+// ---------------------------------------------------------------------------
+
+describe("conditionFieldLabel", () => {
+  test("BT-026: statuses + deployment_status -> 'Deployment state'", () => {
+    expect(conditionFieldLabel("statuses", "github.deployment_status")).toBe(
+      "Deployment state",
+    );
+  });
+
+  test("BT-027: statuses + webhook.error -> 'Severity'", () => {
+    expect(conditionFieldLabel("statuses", "webhook.error")).toBe("Severity");
+  });
+
+  test("BT-028: actions + pull_request -> 'Actions'", () => {
+    expect(conditionFieldLabel("actions", "github.pull_request")).toBe("Actions");
+  });
+
+  test("BT-029: branches + pull_request -> 'Branches'", () => {
+    expect(conditionFieldLabel("branches", "github.pull_request")).toBe("Branches");
+  });
+
+  test("BT-030: labels + issue -> 'Labels'", () => {
+    expect(conditionFieldLabel("labels", "github.issue")).toBe("Labels");
+  });
+
+  test("BT-031: environments + deployment_status -> 'Environments'", () => {
+    expect(conditionFieldLabel("environments", "github.deployment_status")).toBe(
+      "Environments",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 4 — describeOutputModePermissions
+// ---------------------------------------------------------------------------
+
+describe("describeOutputModePermissions", () => {
+  test("BT-032: none mode returns read-only description", () => {
+    const desc = describeOutputModePermissions("none");
+    expect(desc.toLowerCase()).toContain("read-only");
+  });
+
+  test("BT-033: ready_pr mode description mentions pull request", () => {
+    const desc = describeOutputModePermissions("ready_pr");
+    expect(desc.toLowerCase()).toContain("pull request");
+  });
+
+  test("BT-034: none mode description does NOT mention write", () => {
+    const desc = describeOutputModePermissions("none");
+    expect(desc.toLowerCase()).not.toContain("write");
+  });
+
+  test("BT-035: ready_pr mode description mentions open or write (can create PRs)", () => {
+    const desc = describeOutputModePermissions("ready_pr");
+    const lower = desc.toLowerCase();
+    expect(lower.includes("open") || lower.includes("write")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 5 — outputModeLabel
+// ---------------------------------------------------------------------------
+
+describe("outputModeLabel", () => {
+  test("BT-036: none -> 'None'", () => {
+    expect(outputModeLabel("none")).toBe("None");
+  });
+
+  test("BT-037: ready_pr -> 'Ready PR'", () => {
+    expect(outputModeLabel("ready_pr")).toBe("Ready PR");
+  });
+
+  test("BT-038: comment returns a non-empty string (future-safe)", () => {
+    expect(outputModeLabel("comment").length).toBeGreaterThan(0);
   });
 });
