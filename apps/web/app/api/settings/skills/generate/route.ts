@@ -11,7 +11,9 @@ import {
 } from "@/lib/skills/skill-generation";
 import { slugifySkillName } from "@/lib/skills/skill-types";
 
-export const maxDuration = 30;
+// Drafting a full SKILL.md body can take ~30s; allow headroom above that so a
+// slightly longer generation is not killed by the serverless timeout.
+export const maxDuration = 60;
 
 const generateSkillRequestSchema = z.object({
   prompt: z.string().trim().min(1).max(SKILL_GENERATION_REQUEST_MAX_LENGTH),
