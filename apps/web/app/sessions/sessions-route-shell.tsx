@@ -1,7 +1,7 @@
 "use client";
 
-import { PanelLeft } from "lucide-react";
-import { useParams, useRouter } from "next/navigation";
+import { PanelLeft, X } from "lucide-react";
+import { useParams, usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import {
   memo,
@@ -12,6 +12,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import { InboxSidebar } from "@/components/inbox-sidebar";
 import { buildSandboxFreeChatInput } from "@/components/inbox-sidebar-new-chat";
 import { NewSessionDialog } from "@/components/new-session-dialog";
@@ -34,6 +35,11 @@ import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { DEFAULT_SANDBOX_TYPE } from "@/components/sandbox-selector-compact";
 import type { Session as AuthSession } from "@/lib/session/types";
 import { SessionsShellProvider } from "./sessions-shell-context";
+import {
+  type WorkspaceSettingsTarget,
+  useWorkspaceSettings,
+  WorkspaceSettingsProvider,
+} from "./workspace-settings-context";
 
 type SessionsRouteShellProps = {
   children: ReactNode;
@@ -51,9 +57,23 @@ const RouteContentShell = memo(function RouteContentShell({
   children: ReactNode;
 }) {
   const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
+  const { target, closeWorkspaceSettings } = useWorkspaceSettings();
   // The sidebar is offcanvas, so when hidden there is nothing in the panel to
   // reopen it with — surface a persistent control in the content area.
   const sidebarHidden = isMobile ? !openMobile : state === "collapsed";
+
+  useEffect(() => {
+    if (!target) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeWorkspaceSettings();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [target, closeWorkspaceSettings]);
 
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
@@ -77,6 +97,39 @@ const RouteContentShell = memo(function RouteContentShell({
         </Tooltip>
       ) : null}
       {children}
+      {target ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Workspace settings"
+          className="absolute inset-0 z-40 flex flex-col bg-background"
+        >
+          <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+            <div className="min-w-0">
+              <h1 className="text-sm font-semibold">Workspace settings</h1>
+              <p className="truncate text-xs text-muted-foreground">
+                {target.label}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={closeWorkspaceSettings}
+              className="h-8 w-8 shrink-0"
+              aria-label="Close workspace settings"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <ComposioWorkspaceSettingsPanel
+              repoOwner={target.owner}
+              repoName={target.repo}
+            />
+          </div>
+        </div>
+      ) : null}
     </SidebarInset>
   );
 });
@@ -299,46 +352,76 @@ export function SessionsRouteShell({
     [openNewSessionDialog],
   );
 
+  // Workspace settings render as a full view inside the content area (not a
+  // modal). State lives here so both the sidebar trigger and the content shell
+  // can reach it; it auto-closes when the route changes.
+  const [workspaceSettingsTarget, setWorkspaceSettingsTarget] =
+    useState<WorkspaceSettingsTarget | null>(null);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    setWorkspaceSettingsTarget(null);
+  }, [pathname]);
+
+  const openWorkspaceSettings = useCallback(
+    (target: WorkspaceSettingsTarget) => setWorkspaceSettingsTarget(target),
+    [],
+  );
+  const closeWorkspaceSettings = useCallback(
+    () => setWorkspaceSettingsTarget(null),
+    [],
+  );
+  const workspaceSettingsValue = useMemo(
+    () => ({
+      target: workspaceSettingsTarget,
+      openWorkspaceSettings,
+      closeWorkspaceSettings,
+    }),
+    [workspaceSettingsTarget, openWorkspaceSettings, closeWorkspaceSettings],
+  );
+
   return (
     <SessionsShellProvider value={shellContextValue}>
-      <SidebarProvider
-        className="h-dvh overflow-hidden"
-        style={
-          {
-            "--sidebar-width": "20rem",
-          } as CSSProperties
-        }
-      >
-        <Sidebar collapsible="offcanvas" className="border-r border-border">
-          <SidebarContent className="bg-muted/20">
-            <InboxSidebar
-              sessions={sessions}
-              archivedCount={archivedCount}
-              sessionsLoading={sessionsLoading}
-              activeSessionId={activeSessionId}
-              pendingSessionId={pendingSessionId}
-              onSessionClick={handleSessionClick}
-              onSessionPrefetch={handleSessionPrefetch}
-              onRenameSession={handleRenameSession}
-              onArchiveSession={handleArchiveSession}
-              onUnarchiveSession={handleUnarchiveSession}
-              onOpenNewSession={openNewSessionDialog}
-              onCreateSandboxFreeChat={handleCreateSandboxFreeChat}
-              onCreateSessionForRepo={handleCreateSessionForRepo}
-              onCreateSessionFromBranch={handleCreateSessionFromBranch}
-              initialUser={currentUser}
-            />
-          </SidebarContent>
-        </Sidebar>
-        <RouteContentShell>{children}</RouteContentShell>
-      </SidebarProvider>
+      <WorkspaceSettingsProvider value={workspaceSettingsValue}>
+        <SidebarProvider
+          className="h-dvh overflow-hidden"
+          style={
+            {
+              "--sidebar-width": "20rem",
+            } as CSSProperties
+          }
+        >
+          <Sidebar collapsible="offcanvas" className="border-r border-border">
+            <SidebarContent className="bg-muted/20">
+              <InboxSidebar
+                sessions={sessions}
+                archivedCount={archivedCount}
+                sessionsLoading={sessionsLoading}
+                activeSessionId={activeSessionId}
+                pendingSessionId={pendingSessionId}
+                onSessionClick={handleSessionClick}
+                onSessionPrefetch={handleSessionPrefetch}
+                onRenameSession={handleRenameSession}
+                onArchiveSession={handleArchiveSession}
+                onUnarchiveSession={handleUnarchiveSession}
+                onOpenNewSession={openNewSessionDialog}
+                onCreateSandboxFreeChat={handleCreateSandboxFreeChat}
+                onCreateSessionForRepo={handleCreateSessionForRepo}
+                onCreateSessionFromBranch={handleCreateSessionFromBranch}
+                initialUser={currentUser}
+              />
+            </SidebarContent>
+          </Sidebar>
+          <RouteContentShell>{children}</RouteContentShell>
+        </SidebarProvider>
 
-      <NewSessionDialog
-        open={newSessionOpen}
-        onOpenChange={setNewSessionOpen}
-        lastRepo={lastRepo}
-        createSession={createSession}
-      />
+        <NewSessionDialog
+          open={newSessionOpen}
+          onOpenChange={setNewSessionOpen}
+          lastRepo={lastRepo}
+          createSession={createSession}
+        />
+      </WorkspaceSettingsProvider>
     </SessionsShellProvider>
   );
 }
