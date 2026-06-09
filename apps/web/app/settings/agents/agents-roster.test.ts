@@ -206,4 +206,49 @@ describe("buildAgentRoster", () => {
       expect(row.name.length).toBeGreaterThan(0);
     }
   });
+
+  // BT-012: skillsLabel is "None" when no skills are enabled (or count omitted)
+  test("BT-012: skillsLabel is None when no skills are enabled", () => {
+    const rows = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+    });
+    for (const row of rows) {
+      expect(row.skillsLabel).toBe("None");
+    }
+
+    const explicitZero = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      enabledSkillCount: 0,
+    });
+    for (const row of explicitZero) {
+      expect(row.skillsLabel).toBe("None");
+    }
+  });
+
+  // BT-013: skillsLabel reflects the enabled-skill count on every row
+  test("BT-013: skillsLabel shows the enabled-skill count", () => {
+    const rows = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      enabledSkillCount: 3,
+    });
+    for (const row of rows) {
+      expect(row.skillsLabel).toBe("3 enabled");
+    }
+
+    const single = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      enabledSkillCount: 1,
+    });
+    for (const row of single) {
+      expect(row.skillsLabel).toBe("1 enabled");
+    }
+  });
 });
