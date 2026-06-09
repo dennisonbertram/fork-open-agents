@@ -1,3 +1,15 @@
+/**
+ * Regression tests for the collapsed sidebar icon-rail action contract.
+ *
+ * These tests catch future breakage if:
+ * - The expand/new-session/quick-chat actions are removed or reordered
+ * - The ariaLabel or tooltip text is blanked out
+ * - The helper starts returning a shared mutable array
+ *
+ * The companion UI change lives in:
+ *   apps/web/app/sessions/sessions-route-shell.tsx (collapsible="icon", SidebarRail)
+ *   apps/web/components/inbox-sidebar.tsx (collapsed icon strip + expanded content gating)
+ */
 import { describe, expect, test } from "bun:test";
 import {
   getCollapsedRailActions,
