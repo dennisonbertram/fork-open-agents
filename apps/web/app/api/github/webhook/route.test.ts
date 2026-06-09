@@ -171,6 +171,8 @@ describe("POST /api/github/webhook background agent dispatch", () => {
         title: "Fix widgets",
         url: "https://github.com/acme/widgets/pull/7",
         actor: "mona",
+        // merged is surfaced from pull_request.merged (false for non-merged PRs)
+        merged: false,
       },
     });
     expect(findSessions).not.toHaveBeenCalled();

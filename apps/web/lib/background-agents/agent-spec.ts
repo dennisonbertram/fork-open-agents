@@ -10,6 +10,7 @@ import { validateSchedule } from "./schedule-presets";
 
 export type TriggerKind =
   | "github.pull_request"
+  | "github.pull_request_review"
   | "github.deployment_status"
   | "github.issue"
   | "schedule.cron"
@@ -89,6 +90,7 @@ export const defaultForm: FormState = {
 
 export const triggerLabels: Record<TriggerKind, string> = {
   "github.pull_request": "Pull request",
+  "github.pull_request_review": "Pull request review",
   "github.deployment_status": "Deployment status",
   "github.issue": "Issue",
   "schedule.cron": "Schedule",
@@ -226,6 +228,9 @@ export function fieldsForTrigger(kind: TriggerKind): Set<ConditionField> {
   switch (kind) {
     case "github.pull_request":
       return new Set<ConditionField>(["actions", "branches", "labels"]);
+    case "github.pull_request_review":
+      // actions: submitted; statuses: approved|changes_requested|commented
+      return new Set<ConditionField>(["actions", "statuses"]);
     case "github.issue":
       return new Set<ConditionField>(["actions", "labels"]);
     case "github.deployment_status":
@@ -251,6 +256,7 @@ export function conditionFieldLabel(
   if (field === "statuses") {
     if (triggerKind === "github.deployment_status") return "Deployment state";
     if (triggerKind === "webhook.error") return "Severity";
+    if (triggerKind === "github.pull_request_review") return "Review state";
     return "Statuses";
   }
   switch (field) {

@@ -379,6 +379,13 @@
       "when": 1781013232308,
       "tag": "0053_sweet_agent_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1781017012548,
+      "tag": "0054_fearless_steel_serpent",
+      "breakpoints": true
     }
   ]
 }
