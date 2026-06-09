@@ -7,6 +7,7 @@ const writtenChunks: UIMessageChunk[] = [];
 let runStatus: string = "running";
 
 type TestResolvedChatSandboxRuntime = {
+  mode: "sandbox";
   sandboxState: {
     type: "vercel";
     sandboxName: string;
@@ -34,6 +35,7 @@ function createResolvedChatSandboxRuntime(
   overrides: Partial<TestResolvedChatSandboxRuntime> = {},
 ): TestResolvedChatSandboxRuntime {
   return {
+    mode: "sandbox",
     sandboxState: {
       type: "vercel",
       sandboxName: "session_session-1",

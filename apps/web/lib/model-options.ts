@@ -18,6 +18,7 @@ import {
   getProviderFromModelId,
   stripProviderPrefix,
 } from "@/components/provider-icons";
+import { deriveCostTier, deriveRoleHint } from "@/lib/model-roles";
 
 export interface ModelOption {
   id: string;
@@ -27,6 +28,10 @@ export interface ModelOption {
   isVariant: boolean;
   contextWindow?: number;
   cost?: AvailableModelCost;
+  /** Cost-tier glyph: "$" | "$$" | "$$$", derived from cost.input. */
+  costTier?: "$" | "$$" | "$$$";
+  /** Short role hint, e.g. "Balanced", "Fast · Cheap", "Reasoning · 1M ctx". */
+  roleHint?: string;
   provider: string;
   source?: "catalog" | "user";
   baseModelId?: string;
@@ -38,6 +43,15 @@ export interface ModelOption {
 function toBaseModelOption(model: AvailableModel): ModelOption {
   const label = getModelDisplayName(model);
   const provider = getProviderFromModelId(model.id);
+  const costTier = deriveCostTier(model.cost);
+  const roleHint = deriveRoleHint(model.id);
+  const contextStr =
+    typeof model.context_window === "number"
+      ? `${Math.round(model.context_window / 1000)}K`
+      : "";
+  const searchText = [provider, costTier ?? "", contextStr, roleHint ?? ""]
+    .filter(Boolean)
+    .join(" ");
   return {
     id: model.id,
     label,
@@ -46,8 +60,11 @@ function toBaseModelOption(model: AvailableModel): ModelOption {
     isVariant: false,
     contextWindow: model.context_window,
     ...(model.cost ? { cost: model.cost } : {}),
+    ...(costTier ? { costTier } : {}),
+    ...(roleHint ? { roleHint } : {}),
     provider,
     source: "catalog",
+    searchText,
   };
 }
 
@@ -147,7 +164,7 @@ export function groupByProvider(options: ModelOption[]): ModelGroup[] {
   }));
 }
 
-export type ModelSortKey = "name" | "provider";
+export type ModelSortKey = "name" | "provider" | "cost-asc" | "cost-desc";
 
 export interface ModelFilterOptions {
   /** Provider key to filter by, or "all" to include every provider. */
@@ -183,6 +200,17 @@ export function filterAndSortModelOptions(
 
   if (sort === "name") {
     filtered = [...filtered].sort((a, b) => a.label.localeCompare(b.label));
+  } else if (sort === "cost-asc" || sort === "cost-desc") {
+    const direction = sort === "cost-asc" ? 1 : -1;
+    filtered = [...filtered].sort((a, b) => {
+      const aInput = a.cost?.input;
+      const bInput = b.cost?.input;
+      // Models without cost data sink to the bottom regardless of direction
+      if (typeof aInput !== "number" && typeof bInput !== "number") return 0;
+      if (typeof aInput !== "number") return 1;
+      if (typeof bInput !== "number") return -1;
+      return (aInput - bInput) * direction;
+    });
   } else {
     // sort === "provider": use priority-provider order, then alphabetical provider, then name
     filtered = [...filtered].sort((a, b) => {
@@ -202,6 +230,38 @@ export function filterAndSortModelOptions(
   }
 
   return filtered;
+}
+
+/**
+ * Curated list of model IDs to show by default when the user's shortlist is
+ * empty.  Spans fast/cheap, balanced, reasoning, and long-context tiers across
+ * the three major providers.  At runtime these are intersected with the live
+ * catalog so dead IDs never appear in the picker.
+ */
+export const RECOMMENDED_MODEL_IDS = [
+  "openai/gpt-5.4", // Balanced default, APP_DEFAULT_MODEL_ID
+  "openai/gpt-5.4-nano", // Fast / cheap OpenAI
+  "openai/gpt-5.5", // Premium OpenAI
+  "anthropic/claude-haiku-4.5", // Fast / cheap Anthropic
+  "anthropic/claude-opus-4.6", // Reasoning + long-context (1M ctx)
+  "anthropic/claude-sonnet-4-6", // Balanced Anthropic (1M ctx)
+  "google/gemini-2.5-flash", // Long-context Google (1M ctx)
+  "google/gemini-2.0-flash", // Cheapest capable model
+] as const;
+
+/**
+ * From a full catalog of options, return only the entries whose ID is in
+ * RECOMMENDED_MODEL_IDS, or whose source is "user" (always shown).
+ * IDs absent from the live catalog are silently omitted, so no phantom/dead
+ * models can appear.
+ */
+export function buildRecommendedModelOptions(
+  allOptions: ModelOption[],
+): ModelOption[] {
+  const recommendedSet = new Set<string>(RECOMMENDED_MODEL_IDS);
+  return allOptions.filter(
+    (option) => option.source === "user" || recommendedSet.has(option.id),
+  );
 }
 
 export function buildModelOptions(

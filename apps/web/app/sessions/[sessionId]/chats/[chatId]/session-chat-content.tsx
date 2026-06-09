@@ -3391,8 +3391,8 @@ export function SessionChatContent({
                     )}
                   />
                   {session.runtimeMode === "managed_runtime"
-                    ? "Managed"
-                    : "Classic"}
+                    ? "Coordinated"
+                    : "Direct"}
                 </span>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-72 text-pretty">

@@ -163,9 +163,10 @@ describe("BackgroundAgentsSection", () => {
   test("renders readiness diagnostics without secret values", async () => {
     const { BackgroundAgentsSection } = await componentModulePromise;
 
+    // enabled=true, ready=false → action-needed verdict with missing-count subtext
     readinessSwrState = {
       data: {
-        enabled: false,
+        enabled: true,
         ready: false,
         missing: ["BACKGROUND_AGENTS_ENABLED", "GITHUB_APP_PRIVATE_KEY"],
         checks: [
@@ -189,10 +190,33 @@ describe("BackgroundAgentsSection", () => {
     };
     const missingHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
     expect(missingHtml).toContain("Readiness");
+    // Plain-language subtext replaces the old raw count string
     expect(missingHtml).toContain("2 prerequisites need attention.");
-    expect(missingHtml).toContain("Feature flag");
-    expect(missingHtml).toContain("GITHUB_APP_PRIVATE_KEY");
+    // Raw env-var names are behind the collapsed Operator details disclosure
+    // and must NOT appear in the headline; the "Operator details" affordance is visible
+    expect(missingHtml).toContain("Operator details");
     expect(missingHtml).not.toContain("secret-value");
+
+    // enabled=false → unavailable verdict with admin guidance
+    readinessSwrState = {
+      data: {
+        enabled: false,
+        ready: false,
+        missing: ["BACKGROUND_AGENTS_ENABLED"],
+        checks: [
+          {
+            id: "feature_flag",
+            label: "Feature flag",
+            status: "disabled",
+            detail: "BACKGROUND_AGENTS_ENABLED gates trigger dispatch.",
+            missing: ["BACKGROUND_AGENTS_ENABLED"],
+          },
+        ],
+      },
+    };
+    const unavailableHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(unavailableHtml).toContain("Background agents aren");
+    expect(unavailableHtml).toContain("workspace administrator");
 
     readinessSwrState = {
       data: {

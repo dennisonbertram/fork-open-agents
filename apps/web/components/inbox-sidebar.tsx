@@ -65,6 +65,7 @@ type InboxSidebarProps = {
   onArchiveSession: (sessionId: string) => Promise<void>;
   onUnarchiveSession: (sessionId: string) => Promise<void>;
   onOpenNewSession: () => void;
+  onCreateSandboxFreeChat: () => Promise<void>;
   onCreateSessionForRepo: (repoOwner: string, repoName: string) => void;
   onCreateSessionFromBranch: (
     repoOwner: string,
@@ -692,6 +693,7 @@ export function InboxSidebar({
   onArchiveSession,
   onUnarchiveSession,
   onOpenNewSession,
+  onCreateSandboxFreeChat,
   onCreateSessionForRepo,
   onCreateSessionFromBranch,
   initialUser,
@@ -722,6 +724,8 @@ export function InboxSidebar({
     label: string;
   } | null>(null);
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
+  const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
+    useState(false);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
 
@@ -936,6 +940,22 @@ export function InboxSidebar({
     void fetchArchivedSessionsPage({ offset: 0, replace: true });
   }, [fetchArchivedSessionsPage]);
 
+  const handleCreateSandboxFreeChat = useCallback(async () => {
+    if (isCreatingSandboxFreeChat) return;
+    setIsCreatingSandboxFreeChat(true);
+    try {
+      await onCreateSandboxFreeChat();
+      if (isMobile) setOpenMobile(false);
+    } finally {
+      setIsCreatingSandboxFreeChat(false);
+    }
+  }, [
+    isCreatingSandboxFreeChat,
+    isMobile,
+    onCreateSandboxFreeChat,
+    setOpenMobile,
+  ]);
+
   const handleCreateForRepo = useCallback(
     (owner: string, repo: string) => {
       if (isMobile) setOpenMobile(false);
@@ -979,24 +999,49 @@ export function InboxSidebar({
   return (
     <>
       <div className="border-b border-border p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center px-2 py-1.5 text-sm text-primary">
-            <span>Sessions</span>
-          </div>
+        <div className="mb-3 flex items-center gap-1.5">
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
+            variant="default"
+            size="sm"
+            disabled={isCreatingSandboxFreeChat}
             onClick={() => {
               if (isMobile) {
                 setOpenMobile(false);
               }
-              onOpenNewSession();
+              void handleCreateSandboxFreeChat();
             }}
-            className="h-7 w-7"
+            className="h-8 flex-1 justify-start gap-2"
           >
-            <Plus className="h-4 w-4" />
+            {isCreatingSandboxFreeChat ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
+            New chat
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() => {
+                  if (isMobile) {
+                    setOpenMobile(false);
+                  }
+                  onOpenNewSession();
+                }}
+                className="h-8 w-8 shrink-0"
+                aria-label="New session with a repository"
+              >
+                <FolderGit2 className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              New session with a repository
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="flex gap-1">
@@ -1193,7 +1238,35 @@ export function InboxSidebar({
                             </TooltipContent>
                           </Tooltip>
                         </span>
-                      ) : null}
+                      ) : (
+                        <span
+                          className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isCreatingSandboxFreeChat}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleCreateSandboxFreeChat();
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label="New chat"
+                              >
+                                {isCreatingSandboxFreeChat ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Plus className="h-3 w-3" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              New chat
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                      )}
                     </div>
                     <div
                       id={groupContentId}

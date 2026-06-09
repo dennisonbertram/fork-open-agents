@@ -64,7 +64,7 @@ export function VercelSection() {
           <span className="text-sm font-medium">Vercel</span>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Login is managed by Vercel
+          Your identity is managed by Vercel and used to deploy your projects.
         </p>
       </div>
 

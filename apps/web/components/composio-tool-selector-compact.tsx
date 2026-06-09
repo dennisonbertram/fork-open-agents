@@ -4,18 +4,15 @@ import { Settings, Wrench } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
+import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
+import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 
 interface ComposioToolSelectorCompactProps {
   selection: ChatComposioSelection;
@@ -55,13 +52,21 @@ export function ComposioToolSelectorCompact({
   const isUnavailable = data
     ? !data.status.configured || !data.status.available
     : false;
+  const isDisabled = disabled || isLoading;
+
+  const directSlugs = selection.directToolkitSlugs ?? [];
+  const hasDirectSlugs = directSlugs.length > 0;
+
   const disabledReason = isUnavailable
     ? data?.status.message
-    : hasProfiles
+    : hasProfiles || hasDirectSlugs
       ? null
       : "No Composio profiles configured";
-  const isDisabled = disabled || isLoading;
-  const label = selectedProfile?.name ?? "Off";
+
+  const activeToolkits = hasDirectSlugs
+    ? directSlugs
+    : (selectedProfile?.toolkitSlugs ?? []);
+
   const profileOptions =
     data?.profileOptions ??
     data?.profiles.map((profile) => ({
@@ -71,9 +76,13 @@ export function ComposioToolSelectorCompact({
     })) ??
     [];
 
+  const activeProfileId = hasDirectSlugs
+    ? ""
+    : (selection.mainProfileId ?? "off");
+
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover>
+      <PopoverTrigger asChild>
         <button
           type="button"
           disabled={isDisabled}
@@ -81,61 +90,119 @@ export function ComposioToolSelectorCompact({
           title={disabledReason ?? "Select external tools"}
           className={cn(
             "flex h-8 max-w-[180px] items-center gap-1.5 rounded-md px-2.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60",
-            selectedProfile && "text-foreground",
+            (selectedProfile || hasDirectSlugs) && "text-foreground",
           )}
         >
           <Wrench className="size-3.5 shrink-0" />
-          <span className="truncate">Tools: {label}</span>
+          <span className="truncate">
+            {hasDirectSlugs || selectedProfile
+              ? `Tools: ${summarizeChatTools(activeToolkits)}`
+              : "Tools: Off"}
+          </span>
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-64">
-        <DropdownMenuLabel className="text-xs text-muted-foreground">
-          External tools
-        </DropdownMenuLabel>
-        {!hasProfiles ? (
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            No tool profiles yet.
-          </div>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[360px] max-h-[480px] overflow-y-auto p-3"
+      >
+        <p className="mb-2 text-xs font-semibold text-foreground">
+          Tools this chat can use
+        </p>
+
+        {/* Direct toolkit picker — "Choose specific tools" */}
+        <div className="mb-3">
+          <p className="mb-1.5 text-xs font-medium text-foreground">
+            Choose specific tools
+          </p>
+          <ComposioToolkitPicker
+            selectedSlugs={directSlugs}
+            onChange={(slugs) => {
+              onChange({
+                ...selection,
+                directToolkitSlugs: slugs,
+                mainProfileId:
+                  slugs.length > 0 ? null : selection.mainProfileId,
+              });
+            }}
+            disabled={isDisabled}
+            repoOwner={repoOwner}
+            repoName={repoName}
+          />
+        </div>
+
+        {/* Saved profiles — alternative to direct picker */}
+        {hasProfiles ? (
+          <>
+            <div className="my-2 border-t border-border/60" />
+            <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+              Or use a saved profile
+            </p>
+            {isUnavailable ? (
+              <div className="mb-2 text-xs text-destructive">
+                {data?.status.message ?? "Composio is unavailable."}
+              </div>
+            ) : null}
+            <div className="space-y-1">
+              {/* "Off" option */}
+              <button
+                type="button"
+                onClick={() => {
+                  onChange({
+                    ...selection,
+                    mainProfileId: null,
+                    directToolkitSlugs: [],
+                  });
+                }}
+                className={cn(
+                  "w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground",
+                  activeProfileId === "off" &&
+                    "bg-accent text-accent-foreground",
+                )}
+              >
+                Off
+              </button>
+              {profileOptions.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  disabled={!profile.available}
+                  title={profile.disabledReason ?? profile.name}
+                  onClick={() => {
+                    onChange({
+                      ...selection,
+                      mainProfileId: profile.id,
+                      directToolkitSlugs: [],
+                    });
+                  }}
+                  className={cn(
+                    "w-full rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50",
+                    activeProfileId === profile.id &&
+                      "bg-accent text-accent-foreground",
+                  )}
+                >
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-sm">{profile.name}</span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {profile.disabledReason ??
+                        summarizeChatTools(profile.toolkitSlugs, 4)}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
         ) : null}
-        {isUnavailable ? (
-          <div className="px-2 py-1.5 text-xs text-destructive">
-            {data?.status.message ?? "Composio is unavailable."}
-          </div>
-        ) : null}
-        <DropdownMenuRadioGroup
-          value={selection.mainProfileId ?? "off"}
-          onValueChange={(value) => {
-            onChange({
-              ...selection,
-              mainProfileId: value === "off" ? null : value,
-            });
-          }}
-        >
-          <DropdownMenuRadioItem value="off">Off</DropdownMenuRadioItem>
-          {profileOptions.map((profile) => (
-            <DropdownMenuRadioItem
-              key={profile.id}
-              value={profile.id}
-              disabled={!profile.available}
-              title={profile.disabledReason ?? profile.name}
-            >
-              <span className="min-w-0 truncate">{profile.name}</span>
-              {profile.disabledReason ? (
-                <span className="ml-auto max-w-[8rem] truncate text-[11px] text-muted-foreground">
-                  {profile.disabledReason}
-                </span>
-              ) : null}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/settings/composio">
-            <Settings className="size-4" />
+
+        <div className="mt-3 border-t border-border/60 pt-2">
+          <Link
+            href="/settings/composio"
+            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <Settings className="size-3.5" />
             Manage Composio
           </Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

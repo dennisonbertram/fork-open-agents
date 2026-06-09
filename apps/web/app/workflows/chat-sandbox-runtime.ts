@@ -62,9 +62,24 @@ export class WorkspaceSetupError extends Error {
   }
 }
 
-export type ResolvedChatSandboxRuntime = {
-  sandboxState: SandboxState;
+type ResolvedChatSandboxRuntimeCommon = {
   runtimeMode: SessionRecord["runtimeMode"];
+  skills: DiscoveredSkills;
+  sessionTitle: string;
+  repoOwner?: string;
+  repoName?: string;
+};
+
+/** Returned when session.sandboxState is null — no VM is provisioned. */
+export type SandboxFreeRuntime = ResolvedChatSandboxRuntimeCommon & {
+  mode: "sandbox-free";
+  sandboxState: null;
+};
+
+/** Returned when session.sandboxState is non-null — a sandbox VM is connected. */
+export type SandboxBackedRuntime = ResolvedChatSandboxRuntimeCommon & {
+  mode: "sandbox";
+  sandboxState: SandboxState;
   managedRuntime?: {
     profileId: string;
     profileVersion: string;
@@ -75,12 +90,12 @@ export type ResolvedChatSandboxRuntime = {
   workingDirectory: string;
   currentBranch?: string;
   environmentDetails?: string;
-  skills: DiscoveredSkills;
   didSetupWorkspace: boolean;
-  sessionTitle: string;
-  repoOwner?: string;
-  repoName?: string;
 };
+
+export type ResolvedChatSandboxRuntime =
+  | SandboxFreeRuntime
+  | SandboxBackedRuntime;
 
 function isSandboxState(value: unknown): value is SandboxState {
   return (
@@ -673,6 +688,20 @@ export async function resolveChatSandboxRuntime(params: {
     throw new Error("Session is archived");
   }
 
+  // Guard: when sandboxState is null the session is sandbox-free (plain chat, no repo).
+  // Return immediately without provisioning or connecting any VM.
+  if (!isSandboxState(session.sandboxState)) {
+    return {
+      mode: "sandbox-free",
+      sandboxState: null,
+      runtimeMode: session.runtimeMode,
+      skills: [],
+      sessionTitle: session.title,
+      repoOwner: session.repoOwner ?? undefined,
+      repoName: session.repoName ?? undefined,
+    } satisfies SandboxFreeRuntime;
+  }
+
   const didSetupWorkspace = !isSandboxActive(session.sandboxState);
   const startupReporter = new WorkspaceStartupReporter(
     session.runtimeMode === "managed_runtime"
@@ -829,6 +858,7 @@ export async function resolveChatSandboxRuntime(params: {
   });
 
   return {
+    mode: "sandbox",
     sandboxState,
     runtimeMode: session.runtimeMode,
     ...(managedRuntimeProfile
@@ -853,5 +883,5 @@ export async function resolveChatSandboxRuntime(params: {
     sessionTitle: session.title,
     repoOwner: session.repoOwner ?? undefined,
     repoName: session.repoName ?? undefined,
-  };
+  } satisfies SandboxBackedRuntime;
 }

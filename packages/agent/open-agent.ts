@@ -64,6 +64,8 @@ const callOptionsSchema = z.object({
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
   runtimeMode: z.enum(OPEN_AGENT_RUNTIME_MODES).optional(),
+  /** When true, the session has no sandbox VM. Tool policy will exclude all sandbox-dependent tools. */
+  sandboxFree: z.boolean().optional(),
   managedRuntime: z
     .object({
       profileId: z.string().optional(),
@@ -119,6 +121,19 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   "web_fetch",
 ] as const satisfies ReadonlyArray<keyof typeof tools>;
 
+/**
+ * Tool names that are safe to expose when there is no sandbox VM.
+ * Excludes every tool that touches the filesystem, spawns a shell,
+ * or delegates to a sandbox subagent (bash, read, write, edit, grep,
+ * glob, task, setup_managed_runtime_profile).
+ */
+export const CHAT_ONLY_TOOL_NAMES = [
+  "todo_write",
+  "ask_user_question",
+  "skill",
+  "web_fetch",
+] as const satisfies ReadonlyArray<keyof typeof tools>;
+
 function pickTools(
   sourceTools: ToolSet,
   allowedToolNames: ReadonlyArray<string>,
@@ -145,10 +160,38 @@ export function getOpenAgentToolsForRuntimeMode(
   return tools;
 }
 
+/**
+ * Returns the subset of tools that are safe without a sandbox VM.
+ * Excludes file/shell/task tools that require an active sandbox.
+ */
+export function getChatOnlyTools(): ToolSet {
+  return pickTools(tools, CHAT_ONLY_TOOL_NAMES);
+}
+
 export function getRuntimeModeToolPolicy(
   runtimeMode: OpenAgentRuntimeMode = "classic",
   requestedTools?: ToolSet,
+  policyOptions?: { sandboxFree?: boolean },
 ): ToolSet {
+  // Sandbox-free mode: keep only chat-safe tools plus any caller-provided
+  // non-sandbox tools (e.g. Composio tools that run via their own API).
+  if (policyOptions?.sandboxFree) {
+    const mergedTools = requestedTools
+      ? { ...tools, ...requestedTools }
+      : tools;
+    // Start from the chat-only base, then append caller-provided tools that
+    // are not in the base tool set (those are external tools like Composio).
+    const chatBase = pickTools(mergedTools, CHAT_ONLY_TOOL_NAMES);
+    if (requestedTools) {
+      for (const [name, tool] of Object.entries(requestedTools)) {
+        if (!(name in tools)) {
+          chatBase[name] = tool;
+        }
+      }
+    }
+    return chatBase;
+  }
+
   const mergedTools = requestedTools ? { ...tools, ...requestedTools } : tools;
 
   if (runtimeMode !== "managed_runtime") {
@@ -199,6 +242,7 @@ export const openAgent = new ToolLoopAgent({
     const sandbox = options.sandbox;
     const skills = options.skills ?? [];
     const runtimeMode = options.runtimeMode ?? "classic";
+    const sandboxFree = options.sandboxFree ?? false;
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
 
@@ -210,16 +254,16 @@ export const openAgent = new ToolLoopAgent({
       skills,
       modelId: mainSelection.id,
       runtimeMode,
+      sandboxFree,
     });
 
     return {
       ...settings,
       model: callModel,
       tools: addCacheControl({
-        tools: getRuntimeModeToolPolicy(
-          runtimeMode,
-          settings.tools,
-        ) as typeof tools,
+        tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
+          sandboxFree,
+        }) as typeof tools,
         model: callModel,
       }),
       instructions,
