@@ -22,6 +22,8 @@ Start here:
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
   paths.
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
+- [API Contract Tests](api-contract-tests.md) - real-HTTP contract suite
+  (`bun run test:contract`) for verifying the backend independently of the UI.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
 - [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
