@@ -49,6 +49,7 @@ import {
 } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
+import { installSessionUserSkills } from "@/lib/skills/session-user-skills";
 import { getCachedSkills, setCachedSkills } from "@/lib/skills-cache";
 import { WorkspaceStartupReporter } from "./workspace-startup-log";
 
@@ -811,6 +812,13 @@ export async function resolveChatSandboxRuntime(params: {
     }),
     installSessionGlobalSkills({
       session,
+      sandbox,
+      didSetupWorkspace,
+    }),
+    installSessionUserSkills({
+      userId: params.userId,
+      sessionId: params.sessionId,
+      sandboxName: sandboxState.sandboxName ?? null,
       sandbox,
       didSetupWorkspace,
     }),

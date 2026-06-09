@@ -161,6 +161,10 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
   installGlobalSkills: async () => undefined,
 }));
 
+mock.module("@/lib/skills/session-user-skills", () => ({
+  installSessionUserSkills: async () => undefined,
+}));
+
 mock.module("@/lib/skills-cache", () => ({
   getCachedSkills: async () => null,
   setCachedSkills: async () => undefined,

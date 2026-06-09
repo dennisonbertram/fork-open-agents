@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Bot, Users } from "lucide-react";
+import { Bot, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
@@ -30,6 +30,7 @@ describe("settings nav data", () => {
       "/settings/agents",
       "/settings/models",
       "/settings/composio",
+      "/settings/skills",
       "/settings/background-agents",
     ]);
     expect(byId.insights).toEqual(["/settings/usage", "/settings/leaderboard"]);
@@ -51,8 +52,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(10);
-    expect(new Set(items.map((i) => i.id)).size).toBe(10);
+    expect(items).toHaveLength(11);
+    expect(new Set(items.map((i) => i.id)).size).toBe(11);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -82,5 +83,16 @@ describe("settings nav data", () => {
     // Verify by reference equality — lucide icons don't expose .name
     expect(item?.icon).toBe(Users);
     expect(item?.icon).not.toBe(Bot);
+  });
+
+  // NAV-004: skills item lives in the tools group with the Sparkles icon
+  test("NAV-004: skills item resolves to the tools group with Sparkles icon", () => {
+    const item = findActiveNavItem("/settings/skills");
+    expect(item?.id).toBe("skills");
+    expect(item?.href).toBe("/settings/skills");
+    expect(item?.icon).toBe(Sparkles);
+
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
+    expect(toolsGroup?.items.map((i) => i.id)).toContain("skills");
   });
 });
