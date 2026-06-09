@@ -1774,6 +1774,32 @@ export const agents = pgTable(
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 
+// ── agent_tool_entries — audit trail of agent-authored Composio toolkit additions ──
+// One row per toolkit addition proposed by an agent while toolAuthoringEnabled=true.
+// status starts as "proposed"; owner must approve before the slug becomes live.
+export const agentToolEntries = pgTable("agent_tool_entries", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["composio"] }).notNull(),
+  toolkitSlug: text("toolkit_slug").notNull(),
+  status: text("status", { enum: ["proposed", "approved", "rejected"] })
+    .notNull()
+    .default("proposed"),
+  // Provenance — which chat/run triggered this proposal
+  createdByChatId: text("created_by_chat_id"),
+  createdByRunId: text("created_by_run_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  approvedAt: timestamp("approved_at"),
+});
+
+export type AgentToolEntry = typeof agentToolEntries.$inferSelect;
+export type NewAgentToolEntry = typeof agentToolEntries.$inferInsert;
+
 // Usage tracking — one row per assistant turn (append-only)
 export const usageEvents = pgTable("usage_events", {
   id: text("id").primaryKey(),

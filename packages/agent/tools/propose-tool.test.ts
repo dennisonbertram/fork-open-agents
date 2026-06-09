@@ -31,7 +31,8 @@ mock.module("zod", () => {
 });
 
 // ── Import SUT ────────────────────────────────────────────────────────────────
-const { proposeComposioToolTool, PROPOSE_TOOL_NAME } = await import("./propose-tool");
+const { proposeComposioToolTool, PROPOSE_TOOL_NAME } =
+  await import("./propose-tool");
 
 describe("propose_composio_tool tool", () => {
   // BT-006: the tool is a real tool object with the right name
@@ -43,20 +44,24 @@ describe("propose_composio_tool tool", () => {
 
   // BT-007: the tool has an execute function
   it("has an execute function", () => {
-    expect(typeof (proposeComposioToolTool as Record<string, unknown>)["execute"]).toBe("function");
+    expect(
+      typeof (proposeComposioToolTool as Record<string, unknown>)["execute"],
+    ).toBe("function");
   });
 
   // BT-008: the execute fn returns an error when no proposeToolAction is in context
   it("returns an error result when proposeToolAction is absent from context", async () => {
-    const executeFn = (proposeComposioToolTool as Record<string, unknown>)["execute"] as (
+    const executeFn = (proposeComposioToolTool as Record<string, unknown>)[
+      "execute"
+    ] as (
       input: unknown,
-      options: { experimental_context?: unknown }
+      options: { experimental_context?: unknown },
     ) => Promise<unknown>;
 
-    const result = await executeFn(
+    const result = (await executeFn(
       { toolkitSlug: "github", reason: "need github tools" },
       { experimental_context: { sandbox: { state: {} }, model: {} } }, // no proposeToolAction
-    ) as Record<string, unknown>;
+    )) as Record<string, unknown>;
 
     expect(result["ok"]).toBe(false);
     expect(typeof result["error"]).toBe("string");
@@ -65,30 +70,34 @@ describe("propose_composio_tool tool", () => {
   // BT-009: the execute fn calls proposeToolAction and returns success
   it("calls proposeToolAction from experimental_context and returns ok=true", async () => {
     let capturedSlug: string | null = null;
-    let capturedChatId: string | null = null;
 
     const fakeContext = {
       sandbox: { state: {}, workingDirectory: "/tmp" },
       model: {},
-      proposeToolAction: async (input: { toolkitSlug: string; chatId?: string }) => {
+      proposeToolAction: async (input: {
+        toolkitSlug: string;
+        chatId?: string;
+      }) => {
         capturedSlug = input.toolkitSlug;
-        capturedChatId = input.chatId ?? null;
         return { entryId: "entry-123" };
       },
     };
 
-    const executeFn = (proposeComposioToolTool as Record<string, unknown>)["execute"] as (
+    const executeFn = (proposeComposioToolTool as Record<string, unknown>)[
+      "execute"
+    ] as (
       input: unknown,
-      options: { experimental_context?: unknown }
+      options: { experimental_context?: unknown },
     ) => Promise<unknown>;
 
-    const result = await executeFn(
+    const result = (await executeFn(
       { toolkitSlug: "github", reason: "need github integration" },
       { experimental_context: fakeContext },
-    ) as Record<string, unknown>;
+    )) as Record<string, unknown>;
 
     expect(result["ok"]).toBe(true);
-    expect(capturedSlug).toBe("github");
+    // capturedSlug is string|null but after the call it is set to "github"
+    expect(capturedSlug as string | null).toEqual("github");
   });
 });
 
