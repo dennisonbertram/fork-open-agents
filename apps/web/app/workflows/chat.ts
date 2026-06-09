@@ -449,6 +449,16 @@ function getSetupErrorMessage(error: unknown): string {
     return message;
   }
 
+  // Defense-in-depth: catch raw crypto auth-tag failure that escaped wrapping,
+  // or InferenceSecretDecryptionError that propagated without being wrapped.
+  if (
+    name === "InferenceSecretDecryptionError" ||
+    message.includes("could not be decrypted") ||
+    message.includes("Unsupported state or unable to authenticate data")
+  ) {
+    return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
+  }
+
   if (
     name === "ComposioSetupError" ||
     message.includes("Composio") ||
