@@ -99,6 +99,7 @@ const agent: BackgroundAgentWithTriggers = {
   permissions: {},
   outputMode: "none",
   checkCommand: null,
+  composioToolkitSlugs: [],
   createdAt: new Date(),
   updatedAt: new Date(),
 };

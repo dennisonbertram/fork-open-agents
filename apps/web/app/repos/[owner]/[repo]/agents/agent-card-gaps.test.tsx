@@ -117,6 +117,7 @@ function makeAgent(
     permissions: {},
     outputMode: "none",
     checkCommand: null,
+    composioToolkitSlugs: [],
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [
