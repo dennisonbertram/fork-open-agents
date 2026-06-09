@@ -107,3 +107,43 @@ describe("MODEL_ROLE_HINTS", () => {
     expect(Object.keys(MODEL_ROLE_HINTS).length).toBeGreaterThanOrEqual(6);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests
+// ---------------------------------------------------------------------------
+describe("model-roles regression", () => {
+  // REG-TIER-001: boundary between $ and $$ is exactly 1.0 (not 0.99 or 1.01)
+  // Catches: if the threshold is changed, tier assignments break
+  test("REG-TIER-001: input 0.99 → $ and input 1.00 → $$", () => {
+    expect(deriveCostTier({ input: 0.99, output: 0 })).toBe("$");
+    expect(deriveCostTier({ input: 1, output: 0 })).toBe("$$");
+  });
+
+  // REG-TIER-002: boundary between $$ and $$$ is exactly 5.0 (inclusive)
+  // Catches: if > vs >= changes on the threshold, 5.0 moves to wrong tier
+  test("REG-TIER-002: input 5.00 → $$ and input 5.01 → $$$", () => {
+    expect(deriveCostTier({ input: 5, output: 0 })).toBe("$$");
+    expect(deriveCostTier({ input: 5.01, output: 0 })).toBe("$$$");
+  });
+
+  // REG-ROLE-001: critical recommended models keep their hints
+  // Catches: if MODEL_ROLE_HINTS entries are removed or renamed
+  test("REG-ROLE-001: claude-opus-4.6 has 'Reasoning' in its hint", () => {
+    const hint = MODEL_ROLE_HINTS["anthropic/claude-opus-4.6"];
+    expect(hint).toBeDefined();
+    expect(hint.toLowerCase()).toContain("reasoning");
+  });
+
+  test("REG-ROLE-001b: gemini-2.0-flash has 'Cheap' in its hint", () => {
+    const hint = MODEL_ROLE_HINTS["google/gemini-2.0-flash"];
+    expect(hint).toBeDefined();
+    expect(hint.toLowerCase()).toContain("cheap");
+  });
+
+  // REG-ROLE-002: deriveRoleHint for known model returns same as static map lookup
+  // Catches: if deriveRoleHint stops delegating to MODEL_ROLE_HINTS
+  test("REG-ROLE-002: deriveRoleHint result matches direct MODEL_ROLE_HINTS lookup", () => {
+    const modelId = "openai/gpt-5.4";
+    expect(deriveRoleHint(modelId)).toBe(MODEL_ROLE_HINTS[modelId]);
+  });
+});

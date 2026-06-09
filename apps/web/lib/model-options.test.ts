@@ -757,3 +757,100 @@ describe("filterAndSortModelOptions — cost sort", () => {
     expect(result[result.length - 1].id).toBe("unknown/mystery");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests for buildRecommendedModelOptions and RECOMMENDED_MODEL_IDS
+// ---------------------------------------------------------------------------
+describe("buildRecommendedModelOptions — regression", () => {
+  // REG-REC-001: non-recommended catalog models are excluded
+  // Catches: if the function is reverted to return allOptions, this fails
+  test("REG-REC-001: non-recommended models do not appear in recommended output", () => {
+    const nonRecommended = {
+      id: "openai/gpt-4o",
+      label: "GPT-4o",
+      shortLabel: "GPT-4o",
+      isVariant: false,
+      provider: "openai",
+      source: "catalog" as const,
+    };
+    const recommended = {
+      id: "openai/gpt-5.4",
+      label: "GPT-5.4",
+      shortLabel: "GPT-5.4",
+      isVariant: false,
+      provider: "openai",
+      source: "catalog" as const,
+    };
+    const result = buildRecommendedModelOptions([nonRecommended, recommended]);
+    const ids = result.map((o) => o.id);
+    expect(ids).not.toContain("openai/gpt-4o");
+    expect(ids).toContain("openai/gpt-5.4");
+  });
+
+  // REG-REC-002: user-source options always pass through (regression against filtering them out)
+  test("REG-REC-002: user-source options always appear in recommended output", () => {
+    const userOption = {
+      id: "user-profile:p1:anthropic%2Fclaude-opus-4.6",
+      label: "Claude Opus",
+      shortLabel: "Opus",
+      isVariant: false,
+      provider: "user",
+      source: "user" as const,
+    };
+    const result = buildRecommendedModelOptions([userOption]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("user-profile:p1:anthropic%2Fclaude-opus-4.6");
+  });
+
+  // REG-REC-003: RECOMMENDED_MODEL_IDS itself is stable — verify the exact IDs haven't drifted
+  test("REG-REC-003: RECOMMENDED_MODEL_IDS contains the expected canonical set", () => {
+    const ids = RECOMMENDED_MODEL_IDS as readonly string[];
+    expect(ids).toContain("openai/gpt-5.4");
+    expect(ids).toContain("openai/gpt-5.4-nano");
+    expect(ids).toContain("openai/gpt-5.5");
+    expect(ids).toContain("anthropic/claude-haiku-4.5");
+    expect(ids).toContain("anthropic/claude-opus-4.6");
+    expect(ids).toContain("anthropic/claude-sonnet-4-6");
+    expect(ids).toContain("google/gemini-2.5-flash");
+    expect(ids).toContain("google/gemini-2.0-flash");
+  });
+
+  // REG-REC-004: cost sort is non-destructive — all models present after sort
+  test("REG-REC-004: cost-asc sort returns all models (no models lost)", () => {
+    const options = [
+      {
+        id: "a",
+        label: "A",
+        shortLabel: "A",
+        isVariant: false,
+        provider: "openai",
+        cost: { input: 1, output: 5 },
+      },
+      {
+        id: "b",
+        label: "B",
+        shortLabel: "B",
+        isVariant: false,
+        provider: "anthropic",
+      },
+      {
+        id: "c",
+        label: "C",
+        shortLabel: "C",
+        isVariant: false,
+        provider: "google",
+        cost: { input: 0.1, output: 0.4 },
+      },
+    ];
+    const result = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "cost-asc",
+      search: "",
+    });
+    expect(result).toHaveLength(3);
+    const ids = new Set(result.map((o) => o.id));
+    expect(ids.has("a")).toBe(true);
+    expect(ids.has("b")).toBe(true);
+    expect(ids.has("c")).toBe(true);
+  });
+});
