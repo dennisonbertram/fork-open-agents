@@ -39,6 +39,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   buildAgentPayload,
   buildFormFromAgent,
@@ -51,6 +52,10 @@ import {
   type OutputMode,
   type TriggerKind,
 } from "./background-agents-form";
+import {
+  mapReadinessToVerdict,
+  type BackgroundReadinessResponse,
+} from "./background-readiness-verdict";
 
 type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
@@ -79,21 +84,6 @@ type BackgroundRun = {
 
 type BackgroundRunsResponse = {
   runs: BackgroundRun[];
-};
-
-type BackgroundReadinessCheck = {
-  id: string;
-  label: string;
-  status: "ready" | "missing" | "disabled";
-  detail: string;
-  missing: string[];
-};
-
-type BackgroundReadinessResponse = {
-  enabled: boolean;
-  ready: boolean;
-  missing: string[];
-  checks: BackgroundReadinessCheck[];
 };
 
 type ManualTestResponse = {
@@ -332,39 +322,7 @@ export function BackgroundAgentsSection() {
     <div className="space-y-6">
       <section className="rounded-md border border-border">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-medium">Readiness</h2>
-            {readinessData && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {readinessData.ready
-                  ? "Hosted prerequisites are configured."
-                  : `${readinessData.missing.length} prerequisite${readinessData.missing.length === 1 ? "" : "s"} need attention.`}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {readinessData && (
-              <StatusPill
-                status={
-                  readinessData.ready
-                    ? "ready"
-                    : readinessData.enabled
-                      ? "missing"
-                      : "disabled"
-                }
-              />
-            )}
-            <Button
-              aria-label="Refresh background agent readiness"
-              variant="ghost"
-              size="icon"
-              onClick={() => void mutateReadiness()}
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", readinessLoading && "animate-spin")}
-              />
-            </Button>
-          </div>
+          <h2 className="text-sm font-medium">Readiness</h2>
         </div>
         {readinessError ? (
           <div className="p-4 text-sm text-destructive">
@@ -375,47 +333,12 @@ export function BackgroundAgentsSection() {
             Loading background agent readiness.
           </div>
         ) : readinessData ? (
-          <div className="grid gap-3 p-4 md:grid-cols-2">
-            {readinessData.checks.map((check) => (
-              <div
-                key={check.id}
-                className="rounded-md border border-border bg-muted/20 p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CheckCircle2
-                        className={cn(
-                          "h-4 w-4 shrink-0",
-                          check.status === "ready"
-                            ? "text-emerald-600 dark:text-emerald-300"
-                            : "text-muted-foreground",
-                        )}
-                      />
-                      <p className="truncate text-sm font-medium">
-                        {check.label}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-pretty text-xs text-muted-foreground">
-                      {check.detail}
-                    </p>
-                  </div>
-                  <StatusPill status={check.status} />
-                </div>
-                {check.missing.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {check.missing.map((name) => (
-                      <span
-                        key={name}
-                        className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                      >
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="p-4">
+            <ReadinessVerdict
+              {...mapReadinessToVerdict(readinessData)}
+              onRefresh={() => void mutateReadiness()}
+              refreshing={readinessLoading}
+            />
           </div>
         ) : null}
       </section>

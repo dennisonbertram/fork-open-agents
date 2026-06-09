@@ -36,6 +36,7 @@ import {
   getDefaultModelOptionId,
   withMissingModelOption,
 } from "@/lib/model-options";
+import { shouldCollapseSingleOption } from "./preferences-helpers";
 
 const SANDBOX_OPTIONS: Array<{ id: SandboxType; name: string }> = [
   { id: "vercel", name: "Vercel" },
@@ -573,48 +574,80 @@ export function PreferencesSection() {
 
             <div className="grid gap-2">
               <Label htmlFor="sandbox">Default Sandbox</Label>
-              <Select
-                value={preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE}
-                onValueChange={(value) =>
-                  handleSandboxChange(value as SandboxType)
-                }
-                disabled={isSaving}
-              >
-                <SelectTrigger id="sandbox" className="w-full">
-                  <SelectValue placeholder="Select a sandbox type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SANDBOX_OPTIONS.map((option) => (
-                    <SelectItem key={option.id} value={option.id}>
-                      {option.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {shouldCollapseSingleOption(SANDBOX_OPTIONS) ? (
+                <p className="text-sm text-foreground">
+                  {SANDBOX_OPTIONS[0]?.name ?? "None"} &mdash; the only backend
+                  available
+                </p>
+              ) : (
+                <Select
+                  value={
+                    preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE
+                  }
+                  onValueChange={(value) =>
+                    handleSandboxChange(value as SandboxType)
+                  }
+                  disabled={isSaving}
+                >
+                  <SelectTrigger id="sandbox" className="w-full">
+                    <SelectValue placeholder="Select a sandbox type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SANDBOX_OPTIONS.map((option) => (
+                      <SelectItem key={option.id} value={option.id}>
+                        {option.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Where the agent runs code when a chat uses a sandbox.
+              </p>
             </div>
 
             <div className="grid gap-2">
               <Label htmlFor="managed-runtime-profile">
                 Managed runtime profile
               </Label>
-              <Select
-                value={preferences?.defaultManagedRuntimeProfileId}
-                onValueChange={handleManagedRuntimeProfileChange}
-                disabled={isSaving}
-              >
-                <SelectTrigger id="managed-runtime-profile" className="w-full">
-                  <SelectValue placeholder="Select a runtime profile" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MANAGED_RUNTIME_PROFILE_OPTIONS.map((profile) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.displayName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {shouldCollapseSingleOption(
+                MANAGED_RUNTIME_PROFILE_OPTIONS.map((p) => ({
+                  id: p.id,
+                  name: p.displayName,
+                })),
+              ) ? (
+                <p className="text-sm text-foreground">
+                  {MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.displayName ?? "None"}
+                </p>
+              ) : (
+                <Select
+                  value={preferences?.defaultManagedRuntimeProfileId}
+                  onValueChange={handleManagedRuntimeProfileChange}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger
+                    id="managed-runtime-profile"
+                    className="w-full"
+                  >
+                    <SelectValue placeholder="Select a runtime profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {MANAGED_RUNTIME_PROFILE_OPTIONS.map((profile) => (
+                      <SelectItem key={profile.id} value={profile.id}>
+                        {profile.displayName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
               <p className="text-xs text-muted-foreground">
-                Used when creating new managed runtime sessions.
+                {MANAGED_RUNTIME_PROFILE_OPTIONS.find(
+                  (p) =>
+                    p.id ===
+                    (preferences?.defaultManagedRuntimeProfileId ??
+                      MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.id),
+                )?.description ??
+                  "Used when creating new managed runtime sessions."}
               </p>
             </div>
 
@@ -638,6 +671,10 @@ export function PreferencesSection() {
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">
+                How code changes are shown in chat: Unified = one column with
+                +/- lines; Split = old vs new side by side.
+              </p>
             </div>
           </div>
 

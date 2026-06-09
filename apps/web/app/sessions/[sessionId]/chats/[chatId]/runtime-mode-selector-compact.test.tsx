@@ -42,10 +42,10 @@ describe("getRuntimeModeSummary", () => {
       profile,
     });
 
-    expect(summary).toContain("Coordinator");
-    expect(summary).toContain("delegates repo work to managed workers");
+    expect(summary).toContain("Coordinated");
+    expect(summary).toContain("managed workers");
     expect(summary).toContain("Runtime Inspector");
-    expect(summary).toContain("incomplete proof");
+    expect(summary).toContain("proof bundle");
   });
 
   test("keeps classic mode explicit as direct work", () => {
@@ -54,8 +54,9 @@ describe("getRuntimeModeSummary", () => {
       profile,
     });
 
-    expect(summary).toContain("top-level agent can work directly");
-    expect(summary).toContain("Switch to managed runtime");
+    expect(summary).toContain("Direct");
+    expect(summary).toContain("edits your repo itself");
+    expect(summary).toContain("Switch to Coordinated");
   });
 });
 
@@ -72,9 +73,9 @@ describe("RuntimeModeSelectorCompact", () => {
       />,
     );
 
-    expect(html).toContain("Managed");
-    expect(html).toContain("Coordinator");
-    expect(html).toContain("managed workers");
+    // The trigger shows the outcome label + a short aria-label state.
+    expect(html).toContain("Coordinated");
+    expect(html).toContain("Runtime: Coordinated");
   });
 
   test("renders Manage-profile control when a session-source profile is selected", () => {

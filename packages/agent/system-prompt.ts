@@ -348,7 +348,15 @@ export interface BuildSystemPromptOptions {
   skills?: SkillMetadata[];
   modelId?: string;
   runtimeMode?: "classic" | "managed_runtime";
+  /** When true, the session has no sandbox VM. Informs the agent it cannot execute code. */
+  sandboxFree?: boolean;
 }
+
+const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
+
+You are running in a plain chat session. You have no code-execution environment — there is no sandbox VM, no filesystem, and no shell available. You can answer questions, analyze information, fetch web resources, and use Composio tools, but you cannot read or write files, run commands, or execute code.
+
+If the user needs to run code, edit files, or work in a repository, suggest that they add a sandbox to the session first.`;
 
 const MANAGED_RUNTIME_COORDINATOR_PROMPT = `# Managed Runtime Coordinator Mode
 
@@ -434,6 +442,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
+
+  if (options.sandboxFree) {
+    parts.push(SANDBOX_FREE_PROMPT);
+  }
 
   if (options.runtimeMode === "managed_runtime") {
     parts.push(MANAGED_RUNTIME_COORDINATOR_PROMPT);

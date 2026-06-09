@@ -46,7 +46,9 @@ mock.module("ai", () => {
 const {
   getOpenAgentToolsForRuntimeMode,
   getRuntimeModeToolPolicy,
+  getChatOnlyTools,
   MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  CHAT_ONLY_TOOL_NAMES,
   OPEN_AGENT_TOOL_NAMES,
 } = await import("./open-agent");
 const { buildSystemPrompt } = await import("./system-prompt");
@@ -144,5 +146,136 @@ describe("openAgent runtime tool policy", () => {
     // The prompt must explicitly prohibit skipping the tool call
     expect(prompt).toContain("Never skip the");
     expect(prompt).toContain("setup_managed_runtime_profile");
+  });
+});
+
+// BT-001, BT-002, BT-003: chat-only tool policy for sandbox-free sessions
+describe("chat-only tool policy (sandbox-free)", () => {
+  // BT-001: getChatOnlyTools excludes every sandbox-dependent tool
+  test("getChatOnlyTools excludes file/bash/exec/edit/task/grep/glob tools", () => {
+    const chatTools = Object.keys(getChatOnlyTools());
+
+    expect(chatTools).not.toContain("bash");
+    expect(chatTools).not.toContain("read");
+    expect(chatTools).not.toContain("write");
+    expect(chatTools).not.toContain("edit");
+    expect(chatTools).not.toContain("grep");
+    expect(chatTools).not.toContain("glob");
+    expect(chatTools).not.toContain("task");
+    expect(chatTools).not.toContain("setup_managed_runtime_profile");
+  });
+
+  // BT-002: getChatOnlyTools keeps safe non-sandbox tools
+  test("getChatOnlyTools keeps web_fetch, ask_user_question, skill, todo_write", () => {
+    const chatTools = Object.keys(getChatOnlyTools());
+
+    expect(chatTools).toContain("web_fetch");
+    expect(chatTools).toContain("ask_user_question");
+    expect(chatTools).toContain("skill");
+    expect(chatTools).toContain("todo_write");
+  });
+
+  // BT-003: getRuntimeModeToolPolicy with sandboxFree=true returns chat-only tools
+  test("getRuntimeModeToolPolicy with sandboxFree:true returns only chat-safe tools", () => {
+    const filteredTools = getRuntimeModeToolPolicy("classic", undefined, {
+      sandboxFree: true,
+    });
+    const toolNames = Object.keys(filteredTools);
+
+    expect(toolNames).toEqual([...CHAT_ONLY_TOOL_NAMES]);
+    expect(toolNames).not.toContain("bash");
+    expect(toolNames).not.toContain("read");
+    expect(toolNames).not.toContain("write");
+    expect(toolNames).not.toContain("edit");
+    expect(toolNames).not.toContain("task");
+  });
+
+  // BT-004: Composio tools (caller-provided) pass through in sandbox-free mode
+  test("caller-provided Composio tools are kept in sandbox-free mode", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_LIST_ISSUES" };
+    const filteredTools = getRuntimeModeToolPolicy(
+      "classic",
+      {
+        COMPOSIO_GITHUB_LIST_ISSUES: composioTool,
+      } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1],
+      { sandboxFree: true },
+    );
+
+    expect(filteredTools.COMPOSIO_GITHUB_LIST_ISSUES as unknown).toBe(
+      composioTool,
+    );
+    // Sandbox tools must still be absent
+    expect(Object.keys(filteredTools)).not.toContain("bash");
+    expect(Object.keys(filteredTools)).not.toContain("read");
+  });
+
+  // BT-005: system prompt for sandbox-free mode tells the agent it has no code-execution environment
+  test("buildSystemPrompt with sandboxFree:true informs the agent it has no sandbox", () => {
+    const prompt = buildSystemPrompt({ sandboxFree: true });
+
+    expect(prompt).toContain("no code-execution environment");
+  });
+
+  // BT-006: CHAT_ONLY_TOOL_NAMES is exported and matches getChatOnlyTools keys
+  test("CHAT_ONLY_TOOL_NAMES matches the keys returned by getChatOnlyTools", () => {
+    const chatToolKeys = Object.keys(getChatOnlyTools());
+
+    expect(chatToolKeys).toEqual([...CHAT_ONLY_TOOL_NAMES]);
+  });
+});
+
+// REGRESSION tests: catch future breakage of the chat-only policy from different angles
+describe("regression: chat-only tool policy stability", () => {
+  // REGRESSION-001: classic mode (with sandbox) must still get the FULL tool set.
+  // If the sandboxFree guard accidentally activates for non-free sessions, this fails.
+  test("classic mode without sandboxFree flag still receives the full tool set", () => {
+    const classicTools = getRuntimeModeToolPolicy("classic");
+    const classicToolNames = Object.keys(classicTools);
+
+    expect(classicToolNames).toContain("bash");
+    expect(classicToolNames).toContain("read");
+    expect(classicToolNames).toContain("write");
+    expect(classicToolNames).toContain("edit");
+    expect(classicToolNames).toContain("task");
+    expect(classicToolNames).toContain("grep");
+    expect(classicToolNames).toContain("glob");
+    // Must equal the full tool set
+    expect(classicToolNames).toEqual([...OPEN_AGENT_TOOL_NAMES]);
+  });
+
+  // REGRESSION-002: CHAT_ONLY_TOOL_NAMES must be a strict subset of OPEN_AGENT_TOOL_NAMES.
+  // If a new tool is added to CHAT_ONLY_TOOL_NAMES that does not exist in the agent,
+  // this test catches a typo or stale reference.
+  test("every name in CHAT_ONLY_TOOL_NAMES is a valid agent tool name", () => {
+    for (const name of CHAT_ONLY_TOOL_NAMES) {
+      expect(OPEN_AGENT_TOOL_NAMES).toContain(name);
+    }
+  });
+
+  // REGRESSION-003: sandbox-free prompt section must NOT appear in managed_runtime mode.
+  // The two prompt overlays are orthogonal; mixing them would be confusing.
+  test("sandbox-free prompt section does not appear in managed_runtime mode prompt", () => {
+    const managedPrompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    // The managed runtime prompt must not mix in the sandbox-free notice.
+    expect(managedPrompt).not.toContain("no code-execution environment");
+  });
+
+  // REGRESSION-004: sandbox-free prompt section must NOT appear in a normal classic prompt.
+  test("sandbox-free prompt section does not appear in normal classic-mode prompt", () => {
+    const classicPrompt = buildSystemPrompt({ runtimeMode: "classic" });
+
+    expect(classicPrompt).not.toContain("no code-execution environment");
+  });
+
+  // REGRESSION-005: sandboxFree=false is identical to the default (no flag) for classic mode.
+  // Ensures that explicitly passing false does not accidentally trigger the restriction.
+  test("sandboxFree:false produces the same tool set as omitting the flag in classic mode", () => {
+    const withFalse = Object.keys(
+      getRuntimeModeToolPolicy("classic", undefined, { sandboxFree: false }),
+    );
+    const withOmitted = Object.keys(getRuntimeModeToolPolicy("classic"));
+
+    expect(withFalse).toEqual(withOmitted);
   });
 });

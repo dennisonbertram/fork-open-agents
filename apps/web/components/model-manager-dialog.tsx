@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { CheckIcon, SearchIcon } from "lucide-react";
 import {
+  RECOMMENDED_MODEL_IDS,
   type ModelOption,
   type ModelSortKey,
   filterAndSortModelOptions,
@@ -116,6 +117,15 @@ export function ModelManagerDialog({
     setSelected(new Set(modelOptions.map((o) => o.id)));
   }, [modelOptions]);
 
+  const handleRecommended = useCallback(() => {
+    // Intersect with the live catalog so we never select IDs that aren&apos;t present
+    const catalogIds = new Set(modelOptions.map((o) => o.id));
+    const liveRecommended = (RECOMMENDED_MODEL_IDS as readonly string[]).filter(
+      (id) => catalogIds.has(id),
+    );
+    setSelected(new Set(liveRecommended));
+  }, [modelOptions]);
+
   const selectedCount = selected.size;
   const totalCount = modelOptions.length;
 
@@ -177,6 +187,8 @@ export function ModelManagerDialog({
             <SelectContent>
               <SelectItem value="name">Name A–Z</SelectItem>
               <SelectItem value="provider">Provider</SelectItem>
+              <SelectItem value="cost-asc">Cost ↑</SelectItem>
+              <SelectItem value="cost-desc">Cost ↓</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -240,6 +252,14 @@ export function ModelManagerDialog({
           <div className="flex items-center gap-3">
             <button
               type="button"
+              onClick={handleRecommended}
+              className="text-xs text-muted-foreground hover:text-foreground"
+              title="Reset to the curated Recommended shortlist"
+            >
+              Recommended
+            </button>
+            <button
+              type="button"
               onClick={handleSelectAll}
               className="text-xs text-muted-foreground hover:text-foreground"
             >
@@ -257,8 +277,8 @@ export function ModelManagerDialog({
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground">
               {selectedCount === 0
-                ? "Showing all"
-                : `${selectedCount} of ${totalCount} shown`}
+                ? `Selector shows all ${totalCount} models`
+                : `Selector shows your ${selectedCount} models`}
             </span>
             <button
               type="button"

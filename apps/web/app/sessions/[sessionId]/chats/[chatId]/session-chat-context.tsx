@@ -34,7 +34,11 @@ import {
 import { useSessionSkills } from "@/hooks/use-session-skills";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { ChatComposioSelection } from "@/lib/composio/types";
-import { type ModelOption, withMissingModelOption } from "@/lib/model-options";
+import {
+  type ModelOption,
+  buildRecommendedModelOptions,
+  withMissingModelOption,
+} from "@/lib/model-options";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import {
   clearSandboxResumeState,
@@ -340,7 +344,7 @@ export function SessionChatProvider({
   );
   const baseModelOptions = useMemo(() => {
     if (!enabledModelIds || enabledModelIds.length === 0) {
-      return allModelOptions;
+      return buildRecommendedModelOptions(allModelOptions);
     }
     const enabledSet = new Set(enabledModelIds);
     return allModelOptions.filter(
