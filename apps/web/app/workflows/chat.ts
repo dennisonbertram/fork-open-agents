@@ -275,25 +275,26 @@ async function resolveChatModelRuntime(params: {
     const toRosterEntry = (
       resolved: Awaited<ReturnType<typeof resolveAgentForRole>>,
     ) => {
-      // Only include an entry when at least one field differs from synthetic defaults.
-      // Synthetic fallback returns: modelId from prefs, instructions: null, composioToolkitSlugs: [].
-      // We emit an entry whenever instructions or slugs are explicitly set, or modelId
-      // is explicitly set on a DB row (distinguished from pref default by the instructions/slugs
-      // being non-null). In practice, any non-null instructions or non-empty slugs signals
-      // a real DB row was found.
+      // Only include an entry when at least one field was explicitly set by a
+      // real DB row. The synthetic prefs fallback (fromDbRow=false) must NOT
+      // produce a roster entry even when modelId is non-null, because the
+      // synthetic modelId lacks providerOptionsOverrides and directAnthropic
+      // that were resolved for the main subagentModel. Threading a modelId-only
+      // roster entry would cause applyRosterOverrides to call gateway(modelId)
+      // with no second argument, silently dropping those overrides.
       const hasInstructions = resolved.instructions !== null;
       const hasSlugs = resolved.composioToolkitSlugs.length > 0;
-      // A non-null modelId could be from a DB row OR from prefs synthetic fallback.
-      // We include it always — when it's from prefs the subagent already uses
-      // that model via subagentModel, so it's a harmless no-op duplicate.
-      const hasModel = resolved.modelId !== null;
+      // Only include modelId when this resolution came from a real DB row.
+      // Synthetic fallback modelId is already wired via subagentModel and must
+      // not be duplicated in the roster without its full model selection context.
+      const hasModel = resolved.fromDbRow && resolved.modelId !== null;
 
       if (!hasModel && !hasInstructions && !hasSlugs) {
         return null;
       }
 
       return {
-        ...(resolved.modelId !== null ? { modelId: resolved.modelId } : {}),
+        ...(hasModel ? { modelId: resolved.modelId } : {}),
         ...(hasInstructions ? { instructions: resolved.instructions } : {}),
         ...(hasSlugs
           ? { composioToolkitSlugs: resolved.composioToolkitSlugs }

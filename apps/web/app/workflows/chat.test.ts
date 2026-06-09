@@ -2545,6 +2545,103 @@ describe("runAgentWorkflow", () => {
     expect(source).toContain("validateGoalCompletion");
   });
 
+  // ── PARAMOUNT INVARIANT: subagent roster must be null when no DB rows ──────
+  // BT-ROSTER-001 through BT-ROSTER-003 guard against the invariant violation
+  // described in the blocking finding: when resolveAgentForRole returns a synthetic
+  // fallback (fromDbRow=false), chat.ts must NOT emit a modelId-only roster entry.
+  // If it does, applyRosterOverrides calls gateway(modelId) without
+  // providerOptionsOverrides, silently dropping model-variant overrides.
+  //
+  // NOTE: These tests MUST appear before ANY test that re-mocks @/app/config
+  // (the abort test and "still clears stream" test), because those re-mocks
+  // persist for subsequent dynamic imports and break stream option capture.
+
+  test("BT-ROSTER-001: when all roles return synthetic fallback (fromDbRow=false), agentOptions has no subagentRoster", async () => {
+    // Synthetic fallback has non-null modelId (from prefs), null instructions,
+    // empty slugs. Before the fix, toRosterEntry() would include modelId
+    // and hasAnyEntry would be true → roster threaded into agentOptions.
+    // After the fix, fromDbRow=false means modelId is ignored in toRosterEntry,
+    // no entry is emitted, and subagentRoster stays null.
+    await runAgentWorkflow(makeOptions());
+
+    // agentStreamOptions is what was passed to webAgent.stream().
+    // It must NOT have a subagentRoster when all roles are synthetic.
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    expect(opts?.subagentRoster).toBeUndefined();
+  });
+
+  test("BT-ROSTER-002: when one role has a real DB row (fromDbRow=true, modelId set), roster IS threaded for that role only", async () => {
+    // executor has a real DB row with a custom model — should appear in roster.
+    // explorer and design are synthetic — should NOT appear in roster.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent("executor", "openai/gpt-5.4"),
+            fromDbRow: true,
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    // roster must exist because executor has a real DB row
+    expect(roster).toBeDefined();
+    // only executor appears
+    expect(roster?.executor).toMatchObject({ modelId: "openai/gpt-5.4" });
+    // explorer and design must be absent (synthetic, no entry emitted)
+    expect(roster?.explorer).toBeUndefined();
+    expect(roster?.design).toBeUndefined();
+  });
+
+  test("BT-ROSTER-003: when all roles are synthetic (fromDbRow=false) even with non-null modelId, subagentRoster in agentOptions is undefined", async () => {
+    // Simulate the exact production scenario: user has defaultSubagentModelId set,
+    // zero agents rows. All roles return synthetic with a non-null modelId.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) =>
+        makeSyntheticResolvedAgent(params.role, "anthropic/claude-sonnet-4.5"),
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    // subagentRoster must be absent — model is already wired via subagentModel
+    // in the agentOptions, and we must NOT override it without providerOptionsOverrides
+    expect(opts?.subagentRoster).toBeUndefined();
+  });
+
+  test("regression: BT-ROSTER-REG-001 real DB row with instructions still threads full roster entry", async () => {
+    // If fromDbRow=true AND instructions is set, the entry must include both
+    // modelId and instructions. This catches future regressions where only one
+    // field is emitted.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "explorer") {
+          return {
+            ...makeSyntheticResolvedAgent("explorer", "openai/gpt-5.4"),
+            fromDbRow: true,
+            instructions: "Focus on reading, not writing.",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    expect(roster).toBeDefined();
+    expect(roster?.explorer).toMatchObject({
+      modelId: "openai/gpt-5.4",
+      instructions: "Focus on reading, not writing.",
+    });
+  });
+
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
     // Simulate abort: override the agent stream to throw an AbortError.
     // This is what happens when the user clicks Stop — the agent stream throws
@@ -2735,107 +2832,5 @@ describe("runAgentWorkflow", () => {
 
     // The finally block should still fire
     expect(spies.clearActiveStream).toHaveBeenCalled();
-  });
-});
-
-// ── PARAMOUNT INVARIANT: subagent roster roster must be null when no DB rows ──
-// BT-ROSTER-001 through BT-ROSTER-003 guard against the invariant violation
-// described in the blocking finding: when resolveAgentForRole returns a synthetic
-// fallback (fromDbRow=false), chat.ts must NOT emit a modelId-only roster entry.
-// If it does, applyRosterOverrides calls gateway(modelId) without
-// providerOptionsOverrides, silently dropping model-variant overrides.
-
-describe("subagent roster — PARAMOUNT INVARIANT: no-row path must not thread a roster", () => {
-  beforeEach(() => {
-    // Default spy: synthetic fallback (fromDbRow=false) for all roles
-    resolveAgentForRoleSpy.mockImplementation(async (params: { role: string }) =>
-      makeSyntheticResolvedAgent(params.role),
-    );
-  });
-
-  test("BT-ROSTER-001: when all roles return synthetic fallback (fromDbRow=false), agentOptions has no subagentRoster", async () => {
-    // Synthetic fallback has non-null modelId (from prefs), null instructions,
-    // empty slugs. Before the fix, toRosterEntry() would include modelId
-    // and hasAnyEntry would be true → roster threaded into agentOptions.
-    // After the fix, fromDbRow=false means modelId is ignored in toRosterEntry,
-    // no entry is emitted, and subagentRoster stays null.
-    await runAgentWorkflow(makeOptions());
-
-    // agentStreamOptions is what was passed to webAgent.stream().
-    // It must NOT have a subagentRoster when all roles are synthetic.
-    const opts = agentStreamOptions as Record<string, unknown> | undefined;
-    expect(opts?.subagentRoster).toBeUndefined();
-  });
-
-  test("BT-ROSTER-002: when one role has a real DB row (fromDbRow=true, modelId set), roster IS threaded for that role only", async () => {
-    // executor has a real DB row with a custom model — should appear in roster.
-    // explorer and design are synthetic — should NOT appear in roster.
-    resolveAgentForRoleSpy.mockImplementation(
-      async (params: { role: string }) => {
-        if (params.role === "executor") {
-          return {
-            ...makeSyntheticResolvedAgent("executor", "openai/gpt-5.4"),
-            fromDbRow: true,
-          };
-        }
-        return makeSyntheticResolvedAgent(params.role);
-      },
-    );
-
-    await runAgentWorkflow(makeOptions());
-
-    const opts = agentStreamOptions as Record<string, unknown> | undefined;
-    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
-    // roster must exist because executor has a real DB row
-    expect(roster).toBeDefined();
-    // only executor appears
-    expect(roster?.executor).toMatchObject({ modelId: "openai/gpt-5.4" });
-    // explorer and design must be absent (synthetic, no entry emitted)
-    expect(roster?.explorer).toBeUndefined();
-    expect(roster?.design).toBeUndefined();
-  });
-
-  test("BT-ROSTER-003: when all roles are synthetic (fromDbRow=false) even with non-null modelId, subagentRoster in agentOptions is undefined", async () => {
-    // Simulate the exact production scenario: user has defaultSubagentModelId set,
-    // zero agents rows. All roles return synthetic with a non-null modelId.
-    resolveAgentForRoleSpy.mockImplementation(
-      async (params: { role: string }) =>
-        makeSyntheticResolvedAgent(params.role, "anthropic/claude-sonnet-4.5"),
-    );
-
-    await runAgentWorkflow(makeOptions());
-
-    const opts = agentStreamOptions as Record<string, unknown> | undefined;
-    // subagentRoster must be absent — model is already wired via subagentModel
-    // in the agentOptions, and we must NOT override it without providerOptionsOverrides
-    expect(opts?.subagentRoster).toBeUndefined();
-  });
-
-  test("regression: BT-ROSTER-REG-001 real DB row with instructions still threads full roster entry", async () => {
-    // If fromDbRow=true AND instructions is set, the entry must include both
-    // modelId and instructions. This catches future regressions where only one
-    // field is emitted.
-    resolveAgentForRoleSpy.mockImplementation(
-      async (params: { role: string }) => {
-        if (params.role === "explorer") {
-          return {
-            ...makeSyntheticResolvedAgent("explorer", "openai/gpt-5.4"),
-            fromDbRow: true,
-            instructions: "Focus on reading, not writing.",
-          };
-        }
-        return makeSyntheticResolvedAgent(params.role);
-      },
-    );
-
-    await runAgentWorkflow(makeOptions());
-
-    const opts = agentStreamOptions as Record<string, unknown> | undefined;
-    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
-    expect(roster).toBeDefined();
-    expect(roster?.explorer).toMatchObject({
-      modelId: "openai/gpt-5.4",
-      instructions: "Focus on reading, not writing.",
-    });
   });
 });
