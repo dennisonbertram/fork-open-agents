@@ -78,23 +78,25 @@ const RouteContentShell = memo(function RouteContentShell({
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
       {sidebarHidden ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={toggleSidebar}
-              className="absolute left-2.5 top-2.5 z-30 h-8 w-8 bg-background/80 shadow-sm backdrop-blur"
-              aria-label="Open panel"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Open panel
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex shrink-0 items-center border-b border-border/60 px-2 py-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                aria-label="Open panel"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={4}>
+              Open panel
+            </TooltipContent>
+          </Tooltip>
+        </div>
       ) : null}
       {children}
       {target ? (
