@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  spyOn,
+  test,
+} from "bun:test";
 
 mock.module("server-only", () => ({}));
 mock.module("drizzle-orm", () => ({
@@ -15,15 +23,17 @@ mock.module("@/lib/db/client", () => ({ db: {} }));
 // Control variable for whether decryption should fail
 let shouldDecryptFail = true;
 
+class InferenceSecretDecryptionError extends Error {
+  override name = "InferenceSecretDecryptionError";
+}
+
 mock.module("@/lib/inference/encryption", () => ({
+  InferenceSecretDecryptionError,
   encryptInferenceSecret: (s: string) => `encrypted:${s}`,
   decryptInferenceSecret: (_payload: string) => {
     if (shouldDecryptFail) {
-      throw Object.assign(
-        new Error(
-          "Stored API key could not be decrypted (encryption key mismatch for this environment).",
-        ),
-        { name: "InferenceSecretDecryptionError" },
+      throw new InferenceSecretDecryptionError(
+        "Stored API key could not be decrypted (encryption key mismatch for this environment).",
       );
     }
 
@@ -57,7 +67,7 @@ describe("decryptInferenceProfileApiKey observability", () => {
       id: "profile-obs-test-999",
       name: "Observability Test Profile",
       encryptedApiKey: "encrypted:super-secret-key",
-      provider: "anthropic",
+      provider: "anthropic" as const,
     };
 
     try {
@@ -70,10 +80,12 @@ describe("decryptInferenceProfileApiKey observability", () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
 
     // Find the call that contains our structured log
-    const calls = consoleErrorSpy.mock.calls;
-    const structuredCall = calls.find((callArgs) => {
+    const calls = consoleErrorSpy.mock.calls as unknown[][];
+    const structuredCall = calls.find((callArgs: unknown[]) => {
       const serialized = callArgs
-        .map((a) => (typeof a === "string" ? a : JSON.stringify(a) ?? String(a)))
+        .map((a) =>
+          typeof a === "string" ? a : (JSON.stringify(a) ?? String(a)),
+        )
         .join(" ");
       return (
         serialized.includes("inference_profile_decrypt_failed") ||
@@ -84,7 +96,7 @@ describe("decryptInferenceProfileApiKey observability", () => {
     expect(structuredCall).toBeDefined();
 
     // The structured log payload must include the profile id
-    const serialized = (structuredCall ?? [])
+    const serialized = ((structuredCall as unknown[] | undefined) ?? [])
       .map((a) =>
         typeof a === "string" ? a : (JSON.stringify(a) ?? String(a)),
       )

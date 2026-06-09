@@ -49,7 +49,9 @@ describe("InferenceSecretDecryptionError", () => {
     // Must throw the typed error — not raw crypto "Unsupported state or unable to authenticate data"
     expect(caughtError).toBeInstanceOf(InferenceSecretDecryptionError);
     expect(caughtError).toBeInstanceOf(Error);
-    const err = caughtError as InferenceSecretDecryptionError;
+    const err = caughtError as InstanceType<
+      typeof InferenceSecretDecryptionError
+    >;
     expect(err.name).toBe("InferenceSecretDecryptionError");
     // Message must be safe — no key material, no plaintext
     expect(err.message).not.toContain("my-api-key-value");

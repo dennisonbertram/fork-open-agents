@@ -6,6 +6,7 @@ import {
   decryptInferenceSecret,
   encryptInferenceSecret,
   fingerprintInferenceSecret,
+  InferenceSecretDecryptionError,
   lastFourSecretChars,
 } from "@/lib/inference/encryption";
 import { normalizeAnthropicBaseUrl } from "@/lib/inference/model-routing";
@@ -50,9 +51,32 @@ function keyFieldsForSecret(apiKey: string) {
 }
 
 export function decryptInferenceProfileApiKey(
-  profile: Pick<InferenceProfile, "encryptedApiKey">,
+  profile: Pick<
+    InferenceProfile,
+    "encryptedApiKey" | "id" | "name" | "provider"
+  >,
 ): string {
-  return decryptInferenceSecret(profile.encryptedApiKey);
+  try {
+    return decryptInferenceSecret(profile.encryptedApiKey);
+  } catch (error) {
+    if (error instanceof InferenceSecretDecryptionError) {
+      console.error("[inference] inference_profile_decrypt_failed", {
+        event: "inference_profile_decrypt_failed",
+        profileId: profile.id,
+        provider: profile.provider,
+        errorKind: "decrypt_auth_tag_mismatch",
+      });
+
+      throw Object.assign(
+        new Error(
+          `The saved API key for inference profile "${profile.name}" can't be decrypted in this environment — re-enter it in Settings → Models.`,
+        ),
+        { name: "InferenceProfileResolutionError" },
+      );
+    }
+
+    throw error;
+  }
 }
 
 export async function listInferenceProfiles(

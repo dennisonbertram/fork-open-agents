@@ -259,8 +259,8 @@ beforeEach(() => {
       }
     },
   );
-  spies.closeStream.mockImplementation((writable: WritableStream<UIMessageChunk>) =>
-    writable.close(),
+  spies.closeStream.mockImplementation(
+    (writable: WritableStream<UIMessageChunk>) => writable.close(),
   );
   spies.resolveChatSandboxRuntime.mockImplementation(
     (params: { assistantId: string }) => {
@@ -326,7 +326,9 @@ describe("decrypt error → actionable user message mapping (BT-009)", () => {
     // Must contain the actionable guidance
     expect(delta.toLowerCase()).toContain("settings");
     // Must NOT expose raw crypto error text
-    expect(delta).not.toContain("Unsupported state or unable to authenticate data");
+    expect(delta).not.toContain(
+      "Unsupported state or unable to authenticate data",
+    );
   });
 
   // BT-010: raw "Unsupported state or unable to authenticate data" crypto error

@@ -16,17 +16,19 @@ mock.module("@/lib/db/client", () => ({ db: {} }));
 let shouldDecryptFail = false;
 let decryptError: Error | null = null;
 
+class InferenceSecretDecryptionError extends Error {
+  override name = "InferenceSecretDecryptionError";
+}
+
 mock.module("@/lib/inference/encryption", () => ({
+  InferenceSecretDecryptionError,
   encryptInferenceSecret: (s: string) => `encrypted:${s}`,
   decryptInferenceSecret: (payload: string) => {
     if (shouldDecryptFail) {
       throw (
         decryptError ??
-        Object.assign(
-          new Error(
-            "Stored API key could not be decrypted (encryption key mismatch for this environment).",
-          ),
-          { name: "InferenceSecretDecryptionError" },
+        new InferenceSecretDecryptionError(
+          "Stored API key could not be decrypted (encryption key mismatch for this environment).",
         )
       );
     }
@@ -47,7 +49,7 @@ const fakeProfile = {
   id: "profile-abc123",
   name: "My Personal Anthropic Key",
   encryptedApiKey: "encrypted:sk-ant-real-key-value",
-  provider: "anthropic",
+  provider: "anthropic" as const,
 };
 
 // BT-004: when decrypt succeeds, returns the decrypted key
