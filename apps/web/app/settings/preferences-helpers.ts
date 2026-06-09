@@ -5,6 +5,5 @@
 export function shouldCollapseSingleOption(
   options: Array<{ id: string; name: string }>,
 ): boolean {
-  // STUB — implementation pending
-  return false;
+  return options.length <= 1;
 }
