@@ -34,6 +34,16 @@ export interface AgentRow {
  */
 export interface ResolvedAgent {
   role: AgentRole;
+  /**
+   * True when this resolution came from a real DB agents row.
+   * False when it is the synthetic prefs-derived fallback (no rows exist).
+   *
+   * Consumers (e.g. chat.ts toRosterEntry) must check this before including
+   * modelId in a roster entry: a synthetic modelId must NOT be threaded into
+   * the roster because it lacks providerOptionsOverrides, which would silently
+   * drop model-variant overrides already wired through subagentModel.
+   */
+  fromDbRow: boolean;
   modelId: string | null;
   inferenceProfileId: string | null;
   instructions: string | null;
@@ -145,6 +155,7 @@ export async function resolveAgentForRole(
 
   return {
     role,
+    fromDbRow: false,
     modelId,
     inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
     instructions: null, // null = use built-in system prompt for the role
@@ -173,6 +184,7 @@ function normalizeSkillRefs(value: unknown): GlobalSkillRef[] {
 function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
   return {
     role: row.role,
+    fromDbRow: true,
     modelId: row.modelId,
     inferenceProfileId: row.inferenceProfileId,
     instructions: row.instructions,

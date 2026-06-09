@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import type { AgentSandboxContext } from "./open-agent";
 import type { SkillMetadata } from "./skills/types";
+import type { SubagentRoster } from "./subagents/roster";
 
 export const todoStatusSchema = z.enum(["pending", "in_progress", "completed"]);
 export type TodoStatus = z.infer<typeof todoStatusSchema>;
@@ -29,6 +30,11 @@ export interface AgentContext {
     profileRunId?: string;
     sandboxName?: string;
   };
+  /**
+   * Per-role subagent configuration resolved from agents rows in the web app.
+   * Absent or null = synthetic fallback (today's behavior unchanged).
+   */
+  subagentRoster?: SubagentRoster;
 }
 
 export interface SandboxExecutionContext {
