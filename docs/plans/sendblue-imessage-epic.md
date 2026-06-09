@@ -2,9 +2,17 @@
 
 Prepared: 2026-06-09
 
-Status: planning, not ready for implementation
+Status: Deferred — not currently planned (deferred 2026-06-09)
 
-GitHub issue: https://github.com/dennisonbertram/fork-open-agents/issues/262
+GitHub issue: https://github.com/dennisonbertram/fork-open-agents/issues/262 (closed: not planned)
+
+---
+
+> **Deferral note (2026-06-09):** Parked as hard / uncertain value. Sendblue's AI Agent plan is
+> inbound-initiated only ($100/mo; cold outbound needs Enterprise), and the inbound webhook
+> signature scheme is undocumented — a hard blocker that cannot be verified without a live
+> account. The design below is preserved for reference; reopen issue #262 (and slices
+> #265–#268) to revive it.
 
 ---
 
