@@ -151,7 +151,7 @@ const fakeSandbox = {
 const connectSandbox = mock(async () => fakeSandbox);
 const getCurrentBranch = mock(async () => "main");
 const getStagedDiff = mock(async () => "");
-const hasUncommittedChanges = mock(async () => false);
+const hasUncommittedChanges = mock(async () => true);
 const stageAll = mock(async () => undefined);
 
 mock.module("@open-agents/sandbox", () => ({
@@ -276,7 +276,9 @@ const fakeComposioTools: Record<string, unknown> = {
 };
 
 const resolveComposioToolsForBgRun = mock(
-  async (_params: unknown): Promise<{
+  async (
+    _params: unknown,
+  ): Promise<{
     status: "ready" | "off" | "error";
     tools?: Record<string, unknown>;
     toolkitSlugs?: string[];
@@ -320,7 +322,8 @@ function buildRun(
     issueNumber: null,
     deploymentUrl: null,
     sandboxName: null,
-    outputKind: "none",
+    // Use ready_pr so runMutationAgent (which calls openAgent.generate) is reached.
+    outputKind: "ready_pr",
     outputUrl: null,
     errorKind: null,
     errorMessage: null,
@@ -336,9 +339,7 @@ function buildRun(
   };
 }
 
-function buildAgent(
-  overrides: Partial<BackgroundAgent> = {},
-): BackgroundAgent {
+function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   const now = new Date("2026-05-27T12:00:00.000Z");
   return {
     id: "agent-1",
@@ -350,7 +351,8 @@ function buildAgent(
     repoName: "widgets",
     instructions: "Do composio things.",
     permissions: {},
-    outputMode: "none",
+    // Use ready_pr so runMutationAgent (which calls openAgent.generate) is reached.
+    outputMode: "ready_pr",
     checkCommand: null,
     composioToolkitSlugs: [],
     createdAt: now,
@@ -395,7 +397,9 @@ beforeEach(() => {
   // Default: no toolkit slugs on agent, no grants, resolver returns "off"
   currentAgent = buildAgent({ composioToolkitSlugs: [] });
   listEnabledToolGrantsForAgent.mockImplementation(async () => []);
-  resolveComposioToolsForBgRun.mockImplementation(async () => ({ status: "off" }));
+  resolveComposioToolsForBgRun.mockImplementation(async () => ({
+    status: "off",
+  }));
 });
 
 afterEach(() => {

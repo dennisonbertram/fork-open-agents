@@ -393,6 +393,13 @@
       "when": 1781021274488,
       "tag": "0055_talented_hex",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1781025805025,
+      "tag": "0056_lethal_silhouette",
+      "breakpoints": true
     }
   ]
 }
