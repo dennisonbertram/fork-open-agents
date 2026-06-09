@@ -289,7 +289,9 @@ describe("BackgroundAgentsSection", () => {
       },
     };
     const configuredHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
-    expect(configuredHtml).toContain("github.pull_request");
+    // Trigger kind is now humanized in run history: "Pull request" not raw "github.pull_request"
+    expect(configuredHtml).toContain("Pull request");
+    expect(configuredHtml).not.toContain("github.pull_request");
     expect(configuredHtml).toContain("acme/widgets");
     expect(configuredHtml).toContain("PR #42");
     expect(configuredHtml).toContain("/background-runs/run-1");
@@ -477,6 +479,95 @@ describe("BackgroundAgentsSection", () => {
     // Delete button should not appear when there are no agents
     expect(html).not.toContain("Delete agent");
     expect(html).toContain("No background agents yet.");
+  });
+
+  test("REG-003: run history never shows raw trigger kind strings (regression guard)", async () => {
+    // If triggerLabels lookup is removed from run history, raw kind strings reappear
+    runsSwrState = {
+      data: {
+        runs: [
+          {
+            id: "run-pr",
+            status: "succeeded",
+            source: "webhook",
+            triggerKind: "github.pull_request",
+            externalId: "evt-1",
+            repoOwner: "acme",
+            repoName: "widgets",
+            ref: null,
+            sha: null,
+            branch: null,
+            prNumber: 7,
+            issueNumber: null,
+            outputKind: null,
+            outputUrl: null,
+            errorKind: null,
+            createdAt: "2026-06-01T10:00:00.000Z",
+            startedAt: null,
+            finishedAt: null,
+          },
+          {
+            id: "run-deploy",
+            status: "queued",
+            source: "webhook",
+            triggerKind: "github.deployment_status",
+            externalId: "evt-2",
+            repoOwner: "acme",
+            repoName: "widgets",
+            ref: null,
+            sha: null,
+            branch: null,
+            prNumber: null,
+            issueNumber: null,
+            outputKind: null,
+            outputUrl: null,
+            errorKind: null,
+            createdAt: "2026-06-01T11:00:00.000Z",
+            startedAt: null,
+            finishedAt: null,
+          },
+        ],
+      },
+    };
+    const { BackgroundAgentsSection } = await componentModulePromise;
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Humanized labels appear
+    expect(html).toContain("Pull request");
+    expect(html).toContain("Deployment status");
+    // Raw enum values must NOT appear in the run history
+    expect(html).not.toContain("github.pull_request");
+    expect(html).not.toContain("github.deployment_status");
+  });
+
+  test("REG-004: output mode permissions summary renders below the output mode select (regression guard)", async () => {
+    // Radix Select portals dropdown content so SelectItem text is not in static markup.
+    // Instead assert that the derived permissions summary is present — this relies on
+    // describeOutputModePermissions being wired to the rendered form.
+    const { BackgroundAgentsSection } = await componentModulePromise;
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Default outputMode is "none" → read-only summary must appear
+    expect(html.toLowerCase()).toContain("read-only");
+    // Raw enum "ready_pr" must not appear as visible element content
+    expect(html).not.toContain(">ready_pr<");
+    // The output mode label field heading must be present
+    expect(html).toContain("Output mode");
+  });
+
+  test("REG-005: condition fields section renders only fields valid for pull_request trigger (regression guard)", async () => {
+    const { BackgroundAgentsSection } = await componentModulePromise;
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // Default trigger is pull_request: Actions, Branches, Labels should appear
+    expect(html).toContain("Actions");
+    expect(html).toContain("Branches");
+    expect(html).toContain("Labels");
+    // Environments and Deployment state should NOT appear for pull_request trigger
+    expect(html).not.toContain("Environments");
+    expect(html).not.toContain("Deployment state");
+    // The raw "Severities" mislabel must never appear
+    expect(html).not.toContain("Severities");
   });
 
   test("builds edit form state and update payloads for existing agents", async () => {

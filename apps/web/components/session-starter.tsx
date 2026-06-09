@@ -23,11 +23,15 @@ import {
   SANDBOX_OPTIONS,
   type SandboxType,
 } from "./sandbox-selector-compact";
+import {
+  getButtonLabel,
+  getSessionFooter,
+  isSubmitBlocked,
+  type SessionMode,
+} from "./session-starter-helpers";
 import { SessionStarterVercelSyncSection } from "./session-starter-vercel-sync-section";
 import { prepareSessionTitle } from "./session-starter-title";
 import { Switch } from "./ui/switch";
-
-type SessionMode = "empty" | "repo";
 
 interface SessionStarterProps {
   onSubmit: (session: {
@@ -115,7 +119,10 @@ export function SessionStarter({
       setVercelProjectChoice(null);
       return;
     }
-    setVercelProjectChoice(undefined);
+    // Projects exist but no saved default — default to "don't sync" (null)
+    // so the submit button is not blocked. The user can expand the Vercel
+    // section to configure sync if they want.
+    setVercelProjectChoice(null);
   }, [repoProjects, repoProjectsLoading, shouldLoadVercelProjects]);
 
   const handleRepoSelect = (owner: string, repo: string) => {
@@ -162,13 +169,20 @@ export function SessionStarter({
     repoProjects.selectedProjectId === null &&
     vercelProjectChoice === undefined;
   const controlsDisabled = isLoading || preferencesLoading;
-  const isSubmitDisabled =
-    controlsDisabled ||
-    (isRepoModeDisabled && mode === "repo") ||
-    (mode === "repo" && (githubConnectionLoading || reconnectRequired)) ||
-    !isRepoSelectionComplete ||
-    isVercelLookupPending ||
-    requiresVercelChoice;
+
+  // isSubmitBlocked is computed by the pure helper — requiresVercelChoice is
+  // passed for API completeness but does NOT block submit (fixes #219).
+  const submitBlocked = isSubmitBlocked({
+    controlsDisabled,
+    mode,
+    isRepoModeDisabled,
+    githubConnectionLoading,
+    reconnectRequired,
+    isRepoSelectionComplete: Boolean(isRepoSelectionComplete),
+    isVercelLookupPending,
+    requiresVercelChoice,
+  });
+
   const effectiveAutoCommitPush = autoCommitPush ?? defaultAutoCommitPush;
   const effectiveAutoCreatePr = autoCreatePr ?? defaultAutoCreatePr;
   const showVercelProjectSection =
@@ -180,7 +194,7 @@ export function SessionStarter({
     (sessionLoading || session?.authProvider === "vercel");
 
   const handleSubmit = () => {
-    if (isSubmitDisabled) return;
+    if (submitBlocked) return;
 
     let vercelProject: VercelProjectSelection | null | undefined;
     if (shouldLoadVercelProjects) {
@@ -194,6 +208,7 @@ export function SessionStarter({
             (project) => project.projectId === vercelProjectChoice,
           ) ?? null;
       } else {
+        // Still resolving — should not reach here since submitBlocked guards it
         return;
       }
     }
@@ -215,10 +230,8 @@ export function SessionStarter({
     });
   };
 
-  const buttonLabel =
-    mode === "repo" && selectedOwner && selectedRepo
-      ? `Start with ${selectedOwner}/${selectedRepo}`
-      : "Start session";
+  const buttonLabel = getButtonLabel(mode, selectedOwner, selectedRepo);
+  const footerText = getSessionFooter(mode, sandboxName);
 
   return (
     <div
@@ -240,7 +253,7 @@ export function SessionStarter({
             )}
           >
             <MessageSquare className="h-3.5 w-3.5" />
-            New Chat
+            New chat
           </button>
           <button
             type="button"
@@ -256,7 +269,7 @@ export function SessionStarter({
             )}
           >
             <GitBranch className="h-3.5 w-3.5" />
-            Start Session
+            Connect a repo
           </button>
         </div>
 
@@ -301,7 +314,7 @@ export function SessionStarter({
 
         {mode === "empty" && (
           <p className="text-center text-sm text-muted-foreground dark:text-neutral-500">
-            Start a new chat -- no repository required.
+            Start a new chat — no repository required.
           </p>
         )}
 
@@ -387,10 +400,10 @@ export function SessionStarter({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={isSubmitDisabled}
+          disabled={submitBlocked}
           className={cn(
             "flex w-full items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-colors",
-            isSubmitDisabled
+            submitBlocked
               ? "cursor-not-allowed bg-muted text-muted-foreground"
               : "bg-foreground text-background hover:bg-foreground/90",
           )}
@@ -399,16 +412,22 @@ export function SessionStarter({
           {isLoading ? "Creating session…" : buttonLabel}
         </button>
 
-        <p className="text-center text-xs text-muted-foreground">
-          Using {sandboxName} sandbox{" "}
-          <span className="text-muted-foreground/60">&middot;</span>{" "}
-          <Link
-            href="/settings/preferences"
-            className="text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/40"
-          >
-            Change
-          </Link>
-        </p>
+        {mode === "empty" ? (
+          <p className="text-center text-xs text-muted-foreground">
+            {footerText}
+          </p>
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">
+            {footerText}{" "}
+            <span className="text-muted-foreground/60">&middot;</span>{" "}
+            <Link
+              href="/settings/preferences"
+              className="text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/40"
+            >
+              Change
+            </Link>
+          </p>
+        )}
       </div>
     </div>
   );
