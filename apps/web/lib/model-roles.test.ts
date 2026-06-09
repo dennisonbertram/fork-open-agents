@@ -11,24 +11,24 @@ import {
 describe("deriveCostTier", () => {
   // BT-TIER-001: input < 1 $/M → "$"
   test("BT-TIER-001: input 0.10 → $", () => {
-    expect(deriveCostTier({ input: 0.10, output: 0.40 })).toBe("$");
+    expect(deriveCostTier({ input: 0.1, output: 0.4 })).toBe("$");
   });
 
   test("BT-TIER-001b: input 0.80 → $", () => {
-    expect(deriveCostTier({ input: 0.80, output: 4.00 })).toBe("$");
+    expect(deriveCostTier({ input: 0.8, output: 4 })).toBe("$");
   });
 
   // BT-TIER-002: input 1–5 $/M → "$$"
   test("BT-TIER-002: input 1.00 → $$", () => {
-    expect(deriveCostTier({ input: 1.00, output: 5.00 })).toBe("$$");
+    expect(deriveCostTier({ input: 1, output: 5 })).toBe("$$");
   });
 
   test("BT-TIER-002b: input 3.00 → $$", () => {
-    expect(deriveCostTier({ input: 3.00, output: 15 })).toBe("$$");
+    expect(deriveCostTier({ input: 3, output: 15 })).toBe("$$");
   });
 
   test("BT-TIER-002c: input exactly 5.00 → $$", () => {
-    expect(deriveCostTier({ input: 5.00, output: 25 })).toBe("$$");
+    expect(deriveCostTier({ input: 5, output: 25 })).toBe("$$");
   });
 
   // BT-TIER-003: input > 5 $/M → "$$$"

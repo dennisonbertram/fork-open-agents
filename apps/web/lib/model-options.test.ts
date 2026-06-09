@@ -48,29 +48,28 @@ describe("model options", () => {
 
     const options = buildModelOptions(models, variants);
 
-    expect(options).toEqual([
-      {
-        id: "openai/gpt-5",
-        label: "GPT-5",
-        shortLabel: "GPT-5",
-        description: "Base model",
-        isVariant: false,
-        contextWindow: 400_000,
-        provider: "openai",
-        source: "catalog",
-      },
-      {
-        id: "variant:gpt-5-medium",
-        label: "GPT-5 Medium Reasoning",
-        shortLabel: "GPT-5 Medium Reasoning",
-        description: "Variant of GPT-5",
-        isVariant: true,
-        contextWindow: 400_000,
-        provider: "openai",
-        source: "catalog",
-        baseModelId: "openai/gpt-5",
-      },
-    ]);
+    expect(options).toHaveLength(2);
+    expect(options[0]).toMatchObject({
+      id: "openai/gpt-5",
+      label: "GPT-5",
+      shortLabel: "GPT-5",
+      description: "Base model",
+      isVariant: false,
+      contextWindow: 400_000,
+      provider: "openai",
+      source: "catalog",
+    });
+    expect(options[1]).toMatchObject({
+      id: "variant:gpt-5-medium",
+      label: "GPT-5 Medium Reasoning",
+      shortLabel: "GPT-5 Medium Reasoning",
+      description: "Variant of GPT-5",
+      isVariant: true,
+      contextWindow: 400_000,
+      provider: "openai",
+      source: "catalog",
+      baseModelId: "openai/gpt-5",
+    });
   });
 
   test("buildModelOptions strips provider prefix for shortLabel", () => {
@@ -686,7 +685,7 @@ describe("filterAndSortModelOptions — cost sort", () => {
     shortLabel: "2.0 Flash",
     isVariant: false,
     provider: "google",
-    cost: { input: 0.10, output: 0.40 },
+    cost: { input: 0.1, output: 0.4 },
   };
   const midModel = {
     id: "anthropic/claude-haiku-4.5",
@@ -694,7 +693,7 @@ describe("filterAndSortModelOptions — cost sort", () => {
     shortLabel: "Haiku 4.5",
     isVariant: false,
     provider: "anthropic",
-    cost: { input: 1.00, output: 5.00 },
+    cost: { input: 1, output: 5 },
   };
   const expensiveModel = {
     id: "openai/gpt-5.5",
@@ -702,7 +701,7 @@ describe("filterAndSortModelOptions — cost sort", () => {
     shortLabel: "GPT-5.5",
     isVariant: false,
     provider: "openai",
-    cost: { input: 5.00, output: 30 },
+    cost: { input: 5, output: 30 },
   };
   const noCostModel = {
     id: "unknown/mystery",

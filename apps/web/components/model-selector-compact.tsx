@@ -201,23 +201,43 @@ export function ModelSelectorCompact({
                           provider={option.provider}
                           className="mr-1.5 size-3.5 shrink-0 opacity-70"
                         />
-                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                          <span className="min-w-0 truncate">
-                            {option.shortLabel}
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="min-w-0 truncate">
+                              {option.shortLabel}
+                            </span>
+                            {/* Personal-provider (user-key) models: a small green dot
+                              instead of a competing "Personal …" label, so the full
+                              model name stays readable. */}
+                            {isUserModel && (
+                              <span
+                                className="size-1.5 shrink-0 rounded-full bg-emerald-500"
+                                aria-label="Your personal provider key"
+                                title="Uses your personal provider key"
+                              />
+                            )}
+                            {option.secondaryLabel && !isUserModel && (
+                              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                                {option.secondaryLabel}
+                              </span>
+                            )}
                           </span>
-                          {/* Personal-provider (user-key) models: a small green dot
-                            instead of a competing "Personal …" label, so the full
-                            model name stays readable. */}
-                          {isUserModel && (
-                            <span
-                              className="size-1.5 shrink-0 rounded-full bg-emerald-500"
-                              aria-label="Your personal provider key"
-                              title="Uses your personal provider key"
-                            />
-                          )}
-                          {option.secondaryLabel && !isUserModel && (
-                            <span className="min-w-0 truncate text-xs text-muted-foreground">
-                              {option.secondaryLabel}
+                          {/* Compact metadata: cost tier · context window · role hint */}
+                          {(option.costTier ||
+                            option.contextWindow ||
+                            option.roleHint) && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+                              {option.costTier && (
+                                <span>{option.costTier}</span>
+                              )}
+                              {option.contextWindow && (
+                                <span>
+                                  {Math.round(option.contextWindow / 1000)}K
+                                </span>
+                              )}
+                              {option.roleHint && (
+                                <span>{option.roleHint}</span>
+                              )}
                             </span>
                           )}
                         </span>
