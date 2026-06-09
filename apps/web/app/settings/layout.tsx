@@ -25,6 +25,25 @@ import { PreferencesSectionSkeleton } from "./preferences-section";
 import { SettingsNav } from "./settings-nav";
 import { SkillsSectionSkeleton } from "./skills/skills-section";
 
+function RuntimeProfilesSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <Skeleton className="mb-4 h-4 w-32" />
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-md" />
+          ))}
+        </div>
+      </div>
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <Skeleton className="mb-4 h-4 w-32" />
+        <Skeleton className="h-12 w-full rounded-md" />
+      </div>
+    </div>
+  );
+}
+
 /** Skeleton shown while auth is loading for the combined profile page */
 function ProfilePageSkeleton() {
   return (
@@ -179,6 +198,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </div>
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
+    ) : activeItem?.id === "runtime-profiles" ? (
+      <RuntimeProfilesSkeleton />
     ) : (
       <ProfilePageSkeleton />
     );

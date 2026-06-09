@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { SettingsPageHeader } from "@/components/ui/settings-section";
 import { InferenceProfilesSection } from "../inference-profiles-section";
 import { ModelVariantsSection } from "../model-variants-section";
-import { ModelPreferencesSection } from "../preferences-section";
+import { ModelPreferencesSection } from "./models-preferences-section";
 
 export const metadata: Metadata = {
   title: "Models",
