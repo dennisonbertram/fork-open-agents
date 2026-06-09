@@ -272,13 +272,15 @@ describe("POST /api/github/webhook background agent dispatch", () => {
     expect(body.event).toBe("pull_request_review");
     expect(body.backgroundAgents).toBeDefined();
     expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledTimes(1);
-    const call = dispatchBackgroundTriggerEvent.mock.calls[0]?.[0];
-    expect(call).toBeDefined();
-    expect(call?.event?.kind).toBe("github.pull_request_review");
-    expect(call?.event?.action).toBe("submitted");
-    expect(call?.event?.repoOwner).toBe("acme");
-    expect(call?.event?.repoName).toBe("widgets");
-    expect(call?.requestId).toBe("req-review-1");
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledWith({
+      requestId: "req-review-1",
+      event: expect.objectContaining({
+        kind: "github.pull_request_review",
+        action: "submitted",
+        repoOwner: "acme",
+        repoName: "widgets",
+      }),
+    });
   });
 
   test("dispatches pull_request closed+merged=true with merged condition", async () => {
@@ -301,9 +303,14 @@ describe("POST /api/github/webhook background agent dispatch", () => {
 
     expect(response.status).toBe(200);
     expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledTimes(1);
-    const call = dispatchBackgroundTriggerEvent.mock.calls[0]?.[0];
-    expect(call?.event?.merged).toBe(true);
-    expect(call?.event?.action).toBe("closed");
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          merged: true,
+          action: "closed",
+        }),
+      }),
+    );
   });
 
   test("rejects pull_request_review delivery with invalid signature", async () => {

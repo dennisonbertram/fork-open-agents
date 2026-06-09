@@ -7,13 +7,7 @@
  *  - Records completion status / events on success
  *  - Records failure status when runner returns errorKind
  */
-import {
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
@@ -113,6 +107,11 @@ mock.module("./store", () => ({
   updateBackgroundAgentRunStatus,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
+  // These are needed by builtin-agent.ts (imported via isLearningsAgent)
+  listRepoBackgroundAgents: mock(async () => []),
+  listBackgroundAgents: mock(async () => []),
+  createBackgroundAgent: mock(async () => ({})),
+  updateBackgroundAgent: mock(async () => null),
 }));
 
 mock.module("./run-summary", () => ({

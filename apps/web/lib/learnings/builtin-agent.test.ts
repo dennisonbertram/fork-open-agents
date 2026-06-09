@@ -80,14 +80,13 @@ const listRepoBackgroundAgents = mock(async () => {
 
 const updateBackgroundAgent = mock(
   async (_userId: string, agentId: string, input: Record<string, unknown>) => {
+    // Apply the status change to the in-memory array so subsequent
+    // listRepoBackgroundAgents calls reflect the updated state
     const agent = createdAgents.find((a) => a.id === agentId);
-    if (!agent) {
-      return null;
-    }
-    if (input.status !== undefined) {
+    if (agent && input.status !== undefined) {
       agent.status = input.status as "enabled" | "disabled";
     }
-    return agent;
+    return agent ?? null;
   },
 );
 
@@ -244,7 +243,12 @@ describe("ensureRepoLearningsAgent", () => {
     };
     const { ensureRepoLearningsAgent } = await modulePromise;
 
-    const result = await ensureRepoLearningsAgent("user-1", "acme", "widgets", true);
+    const result = await ensureRepoLearningsAgent(
+      "user-1",
+      "acme",
+      "widgets",
+      true,
+    );
 
     expect(result.errorKind).toBe("user_no_write");
     expect(createBackgroundAgent).not.toHaveBeenCalled();
@@ -265,7 +269,12 @@ describe("ensureRepoLearningsAgent", () => {
     };
     const { ensureRepoLearningsAgent } = await modulePromise;
 
-    const result = await ensureRepoLearningsAgent("user-1", "acme", "widgets", true);
+    const result = await ensureRepoLearningsAgent(
+      "user-1",
+      "acme",
+      "widgets",
+      true,
+    );
 
     expect(result.errorKind).toBe("no_installation");
     expect(createBackgroundAgent).not.toHaveBeenCalled();

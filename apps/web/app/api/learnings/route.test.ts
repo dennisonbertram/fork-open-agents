@@ -97,7 +97,11 @@ describe("POST /api/learnings", () => {
     const response = await POST(
       new Request("http://localhost/api/learnings", {
         method: "POST",
-        body: JSON.stringify({ repoOwner: "acme", repoName: "widgets", enabled: true }),
+        body: JSON.stringify({
+          repoOwner: "acme",
+          repoName: "widgets",
+          enabled: true,
+        }),
         headers: { "Content-Type": "application/json" },
       }),
     );
@@ -128,7 +132,11 @@ describe("POST /api/learnings", () => {
     const response = await POST(
       new Request("http://localhost/api/learnings", {
         method: "POST",
-        body: JSON.stringify({ repoOwner: "acme", repoName: "widgets", enabled: true }),
+        body: JSON.stringify({
+          repoOwner: "acme",
+          repoName: "widgets",
+          enabled: true,
+        }),
         headers: { "Content-Type": "application/json" },
       }),
     );
@@ -148,7 +156,11 @@ describe("POST /api/learnings", () => {
     const response = await POST(
       new Request("http://localhost/api/learnings", {
         method: "POST",
-        body: JSON.stringify({ repoOwner: "acme", repoName: "widgets", enabled: true }),
+        body: JSON.stringify({
+          repoOwner: "acme",
+          repoName: "widgets",
+          enabled: true,
+        }),
         headers: { "Content-Type": "application/json" },
       }),
     );
@@ -166,7 +178,11 @@ describe("POST /api/learnings", () => {
     const response = await POST(
       new Request("http://localhost/api/learnings", {
         method: "POST",
-        body: JSON.stringify({ repoOwner: "acme", repoName: "widgets", enabled: true }),
+        body: JSON.stringify({
+          repoOwner: "acme",
+          repoName: "widgets",
+          enabled: true,
+        }),
         headers: { "Content-Type": "application/json" },
       }),
     );
@@ -191,7 +207,11 @@ describe("POST /api/learnings", () => {
     const response = await POST(
       new Request("http://localhost/api/learnings", {
         method: "POST",
-        body: JSON.stringify({ repoOwner: "acme", repoName: "widgets", enabled: false }),
+        body: JSON.stringify({
+          repoOwner: "acme",
+          repoName: "widgets",
+          enabled: false,
+        }),
         headers: { "Content-Type": "application/json" },
       }),
     );

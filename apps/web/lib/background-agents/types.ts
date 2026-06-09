@@ -70,6 +70,9 @@ export const triggerConditionsSchema = z
     labels: z.array(z.string().min(1)).optional(),
     environments: z.array(z.string().min(1)).optional(),
     severities: z.array(z.string().min(1)).optional(),
+    // mergedOnly restricts github.pull_request to merged-closed events.
+    // Stored as JSONB, no migration needed. Not user-exposed yet (CODE-03).
+    mergedOnly: z.boolean().optional(),
   })
   .strict();
 

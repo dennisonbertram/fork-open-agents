@@ -43,6 +43,9 @@ export type BackgroundAgentTriggerConditions = {
   labels?: string[];
   environments?: string[];
   severities?: string[];
+  // mergedOnly: true restricts github.pull_request triggers to merged-closed events only.
+  // Stored as JSONB — no migration needed. Not yet exposed in the UI (CODE-03).
+  mergedOnly?: boolean;
 };
 
 export type BackgroundAgentPermissions = {

@@ -40,7 +40,13 @@ describe("GitHub App webhook readiness", () => {
     }
     appData = {
       slug: "open-agents-dennison",
-      events: ["pull_request", "issues", "deployment_status"],
+      // pull_request_review is now required (CODE-02)
+      events: [
+        "pull_request",
+        "issues",
+        "deployment_status",
+        "pull_request_review",
+      ],
       permissions: {
         contents: "write",
         pull_requests: "write",
