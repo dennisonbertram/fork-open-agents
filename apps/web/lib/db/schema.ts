@@ -1607,7 +1607,7 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
-    index("agents_user_role_scope_idx").on(
+    uniqueIndex("agents_user_role_scope_idx").on(
       table.userId,
       table.role,
       table.scope,
