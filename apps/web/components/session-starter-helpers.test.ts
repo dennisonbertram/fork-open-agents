@@ -164,3 +164,76 @@ describe("getButtonLabel", () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// REGRESSION tests — would fail if the green changes in 023260e7 are reverted
+// ---------------------------------------------------------------------------
+describe("REGRESSION — footer never makes a false sandbox claim in empty mode", () => {
+  test("REGRESSION-001: getSessionFooter(empty) does not contain 'Using'", () => {
+    // If the old unconditional footer were restored, this would fail because
+    // the old text was "Using {sandboxName} sandbox".
+    const result = getSessionFooter("empty", "Vercel");
+    expect(result).not.toContain("Using");
+  });
+
+  test("REGRESSION-002: getSessionFooter(empty) does not contain the sandbox name", () => {
+    // Prevents restoring the old "Using Vercel sandbox" in empty mode.
+    expect(getSessionFooter("empty", "Vercel")).not.toContain("Vercel");
+    expect(getSessionFooter("empty", "AnotherSandbox")).not.toContain(
+      "AnotherSandbox",
+    );
+  });
+
+  test("REGRESSION-003: getSessionFooter(repo) still contains 'Using' and the sandbox name", () => {
+    // Repo mode must still communicate which sandbox is active.
+    const result = getSessionFooter("repo", "Vercel");
+    expect(result).toContain("Using");
+    expect(result).toContain("Vercel");
+  });
+});
+
+describe("REGRESSION — Vercel env-sync choice never hard-blocks submit", () => {
+  test("REGRESSION-004: isSubmitBlocked returns false when only requiresVercelChoice=true", () => {
+    // If requiresVercelChoice is re-added to the blocking conditions,
+    // this test fails — catching the regression immediately.
+    const result = isSubmitBlocked({
+      controlsDisabled: false,
+      mode: "repo",
+      isRepoModeDisabled: false,
+      githubConnectionLoading: false,
+      reconnectRequired: false,
+      isRepoSelectionComplete: true,
+      isVercelLookupPending: false,
+      requiresVercelChoice: true,
+    });
+    expect(result).toBe(false);
+  });
+
+  test("REGRESSION-005: isSubmitBlocked does not change behavior when requiresVercelChoice toggles", () => {
+    // Varying requiresVercelChoice must have zero effect on the return value.
+    const base = {
+      controlsDisabled: false,
+      mode: "repo" as const,
+      isRepoModeDisabled: false,
+      githubConnectionLoading: false,
+      reconnectRequired: false,
+      isRepoSelectionComplete: true,
+      isVercelLookupPending: false,
+    };
+    expect(isSubmitBlocked({ ...base, requiresVercelChoice: true })).toBe(
+      false,
+    );
+    expect(isSubmitBlocked({ ...base, requiresVercelChoice: false })).toBe(
+      false,
+    );
+  });
+});
+
+describe("REGRESSION — button label reads 'Start chat' in empty mode", () => {
+  test("REGRESSION-006: getButtonLabel(empty) never returns the old 'Start session' label", () => {
+    // The old text was "Start session". If reverted, this test fails.
+    const label = getButtonLabel("empty", "", "");
+    expect(label).not.toBe("Start session");
+    expect(label).toBe("Start chat");
+  });
+});
