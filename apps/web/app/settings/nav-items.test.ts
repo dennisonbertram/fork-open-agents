@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Bot, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
@@ -78,8 +79,8 @@ describe("settings nav data", () => {
   // NAV-003: agents item does not use the Bot icon (reserved for background-agents)
   test("NAV-003: agents item uses Users icon (not Bot)", () => {
     const item = findActiveNavItem("/settings/agents");
-    // We can verify the icon name by checking the function name
-    expect(item?.icon.name).not.toBe("Bot");
-    expect(item?.icon.name).toBe("Users");
+    // Verify by reference equality — lucide icons don't expose .name
+    expect(item?.icon).toBe(Users);
+    expect(item?.icon).not.toBe(Bot);
   });
 });

@@ -52,7 +52,10 @@ describe("buildAgentRoster", () => {
   // BT-002: Main model comes from defaultModelId
   test("BT-002: Main row model reflects defaultModelId preference", () => {
     const rows = buildAgentRoster({
-      preferences: { ...basePrefs, defaultModelId: "anthropic/claude-3-7-sonnet" },
+      preferences: {
+        ...basePrefs,
+        defaultModelId: "anthropic/claude-3-7-sonnet",
+      },
       composioDefaults: noComposioDefaults,
       runtimeProfiles,
     });
@@ -135,7 +138,10 @@ describe("buildAgentRoster", () => {
   // BT-007: runtimeLabel shows the profile displayName
   test("BT-007: runtimeLabel shows the displayName of the matching profile", () => {
     const rows = buildAgentRoster({
-      preferences: { ...basePrefs, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      preferences: {
+        ...basePrefs,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       composioDefaults: noComposioDefaults,
       runtimeProfiles,
     });
@@ -147,7 +153,10 @@ describe("buildAgentRoster", () => {
   // BT-008: runtimeLabel falls back to "Default sandbox" when profileId doesn't match
   test("BT-008: runtimeLabel falls back to Default sandbox when profile not found", () => {
     const rows = buildAgentRoster({
-      preferences: { ...basePrefs, defaultManagedRuntimeProfileId: "unknown-profile" },
+      preferences: {
+        ...basePrefs,
+        defaultManagedRuntimeProfileId: "unknown-profile",
+      },
       composioDefaults: noComposioDefaults,
       runtimeProfiles,
     });
