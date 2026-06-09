@@ -2,9 +2,7 @@ import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // Mock heavy data-fetching sections so we test page composition, not data.
-mock.module("../preferences-section", () => ({
-  PreferencesSection: () => <div>PREFERENCES_SECTION_STUB</div>,
-  PreferencesSectionSkeleton: () => <div>PREFERENCES_SKELETON_STUB</div>,
+mock.module("./models-preferences-section", () => ({
   ModelPreferencesSection: () => <div>MODEL_PREFERENCES_SECTION_STUB</div>,
   ModelPreferencesSectionSkeleton: () => (
     <div>MODEL_PREFERENCES_SKELETON_STUB</div>
