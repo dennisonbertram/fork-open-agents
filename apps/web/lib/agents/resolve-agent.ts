@@ -1,10 +1,13 @@
-// STUB — to be implemented in the GREEN phase
-// Exists only to allow the test runner to import the module and produce
-// meaningful behavioral failures rather than "Cannot find module" errors.
+import { listAgentsForUser } from "@/lib/db/agents";
+import { getUserPreferences } from "@/lib/db/user-preferences";
+import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type AgentRole = "main" | "explorer" | "executor" | "design";
 export type AgentScope = "user_default" | "repo" | "session";
 
+/** Minimal shape of an agent DB row that the resolver needs. */
 export interface AgentRow {
   id: string;
   userId: string;
@@ -25,12 +28,16 @@ export interface AgentRow {
   toolAuthoringEnabled: boolean;
 }
 
+/**
+ * The flattened, inheritance-collapsed view of an agent configuration.
+ * This is what every run type consumes.
+ */
 export interface ResolvedAgent {
   role: AgentRole;
   modelId: string | null;
   inferenceProfileId: string | null;
   instructions: string | null;
-  skillRefs: unknown[];
+  skillRefs: GlobalSkillRef[];
   builtinToolNames: string[] | null;
   composioToolkitSlugs: string[];
   composioProfileId: string | null;
@@ -44,15 +51,48 @@ export interface PickScopeKeys {
   repoName?: string;
 }
 
+// ── Pure helper ───────────────────────────────────────────────────────────────
+
 /**
- * STUB — always returns undefined, so tests expecting specific precedence fail.
+ * Pure function — given a list of agent rows for a single role and a set of
+ * scope lookup keys, returns the most specific matching row following the
+ * resolution order:
+ *
+ *   session > repo > user_default
+ *
+ * Returns `undefined` when no row matches any scope.
  */
 export function pickMostSpecificAgent(
-  _rows: AgentRow[],
-  _keys: PickScopeKeys,
+  rows: AgentRow[],
+  keys: PickScopeKeys,
 ): AgentRow | undefined {
+  // 1. Session scope — exact sessionId match
+  if (keys.sessionId) {
+    const sessionRow = rows.find(
+      (r) => r.scope === "session" && r.sessionId === keys.sessionId,
+    );
+    if (sessionRow) return sessionRow;
+  }
+
+  // 2. Repo scope — exact repoOwner+repoName match
+  if (keys.repoOwner && keys.repoName) {
+    const repoRow = rows.find(
+      (r) =>
+        r.scope === "repo" &&
+        r.repoOwner === keys.repoOwner &&
+        r.repoName === keys.repoName,
+    );
+    if (repoRow) return repoRow;
+  }
+
+  // 3. User-default scope
+  const userDefaultRow = rows.find((r) => r.scope === "user_default");
+  if (userDefaultRow) return userDefaultRow;
+
   return undefined;
 }
+
+// ── Resolver ──────────────────────────────────────────────────────────────────
 
 export interface ResolveAgentParams {
   userId: string;
@@ -63,10 +103,84 @@ export interface ResolveAgentParams {
 }
 
 /**
- * STUB — always throws so tests fail meaningfully.
+ * Resolve the effective agent configuration for a given role + scope context.
+ *
+ * Resolution order (most specific wins):
+ *   1. scope=session  row for {userId, role, sessionId}
+ *   2. scope=repo     row for {userId, role, repoOwner, repoName}
+ *   3. scope=user_default row for {userId, role}
+ *   4. Synthetic built-in fallback derived from userPreferences
+ *      → returns exactly today's behavior when zero agent rows exist.
+ *
+ * The synthetic fallback is CRITICAL: with no `agents` rows every resolution
+ * returns exactly today's behavior, so the foundation ships with zero runtime
+ * change.
  */
 export async function resolveAgentForRole(
-  _params: ResolveAgentParams,
+  params: ResolveAgentParams,
 ): Promise<ResolvedAgent> {
-  throw new Error("resolveAgentForRole: not yet implemented");
+  const { userId, role, sessionId, repoOwner, repoName } = params;
+
+  // Fetch all rows for this user+role in one query
+  const rows = await listAgentsForUser({ userId, role });
+
+  const matched = pickMostSpecificAgent(rows, {
+    sessionId,
+    repoOwner,
+    repoName,
+  });
+
+  if (matched) {
+    return rowToResolvedAgent(matched);
+  }
+
+  // Synthetic fallback — derived from userPreferences so behavior is unchanged
+  // when no agent rows exist.
+  const prefs = await getUserPreferences(userId);
+
+  const isSubRole = role !== "main";
+  const modelId = isSubRole
+    ? (prefs.defaultSubagentModelId ?? prefs.defaultModelId)
+    : prefs.defaultModelId;
+
+  return {
+    role,
+    modelId,
+    inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
+    instructions: null, // null = use built-in system prompt for the role
+    skillRefs: [],
+    builtinToolNames: null, // null = use role's default policy from packages/agent
+    composioToolkitSlugs: [],
+    composioProfileId: null,
+    managedRuntimeProfileId: prefs.defaultManagedRuntimeProfileId,
+    toolAuthoringEnabled: false,
+  };
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+function normalizeSkillRefs(value: unknown): GlobalSkillRef[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is GlobalSkillRef =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as Record<string, unknown>)["source"] === "string" &&
+      typeof (item as Record<string, unknown>)["skillName"] === "string",
+  );
+}
+
+function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
+  return {
+    role: row.role,
+    modelId: row.modelId,
+    inferenceProfileId: row.inferenceProfileId,
+    instructions: row.instructions,
+    skillRefs: normalizeSkillRefs(row.skillRefs),
+    builtinToolNames: row.builtinToolNames,
+    composioToolkitSlugs: row.composioToolkitSlugs,
+    composioProfileId: row.composioProfileId,
+    managedRuntimeProfileId: row.managedRuntimeProfileId,
+    toolAuthoringEnabled: row.toolAuthoringEnabled,
+  };
 }

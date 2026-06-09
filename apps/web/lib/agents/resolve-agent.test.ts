@@ -6,12 +6,35 @@
  */
 
 import { describe, expect, it, mock, beforeEach } from "bun:test";
+import type { AgentRole, AgentScope } from "./resolve-agent";
 
 // ─── module mocks ─────────────────────────────────────────────────────────────
 // We mock the two I/O modules before importing the resolver so the resolver
 // picks up the mocked versions at import time.
 
-const mockListAgentsForUser = mock(async (_params: unknown) => []);
+type AgentRow = {
+  id: string;
+  userId: string;
+  name: string;
+  role: AgentRole;
+  scope: AgentScope;
+  sessionId: string | null;
+  repoOwner: string | null;
+  repoName: string | null;
+  modelId: string | null;
+  inferenceProfileId: string | null;
+  instructions: string | null;
+  skillRefs: unknown[];
+  builtinToolNames: string[] | null;
+  composioToolkitSlugs: string[];
+  composioProfileId: string | null;
+  managedRuntimeProfileId: string | null;
+  toolAuthoringEnabled: boolean;
+};
+
+const mockListAgentsForUser = mock(
+  async (_params: unknown): Promise<AgentRow[]> => [],
+);
 const mockGetUserPreferences = mock(async (_userId: string) => ({
   defaultModelId: "anthropic/claude-opus-4",
   defaultSubagentModelId: null as string | null,
@@ -34,31 +57,10 @@ mock.module("@/lib/db/user-preferences", () => ({
 }));
 
 // ─── import after mocking ────────────────────────────────────────────────────
-const { resolveAgentForRole, pickMostSpecificAgent } = await import(
-  "./resolve-agent"
-);
+const { resolveAgentForRole, pickMostSpecificAgent } =
+  await import("./resolve-agent");
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
-
-type AgentRow = {
-  id: string;
-  userId: string;
-  name: string;
-  role: "main" | "explorer" | "executor" | "design";
-  scope: "user_default" | "repo" | "session";
-  sessionId: string | null;
-  repoOwner: string | null;
-  repoName: string | null;
-  modelId: string | null;
-  inferenceProfileId: string | null;
-  instructions: string | null;
-  skillRefs: unknown[];
-  builtinToolNames: string[] | null;
-  composioToolkitSlugs: string[];
-  composioProfileId: string | null;
-  managedRuntimeProfileId: string | null;
-  toolAuthoringEnabled: boolean;
-};
 
 function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
   return {
@@ -100,11 +102,14 @@ describe("pickMostSpecificAgent (pure helper)", () => {
       sessionId: "session-x",
     });
 
-    const result = pickMostSpecificAgent([userDefaultRow, repoRow, sessionRow], {
-      sessionId: "session-x",
-      repoOwner: "acme",
-      repoName: "api",
-    });
+    const result = pickMostSpecificAgent(
+      [userDefaultRow, repoRow, sessionRow],
+      {
+        sessionId: "session-x",
+        repoOwner: "acme",
+        repoName: "api",
+      },
+    );
 
     expect(result?.id).toBe("sess");
   });
