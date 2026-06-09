@@ -279,6 +279,167 @@ export async function markManagedRuntimeSavedProfileTesting(params: {
   return profile;
 }
 
+// ---------------------------------------------------------------------------
+// user_default scope helpers (account-level, not tied to a session)
+// ---------------------------------------------------------------------------
+
+export type CreateUserDefaultProfileParams = {
+  userId: string;
+  displayName: string;
+  description: string;
+  setupCommands: ManagedRuntimeProfileCommand[];
+  verificationCommands: ManagedRuntimeProfileCommand[];
+  expectedTools: string[];
+  optionalTools: string[];
+  defaultPorts: number[];
+};
+
+/**
+ * Insert a new account-level managed runtime profile (scope=user_default,
+ * session_id=null). Mirrors applyDraftAsSessionManagedRuntimeProfile's insert
+ * logic but is parameterized for scope/sessionId instead of using a draft.
+ */
+export async function createManagedRuntimeSavedProfile(
+  params: CreateUserDefaultProfileParams,
+): Promise<ManagedRuntimeSavedProfile> {
+  const now = new Date();
+  const id = `user-profile-${nanoid()}`;
+  const [profile] = await db
+    .insert(managedRuntimeSavedProfiles)
+    .values({
+      id,
+      userId: params.userId,
+      sessionId: null,
+      sourceDraftId: null,
+      scope: "user_default",
+      version: `created-${now.toISOString()}`,
+      displayName: params.displayName,
+      description: params.description,
+      setupCommands: params.setupCommands.map(normalizeCommand),
+      verificationCommands: params.verificationCommands.map(normalizeCommand),
+      expectedTools: params.expectedTools,
+      optionalTools: params.optionalTools,
+      defaultPorts: params.defaultPorts,
+      latestTestRunId: null,
+      testResults: [],
+      testFailureMessage: null,
+      testedAt: null,
+      updatedAt: now,
+    })
+    .returning();
+
+  if (!profile) {
+    throw new Error("Failed to create managed runtime profile");
+  }
+
+  return profile;
+}
+
+/**
+ * List all account-level (scope=user_default) saved profiles for a user.
+ */
+export async function listUserDefaultProfiles(params: {
+  userId: string;
+}): Promise<ManagedRuntimeSavedProfile[]> {
+  return db.query.managedRuntimeSavedProfiles.findMany({
+    where: and(
+      eq(managedRuntimeSavedProfiles.userId, params.userId),
+      eq(managedRuntimeSavedProfiles.scope, "user_default"),
+    ),
+    orderBy: [desc(managedRuntimeSavedProfiles.updatedAt)],
+  });
+}
+
+/**
+ * Get a single account-level profile by id + userId.
+ * Returns undefined if not found or if it belongs to a different user.
+ */
+export async function getUserDefaultProfile(params: {
+  userId: string;
+  profileId: string;
+}): Promise<ManagedRuntimeSavedProfile | undefined> {
+  return db.query.managedRuntimeSavedProfiles.findFirst({
+    where: and(
+      eq(managedRuntimeSavedProfiles.id, params.profileId),
+      eq(managedRuntimeSavedProfiles.userId, params.userId),
+      eq(managedRuntimeSavedProfiles.scope, "user_default"),
+    ),
+  });
+}
+
+/**
+ * Update an account-level profile. Clears test evidence (same as the session
+ * PATCH) since editing invalidates prior results.
+ */
+export async function updateUserDefaultProfile(params: {
+  userId: string;
+  profileId: string;
+  profile: Pick<
+    ManagedRuntimeProfile,
+    | "displayName"
+    | "description"
+    | "setupCommands"
+    | "verificationCommands"
+    | "expectedTools"
+    | "optionalTools"
+    | "defaultPorts"
+  >;
+}): Promise<ManagedRuntimeSavedProfile | undefined> {
+  const now = new Date();
+  const [profile] = await db
+    .update(managedRuntimeSavedProfiles)
+    .set({
+      version: `edited-${now.toISOString()}`,
+      displayName: params.profile.displayName,
+      description: params.profile.description,
+      setupCommands: params.profile.setupCommands.map(normalizeCommand),
+      verificationCommands:
+        params.profile.verificationCommands.map(normalizeCommand),
+      expectedTools: params.profile.expectedTools,
+      optionalTools: params.profile.optionalTools,
+      defaultPorts: params.profile.defaultPorts,
+      latestTestRunId: null,
+      testResults: [],
+      testFailureMessage: null,
+      testedAt: null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(managedRuntimeSavedProfiles.id, params.profileId),
+        eq(managedRuntimeSavedProfiles.userId, params.userId),
+        eq(managedRuntimeSavedProfiles.scope, "user_default"),
+      ),
+    )
+    .returning();
+
+  return profile;
+}
+
+/**
+ * Delete an account-level profile. The scope guard ensures session profiles
+ * cannot be accidentally deleted via this path.
+ */
+export async function deleteUserDefaultProfile(params: {
+  userId: string;
+  profileId: string;
+}): Promise<ManagedRuntimeSavedProfile | undefined> {
+  const [profile] = await db
+    .delete(managedRuntimeSavedProfiles)
+    .where(
+      and(
+        eq(managedRuntimeSavedProfiles.id, params.profileId),
+        eq(managedRuntimeSavedProfiles.userId, params.userId),
+        eq(managedRuntimeSavedProfiles.scope, "user_default"),
+      ),
+    )
+    .returning();
+
+  return profile;
+}
+
+// ---------------------------------------------------------------------------
+
 export async function finishManagedRuntimeSavedProfileTest(params: {
   userId: string;
   sessionId: string;

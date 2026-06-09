@@ -18,12 +18,11 @@ import {
   buildComposioSessionConfig,
   getComposioProfileConfigHash,
 } from "./session-config";
-import {
-  buildComposioSessionConfigFromDirectList,
-  hashDirectConfig,
-} from "./direct-list-config";
 import { toComposioUserId } from "./user-id";
 import { getComposioUserFacingError } from "./errors";
+import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
+import { resolveComposioSlugsForChatMain } from "./resolve-chat-with-agent-row";
+import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
 
 export {
   buildComposioSessionConfig,
@@ -141,10 +140,51 @@ export async function resolveComposioToolsForChat(params: {
   // saved profile.
   const isMainAgentKey =
     params.agentKey === undefined || params.agentKey === "main";
-  const directSlugs =
-    isMainAgentKey && selection.directToolkitSlugs?.length
-      ? selection.directToolkitSlugs
-      : null;
+
+  // ── Phase 3: resolve agent row defaults for the main agent ────────────────
+  // For the main agent, consult resolveAgentForRole to get the user_default
+  // composio config. The explicit per-chat selection ALWAYS wins; the agent
+  // row only fills in when the chat has no explicit value.
+  // PRECEDENCE:
+  //   explicit per-chat directToolkitSlugs > explicit per-chat mainProfileId
+  //   > agent row composioToolkitSlugs > agent row composioProfileId
+  //   > null (no tools, today's behavior)
+  let agentRowComposioSlugs: string[] | null = null;
+  let agentRowComposioProfileId: string | null = null;
+
+  if (isMainAgentKey) {
+    try {
+      const agentRow = await resolveAgentForRole({
+        userId: params.userId,
+        role: "main",
+        sessionId: chat.sessionId,
+      });
+      // Only use agent row values when they differ from empty defaults
+      // (composioToolkitSlugs defaults to [] in synthetic fallback, which means
+      // "no row" — treat both [] and null as "no agent-row selection")
+      agentRowComposioSlugs =
+        agentRow.composioToolkitSlugs.length > 0
+          ? agentRow.composioToolkitSlugs
+          : null;
+      agentRowComposioProfileId = agentRow.composioProfileId;
+    } catch {
+      // Graceful degradation: if agent row resolution fails, fall back to
+      // today's behavior (no agent row contribution)
+    }
+  }
+
+  const resolvedForMain = isMainAgentKey
+    ? resolveComposioSlugsForChatMain({
+        chatDirectSlugs: selection.directToolkitSlugs ?? null,
+        chatMainProfileId: selection.mainProfileId,
+        agentRowComposioSlugs,
+        agentRowComposioProfileId,
+      })
+    : null;
+
+  const directSlugs = isMainAgentKey
+    ? (resolvedForMain?.directSlugs ?? null)
+    : null;
 
   if (directSlugs) {
     if ((params.runtimeMode ?? "classic") !== "classic") {
@@ -161,7 +201,6 @@ export async function resolveComposioToolsForChat(params: {
     }
 
     const composio = getComposioClient();
-    const configHash = hashDirectConfig(directSlugs);
     const syntheticProfileId = "direct";
     const agentKey = params.agentKey ?? "main";
 
@@ -172,61 +211,41 @@ export async function resolveComposioToolsForChat(params: {
     );
 
     try {
-      const existingSession = await getComposioAgentSession({
+      return await resolveComposioToolsForToolkitList({
         userId: params.userId,
-        chatId: params.chatId,
-        agentKey,
-        profileId: syntheticProfileId,
-        configHash,
-      });
-
-      if (existingSession) {
-        const session = await composio.use(existingSession.composioSessionId);
-        const tools = await session.tools();
-        await touchComposioAgentSession(existingSession.id);
-        return {
-          status: "ready",
-          tools,
-          profile: null,
-          composioSessionId: existingSession.composioSessionId,
-          configHash,
-          reusedSession: true,
-        };
-      }
-
-      const sessionConfig = buildComposioSessionConfigFromDirectList({
-        toolkitSlugs: directSlugs,
+        slugs: directSlugs,
+        composio,
         connectedAccountIdsByToolkit,
+        getCachedSession: (configHash) =>
+          getComposioAgentSession({
+            userId: params.userId,
+            chatId: params.chatId,
+            agentKey,
+            profileId: syntheticProfileId,
+            configHash,
+          }),
+        upsertSession: ({ composioSessionId, configHash }) =>
+          upsertComposioAgentSession({
+            userId: params.userId,
+            chatId: params.chatId,
+            agentKey,
+            profileId: syntheticProfileId,
+            configHash,
+            composioSessionId,
+          }),
+        touchSession: (id) => touchComposioAgentSession(id),
       });
-      const session = await composio.create(
-        toComposioUserId(params.userId),
-        sessionConfig,
-      );
-      const tools = await session.tools();
-      await upsertComposioAgentSession({
-        userId: params.userId,
-        chatId: params.chatId,
-        agentKey,
-        profileId: syntheticProfileId,
-        configHash,
-        composioSessionId: session.sessionId,
-      });
-      return {
-        status: "ready",
-        tools,
-        profile: null,
-        composioSessionId: session.sessionId,
-        configHash,
-        reusedSession: false,
-      };
     } catch (error) {
       throw toSetupError(error);
     }
   }
 
-  // ── Profile path (existing behavior, unchanged) ───────────────────────────
+  // ── Profile path ─────────────────────────────────────────────────────────
+  // For the main agent, use the resolved profileId (which already applies the
+  // precedence: explicit chat profile > agent row profile > null).
+  // For subagents, use the existing agentProfileOverrides logic unchanged.
   const profileId = isMainAgentKey
-    ? selection.mainProfileId
+    ? (resolvedForMain?.profileId ?? null)
     : (selection.agentProfileOverrides?.[params.agentKey!] ?? null);
 
   if (!profileId) {

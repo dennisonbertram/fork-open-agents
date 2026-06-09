@@ -10,6 +10,7 @@ import {
 } from "./models";
 
 import type { SkillMetadata } from "./skills/types";
+import type { SubagentRoster } from "./subagents/roster";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
@@ -75,6 +76,11 @@ const callOptionsSchema = z.object({
       sandboxName: z.string().optional(),
     })
     .optional(),
+  /**
+   * Per-role subagent configuration resolved from agents rows.
+   * Absent = synthetic fallback (today's subagent behavior unchanged).
+   */
+  subagentRoster: z.custom<SubagentRoster>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -245,6 +251,7 @@ export const openAgent = new ToolLoopAgent({
     const sandboxFree = options.sandboxFree ?? false;
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
+    const subagentRoster = options.subagentRoster;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -274,6 +281,7 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         runtimeMode,
         managedRuntime,
+        ...(subagentRoster ? { subagentRoster } : {}),
       },
     };
   },

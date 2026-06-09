@@ -2,6 +2,7 @@ import { connectSandbox, type Sandbox } from "@open-agents/sandbox";
 import type { LanguageModel, ModelMessage } from "ai";
 import * as path from "path";
 import type { AgentContext } from "../types";
+import type { SubagentRoster } from "../subagents/roster";
 
 function isAgentContext(value: unknown): value is AgentContext {
   return (
@@ -175,6 +176,31 @@ export function getSubagentModel(
  */
 export function shellEscape(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
+}
+
+/**
+ * Extract the subagent roster from experimental_context.
+ * Returns null when the context is absent or has no roster (synthetic fallback:
+ * subagent behavior is byte-identical to today).
+ */
+export function getSubagentRoster(
+  experimental_context: unknown,
+): SubagentRoster | null {
+  if (
+    typeof experimental_context !== "object" ||
+    experimental_context === null
+  ) {
+    return null;
+  }
+
+  const ctx = experimental_context as Record<string, unknown>;
+  const roster = ctx["subagentRoster"];
+
+  if (typeof roster !== "object" || roster === null || Array.isArray(roster)) {
+    return null;
+  }
+
+  return roster as SubagentRoster;
 }
 
 export type ToolNeedsApprovalFunction<INPUT> = (

@@ -40,6 +40,7 @@ import {
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
 } from "./store";
+import { resolveComposioToolsForBgRun } from "./composio-tools";
 import { buildRunSummary } from "./run-summary";
 import {
   persistRunSummary,
@@ -263,6 +264,8 @@ async function runMutationAgent(params: {
   sandboxName: string;
   sandbox: Sandbox;
   prompt: string;
+  /** Optional Composio tools to inject into the agent loop. */
+  composioTools?: import("ai").ToolSet;
 }) {
   const messages: ModelMessage[] = [
     {
@@ -279,7 +282,7 @@ async function runMutationAgent(params: {
     },
     runtimeMode: "classic",
     customInstructions:
-      "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary. External third-party tool providers such as Composio are not available in v1.",
+      "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
 
   await recordBackgroundAgentEvent({
@@ -303,6 +306,7 @@ async function runMutationAgent(params: {
     const result = await openAgent.generate({
       messages,
       options,
+      ...(params.composioTools ? { tools: params.composioTools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
     });
     const durationMs = Date.now() - startedAt;
@@ -730,6 +734,64 @@ export async function executeBackgroundAgentRun(params: {
     timeoutMs: 15_000,
   });
 
+  // ── Phase 5: resolve Composio tools for this run ─────────────────────────
+  // Attempted when the agent has non-empty composioToolkitSlugs.
+  // Empty slugs = no-op (pre-Phase-5 behavior).
+  // The resolver handles repo policy gating. Grant-level gating is checked
+  // here: if no enabled grants exist, slugs are cleared before resolving
+  // so the resolver fast-paths to { status: "off" } without external calls.
+  let resolvedComposioTools: import("ai").ToolSet | undefined;
+  const agentToolkitSlugs = agent.composioToolkitSlugs ?? [];
+
+  if (agentToolkitSlugs.length > 0) {
+    const composioResult = await resolveComposioToolsForBgRun({
+      agentId: run.agentId,
+      runId: run.id,
+      userId: run.userId,
+      slugs: agentToolkitSlugs,
+      repoOwner: run.repoOwner,
+      repoName: run.repoName,
+    });
+
+    if (composioResult.status === "ready") {
+      resolvedComposioTools = composioResult.tools;
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.resolved",
+        status: "succeeded",
+        summary: `Resolved Composio tools: ${composioResult.toolkitSlugs.join(", ")}.`,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        // Payload: toolkit names only — no secrets, no API keys.
+        payload: {
+          toolkitSlugs: composioResult.toolkitSlugs,
+          toolCount: Object.keys(composioResult.tools).length,
+        },
+      });
+    } else if (composioResult.status === "error") {
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.error",
+        status: "failed",
+        level: "warn",
+        summary: `Composio tool resolution failed: ${composioResult.error}`,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        payload: {
+          // Do NOT include error details that might contain secrets
+          toolkitSlugsRequested: agentToolkitSlugs,
+        },
+      });
+      // Non-fatal: run continues without Composio tools.
+    }
+  }
+
   let readyPrBranchName: string | null = null;
   if (agent.outputMode === "ready_pr") {
     readyPrBranchName = buildBackgroundBranchName({
@@ -771,6 +833,7 @@ export async function executeBackgroundAgentRun(params: {
           payloadSummary: run.payloadSummary,
           checkCommand: agent.checkCommand,
         }),
+        composioTools: resolvedComposioTools,
       });
       await recordBackgroundAgentEvent({
         runId: run.id,

@@ -211,6 +211,49 @@ export const inferenceProfiles = pgTable(
   ],
 );
 
+/**
+ * User-authored agent skills. Each row is a reusable `SKILL.md` the user owns;
+ * enabled rows are materialized into `~/.agents/skills/<name>/SKILL.md` in the
+ * sandbox at workspace setup so the agent can discover and invoke them.
+ */
+export const userSkills = pgTable(
+  "user_skills",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Slug used for discovery + `/name` invocation. Unique per user. */
+    name: text("name").notNull(),
+    /** Single-line description surfaced to the agent and in the system prompt. */
+    description: text("description").notNull(),
+    /** Markdown instruction body written after the SKILL.md frontmatter. */
+    body: text("body").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /** When true, the model cannot auto-invoke the skill (user slash only). */
+    disableModelInvocation: boolean("disable_model_invocation")
+      .notNull()
+      .default(false),
+    /** When false, the skill is not offered as a user `/slash` command. */
+    userInvocable: boolean("user_invocable").notNull().default(true),
+    /** Optional tool allow-list serialized to the `allowed-tools` frontmatter. */
+    allowedTools: jsonb("allowed_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    /** How the skill body originated: hand-authored or AI-generated draft. */
+    source: text("source", { enum: ["manual", "generated"] })
+      .notNull()
+      .default("manual"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("user_skills_user_idx").on(table.userId),
+    uniqueIndex("user_skills_user_name_idx").on(table.userId, table.name),
+  ],
+);
+
 export const sessions = pgTable(
   "sessions",
   {
@@ -841,6 +884,16 @@ export const backgroundAgents = pgTable(
       .notNull()
       .default("none"),
     checkCommand: text("check_command"),
+    /**
+     * Composio toolkit slugs this agent is allowed to use.
+     * Empty array (default) = no Composio tools = pre-Phase-5 behavior.
+     * Populated slugs are resolved at run time via resolveComposioToolsForBgRun,
+     * gated by enabled backgroundAgentToolGrants and repo policy.
+     */
+    composioToolkitSlugs: jsonb("composio_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1369,6 +1422,8 @@ export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
 export type NewVercelProjectLink = typeof vercelProjectLinks.$inferInsert;
 export type InferenceProfile = typeof inferenceProfiles.$inferSelect;
 export type NewInferenceProfile = typeof inferenceProfiles.$inferInsert;
+export type UserSkill = typeof userSkills.$inferSelect;
+export type NewUserSkill = typeof userSkills.$inferInsert;
 export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
 export type SandboxService = typeof sandboxServices.$inferSelect;
@@ -1707,7 +1762,7 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
-    index("agents_user_role_scope_idx").on(
+    uniqueIndex("agents_user_role_scope_idx").on(
       table.userId,
       table.role,
       table.scope,
