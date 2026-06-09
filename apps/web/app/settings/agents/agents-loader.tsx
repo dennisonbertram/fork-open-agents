@@ -9,6 +9,7 @@ import type { ComposioToolProfileSummary } from "@/lib/composio/types";
 import { defaultComposioAgentDefaults } from "@/lib/composio/types";
 import { AgentsSectionSkeleton, AgentsSection } from "./agents-section";
 import { buildAgentRoster } from "./agents-roster";
+import type { AgentSettingsResponse } from "@/app/api/settings/agents/route";
 
 const RUNTIME_PROFILES = listManagedRuntimeProfiles();
 
@@ -21,8 +22,9 @@ interface SkillsCountResponse {
 }
 
 /**
- * Fetches preferences + composio defaults and renders the AgentsSection.
- * Falls back gracefully if either API is unavailable.
+ * Fetches preferences + composio defaults + user_default agent rows
+ * and renders the AgentsSection.
+ * Falls back gracefully if any API is unavailable.
  */
 export function AgentsLoader() {
   const { data: prefsData, isLoading: prefsLoading } =
@@ -34,7 +36,13 @@ export function AgentsLoader() {
   const { data: skillsData, isLoading: skillsLoading } =
     useSWR<SkillsCountResponse>("/api/settings/skills", fetcher);
 
-  if (prefsLoading || composioLoading || skillsLoading) {
+  const {
+    data: agentData,
+    isLoading: agentsLoading,
+    mutate: mutateAgents,
+  } = useSWR<AgentSettingsResponse>("/api/settings/agents", fetcher);
+
+  if (prefsLoading || composioLoading || skillsLoading || agentsLoading) {
     return <AgentsSectionSkeleton />;
   }
 
@@ -54,13 +62,22 @@ export function AgentsLoader() {
     (skill) => skill.enabled,
   ).length;
 
+  const userDefaultAgentRows = agentData?.agents ?? [];
+
   const rows = buildAgentRoster({
     preferences,
     composioDefaults,
     runtimeProfiles: RUNTIME_PROFILES,
     profileSummaries,
     enabledSkillCount,
+    userDefaultAgentRows,
   });
 
-  return <AgentsSection rows={rows} />;
+  return (
+    <AgentsSection
+      rows={rows}
+      onAgentSaved={() => void mutateAgents()}
+      onAgentReset={() => void mutateAgents()}
+    />
+  );
 }
