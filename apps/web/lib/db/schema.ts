@@ -918,6 +918,7 @@ export const backgroundAgentTriggers = pgTable(
     kind: text("kind", {
       enum: [
         "github.pull_request",
+        "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
         "schedule.cron",
@@ -1017,6 +1018,7 @@ export const backgroundAgentRuns = pgTable(
     triggerKind: text("trigger_kind", {
       enum: [
         "github.pull_request",
+        "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
         "schedule.cron",
@@ -1270,6 +1272,149 @@ export const workflowRunSteps = pgTable(
     ),
   ],
 );
+
+// ── Per-repo learnings store (CODE-01) ───────────────────────────────────────
+// Three tables: repoLearnings, repoLearningEvidence, repoLearningExtractionRuns.
+// Partitioned per (userId, repoOwner, repoName) — v1 limitation documented in
+// docs/plans/pr-review-learnings-agent-epic.md.
+// dedupSignature is NOT NULL (must-fix #5) — computed deterministically pre-insert.
+// JSONB columns use .default([]) to avoid NULL (must-fix pattern).
+
+export const repoLearnings = pgTable(
+  "repo_learnings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    installationId: integer("installation_id"),
+    type: text("type", {
+      enum: [
+        "bug",
+        "convention",
+        "architecture",
+        "design",
+        "workflow",
+        "anti_pattern",
+      ],
+    }).notNull(),
+    scope: text("scope", {
+      enum: ["file", "module", "repo"],
+    })
+      .notNull()
+      .default("repo"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    rootCause: text("root_cause"),
+    solution: text("solution"),
+    prevention: text("prevention"),
+    affectedPaths: jsonb("affected_paths")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    severity: text("severity", {
+      enum: ["critical", "high", "medium", "low", "info"],
+    })
+      .notNull()
+      .default("info"),
+    confidence: text("confidence", {
+      enum: ["proven", "high", "medium", "low", "speculative"],
+    })
+      .notNull()
+      .default("medium"),
+    status: text("status", {
+      enum: ["active", "consolidation_review", "archived", "superseded"],
+    })
+      .notNull()
+      .default("active"),
+    // NOT NULL — deterministic hash computed pre-insert (must-fix #5)
+    dedupSignature: text("dedup_signature").notNull(),
+    supersedesLearningId: text("supersedes_learning_id"),
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
+    sourcePrNumber: integer("source_pr_number"),
+    sourcePrUrl: text("source_pr_url"),
+    // Set only by CODE-04 projection; null in this slice
+    committedFilePath: text("committed_file_path"),
+    createdBy: text("created_by")
+      .notNull()
+      .default("pr_review_learnings_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_repo_learnings_repo").on(t.userId, t.repoOwner, t.repoName),
+    index("idx_repo_learnings_status").on(t.userId, t.status, t.lastUsedAt),
+    uniqueIndex("idx_repo_learnings_dedup").on(
+      t.userId,
+      t.repoOwner,
+      t.repoName,
+      t.dedupSignature,
+    ),
+  ],
+);
+
+export const repoLearningEvidence = pgTable(
+  "repo_learning_evidence",
+  {
+    id: text("id").primaryKey(),
+    learningId: text("learning_id")
+      .notNull()
+      .references(() => repoLearnings.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: [
+        "pr_url",
+        "review_comment",
+        "file_excerpt",
+        "command_output",
+        "test_failure",
+      ],
+    }).notNull(),
+    ref: text("ref").notNull(),
+    // Redacted + redaction-verified before persist; dropped if failed/blocked
+    excerpt: text("excerpt"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("idx_learning_evidence_learning").on(t.learningId)],
+);
+
+export const repoLearningExtractionRuns = pgTable(
+  "repo_learning_extraction_runs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Links to backgroundAgentRuns.id for audit/ROI (forward hook for CODE-02+)
+    backgroundAgentRunId: text("background_agent_run_id"),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    prNumber: integer("pr_number"),
+    triggerKind: text("trigger_kind").notNull(),
+    candidatesExtracted: integer("candidates_extracted").notNull().default(0),
+    accepted: integer("accepted").notNull().default(0),
+    merged: integer("merged").notNull().default(0),
+    rejected: integer("rejected").notNull().default(0),
+    // Typed errorKind; see observability error taxonomy
+    errorKind: text("error_kind"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_learning_extraction_repo").on(t.userId, t.repoOwner, t.repoName),
+  ],
+);
+
+export type RepoLearning = typeof repoLearnings.$inferSelect;
+export type NewRepoLearning = typeof repoLearnings.$inferInsert;
+export type RepoLearningEvidence = typeof repoLearningEvidence.$inferSelect;
+export type NewRepoLearningEvidence = typeof repoLearningEvidence.$inferInsert;
+export type RepoLearningExtractionRun =
+  typeof repoLearningExtractionRuns.$inferSelect;
+export type NewRepoLearningExtractionRun =
+  typeof repoLearningExtractionRuns.$inferInsert;
 
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;

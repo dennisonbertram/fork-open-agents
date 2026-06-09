@@ -2,6 +2,7 @@ import { z } from "zod";
 
 export const backgroundAgentTriggerKinds = [
   "github.pull_request",
+  "github.pull_request_review",
   "github.deployment_status",
   "github.issue",
   "schedule.cron",
@@ -153,6 +154,13 @@ export type NormalizedBackgroundTriggerEvent = {
   actor?: string;
   message?: string;
   occurredAt?: string;
+  // pull_request: merged boolean on closed events
+  merged?: boolean;
+  // pull_request_review: review-specific fields
+  reviewId?: number;
+  reviewState?: string;
+  reviewerLogin?: string;
+  prUrl?: string;
 };
 
 export function normalizeRepoName(value: string): string {
