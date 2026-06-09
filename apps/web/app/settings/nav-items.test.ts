@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { Bot, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
@@ -26,6 +27,7 @@ describe("settings nav data", () => {
       "/settings/connections",
     ]);
     expect(byId.tools).toEqual([
+      "/settings/agents",
       "/settings/models",
       "/settings/composio",
       "/settings/background-agents",
@@ -49,8 +51,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(9);
-    expect(new Set(items.map((i) => i.id)).size).toBe(9);
+    expect(items).toHaveLength(10);
+    expect(new Set(items.map((i) => i.id)).size).toBe(10);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -58,5 +60,27 @@ describe("settings nav data", () => {
     expect(findActiveNavItem("/settings/usage/2025")?.id).toBe("usage");
     expect(findActiveNavItem("/settings/profile")?.id).toBe("profile");
     expect(findActiveNavItem("/settings/nonexistent")).toBeUndefined();
+  });
+
+  // NAV-001: agents item resolves correctly
+  test("NAV-001: findActiveNavItem resolves /settings/agents to the agents item", () => {
+    const item = findActiveNavItem("/settings/agents");
+    expect(item?.id).toBe("agents");
+    expect(item?.href).toBe("/settings/agents");
+  });
+
+  // NAV-002: agents item is in the tools group
+  test("NAV-002: agents item is in the tools group and is the first item", () => {
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
+    expect(toolsGroup).toBeDefined();
+    expect(toolsGroup?.items[0]?.id).toBe("agents");
+  });
+
+  // NAV-003: agents item does not use the Bot icon (reserved for background-agents)
+  test("NAV-003: agents item uses Users icon (not Bot)", () => {
+    const item = findActiveNavItem("/settings/agents");
+    // Verify by reference equality — lucide icons don't expose .name
+    expect(item?.icon).toBe(Users);
+    expect(item?.icon).not.toBe(Bot);
   });
 });

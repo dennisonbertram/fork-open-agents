@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AccountsSectionSkeleton } from "./accounts-section";
+import { AgentsSectionSkeleton } from "./agents/agents-section";
 import { ComposioSectionSkeleton } from "./composio-section";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
@@ -162,6 +163,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const fallbackContent =
     activeItem?.id === "connections" ? (
       <ConnectionsPageSkeleton />
+    ) : activeItem?.id === "agents" ? (
+      <AgentsSectionSkeleton />
     ) : activeItem?.id === "composio" ? (
       <ComposioSectionSkeleton />
     ) : activeItem?.id === "preferences" ? (

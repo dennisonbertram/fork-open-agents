@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Trophy,
   User,
+  Users,
 } from "lucide-react";
 
 export type SettingsNavItem = {
@@ -59,6 +60,12 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     id: "tools",
     label: "Tools",
     items: [
+      {
+        id: "agents",
+        label: "Agents",
+        href: "/settings/agents",
+        icon: Users,
+      },
       { id: "models", label: "Models", href: "/settings/models", icon: Boxes },
       {
         id: "composio",
