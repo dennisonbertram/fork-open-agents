@@ -528,3 +528,78 @@ describe("resolveAgentForRole — data-access contract", () => {
     expect(firstCallArg?.userId).toBe("user-42");
   });
 });
+
+// ─── BT-007: fromDbRow discriminator on ResolvedAgent ────────────────────────
+// These tests verify the PARAMOUNT INVARIANT FIX: ResolvedAgent now carries a
+// fromDbRow boolean so chat.ts can skip modelId in roster entries that come
+// from the synthetic prefs fallback (no real agents rows).
+
+describe("resolveAgentForRole — fromDbRow discriminator", () => {
+  beforeEach(() => {
+    mockListAgentsForUser.mockReset();
+    mockGetUserPreferences.mockReset();
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "anthropic/claude-opus-4",
+      defaultSubagentModelId: "anthropic/claude-haiku-4.5",
+      defaultInferenceProfileId: null,
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+  });
+
+  it("BT-007a: synthetic fallback (no rows) sets fromDbRow=false", async () => {
+    // When no DB rows exist, the result must mark fromDbRow as false so
+    // chat.ts knows NOT to include modelId in the roster entry.
+    mockListAgentsForUser.mockResolvedValue([]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "explorer",
+    });
+
+    // fromDbRow must exist and be false for the synthetic path
+    expect((resolved as { fromDbRow?: boolean }).fromDbRow).toBe(false);
+  });
+
+  it("BT-007b: DB row resolution sets fromDbRow=true", async () => {
+    // When a real DB row is matched, fromDbRow must be true so that
+    // chat.ts includes modelId in the roster entry (only for explicit rows).
+    mockListAgentsForUser.mockResolvedValue([
+      makeAgent({
+        id: "real-row",
+        role: "explorer",
+        scope: "user_default",
+        modelId: "openai/gpt-5.4",
+        instructions: null,
+      }),
+    ]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "explorer",
+    });
+
+    expect((resolved as { fromDbRow?: boolean }).fromDbRow).toBe(true);
+  });
+
+  it("BT-007c: synthetic fallback with non-null subagent model still has fromDbRow=false", async () => {
+    // Even when defaultSubagentModelId is set in prefs, the resolution is
+    // still synthetic — fromDbRow must be false, NOT true.
+    mockListAgentsForUser.mockResolvedValue([]);
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "executor",
+    });
+
+    // modelId comes from prefs defaultSubagentModelId
+    expect(resolved.modelId).toBe("anthropic/claude-haiku-4.5");
+    // but it must NOT claim it came from a DB row
+    expect((resolved as { fromDbRow?: boolean }).fromDbRow).toBe(false);
+  });
+});
