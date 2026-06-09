@@ -158,30 +158,47 @@ describe("isStepValid", () => {
   test("BT-014: conditions step invalid for schedule.cron with empty schedule", () => {
     const step: StepId = "conditions";
     expect(
-      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "" }), step),
+      isStepValid(
+        makeForm({ triggerKind: "schedule.cron", schedule: "" }),
+        step,
+      ),
     ).toBe(false);
   });
 
   test("BT-015: conditions step invalid for schedule.cron with malformed cron '* * *'", () => {
     const step: StepId = "conditions";
     expect(
-      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "* * *" }), step),
+      isStepValid(
+        makeForm({ triggerKind: "schedule.cron", schedule: "* * *" }),
+        step,
+      ),
     ).toBe(false);
   });
 
   test("BT-016: conditions step valid for schedule.cron with @hourly", () => {
     const step: StepId = "conditions";
     expect(
-      isStepValid(makeForm({ triggerKind: "schedule.cron", schedule: "@hourly" }), step),
+      isStepValid(
+        makeForm({ triggerKind: "schedule.cron", schedule: "@hourly" }),
+        step,
+      ),
     ).toBe(true);
   });
 
   test("BT-017: conditions step always valid for non-cron triggers", () => {
     const step: StepId = "conditions";
-    expect(isStepValid(makeForm({ triggerKind: "github.pull_request" }), step)).toBe(true);
-    expect(isStepValid(makeForm({ triggerKind: "github.issue" }), step)).toBe(true);
-    expect(isStepValid(makeForm({ triggerKind: "github.deployment_status" }), step)).toBe(true);
-    expect(isStepValid(makeForm({ triggerKind: "webhook.error" }), step)).toBe(true);
+    expect(
+      isStepValid(makeForm({ triggerKind: "github.pull_request" }), step),
+    ).toBe(true);
+    expect(isStepValid(makeForm({ triggerKind: "github.issue" }), step)).toBe(
+      true,
+    );
+    expect(
+      isStepValid(makeForm({ triggerKind: "github.deployment_status" }), step),
+    ).toBe(true);
+    expect(isStepValid(makeForm({ triggerKind: "webhook.error" }), step)).toBe(
+      true,
+    );
   });
 
   test("BT-018: instructions step invalid when instructions is empty", () => {
@@ -268,11 +285,15 @@ describe("conditionFieldLabel", () => {
   });
 
   test("BT-028: actions + pull_request -> 'Actions'", () => {
-    expect(conditionFieldLabel("actions", "github.pull_request")).toBe("Actions");
+    expect(conditionFieldLabel("actions", "github.pull_request")).toBe(
+      "Actions",
+    );
   });
 
   test("BT-029: branches + pull_request -> 'Branches'", () => {
-    expect(conditionFieldLabel("branches", "github.pull_request")).toBe("Branches");
+    expect(conditionFieldLabel("branches", "github.pull_request")).toBe(
+      "Branches",
+    );
   });
 
   test("BT-030: labels + issue -> 'Labels'", () => {
@@ -280,9 +301,9 @@ describe("conditionFieldLabel", () => {
   });
 
   test("BT-031: environments + deployment_status -> 'Environments'", () => {
-    expect(conditionFieldLabel("environments", "github.deployment_status")).toBe(
-      "Environments",
-    );
+    expect(
+      conditionFieldLabel("environments", "github.deployment_status"),
+    ).toBe("Environments");
   });
 });
 
@@ -328,5 +349,93 @@ describe("outputModeLabel", () => {
 
   test("BT-038: comment returns a non-empty string (future-safe)", () => {
     expect(outputModeLabel("comment").length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests — catch future breakage from different angles
+// ---------------------------------------------------------------------------
+
+describe("REG: fieldsForTrigger — dead fields are fully absent", () => {
+  test("REG-010: deployment_status has exactly 2 fields (environments + statuses); no more", () => {
+    const fields = fieldsForTrigger("github.deployment_status");
+    // If someone accidentally adds actions/branches/labels back, this catches it
+    expect(fields.size).toBe(2);
+    expect(fields.has("environments")).toBe(true);
+    expect(fields.has("statuses")).toBe(true);
+  });
+
+  test("REG-011: schedule.cron still returns empty set even if trigger map is extended", () => {
+    // Cron has no event-driven condition fields ever — if this changes, the
+    // UI would show nonsense condition inputs on a time-based trigger
+    const fields = fieldsForTrigger("schedule.cron");
+    expect(fields.size).toBe(0);
+  });
+
+  test("REG-012: pull_request has exactly 3 fields; environments/statuses never leak in", () => {
+    const fields = fieldsForTrigger("github.pull_request");
+    expect(fields.size).toBe(3);
+    expect(fields.has("environments")).toBe(false);
+    expect(fields.has("statuses")).toBe(false);
+  });
+});
+
+describe("REG: conditionFieldLabel — deployment_status label never regresses to 'Severities'", () => {
+  test("REG-013: deployment_status statuses field must not be 'Severities' (old mislabel)", () => {
+    const label = conditionFieldLabel("statuses", "github.deployment_status");
+    expect(label).not.toBe("Severities");
+    expect(label).toBe("Deployment state");
+  });
+
+  test("REG-014: webhook.error statuses field must not be 'Statuses' (wrong context)", () => {
+    const label = conditionFieldLabel("statuses", "webhook.error");
+    expect(label).not.toBe("Statuses");
+    expect(label).toBe("Severity");
+  });
+});
+
+describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron with no schedule is blocked", () => {
+  function makeForm(overrides: Partial<FormState> = {}): FormState {
+    return {
+      name: "Nightly",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "schedule.cron",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Run nightly checks.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      ...overrides,
+    };
+  }
+
+  test("REG-015: schedule.cron agent with empty schedule is blocked at test step", () => {
+    // This catches the regression where canSubmit didn't gate on schedule validity
+    expect(isStepValid(makeForm({ schedule: "" }), "test")).toBe(false);
+  });
+
+  test("REG-016: schedule.cron with valid schedule passes test step if all other fields present", () => {
+    expect(isStepValid(makeForm({ schedule: "@daily" }), "test")).toBe(true);
+  });
+
+  test("REG-017: whitespace-only instructions blocks test step", () => {
+    const form = makeForm({ schedule: "@hourly", instructions: "   " });
+    // instructions.trim().length === 0 → instructions step fails → test step fails
+    expect(isStepValid(form, "test")).toBe(false);
+  });
+});
+
+describe("REG: describeOutputModePermissions — both modes produce distinct summaries", () => {
+  test("REG-018: none and ready_pr summaries are different strings", () => {
+    const noneDesc = describeOutputModePermissions("none");
+    const prDesc = describeOutputModePermissions("ready_pr");
+    // If someone accidentally returns the same string for both, this catches it
+    expect(noneDesc).not.toBe(prDesc);
   });
 });
