@@ -1490,6 +1490,90 @@ export const userPreferences = pgTable("user_preferences", {
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
 
+// ── Agents — per-role/scope agent configuration ──────────────────────────────
+// One row = one named agent configuration, scoped and ownable.
+// References existing runtime/inference profiles rather than absorbing them.
+// With no rows, resolution returns the synthetic fallback = today's behavior.
+export const agents = pgTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Identity
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    // Maps a row to one of the four runtime roles.
+    // "main" = the chat coordinator; explorer/executor/design = subagents.
+    role: text("role", { enum: ["main", "explorer", "executor", "design"] })
+      .notNull()
+      .default("main"),
+
+    // Scope — mirrors managed_runtime_saved_profiles.
+    // user_default = the user's fleet default for this role; session/repo = overrides.
+    scope: text("scope", { enum: ["user_default", "repo", "session"] })
+      .notNull()
+      .default("user_default"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "cascade",
+    }),
+    repoOwner: text("repo_owner"),
+    repoName: text("repo_name"),
+
+    // --- COGNITION ---
+    // null = inherit (main → userPreferences.defaultModelId; sub → defaultSubagentModelId)
+    modelId: text("model_id"),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
+    // null = built-in system prompt for the role
+    instructions: text("instructions"),
+    skillRefs: jsonb("skill_refs")
+      .$type<GlobalSkillRef[]>()
+      .notNull()
+      .default([]),
+
+    // --- TOOLS (data-defined) ---
+    // Built-in agent-loop tool allowlist by NAME.
+    // null = use the role's default policy from packages/agent (no behavior change).
+    builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
+    // Composio: same direct-list shape chats already use.
+    composioToolkitSlugs: jsonb("composio_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    // Optional reference to a saved Composio profile instead of a raw slug list.
+    composioProfileId: text("composio_profile_id"),
+
+    // --- RUNTIME (referenced, not absorbed) ---
+    managedRuntimeProfileId: text("managed_runtime_profile_id"), // null = inherit
+
+    // --- #242 provenance / gating ---
+    // Lets an agent author its own tools, off by default.
+    toolAuthoringEnabled: boolean("tool_authoring_enabled")
+      .notNull()
+      .default(false),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agents_user_idx").on(table.userId),
+    index("agents_user_role_scope_idx").on(
+      table.userId,
+      table.role,
+      table.scope,
+    ),
+    index("agents_session_idx").on(table.sessionId),
+  ],
+);
+
+export type Agent = typeof agents.$inferSelect;
+export type NewAgent = typeof agents.$inferInsert;
+
 // Usage tracking — one row per assistant turn (append-only)
 export const usageEvents = pgTable("usage_events", {
   id: text("id").primaryKey(),
