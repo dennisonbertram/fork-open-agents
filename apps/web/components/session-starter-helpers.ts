@@ -1,6 +1,8 @@
 /**
  * Pure helpers extracted from session-starter.tsx.
- * Stubs — implementation will follow in the green phase.
+ *
+ * Keeping these as standalone functions makes them trivially unit-testable and
+ * removes logic from the render body.
  */
 
 export type SessionMode = "empty" | "repo";
@@ -13,37 +15,69 @@ export interface IsSubmitBlockedParams {
   reconnectRequired: boolean;
   isRepoSelectionComplete: boolean;
   isVercelLookupPending: boolean;
-  /** Kept in signature for backward compat but no longer a blocker. */
+  /**
+   * Kept in the signature for forward-compat but is intentionally NOT used as
+   * a blocking signal (fixes #219 — the funnel must not hard-block on an
+   * unresolved Vercel env-sync choice).
+   */
   requiresVercelChoice: boolean;
 }
 
 /**
- * Returns the footer text for the session-starter card.
- * Empty mode → reassurance (no sandbox claim).
- * Repo mode  → "Using {sandboxName} sandbox · Change".
+ * Returns the footer copy for the session-starter card.
+ *
+ * - empty mode: reassurance that no sandbox is provisioned immediately.
+ * - repo mode:  "Using {sandboxName} sandbox · Change" — a sandbox really is
+ *               provisioned here.
  */
 export function getSessionFooter(
-  _mode: SessionMode,
-  _sandboxName: string,
+  mode: SessionMode,
+  sandboxName: string,
 ): string {
-  throw new Error("not implemented");
+  if (mode === "empty") {
+    return "Starts instantly — no sandbox. Add one later if the agent needs to run code.";
+  }
+  return `Using ${sandboxName} sandbox`;
 }
 
 /**
- * Returns true when the Start button should be disabled.
- * Note: requiresVercelChoice no longer blocks submit.
+ * Returns true when the Start/Submit button should be disabled.
+ *
+ * Note: requiresVercelChoice is intentionally excluded from the blocking
+ * conditions. The env-sync card is now optional (collapses by default), so
+ * users can proceed with one click and configure Vercel sync later.
  */
-export function isSubmitBlocked(_params: IsSubmitBlockedParams): boolean {
-  throw new Error("not implemented");
+export function isSubmitBlocked({
+  controlsDisabled,
+  mode,
+  isRepoModeDisabled,
+  githubConnectionLoading,
+  reconnectRequired,
+  isRepoSelectionComplete,
+  isVercelLookupPending,
+}: IsSubmitBlockedParams): boolean {
+  if (controlsDisabled) return true;
+  if (mode === "repo" && isRepoModeDisabled) return true;
+  if (mode === "repo" && (githubConnectionLoading || reconnectRequired))
+    return true;
+  if (!isRepoSelectionComplete) return true;
+  if (isVercelLookupPending) return true;
+  return false;
 }
 
 /**
- * Returns the primary button label.
+ * Returns the label for the primary submit button.
+ *
+ * - empty mode or repo mode with no repo selected: "Start chat"
+ * - repo mode with owner + repo:                   "Start with {owner}/{repo}"
  */
 export function getButtonLabel(
-  _mode: SessionMode,
-  _selectedOwner: string,
-  _selectedRepo: string,
+  mode: SessionMode,
+  selectedOwner: string,
+  selectedRepo: string,
 ): string {
-  throw new Error("not implemented");
+  if (mode === "repo" && selectedOwner && selectedRepo) {
+    return `Start with ${selectedOwner}/${selectedRepo}`;
+  }
+  return "Start chat";
 }

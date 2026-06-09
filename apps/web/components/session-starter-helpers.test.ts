@@ -19,10 +19,13 @@ import {
 // BT-001 / BT-002: footer mode helper
 // ---------------------------------------------------------------------------
 describe("getSessionFooter", () => {
-  test("BT-001: empty mode returns a reassurance string without 'sandbox'", () => {
+  test("BT-001: empty mode does not claim 'Using ... sandbox' (no false sandbox claim)", () => {
     const result = getSessionFooter("empty", "Vercel");
+    // Must NOT claim a sandbox is actively being used — the word "using" should
+    // not appear as that would mislead users in sandbox-free chat mode.
     expect(result.toLowerCase()).not.toContain("using");
-    expect(result.toLowerCase()).not.toContain("sandbox");
+    // Must NOT contain the sandbox name as though it is provisioned.
+    expect(result).not.toContain("Vercel");
   });
 
   test("BT-001: empty mode result contains 'instant' or 'no sandbox' messaging", () => {
@@ -75,7 +78,10 @@ describe("isSubmitBlocked", () => {
   });
 
   test("BT-003: requiresVercelChoice=false also does not block submit in clean state", () => {
-    const result = isSubmitBlocked({ ...baseParams, requiresVercelChoice: false });
+    const result = isSubmitBlocked({
+      ...baseParams,
+      requiresVercelChoice: false,
+    });
     expect(result).toBe(false);
   });
 
