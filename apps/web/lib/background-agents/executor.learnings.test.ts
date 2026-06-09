@@ -27,7 +27,9 @@ function makeFakeGenerate(overrides?: {
     candidates: [
       {
         title: overrides?.title ?? "Avoid global state",
-        description: overrides?.description ?? "Global state causes unpredictable re-renders in React",
+        description:
+          overrides?.description ??
+          "Global state causes unpredictable re-renders in React",
         rootCause: overrides?.rootCause ?? "Shared mutable state",
         solution: overrides?.solution ?? "Use local state with useState",
         prevention: overrides?.prevention ?? "Prefer component-local state",
@@ -40,7 +42,8 @@ function makeFakeGenerate(overrides?: {
         actionable: overrides?.actionable ?? true,
         qualityScore: overrides?.qualityScore ?? 4,
         reviewerSourced: overrides?.reviewerSourced ?? false,
-        excerpt: overrides?.excerpt ?? "Use useState instead of global variables",
+        excerpt:
+          overrides?.excerpt ?? "Use useState instead of global variables",
       },
     ],
   });
@@ -57,15 +60,21 @@ function makeFakeStore(): LearningsStore & {
     runs: [] as unknown[],
     events: [] as unknown[],
 
-    async findForDedup(_params: { userId: string; repoOwner: string; repoName: string }) {
-      return store.learnings as Parameters<LearningsStore["findForDedup"]>[0] extends infer P
-        ? Awaited<ReturnType<LearningsStore["findForDedup"]>>
-        : never;
+    async findForDedup(_params: {
+      userId: string;
+      repoOwner: string;
+      repoName: string;
+    }) {
+      return store.learnings as Awaited<
+        ReturnType<LearningsStore["findForDedup"]>
+      >;
     },
 
     async createLearning(learning: unknown) {
       store.learnings.push(learning);
-      return { id: "fake-id-1", ...(learning as object) } as Awaited<ReturnType<LearningsStore["createLearning"]>>;
+      return { id: "fake-id-1", ...(learning as object) } as Awaited<
+        ReturnType<LearningsStore["createLearning"]>
+      >;
     },
 
     async updateLearning(id: string, updates: unknown) {
@@ -73,14 +82,21 @@ function makeFakeStore(): LearningsStore & {
         (l) => (l as Record<string, unknown>)["id"] === id,
       );
       if (idx >= 0) {
-        store.learnings[idx] = { ...(store.learnings[idx] as object), ...(updates as object) };
+        store.learnings[idx] = {
+          ...(store.learnings[idx] as object),
+          ...(updates as object),
+        };
       }
-      return { id, ...(updates as object) } as Awaited<ReturnType<LearningsStore["updateLearning"]>>;
+      return { id, ...(updates as object) } as Awaited<
+        ReturnType<LearningsStore["updateLearning"]>
+      >;
     },
 
     async recordExtractionRun(run: unknown) {
       store.runs.push(run);
-      return { id: "fake-run-id", ...(run as object) } as Awaited<ReturnType<LearningsStore["recordExtractionRun"]>>;
+      return { id: "fake-run-id", ...(run as object) } as Awaited<
+        ReturnType<LearningsStore["recordExtractionRun"]>
+      >;
     },
   };
   return store;
@@ -152,8 +168,12 @@ describe("runLearningsExtraction", () => {
       userId: "user-123",
       installationId: 99,
       backgroundAgentRunId: "run-abc",
-      octokit: makeFakeOctokit() as unknown as Parameters<typeof runLearningsExtraction>[0]["octokit"],
-      generate: makeFakeGenerate() as unknown as Parameters<typeof runLearningsExtraction>[0]["generate"],
+      octokit: makeFakeOctokit() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["octokit"],
+      generate: makeFakeGenerate() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["generate"],
       store,
       recordEvent,
     });
@@ -162,7 +182,9 @@ describe("runLearningsExtraction", () => {
     expect(result.accepted).toBe(1);
     expect(store.learnings).toHaveLength(1);
     // Single-source learning gets confidence="medium"
-    expect((store.learnings[0] as Record<string, unknown>)["confidence"]).toBe("medium");
+    expect((store.learnings[0] as Record<string, unknown>)["confidence"]).toBe(
+      "medium",
+    );
     // One extraction run summary
     expect(store.runs).toHaveLength(1);
     expect((store.runs[0] as Record<string, unknown>)["accepted"]).toBe(1);
@@ -182,7 +204,9 @@ describe("runLearningsExtraction", () => {
       userId: "user-123",
       installationId: 99,
       backgroundAgentRunId: "run-secret",
-      octokit: makeFakeOctokit() as unknown as Parameters<typeof runLearningsExtraction>[0]["octokit"],
+      octokit: makeFakeOctokit() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["octokit"],
       generate: makeFakeGenerate({
         excerpt: secretExcerpt,
       }) as unknown as Parameters<typeof runLearningsExtraction>[0]["generate"],
@@ -205,7 +229,9 @@ describe("runLearningsExtraction", () => {
       userId: "user-123",
       installationId: 99,
       backgroundAgentRunId: "run-reviewer",
-      octokit: makeFakeOctokit() as unknown as Parameters<typeof runLearningsExtraction>[0]["octokit"],
+      octokit: makeFakeOctokit() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["octokit"],
       generate: makeFakeGenerate({
         reviewerSourced: true,
       }) as unknown as Parameters<typeof runLearningsExtraction>[0]["generate"],
@@ -214,7 +240,9 @@ describe("runLearningsExtraction", () => {
     });
 
     expect(store.learnings).toHaveLength(1);
-    expect((store.learnings[0] as Record<string, unknown>)["confidence"]).toBe("low");
+    expect((store.learnings[0] as Record<string, unknown>)["confidence"]).toBe(
+      "low",
+    );
   });
 
   // BT-019: non-merged event does not trigger extraction
@@ -232,8 +260,12 @@ describe("runLearningsExtraction", () => {
       userId: "user-123",
       installationId: 99,
       backgroundAgentRunId: "run-closed",
-      octokit: makeFakeOctokit() as unknown as Parameters<typeof runLearningsExtraction>[0]["octokit"],
-      generate: makeFakeGenerate() as unknown as Parameters<typeof runLearningsExtraction>[0]["generate"],
+      octokit: makeFakeOctokit() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["octokit"],
+      generate: makeFakeGenerate() as unknown as Parameters<
+        typeof runLearningsExtraction
+      >[0]["generate"],
       store,
       recordEvent,
     });

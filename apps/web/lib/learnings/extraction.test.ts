@@ -37,7 +37,8 @@ describe("verifyRedaction", () => {
   });
 
   test("detects sk- token prefix as failed/blocked", () => {
-    const text = "Using API key sk-proj-abc123defghijklmnopqrstuvwxyz to call the service";
+    const text =
+      "Using API key sk-proj-abc123defghijklmnopqrstuvwxyz to call the service";
     const result = verifyRedaction(text);
     expect(["failed", "blocked"]).toContain(result.status);
     expect(result.detector).toBe("known_prefix");
@@ -58,14 +59,17 @@ describe("toEventPayload", () => {
     expect(payload).not.toHaveProperty("stderr");
     // Must have the safe key
     expect(
-      Object.prototype.hasOwnProperty.call(payload, "candidate_text") ||
-        Object.prototype.hasOwnProperty.call(payload, "learning_excerpt"),
+      Object.hasOwn(payload, "candidate_text") ||
+        Object.hasOwn(payload, "learning_excerpt"),
     ).toBe(true);
   });
 
   test("payload using candidate_text/learning_excerpt survives redactHarnessPayload without wholesale redaction", () => {
     const safeText = "Prefer small React components for better testability";
-    const payload = toEventPayload({ title: "Component design", description: safeText });
+    const payload = toEventPayload({
+      title: "Component design",
+      description: safeText,
+    });
     const redacted = redactHarnessPayload(payload);
 
     // The value under the safe key should NOT be "[REDACTED_ARTIFACT_CONTENT]"

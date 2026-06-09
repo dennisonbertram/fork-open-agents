@@ -1,39 +1,32 @@
 import "server-only";
 
 import { and, eq } from "drizzle-orm";
+import { db } from "@/lib/db/client";
 import { repoLearningExtractionRuns, repoLearnings } from "@/lib/db/schema";
-import type {
-  FindForDedupResult,
-  LearningsStore,
-  RepoLearningExtractionRunRow,
-  RepoLearningRow,
-} from "./types";
-
-type DbClient = {
-  insert: (table: unknown) => {
-    values: (values: unknown) => Promise<unknown>;
-  };
-  update: (table: unknown) => {
-    set: (values: unknown) => {
-      where: (condition: unknown) => Promise<unknown>;
-    };
-  };
-  select: (fields?: unknown) => {
-    from: (table: unknown) => {
-      where: (condition: unknown) => Promise<unknown[]>;
-    };
-  };
-};
+import type { FindForDedupResult, LearningsStore } from "./types";
 
 /**
- * Creates a Drizzle-backed LearningsStore.
- * This is the only DB-touching file in the learnings module.
+ * Creates a Drizzle-backed LearningsStore. This is the only DB-touching file in
+ * the learnings module; all extraction/dedup/redaction logic stays pure and is
+ * unit-tested against the LearningsStore interface with an injected fake.
+ *
+ * The `database` parameter defaults to the real client but stays injectable so
+ * the executor wiring (#274) and any future integration test can substitute a
+ * transaction-scoped client.
  */
-export function createDbLearningsStore(db: DbClient): LearningsStore {
+export function createDbLearningsStore(database = db): LearningsStore {
   return {
     async findForDedup({ userId, repoOwner, repoName }) {
-      const rows = await (db
-        .select()
+      const rows = await database
+        .select({
+          id: repoLearnings.id,
+          title: repoLearnings.title,
+          rootCause: repoLearnings.rootCause,
+          solution: repoLearnings.solution,
+          affectedPaths: repoLearnings.affectedPaths,
+          prevention: repoLearnings.prevention,
+          dedupSignature: repoLearnings.dedupSignature,
+        })
         .from(repoLearnings)
         .where(
           and(
@@ -41,44 +34,33 @@ export function createDbLearningsStore(db: DbClient): LearningsStore {
             eq(repoLearnings.repoOwner, repoOwner),
             eq(repoLearnings.repoName, repoName),
           ),
-        ) as unknown as Promise<RepoLearningRow[]>);
+        );
 
-      return rows.map((r) => ({
-        id: r.id,
-        title: r.title,
-        rootCause: r.rootCause,
-        solution: r.solution,
-        affectedPaths: r.affectedPaths,
-        prevention: r.prevention,
-        dedupSignature: r.dedupSignature,
-      })) satisfies FindForDedupResult;
+      return rows satisfies FindForDedupResult;
     },
 
     async createLearning(learning) {
-      const [row] = await (db.insert(repoLearnings).values({
-        ...learning,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }) as unknown as Promise<RepoLearningRow[]>);
+      const [row] = await database
+        .insert(repoLearnings)
+        .values(learning)
+        .returning();
       return row;
     },
 
     async updateLearning(id, updates) {
-      const [row] = await (db
+      const [row] = await database
         .update(repoLearnings)
         .set({ ...updates, updatedAt: new Date() })
-        .where(eq(repoLearnings.id, id)) as unknown as Promise<
-        RepoLearningRow[]
-      >);
+        .where(eq(repoLearnings.id, id))
+        .returning();
       return row;
     },
 
     async recordExtractionRun(run) {
-      const [row] = await (db
+      const [row] = await database
         .insert(repoLearningExtractionRuns)
-        .values({ ...run, createdAt: new Date() }) as unknown as Promise<
-        RepoLearningExtractionRunRow[]
-      >);
+        .values(run)
+        .returning();
       return row;
     },
   };

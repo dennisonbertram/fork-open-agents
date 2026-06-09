@@ -112,8 +112,14 @@ describe("computeDedupSignature", () => {
   });
 
   test("returns same signature regardless of affectedPaths order", () => {
-    const a: OverlapInput = { ...baseCandidate, affectedPaths: ["a.ts", "b.ts"] };
-    const b: OverlapInput = { ...baseCandidate, affectedPaths: ["b.ts", "a.ts"] };
+    const a: OverlapInput = {
+      ...baseCandidate,
+      affectedPaths: ["a.ts", "b.ts"],
+    };
+    const b: OverlapInput = {
+      ...baseCandidate,
+      affectedPaths: ["b.ts", "a.ts"],
+    };
     expect(computeDedupSignature(a)).toBe(computeDedupSignature(b));
   });
 

@@ -124,7 +124,8 @@ describe("normalizeGitHubBackgroundEvent", () => {
       review: {
         id: 9999,
         state: "approved",
-        html_url: "https://github.com/owner/repo/pull/42#pullrequestreview-9999",
+        html_url:
+          "https://github.com/owner/repo/pull/42#pullrequestreview-9999",
         user: { login: "reviewer" },
       },
       pull_request: {
