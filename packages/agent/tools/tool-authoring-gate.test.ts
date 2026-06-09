@@ -15,7 +15,9 @@ import { describe, expect, it, mock } from "bun:test";
 mock.module("ai", () => {
   class MockToolLoopAgent {
     readonly config: unknown;
-    constructor(config: unknown) { this.config = config; }
+    constructor(config: unknown) {
+      this.config = config;
+    }
   }
   const createGateway = () => (modelId: string) => ({ modelId });
   return {
@@ -24,13 +26,16 @@ mock.module("ai", () => {
     gateway: createGateway,
     getToolName: (part: { toolName?: string; type?: string }) => {
       if (part.toolName) return part.toolName;
-      if (typeof part.type === "string" && part.type.startsWith("tool-")) return part.type.slice(5);
+      if (typeof part.type === "string" && part.type.startsWith("tool-"))
+        return part.type.slice(5);
       return "";
     },
     isToolUIPart: (part: unknown) => {
       if (!part || typeof part !== "object") return false;
       const candidate = part as { type?: unknown };
-      return typeof candidate.type === "string" && candidate.type.startsWith("tool-");
+      return (
+        typeof candidate.type === "string" && candidate.type.startsWith("tool-")
+      );
     },
     stepCountIs: (count: number) => ({ count }),
     ToolLoopAgent: MockToolLoopAgent,
@@ -39,19 +44,24 @@ mock.module("ai", () => {
   };
 });
 
-const { getRuntimeModeToolPolicy, OPEN_AGENT_TOOL_NAMES } = await import("../open-agent");
+const { getRuntimeModeToolPolicy, OPEN_AGENT_TOOL_NAMES } =
+  await import("../open-agent");
 const { PROPOSE_TOOL_NAME } = await import("./propose-tool");
 
 describe("tool authoring gate in runtime tool policy", () => {
   // BT-010: disabled => tool absent
   it("does NOT include propose_composio_tool when toolAuthoringEnabled is false", () => {
-    const toolset = getRuntimeModeToolPolicy("classic", undefined, { toolAuthoringEnabled: false });
+    const toolset = getRuntimeModeToolPolicy("classic", undefined, {
+      toolAuthoringEnabled: false,
+    });
     expect(Object.keys(toolset)).not.toContain(PROPOSE_TOOL_NAME);
   });
 
   // BT-011: enabled => tool present
   it("includes propose_composio_tool when toolAuthoringEnabled is true", () => {
-    const toolset = getRuntimeModeToolPolicy("classic", undefined, { toolAuthoringEnabled: true });
+    const toolset = getRuntimeModeToolPolicy("classic", undefined, {
+      toolAuthoringEnabled: true,
+    });
     expect(Object.keys(toolset)).toContain(PROPOSE_TOOL_NAME);
   });
 
@@ -63,7 +73,9 @@ describe("tool authoring gate in runtime tool policy", () => {
 
   // REGRESSION: existing tool names are unchanged when toolAuthoringEnabled=false
   it("regression: all existing OPEN_AGENT_TOOL_NAMES are preserved in classic mode when authoring is disabled", () => {
-    const toolset = getRuntimeModeToolPolicy("classic", undefined, { toolAuthoringEnabled: false });
+    const toolset = getRuntimeModeToolPolicy("classic", undefined, {
+      toolAuthoringEnabled: false,
+    });
     for (const name of OPEN_AGENT_TOOL_NAMES) {
       expect(Object.keys(toolset)).toContain(name);
     }

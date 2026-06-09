@@ -17,33 +17,28 @@ mock.module("server-only", () => ({}));
 let fakeEntries: Record<string, unknown>[] = [];
 let fakeAgents: Record<string, unknown>[] = [];
 let lastInserted: unknown = null;
-let lastUpdatedEntry: unknown = null;
+let _lastUpdatedEntry: unknown = null;
 let lastUpdatedAgent: { id: string; slugs: string[] } | null = null;
 
 // ── Mock DB client ─────────────────────────────────────────────────────────────
-mock.module("@/lib/db/client", () => {
-  const buildSelectChain = (rows: () => Record<string, unknown>[]) => ({
-    select: () => ({
-      from: () => ({
-        where: () => ({
-          limit: async (n: number) => rows().slice(0, n),
-        }),
-      }),
-    }),
+// Build a thenable+limit chain so both .where() (awaited directly) and
+// .where().limit(n) patterns work.
+function makeWhereResult(rows: Record<string, unknown>[]) {
+  const p = Promise.resolve(rows);
+  return Object.assign(p, {
+    limit: (n: number) => Promise.resolve(rows.slice(0, n)),
   });
+}
 
+mock.module("@/lib/db/client", () => {
   return {
     db: {
       select: () => ({
         from: (_table: unknown) => ({
-          where: () => ({
-            limit: async (n: number) =>
-              (_table === "agent_tool_entries_table" ? fakeEntries : fakeAgents).slice(0, n),
-          }),
-          // no .where => full list
-          then: (resolve: (v: unknown) => void) => {
-            resolve(fakeEntries);
-          },
+          where: () =>
+            makeWhereResult(
+              _table === "agents_table" ? fakeAgents : fakeEntries,
+            ),
         }),
       }),
       insert: (_table: unknown) => ({
@@ -55,7 +50,7 @@ mock.module("@/lib/db/client", () => {
             fakeEntries.push(vals as Record<string, unknown>);
           }
           return {
-            returning: async () => [vals],
+            returning: () => Promise.resolve([vals]),
           };
         },
       }),
@@ -66,9 +61,9 @@ mock.module("@/lib/db/client", () => {
               if (_table === "agents_table") {
                 lastUpdatedAgent = patch as { id: string; slugs: string[] };
               } else {
-                lastUpdatedEntry = patch;
+                _lastUpdatedEntry = patch;
               }
-              return [{ ...patch }];
+              return [Object.assign({}, patch)];
             },
           }),
         }),
@@ -105,7 +100,7 @@ function resetState() {
   fakeEntries = [];
   fakeAgents = [];
   lastInserted = null;
-  lastUpdatedEntry = null;
+  _lastUpdatedEntry = null;
   lastUpdatedAgent = null;
 }
 
@@ -152,7 +147,9 @@ describe("agent-tool-entries data layer", () => {
 
     it("does NOT change composioToolkitSlugs on the agents row (off-by-default)", async () => {
       // Set up an agent row with an initial slug list
-      fakeAgents = [{ id: "agent-abc", composioToolkitSlugs: ["existing-tool"] }];
+      fakeAgents = [
+        { id: "agent-abc", composioToolkitSlugs: ["existing-tool"] },
+      ];
 
       await createProposedToolEntry({
         agentId: "agent-abc",
@@ -166,7 +163,9 @@ describe("agent-tool-entries data layer", () => {
       expect(lastUpdatedAgent).toBeNull();
       // And the agents array should not have a new slug appended
       const agentRow = fakeAgents[0] as Record<string, unknown>;
-      expect((agentRow["composioToolkitSlugs"] as string[])).toEqual(["existing-tool"]);
+      expect(agentRow["composioToolkitSlugs"] as string[]).toEqual([
+        "existing-tool",
+      ]);
     });
   });
 
@@ -174,8 +173,20 @@ describe("agent-tool-entries data layer", () => {
   describe("listToolEntriesForAgent (BT-002)", () => {
     it("returns all entries for the given agentId and userId", async () => {
       fakeEntries = [
-        { id: "e1", agentId: "agent-abc", userId: "user-xyz", toolkitSlug: "github", status: "proposed" },
-        { id: "e2", agentId: "agent-abc", userId: "user-xyz", toolkitSlug: "linear", status: "approved" },
+        {
+          id: "e1",
+          agentId: "agent-abc",
+          userId: "user-xyz",
+          toolkitSlug: "github",
+          status: "proposed",
+        },
+        {
+          id: "e2",
+          agentId: "agent-abc",
+          userId: "user-xyz",
+          toolkitSlug: "linear",
+          status: "approved",
+        },
       ];
 
       const entries = await listToolEntriesForAgent("user-xyz", "agent-abc");

@@ -29,9 +29,12 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 
 // ── Mock data layer ───────────────────────────────────────────────────────────
 mock.module("@/lib/db/agent-tool-entries", () => ({
-  listToolEntriesForAgent: async (_userId: string, _agentId: string) => mockListResult,
-  approveToolEntry: async (_userId: string, _entryId: string) => mockApproveResult,
-  rejectToolEntry: async (_userId: string, _entryId: string) => mockRejectResult,
+  listToolEntriesForAgent: async (_userId: string, _agentId: string) =>
+    mockListResult,
+  approveToolEntry: async (_userId: string, _entryId: string) =>
+    mockApproveResult,
+  rejectToolEntry: async (_userId: string, _entryId: string) =>
+    mockRejectResult,
 }));
 
 const { GET, POST } = await import("./route");
@@ -50,10 +53,14 @@ describe("GET /api/agents/tool-entries", () => {
   it("returns 401 when not authenticated", async () => {
     mockAuthResult = {
       ok: false,
-      response: new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      }),
     };
 
-    const req = new Request("http://localhost/api/agents/tool-entries?agentId=agent-abc");
+    const req = new Request(
+      "http://localhost/api/agents/tool-entries?agentId=agent-abc",
+    );
     const res = await GET(req);
 
     expect(res.status).toBe(401);
@@ -62,14 +69,21 @@ describe("GET /api/agents/tool-entries", () => {
   // BT-013: returns entries for the authenticated user
   it("returns 200 with entries for the authenticated user's agent", async () => {
     mockListResult = [
-      { id: "e1", agentId: "agent-abc", toolkitSlug: "github", status: "proposed" },
+      {
+        id: "e1",
+        agentId: "agent-abc",
+        toolkitSlug: "github",
+        status: "proposed",
+      },
     ];
 
-    const req = new Request("http://localhost/api/agents/tool-entries?agentId=agent-abc");
+    const req = new Request(
+      "http://localhost/api/agents/tool-entries?agentId=agent-abc",
+    );
     const res = await GET(req);
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { entries: unknown[] };
+    const body = (await res.json()) as { entries: unknown[] };
     expect(Array.isArray(body.entries)).toBe(true);
   });
 
@@ -95,7 +109,7 @@ describe("POST /api/agents/tool-entries (approve/reject)", () => {
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { ok: boolean };
+    const body = (await res.json()) as { ok: boolean };
     expect(body.ok).toBe(true);
   });
 
@@ -125,14 +139,16 @@ describe("POST /api/agents/tool-entries (approve/reject)", () => {
     const res = await POST(req);
 
     expect(res.status).toBe(200);
-    const body = await res.json() as { ok: boolean };
+    const body = (await res.json()) as { ok: boolean };
     expect(body.ok).toBe(true);
   });
 
   it("returns 401 when not authenticated", async () => {
     mockAuthResult = {
       ok: false,
-      response: new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 }),
+      response: new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+      }),
     };
 
     const req = new Request("http://localhost/api/agents/tool-entries", {
