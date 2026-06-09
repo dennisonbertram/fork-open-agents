@@ -24,6 +24,8 @@ Start here:
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
 - [API Contract Tests](api-contract-tests.md) - real-HTTP contract suite
   (`bun run test:contract`) for verifying the backend independently of the UI.
+- [OpenAPI Contract & Typed Client](api-openapi-contract.md) - the generated
+  `openapi.json` + typed client (`lib/api/client.ts`) the frontend consumes.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
 - [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
