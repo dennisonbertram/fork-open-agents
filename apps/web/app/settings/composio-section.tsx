@@ -9,6 +9,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { toast } from "sonner";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
 import type {
@@ -281,6 +282,7 @@ function ProfileEditor({
         } | null;
         throw new Error(body?.error ?? "Failed to save profile");
       }
+      toast.success(isNew ? "Profile created" : "Profile saved");
       onSaved();
     } catch (saveError) {
       setError(
@@ -312,6 +314,7 @@ function ProfileEditor({
         } | null;
         throw new Error(body?.error ?? "Failed to delete profile");
       }
+      toast.success("Profile deleted");
       onDeleted();
     } catch (deleteError) {
       setError(
@@ -610,9 +613,14 @@ function DeleteProfileButton({ profile, onDeleted }: DeleteProfileButtonProps) {
         } | null;
         throw new Error(body?.error ?? "Failed to delete profile");
       }
+      toast.success("Profile deleted");
       onDeleted();
-    } catch {
-      // Ignore — user can retry from expanded editor
+    } catch (deleteError) {
+      toast.error(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Failed to delete profile",
+      );
     } finally {
       setIsPending(false);
     }
@@ -732,6 +740,7 @@ export function ComposioSection() {
         throw new Error(body?.error ?? "Failed to update defaults");
       }
       await mutate();
+      toast.success("Agent default updated");
     } catch (defaultsError) {
       setActionError(
         defaultsError instanceof Error
