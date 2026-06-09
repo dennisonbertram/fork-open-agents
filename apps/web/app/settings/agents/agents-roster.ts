@@ -22,15 +22,35 @@ export type AgentRosterRow = {
   model: string | null;
   /** True when the sub-role has no explicit model override (inherits Main). */
   modelInherited: boolean;
+  /** True when model comes from a user_default agent row (not preference default). */
+  modelCustom: boolean;
   /** Human label for the Composio tools assignment (profile name or "None"). */
   toolsLabel: string;
+  /** True when tools come from a user_default agent row. */
+  toolsCustom: boolean;
+  /** Instructions string or null (null = built-in). */
+  instructions: string | null;
+  /** True when instructions come from a user_default agent row (non-null). */
+  instructionsCustom: boolean;
   /** Human label for the managed runtime profile. */
   runtimeLabel: string;
+  /** True when runtime comes from a user_default agent row. */
+  runtimeCustom: boolean;
   /**
    * Human label for the user's enabled skills. Skills are globally available to
    * the user's agents, so this label is identical across every role row.
    */
   skillsLabel: string;
+};
+
+/** Minimal shape of a user_default agent row needed by the roster builder. */
+export type UserDefaultAgentRowSummary = {
+  role: "main" | "explorer" | "executor" | "design";
+  modelId: string | null;
+  composioToolkitSlugs: string[];
+  composioProfileId: string | null;
+  instructions: string | null;
+  managedRuntimeProfileId: string | null;
 };
 
 export type BuildAgentRosterInput = {
@@ -45,6 +65,12 @@ export type BuildAgentRosterInput = {
   profileSummaries?: ComposioToolProfileSummary[];
   /** Count of the user's enabled, hand-authored skills. Defaults to 0. */
   enabledSkillCount?: number;
+  /**
+   * Phase 3: user_default agent rows.
+   * When provided, values from these rows override the preference defaults for the
+   * matching role's fields, and the `*Custom` flags are set to true.
+   */
+  userDefaultAgentRows?: UserDefaultAgentRowSummary[];
 };
 
 /** "None" when no skills are enabled, otherwise "N enabled". */
@@ -80,8 +106,13 @@ const ROLE_DESCRIPTIONS: Record<
 };
 
 /**
- * Build the read-only agent roster rows from pre-loaded settings data.
+ * Build the agent roster rows from pre-loaded settings data.
  * Returns exactly four rows in canonical role order.
+ *
+ * Phase 3: when userDefaultAgentRows are provided, their values override the
+ * preference defaults and the `*Custom` flags are set accordingly, so the
+ * collapsed summary reflects saved values. All original behavior is preserved
+ * when no rows are provided (or rows is empty).
  */
 export function buildAgentRoster({
   preferences,
@@ -89,33 +120,95 @@ export function buildAgentRoster({
   runtimeProfiles,
   profileSummaries = [],
   enabledSkillCount = 0,
+  userDefaultAgentRows = [],
 }: BuildAgentRosterInput): AgentRosterRow[] {
   const profileById = new Map(profileSummaries.map((p) => [p.id, p]));
 
   const runtimeProfile = runtimeProfiles.find(
     (p) => p.id === preferences.defaultManagedRuntimeProfileId,
   );
-  const runtimeLabel = runtimeProfile?.displayName ?? "Default sandbox";
+  const defaultRuntimeLabel = runtimeProfile?.displayName ?? "Default sandbox";
   const skillsLabel = formatSkillsLabel(enabledSkillCount);
 
   const subagentModel = preferences.defaultSubagentModelId;
   const subagentModelInherited = subagentModel === null;
 
+  // Index user_default rows by role for O(1) lookup
+  const agentRowByRole = new Map(userDefaultAgentRows.map((r) => [r.role, r]));
+
   const keys = ["main", "explorer", "executor", "design"] as const;
 
   return keys.map((key): AgentRosterRow => {
-    // Model
     const isMain = key === "main";
-    const model = isMain ? preferences.defaultModelId : (subagentModel ?? null);
-    const modelInherited = !isMain && subagentModelInherited;
-
-    // Description
     const description = ROLE_DESCRIPTIONS[key];
+    const agentRow = agentRowByRole.get(key);
 
-    // Tools label
-    const profileId = composioDefaults[key].defaultProfileId;
-    const profile = profileId != null ? profileById.get(profileId) : undefined;
-    const toolsLabel = profile?.name ?? "None";
+    // ── Model ──────────────────────────────────────────────────────────────
+    let model: string | null;
+    let modelInherited: boolean;
+    let modelCustom: boolean;
+
+    if (agentRow?.modelId != null) {
+      // agent row has an explicit modelId
+      model = agentRow.modelId;
+      modelInherited = false;
+      modelCustom = true;
+    } else {
+      // fall back to preference defaults
+      model = isMain ? preferences.defaultModelId : (subagentModel ?? null);
+      modelInherited = !isMain && subagentModelInherited;
+      modelCustom = false;
+    }
+
+    // ── Tools ──────────────────────────────────────────────────────────────
+    let toolsLabel: string;
+    let toolsCustom: boolean;
+
+    if (
+      agentRow &&
+      (agentRow.composioToolkitSlugs.length > 0 ||
+        agentRow.composioProfileId != null)
+    ) {
+      // agent row has explicit tools
+      if (
+        agentRow.composioProfileId != null &&
+        agentRow.composioToolkitSlugs.length === 0
+      ) {
+        const prof = profileById.get(agentRow.composioProfileId);
+        toolsLabel = prof?.name ?? agentRow.composioProfileId;
+      } else {
+        const count = agentRow.composioToolkitSlugs.length;
+        toolsLabel =
+          count === 1 ? agentRow.composioToolkitSlugs[0] : `${count} toolkits`;
+      }
+      toolsCustom = true;
+    } else {
+      // fall back to composio defaults
+      const profileId = composioDefaults[key].defaultProfileId;
+      const profile =
+        profileId != null ? profileById.get(profileId) : undefined;
+      toolsLabel = profile?.name ?? "None";
+      toolsCustom = false;
+    }
+
+    // ── Instructions ───────────────────────────────────────────────────────
+    const instructions = agentRow?.instructions ?? null;
+    const instructionsCustom = instructions != null;
+
+    // ── Runtime ────────────────────────────────────────────────────────────
+    let runtimeLabel: string;
+    let runtimeCustom: boolean;
+
+    if (agentRow?.managedRuntimeProfileId != null) {
+      const prof = runtimeProfiles.find(
+        (p) => p.id === agentRow.managedRuntimeProfileId,
+      );
+      runtimeLabel = prof?.displayName ?? agentRow.managedRuntimeProfileId;
+      runtimeCustom = true;
+    } else {
+      runtimeLabel = defaultRuntimeLabel;
+      runtimeCustom = false;
+    }
 
     return {
       key,
@@ -123,8 +216,13 @@ export function buildAgentRoster({
       description,
       model,
       modelInherited,
+      modelCustom,
       toolsLabel,
+      toolsCustom,
+      instructions,
+      instructionsCustom,
       runtimeLabel,
+      runtimeCustom,
       skillsLabel,
     };
   });

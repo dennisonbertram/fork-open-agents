@@ -7,10 +7,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import {
-  agentPatchSchema,
-  type AgentPatchInput,
-} from "./agents-api-mapper";
+import { agentPatchSchema, type AgentPatchInput } from "./agents-api-mapper";
 
 // BT-M-001: valid patch with all optional fields
 describe("agentPatchSchema", () => {
@@ -37,7 +34,10 @@ describe("agentPatchSchema", () => {
   });
 
   it("BT-M-004: accepts null modelId (reset to inherit)", () => {
-    const result = agentPatchSchema.safeParse({ role: "explorer", modelId: null });
+    const result = agentPatchSchema.safeParse({
+      role: "explorer",
+      modelId: null,
+    });
     expect(result.success).toBe(true);
   });
 
@@ -86,7 +86,9 @@ describe("agentPatchSchema", () => {
     });
     // Either stripped (success + no unknownField) or rejected
     if (result.success) {
-      expect((result.data as Record<string, unknown>)["unknownField"]).toBeUndefined();
+      expect(
+        (result.data as Record<string, unknown>)["unknownField"],
+      ).toBeUndefined();
     }
     // Either outcome is acceptable as long as the field isn't passed to DB
   });
