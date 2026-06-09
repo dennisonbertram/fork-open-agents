@@ -28,6 +28,12 @@ export type AgentRosterRow = {
   toolsLabel: string;
   /** True when tools come from a user_default agent row. */
   toolsCustom: boolean;
+  /**
+   * Raw Composio toolkit slugs from the saved user_default agent row.
+   * Empty array when no row exists or the row has none saved.
+   * Populated so the AgentEditor can pre-populate without data loss on Save.
+   */
+  composioToolkitSlugs: string[];
   /** Instructions string or null (null = built-in). */
   instructions: string | null;
   /** True when instructions come from a user_default agent row (non-null). */
@@ -219,6 +225,7 @@ export function buildAgentRoster({
       modelCustom,
       toolsLabel,
       toolsCustom,
+      composioToolkitSlugs: agentRow?.composioToolkitSlugs ?? [],
       instructions,
       instructionsCustom,
       runtimeLabel,

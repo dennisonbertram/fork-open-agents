@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
+import { useModelOptions } from "@/hooks/use-model-options";
 import type { AgentRosterRow } from "./agents-roster";
 
 /** Map each role to a subtitle shown beneath the role name in the card. */
@@ -82,14 +83,9 @@ function AgentEditor({
   onReset: () => void;
   onCancel: () => void;
 }) {
+  const { modelOptions } = useModelOptions();
   const [modelId, setModelId] = useState<string>(row.model ?? "");
-  const [slugs, setSlugs] = useState<string[]>(
-    row.toolsCustom
-      ? row.toolsLabel.includes("toolkit")
-        ? [] // slugs not directly on row, start empty
-        : []
-      : [],
-  );
+  const [slugs, setSlugs] = useState<string[]>(row.composioToolkitSlugs);
   const [instructions, setInstructions] = useState<string>(
     row.instructions ?? "",
   );
@@ -173,20 +169,11 @@ function AgentEditor({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="">Inherit default</SelectItem>
-            <SelectItem value="anthropic/claude-opus-4-5">
-              Claude Opus 4.5
-            </SelectItem>
-            <SelectItem value="anthropic/claude-sonnet-4-5">
-              Claude Sonnet 4.5
-            </SelectItem>
-            <SelectItem value="anthropic/claude-3-5-haiku">
-              Claude 3.5 Haiku
-            </SelectItem>
-            <SelectItem value="openai/gpt-4o">GPT-4o</SelectItem>
-            <SelectItem value="openai/o3">o3</SelectItem>
-            <SelectItem value="google/gemini-2.0-flash">
-              Gemini 2.0 Flash
-            </SelectItem>
+            {modelOptions.map((opt) => (
+              <SelectItem key={opt.id} value={opt.id}>
+                {opt.label}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
