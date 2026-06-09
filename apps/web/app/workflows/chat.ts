@@ -13,6 +13,7 @@ import {
   toAnthropicDirectModelId,
   type AgentModelSelection,
   type OpenAgentCallOptions,
+  type SubagentRoster,
 } from "@open-agents/agent";
 import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
@@ -99,6 +100,8 @@ type ChatModelRuntime = {
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
+  /** Per-role subagent roster resolved from agents rows. null = no rows (today's defaults). */
+  subagentRoster: SubagentRoster | null;
 };
 
 type Writable = WritableStream<UIMessageChunk>;
@@ -252,6 +255,71 @@ async function resolveChatModelRuntime(params: {
     inferenceProvider = profile.provider;
   }
 
+  // ── Phase 4: resolve per-role subagent roster ────────────────────────────────
+  // Mirror the skills plumbing pattern: resolve in the web layer, thread through
+  // agentOptions → experimental_context → task tool.
+  // Best-effort: failures log and fall back to null (today's behavior).
+  let subagentRoster: SubagentRoster | null = null;
+  try {
+    const { resolveAgentForRole } = await import("@/lib/agents/resolve-agent");
+    const scopeKeys = {
+      userId: params.userId,
+      sessionId: params.sessionId,
+    };
+    const [explorerAgent, executorAgent, designAgent] = await Promise.all([
+      resolveAgentForRole({ ...scopeKeys, role: "explorer" }),
+      resolveAgentForRole({ ...scopeKeys, role: "executor" }),
+      resolveAgentForRole({ ...scopeKeys, role: "design" }),
+    ]);
+
+    const toRosterEntry = (
+      resolved: Awaited<ReturnType<typeof resolveAgentForRole>>,
+    ) => {
+      // Only include an entry when at least one field was explicitly set by a
+      // real DB row. The synthetic prefs fallback (fromDbRow=false) must NOT
+      // produce a roster entry even when modelId is non-null, because the
+      // synthetic modelId lacks providerOptionsOverrides and directAnthropic
+      // that were resolved for the main subagentModel. Threading a modelId-only
+      // roster entry would cause applyRosterOverrides to call gateway(modelId)
+      // with no second argument, silently dropping those overrides.
+      const hasInstructions = resolved.instructions !== null;
+      const hasSlugs = resolved.composioToolkitSlugs.length > 0;
+      // Only include modelId when this resolution came from a real DB row.
+      // Synthetic fallback modelId is already wired via subagentModel and must
+      // not be duplicated in the roster without its full model selection context.
+      const hasModel = resolved.fromDbRow && resolved.modelId !== null;
+
+      if (!hasModel && !hasInstructions && !hasSlugs) {
+        return null;
+      }
+
+      return {
+        ...(hasModel ? { modelId: resolved.modelId } : {}),
+        ...(hasInstructions ? { instructions: resolved.instructions } : {}),
+        ...(hasSlugs
+          ? { composioToolkitSlugs: resolved.composioToolkitSlugs }
+          : {}),
+      };
+    };
+
+    const explorerEntry = toRosterEntry(explorerAgent);
+    const executorEntry = toRosterEntry(executorAgent);
+    const designEntry = toRosterEntry(designAgent);
+
+    const hasAnyEntry =
+      explorerEntry !== null || executorEntry !== null || designEntry !== null;
+    if (hasAnyEntry) {
+      subagentRoster = {
+        ...(explorerEntry ? { explorer: explorerEntry } : {}),
+        ...(executorEntry ? { executor: executorEntry } : {}),
+        ...(designEntry ? { design: designEntry } : {}),
+      };
+    }
+  } catch (err: unknown) {
+    console.error("[chat] subagent roster resolution failed (non-fatal):", err);
+    subagentRoster = null;
+  }
+
   return {
     selectedModelId: getModelOptionSelectionId(
       selectedModelId ?? mainModelSelection.id,
@@ -268,9 +336,11 @@ async function resolveChatModelRuntime(params: {
         ? { subagentModel: subagentModelSelection }
         : {}),
       customInstructions: assistantFileLinkPrompt,
+      ...(subagentRoster ? { subagentRoster } : {}),
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
+    subagentRoster,
   };
 }
 
