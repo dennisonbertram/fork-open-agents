@@ -57,9 +57,8 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
   listUserDefaultProfiles: async () => userDefaultProfiles,
   createManagedRuntimeSavedProfile: async () => createdProfile,
-  toManagedRuntimeProfile: (
-    profile: (typeof userDefaultProfiles)[number],
-  ) => profile,
+  toManagedRuntimeProfile: (profile: (typeof userDefaultProfiles)[number]) =>
+    profile,
 }));
 
 mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
