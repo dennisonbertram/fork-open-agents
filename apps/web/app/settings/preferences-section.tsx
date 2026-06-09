@@ -92,6 +92,22 @@ function GroupHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Read-only value shown when a picker has only one option. Styled to match the
+ * height/border of a Select trigger so single-option fields read as a settled
+ * value in line with the editable fields beside them — not floating text.
+ */
+function ReadOnlyValue({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex h-9 items-center justify-between rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
+      <span className="truncate">{children}</span>
+      <span className="ml-2 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        Only option
+      </span>
+    </div>
+  );
+}
+
 export function PreferencesSectionSkeleton() {
   return (
     <div className="space-y-8">
@@ -469,9 +485,9 @@ export function PreferencesSection() {
           <div className="grid gap-2">
             <Label htmlFor="sandbox">Default sandbox</Label>
             {shouldCollapseSingleOption(SANDBOX_OPTIONS) ? (
-              <p className="text-sm text-foreground">
+              <ReadOnlyValue>
                 {SANDBOX_OPTIONS[0]?.name ?? "None"}
-              </p>
+              </ReadOnlyValue>
             ) : (
               <Select
                 value={preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE}
@@ -509,9 +525,9 @@ export function PreferencesSection() {
                 name: p.displayName,
               })),
             ) ? (
-              <p className="text-sm text-foreground">
+              <ReadOnlyValue>
                 {MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.displayName ?? "None"}
-              </p>
+              </ReadOnlyValue>
             ) : (
               <Select
                 value={preferences?.defaultManagedRuntimeProfileId}
@@ -638,7 +654,7 @@ export function PreferencesSection() {
             />
           </div>
           {(preferences?.alertsEnabled ?? true) && (
-            <div className="flex items-center justify-between gap-4 pl-4">
+            <div className="ml-1 flex items-center justify-between gap-4 border-l-2 border-border/60 pl-4">
               <div className="space-y-0.5">
                 <Label htmlFor="alert-sound-enabled">Alert sound</Label>
                 <p className="text-xs text-muted-foreground">
@@ -677,7 +693,7 @@ export function PreferencesSection() {
             />
           </div>
           {(preferences?.publicUsageEnabled ?? false) && publicProfilePath && (
-            <div className="grid gap-2 pl-4">
+            <div className="ml-1 grid gap-2 border-l-2 border-border/60 pl-4">
               <Label htmlFor="public-usage-url">Public profile URL</Label>
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Input
