@@ -93,7 +93,10 @@ describe("Fix 2: AgentRosterRow carries raw composioToolkitSlugs for editor pre-
     // This assertion fails until AgentRosterRow gains a composioToolkitSlugs field
     // and buildAgentRoster threads the raw slugs through.
     expect(main).toHaveProperty("composioToolkitSlugs");
-    expect((main as AgentRosterRow & { composioToolkitSlugs: string[] }).composioToolkitSlugs).toEqual(["github", "linear"]);
+    expect(
+      (main as AgentRosterRow & { composioToolkitSlugs: string[] })
+        .composioToolkitSlugs,
+    ).toEqual(["github", "linear"]);
   });
 
   /**
@@ -112,7 +115,10 @@ describe("Fix 2: AgentRosterRow carries raw composioToolkitSlugs for editor pre-
     for (const row of rows) {
       // This assertion fails until the field is added to the row shape
       expect(row).toHaveProperty("composioToolkitSlugs");
-      expect((row as AgentRosterRow & { composioToolkitSlugs: string[] }).composioToolkitSlugs).toEqual([]);
+      expect(
+        (row as AgentRosterRow & { composioToolkitSlugs: string[] })
+          .composioToolkitSlugs,
+      ).toEqual([]);
     }
   });
 
