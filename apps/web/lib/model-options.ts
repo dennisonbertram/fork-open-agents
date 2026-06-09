@@ -204,6 +204,21 @@ export function filterAndSortModelOptions(
   return filtered;
 }
 
+/** Curated list of model IDs to show by default when the user's shortlist is empty. */
+export const RECOMMENDED_MODEL_IDS = [] as const;
+
+/**
+ * From a full catalog of options, return only the entries whose ID is in
+ * RECOMMENDED_MODEL_IDS, or whose source is "user" (always shown).
+ * IDs absent from the live catalog are silently omitted.
+ */
+export function buildRecommendedModelOptions(
+  allOptions: ModelOption[],
+): ModelOption[] {
+  // stub — not yet implemented
+  return [];
+}
+
 export function buildModelOptions(
   models: AvailableModel[],
   modelVariants: ModelVariant[],
