@@ -19,37 +19,32 @@
  */
 import { describe, expect, test } from "bun:test";
 
-const EXPECTED_GROUP_TITLES = [
+const EXPECTED_GROUP_TITLES: string[] = [
   "Appearance",
   "Defaults for new chats",
   "Git automation",
   "Notifications",
   "Sharing & privacy",
   "Skills",
-] as const;
+];
 
 describe("preference-groups structure", () => {
   test("BT-101: PREFERENCE_GROUPS has exactly 6 entries", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     expect(PREFERENCE_GROUPS).toHaveLength(6);
   });
 
   test("BT-102: group titles match expected sentence-case names in order", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
-    const titles = PREFERENCE_GROUPS.map(
-      (g: { title: string }) => g.title,
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
+    const titles = PREFERENCE_GROUPS.map((g: { title: string }) => g.title);
     expect(titles).toEqual(EXPECTED_GROUP_TITLES);
   });
 
   test("BT-103: Appearance group has browser-only caption", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     const appearance = PREFERENCE_GROUPS.find(
       (g: { title: string }) => g.title === "Appearance",
     );
@@ -60,22 +55,18 @@ describe("preference-groups structure", () => {
   });
 
   test("BT-104: Git automation group has auto-PR dependency caption", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     const gitGroup = PREFERENCE_GROUPS.find(
       (g: { title: string }) => g.title === "Git automation",
     );
     expect(gitGroup).toBeDefined();
-    expect(gitGroup?.autoCreatePrCaption).toContain(
-      "Auto commit & push is on",
-    );
+    expect(gitGroup?.autoCreatePrCaption).toContain("Auto commit & push is on");
   });
 
   test("BT-105: Notifications group has alert-sound caption", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     const notifGroup = PREFERENCE_GROUPS.find(
       (g: { title: string }) => g.title === "Notifications",
     );
@@ -84,9 +75,8 @@ describe("preference-groups structure", () => {
   });
 
   test("BT-106: Defaults for new chats group has sandbox/profile distinction copy", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     const defaultsGroup = PREFERENCE_GROUPS.find(
       (g: { title: string }) => g.title === "Defaults for new chats",
     );
@@ -102,9 +92,8 @@ describe("preference-groups structure", () => {
   });
 
   test("BT-107: Skills group clarifies repo-wins precedence", async () => {
-    const { PREFERENCE_GROUPS } = await import(
-      "../preferences/preference-groups"
-    );
+    const { PREFERENCE_GROUPS } =
+      await import("../preferences/preference-groups");
     const skillsGroup = PREFERENCE_GROUPS.find(
       (g: { title: string }) => g.title === "Skills",
     );
