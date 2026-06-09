@@ -23,6 +23,7 @@ import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { findActiveNavItem } from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 import { SettingsNav } from "./settings-nav";
+import { SkillsSectionSkeleton } from "./skills/skills-section";
 
 function RuntimeProfilesSkeleton() {
   return (
@@ -186,6 +187,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <AgentsSectionSkeleton />
     ) : activeItem?.id === "composio" ? (
       <ComposioSectionSkeleton />
+    ) : activeItem?.id === "skills" ? (
+      <SkillsSectionSkeleton />
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (

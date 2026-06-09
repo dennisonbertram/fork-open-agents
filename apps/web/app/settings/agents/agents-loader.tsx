@@ -16,6 +16,10 @@ interface PreferencesResponse {
   preferences: UserPreferences;
 }
 
+interface SkillsCountResponse {
+  skills: Array<{ enabled: boolean }>;
+}
+
 /**
  * Fetches preferences + composio defaults and renders the AgentsSection.
  * Falls back gracefully if either API is unavailable.
@@ -27,7 +31,10 @@ export function AgentsLoader() {
   const { data: composioData, isLoading: composioLoading } =
     useSWR<ComposioSettingsResponse>("/api/settings/composio", fetcher);
 
-  if (prefsLoading || composioLoading) {
+  const { data: skillsData, isLoading: skillsLoading } =
+    useSWR<SkillsCountResponse>("/api/settings/skills", fetcher);
+
+  if (prefsLoading || composioLoading || skillsLoading) {
     return <AgentsSectionSkeleton />;
   }
 
@@ -43,11 +50,16 @@ export function AgentsLoader() {
   const profileSummaries: ComposioToolProfileSummary[] =
     composioData?.profiles ?? [];
 
+  const enabledSkillCount = (skillsData?.skills ?? []).filter(
+    (skill) => skill.enabled,
+  ).length;
+
   const rows = buildAgentRoster({
     preferences,
     composioDefaults,
     runtimeProfiles: RUNTIME_PROFILES,
     profileSummaries,
+    enabledSkillCount,
   });
 
   return <AgentsSection rows={rows} />;

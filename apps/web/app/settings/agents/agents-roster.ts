@@ -26,6 +26,11 @@ export type AgentRosterRow = {
   toolsLabel: string;
   /** Human label for the managed runtime profile. */
   runtimeLabel: string;
+  /**
+   * Human label for the user's enabled skills. Skills are globally available to
+   * the user's agents, so this label is identical across every role row.
+   */
+  skillsLabel: string;
 };
 
 export type BuildAgentRosterInput = {
@@ -38,7 +43,14 @@ export type BuildAgentRosterInput = {
   runtimeProfiles: ManagedRuntimeProfile[];
   /** Optional profile summaries for resolving profile names. */
   profileSummaries?: ComposioToolProfileSummary[];
+  /** Count of the user's enabled, hand-authored skills. Defaults to 0. */
+  enabledSkillCount?: number;
 };
+
+/** "None" when no skills are enabled, otherwise "N enabled". */
+function formatSkillsLabel(count: number): string {
+  return count > 0 ? `${count} enabled` : "None";
+}
 
 /** Human-friendly display name per role. */
 const ROLE_NAMES: Record<"main" | "explorer" | "executor" | "design", string> =
@@ -76,6 +88,7 @@ export function buildAgentRoster({
   composioDefaults,
   runtimeProfiles,
   profileSummaries = [],
+  enabledSkillCount = 0,
 }: BuildAgentRosterInput): AgentRosterRow[] {
   const profileById = new Map(profileSummaries.map((p) => [p.id, p]));
 
@@ -83,6 +96,7 @@ export function buildAgentRoster({
     (p) => p.id === preferences.defaultManagedRuntimeProfileId,
   );
   const runtimeLabel = runtimeProfile?.displayName ?? "Default sandbox";
+  const skillsLabel = formatSkillsLabel(enabledSkillCount);
 
   const subagentModel = preferences.defaultSubagentModelId;
   const subagentModelInherited = subagentModel === null;
@@ -111,6 +125,7 @@ export function buildAgentRoster({
       modelInherited,
       toolsLabel,
       runtimeLabel,
+      skillsLabel,
     };
   });
 }

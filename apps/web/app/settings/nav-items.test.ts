@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Bot, Cpu, Users } from "lucide-react";
+import { Bot, Cpu, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
@@ -30,6 +30,7 @@ describe("settings nav data", () => {
       "/settings/agents",
       "/settings/models",
       "/settings/composio",
+      "/settings/skills",
       "/settings/background-agents",
       "/settings/runtime-profiles",
     ]);
@@ -52,8 +53,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(11);
-    expect(new Set(items.map((i) => i.id)).size).toBe(11);
+    expect(items).toHaveLength(12);
+    expect(new Set(items.map((i) => i.id)).size).toBe(12);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -85,22 +86,33 @@ describe("settings nav data", () => {
     expect(item?.icon).not.toBe(Bot);
   });
 
-  // NAV-004: runtime-profiles item resolves correctly and is in Tools group
-  test("NAV-004: runtime-profiles item resolves to the correct href and label", () => {
+  // NAV-004: skills item lives in the tools group with the Sparkles icon
+  test("NAV-004: skills item resolves to the tools group with Sparkles icon", () => {
+    const item = findActiveNavItem("/settings/skills");
+    expect(item?.id).toBe("skills");
+    expect(item?.href).toBe("/settings/skills");
+    expect(item?.icon).toBe(Sparkles);
+
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
+    expect(toolsGroup?.items.map((i) => i.id)).toContain("skills");
+  });
+
+  // NAV-005: runtime-profiles item resolves correctly and is in Tools group
+  test("NAV-005: runtime-profiles item resolves to the correct href and label", () => {
     const item = findActiveNavItem("/settings/runtime-profiles");
     expect(item?.id).toBe("runtime-profiles");
     expect(item?.href).toBe("/settings/runtime-profiles");
     expect(item?.label).toBe("Runtime profiles");
   });
 
-  // NAV-005: runtime-profiles uses Cpu icon (distinct from other tools icons)
-  test("NAV-005: runtime-profiles item uses Cpu icon", () => {
+  // NAV-006: runtime-profiles uses Cpu icon (distinct from other tools icons)
+  test("NAV-006: runtime-profiles item uses Cpu icon", () => {
     const item = findActiveNavItem("/settings/runtime-profiles");
     expect(item?.icon).toBe(Cpu);
   });
 
-  // NAV-006: runtime-profiles is in the tools group
-  test("NAV-006: runtime-profiles item is in the tools group", () => {
+  // NAV-007: runtime-profiles is in the tools group
+  test("NAV-007: runtime-profiles item is in the tools group", () => {
     const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
     const ids = toolsGroup?.items.map((i) => i.id);
     expect(ids).toContain("runtime-profiles");
