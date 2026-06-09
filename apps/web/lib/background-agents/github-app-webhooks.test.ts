@@ -142,4 +142,55 @@ describe("GitHub App webhook readiness", () => {
     expect(JSON.stringify(check)).not.toContain("private-key");
     expect(JSON.stringify(check)).not.toContain("webhook-secret");
   });
+
+  // TASK-274: pull_request_review subscription requirement
+  test("reports missing when pull_request_review is absent from installed events", async () => {
+    configureEnv();
+    // App subscribed to pull_request/issues/deployment_status but NOT pull_request_review
+    appData = {
+      slug: "open-agents-dennison",
+      events: ["pull_request", "issues", "deployment_status"],
+      permissions: {
+        contents: "write",
+        pull_requests: "write",
+        issues: "read",
+        deployments: "read",
+        statuses: "read",
+        metadata: "read",
+      },
+    };
+    const { getGitHubAppWebhookReadinessCheck } = await modulePromise;
+
+    const check = await getGitHubAppWebhookReadinessCheck();
+
+    expect(check.status).toBe("missing");
+    expect(check.missing).toContain("event:pull_request_review");
+  });
+
+  test("reports ready when pull_request_review is present in installed events", async () => {
+    configureEnv();
+    appData = {
+      slug: "open-agents-dennison",
+      events: [
+        "pull_request",
+        "issues",
+        "deployment_status",
+        "pull_request_review",
+      ],
+      permissions: {
+        contents: "write",
+        pull_requests: "write",
+        issues: "read",
+        deployments: "read",
+        statuses: "read",
+        metadata: "read",
+      },
+    };
+    const { getGitHubAppWebhookReadinessCheck } = await modulePromise;
+
+    const check = await getGitHubAppWebhookReadinessCheck();
+
+    expect(check.status).toBe("ready");
+    expect(check.missing).not.toContain("event:pull_request_review");
+  });
 });
