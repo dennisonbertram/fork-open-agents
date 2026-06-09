@@ -6,6 +6,7 @@
  * The settings form still imports from background-agents-form.ts which
  * re-exports from here.
  */
+import { validateSchedule } from "./schedule-presets";
 
 export type TriggerKind =
   | "github.pull_request"
@@ -192,6 +193,140 @@ export function buildAgentPayload(form: FormState) {
       },
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// New pure functions — Slices 1–5
+// ---------------------------------------------------------------------------
+
+export type StepId =
+  | "trigger"
+  | "conditions"
+  | "instructions"
+  | "permissions"
+  | "outputs"
+  | "test";
+
+export type ConditionField =
+  | "actions"
+  | "branches"
+  | "labels"
+  | "environments"
+  | "statuses";
+
+/**
+ * Returns the Set of condition fields valid for the given trigger kind.
+ * Fields not in the returned set are dead noise for that trigger and should
+ * be hidden in the UI and reset when the trigger kind changes.
+ *
+ * "statuses" maps to `conditionSeverities` in FormState — the UI label is
+ * trigger-dependent (see conditionFieldLabel).
+ */
+export function fieldsForTrigger(kind: TriggerKind): Set<ConditionField> {
+  switch (kind) {
+    case "github.pull_request":
+      return new Set<ConditionField>(["actions", "branches", "labels"]);
+    case "github.issue":
+      return new Set<ConditionField>(["actions", "labels"]);
+    case "github.deployment_status":
+      return new Set<ConditionField>(["environments", "statuses"]);
+    case "schedule.cron":
+      return new Set<ConditionField>();
+    case "webhook.error":
+      return new Set<ConditionField>(["statuses"]);
+  }
+}
+
+/**
+ * Returns the human label for a condition field in the context of a trigger.
+ *
+ * The "statuses" field has a trigger-dependent label:
+ * - github.deployment_status: "Deployment state" (matches deployment state like success/failure)
+ * - webhook.error: "Severity" (matches severity on the webhook payload)
+ */
+export function conditionFieldLabel(
+  field: ConditionField,
+  triggerKind: TriggerKind,
+): string {
+  if (field === "statuses") {
+    if (triggerKind === "github.deployment_status") return "Deployment state";
+    if (triggerKind === "webhook.error") return "Severity";
+    return "Statuses";
+  }
+  switch (field) {
+    case "actions":
+      return "Actions";
+    case "branches":
+      return "Branches";
+    case "labels":
+      return "Labels";
+    case "environments":
+      return "Environments";
+  }
+}
+
+/**
+ * Returns a user-facing summary of what the given output mode permits.
+ * Derived from the outputMode → permissions map in buildAgentPayload.
+ */
+export function describeOutputModePermissions(mode: OutputMode): string {
+  switch (mode) {
+    case "ready_pr":
+      return "Read + open PRs — this agent can read your code and open pull requests. It cannot merge, push to protected branches, or modify issues.";
+    default:
+      return "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything.";
+  }
+}
+
+/**
+ * Returns the user-facing label for an output mode.
+ * Centralizes the inline ternary used in background-agents-section.tsx.
+ */
+export function outputModeLabel(mode: OutputMode): string {
+  switch (mode) {
+    case "none":
+      return "None";
+    case "ready_pr":
+      return "Ready PR";
+    case "comment":
+      return "Comment";
+    case "issue":
+      return "Issue";
+    case "notification":
+      return "Notification";
+  }
+}
+
+/**
+ * Validates whether the given form step is complete.
+ * Used by the form stepper to gate "Next" navigation and the final submit button.
+ */
+export function isStepValid(form: FormState, stepId: StepId): boolean {
+  switch (stepId) {
+    case "trigger":
+      return (
+        form.name.trim().length > 0 &&
+        form.repoOwner.trim().length > 0 &&
+        form.repoName.trim().length > 0
+      );
+    case "conditions":
+      if (form.triggerKind === "schedule.cron") {
+        return validateSchedule(form.schedule).valid;
+      }
+      return true;
+    case "instructions":
+      return form.instructions.trim().length > 0;
+    case "permissions":
+      return true;
+    case "outputs":
+      return true;
+    case "test":
+      return (
+        isStepValid(form, "trigger") &&
+        isStepValid(form, "conditions") &&
+        isStepValid(form, "instructions")
+      );
+  }
 }
 
 export function buildFormFromAgent(agent: BackgroundAgent): FormState {

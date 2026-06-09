@@ -10,8 +10,13 @@ export {
   buildAgentPayload,
   buildFormFromAgent,
   buildRepoScopedDefaultForm,
+  conditionFieldLabel,
   defaultForm,
+  describeOutputModePermissions,
+  fieldsForTrigger,
   flowSteps,
+  isStepValid,
+  outputModeLabel,
   supportedOutputModes,
   triggerLabels,
 } from "@/lib/background-agents/agent-spec";
@@ -19,8 +24,10 @@ export {
 export type {
   BackgroundAgent,
   BackgroundAgentTrigger,
+  ConditionField,
   FormState,
   OutputMode,
+  StepId,
   TriggerConditions,
   TriggerKind,
 } from "@/lib/background-agents/agent-spec";
