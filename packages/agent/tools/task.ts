@@ -10,9 +10,14 @@ import {
   SUBAGENT_REGISTRY,
   SUBAGENT_TYPES,
 } from "../subagents/registry";
+import { applyRosterOverrides } from "../subagents/roster";
 import { SUBAGENT_STEP_LIMIT } from "../subagents/constants";
 import { sumLanguageModelUsage } from "../usage";
-import { getSandboxContext, getSubagentModel } from "./utils";
+import {
+  getSandboxContext,
+  getSubagentModel,
+  getSubagentRoster,
+} from "./utils";
 
 const subagentTypeSchema = z.enum(SUBAGENT_TYPES);
 
@@ -189,8 +194,8 @@ IMPORTANT:
     { experimental_context, abortSignal },
   ) {
     const sandboxContext = getSandboxContext(experimental_context, "task");
-    const model = getSubagentModel(experimental_context, "task");
-    const subagentModelId = typeof model === "string" ? model : model.modelId;
+    const defaultModel = getSubagentModel(experimental_context, "task");
+    const roster = getSubagentRoster(experimental_context);
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
@@ -199,6 +204,26 @@ IMPORTANT:
     const delegatedInstructions = managedRuntimeInstructions
       ? `${instructions}\n\n${managedRuntimeInstructions}`
       : instructions;
+
+    // Apply per-role roster overrides if the subagent role has a configured entry.
+    // For non-subagent roles (managed_runtime workers etc.) the cast below is safe
+    // because applyRosterOverrides only reads known keys from the roster object.
+    const isSubagentRole = (
+      role: string,
+    ): role is "explorer" | "executor" | "design" =>
+      role === "explorer" || role === "executor" || role === "design";
+
+    const rosterOverrides = isSubagentRole(subagentType)
+      ? applyRosterOverrides({
+          role: subagentType,
+          roster,
+          base: { model: defaultModel, instructions: delegatedInstructions },
+        })
+      : { model: defaultModel, instructions: delegatedInstructions };
+
+    const model = rosterOverrides.model as typeof defaultModel;
+    const effectiveInstructions = rosterOverrides.instructions;
+    const subagentModelId = typeof model === "string" ? model : model.modelId;
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
     const startedAt = Date.now();
@@ -215,7 +240,7 @@ IMPORTANT:
         "Complete this task and provide a summary of what you accomplished.",
       options: {
         task,
-        instructions: delegatedInstructions,
+        instructions: effectiveInstructions,
         sandbox: sandboxContext.sandbox,
         model,
       },

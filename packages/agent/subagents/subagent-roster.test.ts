@@ -33,16 +33,26 @@ describe("BT-P4-001: No roster / no rows => default behavior unchanged", () => {
   });
 
   test("applyRosterOverrides returns base options unchanged when roster is null", () => {
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base" };
-    const result = applyRosterOverrides({ role: "explorer", roster: null, base });
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base",
+    };
+    const result = applyRosterOverrides({
+      role: "explorer",
+      roster: null,
+      base,
+    });
     expect(result.model).toBe(base.model);
     expect(result.instructions).toBe("base");
-    expect(result.extraTools).toBeUndefined();
+    expect(result.composioToolkitSlugs).toBeUndefined();
   });
 
   test("applyRosterOverrides returns base options unchanged when roster has no entry for role", () => {
     const roster: SubagentRoster = { executor: { modelId: "openai/gpt-4.5" } };
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base" };
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base",
+    };
     const result = applyRosterOverrides({ role: "explorer", roster, base });
     expect(result.model).toBe(base.model);
     expect(result.instructions).toBe("base");
@@ -56,7 +66,10 @@ describe("BT-P4-002: Explorer row with modelId => explorer uses that model", () 
     const roster: SubagentRoster = {
       explorer: { modelId: "openai/gpt-4o" },
     };
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base" };
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base",
+    };
     const result = applyRosterOverrides({ role: "explorer", roster, base });
     // The model must reflect the configured modelId
     expect(result.model).not.toBe(base.model);
@@ -67,7 +80,10 @@ describe("BT-P4-002: Explorer row with modelId => explorer uses that model", () 
     const roster: SubagentRoster = {
       explorer: { modelId: null },
     };
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base" };
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base",
+    };
     const result = applyRosterOverrides({ role: "explorer", roster, base });
     expect(result.model).toBe(base.model);
   });
@@ -80,7 +96,10 @@ describe("BT-P4-003: Role row with instructions => system prompt includes them",
     const roster: SubagentRoster = {
       executor: { instructions: "Always write tests first." },
     };
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base prompt" };
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base prompt",
+    };
     const result = applyRosterOverrides({ role: "executor", roster, base });
     expect(result.instructions).toContain("base prompt");
     expect(result.instructions).toContain("Always write tests first.");
@@ -90,7 +109,10 @@ describe("BT-P4-003: Role row with instructions => system prompt includes them",
     const roster: SubagentRoster = {
       executor: { instructions: null },
     };
-    const base = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "base prompt" };
+    const base = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "base prompt",
+    };
     const result = applyRosterOverrides({ role: "executor", roster, base });
     expect(result.instructions).toBe("base prompt");
   });
@@ -103,7 +125,10 @@ describe("BT-P4-004: Role row with composioToolkitSlugs => subagent gets those t
     const roster: SubagentRoster = {
       design: { composioToolkitSlugs: ["github", "linear"] },
     };
-    const base = { model: { modelId: "anthropic/claude-opus-4.6" }, instructions: "design prompt" };
+    const base = {
+      model: { modelId: "anthropic/claude-opus-4.6" },
+      instructions: "design prompt",
+    };
     const result = applyRosterOverrides({ role: "design", roster, base });
     expect(result.composioToolkitSlugs).toEqual(["github", "linear"]);
   });
@@ -112,7 +137,10 @@ describe("BT-P4-004: Role row with composioToolkitSlugs => subagent gets those t
     const roster: SubagentRoster = {
       design: { composioToolkitSlugs: [] },
     };
-    const base = { model: { modelId: "anthropic/claude-opus-4.6" }, instructions: "design prompt" };
+    const base = {
+      model: { modelId: "anthropic/claude-opus-4.6" },
+      instructions: "design prompt",
+    };
     const result = applyRosterOverrides({ role: "design", roster, base });
     expect(result.composioToolkitSlugs).toBeUndefined();
   });
@@ -125,8 +153,15 @@ describe("BT-P4-005: Executor unaffected when only explorer row is configured", 
     const roster: SubagentRoster = {
       explorer: { modelId: "openai/gpt-4o", instructions: "Only explore." },
     };
-    const baseExecutor = { model: { modelId: "anthropic/claude-haiku-4.5" }, instructions: "executor base" };
-    const result = applyRosterOverrides({ role: "executor", roster, base: baseExecutor });
+    const baseExecutor = {
+      model: { modelId: "anthropic/claude-haiku-4.5" },
+      instructions: "executor base",
+    };
+    const result = applyRosterOverrides({
+      role: "executor",
+      roster,
+      base: baseExecutor,
+    });
     expect(result.model).toBe(baseExecutor.model);
     expect(result.instructions).toBe("executor base");
     expect(result.composioToolkitSlugs).toBeUndefined();
