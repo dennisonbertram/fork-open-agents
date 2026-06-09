@@ -351,6 +351,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     permissions: {},
     outputMode: "none",
     checkCommand: null,
+    composioToolkitSlugs: [],
     createdAt: now,
     updatedAt: now,
     ...overrides,
