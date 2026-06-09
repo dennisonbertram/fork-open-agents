@@ -20,8 +20,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
-import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -703,6 +703,7 @@ export function InboxSidebar({
   const { rank: leaderboardRank, loading: leaderboardLoading } =
     useLeaderboardRank();
   const { isMobile, setOpenMobile } = useSidebar();
+  const { openWorkspaceSettings } = useWorkspaceSettings();
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionWithUnread[]>(
     [],
@@ -717,11 +718,6 @@ export function InboxSidebar({
   const [branchPickerRepo, setBranchPickerRepo] = useState<{
     owner: string;
     repo: string;
-  } | null>(null);
-  const [workspaceSettingsRepo, setWorkspaceSettingsRepo] = useState<{
-    owner: string;
-    repo: string;
-    label: string;
   } | null>(null);
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
   const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
@@ -970,9 +966,12 @@ export function InboxSidebar({
 
   const handleOpenWorkspaceSettings = useCallback(
     (owner: string, repo: string, label: string) => {
-      setWorkspaceSettingsRepo({ owner, repo, label });
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      openWorkspaceSettings({ owner, repo, label });
     },
-    [],
+    [isMobile, setOpenMobile, openWorkspaceSettings],
   );
 
   const handleBranchSelected = useCallback(
@@ -1391,29 +1390,6 @@ export function InboxSidebar({
           onSelectBranch={handleBranchSelected}
         />
       ) : null}
-
-      <Dialog
-        open={workspaceSettingsRepo !== null}
-        onOpenChange={(open) => {
-          if (!open) setWorkspaceSettingsRepo(null);
-        }}
-      >
-        <DialogContent className="flex h-[85vh] max-w-2xl flex-col overflow-hidden p-0 sm:h-[42rem]">
-          <DialogHeader className="border-b border-border px-4 py-3">
-            <DialogTitle>Workspace Settings</DialogTitle>
-            <DialogDescription>
-              {workspaceSettingsRepo?.label ??
-                "Configure repository workspace access."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1">
-            <ComposioWorkspaceSettingsPanel
-              repoOwner={workspaceSettingsRepo?.owner ?? null}
-              repoName={workspaceSettingsRepo?.repo ?? null}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Archive confirmation dialog */}
       <Dialog
