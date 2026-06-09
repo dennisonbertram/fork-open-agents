@@ -35,9 +35,7 @@ describe("models-preferences-section exports", () => {
 describe("models page imports from models-preferences-section", () => {
   test("BT-002: page.tsx renders MODEL_PREFERENCES stub from models-preferences-section", async () => {
     mock.module("./models-preferences-section", () => ({
-      ModelPreferencesSection: () => (
-        <div>MODEL_PREFS_FROM_NEW_LOCATION</div>
-      ),
+      ModelPreferencesSection: () => <div>MODEL_PREFS_FROM_NEW_LOCATION</div>,
       ModelPreferencesSectionSkeleton: () => <div>SKELETON_NEW</div>,
     }));
     mock.module("../inference-profiles-section", () => ({
