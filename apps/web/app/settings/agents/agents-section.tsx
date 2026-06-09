@@ -15,11 +15,13 @@ const ROLE_SUBTITLES: Record<AgentRosterRow["key"], string> = {
 function FieldCell({
   label,
   value,
+  hint,
   editLabel,
   editHref,
 }: {
   label: string;
   value: string;
+  hint?: string;
   editLabel: string;
   editHref: string;
 }) {
@@ -29,6 +31,9 @@ function FieldCell({
         {label}
       </span>
       <span className="text-sm font-medium">{value}</span>
+      {hint ? (
+        <span className="text-xs text-muted-foreground">{hint}</span>
+      ) : null}
       <Link
         href={editHref}
         className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
@@ -58,8 +63,9 @@ function AgentCard({ row }: { row: AgentRosterRow }) {
           editHref="/settings/models"
         />
         <FieldCell
-          label="Tools"
-          value={row.toolsLabel}
+          label="External tools"
+          value={row.toolsLabel === "None" ? "None connected" : row.toolsLabel}
+          hint="Built-in file editing & commands are always on."
           editLabel="Edit in Composio"
           editHref="/settings/composio"
         />
