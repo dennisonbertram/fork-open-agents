@@ -1021,21 +1021,16 @@ export function InboxSidebar({
             type="button"
             variant="default"
             size="sm"
-            disabled={isCreatingSandboxFreeChat}
             onClick={() => {
               if (isMobile) {
                 setOpenMobile(false);
               }
-              void handleCreateSandboxFreeChat();
+              onOpenNewSession();
             }}
             className="h-8 flex-1 justify-center gap-2"
           >
-            {isCreatingSandboxFreeChat ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Plus className="h-4 w-4" />
-            )}
-            New chat
+            <Plus className="h-4 w-4" />
+            New session
           </Button>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1043,20 +1038,25 @@ export function InboxSidebar({
                 type="button"
                 variant="outline"
                 size="icon"
+                disabled={isCreatingSandboxFreeChat}
                 onClick={() => {
                   if (isMobile) {
                     setOpenMobile(false);
                   }
-                  onOpenNewSession();
+                  void handleCreateSandboxFreeChat();
                 }}
                 className="h-8 w-8 shrink-0"
-                aria-label="New session with a repository"
+                aria-label="Quick chat (no repo)"
               >
-                <FolderGit2 className="h-4 w-4" />
+                {isCreatingSandboxFreeChat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom" sideOffset={4}>
-              New session with a repository
+              Quick chat (no repo)
             </TooltipContent>
           </Tooltip>
         </div>
