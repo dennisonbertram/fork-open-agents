@@ -30,7 +30,9 @@ describe("SettingsSection", () => {
       />,
     );
     expect(html).toContain("Default models");
-    expect(html).toContain("The models new chats use unless you pick something else.");
+    expect(html).toContain(
+      "The models new chats use unless you pick something else.",
+    );
   });
 
   test("renders a learn-more link only when href is provided", () => {
@@ -45,7 +47,10 @@ describe("SettingsSection", () => {
     expect(withLink).toContain("Learn more");
 
     const withoutLink = renderToStaticMarkup(
-      <SettingsSection title="Personal API keys" description="Bring your own provider key." />,
+      <SettingsSection
+        title="Personal API keys"
+        description="Bring your own provider key."
+      />,
     );
     expect(withoutLink).not.toContain("Learn more");
   });
@@ -74,7 +79,10 @@ describe("SettingsSection", () => {
 
   test("renders an action slot when provided", () => {
     const html = renderToStaticMarkup(
-      <SettingsSection title="GitHub" action={<button type="button">Connect</button>}>
+      <SettingsSection
+        title="GitHub"
+        action={<button type="button">Connect</button>}
+      >
         <div />
       </SettingsSection>,
     );

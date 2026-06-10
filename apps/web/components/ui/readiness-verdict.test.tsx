@@ -38,7 +38,10 @@ describe("ReadinessVerdict", () => {
 
   test("never leaks an env-var name into the end-user headline", () => {
     const html = renderToStaticMarkup(
-      <ReadinessVerdict status="unavailable" headline="Managed by your workspace." />,
+      <ReadinessVerdict
+        status="unavailable"
+        headline="Managed by your workspace."
+      />,
     );
     expect(html).not.toMatch(/[A-Z_]{6,}/); // no SCREAMING_SNAKE token in user-facing copy
     expect(html).toContain("bg-muted-foreground/50");
@@ -57,7 +60,10 @@ describe("ReadinessVerdict", () => {
 
   test("uses the destructive dot for an error status", () => {
     const html = renderToStaticMarkup(
-      <ReadinessVerdict status="error" headline="Can't reach the service — try again." />,
+      <ReadinessVerdict
+        status="error"
+        headline="Can't reach the service — try again."
+      />,
     );
     expect(html).toContain("bg-destructive");
   });
