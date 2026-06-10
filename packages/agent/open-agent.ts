@@ -26,6 +26,11 @@ import {
   webFetchTool,
   writeFileTool,
 } from "./tools";
+import {
+  getProposeTool,
+  PROPOSE_TOOL_NAME,
+  type ProposeToolAction,
+} from "./tools/propose-tool";
 
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
@@ -81,6 +86,18 @@ const callOptionsSchema = z.object({
    * Absent = synthetic fallback (today's subagent behavior unchanged).
    */
   subagentRoster: z.custom<SubagentRoster>().optional(),
+  /**
+   * Phase 6 (#242): when true, the propose_composio_tool is included in the toolset.
+   * Absent or false = tool is excluded (off by default, per design doc).
+   * The web layer resolves this from the agent's toolAuthoringEnabled flag.
+   */
+  toolAuthoringEnabled: z.boolean().optional(),
+  /**
+   * Phase 6 (#242): web-provided action to record a proposed tool entry.
+   * Injected into experimental_context so the tool has no direct DB dependency.
+   * Only present when toolAuthoringEnabled=true.
+   */
+  proposeToolAction: z.custom<ProposeToolAction>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -177,10 +194,12 @@ export function getChatOnlyTools(): ToolSet {
 export function getRuntimeModeToolPolicy(
   runtimeMode: OpenAgentRuntimeMode = "classic",
   requestedTools?: ToolSet,
-  policyOptions?: { sandboxFree?: boolean },
+  policyOptions?: { sandboxFree?: boolean; toolAuthoringEnabled?: boolean },
 ): ToolSet {
   // Sandbox-free mode: keep only chat-safe tools plus any caller-provided
   // non-sandbox tools (e.g. Composio tools that run via their own API).
+  // NOTE: the authoring tool is NOT included in sandbox-free mode even when
+  // toolAuthoringEnabled=true — it is a config-write action, not a chat tool.
   if (policyOptions?.sandboxFree) {
     const mergedTools = requestedTools
       ? { ...tools, ...requestedTools }
@@ -198,7 +217,21 @@ export function getRuntimeModeToolPolicy(
     return chatBase;
   }
 
-  const mergedTools = requestedTools ? { ...tools, ...requestedTools } : tools;
+  // Always create a new object so we can safely add authoring tool without
+  // mutating the module-level `tools` constant (important for test isolation).
+  const mergedTools: ToolSet = requestedTools
+    ? { ...tools, ...requestedTools }
+    : { ...tools };
+
+  // Phase 6 (#242): conditionally add the authoring tool ONLY when enabled.
+  // This is gated here rather than in the base tool list so that the default
+  // toolset is unaffected and existing agents see no behavior change.
+  const proposeTool = getProposeTool({
+    toolAuthoringEnabled: policyOptions?.toolAuthoringEnabled,
+  });
+  if (proposeTool) {
+    mergedTools[PROPOSE_TOOL_NAME] = proposeTool;
+  }
 
   if (runtimeMode !== "managed_runtime") {
     return mergedTools;
@@ -252,6 +285,9 @@ export const openAgent = new ToolLoopAgent({
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
     const subagentRoster = options.subagentRoster;
+    // Phase 6 (#242): optional tool authoring gate + web-injected action
+    const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
+    const proposeToolAction = options.proposeToolAction;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -270,6 +306,7 @@ export const openAgent = new ToolLoopAgent({
       tools: addCacheControl({
         tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
           sandboxFree,
+          toolAuthoringEnabled,
         }) as typeof tools,
         model: callModel,
       }),
@@ -282,6 +319,10 @@ export const openAgent = new ToolLoopAgent({
         runtimeMode,
         managedRuntime,
         ...(subagentRoster ? { subagentRoster } : {}),
+        // Phase 6: only inject when enabled; undefined = no authoring in this session
+        ...(toolAuthoringEnabled && proposeToolAction
+          ? { proposeToolAction }
+          : {}),
       },
     };
   },
