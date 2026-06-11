@@ -823,7 +823,9 @@ describe("VR-18: condition nodes may not carry non-branch outgoing edges", () =>
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      const err = result.errors.find((e) => e.rule === "invalid_condition_edge");
+      const err = result.errors.find(
+        (e) => e.rule === "invalid_condition_edge",
+      );
       expect(err).toBeDefined();
       expect(err?.edgeId).toBe("e4");
     }
@@ -842,7 +844,9 @@ describe("VR-18: condition nodes may not carry non-branch outgoing edges", () =>
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      const err = result.errors.find((e) => e.rule === "invalid_condition_edge");
+      const err = result.errors.find(
+        (e) => e.rule === "invalid_condition_edge",
+      );
       expect(err).toBeDefined();
       expect(err?.edgeId).toBe("e5");
     }
