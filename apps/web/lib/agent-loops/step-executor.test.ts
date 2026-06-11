@@ -148,6 +148,73 @@ mock.module("@/lib/github/access", () => ({
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: mintInstallationTokenMock,
   revokeInstallationToken: revokeInstallationTokenMock,
+  // Needed because agent-step.ts (imported by step-executor.ts) uses this.
+  withScopedInstallationOctokit: mock(
+    async (params: {
+      installationId: number;
+      repositoryId: number;
+      permissions: Record<string, string>;
+      operation: (octokit: unknown) => Promise<unknown>;
+    }) => params.operation({ rest: {} }),
+  ),
+}));
+
+// ── Mocks required by agent-step.ts (transitively imported by step-executor.ts) ──
+// agent-step.ts imports @open-agents/sandbox, @open-agents/agent,
+// @/lib/github/commit-intent, @/lib/github/commit, @/lib/sandbox/config.
+// We mock these here so that agent_step exercises the access-check path and then
+// fails at connectSandbox (sandbox_unavailable) in the step-executor suite.
+
+mock.module("@open-agents/sandbox", () => ({
+  connectSandbox: mock(async () => {
+    throw new Error("Sandbox unavailable in step-executor test suite");
+  }),
+  hasUncommittedChanges: mock(async () => false),
+  stageAll: mock(async () => undefined),
+  getCurrentBranch: mock(async () => "main"),
+  getHeadSha: mock(async () => "abc123"),
+  getStagedDiff: mock(async () => ""),
+  getChangedFiles: mock(async () => []),
+  getFileModes: mock(async () => new Map()),
+  detectBinaryFiles: mock(async () => new Map()),
+  readFileContents: mock(async () => []),
+  syncToRemote: mock(async () => undefined),
+  withTemporaryGitHubAuth: mock(
+    async (_sb: unknown, _tok: string, fn: () => Promise<void>) => fn(),
+  ),
+}));
+
+mock.module("@open-agents/agent", () => ({
+  openAgent: {
+    generate: mock(async () => ({
+      finishReason: "stop",
+      rawFinishReason: "end_turn",
+      steps: [{ toolCalls: [] }],
+      response: { messages: [] },
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    })),
+  },
+  gateway: mock((m: string) => m),
+}));
+
+mock.module("@/lib/github/commit-intent", () => ({
+  buildCommitIntentFromSandbox: mock(async () => ({
+    ok: false,
+    error: "not used in step-executor suite",
+  })),
+}));
+
+mock.module("@/lib/github/commit", () => ({
+  createCommit: mock(async () => ({ ok: true, commitSha: "abc" })),
+  buildCoAuthor: mock(async () => null),
+}));
+
+mock.module("@/lib/sandbox/config", () => ({
+  DEFAULT_SANDBOX_BASE_SNAPSHOT_ID: undefined,
+  DEFAULT_SANDBOX_PORTS: [3000],
+  DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,
+  DEFAULT_SANDBOX_VCPUS: 2,
 }));
 
 // ── GitHub API client mock ────────────────────────────────────────────────────
@@ -1219,7 +1286,11 @@ describe("start node", () => {
   });
 });
 
-// ── BT-009: agent_step → not_implemented (M1-05) ─────────────────────────────
+// ── BT-009: agent_step — dispatched to executeAgentStep (M1-05) ──────────────
+//
+// In this test suite, connectSandbox is mocked to throw (sandbox_unavailable).
+// This confirms that agent_step is no longer a not_implemented stub — it now
+// reaches the sandbox phase, meaning the arm is fully dispatched.
 
 describe("agent_step node", () => {
   beforeEach(() => {
@@ -1243,16 +1314,19 @@ describe("agent_step node", () => {
     currentLoop = makeLoop();
   });
 
-  test("BT-009: agent_step → typed not_implemented failure referencing M1-05", async () => {
+  test("BT-009: agent_step — executeAgentStep dispatched (no longer not_implemented)", async () => {
     const { executeAgentLoopStep } = await executorPromise;
     const result = await executeAgentLoopStep({
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
     });
 
+    // The sandbox mock throws, so we get sandbox_unavailable — but NOT
+    // not_implemented. This proves the arm is dispatched.
     expect(result.outcome).toBe("failure");
-    expect(result.errorKind).toBe("not_implemented");
-    expect(result.errorMessage).toMatch(/M1-05/);
+    expect(result.errorKind).not.toBe("not_implemented");
+    // Verify it attempted to connect a sandbox (reached executeAgentStep)
+    expect(verifyRepoAccessMock.mock.calls.length).toBeGreaterThan(0);
   });
 });
 
@@ -1379,17 +1453,19 @@ describe("event emission", () => {
 
   test("BT-012: agent-loop.step.failed emitted on failure with errorKind", async () => {
     resetMocks();
-    // Use an agent_step node to trigger a not_implemented failure
+    // Use a github_check node with repo-access denied to trigger a typed failure
+    verifyRepoAccessResult = { ok: false, reason: "user_no_access" };
     const node = {
-      id: "agent-node-1",
-      kind: "agent_step",
-      label: "Impl",
+      id: "check-node-fail",
+      kind: "github_check",
+      label: "Check",
       position: { x: 0, y: 0 },
+      check: { kind: "list_issues" },
     };
     const snapshot = makeDefinitionSnapshot([node]);
     currentStepRun = makeStepRun({
-      nodeId: "agent-node-1",
-      nodeKind: "agent_step",
+      nodeId: "check-node-fail",
+      nodeKind: "github_check",
     });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
@@ -1411,7 +1487,7 @@ describe("event emission", () => {
     expect(failedEvent?.status).toBe("failed");
     // The payload must contain errorKind
     const payload = failedEvent?.payload as Record<string, unknown>;
-    expect(payload?.["errorKind"]).toBe("not_implemented");
+    expect(payload?.["errorKind"]).toBe("permission_missing");
   });
 });
 

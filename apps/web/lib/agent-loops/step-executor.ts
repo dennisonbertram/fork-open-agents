@@ -45,6 +45,7 @@ import {
   updateAgentLoopRunStatus,
   updateAgentLoopRunContext,
 } from "./store";
+import { executeAgentStep } from "./agent-step";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -259,14 +260,21 @@ export async function executeAgentLoopStep(params: {
 
   // ── 5. Dispatch by node kind ────────────────────────────────────────────────
 
-  // ── agent_step: not implemented in this slice (M1-05) ────────────────────
+  // ── agent_step: delegate to colocated executor (M1-05) ───────────────────
 
   if (node.kind === "agent_step") {
-    return recordStepFailure({
-      ...failureCtx,
-      errorKind: "not_implemented",
-      errorMessage:
-        "agent_step execution is not implemented in this slice — see M1-05",
+    // executeAgentStep handles all sandbox lifecycle, output contract,
+    // checkCommand, commit/push, disposal, and events internally.
+    // On failure it records the step update + event and returns a typed result.
+    // On success it records the step update + context merge + completion event.
+    return executeAgentStep({
+      stepRunId,
+      workflowRunId,
+      loopRunId,
+      node,
+      loopRun,
+      loop,
+      startedAt,
     });
   }
 
