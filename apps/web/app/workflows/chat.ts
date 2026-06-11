@@ -499,15 +499,52 @@ function withModelMetadata(
   };
 }
 
-// Matches "invalid api key" case-insensitively; used in the auth-error branch.
-const PROVIDER_AUTH_KEY_RE = /invalid api key/i;
+// Phrase-list approach for provider auth signals. Case-insensitive substring
+// matching is performed by matchesAnyPhrase. Covers API-key rejection, revoked
+// tokens, and HTTP 401 forms. Does NOT match rate-limit (429), timing strings
+// like "401ms", or unrelated "unauthorized" prose.
+const PROVIDER_AUTH_PHRASES: readonly string[] = [
+  "invalid api key",
+  "invalid or revoked",
+  "authentication_error",
+  "invalid_api_key",
+  "incorrect api key provided",
+  "invalid x-api-key",
+  "http 401",
+  "401 unauthorized",
+  "status 401",
+  "unauthorized",
+];
 
-// Matches billing-specific insufficient/quota/credit signals. Deliberately
-// excludes "insufficient permissions", "insufficient scope", etc. (OAuth/ACL
-// errors) by requiring the word to be followed by _credits or _quota, or by
-// matching quota/credit as standalone keywords.
-const PROVIDER_BILLING_RE =
-  /insufficient[_ ]credits|insufficient[_ ]quota|exceeded.*quota|out of credits|quota.*exceeded/i;
+// Phrase-list for provider credit / quota / billing signals. Deliberately
+// excludes OAuth/ACL errors ("insufficient permissions", "insufficient scope")
+// and filesystem errors ("disk quota exceeded writing /tmp") by using specific
+// phrases rather than loose regex alternatives. "quota exceeded for" matches
+// real provider quota messages (e.g. "Quota exceeded for this model") without
+// matching disk-path quota strings that lack the trailing "for".
+const PROVIDER_CREDIT_PHRASES: readonly string[] = [
+  "out of credits",
+  "insufficient credits",
+  "insufficient_credits",
+  "insufficient_quota",
+  "insufficient funds",
+  "credit balance is too low",
+  "exceeded your current quota",
+  "quota exceeded for",
+  "http 402",
+  "status 402",
+  "payment required",
+  "402 payment",
+];
+
+/** Returns true if `message` contains any of `phrases` (case-insensitive). */
+function matchesAnyPhrase(
+  message: string,
+  phrases: readonly string[],
+): boolean {
+  const lower = message.toLowerCase();
+  return phrases.some((phrase) => lower.includes(phrase));
+}
 
 function getSetupErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
@@ -551,31 +588,18 @@ function getSetupErrorMessage(error: unknown): string {
   }
 
   // Provider auth failures (API key rejected / access token invalid).
-  // Require at least one auth-specific signal. For the composed
-  // "No output generated\n\nProvider error: …" form we also require that
-  // signal so that rate-limit (429) or service-unavailable (503) errors
-  // that reach the same composition do not produce auth guidance.
-  if (
-    message.includes("Invalid or revoked") ||
-    message.includes("Unauthorized") ||
-    message.includes("HTTP 401") ||
-    message.includes("status 401") ||
-    message.includes("401 Unauthorized") ||
-    PROVIDER_AUTH_KEY_RE.test(message)
-  ) {
+  // Uses the shared PROVIDER_AUTH_PHRASES list so that rate-limit (429),
+  // service-unavailable (503), timing strings ("401ms"), and unrelated prose
+  // do not produce auth guidance.
+  if (matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES)) {
     return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
   }
 
   // Provider credit / quota / billing failures.
-  // Match specific HTTP-402 forms and billing-specific insufficient/quota/credit
-  // keywords; deliberately exclude OAuth/ACL "insufficient permissions" etc.
-  if (
-    message.includes("HTTP 402") ||
-    message.includes("status 402") ||
-    message.includes("Payment Required") ||
-    message.includes("402 Payment") ||
-    PROVIDER_BILLING_RE.test(message)
-  ) {
+  // Uses PROVIDER_CREDIT_PHRASES which excludes OAuth/ACL errors like
+  // "insufficient permissions" and filesystem errors like
+  // "disk quota exceeded writing /tmp". See phrase-list comments above.
+  if (matchesAnyPhrase(message, PROVIDER_CREDIT_PHRASES)) {
     return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
   }
 
