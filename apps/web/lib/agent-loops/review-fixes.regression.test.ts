@@ -236,6 +236,9 @@ mock.module("@/lib/github/access", () => ({ verifyRepoAccess: regVerifyMock }));
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: regMintMock,
   revokeInstallationToken: regRevokeMock,
+  // agent-step.ts (loaded via step-executor.ts) imports this; bun's
+  // mock.module replaces the whole module, so the export must exist here.
+  withScopedInstallationOctokit: mock(() => Promise.resolve(undefined)),
 }));
 
 let _regGhApiCallCount = 0;
