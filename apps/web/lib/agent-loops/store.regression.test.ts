@@ -124,6 +124,15 @@ function resetMocks() {
   limitMockLeft.mockClear();
 }
 
+// Minimal valid loop definition (start → end) used in tests to pass validation gate
+const VALID_DEFINITION = {
+  nodes: [
+    { id: "s", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    { id: "e", kind: "end", label: "End", position: { x: 100, y: 0 } },
+  ],
+  edges: [{ id: "e1", source: "s", target: "e", when: "always" }],
+};
+
 function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "loop-1",
@@ -132,7 +141,7 @@ function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
     description: null,
     repoOwner: "acme",
     repoName: "widgets",
-    definition: { nodes: [], edges: [] },
+    definition: VALID_DEFINITION,
     status: "draft",
     guardrails: null,
     permissions: {},
@@ -182,7 +191,7 @@ describe("REGRESSION-001: createAgentLoop binds userId from argument, not from i
       name: "Regression Loop",
       repoOwner: "o",
       repoName: "r",
-      definition: { nodes: [], edges: [] },
+      definition: VALID_DEFINITION,
       status: "draft",
       guardrails: null,
       permissions: {},
@@ -197,10 +206,13 @@ describe("REGRESSION-001: createAgentLoop binds userId from argument, not from i
       name: "Regression Loop",
       repoOwner: "o",
       repoName: "r",
-      definition: { nodes: [], edges: [] },
+      definition: VALID_DEFINITION,
     });
 
-    expect(result.userId).toBe("user-A");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop.userId).toBe("user-A");
+    }
     // The row inserted into the DB must also have userId = "user-A"
     const insertedRow = valuesMock.mock.calls[0]?.[0] as Record<
       string,
