@@ -262,7 +262,10 @@ describe("regression R-13: non-exists ops still return condition_path_missing fo
         { path: "context.missing", op, value: 42 },
         {},
       );
-      expect(result).toEqual({ ok: false, errorKind: "condition_path_missing" });
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "condition_path_missing",
+      });
     });
   }
 });
