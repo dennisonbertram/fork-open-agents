@@ -120,6 +120,7 @@ const regressionAgent: BackgroundAgentWithTriggers = {
 const regressionTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
   id: "trigger-regression",
   agentId: "agent-regression",
+  loopId: null,
   userId: "user-regression",
   name: "Every minute",
   kind: "schedule.cron",

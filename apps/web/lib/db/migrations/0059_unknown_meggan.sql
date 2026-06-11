@@ -1,1 +1,0 @@
-ALTER TABLE "agents" ADD COLUMN "github_tools_enabled" boolean DEFAULT false NOT NULL;
