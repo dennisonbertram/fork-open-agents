@@ -598,6 +598,111 @@ describe("REG-007: openIssueCount == issues.length", () => {
   });
 });
 
+// ── REG-NEW-009: invalid *From types never reach the GitHub API ───────────────
+
+describe("REG-009: invalid *From types never reach the GitHub API", () => {
+  test("string at prNumberFrom → no API call (would be /pulls/NaN if coerced)", async () => {
+    resetMocks();
+    const node = {
+      id: "pr-type-reg",
+      kind: "github_check",
+      label: "PR",
+      position: { x: 0, y: 0 },
+      check: { kind: "pr_status", prNumberFrom: "step.pr" },
+    };
+    currentStepRun = makeStepRun({
+      nodeId: "pr-type-reg",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
+      context: { step: { pr: "not-a-number" } },
+    });
+    currentLoop = makeLoop();
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
+
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    // Zero GitHub API calls: if this fails, the guard was removed
+    expect(githubApiCallCount).toBe(0);
+    // Must also not call pulls.get (extra belt-and-suspenders check)
+    expect(octokitMock.rest.pulls.get.mock.calls.length).toBe(0);
+  });
+
+  test("object at refFrom → no API call (would be /commits/[object Object] if coerced)", async () => {
+    resetMocks();
+    const node = {
+      id: "ci-type-reg",
+      kind: "github_check",
+      label: "CI",
+      position: { x: 0, y: 0 },
+      check: { kind: "ci_status", refFrom: "step.sha" },
+    };
+    currentStepRun = makeStepRun({
+      nodeId: "ci-type-reg",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
+      context: { step: { sha: { nested: "bad" } } },
+    });
+    currentLoop = makeLoop();
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
+
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+    expect(octokitMock.rest.checks.listForRef.mock.calls.length).toBe(0);
+  });
+
+  test("no-check config guard fires before verifyRepoAccess — access + mint are uncalled", async () => {
+    resetMocks();
+    // Node with no 'check' field — misconfigured
+    const node = {
+      id: "no-check-reg",
+      kind: "github_check",
+      label: "Bad",
+      position: { x: 0, y: 0 },
+    };
+    currentStepRun = makeStepRun({
+      nodeId: "no-check-reg",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
+    });
+    currentLoop = makeLoop();
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
+
+    expect(result.errorKind).toBe("loop_invalid");
+    // If the guard ordering was reverted, these would be non-zero
+    expect(verifyRepoAccessMock.mock.calls.length).toBe(0);
+    expect(mintInstallationTokenMock.mock.calls.length).toBe(0);
+  });
+});
+
 // ── REG-008: token not in stepOutput for any check kind ──────────────────────
 
 describe("REG-008: installation token absent from step output", () => {

@@ -697,6 +697,258 @@ describe("github_check — ci_status", () => {
   });
 });
 
+// ── BT-NEW-001: pr_status — non-numeric prNumberFrom value → condition_type_mismatch ─
+
+describe("github_check — pr_status *From type validation", () => {
+  function setupPrStatusNode(contextValue: unknown) {
+    const node = {
+      id: "pr-type-node",
+      kind: "github_check",
+      label: "PR Status",
+      position: { x: 0, y: 0 },
+      check: { kind: "pr_status", prNumberFrom: "step.prNumber" },
+    };
+    const snapshot = makeDefinitionSnapshot([node]);
+    currentStepRun = makeStepRun({
+      nodeId: "pr-type-node",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+      context: { step: { prNumber: contextValue } },
+    });
+    currentLoop = makeLoop();
+  }
+
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  test("BT-NEW-001: non-numeric string at prNumberFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupPrStatusNode("abc");
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(result.errorMessage).toMatch(/prNumberFrom/);
+    expect(result.errorMessage).toMatch(/positive integer/i);
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-001: float value at prNumberFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupPrStatusNode(3.14);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-001: zero at prNumberFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupPrStatusNode(0);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-001: negative integer at prNumberFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupPrStatusNode(-5);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-001: object at prNumberFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupPrStatusNode({ pr: 42 });
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-001: positive integer at prNumberFrom → success (happy path)", async () => {
+    setupPrStatusNode(42);
+    getPullResult = {
+      number: 42,
+      title: "Happy PR",
+      state: "open",
+      merged: false,
+      draft: false,
+      html_url: "https://github.com/acme/my-repo/pull/42",
+      head: { sha: "sha1", ref: "feat" },
+      base: { ref: "main" },
+      mergeable: true,
+    };
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(githubApiCallCount).toBe(1);
+  });
+});
+
+// ── BT-NEW-002: ci_status — non-string refFrom value → condition_type_mismatch ─
+
+describe("github_check — ci_status *From type validation", () => {
+  function setupCiStatusNode(contextValue: unknown) {
+    const node = {
+      id: "ci-type-node",
+      kind: "github_check",
+      label: "CI Status",
+      position: { x: 0, y: 0 },
+      check: { kind: "ci_status", refFrom: "step.headSha" },
+    };
+    const snapshot = makeDefinitionSnapshot([node]);
+    currentStepRun = makeStepRun({
+      nodeId: "ci-type-node",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+      context: { step: { headSha: contextValue } },
+    });
+    currentLoop = makeLoop();
+  }
+
+  beforeEach(() => {
+    resetMocks();
+  });
+
+  test("BT-NEW-002: number at refFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupCiStatusNode(12345);
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(result.errorMessage).toMatch(/refFrom/);
+    expect(result.errorMessage).toMatch(/non-empty string/i);
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-002: object at refFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupCiStatusNode({ sha: "abc" });
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-002: empty string at refFrom → condition_type_mismatch, no GitHub call", async () => {
+    setupCiStatusNode("");
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("condition_type_mismatch");
+    expect(githubApiCallCount).toBe(0);
+  });
+
+  test("BT-NEW-002: valid SHA string at refFrom → success (happy path)", async () => {
+    setupCiStatusNode("abc123def456");
+    listCheckRunsResult = [
+      { id: 1, name: "build", status: "completed", conclusion: "success" },
+    ];
+
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(githubApiCallCount).toBe(1);
+  });
+});
+
+// ── BT-NEW-003: github_check with no check config — guard fires BEFORE access check ─
+
+describe("github_check — no check config guard ordering", () => {
+  beforeEach(() => {
+    resetMocks();
+
+    const node = {
+      id: "no-check-node",
+      kind: "github_check",
+      label: "Bad Node",
+      position: { x: 0, y: 0 },
+      // deliberately no 'check' field
+    };
+    const snapshot = makeDefinitionSnapshot([node]);
+    currentStepRun = makeStepRun({
+      nodeId: "no-check-node",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
+    currentLoop = makeLoop();
+  });
+
+  test("BT-NEW-003: missing check config → loop_invalid failure, verifyRepoAccess NOT called", async () => {
+    const { executeAgentLoopStep } = await executorPromise;
+    const result = await executeAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("loop_invalid");
+    // The guard must fire before repo access is verified
+    expect(verifyRepoAccessMock.mock.calls.length).toBe(0);
+    // And certainly before mint
+    expect(mintInstallationTokenMock.mock.calls.length).toBe(0);
+  });
+});
+
 // ── BT-005: permission / installation failures ────────────────────────────────
 
 describe("github_check — permission / installation failures", () => {
