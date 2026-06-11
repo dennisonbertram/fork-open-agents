@@ -216,7 +216,6 @@ const pauseLoopRunMock = mock(async (runId: string, _userId: string) => {
   }
   currentLoopRun = { ...currentLoopRun, status: "paused" };
   recordedRunStatusUpdates.push({ runId, status: "paused" });
-  recordedEvents.push({ loopRunId: runId, eventName: "agent-loop.run.paused", status: "info" });
   return currentLoopRun;
 });
 
@@ -227,29 +226,52 @@ const cancelLoopRunMock = mock(async (runId: string, _userId: string) => {
   }
   currentLoopRun = { ...currentLoopRun, status: "cancelled" };
   recordedRunStatusUpdates.push({ runId, status: "cancelled" });
-  recordedEvents.push({ loopRunId: runId, eventName: "agent-loop.run.cancelled", status: "info" });
   return currentLoopRun;
 });
 
-const resumeLoopRunMock = mock(async (runId: string, _userId: string, _currentStepRunIdArg: string) => {
+const resumeLoopRunMock = mock(async (runId: string, _userId: string) => {
   if (currentLoopRun.status !== "paused") {
     throw new Error(`Cannot resume run in status: ${currentLoopRun.status}`);
   }
   currentLoopRun = { ...currentLoopRun, status: "running" };
   recordedRunStatusUpdates.push({ runId, status: "running" });
-  recordedEvents.push({ loopRunId: runId, eventName: "agent-loop.run.resumed", status: "info" });
   return currentLoopRun;
 });
 
-const retryCurrentStepMock = mock(async (runId: string, _userId: string) => {
-  if (currentLoopRun.status !== "failed" && currentLoopRun.status !== "stalled") {
-    throw new Error(`Cannot retry run in status: ${currentLoopRun.status}`);
-  }
-  currentLoopRun = { ...currentLoopRun, status: "running" };
-  recordedRunStatusUpdates.push({ runId, status: "running" });
-  recordedEvents.push({ loopRunId: runId, eventName: "agent-loop.run.retry", status: "info" });
-  return currentLoopRun;
-});
+const retryCurrentStepMock = mock(
+  async (params: { runId: string; userId: string }) => {
+    const { runId } = params;
+    if (currentLoopRun.status !== "failed" && currentLoopRun.status !== "stalled") {
+      throw new Error(`Cannot retry run in status: ${currentLoopRun.status}`);
+    }
+    // Find the current step run to get nodeId/nodeKind and attempt
+    const failedStepRun = currentLoopRun.currentStepRunId
+      ? stepRunIdToStepRun[currentLoopRun.currentStepRunId]
+      : undefined;
+    const nodeId = currentLoopRun.currentNodeId ?? failedStepRun?.nodeId ?? "work";
+    const nodeKind = failedStepRun?.nodeKind ?? "agent_step";
+    const nextAttempt = (failedStepRun?.attempt ?? 1) + 1;
+
+    // Create a new step run (simulates the store creating attempt n+1)
+    const id = nextStepRunId();
+    recordedStepRunCreations.push({ loopRunId: runId, nodeId, nodeKind, attempt: nextAttempt });
+    const newStepRun: AgentLoopStepRun = makeStepRun({
+      id,
+      loopRunId: runId,
+      nodeId,
+      nodeKind,
+      attempt: nextAttempt,
+      status: "queued",
+    });
+    stepRunIdToNodeId[id] = nodeId;
+    stepRunIdToStepRun[id] = newStepRun;
+
+    currentLoopRun = { ...currentLoopRun, status: "running", currentStepRunId: id };
+    recordedRunStatusUpdates.push({ runId, status: "running" });
+
+    return newStepRun;
+  },
+);
 
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
@@ -258,7 +280,6 @@ mock.module("./store", () => ({
   createAgentLoopStepRun: createAgentLoopStepRunMock,
   advanceRunToNextStep: advanceRunToNextStepMock,
   countStepRunsForNode: countStepRunsForNodeMock,
-  updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   pauseLoopRun: pauseLoopRunMock,
   cancelLoopRun: cancelLoopRunMock,
   resumeLoopRun: resumeLoopRunMock,
@@ -281,6 +302,18 @@ const workflowStartMock = mock(
 );
 mock.module("workflow/api", () => ({
   start: workflowStartMock,
+}));
+
+// Mock the workflow package itself (used by agent-loop-step.ts)
+mock.module("workflow", () => ({
+  getWorkflowMetadata: () => ({ workflowRunId: "wf-run-mock" }),
+}));
+
+// Mock the workflow file — prevents transitive 'workflow' package import errors.
+// chain.ts imports runAgentLoopStepWorkflow only to pass to start() as a reference.
+// Since start() itself is mocked, the actual implementation is never called here.
+mock.module("@/app/workflows/agent-loop-step", () => ({
+  runAgentLoopStepWorkflow: mock(async (_input: { stepRunId: string }) => {}),
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

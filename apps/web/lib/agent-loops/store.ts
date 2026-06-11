@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -556,4 +556,260 @@ export async function listAgentLoopEvents(
     orderBy: [desc(agentLoopEvents.createdAt)],
     limit: 200,
   });
+}
+
+// ── Chain-level store functions (M1-06) ───────────────────────────────────────
+
+/**
+ * Atomically advances the run to the next step ONLY IF `currentStepRunId`
+ * still equals `fromStepRunId` (anti-double-dispatch guard).
+ *
+ * Returns true if the update succeeded (1 row updated), false if it was a
+ * no-op (0 rows — another invocation already advanced this step).
+ *
+ * This is the canonical conditional update that prevents two concurrent
+ * chain invocations from both dispatching the next step.
+ */
+export async function advanceRunToNextStep(params: {
+  runId: string;
+  fromStepRunId: string;
+  nextNodeId: string;
+  nextStepRunId: string;
+  stepCount: number;
+  iterationCount: number;
+  workflowRunId: string;
+}): Promise<boolean> {
+  const now = new Date();
+
+  const result = await db
+    .update(agentLoopRuns)
+    .set({
+      currentNodeId: params.nextNodeId,
+      currentStepRunId: params.nextStepRunId,
+      stepCount: params.stepCount,
+      iterationCount: params.iterationCount,
+      workflowRunId: params.workflowRunId,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, params.runId),
+        eq(agentLoopRuns.currentStepRunId, params.fromStepRunId),
+      ),
+    )
+    .returning({ id: agentLoopRuns.id });
+
+  return result.length > 0;
+}
+
+/**
+ * Counts prior step runs for a (loopRunId, nodeId) pair.
+ * Used to determine if visiting a node again constitutes a loop iteration.
+ */
+export async function countStepRunsForNode(params: {
+  loopRunId: string;
+  nodeId: string;
+}): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.loopRunId),
+        eq(agentLoopStepRuns.nodeId, params.nodeId),
+      ),
+    );
+
+  return row?.total ?? 0;
+}
+
+/**
+ * Transitions a run from running/queued to paused.
+ * Throws if the run is not in a pausable status.
+ */
+export async function pauseLoopRun(
+  runId: string,
+  _userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "paused",
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        sql`${agentLoopRuns.status} IN ('running', 'queued')`,
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(
+      `Cannot pause run ${runId}: not in a pausable status (running/queued)`,
+    );
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a run from running/queued/paused to cancelled.
+ * Throws if the run is not in a cancellable status.
+ */
+export async function cancelLoopRun(
+  runId: string,
+  _userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "cancelled",
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        sql`${agentLoopRuns.status} IN ('running', 'queued', 'paused')`,
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(
+      `Cannot cancel run ${runId}: not in a cancellable status (running/queued/paused)`,
+    );
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a run from paused to running.
+ * Throws if the run is not paused.
+ */
+export async function resumeLoopRun(
+  runId: string,
+  _userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "running",
+      // COALESCE: preserve startedAt if already set
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        eq(agentLoopRuns.status, "paused"),
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(
+      `Cannot resume run ${runId}: not in paused status`,
+    );
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a failed/stalled run to running and creates attempt n+1 of the
+ * current step node. Returns the new step run so the caller can dispatch it.
+ *
+ * Throws if the run is not in a retryable status (failed/stalled) or if
+ * currentNodeId/currentStepRunId are not set.
+ */
+export async function retryCurrentStep(params: {
+  runId: string;
+  userId: string;
+}): Promise<AgentLoopStepRun> {
+  // Load the run
+  const run = await db.query.agentLoopRuns.findFirst({
+    where: eq(agentLoopRuns.id, params.runId),
+  });
+
+  if (!run) {
+    throw new Error(`Run ${params.runId} not found`);
+  }
+
+  if (run.status !== "failed" && run.status !== "stalled") {
+    throw new Error(
+      `Cannot retry run ${params.runId}: not in a retryable status (failed/stalled), got: ${run.status}`,
+    );
+  }
+
+  if (!run.currentNodeId || !run.currentStepRunId) {
+    throw new Error(
+      `Cannot retry run ${params.runId}: missing currentNodeId or currentStepRunId`,
+    );
+  }
+
+  // Find the current (failed) step run to get nodeKind
+  const failedStepRun = await db.query.agentLoopStepRuns.findFirst({
+    where: eq(agentLoopStepRuns.id, run.currentStepRunId),
+  });
+
+  if (!failedStepRun) {
+    throw new Error(
+      `Cannot retry: step run ${run.currentStepRunId} not found`,
+    );
+  }
+
+  // Count attempts so far to compute n+1
+  const [attemptRow] = await db
+    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.runId),
+        eq(agentLoopStepRuns.nodeId, run.currentNodeId),
+      ),
+    );
+
+  const nextAttempt = (attemptRow?.maxAttempt ?? 1) + 1;
+
+  // Create the new step run
+  const [newStepRun] = await db
+    .insert(agentLoopStepRuns)
+    .values({
+      id: nanoid(),
+      loopRunId: params.runId,
+      nodeId: run.currentNodeId,
+      nodeKind: failedStepRun.nodeKind,
+      attempt: nextAttempt,
+      status: "queued",
+    })
+    .returning();
+
+  if (!newStepRun) {
+    throw new Error("Failed to create retry step run");
+  }
+
+  // Transition the run to running and update currentStepRunId
+  const now = new Date();
+  await db
+    .update(agentLoopRuns)
+    .set({
+      status: "running",
+      currentStepRunId: newStepRun.id,
+      // COALESCE: preserve startedAt if already set
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.runId));
+
+  return newStepRun;
 }
