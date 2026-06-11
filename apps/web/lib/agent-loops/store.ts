@@ -387,6 +387,37 @@ export async function updateAgentLoopRunStatus(params: {
 
 // ── agentLoopStepRuns ─────────────────────────────────────────────────────────
 
+// ── agentLoopStepRuns — read ──────────────────────────────────────────────────
+
+export type AgentLoopStepRunWithContext = {
+  stepRun: AgentLoopStepRun;
+  loopRun: AgentLoopRun;
+  loop: AgentLoop;
+};
+
+/**
+ * Loads a step run together with its parent loop run and the loop definition
+ * row. Used by the step executor to obtain all data it needs in one round trip.
+ * Returns null when the step run does not exist or the loop join fails.
+ */
+export async function getAgentLoopStepRunWithContext(
+  stepRunId: string,
+): Promise<AgentLoopStepRunWithContext | null> {
+  const stepRun = await db.query.agentLoopStepRuns.findFirst({
+    where: eq(agentLoopStepRuns.id, stepRunId),
+  });
+  if (!stepRun) {
+    return null;
+  }
+
+  const row = await getAgentLoopRunWithLoop(stepRun.loopRunId);
+  if (!row) {
+    return null;
+  }
+
+  return { stepRun, loopRun: row.run, loop: row.loop };
+}
+
 export async function createAgentLoopStepRun(
   input: CreateAgentLoopStepRunInput,
 ): Promise<AgentLoopStepRun> {
