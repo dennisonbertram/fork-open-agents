@@ -25,6 +25,7 @@
  *   VR-14  condition ops other than exists require value
  *   VR-15  Structural zod validation
  *   VR-17  No duplicate node ids within a definition
+ *   VR-18  Condition node outgoing edges must only use true/false when values
  *
  * No eval, no RegExp expression parsing, no I/O, no DB.
  */
@@ -211,6 +212,7 @@ export function validateLoopDefinition(
 
   // VR-05: condition nodes must have both true and false outgoing edges
   // VR-06: non-condition nodes may not use true/false when values
+  // VR-18: condition nodes may only use true/false when values (no success/failure/always)
   for (const node of def.nodes) {
     const outs = outgoingEdges.get(node.id) ?? [];
     if (node.kind === "condition") {
@@ -233,6 +235,19 @@ export function validateLoopDefinition(
           nodeId: node.id,
           branch: "false",
         });
+      }
+      // VR-18: every outgoing edge from a condition node must use true or false;
+      // success/failure/always edges are dead routing because the runtime edge
+      // evaluator (M1-03) only dispatches condition outcomes via true/false.
+      for (const edge of outs) {
+        if (edge.when !== "true" && edge.when !== "false") {
+          errors.push({
+            kind: "loop_invalid",
+            rule: "invalid_condition_edge",
+            message: `Edge "${edge.id}" uses when="${edge.when}" on condition node "${node.id}". Condition nodes may only have true/false outgoing edges; the runtime evaluator never traverses other when values.`,
+            edgeId: edge.id,
+          });
+        }
       }
     } else {
       // Non-condition nodes may not use true/false

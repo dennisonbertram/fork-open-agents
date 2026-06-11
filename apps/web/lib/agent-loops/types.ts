@@ -293,4 +293,10 @@ export type LoopValidationError =
       rule: "duplicate_node_id";
       message: string;
       nodeId: string;
+    }
+  | {
+      kind: "loop_invalid";
+      rule: "invalid_condition_edge";
+      message: string;
+      edgeId: string;
     };
