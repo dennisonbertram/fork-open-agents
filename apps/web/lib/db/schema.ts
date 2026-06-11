@@ -928,9 +928,7 @@ export const agentLoops = pgTable(
     repoOwner: text("repo_owner").notNull(),
     repoName: text("repo_name").notNull(),
     /** { nodes: LoopNode[], edges: LoopEdge[] } — validated on write by M1-02 */
-    definition: jsonb("definition")
-      .$type<Record<string, unknown>>()
-      .notNull(),
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
     status: text("status", {
       enum: ["draft", "active", "paused", "archived"],
     })
@@ -1320,10 +1318,7 @@ export const agentLoopRuns = pgTable(
   },
   (table) => [
     index("agent_loop_runs_loop_created_idx").on(table.loopId, table.createdAt),
-    index("agent_loop_runs_user_created_idx").on(
-      table.userId,
-      table.createdAt,
-    ),
+    index("agent_loop_runs_user_created_idx").on(table.userId, table.createdAt),
     index("agent_loop_runs_status_idx").on(table.status),
     uniqueIndex("agent_loop_runs_idempotency_idx").on(table.idempotencyKey),
   ],

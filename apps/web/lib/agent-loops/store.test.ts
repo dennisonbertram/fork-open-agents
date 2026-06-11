@@ -20,8 +20,8 @@ mock.module("server-only", () => ({}));
 
 // ── DB mock ──────────────────────────────────────────────────────────────────
 let insertedValues: unknown[] = [];
-let updatedSet: unknown = {};
-let deletedWhere: unknown = null;
+let _updatedSet: unknown = {};
+let _deletedWhere: unknown = null;
 let queryResult: unknown[] = [];
 
 const returningMock = mock(() => {
@@ -40,10 +40,12 @@ const insertMock = mock((_table: unknown) => ({
 
 const updateMock = mock((_table: unknown) => ({
   set: mock((setVals: unknown) => {
-    updatedSet = setVals;
+    _updatedSet = setVals;
     return {
       where: mock(() => ({
-        returning: mock(() => [{ ...(insertedValues[0] as object), ...(setVals as object) }]),
+        returning: mock(() => [
+          { ...(insertedValues[0] as object), ...(setVals as object) },
+        ]),
       })),
     };
   }),
@@ -51,7 +53,7 @@ const updateMock = mock((_table: unknown) => ({
 
 const deleteMock = mock((_table: unknown) => ({
   where: mock((where: unknown) => {
-    deletedWhere = where;
+    _deletedWhere = where;
     return { returning: mock(() => [{ id: "loop-1" }]) };
   }),
 }));
@@ -81,7 +83,9 @@ const txInsertMock = mock((_table: unknown) => ({
 const txUpdateMock = mock((_table: unknown) => ({
   set: mock((setVals: unknown) => ({
     where: mock(() => ({
-      returning: mock(() => [{ ...(insertedValues[0] as object), ...(setVals as object) }]),
+      returning: mock(() => [
+        { ...(insertedValues[0] as object), ...(setVals as object) },
+      ]),
     })),
   })),
 }));
@@ -146,8 +150,8 @@ const storePromise = import("./store");
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function resetMocks() {
   insertedValues = [];
-  updatedSet = {};
-  deletedWhere = null;
+  _updatedSet = {};
+  _deletedWhere = null;
   queryResult = [];
   insertMock.mockClear();
   updateMock.mockClear();
@@ -592,10 +596,7 @@ describe("listAgentLoopEvents", () => {
 // than a live-DB test (no test DB in CI for this kind of check).
 describe("migration SQL idempotency and check constraint (BT-013)", () => {
   test("migration contains num_nonnulls check and IF NOT EXISTS guards", () => {
-    const migrationsDir = join(
-      import.meta.dir,
-      "../../../db/migrations",
-    );
+    const migrationsDir = join(import.meta.dir, "../../../db/migrations");
 
     let files: string[];
     try {

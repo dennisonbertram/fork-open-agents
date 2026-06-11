@@ -116,6 +116,7 @@ function makeAgent(
       {
         id: "trigger-reg-1",
         agentId: "agent-reg-1",
+        loopId: null,
         userId: "user-1",
         name: "On PR",
         kind: "github.pull_request",

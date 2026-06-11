@@ -270,7 +270,7 @@ export async function updateAgentLoopRunStatus(params: {
   stepCount?: number;
   context?: Record<string, unknown>;
 }): Promise<AgentLoopRun | null> {
-  const terminalStatuses: Set<AgentLoopRun["status"]> = new Set([
+  const terminalStatuses = new Set<AgentLoopRun["status"]>([
     "completed",
     "failed",
     "cancelled",
@@ -291,14 +291,18 @@ export async function updateAgentLoopRunStatus(params: {
       ...(params.workflowRunId !== undefined
         ? { workflowRunId: params.workflowRunId }
         : {}),
-      ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
       ...(params.errorMessage !== undefined
         ? { errorMessage: params.errorMessage }
         : {}),
       ...(params.iterationCount !== undefined
         ? { iterationCount: params.iterationCount }
         : {}),
-      ...(params.stepCount !== undefined ? { stepCount: params.stepCount } : {}),
+      ...(params.stepCount !== undefined
+        ? { stepCount: params.stepCount }
+        : {}),
       ...(params.context !== undefined ? { context: params.context } : {}),
       ...(params.status === "running" ? { startedAt: now } : {}),
       ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),
@@ -338,7 +342,7 @@ export async function createAgentLoopStepRun(
 export async function updateAgentLoopStepRun(
   params: UpdateAgentLoopStepRunInput,
 ): Promise<AgentLoopStepRun | null> {
-  const terminalStatuses: Set<NonNullable<typeof params.status>> = new Set([
+  const terminalStatuses = new Set<NonNullable<typeof params.status>>([
     "succeeded",
     "failed",
     "skipped",
@@ -358,14 +362,18 @@ export async function updateAgentLoopStepRun(
       ...(params.workflowRunId !== undefined
         ? { workflowRunId: params.workflowRunId }
         : {}),
-      ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
       ...(params.errorMessage !== undefined
         ? { errorMessage: params.errorMessage }
         : {}),
       ...(params.durationMs !== undefined
         ? { durationMs: params.durationMs }
         : {}),
-      ...(params.status === "running" ? { startedAt: params.startedAt ?? now } : {}),
+      ...(params.status === "running"
+        ? { startedAt: params.startedAt ?? now }
+        : {}),
       ...(params.status !== undefined && terminalStatuses.has(params.status)
         ? { finishedAt: params.finishedAt ?? now }
         : {}),
