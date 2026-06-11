@@ -20,6 +20,11 @@
  *         type mismatch, not a silent true
  *   R-10  evaluateEdges: always edge from start node is the only routing path (no outcome
  *         edges on start) — picks always correctly for any outcome
+ *   R-11  evaluateCondition: exists on absent path returns ok:true result:false — if it
+ *         returned an error instead, a condition node could never take its false branch
+ *         on the first iteration (making the op useless for "does this exist yet?" guards)
+ *   R-12  mergeStepOutput: a single value that alone exceeds 64KB is replaced with a
+ *         truncation marker so the persisted context is always ≤ 64KB
  */
 
 import { describe, expect, test } from "bun:test";
@@ -105,15 +110,27 @@ describe("regression R-02: direct match wins over always", () => {
   });
 });
 
-// ── R-03: single oversized value retained ─────────────────────────────────────
+// ── R-03: single oversized value stored as truncation marker ─────────────────
 
-describe("regression R-03: single oversized value retained", () => {
-  test("a single value that exceeds 64KB by itself is still stored (cannot drop the only key)", () => {
+describe("regression R-03: single oversized value stored as truncation marker", () => {
+  test("a single value that exceeds 64KB is stored as a truncation marker so the context stays ≤ 64KB", () => {
     // A value that alone is > 64KB
     const hugeValue = "x".repeat(70 * 1024);
     const result = mergeStepOutput({}, "step-1", { data: hugeValue });
-    // The only key must still be present even if it exceeds the cap
+    // The key must still be present so downstream lookups can detect a truncated value
     expect("step-1" in result.context).toBe(true);
+    // The stored value must be a truncation marker
+    const stored = result.context["step-1"] as {
+      truncated: boolean;
+      byteSize: number;
+    };
+    expect(stored.truncated).toBe(true);
+    expect(typeof stored.byteSize).toBe("number");
+    // The resulting context must be under 64KB
+    const serializedSize = new TextEncoder().encode(
+      JSON.stringify(result.context),
+    ).length;
+    expect(serializedSize).toBeLessThan(64 * 1024);
   });
 });
 
@@ -182,6 +199,53 @@ describe("regression R-09: neq boolean vs number is type mismatch", () => {
       { step: { done: false } },
     );
     expect(result).toEqual({ ok: false, errorKind: "condition_type_mismatch" });
+  });
+});
+
+// ── R-11: exists on absent path returns false, not an error ──────────────────
+
+describe("regression R-11: exists absent path returns ok:true result:false", () => {
+  test("exists on absent path returns ok:true result:false so the false branch is routable", () => {
+    // If exists returned condition_path_missing for a missing path, a condition
+    // node "context.issues exists? false → end" could never route false on the
+    // first iteration when the key hasn't been set yet.
+    const result = evaluateCondition(
+      { path: "context.issues", op: "exists" },
+      {},
+    );
+    expect(result).toEqual({ ok: true, result: false });
+  });
+
+  test("exists on absent nested path returns ok:true result:false", () => {
+    const result = evaluateCondition(
+      { path: "step.output.data", op: "exists" },
+      { step: {} },
+    );
+    expect(result).toEqual({ ok: true, result: false });
+  });
+});
+
+// ── R-12: single oversized value gets truncation marker ──────────────────────
+
+describe("regression R-12: single oversized value replaced with truncation marker", () => {
+  test("a single value that exceeds 64KB by itself is replaced with a truncation marker", () => {
+    const hugeValue = "x".repeat(70 * 1024);
+    const result = mergeStepOutput({}, "step-1", { data: hugeValue });
+    // The key must still be present so downstream lookups work
+    expect("step-1" in result.context).toBe(true);
+    // The value must be a truncation marker, not the raw oversized value
+    const stored = result.context["step-1"] as {
+      truncated: boolean;
+      byteSize: number;
+    };
+    expect(stored.truncated).toBe(true);
+    expect(typeof stored.byteSize).toBe("number");
+    expect(stored.byteSize).toBeGreaterThan(64 * 1024);
+    // The resulting context must be under 64KB
+    const serializedSize = new TextEncoder().encode(
+      JSON.stringify(result.context),
+    ).length;
+    expect(serializedSize).toBeLessThan(64 * 1024);
   });
 });
 

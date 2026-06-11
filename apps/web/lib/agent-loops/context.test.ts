@@ -7,8 +7,10 @@
  *   CT-03  Does not throw on weird/null values
  *   CT-04  Under-cap merge → truncated: false
  *   CT-05  Over-cap merge drops OLDEST keys first → truncated: true
- *   CT-06  After truncation result is under 64KB
+ *   CT-06  After truncation result is under 64KB (including when only one key remains)
  *   CT-07  Replacement of existing key for same node keeps context under cap
+ *   CT-08  Single value that alone exceeds 64KB is stored as a truncation marker
+ *          so the persisted context is always ≤ 64KB
  *
  * lookupContextPath tests:
  *   CT-10  Dot-path lookup on nested object returns found: true, value
@@ -128,6 +130,31 @@ describe("mergeStepOutput — CT-07 replacing existing key", () => {
     const r2 = mergeStepOutput(r1.context, "step-1", { b: 2 });
     // The key is updated, not appended
     expect(r2.context["step-1"]).toEqual({ b: 2 });
+  });
+});
+
+// ── CT-08: Single oversized singleton gets truncation marker ─────────────────
+
+describe("mergeStepOutput — CT-08 oversized singleton gets truncation marker", () => {
+  test("when the only value exceeds 64KB, the key is stored with a truncation marker", () => {
+    const hugeValue = "x".repeat(70 * 1024); // 70KB string
+    const result = mergeStepOutput({}, "step-1", { data: hugeValue });
+    expect(result.truncated).toBe(true);
+    // Key is present
+    expect("step-1" in result.context).toBe(true);
+    // Value is the truncation marker
+    const stored = result.context["step-1"] as {
+      truncated: boolean;
+      byteSize: number;
+    };
+    expect(stored.truncated).toBe(true);
+    expect(typeof stored.byteSize).toBe("number");
+    expect(stored.byteSize).toBeGreaterThan(64 * 1024);
+    // Context is under 64KB
+    const serializedSize = new TextEncoder().encode(
+      JSON.stringify(result.context),
+    ).length;
+    expect(serializedSize).toBeLessThan(CONTEXT_CAP_BYTES);
   });
 });
 

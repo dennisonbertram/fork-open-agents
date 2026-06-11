@@ -267,10 +267,22 @@ describe("evaluateCondition — CO-22 exists present", () => {
   });
 });
 
-describe("evaluateCondition — CO-23 exists missing path", () => {
-  test("exists returns condition_path_missing when path is not found", () => {
+describe("evaluateCondition — CO-23 exists missing path routes false, never an error", () => {
+  test("exists returns ok:true result:false when path is not found", () => {
     const result = evaluateCondition(cond("check.count", "exists"), {});
-    expect(result).toEqual({ ok: false, errorKind: "condition_path_missing" });
+    expect(result).toEqual({ ok: true, result: false });
+  });
+
+  test("exists routes false for absent path — never an error", () => {
+    // A loop condition node "context.issues exists? false → end" must be able to
+    // route the false branch. If exists returned an error for missing path, the
+    // false branch could never be taken on the first iteration, making the op useless.
+    const result = evaluateCondition(
+      { path: "context.issues", op: "exists" },
+      {},
+    );
+    expect(result.ok).toBe(true);
+    expect((result as { ok: true; result: boolean }).result).toBe(false);
   });
 });
 
