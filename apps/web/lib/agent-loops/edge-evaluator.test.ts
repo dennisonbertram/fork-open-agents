@@ -379,3 +379,73 @@ describe("evaluateEdges — EE-10 unknown nodeId", () => {
     expect(result.edgeId).toBeNull();
   });
 });
+
+// ── EE-11: dangling target on direct-match edge → nulls (fail closed) ─────────
+//
+// If a definition was stored as opaque JSONB (e.g. via createAgentLoopRun)
+// before validateLoopDefinition ran, edges can target node ids that do not
+// exist in the definition's nodes array. evaluateEdges must fail closed in
+// that case rather than returning the phantom id.
+
+describe("evaluateEdges — EE-11 direct-match edge with dangling target → nulls", () => {
+  test("returns nulls when matched direct-outcome edge targets a node not in the definition", () => {
+    const def: LoopDefinition = {
+      nodes: [
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+          instructions: "Do work",
+        },
+      ],
+      edges: [
+        { id: "e1", source: "start-1", target: "step-1", when: "always" },
+        // target "phantom-node" is NOT declared in nodes — dangling edge
+        { id: "e2", source: "step-1", target: "phantom-node", when: "success" },
+      ],
+    };
+    const result = evaluateEdges(def, "step-1", "success");
+    expect(result.nextNodeId).toBeNull();
+    expect(result.edgeId).toBeNull();
+  });
+});
+
+// ── EE-12: dangling target on always-fallback edge → nulls (fail closed) ──────
+
+describe("evaluateEdges — EE-12 always-fallback edge with dangling target → nulls", () => {
+  test("returns nulls when always-fallback edge targets a node not in the definition", () => {
+    const def: LoopDefinition = {
+      nodes: [
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+          instructions: "Do work",
+        },
+      ],
+      edges: [
+        { id: "e1", source: "start-1", target: "step-1", when: "always" },
+        // target "ghost-node" is NOT declared in nodes — dangling always edge
+        { id: "e2", source: "step-1", target: "ghost-node", when: "always" },
+      ],
+    };
+    // outcome "success" → no direct success edge → falls back to always → target is dangling → nulls
+    const result = evaluateEdges(def, "step-1", "success");
+    expect(result.nextNodeId).toBeNull();
+    expect(result.edgeId).toBeNull();
+  });
+});
