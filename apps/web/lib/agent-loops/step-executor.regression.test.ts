@@ -130,6 +130,9 @@ mock.module("@/lib/github/access", () => ({
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: mintInstallationTokenMock,
   revokeInstallationToken: revokeInstallationTokenMock,
+  // agent-step.ts (loaded via step-executor.ts) imports this; bun's
+  // mock.module replaces the whole module, so the export must exist here.
+  withScopedInstallationOctokit: mock(() => Promise.resolve(undefined)),
 }));
 
 // GitHub API mocks

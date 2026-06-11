@@ -396,6 +396,7 @@ mock.module("@/lib/github/access", () => ({
 mock.module("@/lib/github/app", () => ({
   mintInstallationToken: f3f4MintMock,
   revokeInstallationToken: f3f4RevokeMock,
+  withScopedInstallationOctokit: mock(() => Promise.resolve(undefined)),
 }));
 
 // GitHub API mock for executor tests
