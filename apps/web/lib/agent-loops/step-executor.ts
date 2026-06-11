@@ -386,7 +386,70 @@ export async function executeAgentLoopStep(params: {
   // ── github_check ──────────────────────────────────────────────────────────
 
   if (node.kind === "github_check") {
-    // 5a. Verify repo access + resolve installationId / repositoryId
+    // 5a. Check config validation — guard fires BEFORE any access/token work
+    if (!node.check) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind: "loop_invalid",
+        errorMessage: `github_check node '${node.id}' has no check configured`,
+      });
+    }
+
+    // 5b. Resolve *From context paths BEFORE any API call or token mint
+    let resolvedRef: string | undefined;
+    let resolvedPrNumber: number | undefined;
+
+    if (node.check.kind === "pr_status") {
+      const lookup = lookupContextPath(
+        loopRun.context ?? {},
+        node.check.prNumberFrom,
+      );
+      if (!lookup.found) {
+        return recordStepFailure({
+          ...failureCtx,
+          errorKind: "condition_path_missing",
+          errorMessage: `Context path '${node.check.prNumberFrom}' not found for prNumberFrom`,
+        });
+      }
+      const rawPr = lookup.value;
+      if (
+        typeof rawPr !== "number" ||
+        !Number.isInteger(rawPr) ||
+        rawPr <= 0
+      ) {
+        return recordStepFailure({
+          ...failureCtx,
+          errorKind: "condition_type_mismatch",
+          errorMessage: `prNumberFrom '${node.check.prNumberFrom}' must resolve to a positive integer, got: ${typeof rawPr === "number" ? rawPr : typeof rawPr}`,
+        });
+      }
+      resolvedPrNumber = rawPr;
+    }
+
+    if (node.check.kind === "ci_status") {
+      const lookup = lookupContextPath(
+        loopRun.context ?? {},
+        node.check.refFrom,
+      );
+      if (!lookup.found) {
+        return recordStepFailure({
+          ...failureCtx,
+          errorKind: "condition_path_missing",
+          errorMessage: `Context path '${node.check.refFrom}' not found for refFrom`,
+        });
+      }
+      const rawRef = lookup.value;
+      if (typeof rawRef !== "string" || rawRef.length === 0) {
+        return recordStepFailure({
+          ...failureCtx,
+          errorKind: "condition_type_mismatch",
+          errorMessage: `refFrom '${node.check.refFrom}' must resolve to a non-empty string, got: ${typeof rawRef}`,
+        });
+      }
+      resolvedRef = rawRef;
+    }
+
+    // 5c. Verify repo access + resolve installationId / repositoryId
     const accessResult = await verifyRepoAccess({
       userId: loopRun.userId,
       owner: loop.repoOwner,
@@ -406,7 +469,7 @@ export async function executeAgentLoopStep(params: {
       });
     }
 
-    // 5b. Mint installation token scoped to this repo
+    // 5d. Mint installation token scoped to this repo
     let token: string;
     try {
       const scopedToken = await mintInstallationToken({
@@ -427,52 +490,6 @@ export async function executeAgentLoopStep(params: {
         errorKind: "github_check_failed",
         errorMessage: `Failed to mint installation token: ${err instanceof Error ? err.message : String(err)}`,
       });
-    }
-
-    // 5c. Check config validation — fall back if no check configured
-    if (!node.check) {
-      await revokeInstallationToken(token);
-      return recordStepFailure({
-        ...failureCtx,
-        errorKind: "loop_invalid",
-        errorMessage: `github_check node '${node.id}' has no check configured`,
-      });
-    }
-
-    // 5d. Resolve *From context paths BEFORE any API call
-    let resolvedRef: string | undefined;
-    let resolvedPrNumber: number | undefined;
-
-    if (node.check.kind === "pr_status") {
-      const lookup = lookupContextPath(
-        loopRun.context ?? {},
-        node.check.prNumberFrom,
-      );
-      if (!lookup.found) {
-        await revokeInstallationToken(token);
-        return recordStepFailure({
-          ...failureCtx,
-          errorKind: "condition_path_missing",
-          errorMessage: `Context path '${node.check.prNumberFrom}' not found for prNumberFrom`,
-        });
-      }
-      resolvedPrNumber = Number(lookup.value);
-    }
-
-    if (node.check.kind === "ci_status") {
-      const lookup = lookupContextPath(
-        loopRun.context ?? {},
-        node.check.refFrom,
-      );
-      if (!lookup.found) {
-        await revokeInstallationToken(token);
-        return recordStepFailure({
-          ...failureCtx,
-          errorKind: "condition_path_missing",
-          errorMessage: `Context path '${node.check.refFrom}' not found for refFrom`,
-        });
-      }
-      resolvedRef = String(lookup.value);
     }
 
     // 5e. Execute the typed check function
