@@ -513,3 +513,63 @@ describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
     expect(result.runIds).toContain("run-agent-1");
   });
 });
+
+// ── BT-326-18: REGRESSION — loop-bound webhook.error never reaches createRunForTrigger ────
+
+describe("REGRESSION-326-webhook: loop-bound webhook.error dispatch isolation", () => {
+  beforeEach(resetIntegrationMocks);
+
+  test("BT-326-18: dispatchWebhookErrorEvent — loop-bound trigger NEVER calls createRunForTrigger, always calls bridge", async () => {
+    // This test would FAIL if the loop branch in dispatchWebhookErrorEvent were
+    // removed or bypassed: createRunForTrigger would be called with a null agentId,
+    // causing a null-dereference on row.agent.id in the agent path.
+    const loopWebhookTriggerReg: BackgroundAgentWithTriggers["triggers"][number] =
+      {
+        id: "trigger-loop-webhook-reg",
+        agentId: null,
+        loopId: "loop-webhook-reg-1",
+        userId: "user-1",
+        name: "Loop webhook regression",
+        kind: "webhook.error",
+        status: "enabled",
+        conditions: {},
+        schedule: null,
+        webhookPublicId: "wh_loop_reg",
+        webhookSecretHash: "hash-reg",
+        lastRunAt: null,
+        nextRunAt: null,
+        lastSkipReason: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTriggerReg,
+    };
+    loopForTriggerResult = {
+      ...activeLoop,
+      id: "loop-webhook-reg-1",
+    };
+    loopDispatchResult = { created: true, runId: "loop-run-reg-1" };
+
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_reg",
+      event: {
+        externalId: "err-reg-1",
+        title: "Regression error",
+        message: "Test error",
+        occurredAt: "2026-06-11T12:00:00.000Z",
+      },
+      requestId: "req-regression",
+    });
+
+    // The critical regression assertion: createRunForTrigger must NEVER be
+    // called for a loop-bound webhook trigger. If this fires, the loop branch
+    // has been removed and the agent path would get a null agentId.
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
+  });
+});
