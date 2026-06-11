@@ -124,6 +124,7 @@ function makeAgent(
       {
         id: "trigger-1",
         agentId: "agent-1",
+        loopId: null,
         userId: "user-1",
         name: "On deployment",
         kind: "github.deployment_status",

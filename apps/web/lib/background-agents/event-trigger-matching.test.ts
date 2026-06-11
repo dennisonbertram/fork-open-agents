@@ -201,6 +201,7 @@ const baseAgent: BackgroundAgentWithTriggers = {
     {
       id: "trigger-pr",
       agentId: "agent-168",
+      loopId: null,
       userId: "user-1",
       name: "Pull request",
       kind: "github.pull_request",

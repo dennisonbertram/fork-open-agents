@@ -69,6 +69,7 @@ const baseAgent: BackgroundAgentWithTriggers = {
 const scheduleTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
   id: "trigger-sched-1",
   agentId: "agent-sched",
+  loopId: null,
   userId: "user-sched",
   name: "Every minute",
   kind: "schedule.cron",

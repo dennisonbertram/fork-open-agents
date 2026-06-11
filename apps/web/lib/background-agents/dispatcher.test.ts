@@ -61,6 +61,7 @@ const agent: BackgroundAgentWithTriggers = {
     {
       id: "trigger-disabled",
       agentId: "agent-1",
+      loopId: null,
       userId: "user-1",
       name: "Disabled",
       kind: "github.issue",
@@ -78,6 +79,7 @@ const agent: BackgroundAgentWithTriggers = {
     {
       id: "trigger-enabled",
       agentId: "agent-1",
+      loopId: null,
       userId: "user-1",
       name: "Pull request",
       kind: "github.pull_request",
