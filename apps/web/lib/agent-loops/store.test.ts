@@ -404,9 +404,10 @@ describe("createAgentLoopRun", () => {
       idempotencyKey: "idem-1",
     });
 
-    expect(result.run.loopId).toBe("loop-1");
-    expect(result.run.userId).toBe("user-1");
-    expect(result.created).toBe(true);
+    expect(result).not.toBeNull();
+    expect(result!.run.loopId).toBe("loop-1");
+    expect(result!.run.userId).toBe("user-1");
+    expect(result!.created).toBe(true);
     expect(insertMock).toHaveBeenCalledTimes(1);
   });
 
