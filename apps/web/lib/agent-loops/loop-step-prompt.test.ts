@@ -91,7 +91,9 @@ describe("buildLoopStepPrompt", () => {
     });
 
     const lower = prompt.toLowerCase();
-    expect(lower).toMatch(/do not.*pull request|never.*pr|must not.*open.*pr|do not.*open.*pr/);
+    expect(lower).toMatch(
+      /do not.*pull request|never.*pr|must not.*open.*pr|do not.*open.*pr/,
+    );
   });
 
   test("BP-006: prompt includes prohibition against writing outside workspace", () => {
@@ -104,7 +106,9 @@ describe("buildLoopStepPrompt", () => {
 
     // Prohibition language about file writes
     const lower = prompt.toLowerCase();
-    expect(lower).toMatch(/do not write outside|only.*workspace|restrict.*workspace/);
+    expect(lower).toMatch(
+      /do not write outside|only.*workspace|restrict.*workspace/,
+    );
   });
 
   test("BP-007: prompt includes repo and branch", () => {

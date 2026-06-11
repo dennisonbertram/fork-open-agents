@@ -171,7 +171,6 @@ mock.module("@/lib/github/app", () => ({
 
 // ── Sandbox mock ──────────────────────────────────────────────────────────────
 
-let sandboxStopCalled = false;
 let sandboxConnectShouldThrow: Error | null = null;
 
 // Per-test outputs for sandbox.readFile and sandbox.exec
@@ -214,11 +213,14 @@ const sandboxMock = {
       return sandboxExecResult;
     },
   ),
-  stop: mock(async () => {
-    sandboxStopCalled = true;
-  }),
+  stop: mock(async () => undefined),
   writeFile: mock(async () => undefined),
-  stat: mock(async () => ({ isDirectory: () => false, isFile: () => true, size: 0, mtimeMs: 0 })),
+  stat: mock(async () => ({
+    isDirectory: () => false,
+    isFile: () => true,
+    size: 0,
+    mtimeMs: 0,
+  })),
   access: mock(async () => undefined),
   mkdir: mock(async () => undefined),
   readdir: mock(async () => []),
@@ -283,7 +285,12 @@ mock.module("@open-agents/agent", () => ({
 
 // ── Commit mocks ──────────────────────────────────────────────────────────────
 
-let commitIntentResult: { ok: boolean; intent?: unknown; error?: string; empty?: boolean } = {
+let commitIntentResult: {
+  ok: boolean;
+  intent?: unknown;
+  error?: string;
+  empty?: boolean;
+} = {
   ok: true,
   intent: {
     owner: "acme",
@@ -418,7 +425,6 @@ function resetMocks() {
   recordedStepUpdates = [];
   recordedContextUpdates = [];
 
-  sandboxStopCalled = false;
   sandboxConnectShouldThrow = null;
   sandboxReadFileResult = JSON.stringify({ result: "done" });
   sandboxExecResult = {
@@ -498,7 +504,9 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -512,14 +520,18 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
     });
 
     expect(connectSandboxMock.mock.calls.length).toBe(1);
-    const config = connectSandboxMock.mock.calls[0]?.[0] as { state?: { sandboxName?: string } };
+    const config = connectSandboxMock.mock.calls[0]?.[0] as {
+      state?: { sandboxName?: string };
+    };
     expect(config?.state?.sandboxName).toBe("agent_loop_step-run-1");
   });
 
@@ -533,7 +545,9 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -541,7 +555,10 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
 
     expect(recordedContextUpdates.length).toBeGreaterThan(0);
     const ctxUpdate = recordedContextUpdates[0];
-    const nodeCtx = (ctxUpdate?.context as Record<string, unknown>)["agent-node-1"];
+    expect(ctxUpdate).toBeDefined();
+    const nodeCtx = (ctxUpdate!.context as Record<string, unknown>)[
+      "agent-node-1"
+    ];
     expect(nodeCtx).toBeDefined();
   });
 
@@ -550,7 +567,9 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -580,7 +599,9 @@ describe("BT-S02: no file changes — skip commit, still success", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -594,7 +615,9 @@ describe("BT-S02: no file changes — skip commit, still success", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -611,7 +634,9 @@ describe("BT-S03: output JSON missing → step_output_invalid", () => {
   beforeEach(() => {
     resetMocks();
     // Simulate file not found
-    sandboxReadFileResult = new Error("ENOENT: /tmp/loop-step-output.json not found");
+    sandboxReadFileResult = new Error(
+      "ENOENT: /tmp/loop-step-output.json not found",
+    );
     currentStepRun = makeStepRun();
     currentLoopRun = makeLoopRun();
     currentLoop = makeLoop();
@@ -622,7 +647,9 @@ describe("BT-S03: output JSON missing → step_output_invalid", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -649,7 +676,9 @@ describe("BT-S04: output JSON unparseable → step_output_invalid", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -678,7 +707,9 @@ describe("BT-S05: output oversized (>64KB) → step_output_invalid", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -840,7 +871,8 @@ describe("BT-S08: checkCommand fails (non-zero) → checks_failed", () => {
       (e) =>
         e.eventName === "agent-loop.step.check.completed" ||
         (e.eventName === "agent-loop.step.failed" &&
-          (e.payload as Record<string, unknown> | undefined)?.["errorKind"] === "checks_failed"),
+          (e.payload as Record<string, unknown> | undefined)?.["errorKind"] ===
+            "checks_failed"),
     );
     expect(checkEvent).toBeDefined();
   });
@@ -862,7 +894,9 @@ describe("BT-S09: no_installation → installation_missing", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -891,7 +925,9 @@ describe("BT-S10: user_no_access → permission_missing", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -918,7 +954,9 @@ describe("BT-S11: connectSandbox throws → sandbox_unavailable", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -947,7 +985,9 @@ describe("BT-S12: openAgent timeout → typed failure", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -975,7 +1015,9 @@ describe("BT-S13/S14/S15: sandbox disposal on every path", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -991,7 +1033,9 @@ describe("BT-S13/S14/S15: sandbox disposal on every path", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1007,7 +1051,9 @@ describe("BT-S13/S14/S15: sandbox disposal on every path", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1032,7 +1078,9 @@ describe("BT-S16/S17: token never appears in events or step output", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1050,7 +1098,9 @@ describe("BT-S16/S17: token never appears in events or step output", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1079,7 +1129,9 @@ describe("BT-S18: agent-loop.step.sandbox.started emitted", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1109,7 +1161,9 @@ describe("BT-S19: agent-loop.step.agent.completed emitted with usage", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1139,7 +1193,9 @@ describe("BT-S20: agent-loop.step.commit.completed emitted on commit", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1202,7 +1258,9 @@ describe("BT-S22: executor handles commit/push, not the agent", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1234,7 +1292,9 @@ describe("BT-S23: branch from output JSON field 'branch'", () => {
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
       loopRunId: "loop-run-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -1242,7 +1302,10 @@ describe("BT-S23: branch from output JSON field 'branch'", () => {
 
     // buildCommitIntentFromSandbox was called with the branch from output JSON
     expect(buildCommitIntentFromSandboxMock.mock.calls.length).toBe(1);
-    const callArgs = buildCommitIntentFromSandboxMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(callArgs?.["branch"]).toBe("feat/agent-step-branch");
+    const allCalls = buildCommitIntentFromSandboxMock.mock.calls as unknown as [
+      Record<string, unknown>,
+    ][];
+    const callArgs = allCalls[0]?.[0] ?? {};
+    expect(callArgs["branch"]).toBe("feat/agent-step-branch");
   });
 });
