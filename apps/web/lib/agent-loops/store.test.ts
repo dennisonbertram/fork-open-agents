@@ -35,7 +35,10 @@ const onConflictDoNothingMock = mock((_opts?: unknown) => ({
 
 const valuesMock = mock((vals: unknown) => {
   insertedValues = Array.isArray(vals) ? vals : [vals];
-  return { returning: returningMock, onConflictDoNothing: onConflictDoNothingMock };
+  return {
+    returning: returningMock,
+    onConflictDoNothing: onConflictDoNothingMock,
+  };
 });
 
 const insertMock = mock((_table: unknown) => ({
