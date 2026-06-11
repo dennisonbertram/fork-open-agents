@@ -35,7 +35,12 @@ import { validateLoopDefinition } from "./validation";
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function makeStartNode(id = "start-1") {
-  return { id, kind: "start" as const, label: "Start", position: { x: 0, y: 0 } };
+  return {
+    id,
+    kind: "start" as const,
+    label: "Start",
+    position: { x: 0, y: 0 },
+  };
 }
 
 function makeEndNode(id = "end-1") {
@@ -242,7 +247,9 @@ describe("VR-05: condition nodes require both true and false edges", () => {
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      const err = result.errors.find((e) => e.rule === "missing_condition_edge");
+      const err = result.errors.find(
+        (e) => e.rule === "missing_condition_edge",
+      );
       expect(err).toBeDefined();
       expect(err?.nodeId).toBe("cond-1");
       expect(err?.branch).toBe("false");
@@ -261,7 +268,9 @@ describe("VR-05: condition nodes require both true and false edges", () => {
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      const err = result.errors.find((e) => e.rule === "missing_condition_edge");
+      const err = result.errors.find(
+        (e) => e.rule === "missing_condition_edge",
+      );
       expect(err).toBeDefined();
       expect(err?.branch).toBe("true");
     }
@@ -378,7 +387,9 @@ describe("VR-08: end reachable from start (BFS)", () => {
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.errors.some((e) => e.rule === "end_unreachable")).toBe(true);
+      expect(result.errors.some((e) => e.rule === "end_unreachable")).toBe(
+        true,
+      );
     }
   });
 
@@ -464,7 +475,12 @@ describe("VR-11: forbidden node ids (prototype-pollution-safe)", () => {
   test("node with id __proto__ fails with forbidden_node_id", () => {
     const def = {
       nodes: [
-        { id: "__proto__", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "__proto__",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         makeEndNode(),
       ],
       edges: [makeEdge("e1", "__proto__", "end-1", "always")],
@@ -481,7 +497,12 @@ describe("VR-11: forbidden node ids (prototype-pollution-safe)", () => {
   test("node with id constructor fails with forbidden_node_id", () => {
     const def = {
       nodes: [
-        { id: "constructor", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "constructor",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         makeEndNode(),
       ],
       edges: [makeEdge("e1", "constructor", "end-1", "always")],
@@ -497,7 +518,12 @@ describe("VR-11: forbidden node ids (prototype-pollution-safe)", () => {
   test("node with id prototype fails with forbidden_node_id", () => {
     const def = {
       nodes: [
-        { id: "prototype", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "prototype",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         makeEndNode(),
       ],
       edges: [makeEdge("e1", "prototype", "end-1", "always")],
@@ -701,7 +727,9 @@ describe("VR-15: structural zod validation (missing required fields)", () => {
 
   test("node with unknown kind fails with loop_invalid", () => {
     const def = {
-      nodes: [{ id: "x", kind: "unknown_kind", label: "X", position: { x: 0, y: 0 } }],
+      nodes: [
+        { id: "x", kind: "unknown_kind", label: "X", position: { x: 0, y: 0 } },
+      ],
       edges: [],
     };
     const result = validateLoopDefinition(def);

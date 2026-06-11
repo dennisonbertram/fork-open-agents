@@ -44,7 +44,7 @@ const txUpdateMock = mock((_table: unknown) => ({
   })),
 }));
 
-const txFindFirstMock = mock(async () => (null as unknown));
+const txFindFirstMock = mock(async () => null as unknown);
 
 mock.module("@/lib/db/client", () => ({
   db: {

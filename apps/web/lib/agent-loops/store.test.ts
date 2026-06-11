@@ -173,6 +173,15 @@ function resetMocks() {
   limitMockLeft.mockClear();
 }
 
+// Minimal valid loop definition (start → end) used in tests to pass validation gate
+const VALID_DEFINITION = {
+  nodes: [
+    { id: "s", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    { id: "e", kind: "end", label: "End", position: { x: 100, y: 0 } },
+  ],
+  edges: [{ id: "e1", source: "s", target: "e", when: "always" }],
+};
+
 function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     id: "loop-1",
@@ -181,7 +190,7 @@ function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
     description: null,
     repoOwner: "acme",
     repoName: "widgets",
-    definition: { nodes: [], edges: [] },
+    definition: VALID_DEFINITION,
     status: "draft",
     guardrails: null,
     permissions: {},
@@ -254,15 +263,18 @@ describe("createAgentLoop", () => {
       name: "Test Loop",
       repoOwner: "acme",
       repoName: "widgets",
-      definition: { nodes: [], edges: [] },
+      definition: VALID_DEFINITION,
     });
 
-    expect(result.userId).toBe("user-1");
-    expect(result.name).toBe("Test Loop");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop.userId).toBe("user-1");
+      expect(result.loop.name).toBe("Test Loop");
+    }
     expect(insertMock).toHaveBeenCalledTimes(1);
   });
 
-  test("BT-001b: throws when insert returns no rows", async () => {
+  test("BT-001b: throws when insert returns no rows (DB failure after valid definition)", async () => {
     returningMock.mockImplementationOnce(() => []);
 
     const store = await storePromise;
@@ -271,7 +283,7 @@ describe("createAgentLoop", () => {
         name: "Test Loop",
         repoOwner: "acme",
         repoName: "widgets",
-        definition: { nodes: [], edges: [] },
+        definition: VALID_DEFINITION,
       }),
     ).rejects.toThrow();
   });
@@ -280,7 +292,7 @@ describe("createAgentLoop", () => {
 describe("updateAgentLoop", () => {
   beforeEach(resetMocks);
 
-  test("BT-002: returns null when loop does not exist for userId (ownership check)", async () => {
+  test("BT-002: returns {ok:true,loop:null} when loop does not exist for userId (ownership check)", async () => {
     txFindFirstMock.mockResolvedValueOnce(null);
 
     const store = await storePromise;
@@ -288,7 +300,10 @@ describe("updateAgentLoop", () => {
       name: "New name",
     });
 
-    expect(result).toBeNull();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop).toBeNull();
+    }
   });
 
   test("BT-002b: updates and returns loop when ownership passes", async () => {
@@ -308,8 +323,11 @@ describe("updateAgentLoop", () => {
       name: "New name",
     });
 
-    expect(result).not.toBeNull();
-    expect(result?.name).toBe("New name");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.loop).not.toBeNull();
+      expect(result.loop?.name).toBe("New name");
+    }
   });
 });
 

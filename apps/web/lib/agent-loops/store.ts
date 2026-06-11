@@ -17,6 +17,8 @@ import {
   type NewAgentLoopStepRun,
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "@/lib/background-agents/redaction";
+import type { LoopValidationError } from "./types";
+import { validateLoopDefinition } from "./validation";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -24,6 +26,29 @@ export type AgentLoopRunWithLoop = {
   run: AgentLoopRun;
   loop: AgentLoop;
 };
+
+/**
+ * Result type for createAgentLoop and updateAgentLoop (M1-02 validation gate).
+ *
+ * - { ok: true; loop: AgentLoop } — validation passed and DB write succeeded.
+ * - { ok: false; errors: LoopValidationError[] } — definition is invalid; no DB write occurred.
+ *
+ * The M1-08 API routes translate errors[] into a 422 response with the
+ * structured errors array in the body.
+ */
+export type AgentLoopWriteResult =
+  | { ok: true; loop: AgentLoop }
+  | { ok: false; errors: LoopValidationError[] };
+
+/**
+ * Result type for updateAgentLoop.
+ *
+ * Extends AgentLoopWriteResult with a null case when the loop is not found
+ * (ownership miss or missing record — same as before, returns null).
+ */
+export type AgentLoopUpdateResult =
+  | { ok: true; loop: AgentLoop | null }
+  | { ok: false; errors: LoopValidationError[] };
 
 export type CreateAgentLoopInput = {
   name: string;
@@ -105,7 +130,13 @@ function normalizeOptionalText(value: string | null | undefined) {
 export async function createAgentLoop(
   userId: string,
   input: CreateAgentLoopInput,
-): Promise<AgentLoop> {
+): Promise<AgentLoopWriteResult> {
+  // M1-02: validate the definition before persisting
+  const validation = validateLoopDefinition(input.definition);
+  if (!validation.ok) {
+    return { ok: false, errors: validation.errors };
+  }
+
   const [loop] = await db
     .insert(agentLoops)
     .values({
@@ -126,15 +157,23 @@ export async function createAgentLoop(
     throw new Error("Failed to create agent loop");
   }
 
-  return loop;
+  return { ok: true, loop };
 }
 
 export async function updateAgentLoop(
   userId: string,
   loopId: string,
   input: UpdateAgentLoopInput,
-): Promise<AgentLoop | null> {
-  return db.transaction(async (tx) => {
+): Promise<AgentLoopUpdateResult> {
+  // M1-02: validate the definition if it is being updated
+  if (input.definition !== undefined) {
+    const validation = validateLoopDefinition(input.definition);
+    if (!validation.ok) {
+      return { ok: false, errors: validation.errors };
+    }
+  }
+
+  const txResult = await db.transaction(async (tx) => {
     const existing = await tx.query.agentLoops.findFirst({
       where: and(eq(agentLoops.id, loopId), eq(agentLoops.userId, userId)),
     });
@@ -166,6 +205,8 @@ export async function updateAgentLoop(
 
     return updated ?? null;
   });
+
+  return { ok: true, loop: txResult };
 }
 
 export async function deleteAgentLoop(
