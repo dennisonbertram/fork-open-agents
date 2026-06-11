@@ -24,9 +24,13 @@ const returningMock = mock(() => {
   return first ? [first] : [];
 });
 
+const onConflictDoNothingMock = mock((_opts?: unknown) => ({
+  returning: returningMock,
+}));
+
 const valuesMock = mock((vals: unknown) => {
   insertedValues = Array.isArray(vals) ? vals : [vals];
-  return { returning: returningMock };
+  return { returning: returningMock, onConflictDoNothing: onConflictDoNothingMock };
 });
 
 const insertMock = mock((_table: unknown) => ({ values: valuesMock }));

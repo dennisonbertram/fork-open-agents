@@ -29,9 +29,13 @@ const returningMock = mock(() => {
   return first ? [first] : [];
 });
 
+const onConflictDoNothingMock = mock((_opts?: unknown) => ({
+  returning: returningMock,
+}));
+
 const valuesMock = mock((vals: unknown) => {
   insertedValues = Array.isArray(vals) ? vals : [vals];
-  return { returning: returningMock };
+  return { returning: returningMock, onConflictDoNothing: onConflictDoNothingMock };
 });
 
 const insertMock = mock((_table: unknown) => ({
@@ -160,6 +164,7 @@ function resetMocks() {
   findFirstMock.mockClear();
   returningMock.mockClear();
   valuesMock.mockClear();
+  onConflictDoNothingMock.mockClear();
   leftJoinMock.mockClear();
   whereMockLeft.mockClear();
   limitMockLeft.mockClear();
@@ -380,8 +385,11 @@ describe("getOwnedAgentLoop", () => {
 describe("createAgentLoopRun", () => {
   beforeEach(resetMocks);
 
-  test("BT-006: inserts a run with the correct loopId and userId", async () => {
+  test("BT-006: inserts a run with the correct loopId and userId, returns {run, created:true}", async () => {
+    const loop = makeLoop();
     const run = makeLoopRun();
+    // First findFirst call is the ownership check (returns owned loop)
+    findFirstMock.mockResolvedValueOnce(loop);
     returningMock.mockImplementationOnce(() => [run]);
 
     const store = await storePromise;
@@ -393,13 +401,62 @@ describe("createAgentLoopRun", () => {
       idempotencyKey: "idem-1",
     });
 
-    expect(result.loopId).toBe("loop-1");
-    expect(result.userId).toBe("user-1");
+    expect(result.run.loopId).toBe("loop-1");
+    expect(result.run.userId).toBe("user-1");
+    expect(result.created).toBe(true);
     expect(insertMock).toHaveBeenCalledTimes(1);
   });
 
-  test("BT-006b: throws when insert returns no rows", async () => {
+  test("BT-006b: returns null when loop is not owned by userId (cross-tenant rejection)", async () => {
+    // Ownership check returns null — loop belongs to another user
+    findFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-owned-by-other",
+      userId: "attacker-user",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "idem-attack",
+    });
+
+    expect(result).toBeNull();
+    // Must NOT have attempted to insert
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  test("BT-006c: returns {run, created:false} when idempotencyKey already exists (duplicate suppressed)", async () => {
+    const loop = makeLoop();
+    const existingRun = makeLoopRun({ idempotencyKey: "idem-dup" });
+    // Ownership check passes
+    findFirstMock.mockResolvedValueOnce(loop);
+    // onConflictDoNothing returns empty (conflict suppressed)
     returningMock.mockImplementationOnce(() => []);
+    // Fetch of existing run by idempotency key
+    findFirstMock.mockResolvedValueOnce(existingRun);
+
+    const store = await storePromise;
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-1",
+      userId: "user-1",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "idem-dup",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.created).toBe(false);
+    expect(result?.run.idempotencyKey).toBe("idem-dup");
+  });
+
+  test("BT-006d: throws when insert returns nothing AND no existing run found (corrupted state)", async () => {
+    const loop = makeLoop();
+    // Ownership check passes
+    findFirstMock.mockResolvedValueOnce(loop);
+    // onConflictDoNothing returns empty
+    returningMock.mockImplementationOnce(() => []);
+    // No existing run found either
+    findFirstMock.mockResolvedValueOnce(null);
 
     const store = await storePromise;
     await expect(
@@ -408,7 +465,7 @@ describe("createAgentLoopRun", () => {
         userId: "user-1",
         definitionSnapshot: { nodes: [], edges: [] },
         source: "manual",
-        idempotencyKey: "idem-1",
+        idempotencyKey: "idem-corrupt",
       }),
     ).rejects.toThrow();
   });
