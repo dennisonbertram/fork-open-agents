@@ -21,7 +21,10 @@ import type { Condition } from "./types";
 
 export type EvaluateConditionResult =
   | { ok: true; result: boolean }
-  | { ok: false; errorKind: "condition_path_missing" | "condition_type_mismatch" };
+  | {
+      ok: false;
+      errorKind: "condition_path_missing" | "condition_type_mismatch";
+    };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

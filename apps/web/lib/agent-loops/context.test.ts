@@ -112,7 +112,9 @@ describe("mergeStepOutput — CT-06 after truncation is under cap", () => {
     ctx = mergeStepOutput(ctx, "node-A", { data: largeValue }).context;
     ctx = mergeStepOutput(ctx, "node-B", { data: largeValue }).context;
     const result = mergeStepOutput(ctx, "node-C", { data: largeValue });
-    const serializedSize = new TextEncoder().encode(JSON.stringify(result.context)).length;
+    const serializedSize = new TextEncoder().encode(
+      JSON.stringify(result.context),
+    ).length;
     expect(serializedSize).toBeLessThan(CONTEXT_CAP_BYTES);
   });
 });

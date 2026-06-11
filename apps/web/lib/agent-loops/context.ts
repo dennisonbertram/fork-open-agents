@@ -62,7 +62,10 @@ export function mergeStepOutput(
       withoutCurrent[k] = v;
     }
   }
-  let candidate: Record<string, unknown> = { ...withoutCurrent, [nodeId]: output };
+  let candidate: Record<string, unknown> = {
+    ...withoutCurrent,
+    [nodeId]: output,
+  };
 
   if (byteSize(candidate) <= CONTEXT_CAP_BYTES) {
     return { context: candidate, truncated: false };
@@ -118,7 +121,7 @@ export function lookupContextPath(
       return { found: false };
     }
     const obj = current as Record<string, unknown>;
-    if (!Object.prototype.hasOwnProperty.call(obj, seg)) {
+    if (!Object.hasOwn(obj, seg)) {
       return { found: false };
     }
     current = obj[seg];

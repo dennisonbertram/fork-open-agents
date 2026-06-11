@@ -35,8 +35,18 @@ describe("regression R-01: cycle loop-back edge", () => {
   test("failure outcome on a step with a loop-back failure edge returns the loop-back target", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "step-1", kind: "agent_step", label: "Step", position: { x: 100, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "End", position: { x: 200, y: 0 } },
       ],
       edges: [
@@ -58,10 +68,25 @@ describe("regression R-02: direct match wins over always", () => {
   test("when a node has both a success edge and an always edge, success outcome picks the success edge", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "step-1", kind: "agent_step", label: "Step", position: { x: 100, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "End", position: { x: 200, y: 0 } },
-        { id: "fallback-1", kind: "end", label: "Fallback", position: { x: 200, y: 100 } },
+        {
+          id: "fallback-1",
+          kind: "end",
+          label: "Fallback",
+          position: { x: 200, y: 100 },
+        },
       ],
       edges: [
         { id: "e1", source: "start-1", target: "step-1", when: "always" },
@@ -166,8 +191,18 @@ describe("regression R-10: always edge on start resolves for any outcome", () =>
   test("start node with only an always edge resolves for success/failure/true/false outcomes", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "step-1", kind: "agent_step", label: "Step", position: { x: 100, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "End", position: { x: 200, y: 0 } },
       ],
       edges: [

@@ -23,7 +23,12 @@ import type { LoopDefinition } from "./types";
 function makeDefinition(overrides?: Partial<LoopDefinition>): LoopDefinition {
   return {
     nodes: [
-      { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "start-1",
+        kind: "start",
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
       {
         id: "step-1",
         kind: "agent_step",
@@ -58,14 +63,24 @@ describe("evaluateEdges — EE-02 failure outcome", () => {
   test("returns the failure-edge target when outcome is failure", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
           label: "Step",
           position: { x: 100, y: 0 },
         },
-        { id: "retry-1", kind: "agent_step", label: "Retry", position: { x: 100, y: 100 } },
+        {
+          id: "retry-1",
+          kind: "agent_step",
+          label: "Retry",
+          position: { x: 100, y: 100 },
+        },
         { id: "end-1", kind: "end", label: "End", position: { x: 200, y: 0 } },
       ],
       edges: [
@@ -87,7 +102,12 @@ describe("evaluateEdges — EE-03 true outcome", () => {
   test("returns the true-edge target when outcome is true", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "cond-1",
           kind: "condition",
@@ -122,7 +142,12 @@ describe("evaluateEdges — EE-04 false outcome", () => {
   test("returns the false-edge target when outcome is false", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "cond-1",
           kind: "condition",
@@ -158,7 +183,12 @@ describe("evaluateEdges — EE-05 always fallback", () => {
     // start node: only has an always edge; outcome is success (no success edge)
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
@@ -184,7 +214,12 @@ describe("evaluateEdges — EE-06 no match → nulls", () => {
   test("returns null nextNodeId and null edgeId when outcome has no match and no always edge", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
@@ -211,7 +246,12 @@ describe("evaluateEdges — EE-07 failed step no failure/always edge", () => {
   test("returns nulls when a step fails with no failure or always edge", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
@@ -251,7 +291,12 @@ describe("evaluateEdges — EE-08 property: result is declared node or null", ()
   test("nextNodeId is always a declared node or null for a cycle graph", () => {
     const cycleDef: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
@@ -283,15 +328,30 @@ describe("evaluateEdges — EE-09 multiple edges, only matching returned", () =>
   test("returns only the success edge when node has success and failure edges", () => {
     const def: LoopDefinition = {
       nodes: [
-        { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "step-1",
           kind: "agent_step",
           label: "Step",
           position: { x: 100, y: 0 },
         },
-        { id: "end-success", kind: "end", label: "Success", position: { x: 200, y: 0 } },
-        { id: "end-fail", kind: "end", label: "Fail", position: { x: 200, y: 100 } },
+        {
+          id: "end-success",
+          kind: "end",
+          label: "Success",
+          position: { x: 200, y: 0 },
+        },
+        {
+          id: "end-fail",
+          kind: "end",
+          label: "Fail",
+          position: { x: 200, y: 100 },
+        },
       ],
       edges: [
         { id: "e1", source: "start-1", target: "step-1", when: "always" },

@@ -42,17 +42,6 @@ import type { Condition } from "./types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function ctx(path: string, value: unknown): Record<string, unknown> {
-  // Supports single-segment paths like "step-1.count" or "check-1.openIssueCount"
-  const parts = path.split(".");
-  if (parts.length === 1) {
-    return { [path]: value };
-  }
-  // Two-segment: top.sub
-  const [top, ...rest] = parts;
-  return { [top]: { [rest.join(".")]: value } };
-}
-
 function cond(path: string, op: Condition["op"], value?: unknown): Condition {
   return value !== undefined ? { path, op, value } : { path, op };
 }
@@ -61,7 +50,9 @@ function cond(path: string, op: Condition["op"], value?: unknown): Condition {
 
 describe("evaluateCondition — CO-01 eq equal", () => {
   test("eq returns ok:true result:true for equal numbers", () => {
-    const result = evaluateCondition(cond("step.count", "eq", 5), { step: { count: 5 } });
+    const result = evaluateCondition(cond("step.count", "eq", 5), {
+      step: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 
@@ -75,7 +66,9 @@ describe("evaluateCondition — CO-01 eq equal", () => {
 
 describe("evaluateCondition — CO-02 eq unequal", () => {
   test("eq returns ok:true result:false for unequal numbers", () => {
-    const result = evaluateCondition(cond("step.count", "eq", 5), { step: { count: 3 } });
+    const result = evaluateCondition(cond("step.count", "eq", 5), {
+      step: { count: 3 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -84,7 +77,9 @@ describe("evaluateCondition — CO-02 eq unequal", () => {
 
 describe("evaluateCondition — CO-03 eq type mismatch", () => {
   test("eq returns condition_type_mismatch when context value is string and condition value is number", () => {
-    const result = evaluateCondition(cond("step.count", "eq", 5), { step: { count: "5" } });
+    const result = evaluateCondition(cond("step.count", "eq", 5), {
+      step: { count: "5" },
+    });
     expect(result).toEqual({ ok: false, errorKind: "condition_type_mismatch" });
   });
 });
@@ -93,14 +88,18 @@ describe("evaluateCondition — CO-03 eq type mismatch", () => {
 
 describe("evaluateCondition — CO-04 neq unequal", () => {
   test("neq returns ok:true result:true when values differ", () => {
-    const result = evaluateCondition(cond("step.count", "neq", 5), { step: { count: 3 } });
+    const result = evaluateCondition(cond("step.count", "neq", 5), {
+      step: { count: 3 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-05 neq equal", () => {
   test("neq returns ok:true result:false when values are equal", () => {
-    const result = evaluateCondition(cond("step.count", "neq", 5), { step: { count: 5 } });
+    const result = evaluateCondition(cond("step.count", "neq", 5), {
+      step: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -118,14 +117,18 @@ describe("evaluateCondition — CO-06 neq type mismatch", () => {
 
 describe("evaluateCondition — CO-07 gt number greater", () => {
   test("gt returns ok:true result:true when context number > condition value", () => {
-    const result = evaluateCondition(cond("check.count", "gt", 0), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "gt", 0), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-08 gt number not greater", () => {
   test("gt returns ok:true result:false when context number <= condition value", () => {
-    const result = evaluateCondition(cond("check.count", "gt", 5), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "gt", 5), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -152,21 +155,27 @@ describe("evaluateCondition — CO-10 gt both strings type mismatch", () => {
 
 describe("evaluateCondition — CO-11 gte equal", () => {
   test("gte returns ok:true result:true when equal", () => {
-    const result = evaluateCondition(cond("check.count", "gte", 5), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "gte", 5), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-12 gte greater", () => {
   test("gte returns ok:true result:true when greater", () => {
-    const result = evaluateCondition(cond("check.count", "gte", 3), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "gte", 3), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-13 gte less", () => {
   test("gte returns ok:true result:false when less", () => {
-    const result = evaluateCondition(cond("check.count", "gte", 10), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "gte", 10), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -184,14 +193,18 @@ describe("evaluateCondition — CO-14 gte non-numbers", () => {
 
 describe("evaluateCondition — CO-15 lt less", () => {
   test("lt returns ok:true result:true when context number < condition value", () => {
-    const result = evaluateCondition(cond("check.count", "lt", 10), { check: { count: 3 } });
+    const result = evaluateCondition(cond("check.count", "lt", 10), {
+      check: { count: 3 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-16 lt not less", () => {
   test("lt returns ok:true result:false when context number >= condition value", () => {
-    const result = evaluateCondition(cond("check.count", "lt", 3), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "lt", 3), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -209,21 +222,27 @@ describe("evaluateCondition — CO-17 lt non-numbers", () => {
 
 describe("evaluateCondition — CO-18 lte equal", () => {
   test("lte returns ok:true result:true when equal", () => {
-    const result = evaluateCondition(cond("check.count", "lte", 5), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "lte", 5), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-19 lte less", () => {
   test("lte returns ok:true result:true when less", () => {
-    const result = evaluateCondition(cond("check.count", "lte", 10), { check: { count: 3 } });
+    const result = evaluateCondition(cond("check.count", "lte", 10), {
+      check: { count: 3 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-20 lte greater", () => {
   test("lte returns ok:true result:false when greater", () => {
-    const result = evaluateCondition(cond("check.count", "lte", 3), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "lte", 3), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -241,7 +260,9 @@ describe("evaluateCondition — CO-21 lte non-numbers", () => {
 
 describe("evaluateCondition — CO-22 exists present", () => {
   test("exists returns ok:true result:true when path is found", () => {
-    const result = evaluateCondition(cond("check.count", "exists"), { check: { count: 5 } });
+    const result = evaluateCondition(cond("check.count", "exists"), {
+      check: { count: 5 },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 });
@@ -266,18 +287,24 @@ describe("evaluateCondition — CO-24 exists null value", () => {
 
 describe("evaluateCondition — CO-25 contains string includes", () => {
   test("contains returns ok:true result:true when string includes substring", () => {
-    const result = evaluateCondition(cond("step.message", "contains", "hello"), {
-      step: { message: "say hello world" },
-    });
+    const result = evaluateCondition(
+      cond("step.message", "contains", "hello"),
+      {
+        step: { message: "say hello world" },
+      },
+    );
     expect(result).toEqual({ ok: true, result: true });
   });
 });
 
 describe("evaluateCondition — CO-26 contains string not included", () => {
   test("contains returns ok:true result:false when string does not include substring", () => {
-    const result = evaluateCondition(cond("step.message", "contains", "goodbye"), {
-      step: { message: "say hello world" },
-    });
+    const result = evaluateCondition(
+      cond("step.message", "contains", "goodbye"),
+      {
+        step: { message: "say hello world" },
+      },
+    );
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -295,9 +322,12 @@ describe("evaluateCondition — CO-27 contains array includes value", () => {
 
 describe("evaluateCondition — CO-28 contains array does not include value", () => {
   test("contains returns ok:true result:false when array does not include the value", () => {
-    const result = evaluateCondition(cond("check.labels", "contains", "critical"), {
-      check: { labels: ["bug", "enhancement"] },
-    });
+    const result = evaluateCondition(
+      cond("check.labels", "contains", "critical"),
+      {
+        check: { labels: ["bug", "enhancement"] },
+      },
+    );
     expect(result).toEqual({ ok: true, result: false });
   });
 });
@@ -327,12 +357,23 @@ describe("evaluateCondition — CO-30 contains object type mismatch", () => {
 // ── CO-31: missing path on any op → condition_path_missing ───────────────────
 
 describe("evaluateCondition — CO-31 missing path (not silent false)", () => {
-  const ops: Array<Condition["op"]> = ["eq", "neq", "gt", "gte", "lt", "lte", "contains"];
+  const ops: Array<Condition["op"]> = [
+    "eq",
+    "neq",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "contains",
+  ];
 
   for (const op of ops) {
     test(`${op} returns condition_path_missing when path is absent from context`, () => {
       const result = evaluateCondition(cond("missing.path", op, 42), {});
-      expect(result).toEqual({ ok: false, errorKind: "condition_path_missing" });
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "condition_path_missing",
+      });
     });
   }
 });
@@ -341,17 +382,23 @@ describe("evaluateCondition — CO-31 missing path (not silent false)", () => {
 
 describe("evaluateCondition — CO-32 eq boolean", () => {
   test("eq returns ok:true result:true for equal boolean values", () => {
-    const result = evaluateCondition(cond("step.done", "eq", true), { step: { done: true } });
+    const result = evaluateCondition(cond("step.done", "eq", true), {
+      step: { done: true },
+    });
     expect(result).toEqual({ ok: true, result: true });
   });
 
   test("eq returns ok:true result:false for unequal boolean values", () => {
-    const result = evaluateCondition(cond("step.done", "eq", true), { step: { done: false } });
+    const result = evaluateCondition(cond("step.done", "eq", true), {
+      step: { done: false },
+    });
     expect(result).toEqual({ ok: true, result: false });
   });
 
   test("eq returns condition_type_mismatch when boolean context vs number condition", () => {
-    const result = evaluateCondition(cond("step.done", "eq", 1), { step: { done: true } });
+    const result = evaluateCondition(cond("step.done", "eq", 1), {
+      step: { done: true },
+    });
     expect(result).toEqual({ ok: false, errorKind: "condition_type_mismatch" });
   });
 });
