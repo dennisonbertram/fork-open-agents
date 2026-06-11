@@ -25,6 +25,8 @@
  *         on the first iteration (making the op useless for "does this exist yet?" guards)
  *   R-12  mergeStepOutput: a single value that alone exceeds 64KB is replaced with a
  *         truncation marker so the persisted context is always ≤ 64KB
+ *   R-13  Only `exists` routes false for missing path — other ops still error on missing path
+ *         (guard: exists fix must not silently change eq/neq/gt/gte/lt/lte/contains behavior)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -247,6 +249,22 @@ describe("regression R-12: single oversized value replaced with truncation marke
     ).length;
     expect(serializedSize).toBeLessThan(64 * 1024);
   });
+});
+
+// ── R-13: Only exists routes false for missing — other ops still error ────────
+
+describe("regression R-13: non-exists ops still return condition_path_missing for absent path", () => {
+  const valueOps = ["eq", "neq", "gt", "gte", "lt", "lte", "contains"] as const;
+
+  for (const op of valueOps) {
+    test(`${op} still returns condition_path_missing when path is absent (fix must not affect non-exists ops)`, () => {
+      const result = evaluateCondition(
+        { path: "context.missing", op, value: 42 },
+        {},
+      );
+      expect(result).toEqual({ ok: false, errorKind: "condition_path_missing" });
+    });
+  }
 });
 
 // ── R-10: start node with only always edge resolves for any outcome ───────────
