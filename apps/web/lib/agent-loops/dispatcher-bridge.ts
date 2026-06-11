@@ -13,8 +13,7 @@
 import "server-only";
 
 import { start } from "workflow/api";
-import type { AgentLoop } from "@/lib/db/schema";
-import type { BackgroundAgentTrigger } from "@/lib/db/schema";
+import type { AgentLoop, BackgroundAgentTrigger } from "@/lib/db/schema";
 import {
   createAgentLoopRun,
   createAgentLoopStepRun,

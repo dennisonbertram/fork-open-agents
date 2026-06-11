@@ -240,6 +240,53 @@ export async function dispatchWebhookErrorEvent(params: {
     };
   }
 
+  // ── Loop-bound webhook.error trigger branch (mirrors dispatchBackgroundTriggerEvent) ──
+  if (row.trigger.loopId) {
+    // Dynamic imports prevent static module-tree loading in test contexts.
+    const [{ getAgentLoopById }, { dispatchLoopRunForTrigger }] =
+      await Promise.all([
+        import("@/lib/agent-loops/store"),
+        import("@/lib/agent-loops/dispatcher-bridge"),
+      ]);
+    const loop = await getAgentLoopById(row.trigger.loopId);
+    if (!loop) {
+      // Orphaned trigger row — skip silently (should not happen due to FK)
+      return {
+        enabled: true,
+        matched: 0,
+        created: 0,
+        duplicates: 0,
+        runIds: [],
+        loopRunIds: [],
+      };
+    }
+    // Build the normalized event using repo from the loop (not the pseudo-agent row)
+    const loopEvent = {
+      ...event,
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
+    };
+    const loopResult = await dispatchLoopRunForTrigger({
+      loop,
+      trigger: row.trigger,
+      event: loopEvent,
+      requestId: params.requestId,
+    });
+    const loopRunIds: string[] = [];
+    if (!loopResult.skipped && loopResult.runId) {
+      loopRunIds.push(loopResult.runId);
+    }
+    return {
+      enabled: true,
+      matched: 1,
+      created: loopRunIds.length,
+      duplicates: loopResult.skipped ? 0 : loopResult.created === false ? 1 : 0,
+      runIds: [],
+      loopRunIds,
+    };
+  }
+
+  // ── Agent-bound webhook.error trigger branch (unchanged) ──────────────────────
   const result = await createRunForTrigger({
     agent: row.agent,
     trigger: row.trigger,

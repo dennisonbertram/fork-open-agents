@@ -457,11 +457,19 @@ describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
 
     // Bridge must be called with the loop and trigger
     expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
-    const bridgeCall = dispatchLoopRunForTrigger.mock.calls[0]?.[0] as {
-      loop: { id: string };
-      trigger: { id: string; loopId: string | null };
-      event: { source: string; kind: string; externalId: string | null | undefined };
-    };
+    const bridgeCall = (
+      dispatchLoopRunForTrigger.mock.calls[0] as unknown as [
+        {
+          loop: { id: string };
+          trigger: { id: string; loopId: string | null };
+          event: {
+            source: string;
+            kind: string;
+            externalId: string | null | undefined;
+          };
+        },
+      ]
+    )[0];
     expect(bridgeCall.trigger.loopId).toBe("loop-webhook-1");
     expect(bridgeCall.event.source).toBe("webhook");
     expect(bridgeCall.event.kind).toBe("webhook.error");
