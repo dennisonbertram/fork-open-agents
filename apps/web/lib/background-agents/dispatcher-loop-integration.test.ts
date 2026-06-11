@@ -52,7 +52,10 @@ mock.module("./store", () => ({
   updateBackgroundAgentRunStatus,
 }));
 
-// ── Loop store mocks ──────────────────────────────────────────────────────────
+// ── Loop store mock (getAgentLoopById only — dispatcher uses this directly) ───
+// The bridge (dispatchLoopRunForTrigger) is mocked entirely above, so the
+// store mock here only needs to cover getAgentLoopById which the dispatcher
+// calls before delegating to the bridge.
 
 let loopForTriggerResult: {
   id: string;
@@ -71,9 +74,15 @@ let loopForTriggerResult: {
 
 const getAgentLoopById = mock(async () => loopForTriggerResult);
 
+// Mock the agent-loops store. dispatcher.ts imports getAgentLoopById directly.
+// Bun isolates mock.module per test file — this does NOT conflict with the
+// bridge test file's mock of the same path.
 mock.module("@/lib/agent-loops/store", () => ({
   getAgentLoopById,
-  createAgentLoopRun: async () => ({ run: { id: "loop-run-1", status: "queued" }, created: true }),
+  createAgentLoopRun: async () => ({
+    run: { id: "loop-run-1", status: "queued" },
+    created: true,
+  }),
   hasActiveRunForLoop: async () => false,
   getOwnedAgentLoop: async () => loopForTriggerResult,
   createAgentLoopStepRun: async () => ({
@@ -99,13 +108,16 @@ const dispatchLoopRunForTrigger = mock(async () => loopDispatchResult);
 
 mock.module("@/lib/agent-loops/dispatcher-bridge", () => ({
   dispatchLoopRunForTrigger,
-  dispatchManualAgentLoopStart: async () => ({ created: true, runId: "loop-run-manual" }),
+  dispatchManualAgentLoopStart: async () => ({
+    created: true,
+    runId: "loop-run-manual",
+  }),
 }));
 
-mock.module("@/lib/agent-loops/config", () => ({
-  isAgentLoopsEnabled: () => true,
-  isAgentLoopRepoAllowed: () => true,
-}));
+// Note: @/lib/agent-loops/config is intentionally NOT mocked here.
+// dispatcher.ts uses the fully-mocked dispatcher-bridge, so config is never
+// evaluated in this test context. Mocking config here would override the
+// bridge test file's dynamic config mock in the same Bun process.
 
 const dispatcherModulePromise = import("./dispatcher");
 
@@ -194,10 +206,17 @@ const activeLoop = {
   status: "active" as const,
   definition: {
     nodes: [
-      { id: "start-node", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "start-node",
+        kind: "start",
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
       { id: "end-node", kind: "end", label: "End", position: { x: 100, y: 0 } },
     ],
-    edges: [{ id: "e1", source: "start-node", target: "end-node", when: "always" }],
+    edges: [
+      { id: "e1", source: "start-node", target: "end-node", when: "always" },
+    ],
   } as Record<string, unknown>,
   guardrails: null,
   permissions: {},
@@ -245,7 +264,10 @@ describe("dispatchScheduledBackgroundAgents — loop trigger branch", () => {
   test("BT-326-12: due loop-bound cron trigger dispatches loop run and advances nextRunAt", async () => {
     // Loop schedule trigger (loopId set, agentId null)
     agentScheduleRows = [
-      { agent: { ...baseAgent, id: "loop-pseudo-agent" }, trigger: loopScheduleTrigger },
+      {
+        agent: { ...baseAgent, id: "loop-pseudo-agent" },
+        trigger: loopScheduleTrigger,
+      },
     ];
     const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
 
@@ -272,7 +294,10 @@ describe("dispatchScheduledBackgroundAgents — loop trigger branch", () => {
   test("BT-326-12b: loop cron + agent cron both dispatch and both advance nextRunAt", async () => {
     agentScheduleRows = [
       { agent: baseAgent, trigger: agentScheduleTrigger },
-      { agent: { ...baseAgent, id: "loop-pseudo-agent" }, trigger: loopScheduleTrigger },
+      {
+        agent: { ...baseAgent, id: "loop-pseudo-agent" },
+        trigger: loopScheduleTrigger,
+      },
     ];
     const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
 
@@ -302,7 +327,10 @@ describe("dispatchBackgroundTriggerEvent — loop trigger branch", () => {
     // listMatchingTriggersForEvent returns a loop-bound trigger
     // The agent field has no id that matches an existing agent, but loopId is set
     matchingAgentRows = [
-      { agent: { ...baseAgent, id: "loop-event-pseudo" }, trigger: loopEventTrigger },
+      {
+        agent: { ...baseAgent, id: "loop-event-pseudo" },
+        trigger: loopEventTrigger,
+      },
     ];
     loopForTriggerResult = { ...activeLoop, id: "loop-pr-1" };
 
@@ -329,7 +357,11 @@ describe("dispatchBackgroundTriggerEvent — loop trigger branch", () => {
 
   // BT-326-13: unchanged agent-trigger behavior gate
   test("BT-326-13: agent-bound event trigger still dispatches via agent path (unchanged)", async () => {
-    const agentEventTrigger = { ...loopEventTrigger, loopId: null, agentId: "agent-loop-int" };
+    const agentEventTrigger = {
+      ...loopEventTrigger,
+      loopId: null,
+      agentId: "agent-loop-int",
+    };
     matchingAgentRows = [{ agent: baseAgent, trigger: agentEventTrigger }];
 
     const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;

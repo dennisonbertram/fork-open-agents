@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -238,6 +238,42 @@ export async function getOwnedAgentLoop(params: {
     ),
   });
   return loop ?? null;
+}
+
+/**
+ * Looks up a loop by its id WITHOUT ownership scoping.
+ * Used by the dispatcher to load a loop-bound trigger's target loop where
+ * the trigger row's userId is authoritative (not the caller's session).
+ */
+export async function getAgentLoopById(
+  loopId: string,
+): Promise<AgentLoop | null> {
+  const loop = await db.query.agentLoops.findFirst({
+    where: eq(agentLoops.id, loopId),
+  });
+  return loop ?? null;
+}
+
+/**
+ * Returns true if the loop has at least one run in queued, running, or paused
+ * status (single-active-run rule enforcement in M1-07 dispatcher bridge).
+ */
+export async function hasActiveRunForLoop(loopId: string): Promise<boolean> {
+  const activeStatuses: AgentLoopRun["status"][] = [
+    "queued",
+    "running",
+    "paused",
+  ];
+  const [row] = await db
+    .select({ total: count() })
+    .from(agentLoopRuns)
+    .where(
+      and(
+        eq(agentLoopRuns.loopId, loopId),
+        inArray(agentLoopRuns.status, activeStatuses),
+      ),
+    );
+  return (row?.total ?? 0) > 0;
 }
 
 // ── agentLoopRuns ─────────────────────────────────────────────────────────────

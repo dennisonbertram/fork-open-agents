@@ -108,20 +108,32 @@ mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopRepoAllowed: (owner: string, repo: string) => {
     if (!allowedRepos) return true;
     const key = `${owner.toLowerCase()}/${repo.toLowerCase()}`;
-    return allowedRepos.split(",").map((s) => s.trim()).includes(key);
+    return allowedRepos
+      .split(",")
+      .map((s) => s.trim())
+      .includes(key);
   },
 }));
 
 // ── Validation mock ───────────────────────────────────────────────────────────
 
-let validationResult: { ok: true; definition: unknown } | { ok: false; errors: unknown[] } = {
+let validationResult:
+  | { ok: true; definition: unknown }
+  | { ok: false; errors: unknown[] } = {
   ok: true,
   definition: {
     nodes: [
-      { id: "start-node", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "start-node",
+        kind: "start",
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
       { id: "end-node", kind: "end", label: "End", position: { x: 100, y: 0 } },
     ],
-    edges: [{ id: "e1", source: "start-node", target: "end-node", when: "always" }],
+    edges: [
+      { id: "e1", source: "start-node", target: "end-node", when: "always" },
+    ],
   },
 };
 
@@ -137,10 +149,17 @@ const bridgeModulePromise = import("./dispatcher-bridge");
 
 const validDefinition = {
   nodes: [
-    { id: "start-node", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    {
+      id: "start-node",
+      kind: "start",
+      label: "Start",
+      position: { x: 0, y: 0 },
+    },
     { id: "end-node", kind: "end", label: "End", position: { x: 100, y: 0 } },
   ],
-  edges: [{ id: "e1", source: "start-node", target: "end-node", when: "always" }],
+  edges: [
+    { id: "e1", source: "start-node", target: "end-node", when: "always" },
+  ],
 };
 
 const activeLoop = {
@@ -371,7 +390,9 @@ describe("dispatchLoopRunForTrigger", () => {
   test("BT-326-07: skips when definition snapshot fails validation", async () => {
     validationResult = {
       ok: false,
-      errors: [{ kind: "loop_invalid", rule: "no_start", message: "No start node" }],
+      errors: [
+        { kind: "loop_invalid", rule: "no_start", message: "No start node" },
+      ],
     };
     const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
 
