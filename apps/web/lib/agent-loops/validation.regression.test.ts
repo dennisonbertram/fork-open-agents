@@ -22,6 +22,9 @@
  *          the node map, so downstream rules would produce misleading results
  *          rather than catching the root cause; the duplicate-id rule must fire
  *          before the nodeMap is relied on by any other rule.
+ *  RT-13  Reverting VR-18 (invalid condition edge): if the rule were removed, a
+ *          condition node could carry an always edge that the runtime evaluator
+ *          never takes, silently dead-routing any definition that relies on it.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -402,6 +405,34 @@ describe("RT-12: duplicate node id rule fires before nodeMap is relied on", () =
         (e) => e.rule === "duplicate_node_id" && e.nodeId === "step-x",
       );
       expect(dupErr).toBeDefined();
+    }
+  });
+});
+
+// ── RT-13: condition node with always edge — dead routing ─────────────────────
+
+describe("RT-13: condition node carrying an always edge is rejected (VR-18)", () => {
+  test("condition node with true+false+always edges fails with invalid_condition_edge naming the always edge id", () => {
+    // Without VR-18, a condition node could carry an always edge. The runtime
+    // edge evaluator (M1-03) only routes condition outcomes via true/false; the
+    // always edge would be dead routing — never taken — silently swallowing any
+    // logic the author expected to execute unconditionally.
+    const def = {
+      nodes: [startNode(), conditionNode(), endNode()],
+      edges: [
+        edge("e1", "s", "c", "always"),
+        edge("e2", "c", "e", "true"),
+        edge("e3", "c", "e", "false"),
+        edge("e4", "c", "e", "always"), // dead edge; runtime will never traverse it
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find(
+        (e) => e.rule === "invalid_condition_edge" && e.edgeId === "e4",
+      );
+      expect(err).toBeDefined();
     }
   });
 });

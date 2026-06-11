@@ -26,6 +26,7 @@
  *  VR-15  Structural zod validation (missing required fields)
  *  VR-16  Valid minimal graph (start → end) passes
  *  VR-17  No duplicate node ids within a definition
+ *  VR-18  Condition nodes may only have true/false outgoing edges (no success/failure/always)
  */
 
 import { describe, expect, test } from "bun:test";
@@ -802,6 +803,61 @@ describe("VR-17: no duplicate node ids", () => {
 
   test("definition where all node ids are unique passes the duplicate-id check", () => {
     const result = validateLoopDefinition(minimalValidDefinition());
+    expect(result.ok).toBe(true);
+  });
+});
+
+// ── VR-18: Condition nodes may only have true/false outgoing edges ────────────
+
+describe("VR-18: condition nodes may not carry non-branch outgoing edges", () => {
+  test("condition node with true+false+success edges fails with invalid_condition_edge naming the success edge id", () => {
+    const def = {
+      nodes: [makeStartNode(), makeConditionNode(), makeEndNode()],
+      edges: [
+        makeEdge("e1", "start-1", "cond-1", "always"),
+        makeEdge("e2", "cond-1", "end-1", "true"),
+        makeEdge("e3", "cond-1", "end-1", "false"),
+        makeEdge("e4", "cond-1", "end-1", "success"), // invalid on condition node
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.rule === "invalid_condition_edge");
+      expect(err).toBeDefined();
+      expect(err?.edgeId).toBe("e4");
+    }
+  });
+
+  test("condition node with true+false+always edges fails with invalid_condition_edge naming the always edge id", () => {
+    const def = {
+      nodes: [makeStartNode(), makeConditionNode(), makeEndNode()],
+      edges: [
+        makeEdge("e1", "start-1", "cond-1", "always"),
+        makeEdge("e2", "cond-1", "end-1", "true"),
+        makeEdge("e3", "cond-1", "end-1", "false"),
+        makeEdge("e5", "cond-1", "end-1", "always"), // invalid on condition node
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.rule === "invalid_condition_edge");
+      expect(err).toBeDefined();
+      expect(err?.edgeId).toBe("e5");
+    }
+  });
+
+  test("condition node with exactly true and false edges passes", () => {
+    const def = {
+      nodes: [makeStartNode(), makeConditionNode(), makeEndNode()],
+      edges: [
+        makeEdge("e1", "start-1", "cond-1", "always"),
+        makeEdge("e2", "cond-1", "end-1", "true"),
+        makeEdge("e3", "cond-1", "end-1", "false"),
+      ],
+    };
+    const result = validateLoopDefinition(def);
     expect(result.ok).toBe(true);
   });
 });
