@@ -1,5 +1,7 @@
 # Loop Tool — Context Briefing
 
+> **Status: historical context snapshot (pre-decision).** This briefing grounded the planning conversation; the canonical spec is [agent-loops-epic.md](agent-loops-epic.md) and epic [#319](https://github.com/dennisonbertram/fork-open-agents/issues/319). Where they differ, the epic wins — notably: there is **no `loop_back` node kind** (edges targeting earlier nodes form cycles), **`wait`/approval nodes are deferred to v2**, and node/edge definitions live in the **`agentLoops.definition` JSONB** (there is no `agentLoopNodes` table). Do not implement from this document.
+
 This document synthesizes all existing system context needed to design and build a "loop" tool for open-agents. A loop is a user-defined, deterministic sequence of agent-powered steps (e.g. start → check GitHub issues → take issue → implement → review → PR → push to prod → confirm → repeat). The loop runs in the background and has a watchdog agent that monitors and repairs it.
 
 ---
