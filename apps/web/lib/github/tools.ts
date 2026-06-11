@@ -89,37 +89,56 @@ Provide state="open" (default), "closed", or "all".`,
     inputSchema: listIssuesInputSchema,
     execute: async ({ state, perPage }): Promise<IssueOutput> => {
       try {
-        const issues = await withScopedInstallationOctokit({
+        // Build the search query. The GitHub Search API with `is:issue`
+        // excludes pull requests server-side, which avoids the under-delivery
+        // bug that occurs when `listForRepo` returns PRs mixed with issues and
+        // client-side filtering reduces the result below the requested perPage.
+        //
+        // State mapping: listForRepo uses state="open"|"closed"|"all", but the
+        // search API uses `is:open` / `is:closed` qualifiers. For "all", omit
+        // the state qualifier to return both open and closed issues.
+        //
+        // NOTE: when using GitHub Apps with user access tokens the search API
+        // requires the `is:issue` or `is:pull-request` qualifier or it returns
+        // a 422 — see GitHub docs. We always include `is:issue`.
+        //
+        // Rate-limit caveat: the Search API has a lower rate limit (30 req/min
+        // authenticated) than the REST API. This is acceptable for agent-driven
+        // use: each tool call is one search request.
+        const stateQualifier =
+          state === "open"
+            ? " is:open"
+            : state === "closed"
+              ? " is:closed"
+              : "";
+        const q = `repo:${ctx.owner}/${ctx.repo} is:issue${stateQualifier}`;
+
+        const items = await withScopedInstallationOctokit({
           installationId: ctx.installationId,
           repositoryId: ctx.repositoryId,
           permissions: { issues: "read" },
           operation: async (octokit) => {
-            const response = await octokit.rest.issues.listForRepo({
-              owner: ctx.owner,
-              repo: ctx.repo,
-              state,
+            const response = await octokit.rest.search.issuesAndPullRequests({
+              q,
               sort: "updated",
-              direction: "desc",
+              order: "desc",
               per_page: perPage,
             });
-            // GitHub issues API returns PRs too — filter them out
-            return response.data.filter((item) => !item.pull_request);
+            return response.data.items;
           },
         });
 
         return {
           ok: true,
-          issues: issues.map((issue) => ({
-            number: issue.number,
-            title: issue.title,
-            state: issue.state,
-            labels: issue.labels
-              .map((label) =>
-                typeof label === "string" ? label : (label.name ?? ""),
-              )
+          issues: items.map((item) => ({
+            number: item.number,
+            title: item.title,
+            state: item.state,
+            labels: item.labels
+              .map((label) => label.name ?? "")
               .filter(Boolean),
-            updatedAt: issue.updated_at,
-            url: issue.html_url,
+            updatedAt: item.updated_at,
+            url: item.html_url,
           })),
         };
       } catch (error) {
