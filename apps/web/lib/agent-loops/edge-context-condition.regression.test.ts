@@ -270,6 +270,73 @@ describe("regression R-13: non-exists ops still return condition_path_missing fo
   }
 });
 
+// ── R-14: dangling-target guard prevents phantom-node routing ─────────────────
+//
+// If the declared-node guard in evaluateEdges were removed, a stale snapshot
+// edge could route to a phantom node and chain (M1-06) would create a step for
+// a non-existent node. This test would catch that regression for both the
+// direct-match path and the always-fallback path.
+
+describe("regression R-14: dangling-target guard prevents phantom-node routing", () => {
+  test("direct-match edge to phantom node returns nulls, not the phantom id", () => {
+    const def: LoopDefinition = {
+      nodes: [
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+          instructions: "Do work",
+        },
+      ],
+      edges: [
+        { id: "e1", source: "start-1", target: "step-1", when: "always" },
+        // phantom-node is not in the nodes array — simulates a stale JSONB snapshot
+        { id: "e2", source: "step-1", target: "phantom-node", when: "success" },
+      ],
+    };
+    const result = evaluateEdges(def, "step-1", "success");
+    // Must fail closed — the phantom id must never be returned
+    expect(result.nextNodeId).toBeNull();
+    expect(result.edgeId).toBeNull();
+  });
+
+  test("always-fallback edge to phantom node returns nulls, not the phantom id", () => {
+    const def: LoopDefinition = {
+      nodes: [
+        {
+          id: "start-1",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "Step",
+          position: { x: 100, y: 0 },
+          instructions: "Do work",
+        },
+      ],
+      edges: [
+        { id: "e1", source: "start-1", target: "step-1", when: "always" },
+        // ghost-node is not in the nodes array — simulates a stale JSONB snapshot
+        { id: "e2", source: "step-1", target: "ghost-node", when: "always" },
+      ],
+    };
+    // outcome "failure" → no direct failure edge → falls back to always → target is phantom → nulls
+    const result = evaluateEdges(def, "step-1", "failure");
+    expect(result.nextNodeId).toBeNull();
+    expect(result.edgeId).toBeNull();
+  });
+});
+
 // ── R-10: start node with only always edge resolves for any outcome ───────────
 
 describe("regression R-10: always edge on start resolves for any outcome", () => {
