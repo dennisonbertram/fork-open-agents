@@ -351,9 +351,11 @@ describe("dispatchBackgroundTriggerEvent — loop trigger branch", () => {
     });
 
     expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
-    const bridgeCall = dispatchLoopRunForTrigger.mock.calls[0]?.[0] as {
-      trigger: { loopId: string | null };
-    };
+    const bridgeCall = (
+      dispatchLoopRunForTrigger.mock.calls[0] as unknown as [
+        { trigger: { loopId: string | null } },
+      ]
+    )[0];
     expect(bridgeCall.trigger.loopId).toBe("loop-pr-1");
 
     // Loop run id in result

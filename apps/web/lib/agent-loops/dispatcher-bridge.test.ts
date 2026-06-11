@@ -248,11 +248,11 @@ describe("dispatchLoopRunForTrigger", () => {
 
     // Run was created
     expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
-    const createCall = createAgentLoopRun.mock.calls[0]?.[0] as {
-      idempotencyKey: string;
-      source: string;
-      triggerId: string;
-    };
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { idempotencyKey: string; source: string; triggerId: string },
+      ]
+    )[0];
     expect(createCall.idempotencyKey).toContain("loop-1");
     expect(createCall.idempotencyKey).toContain("trigger-1");
     expect(createCall.source).toBe("github");
@@ -260,10 +260,11 @@ describe("dispatchLoopRunForTrigger", () => {
 
     // Step was created
     expect(createAgentLoopStepRun).toHaveBeenCalledTimes(1);
-    const stepCall = createAgentLoopStepRun.mock.calls[0]?.[0] as {
-      nodeId: string;
-      nodeKind: string;
-    };
+    const stepCall = (
+      createAgentLoopStepRun.mock.calls[0] as unknown as [
+        { nodeId: string; nodeKind: string },
+      ]
+    )[0];
     expect(stepCall.nodeId).toBe("start-node");
     expect(stepCall.nodeKind).toBe("start");
 
@@ -274,9 +275,9 @@ describe("dispatchLoopRunForTrigger", () => {
     ]);
 
     // Events recorded
-    const eventNames = recordAgentLoopEvent.mock.calls.map(
-      (c) => (c[0] as { eventName: string }).eventName,
-    );
+    const eventNames = (
+      recordAgentLoopEvent.mock.calls as unknown as { eventName: string }[][]
+    ).map((c) => c[0]!.eventName);
     expect(eventNames).toContain("agent-loop.trigger.received");
     expect(eventNames).toContain("agent-loop.run.created");
     expect(eventNames).toContain("agent-loop.chain.dispatched");
@@ -327,9 +328,9 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(start).not.toHaveBeenCalled();
 
     // Skip event recorded
-    const eventNames = recordAgentLoopEvent.mock.calls.map(
-      (c) => (c[0] as { eventName: string }).eventName,
-    );
+    const eventNames = (
+      recordAgentLoopEvent.mock.calls as unknown as { eventName: string }[][]
+    ).map((c) => c[0]!.eventName);
     expect(eventNames).toContain("agent-loop.trigger.skipped_active_run");
   });
 
@@ -429,9 +430,9 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(updateAgentLoopRunStatus).not.toHaveBeenCalled();
 
     // dispatch_failed event recorded
-    const eventNames = recordAgentLoopEvent.mock.calls.map(
-      (c) => (c[0] as { eventName: string }).eventName,
-    );
+    const eventNames = (
+      recordAgentLoopEvent.mock.calls as unknown as { eventName: string }[][]
+    ).map((c) => c[0]!.eventName);
     expect(eventNames).toContain("agent-loop.chain.dispatch_failed");
     expect(eventNames).not.toContain("agent-loop.chain.dispatched");
   });
@@ -455,10 +456,11 @@ describe("dispatchManualAgentLoopStart", () => {
     expect(result.created).toBe(true);
     expect(result.runId).toBe("loop-run-1");
 
-    const createCall = createAgentLoopRun.mock.calls[0]?.[0] as {
-      source: string;
-      idempotencyKey: string;
-    };
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { source: string; idempotencyKey: string },
+      ]
+    )[0];
     expect(createCall.source).toBe("manual");
     expect(createCall.idempotencyKey).toContain("manual");
 
