@@ -558,7 +558,9 @@ function getSetupErrorMessage(error: unknown): string {
   if (
     message.includes("Invalid or revoked") ||
     message.includes("Unauthorized") ||
-    message.includes(" 401") ||
+    message.includes("HTTP 401") ||
+    message.includes("status 401") ||
+    message.includes("401 Unauthorized") ||
     PROVIDER_AUTH_KEY_RE.test(message)
   ) {
     return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
@@ -571,7 +573,7 @@ function getSetupErrorMessage(error: unknown): string {
     message.includes("HTTP 402") ||
     message.includes("status 402") ||
     message.includes("Payment Required") ||
-    /\b402\b/.test(message) ||
+    message.includes("402 Payment") ||
     PROVIDER_BILLING_RE.test(message)
   ) {
     return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";

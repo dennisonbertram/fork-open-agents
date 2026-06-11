@@ -140,7 +140,7 @@ export async function hasUncommittedChanges(
 export async function stageAll(sandbox: Sandbox): Promise<void> {
   const result = await exec(sandbox, "git add -A", 10000);
   if (!result.success) {
-    throw new Error(`Failed to stage changes: ${result.stdout}`);
+    throw new Error(`Failed to stage changes: ${commandOutput(result)}`);
   }
 }
 

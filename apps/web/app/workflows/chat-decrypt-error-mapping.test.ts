@@ -609,4 +609,115 @@ describe("provider auth / credit error → actionable user message mapping", () 
     expect(delta.toLowerCase()).not.toContain("billing");
     expect(delta.toLowerCase()).not.toContain("credits");
   });
+
+  test("'finished in 401ms' duration string does NOT route to auth-key message", async () => {
+    // A timing log containing 401 must NOT produce auth-key guidance
+    const timingError = new Error(
+      "No output generated from model\n\nProvider error: request finished in 401ms",
+    );
+    inferenceProfileError = timingError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check their API key — 401ms is a duration, not an HTTP status
+    expect(delta.toLowerCase()).not.toContain("api key");
+  });
+
+  test("'ran 4020 steps' string does NOT route to billing message", async () => {
+    // A message containing 4020 must NOT produce billing guidance
+    const stepsError = new Error(
+      "No output generated from model\n\nProvider error: agent ran 4020 steps",
+    );
+    inferenceProfileError = stepsError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check billing/credits — 4020 is a step count, not an HTTP status
+    expect(delta.toLowerCase()).not.toContain("billing");
+    expect(delta.toLowerCase()).not.toContain("credits");
+  });
+
+  test("'HTTP 401' surfaces auth-key message", async () => {
+    const http401Error = new Error(
+      "No output generated from model\n\nProvider error: HTTP 401 Unauthorized",
+    );
+    inferenceProfileError = http401Error;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about API key
+    expect(delta.toLowerCase()).toContain("api key");
+  });
+
+  test("'401 Unauthorized' surfaces auth-key message", async () => {
+    const status401Error = new Error(
+      "No output generated from model\n\nProvider error: 401 Unauthorized",
+    );
+    inferenceProfileError = status401Error;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about API key
+    expect(delta.toLowerCase()).toContain("api key");
+  });
 });

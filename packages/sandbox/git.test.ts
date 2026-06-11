@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ExecResult, Sandbox } from "./interface";
-import { syncToRemotePreservingChanges } from "./git";
+import { stageAll, syncToRemotePreservingChanges } from "./git";
 
 const fetchFeatureCommand =
   "GIT_TERMINAL_PROMPT=0 git fetch --force origin feature:refs/remotes/origin/feature";
@@ -119,5 +119,23 @@ describe("syncToRemotePreservingChanges", () => {
       "git clean -fd",
       "git stash pop",
     ]);
+  });
+});
+
+describe("stageAll", () => {
+  test("throws with stderr when git add -A fails and error is in stderr", async () => {
+    const sandbox = createSandbox([
+      result({
+        success: false,
+        exitCode: 128,
+        stdout: "",
+        stderr:
+          "fatal: not a git repository (or any of the parent directories)\n",
+      }),
+    ]);
+
+    await expect(stageAll(sandbox)).rejects.toThrow(
+      "Failed to stage changes: fatal: not a git repository",
+    );
   });
 });
