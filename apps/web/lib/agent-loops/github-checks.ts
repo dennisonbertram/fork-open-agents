@@ -98,7 +98,13 @@ export async function checkListIssues(params: {
   });
 
   const raw = response.data;
-  const issues = raw.slice(0, MAX_LIST_SIZE).map((issue) => ({
+  // GitHub's issues.listForRepo also returns pull requests (every PR is an
+  // issue in GitHub's model).  Filter them out before applying the cap so
+  // openIssueCount and issues[] contain only true issues.
+  const trueIssues = raw.filter(
+    (item) => !("pull_request" in item) || item.pull_request == null,
+  );
+  const issues = trueIssues.slice(0, MAX_LIST_SIZE).map((issue) => ({
     number: issue.number,
     title: issue.title,
     labels: (issue.labels ?? []).map((l) =>
@@ -178,6 +184,7 @@ export async function checkDeploymentStatus(params: {
   const deployments = await Promise.all(
     rawDeployments.map(async (dep) => {
       let state = "unknown";
+      let logUrl: string | null = null;
       try {
         const statusResponse = await octokit.rest.repos.listDeploymentStatuses({
           owner: params.owner,
@@ -185,7 +192,17 @@ export async function checkDeploymentStatus(params: {
           deployment_id: dep.id,
           per_page: 1,
         });
-        state = statusResponse.data[0]?.state ?? "unknown";
+        const latestStatus = statusResponse.data[0];
+        state = latestStatus?.state ?? "unknown";
+        // Prefer log_url, fall back to target_url, else null.
+        const rawLogUrl = latestStatus?.log_url;
+        const rawTargetUrl = latestStatus?.target_url;
+        logUrl =
+          typeof rawLogUrl === "string" && rawLogUrl.length > 0
+            ? rawLogUrl
+            : typeof rawTargetUrl === "string" && rawTargetUrl.length > 0
+              ? rawTargetUrl
+              : null;
       } catch {
         // If we can't get deployment statuses, report as unknown
       }
@@ -193,7 +210,7 @@ export async function checkDeploymentStatus(params: {
         id: dep.id,
         state,
         createdAt: dep.created_at,
-        logUrl: null as string | null,
+        logUrl,
       };
     }),
   );

@@ -64,6 +64,7 @@ type RunStatusInput = {
 let recordedEvents: EventInput[] = [];
 let recordedStepUpdates: StepUpdateInput[] = [];
 let recordedRunUpdates: RunStatusInput[] = [];
+let recordedContextUpdates: { runId: string; context: Record<string, unknown> }[] = [];
 
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
@@ -99,11 +100,19 @@ const updateAgentLoopRunStatusMock = mock(
   },
 );
 
+const updateAgentLoopRunContextMock = mock(
+  async (input: { runId: string; context: Record<string, unknown> }) => {
+    recordedContextUpdates.push(input);
+    return { ...currentLoopRun, context: input.context };
+  },
+);
+
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  updateAgentLoopRunContext: updateAgentLoopRunContextMock,
 }));
 
 // ── GitHub access + app mocks ─────────────────────────────────────────────────
@@ -297,6 +306,7 @@ function resetMocks() {
   recordedEvents = [];
   recordedStepUpdates = [];
   recordedRunUpdates = [];
+  recordedContextUpdates = [];
   githubApiCallCount = 0;
 
   verifyRepoAccessResult = {
@@ -320,6 +330,7 @@ function resetMocks() {
   updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   updateAgentLoopRunStatusMock.mockClear();
+  updateAgentLoopRunContextMock.mockClear();
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
@@ -399,17 +410,17 @@ describe("github_check — list_issues", () => {
     expect(issues[0]).toHaveProperty("url");
   });
 
-  test("BT-001: output is merged into run context", async () => {
+  test("BT-001: output is merged into run context via updateAgentLoopRunContext", async () => {
     const { executeAgentLoopStep } = await executorPromise;
     await executeAgentLoopStep({
       stepRunId: "step-run-1",
       workflowRunId: "wf-run-1",
     });
 
-    // Run context must be updated with the check output under the node id
-    const contextUpdate = recordedRunUpdates.find(
-      (u) => u.context !== undefined,
-    );
+    // Run context must be updated via the dedicated context function (not via
+    // updateAgentLoopRunStatus with status="running" which would reset startedAt)
+    expect(recordedContextUpdates.length).toBeGreaterThan(0);
+    const contextUpdate = recordedContextUpdates[0];
     expect(contextUpdate).toBeDefined();
     const ctx = contextUpdate?.context as Record<string, unknown>;
     expect(ctx["check-node-1"]).toBeDefined();

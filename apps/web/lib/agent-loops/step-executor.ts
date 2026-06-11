@@ -43,6 +43,7 @@ import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunStatus,
+  updateAgentLoopRunContext,
 } from "./store";
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -548,15 +549,17 @@ export async function executeAgentLoopStep(params: {
     await revokeInstallationToken(token).catch(() => undefined);
 
     // 5f. Merge output into run context
+    // Use updateAgentLoopRunContext (not updateAgentLoopRunStatus) so that the
+    // run's startedAt is never disturbed by the repeated context-merge writes
+    // that happen after each successful github_check.
     const mergeResult = mergeStepOutput(
       loopRun.context ?? {},
       node.id,
       checkOutput,
     );
 
-    await updateAgentLoopRunStatus({
+    await updateAgentLoopRunContext({
       runId: loopRunId,
-      status: "running",
       context: mergeResult.context,
     });
 

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -349,6 +349,14 @@ export async function updateAgentLoopRunStatus(params: {
   ]);
   const now = new Date();
 
+  // Transitioning INTO running: only set startedAt when it is currently null
+  // (prevents repeated "running" context-merge calls from resetting the timestamp
+  // and corrupting duration accounting / the M1-06 wall-clock guardrail).
+  const startedAtClause =
+    params.status === "running"
+      ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})` }
+      : {};
+
   const [run] = await db
     .update(agentLoopRuns)
     .set({
@@ -375,8 +383,31 @@ export async function updateAgentLoopRunStatus(params: {
         ? { stepCount: params.stepCount }
         : {}),
       ...(params.context !== undefined ? { context: params.context } : {}),
-      ...(params.status === "running" ? { startedAt: now } : {}),
+      ...startedAtClause,
       ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.runId))
+    .returning();
+
+  return run ?? null;
+}
+
+/**
+ * Updates only the run context (and updatedAt).  Used by the step executor's
+ * context-merge path after a successful github_check so that the run's
+ * startedAt timestamp is never disturbed by a repeated "running" status write.
+ */
+export async function updateAgentLoopRunContext(params: {
+  runId: string;
+  context: Record<string, unknown>;
+}): Promise<AgentLoopRun | null> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      context: params.context,
       updatedAt: now,
     })
     .where(eq(agentLoopRuns.id, params.runId))

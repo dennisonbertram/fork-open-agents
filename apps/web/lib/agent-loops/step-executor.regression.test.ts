@@ -58,9 +58,15 @@ type RunStatusInput = {
   context?: Record<string, unknown>;
 };
 
+type RunContextInput = {
+  runId: string;
+  context: Record<string, unknown>;
+};
+
 let recordedEvents: EventInput[] = [];
 let recordedStepUpdates: StepUpdateInput[] = [];
 let recordedRunUpdates: RunStatusInput[] = [];
+let recordedContextUpdates: RunContextInput[] = [];
 
 let currentStepRun: AgentLoopStepRun;
 let currentLoopRun: AgentLoopRun;
@@ -90,11 +96,17 @@ const updateAgentLoopRunStatusMock = mock(async (input: RunStatusInput) => {
   };
 });
 
+const updateAgentLoopRunContextMock = mock(async (input: RunContextInput) => {
+  recordedContextUpdates.push(input);
+  return { ...currentLoopRun, context: input.context };
+});
+
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  updateAgentLoopRunContext: updateAgentLoopRunContextMock,
 }));
 
 // Access + app mocks
@@ -255,6 +267,7 @@ function resetMocks() {
   recordedEvents = [];
   recordedStepUpdates = [];
   recordedRunUpdates = [];
+  recordedContextUpdates = [];
   githubApiCallCount = 0;
   issueListThrows = null;
   issueListResult = [];
@@ -268,6 +281,7 @@ function resetMocks() {
   updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   updateAgentLoopRunStatusMock.mockClear();
+  updateAgentLoopRunContextMock.mockClear();
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
@@ -351,7 +365,7 @@ describe("REG-001: *From path missing halts before API call", () => {
 // ── REG-002: context is persisted after github_check success ──────────────────
 
 describe("REG-002: run context updated after github_check", () => {
-  test("list_issues success: updateAgentLoopRunStatus called with new context", async () => {
+  test("list_issues success: updateAgentLoopRunContext called with new context", async () => {
     resetMocks();
     issueListResult = [
       {
@@ -386,7 +400,9 @@ describe("REG-002: run context updated after github_check", () => {
       workflowRunId: "wf-reg",
     });
 
-    const ctxUpdate = recordedRunUpdates.find((u) => u.context !== undefined);
+    // Context must be persisted via the dedicated updateAgentLoopRunContext function
+    expect(recordedContextUpdates.length).toBeGreaterThan(0);
+    const ctxUpdate = recordedContextUpdates[0];
     expect(ctxUpdate).toBeDefined();
 
     // The context must contain the check node's output

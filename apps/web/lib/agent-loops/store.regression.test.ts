@@ -18,6 +18,7 @@ mock.module("server-only", () => ({}));
 // ── DB mock ───────────────────────────────────────────────────────────────────
 let insertedValues: unknown[] = [];
 let queryResult: unknown[] = [];
+const updateSetCapture: unknown[] = [];
 
 const returningMock = mock(() => {
   const first = insertedValues[0];
@@ -37,14 +38,18 @@ const valuesMock = mock((vals: unknown) => {
 });
 
 const insertMock = mock((_table: unknown) => ({ values: valuesMock }));
-const updateMock = mock((_table: unknown) => ({
-  set: mock((setVals: unknown) => ({
+const updateSetMock = mock((setVals: unknown) => {
+  updateSetCapture.push(setVals);
+  return {
     where: mock(() => ({
       returning: mock(() => [
         { ...(insertedValues[0] as object), ...(setVals as object) },
       ]),
     })),
-  })),
+  };
+});
+const updateMock = mock((_table: unknown) => ({
+  set: updateSetMock,
 }));
 const deleteMock = mock((_table: unknown) => ({
   where: mock(() => ({ returning: mock(() => [{ id: "loop-1" }]) })),
@@ -111,8 +116,10 @@ const storePromise = import("./store");
 function resetMocks() {
   insertedValues = [];
   queryResult = [];
+  updateSetCapture.length = 0;
   insertMock.mockClear();
   updateMock.mockClear();
+  updateSetMock.mockClear();
   deleteMock.mockClear();
   findManyMock.mockClear();
   findFirstMock.mockClear();
@@ -472,5 +479,104 @@ describe("REGRESSION-009: createAgentLoopRun duplicate key returns existing run,
     expect(result).not.toBeNull();
     expect(result?.created).toBe(false);
     expect(result?.run.id).toBe("run-1");
+  });
+});
+
+// ── REGRESSION-F4a: updateAgentLoopRunStatus uses COALESCE for startedAt ────
+// Proves that updateAgentLoopRunStatus does not unconditionally set startedAt
+// to a new Date() when status="running".  Each "running" call must use the
+// SQL COALESCE pattern so the timestamp is only ever set when currently NULL.
+describe("REGRESSION-F4a: updateAgentLoopRunStatus uses COALESCE for startedAt (not plain Date)", () => {
+  beforeEach(resetMocks);
+
+  test("first running call: startedAt is a SQL COALESCE expression, not a plain Date", async () => {
+    const store = await storePromise;
+    await store.updateAgentLoopRunStatus({ runId: "run-1", status: "running" });
+
+    const setCall = updateSetCapture[0] as Record<string, unknown> | undefined;
+    expect(setCall).toBeDefined();
+    expect(setCall?.startedAt).toBeDefined();
+    // COALESCE returns a SQL expression object with a toQuery method
+    expect(setCall?.startedAt).not.toBeInstanceOf(Date);
+    const startedAt = setCall?.startedAt as Record<string, unknown>;
+    expect(typeof startedAt?.toQuery).toBe("function");
+  });
+
+  test("second running call: startedAt is still a SQL COALESCE expression (never reset)", async () => {
+    const store = await storePromise;
+    await store.updateAgentLoopRunStatus({ runId: "run-1", status: "running" });
+    resetMocks();
+    await store.updateAgentLoopRunStatus({ runId: "run-1", status: "running" });
+
+    const setCall = updateSetCapture[0] as Record<string, unknown> | undefined;
+    expect(setCall?.startedAt).toBeDefined();
+    expect(setCall?.startedAt).not.toBeInstanceOf(Date);
+    const startedAt = setCall?.startedAt as Record<string, unknown>;
+    expect(typeof startedAt?.toQuery).toBe("function");
+  });
+
+  test("completed status: startedAt is absent (only finishedAt is set)", async () => {
+    const store = await storePromise;
+    await store.updateAgentLoopRunStatus({ runId: "run-1", status: "completed" });
+
+    const setCall = updateSetCapture[0] as Record<string, unknown> | undefined;
+    expect(setCall).toBeDefined();
+    // No startedAt mutation on completion
+    expect(setCall?.startedAt).toBeUndefined();
+    // finishedAt must be set for terminal status
+    expect(setCall?.finishedAt).toBeInstanceOf(Date);
+  });
+});
+
+// ── REGRESSION-F4b: updateAgentLoopRunContext is exported and updates only context ──
+// Catches regression if the dedicated context-merge function is removed or if it
+// accidentally sets startedAt or status.
+describe("REGRESSION-F4b: updateAgentLoopRunContext updates context only", () => {
+  beforeEach(resetMocks);
+
+  test("function is exported from the store", async () => {
+    const store = await storePromise;
+    expect(typeof store.updateAgentLoopRunContext).toBe("function");
+  });
+
+  test("set payload includes context + updatedAt but NOT status or startedAt", async () => {
+    const store = await storePromise;
+    const ctx = { "node-1": { openIssueCount: 5 } };
+
+    await store.updateAgentLoopRunContext({ runId: "run-1", context: ctx });
+
+    expect(updateMock.mock.calls.length).toBe(1);
+    const setCall = updateSetCapture[0] as Record<string, unknown> | undefined;
+    expect(setCall).toBeDefined();
+    expect(setCall?.context).toEqual(ctx);
+    expect(setCall?.updatedAt).toBeInstanceOf(Date);
+    expect(setCall?.status).toBeUndefined();
+    expect(setCall?.startedAt).toBeUndefined();
+    expect(setCall?.finishedAt).toBeUndefined();
+  });
+});
+
+// ── REGRESSION-F4c: github_check context-merge never resets startedAt ────────
+// This regression catches the scenario where the executor switches back to
+// updateAgentLoopRunStatus(status:"running") for context merges instead of the
+// dedicated updateAgentLoopRunContext. The store-level invariant: calling
+// updateAgentLoopRunContext must never produce a startedAt write.
+describe("REGRESSION-F4c: updateAgentLoopRunContext never produces a startedAt write", () => {
+  beforeEach(resetMocks);
+
+  test("repeated context-merge calls do not set startedAt in any update", async () => {
+    const store = await storePromise;
+    const ctx1 = { "node-a": { count: 1 } };
+    const ctx2 = { "node-a": { count: 1 }, "node-b": { count: 2 } };
+
+    await store.updateAgentLoopRunContext({ runId: "run-1", context: ctx1 });
+    await store.updateAgentLoopRunContext({ runId: "run-1", context: ctx2 });
+
+    for (const setCall of updateSetCapture as Array<
+      Record<string, unknown>
+    >) {
+      expect(setCall?.startedAt).toBeUndefined();
+      expect(setCall?.status).toBeUndefined();
+    }
   });
 });
