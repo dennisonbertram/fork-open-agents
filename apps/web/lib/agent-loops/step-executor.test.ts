@@ -64,7 +64,10 @@ type RunStatusInput = {
 let recordedEvents: EventInput[] = [];
 let recordedStepUpdates: StepUpdateInput[] = [];
 let recordedRunUpdates: RunStatusInput[] = [];
-let recordedContextUpdates: { runId: string; context: Record<string, unknown> }[] = [];
+let recordedContextUpdates: {
+  runId: string;
+  context: Record<string, unknown>;
+}[] = [];
 
 // ── Store mocks ───────────────────────────────────────────────────────────────
 

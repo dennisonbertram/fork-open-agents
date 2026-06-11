@@ -517,7 +517,10 @@ describe("REGRESSION-F4a: updateAgentLoopRunStatus uses COALESCE for startedAt (
 
   test("completed status: startedAt is absent (only finishedAt is set)", async () => {
     const store = await storePromise;
-    await store.updateAgentLoopRunStatus({ runId: "run-1", status: "completed" });
+    await store.updateAgentLoopRunStatus({
+      runId: "run-1",
+      status: "completed",
+    });
 
     const setCall = updateSetCapture[0] as Record<string, unknown> | undefined;
     expect(setCall).toBeDefined();
@@ -572,9 +575,7 @@ describe("REGRESSION-F4c: updateAgentLoopRunContext never produces a startedAt w
     await store.updateAgentLoopRunContext({ runId: "run-1", context: ctx1 });
     await store.updateAgentLoopRunContext({ runId: "run-1", context: ctx2 });
 
-    for (const setCall of updateSetCapture as Array<
-      Record<string, unknown>
-    >) {
+    for (const setCall of updateSetCapture as Array<Record<string, unknown>>) {
       expect(setCall?.startedAt).toBeUndefined();
       expect(setCall?.status).toBeUndefined();
     }

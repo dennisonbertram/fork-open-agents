@@ -119,7 +119,9 @@ describe("BT-F1: checkListIssues filters out pull requests", () => {
         title: `PR ${i}`,
         labels: [],
         html_url: `https://github.com/acme/repo/pull/${100 + i}`,
-        pull_request: { url: `https://api.github.com/repos/acme/repo/pulls/${100 + i}` },
+        pull_request: {
+          url: `https://api.github.com/repos/acme/repo/pulls/${100 + i}`,
+        },
       })),
       ...Array.from({ length: 3 }, (_, i) => ({
         number: 200 + i,
@@ -397,19 +399,19 @@ mock.module("@/lib/github/app", () => ({
 }));
 
 // GitHub API mock for executor tests
-let f3f4GithubApiCallCount = 0;
+let _f3f4GithubApiCallCount = 0;
 
 const f3f4OctokitMock = {
   rest: {
     issues: {
       listForRepo: mock(async () => {
-        f3f4GithubApiCallCount++;
+        _f3f4GithubApiCallCount++;
         return { data: [] };
       }),
     },
     pulls: {
       get: mock(async () => {
-        f3f4GithubApiCallCount++;
+        _f3f4GithubApiCallCount++;
         return {
           data: {
             number: 1,
@@ -427,17 +429,17 @@ const f3f4OctokitMock = {
     },
     repos: {
       listDeployments: mock(async () => {
-        f3f4GithubApiCallCount++;
+        _f3f4GithubApiCallCount++;
         return { data: [] };
       }),
       listDeploymentStatuses: mock(async () => {
-        f3f4GithubApiCallCount++;
+        _f3f4GithubApiCallCount++;
         return { data: [] };
       }),
     },
     checks: {
       listForRef: mock(async () => {
-        f3f4GithubApiCallCount++;
+        _f3f4GithubApiCallCount++;
         return { data: { check_runs: [], total_count: 0 } };
       }),
     },
@@ -474,9 +476,7 @@ function makeF3F4StepRun(
   };
 }
 
-function makeF3F4LoopRun(
-  overrides: Partial<AgentLoopRun> = {},
-): AgentLoopRun {
+function makeF3F4LoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
   return {
     id: "run-f3f4",
     loopId: "loop-f3f4",
@@ -529,7 +529,7 @@ function resetF3F4Mocks() {
   f3f4RecordedStepUpdates = [];
   f3f4RecordedRunUpdates = [];
   f3f4RecordedContextUpdates = [];
-  f3f4GithubApiCallCount = 0;
+  _f3f4GithubApiCallCount = 0;
   f3f4VerifyResult = { ok: true, installationId: 42, repositoryId: 7 };
   f3f4GetStepRunMock.mockClear();
   f3f4UpdateStepRunMock.mockClear();
@@ -725,7 +725,10 @@ describe("BT-F4: github_check context-merge uses updateAgentLoopRunContext, not 
     const ctxUpdate = f3f4RecordedContextUpdates[0];
     expect(ctxUpdate?.runId).toBe("run-f3f4");
     expect(ctxUpdate?.context).toBeDefined();
-    expect((ctxUpdate?.context as Record<string, unknown>)["ctx-merge-node"]).toBeDefined();
+    const mergedCtx = ctxUpdate?.context ?? {};
+    expect(
+      (mergedCtx as Record<string, unknown>)["ctx-merge-node"],
+    ).toBeDefined();
 
     // updateAgentLoopRunStatus must NOT have been called with status="running"
     // (it may be called with "completed" for the end node, but not "running" for context merge)
