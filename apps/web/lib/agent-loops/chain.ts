@@ -266,7 +266,11 @@ export async function runAgentLoopStep(
       status: "info",
       level: "info",
       summary: `Chain skipped: run status changed to ${postExecStatus} during step execution`,
-      payload: { reason: "status_changed_during_step", status: postExecStatus, stepRunId },
+      payload: {
+        reason: "status_changed_during_step",
+        status: postExecStatus,
+        stepRunId,
+      },
       workflowRunId,
     });
     return;
