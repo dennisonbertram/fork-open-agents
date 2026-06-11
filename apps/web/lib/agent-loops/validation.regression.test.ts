@@ -383,7 +383,12 @@ describe("RT-12: duplicate node id rule fires before nodeMap is relied on", () =
     // nodeMap; the first is invisible to VR-04 (no_outgoing_edge check uses the
     // map for lookup), VR-08 BFS, and edge validation.
     const def = {
-      nodes: [startNode(), agentStepNode("step-x"), agentStepNode("step-x"), endNode()],
+      nodes: [
+        startNode(),
+        agentStepNode("step-x"),
+        agentStepNode("step-x"),
+        endNode(),
+      ],
       edges: [
         edge("e1", "s", "step-x", "always"),
         edge("e2", "step-x", "e", "success"),
