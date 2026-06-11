@@ -5,10 +5,29 @@
  *   1. Cooperative pre-check — if paused/cancelled/completed/failed → skip (event).
  *   2. If queued → transition to running + emit run.started.
  *   3. Guardrail check BEFORE execution (resolveGuardrails, clamp to ceilings).
+ *      — If tripped, current step run is marked "skipped" (finishedAt set) before
+ *        failing the run so the timeline stays coherent.
  *   4. Execute step (executeAgentLoopStep).
  *   5. If end node (run is now completed by executor) → stop, no dispatch.
  *   6. Advance (evaluateEdges, iteration counting, atomic conditional update).
  *   7. Create next step run + dispatch via start().
+ *
+ * Attempt semantics:
+ *   "attempt" = nth execution of (loopRunId, nodeId) within this run.
+ *   - First visit to a node: attempt 1.
+ *   - Cycle revisit: attempt = priorVisits + 1 (countStepRunsForNode counts
+ *     EXISTING rows before the new one is inserted).
+ *   - Retry via retryCurrentStep: MAX(existing attempts) + 1 — consistent with
+ *     the same priorVisits + 1 semantics.
+ *   This definition satisfies the UNIQUE index on (loopRunId, nodeId, attempt)
+ *   both for cycles and for explicit retries.
+ *
+ * Unique-constraint duplicate-advance defence:
+ *   createAgentLoopStepRun can throw a PG 23505 unique-violation if two
+ *   concurrent invocations race to insert (same loopRunId, nodeId, attempt).
+ *   When that happens the insert is treated as a duplicate-advance: a
+ *   "agent-loop.chain.skipped" event is recorded with reason "duplicate_advance"
+ *   and the function returns without dispatching.
  *
  * advanceLoopRun — exported for tests; handles post-execution routing.
  * resolveGuardrails — pure helper, testable independently.
@@ -28,6 +47,7 @@ import { evaluateEdges } from "./edge-evaluator";
 import {
   getAgentLoopStepRunWithContext,
   updateAgentLoopRunStatus,
+  updateAgentLoopStepRun,
   recordAgentLoopEvent,
   createAgentLoopStepRun,
   advanceRunToNextStep,
@@ -195,6 +215,16 @@ export async function runAgentLoopStep(
       workflowRunId,
     });
 
+    // Nit 2: Mark the current step run "skipped" so the timeline is coherent.
+    // Without this the step run stays "queued" forever — no finishedAt, no
+    // terminal status — making run timeline queries misleading.
+    const guardrailNow = new Date();
+    await updateAgentLoopStepRun({
+      stepRunId,
+      status: "skipped",
+      finishedAt: guardrailNow,
+    });
+
     await updateAgentLoopRunStatus({
       runId: loopRunId,
       status: "failed",
@@ -221,7 +251,21 @@ export async function runAgentLoopStep(
     loopRun.definitionSnapshot,
   );
   if (!snapshotParse.success) {
-    // Should not happen (step-executor handles this) but be defensive
+    // Nit 1: Do not silently return — record an observable event so this
+    // failure shows up in the run timeline and can be detected by the stall
+    // sweep. The run is left in its current status (running) so it can be
+    // recovered via pause→resume.
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId,
+      eventName: "agent-loop.chain.skipped",
+      status: "info",
+      level: "warn",
+      summary: "Chain skipped: definition snapshot could not be re-parsed after execution",
+      payload: { reason: "snapshot_invalid", stepRunId },
+      workflowRunId,
+    });
     return;
   }
 
@@ -363,13 +407,56 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   const nextNodeKind = nextNode?.kind ?? "unknown";
 
   // ── 7e. Create the next step run ─────────────────────────────────────────
+  //
+  // attempt = priorVisits + 1:
+  //   - First visit to this node:  priorVisits = 0 → attempt 1
+  //   - Cycle revisit (loop-back): priorVisits = N → attempt N+1
+  //
+  // This guarantees that the UNIQUE index on (loopRunId, nodeId, attempt) is
+  // never violated by normal cycle traversal.
+  //
+  // Race defence: if two concurrent invocations both computed the same
+  // priorVisits before either inserted, their inserts would have the same
+  // (loopRunId, nodeId, attempt) and the DB would throw a unique-constraint
+  // error (PG code 23505).  We catch that here and treat it identically to
+  // the advanceRunToNextStep returning false — one winner, one graceful skip.
+  let nextStepRun: Awaited<ReturnType<typeof createAgentLoopStepRun>>;
+  try {
+    nextStepRun = await createAgentLoopStepRun({
+      loopRunId,
+      nodeId: nextNodeId,
+      nodeKind: nextNodeKind,
+      attempt: priorVisits + 1,
+    });
+  } catch (insertErr) {
+    // Unique-constraint violation on (loopRunId, nodeId, attempt):
+    // another racing invocation already inserted this step run.
+    // Treat as a graceful duplicate-advance — emit event and stop.
+    const isUniqueViolation =
+      insertErr instanceof Error &&
+      ((insertErr as unknown as Record<string, unknown>)["code"] === "23505" ||
+        insertErr.message.includes("unique constraint") ||
+        insertErr.message.includes("duplicate key"));
 
-  const nextStepRun = await createAgentLoopStepRun({
-    loopRunId,
-    nodeId: nextNodeId,
-    nodeKind: nextNodeKind,
-    attempt: 1,
-  });
+    if (isUniqueViolation) {
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.chain.skipped",
+        status: "info",
+        level: "info",
+        summary:
+          "Advance skipped: concurrent invocation already inserted this step run (unique-constraint)",
+        payload: { reason: "duplicate_advance", stepRunId, nextNodeId },
+        workflowRunId,
+      });
+      return;
+    }
+    // Not a uniqueness error — re-throw so we don't silently swallow
+    // unexpected DB errors.
+    throw insertErr;
+  }
 
   // ── 7f. Atomic advance (anti-double-dispatch) ─────────────────────────────
 
@@ -425,11 +512,20 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       workflowRunId,
     });
   } catch (err) {
-    // Dispatch failed: record event but leave run in running state.
-    // The run's currentStepRunId now points at the QUEUED next step run.
-    // This is recoverable by:
-    //   - The stall sweep (M1-10): finds runs with no event for N minutes → marks stalled
-    //   - Manual retry via retryCurrentStep (which re-dispatches the queued step)
+    // Nit 3 — dispatch failure recovery gap:
+    //
+    // After chain.dispatch_failed the run stays in "running" status with
+    // currentStepRunId pointing at the QUEUED next step run.
+    //
+    // Recovery options:
+    //   1. Stall sweep (M1-10, not yet implemented): detects runs with no event
+    //      for N minutes → marks stalled → operator can retry.
+    //   2. Manual interim recovery: call pauseLoopRun → resumeLoopRun.
+    //      resumeLoopRun re-dispatches the queued currentStepRunId.
+    //      retryCurrentStep does NOT apply here because the run is still
+    //      "running" (not failed/stalled), so it would throw.
+    //
+    // Until M1-10 is in place, pause→resume is the only self-service recovery.
     await recordAgentLoopEvent({
       loopRunId,
       stepRunId,
@@ -446,7 +542,8 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
       workflowRunId,
     });
     // Do NOT fail the run — leave it in running state with currentStepRunId
-    // pointing at the queued next step. The stall sweep will pick it up.
+    // pointing at the queued next step. The stall sweep (M1-10) or a manual
+    // pause→resume will pick it up.
   }
 }
 
@@ -499,6 +596,14 @@ export async function cancelLoopRun(
  * Note: if a step completed but advance had not yet fired when pause landed,
  * the run will be left in running state with no pending dispatch. The stall
  * sweep (M1-10) will detect the stall and route it for recovery.
+ *
+ * Interim dispatch-failure recovery (Nit 3):
+ * After a chain.dispatch_failed event the run stays "running" with a queued
+ * currentStepRunId.  retryCurrentStep requires "failed" or "stalled" and will
+ * throw if called while the run is still "running".  Until the M1-10 stall
+ * sweep is implemented, the only self-service recovery path is:
+ *   1. pauseLoopRun  — transitions to "paused"
+ *   2. resumeLoopRun — transitions to "running" AND re-dispatches the queued step
  */
 export async function resumeLoopRun(
   runId: string,

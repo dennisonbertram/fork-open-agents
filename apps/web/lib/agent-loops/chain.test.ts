@@ -227,7 +227,7 @@ const countStepRunsForNodeMock = mock(
   },
 );
 
-const _updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
+const updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
   return currentStepRun;
 });
 
@@ -314,6 +314,7 @@ const retryCurrentStepMock = mock(
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   createAgentLoopStepRun: createAgentLoopStepRunMock,
   advanceRunToNextStep: advanceRunToNextStepMock,
@@ -499,6 +500,7 @@ function resetAll() {
 
   getAgentLoopStepRunWithContextMock.mockClear();
   updateAgentLoopRunStatusMock.mockClear();
+  updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   createAgentLoopStepRunMock.mockClear();
   advanceRunToNextStepMock.mockClear();

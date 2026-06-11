@@ -249,6 +249,7 @@ const workflowStartMock = mock(
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getCtxMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
+  updateAgentLoopStepRun: mock(async (_input: unknown) => currentStepRun),
   recordAgentLoopEvent: recordEventMock,
   createAgentLoopStepRun: createStepRunMock,
   advanceRunToNextStep: advanceMock,
