@@ -23,6 +23,8 @@ import {
 } from "./config";
 import { scheduleMatchesNow } from "./schedule";
 import { computeNextRuns } from "./schedule-presets";
+import { getAgentLoopById } from "@/lib/agent-loops/store";
+import { dispatchLoopRunForTrigger } from "@/lib/agent-loops/dispatcher-bridge";
 // Note: dispatchLoopRunForTrigger is dynamically imported within the
 // functions that use it (see below) to prevent the agent-loops module tree
 // from being loaded when dispatcher.ts is imported in test contexts that
@@ -112,12 +114,6 @@ export async function dispatchBackgroundTriggerEvent(params: {
   for (const match of matches) {
     // ── Loop-bound trigger branch (M1-07) ────────────────────────────────────
     if (match.trigger.loopId) {
-      // Dynamic imports prevent static module-tree loading in test contexts.
-      const [{ getAgentLoopById }, { dispatchLoopRunForTrigger }] =
-        await Promise.all([
-          import("@/lib/agent-loops/store"),
-          import("@/lib/agent-loops/dispatcher-bridge"),
-        ]);
       const loop = await getAgentLoopById(match.trigger.loopId);
       if (!loop) {
         // Orphaned trigger row — skip silently (should not happen due to FK)
@@ -242,12 +238,6 @@ export async function dispatchWebhookErrorEvent(params: {
 
   // ── Loop-bound webhook.error trigger branch (mirrors dispatchBackgroundTriggerEvent) ──
   if (row.trigger.loopId) {
-    // Dynamic imports prevent static module-tree loading in test contexts.
-    const [{ getAgentLoopById }, { dispatchLoopRunForTrigger }] =
-      await Promise.all([
-        import("@/lib/agent-loops/store"),
-        import("@/lib/agent-loops/dispatcher-bridge"),
-      ]);
     const loop = await getAgentLoopById(row.trigger.loopId);
     if (!loop) {
       // Orphaned trigger row — skip silently (should not happen due to FK)
@@ -508,14 +498,6 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         lastRunAt: now,
         nextRunAt: nextRuns[0] ?? null,
       });
-
-      const [
-        { getAgentLoopById },
-        { dispatchLoopRunForTrigger: dispatchLoop },
-      ] = await Promise.all([
-        import("@/lib/agent-loops/store"),
-        import("@/lib/agent-loops/dispatcher-bridge"),
-      ]);
       const loop = await getAgentLoopById(row.trigger.loopId);
       if (!loop) continue;
 
@@ -529,7 +511,7 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         occurredAt: now.toISOString(),
       };
 
-      const loopResult = await dispatchLoop({
+      const loopResult = await dispatchLoopRunForTrigger({
         loop,
         trigger: row.trigger,
         event,

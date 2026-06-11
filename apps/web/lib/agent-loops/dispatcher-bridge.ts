@@ -13,6 +13,7 @@
 import "server-only";
 
 import { start } from "workflow/api";
+import { runAgentLoopStepWorkflow } from "@/app/workflows/agent-loop-step";
 import type { AgentLoop, BackgroundAgentTrigger } from "@/lib/db/schema";
 import {
   createAgentLoopRun,
@@ -213,8 +214,6 @@ async function dispatchLoopRun(params: {
   // The workflow file imports runAgentLoopStep from chain.ts, which in turn is used here.
   // Static import of agent-loop-step would create a module-resolution problem in tests.
   try {
-    const { runAgentLoopStepWorkflow } =
-      await import("@/app/workflows/agent-loop-step");
     await start(runAgentLoopStepWorkflow, [{ stepRunId: stepRun.id }]);
 
     await recordAgentLoopEvent({

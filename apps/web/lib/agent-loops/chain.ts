@@ -112,6 +112,8 @@ export function resolveGuardrails(
 export async function runAgentLoopStep(
   params: RunAgentLoopStepParams,
 ): Promise<void> {
+  "use step";
+
   const { stepRunId, workflowRunId } = params;
 
   // ── 1. Load context ────────────────────────────────────────────────────────
@@ -653,6 +655,8 @@ export async function pauseLoopRun(
   runId: string,
   userId: string,
 ): Promise<void> {
+  "use step";
+
   await storePauseLoopRun(runId, userId);
 
   await recordAgentLoopEvent({
@@ -672,6 +676,8 @@ export async function cancelLoopRun(
   runId: string,
   userId: string,
 ): Promise<void> {
+  "use step";
+
   await storeCancelLoopRun(runId, userId);
 
   await recordAgentLoopEvent({
@@ -712,6 +718,8 @@ export async function resumeLoopRun(
   runId: string,
   userId: string,
 ): Promise<void> {
+  "use step";
+
   // Transition → running (throws if not paused)
   const run = await storeResumeLoopRun(runId, userId);
 
@@ -765,6 +773,8 @@ export async function retryCurrentStep(
   runId: string,
   userId: string,
 ): Promise<void> {
+  "use step";
+
   // Creates a new step run (attempt n+1) and transitions run to running.
   // Throws if the run is not in a retryable status (failed/stalled).
   const newStepRun = await storeRetryCurrentStep({ runId, userId });
