@@ -499,6 +499,16 @@ function withModelMetadata(
   };
 }
 
+// Matches "invalid api key" case-insensitively; used in the auth-error branch.
+const PROVIDER_AUTH_KEY_RE = /invalid api key/i;
+
+// Matches billing-specific insufficient/quota/credit signals. Deliberately
+// excludes "insufficient permissions", "insufficient scope", etc. (OAuth/ACL
+// errors) by requiring the word to be followed by _credits or _quota, or by
+// matching quota/credit as standalone keywords.
+const PROVIDER_BILLING_RE =
+  /insufficient[_ ]credits|insufficient[_ ]quota|exceeded.*quota|out of credits|quota.*exceeded/i;
+
 function getSetupErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   const name = error instanceof Error ? error.name : "";
@@ -538,6 +548,35 @@ function getSetupErrorMessage(error: unknown): string {
     message.includes("HTTP_Unauthorized")
   ) {
     return getComposioUserFacingError(message);
+  }
+
+  // Provider auth failures (API key rejected / access token invalid).
+  // Require at least one auth-specific signal. For the composed
+  // "No output generated\n\nProvider error: …" form we also require that
+  // signal so that rate-limit (429) or service-unavailable (503) errors
+  // that reach the same composition do not produce auth guidance.
+  if (
+    message.includes("Invalid or revoked") ||
+    message.includes("Unauthorized") ||
+    message.includes("HTTP 401") ||
+    message.includes("status 401") ||
+    message.includes("401 Unauthorized") ||
+    PROVIDER_AUTH_KEY_RE.test(message)
+  ) {
+    return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
+  }
+
+  // Provider credit / quota / billing failures.
+  // Match specific HTTP-402 forms and billing-specific insufficient/quota/credit
+  // keywords; deliberately exclude OAuth/ACL "insufficient permissions" etc.
+  if (
+    message.includes("HTTP 402") ||
+    message.includes("status 402") ||
+    message.includes("Payment Required") ||
+    message.includes("402 Payment") ||
+    PROVIDER_BILLING_RE.test(message)
+  ) {
+    return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
   }
 
   return "Workspace setup failed. Try again in a moment.";

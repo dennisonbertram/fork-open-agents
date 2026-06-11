@@ -37,6 +37,9 @@ Start here:
 - [Workflow Catalog Conventions](workflow-catalog-conventions.md) - id naming,
   versioning, proof-level mapping, disabled-entry rules, and how to add catalog
   entries.
+- [Pipeline Gates](pipeline-gates.md) - the machine-enforced layer (pre-push
+  hook, CI build/guards jobs, migration-safety, test-touch, production smoke)
+  under the prose process docs.
 
 Supporting docs:
 
