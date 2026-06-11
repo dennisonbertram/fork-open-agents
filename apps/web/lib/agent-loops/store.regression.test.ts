@@ -115,9 +115,55 @@ function resetMocks() {
   findFirstMock.mockClear();
   returningMock.mockClear();
   valuesMock.mockClear();
+  onConflictDoNothingMock.mockClear();
   leftJoinMock.mockClear();
   whereMockLeft.mockClear();
   limitMockLeft.mockClear();
+}
+
+function makeLoop(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "loop-1",
+    userId: "user-1",
+    name: "Test Loop",
+    description: null,
+    repoOwner: "acme",
+    repoName: "widgets",
+    definition: { nodes: [], edges: [] },
+    status: "draft",
+    guardrails: null,
+    permissions: {},
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+function makeLoopRun(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: "run-1",
+    loopId: "loop-1",
+    userId: "user-1",
+    status: "queued",
+    definitionSnapshot: { nodes: [], edges: [] },
+    currentNodeId: null,
+    currentStepRunId: null,
+    iterationCount: 0,
+    stepCount: 0,
+    context: {},
+    source: "manual",
+    triggerId: null,
+    idempotencyKey: "idem-1",
+    errorKind: null,
+    errorMessage: null,
+    workflowRunId: null,
+    requestId: null,
+    startedAt: null,
+    finishedAt: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
 }
 
 // ── Regression: createAgentLoop ownership isolation ───────────────────────────
@@ -351,5 +397,65 @@ describe("REGRESSION-007: migration journal records 0059_tense_maverick", () => 
       e.tag.includes("0059_tense_maverick"),
     );
     expect(hasMigration).toBe(true);
+  });
+});
+
+// ── Regression: createAgentLoopRun cross-tenant protection ───────────────────
+// Reverting the ownership guard in createAgentLoopRun would allow a caller to
+// create a run against a loop owned by another user.  This test catches that
+// regression by asserting the function returns null when the ownership check
+// fails (loop not found for the given userId).
+describe("REGRESSION-008: createAgentLoopRun returns null for unowned loop", () => {
+  beforeEach(resetMocks);
+
+  test("returns null and does not insert when loop belongs to another user", async () => {
+    // Ownership check — DB returns nothing for user-attacker / loop-victim
+    findFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-victim",
+      userId: "user-attacker",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "key-attack",
+    });
+
+    expect(result).toBeNull();
+    // The cross-tenant insert must never have been attempted
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+});
+
+// ── Regression: createAgentLoopRun idempotency — no throw on duplicate key ──
+// Without onConflictDoNothing, a retry with the same idempotencyKey would raise
+// a unique-constraint error.  This regression test proves the conflict is
+// suppressed and the existing run is returned instead.
+describe("REGRESSION-009: createAgentLoopRun duplicate key returns existing run, not an error", () => {
+  beforeEach(resetMocks);
+
+  test("second call with same idempotencyKey returns {run, created:false} without throwing", async () => {
+    const loop = makeLoop();
+    const existing = makeLoopRun({ idempotencyKey: "key-retry" });
+
+    // Ownership check passes
+    findFirstMock.mockResolvedValueOnce(loop);
+    // Conflict suppressed — insert returns nothing
+    returningMock.mockImplementationOnce(() => []);
+    // Fetch of the pre-existing run
+    findFirstMock.mockResolvedValueOnce(existing);
+
+    const store = await storePromise;
+    const result = await store.createAgentLoopRun({
+      loopId: "loop-1",
+      userId: "user-1",
+      definitionSnapshot: { nodes: [], edges: [] },
+      source: "manual",
+      idempotencyKey: "key-retry",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.created).toBe(false);
+    expect(result?.run.id).toBe("run-1");
   });
 });
