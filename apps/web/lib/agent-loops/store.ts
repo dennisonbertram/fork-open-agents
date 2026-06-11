@@ -201,10 +201,31 @@ export async function getOwnedAgentLoop(params: {
 
 // ── agentLoopRuns ─────────────────────────────────────────────────────────────
 
+export type CreateAgentLoopRunResult = {
+  run: AgentLoopRun;
+  created: boolean;
+};
+
+/**
+ * Creates a new agent loop run. Returns null when the loop does not exist or
+ * is not owned by input.userId (cross-tenant protection). Returns
+ * {run, created:false} when the idempotencyKey already exists (idempotent
+ * retry — same shape as background-agents createRunForTrigger).
+ */
 export async function createAgentLoopRun(
   input: CreateAgentLoopRunInput,
-): Promise<AgentLoopRun> {
-  const [run] = await db
+): Promise<CreateAgentLoopRunResult | null> {
+  // Verify loop ownership before inserting — prevents a caller from creating a
+  // run against a loop owned by another user (independent FK would allow it).
+  const ownedLoop = await getOwnedAgentLoop({
+    userId: input.userId,
+    loopId: input.loopId,
+  });
+  if (!ownedLoop) {
+    return null;
+  }
+
+  const [inserted] = await db
     .insert(agentLoopRuns)
     .values({
       id: nanoid(),
@@ -217,13 +238,22 @@ export async function createAgentLoopRun(
       triggerId: input.triggerId ?? null,
       requestId: input.requestId ?? null,
     })
+    .onConflictDoNothing({ target: agentLoopRuns.idempotencyKey })
     .returning();
 
-  if (!run) {
-    throw new Error("Failed to create agent loop run");
+  if (inserted) {
+    return { run: inserted, created: true };
   }
 
-  return run;
+  // Conflict suppressed — fetch the existing run.
+  const existing = await db.query.agentLoopRuns.findFirst({
+    where: eq(agentLoopRuns.idempotencyKey, input.idempotencyKey),
+  });
+  if (!existing) {
+    throw new Error("Failed to create or load agent loop run");
+  }
+
+  return { run: existing, created: false };
 }
 
 export async function getAgentLoopRunWithLoop(
