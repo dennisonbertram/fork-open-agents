@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -556,4 +556,311 @@ export async function listAgentLoopEvents(
     orderBy: [desc(agentLoopEvents.createdAt)],
     limit: 200,
   });
+}
+
+// ── Chain-level store functions (M1-06) ───────────────────────────────────────
+
+/**
+ * Atomically advances the run to the next step ONLY IF `currentStepRunId`
+ * still equals `fromStepRunId` (anti-double-dispatch guard).
+ *
+ * Returns true if the update succeeded (1 row updated), false if it was a
+ * no-op (0 rows — another invocation already advanced this step).
+ *
+ * This is the canonical conditional update that prevents two concurrent
+ * chain invocations from both dispatching the next step.
+ */
+export async function advanceRunToNextStep(params: {
+  runId: string;
+  fromStepRunId: string;
+  nextNodeId: string;
+  nextStepRunId: string;
+  stepCount: number;
+  iterationCount: number;
+  workflowRunId: string;
+}): Promise<boolean> {
+  const now = new Date();
+
+  const result = await db
+    .update(agentLoopRuns)
+    .set({
+      currentNodeId: params.nextNodeId,
+      currentStepRunId: params.nextStepRunId,
+      stepCount: params.stepCount,
+      iterationCount: params.iterationCount,
+      workflowRunId: params.workflowRunId,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, params.runId),
+        eq(agentLoopRuns.currentStepRunId, params.fromStepRunId),
+      ),
+    )
+    .returning({ id: agentLoopRuns.id });
+
+  return result.length > 0;
+}
+
+/**
+ * Counts prior step runs for a (loopRunId, nodeId) pair.
+ * Used to determine if visiting a node again constitutes a loop iteration
+ * (priorVisits > 0 means a cycle is happening).
+ */
+export async function countStepRunsForNode(params: {
+  loopRunId: string;
+  nodeId: string;
+}): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.loopRunId),
+        eq(agentLoopStepRuns.nodeId, params.nodeId),
+      ),
+    );
+
+  return row?.total ?? 0;
+}
+
+/**
+ * Returns the maximum attempt number seen so far for a (loopRunId, nodeId)
+ * pair. Used by advanceLoopRun to compute the next attempt as MAX+1.
+ *
+ * Using MAX instead of COUNT is sparse-safe: if attempts {1, 3} exist
+ * (e.g. after a skip), COUNT would give 2 causing attempt 3 to collide,
+ * while MAX gives 3 → next attempt 4 which is always safe.
+ *
+ * Returns 0 when no rows exist (first visit → attempt = 0+1 = 1).
+ */
+export async function getMaxAttemptForNode(params: {
+  loopRunId: string;
+  nodeId: string;
+}): Promise<number> {
+  const [row] = await db
+    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.loopRunId),
+        eq(agentLoopStepRuns.nodeId, params.nodeId),
+      ),
+    );
+
+  return row?.maxAttempt ?? 0;
+}
+
+/**
+ * Transitions a run from running/queued to paused.
+ * Throws if the run is not in a pausable status OR is not owned by userId.
+ *
+ * The WHERE clause includes userId so that a mismatched userId produces the
+ * same "0 rows updated" outcome as a non-existent runId — no existence leak.
+ */
+export async function pauseLoopRun(
+  runId: string,
+  userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "paused",
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        eq(agentLoopRuns.userId, userId),
+        sql`${agentLoopRuns.status} IN ('running', 'queued')`,
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(
+      `Cannot pause run ${runId}: not in a pausable status (running/queued)`,
+    );
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a run from running/queued/paused to cancelled.
+ * Throws if the run is not in a cancellable status OR is not owned by userId.
+ *
+ * The WHERE clause includes userId so that a mismatched userId produces the
+ * same "0 rows updated" outcome as a non-existent runId — no existence leak.
+ */
+export async function cancelLoopRun(
+  runId: string,
+  userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "cancelled",
+      finishedAt: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        eq(agentLoopRuns.userId, userId),
+        sql`${agentLoopRuns.status} IN ('running', 'queued', 'paused')`,
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(
+      `Cannot cancel run ${runId}: not in a cancellable status (running/queued/paused)`,
+    );
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a run from paused to running.
+ * Throws if the run is not paused OR is not owned by userId.
+ *
+ * The WHERE clause includes userId so that a mismatched userId produces the
+ * same "0 rows updated" outcome as a non-existent runId — no existence leak.
+ *
+ * Resume now cleans up the "pause landed mid-execution" case: if a step
+ * completed but the advance had not yet fired when pause landed, the run
+ * may be in paused state with currentStepRunId pointing at a QUEUED next
+ * step.  The caller (chain.resumeLoopRun) re-dispatches that queued step
+ * immediately after this transition, so the chain resumes without needing
+ * the stall sweep.
+ */
+export async function resumeLoopRun(
+  runId: string,
+  userId: string,
+): Promise<AgentLoopRun> {
+  const now = new Date();
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: "running",
+      // COALESCE: preserve startedAt if already set
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        eq(agentLoopRuns.userId, userId),
+        eq(agentLoopRuns.status, "paused"),
+      ),
+    )
+    .returning();
+
+  if (!run) {
+    throw new Error(`Cannot resume run ${runId}: not in paused status`);
+  }
+
+  return run;
+}
+
+/**
+ * Transitions a failed/stalled run to running and creates attempt n+1 of the
+ * current step node. Returns the new step run so the caller can dispatch it.
+ *
+ * Throws if the run is not in a retryable status (failed/stalled), is not
+ * owned by userId, or if currentNodeId/currentStepRunId are not set.
+ *
+ * Ownership is verified by loading the run with both runId AND userId in the
+ * WHERE clause, so a mismatched userId is indistinguishable from a missing run
+ * — no existence leak.
+ */
+export async function retryCurrentStep(params: {
+  runId: string;
+  userId: string;
+}): Promise<AgentLoopStepRun> {
+  // Load the run — ownership-scoped: userId must match to prevent cross-user retry
+  const run = await db.query.agentLoopRuns.findFirst({
+    where: and(
+      eq(agentLoopRuns.id, params.runId),
+      eq(agentLoopRuns.userId, params.userId),
+    ),
+  });
+
+  if (!run) {
+    throw new Error(`Run ${params.runId} not found`);
+  }
+
+  if (run.status !== "failed" && run.status !== "stalled") {
+    throw new Error(
+      `Cannot retry run ${params.runId}: not in a retryable status (failed/stalled), got: ${run.status}`,
+    );
+  }
+
+  if (!run.currentNodeId || !run.currentStepRunId) {
+    throw new Error(
+      `Cannot retry run ${params.runId}: missing currentNodeId or currentStepRunId`,
+    );
+  }
+
+  // Find the current (failed) step run to get nodeKind
+  const failedStepRun = await db.query.agentLoopStepRuns.findFirst({
+    where: eq(agentLoopStepRuns.id, run.currentStepRunId),
+  });
+
+  if (!failedStepRun) {
+    throw new Error(`Cannot retry: step run ${run.currentStepRunId} not found`);
+  }
+
+  // Use MAX(attempt) to compute n+1 — sparse-safe: if attempts {1,3} exist,
+  // MAX=3 → nextAttempt=4, whereas COUNT=2 → nextAttempt=3 would collide.
+  const [attemptRow] = await db
+    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.runId),
+        eq(agentLoopStepRuns.nodeId, run.currentNodeId),
+      ),
+    );
+
+  const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+
+  // Create the new step run
+  const [newStepRun] = await db
+    .insert(agentLoopStepRuns)
+    .values({
+      id: nanoid(),
+      loopRunId: params.runId,
+      nodeId: run.currentNodeId,
+      nodeKind: failedStepRun.nodeKind,
+      attempt: nextAttempt,
+      status: "queued",
+    })
+    .returning();
+
+  if (!newStepRun) {
+    throw new Error("Failed to create retry step run");
+  }
+
+  // Transition the run to running and update currentStepRunId
+  const now = new Date();
+  await db
+    .update(agentLoopRuns)
+    .set({
+      status: "running",
+      currentStepRunId: newStepRun.id,
+      // COALESCE: preserve startedAt if already set
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.runId));
+
+  return newStepRun;
 }
