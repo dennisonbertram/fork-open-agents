@@ -163,7 +163,7 @@ export async function checkDeploymentStatus(params: {
 }): Promise<DeploymentStatusOutput> {
   const octokit = new Octokit({ auth: params.token });
 
-  const response = await octokit.rest.deployments.list({
+  const response = await octokit.rest.repos.listDeployments({
     owner: params.owner,
     repo: params.repo,
     environment: params.environment,
@@ -179,7 +179,7 @@ export async function checkDeploymentStatus(params: {
     rawDeployments.map(async (dep) => {
       let state = "unknown";
       try {
-        const statusResponse = await octokit.rest.deployments.listDeploymentStatuses({
+        const statusResponse = await octokit.rest.repos.listDeploymentStatuses({
           owner: params.owner,
           repo: params.repo,
           deployment_id: dep.id,
@@ -239,7 +239,11 @@ export async function checkCiStatus(params: {
 
   const checkRuns = rawRuns.map((run) => {
     if (run.status === "completed") {
-      if (run.conclusion === "success" || run.conclusion === "neutral" || run.conclusion === "skipped") {
+      if (
+        run.conclusion === "success" ||
+        run.conclusion === "neutral" ||
+        run.conclusion === "skipped"
+      ) {
         passedCount++;
       } else if (run.conclusion != null) {
         failedCount++;

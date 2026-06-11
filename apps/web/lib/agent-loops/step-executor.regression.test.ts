@@ -20,7 +20,7 @@
  *   REG-008: token is not persisted raw in step output for any check kind.
  */
 
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type {
   AgentLoop,
   AgentLoopRun,
@@ -107,7 +107,9 @@ let verifyRepoAccessResult: {
 } = { ok: true, installationId: 42, repositoryId: 7, defaultBranch: "main" };
 
 const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
-const mintInstallationTokenMock = mock(async () => ({ token: "ghs_reg_token" }));
+const mintInstallationTokenMock = mock(async () => ({
+  token: "ghs_reg_token",
+}));
 const revokeInstallationTokenMock = mock(async () => undefined);
 
 mock.module("@/lib/github/access", () => ({
@@ -150,8 +152,8 @@ const octokitMock = {
         };
       }),
     },
-    deployments: {
-      list: mock(async () => {
+    repos: {
+      listDeployments: mock(async () => {
         githubApiCallCount++;
         return { data: [] };
       }),
@@ -177,7 +179,9 @@ mock.module("@octokit/rest", () => ({
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-run-reg",
     loopRunId: "loop-run-reg",
@@ -205,7 +209,10 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     loopId: "loop-reg",
     userId: "user-reg",
     status: "running",
-    definitionSnapshot: { nodes: [], edges: [] } as unknown as Record<string, unknown>,
+    definitionSnapshot: { nodes: [], edges: [] } as unknown as Record<
+      string,
+      unknown
+    >,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -266,7 +273,7 @@ function resetMocks() {
   revokeInstallationTokenMock.mockClear();
   octokitMock.rest.issues.listForRepo.mockClear();
   octokitMock.rest.pulls.get.mockClear();
-  octokitMock.rest.deployments.list.mockClear();
+  octokitMock.rest.repos.listDeployments.mockClear();
   octokitMock.rest.checks.listForRef.mockClear();
 }
 
@@ -284,9 +291,15 @@ describe("REG-001: *From path missing halts before API call", () => {
       position: { x: 0, y: 0 },
       check: { kind: "pr_status", prNumberFrom: "missing.path" },
     };
-    currentStepRun = makeStepRun({ nodeId: "pr-node", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "pr-node",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
       context: {},
     });
     currentLoop = makeLoop();
@@ -311,9 +324,15 @@ describe("REG-001: *From path missing halts before API call", () => {
       position: { x: 0, y: 0 },
       check: { kind: "ci_status", refFrom: "step.sha" },
     };
-    currentStepRun = makeStepRun({ nodeId: "ci-node", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "ci-node",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
       context: {},
     });
     currentLoop = makeLoop();
@@ -349,20 +368,31 @@ describe("REG-002: run context updated after github_check", () => {
       position: { x: 0, y: 0 },
       check: { kind: "list_issues" },
     };
-    currentStepRun = makeStepRun({ nodeId: "issues-node", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "issues-node",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     const ctxUpdate = recordedRunUpdates.find((u) => u.context !== undefined);
     expect(ctxUpdate).toBeDefined();
 
     // The context must contain the check node's output
-    const nodeCtx = ctxUpdate?.context?.["issues-node"] as Record<string, unknown> | undefined;
+    const nodeCtx = ctxUpdate?.context?.["issues-node"] as
+      | Record<string, unknown>
+      | undefined;
     expect(nodeCtx).toBeDefined();
     expect(nodeCtx?.["openIssueCount"]).toBe(1);
   });
@@ -381,12 +411,18 @@ describe("REG-003: end node sets run to completed", () => {
     };
     currentStepRun = makeStepRun({ nodeId: "end-1", nodeKind: "end" });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     // All run status updates must only set 'completed' (not 'failed' or 'running')
     for (const update of recordedRunUpdates) {
@@ -409,7 +445,10 @@ describe("REG-004: condition node is pure — no GitHub calls", () => {
     };
     currentStepRun = makeStepRun({ nodeId: "cond-1", nodeKind: "condition" });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
       context: { issues: { openIssueCount: 5 } },
     });
     currentLoop = makeLoop();
@@ -439,12 +478,18 @@ describe("REG-005: step.started event includes workflowRunId", () => {
     };
     currentStepRun = makeStepRun({ nodeId: "start-1", nodeKind: "start" });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     const startedEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.step.started",
@@ -467,14 +512,23 @@ describe("REG-006: github_check_failed propagates consistently", () => {
       position: { x: 0, y: 0 },
       check: { kind: "list_issues" },
     };
-    currentStepRun = makeStepRun({ nodeId: "check-fail-1", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "check-fail-1",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     const failedUpdate = recordedStepUpdates.find((u) => u.status === "failed");
     expect(failedUpdate?.errorKind).toBe("github_check_failed");
@@ -493,9 +547,24 @@ describe("REG-007: openIssueCount == issues.length", () => {
   test("when API returns 3 issues, openIssueCount is 3", async () => {
     resetMocks();
     issueListResult = [
-      { number: 1, title: "A", labels: [], html_url: "https://github.com/a/b/issues/1" },
-      { number: 2, title: "B", labels: [], html_url: "https://github.com/a/b/issues/2" },
-      { number: 3, title: "C", labels: [], html_url: "https://github.com/a/b/issues/3" },
+      {
+        number: 1,
+        title: "A",
+        labels: [],
+        html_url: "https://github.com/a/b/issues/1",
+      },
+      {
+        number: 2,
+        title: "B",
+        labels: [],
+        html_url: "https://github.com/a/b/issues/2",
+      },
+      {
+        number: 3,
+        title: "C",
+        labels: [],
+        html_url: "https://github.com/a/b/issues/3",
+      },
     ];
     const node = {
       id: "issues-count",
@@ -504,14 +573,23 @@ describe("REG-007: openIssueCount == issues.length", () => {
       position: { x: 0, y: 0 },
       check: { kind: "list_issues" },
     };
-    currentStepRun = makeStepRun({ nodeId: "issues-count", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "issues-count",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     const succeeded = recordedStepUpdates.find((u) => u.status === "succeeded");
     const output = succeeded?.stepOutput as Record<string, unknown> | undefined;
@@ -540,14 +618,23 @@ describe("REG-008: installation token absent from step output", () => {
       position: { x: 0, y: 0 },
       check: { kind: "list_issues" },
     };
-    currentStepRun = makeStepRun({ nodeId: "check-token", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "check-token",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<string, unknown>,
+      definitionSnapshot: { nodes: [node], edges: [] } as unknown as Record<
+        string,
+        unknown
+      >,
     });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
-    await executeAgentLoopStep({ stepRunId: "step-run-reg", workflowRunId: "wf-reg" });
+    await executeAgentLoopStep({
+      stepRunId: "step-run-reg",
+      workflowRunId: "wf-reg",
+    });
 
     const tokenValue = "ghs_reg_token";
     for (const update of recordedStepUpdates) {

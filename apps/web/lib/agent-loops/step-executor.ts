@@ -24,7 +24,10 @@
 
 import "server-only";
 
-import { mintInstallationToken, revokeInstallationToken } from "@/lib/github/app";
+import {
+  mintInstallationToken,
+  revokeInstallationToken,
+} from "@/lib/github/app";
 import { verifyRepoAccess } from "@/lib/github/access";
 import { loopDefinitionSchema } from "./types";
 import { evaluateCondition } from "./condition";
@@ -477,40 +480,40 @@ export async function executeAgentLoopStep(params: {
     try {
       switch (node.check.kind) {
         case "list_issues": {
-          checkOutput = await checkListIssues({
+          checkOutput = (await checkListIssues({
             owner: loop.repoOwner,
             repo: loop.repoName,
             token,
             labels: node.check.labels,
             state: node.check.state,
-          }) as unknown as Record<string, unknown>;
+          })) as unknown as Record<string, unknown>;
           break;
         }
         case "pr_status": {
-          checkOutput = await checkPrStatus({
+          checkOutput = (await checkPrStatus({
             owner: loop.repoOwner,
             repo: loop.repoName,
             token,
             prNumber: resolvedPrNumber!,
-          }) as unknown as Record<string, unknown>;
+          })) as unknown as Record<string, unknown>;
           break;
         }
         case "deployment_status": {
-          checkOutput = await checkDeploymentStatus({
+          checkOutput = (await checkDeploymentStatus({
             owner: loop.repoOwner,
             repo: loop.repoName,
             token,
             environment: node.check.environment,
-          }) as unknown as Record<string, unknown>;
+          })) as unknown as Record<string, unknown>;
           break;
         }
         case "ci_status": {
-          checkOutput = await checkCiStatus({
+          checkOutput = (await checkCiStatus({
             owner: loop.repoOwner,
             repo: loop.repoName,
             token,
             ref: resolvedRef!,
-          }) as unknown as Record<string, unknown>;
+          })) as unknown as Record<string, unknown>;
           break;
         }
         default: {

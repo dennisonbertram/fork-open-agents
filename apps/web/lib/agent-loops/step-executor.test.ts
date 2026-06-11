@@ -123,10 +123,10 @@ let verifyRepoAccessResult: {
 
 const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
 
-let mintInstallationTokenResult: { token: string } = { token: "ghs_test_token" };
-const mintInstallationTokenMock = mock(
-  async () => mintInstallationTokenResult,
-);
+let mintInstallationTokenResult: { token: string } = {
+  token: "ghs_test_token",
+};
+const mintInstallationTokenMock = mock(async () => mintInstallationTokenResult);
 const revokeInstallationTokenMock = mock(async () => undefined);
 
 mock.module("@/lib/github/access", () => ({
@@ -156,14 +156,6 @@ let listCheckRunsThrows: Error | null = null;
 // Track if the GitHub API was called (for *From missing-path tests)
 let githubApiCallCount = 0;
 
-const githubChecksRunMock = mock(async () => {
-  githubApiCallCount++;
-  if (listCheckRunsThrows) throw listCheckRunsThrows;
-  return {
-    data: { check_runs: listCheckRunsResult, total_count: listCheckRunsResult.length },
-  };
-});
-
 const issuesMock = {
   listForRepo: mock(async () => {
     githubApiCallCount++;
@@ -180,16 +172,17 @@ const pullsMock = {
   }),
 };
 
-const deploymentsMock = {
-  listDeploymentStatuses: mock(async () => {
+// repos.listDeployments + repos.listDeploymentStatuses (deployment_status check)
+const reposMock = {
+  listDeployments: mock(async () => {
     githubApiCallCount++;
     if (listDeploymentStatusesThrows) throw listDeploymentStatusesThrows;
     return { data: listDeploymentStatusesResult };
   }),
-  list: mock(async () => {
+  listDeploymentStatuses: mock(async () => {
     githubApiCallCount++;
     if (listDeploymentStatusesThrows) throw listDeploymentStatusesThrows;
-    return { data: listDeploymentStatusesResult };
+    return { data: [] };
   }),
 };
 
@@ -210,7 +203,7 @@ const octokitMock = {
   rest: {
     issues: issuesMock,
     pulls: pullsMock,
-    deployments: deploymentsMock,
+    repos: reposMock,
     checks: checksRunsMock,
   },
 };
@@ -227,7 +220,9 @@ function makeDefinitionSnapshot(nodes: unknown[], edges: unknown[] = []) {
   return { nodes, edges };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-run-1",
     loopRunId: "loop-run-1",
@@ -287,7 +282,9 @@ function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     definition: {} as Record<string, unknown>,
     status: "active",
     guardrails: null,
-    permissions: { github: { issues: "read", checks: "read", deployments: "read" } },
+    permissions: {
+      github: { issues: "read", checks: "read", deployments: "read" },
+    },
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -328,8 +325,8 @@ function resetMocks() {
   revokeInstallationTokenMock.mockClear();
   issuesMock.listForRepo.mockClear();
   pullsMock.get.mockClear();
-  deploymentsMock.listDeploymentStatuses.mockClear();
-  deploymentsMock.list.mockClear();
+  reposMock.listDeployments.mockClear();
+  reposMock.listDeploymentStatuses.mockClear();
   checksRunsMock.listForRef.mockClear();
 }
 
@@ -351,8 +348,13 @@ describe("github_check — list_issues", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
 
-    currentStepRun = makeStepRun({ nodeId: "check-node-1", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "check-node-1",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
 
     listIssuesResult = [
@@ -405,7 +407,9 @@ describe("github_check — list_issues", () => {
     });
 
     // Run context must be updated with the check output under the node id
-    const contextUpdate = recordedRunUpdates.find((u) => u.context !== undefined);
+    const contextUpdate = recordedRunUpdates.find(
+      (u) => u.context !== undefined,
+    );
     expect(contextUpdate).toBeDefined();
     const ctx = contextUpdate?.context as Record<string, unknown>;
     expect(ctx["check-node-1"]).toBeDefined();
@@ -428,7 +432,9 @@ describe("github_check — list_issues", () => {
       workflowRunId: "wf-run-1",
     });
 
-    const succeededUpdate = recordedStepUpdates.find((u) => u.status === "succeeded");
+    const succeededUpdate = recordedStepUpdates.find(
+      (u) => u.status === "succeeded",
+    );
     const output = succeededUpdate?.stepOutput as Record<string, unknown>;
     const issues = output?.["issues"] as unknown[];
     expect(issues.length).toBeLessThanOrEqual(20);
@@ -467,7 +473,10 @@ describe("github_check — pr_status", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
 
-    currentStepRun = makeStepRun({ nodeId: "pr-node-1", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "pr-node-1",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
       context: { impl_step: { prNumber: 42 } },
@@ -496,7 +505,9 @@ describe("github_check — pr_status", () => {
 
     expect(result.outcome).toBe("success");
 
-    const succeededUpdate = recordedStepUpdates.find((u) => u.status === "succeeded");
+    const succeededUpdate = recordedStepUpdates.find(
+      (u) => u.status === "succeeded",
+    );
     const output = succeededUpdate?.stepOutput as Record<string, unknown>;
     expect(output["number"]).toBe(42);
     expect(output["state"]).toBe("open");
@@ -507,7 +518,7 @@ describe("github_check — pr_status", () => {
   test("BT-002: prNumberFrom path missing → condition_path_missing, no GitHub call", async () => {
     // Context does NOT have impl_step.prNumber
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: (currentLoopRun.definitionSnapshot),
+      definitionSnapshot: currentLoopRun.definitionSnapshot,
       context: {},
     });
 
@@ -552,8 +563,13 @@ describe("github_check — deployment_status", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
 
-    currentStepRun = makeStepRun({ nodeId: "deploy-node-1", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "deploy-node-1",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
 
     listDeploymentStatusesResult = [
@@ -576,7 +592,9 @@ describe("github_check — deployment_status", () => {
 
     expect(result.outcome).toBe("success");
 
-    const succeededUpdate = recordedStepUpdates.find((u) => u.status === "succeeded");
+    const succeededUpdate = recordedStepUpdates.find(
+      (u) => u.status === "succeeded",
+    );
     const output = succeededUpdate?.stepOutput as Record<string, unknown>;
     // Must include at least: latestState, environment
     expect(output["latestState"]).toBeDefined();
@@ -612,7 +630,10 @@ describe("github_check — ci_status", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
 
-    currentStepRun = makeStepRun({ nodeId: "ci-node-1", nodeKind: "github_check" });
+    currentStepRun = makeStepRun({
+      nodeId: "ci-node-1",
+      nodeKind: "github_check",
+    });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
       context: { impl_step: { headSha: "abc123" } },
@@ -634,7 +655,9 @@ describe("github_check — ci_status", () => {
 
     expect(result.outcome).toBe("success");
 
-    const succeededUpdate = recordedStepUpdates.find((u) => u.status === "succeeded");
+    const succeededUpdate = recordedStepUpdates.find(
+      (u) => u.status === "succeeded",
+    );
     const output = succeededUpdate?.stepOutput as Record<string, unknown>;
     // Must include: totalCount, passedCount, failedCount, pendingCount, checkRuns
     expect(typeof output["totalCount"]).toBe("number");
@@ -645,7 +668,7 @@ describe("github_check — ci_status", () => {
   test("BT-004: refFrom path missing → condition_path_missing, no GitHub call", async () => {
     // Context has no impl_step.headSha
     currentLoopRun = makeLoopRun({
-      definitionSnapshot: (currentLoopRun.definitionSnapshot),
+      definitionSnapshot: currentLoopRun.definitionSnapshot,
       context: {},
     });
 
@@ -689,8 +712,13 @@ describe("github_check — permission / installation failures", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
 
-    currentStepRun = makeStepRun({ nodeId: "check-node-1", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "check-node-1",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -739,7 +767,10 @@ describe("github_check — permission / installation failures", () => {
 // ── BT-006: condition node ────────────────────────────────────────────────────
 
 describe("condition node", () => {
-  function setupConditionNode(condition: unknown, context: Record<string, unknown> = {}) {
+  function setupConditionNode(
+    condition: unknown,
+    context: Record<string, unknown> = {},
+  ) {
     const node = {
       id: "cond-node-1",
       kind: "condition",
@@ -748,7 +779,10 @@ describe("condition node", () => {
       condition,
     };
     const snapshot = makeDefinitionSnapshot([node]);
-    currentStepRun = makeStepRun({ nodeId: "cond-node-1", nodeKind: "condition" });
+    currentStepRun = makeStepRun({
+      nodeId: "cond-node-1",
+      nodeKind: "condition",
+    });
     currentLoopRun = makeLoopRun({
       definitionSnapshot: snapshot as Record<string, unknown>,
       context,
@@ -795,10 +829,7 @@ describe("condition node", () => {
   });
 
   test("BT-006: condition path missing → typed condition_path_missing failure", async () => {
-    setupConditionNode(
-      { path: "nonexistent.path", op: "gt", value: 0 },
-      {},
-    );
+    setupConditionNode({ path: "nonexistent.path", op: "gt", value: 0 }, {});
 
     const { executeAgentLoopStep } = await executorPromise;
     const result = await executeAgentLoopStep({
@@ -842,7 +873,9 @@ describe("end node", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -856,7 +889,9 @@ describe("end node", () => {
     expect(result.outcome).toBe("success");
 
     // Run status must be set to completed
-    const completedUpdate = recordedRunUpdates.find((u) => u.status === "completed");
+    const completedUpdate = recordedRunUpdates.find(
+      (u) => u.status === "completed",
+    );
     expect(completedUpdate).toBeDefined();
   });
 
@@ -899,7 +934,9 @@ describe("start node", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
     currentStepRun = makeStepRun({ nodeId: "start-node-1", nodeKind: "start" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -930,8 +967,13 @@ describe("agent_step node", () => {
       instructions: "Do something",
     };
     const snapshot = makeDefinitionSnapshot([node]);
-    currentStepRun = makeStepRun({ nodeId: "agent-node-1", nodeKind: "agent_step" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "agent-node-1",
+      nodeKind: "agent_step",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -962,7 +1004,9 @@ describe("snapshot parse failure", () => {
       edges: [],
     };
     currentStepRun = makeStepRun({ nodeId: "x", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: badSnapshot as Record<string, unknown> });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: badSnapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
@@ -992,8 +1036,13 @@ describe("missing node in snapshot", () => {
       },
     ]);
     // stepRun references "missing-node-1" which is not in snapshot
-    currentStepRun = makeStepRun({ nodeId: "missing-node-1", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "missing-node-1",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -1023,7 +1072,9 @@ describe("event emission", () => {
     };
     const snapshot = makeDefinitionSnapshot([node]);
     currentStepRun = makeStepRun({ nodeId: "end-node-1", nodeKind: "end" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
   });
 
@@ -1070,8 +1121,13 @@ describe("event emission", () => {
       position: { x: 0, y: 0 },
     };
     const snapshot = makeDefinitionSnapshot([node]);
-    currentStepRun = makeStepRun({ nodeId: "agent-node-1", nodeKind: "agent_step" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "agent-node-1",
+      nodeKind: "agent_step",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
 
     const { executeAgentLoopStep } = await executorPromise;
@@ -1107,8 +1163,13 @@ describe("redaction", () => {
       check: { kind: "list_issues" },
     };
     const snapshot = makeDefinitionSnapshot([node]);
-    currentStepRun = makeStepRun({ nodeId: "check-node-1", nodeKind: "github_check" });
-    currentLoopRun = makeLoopRun({ definitionSnapshot: snapshot as Record<string, unknown> });
+    currentStepRun = makeStepRun({
+      nodeId: "check-node-1",
+      nodeKind: "github_check",
+    });
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot as Record<string, unknown>,
+    });
     currentLoop = makeLoop();
     listIssuesResult = [];
   });
