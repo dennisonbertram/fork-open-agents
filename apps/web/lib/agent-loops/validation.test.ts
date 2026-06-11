@@ -25,6 +25,7 @@
  *  VR-14  condition ops other than exists require value
  *  VR-15  Structural zod validation (missing required fields)
  *  VR-16  Valid minimal graph (start → end) passes
+ *  VR-17  No duplicate node ids within a definition
  */
 
 import { describe, expect, test } from "bun:test";
@@ -734,6 +735,74 @@ describe("VR-15: structural zod validation (missing required fields)", () => {
     };
     const result = validateLoopDefinition(def);
     expect(result.ok).toBe(false);
+  });
+});
+
+// ── VR-17: No duplicate node ids ─────────────────────────────────────────────
+
+describe("VR-17: no duplicate node ids", () => {
+  test("two nodes sharing the same id fail with duplicate_node_id naming the duplicated id", () => {
+    const def = {
+      nodes: [
+        makeStartNode("shared-id"),
+        makeEndNode("shared-id"), // same id as start
+      ],
+      edges: [makeEdge("e1", "shared-id", "shared-id", "always")],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.rule === "duplicate_node_id");
+      expect(err).toBeDefined();
+      expect(err?.nodeId).toBe("shared-id");
+    }
+  });
+
+  test("error message names the kinds of the colliding nodes", () => {
+    const def = {
+      nodes: [
+        makeStartNode("dup"),
+        makeAgentStepNode("dup"), // start and agent_step share id "dup"
+      ],
+      edges: [makeEdge("e1", "dup", "dup", "always")],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.rule === "duplicate_node_id");
+      expect(err).toBeDefined();
+      // Message should mention the id
+      expect(err?.message).toContain("dup");
+    }
+  });
+
+  test("three nodes where two share an id — all duplicated ids flagged", () => {
+    const def = {
+      nodes: [
+        makeStartNode("s1"),
+        makeAgentStepNode("dup"),
+        makeAgentStepNode("dup"), // duplicate
+        makeEndNode("e1"),
+      ],
+      edges: [
+        makeEdge("e1", "s1", "dup", "always"),
+        makeEdge("e2", "dup", "e1", "success"),
+        makeEdge("e3", "dup", "e1", "failure"),
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find(
+        (e) => e.rule === "duplicate_node_id" && e.nodeId === "dup",
+      );
+      expect(err).toBeDefined();
+    }
+  });
+
+  test("definition where all node ids are unique passes the duplicate-id check", () => {
+    const result = validateLoopDefinition(minimalValidDefinition());
+    expect(result.ok).toBe(true);
   });
 });
 

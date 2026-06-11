@@ -18,6 +18,10 @@
  *  RT-09  Reverting VR-14 (condition value): contains op without value fails
  *  RT-10  Multiple errors returned simultaneously — validator does not short-circuit
  *  RT-11  Store gate: invalid def to updateAgentLoop returns errors, not null
+ *  RT-12  Reverting VR-17 (duplicate node ids): two same-id nodes collapse in
+ *          the node map, so downstream rules would produce misleading results
+ *          rather than catching the root cause; the duplicate-id rule must fire
+ *          before the nodeMap is relied on by any other rule.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -341,6 +345,58 @@ describe("RT-10: validator collects multiple errors, not short-circuit after fir
         true,
       );
       expect(result.errors.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+});
+
+// ── RT-12: duplicate node ids collapse in nodeMap without VR-17 ───────────────
+
+describe("RT-12: duplicate node id rule fires before nodeMap is relied on", () => {
+  test("two nodes with the same id fail with duplicate_node_id, not a misleading downstream rule", () => {
+    // Without VR-17, a start node and an end node sharing the same id would
+    // silently collapse: nodeMap.set(id, node) overwrites the first entry,
+    // so the second node's kind wins. All downstream rules (VR-01/VR-02 counts,
+    // VR-04 outgoing-edge check, VR-08 reachability BFS) operate on corrupted
+    // state and can produce incorrect pass/fail results.
+    //
+    // This regression test proves that the validator catches the root cause
+    // (duplicate_node_id) rather than letting the nodeMap silently eat a node.
+    const def = {
+      nodes: [
+        startNode("collide"),
+        endNode("collide"), // same id — without VR-17, start gets overwritten
+      ],
+      edges: [edge("e1", "collide", "collide", "always")],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      // Must name the specific rule — not a vague structural error
+      const dupErr = result.errors.find((e) => e.rule === "duplicate_node_id");
+      expect(dupErr).toBeDefined();
+      expect(dupErr?.nodeId).toBe("collide");
+    }
+  });
+
+  test("two agent_step nodes sharing an id fail with duplicate_node_id naming the shared id", () => {
+    // Both nodes share "step-x". Without VR-17, only the second one ends up in
+    // nodeMap; the first is invisible to VR-04 (no_outgoing_edge check uses the
+    // map for lookup), VR-08 BFS, and edge validation.
+    const def = {
+      nodes: [startNode(), agentStepNode("step-x"), agentStepNode("step-x"), endNode()],
+      edges: [
+        edge("e1", "s", "step-x", "always"),
+        edge("e2", "step-x", "e", "success"),
+        edge("e3", "step-x", "e", "failure"),
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const dupErr = result.errors.find(
+        (e) => e.rule === "duplicate_node_id" && e.nodeId === "step-x",
+      );
+      expect(dupErr).toBeDefined();
     }
   });
 });
