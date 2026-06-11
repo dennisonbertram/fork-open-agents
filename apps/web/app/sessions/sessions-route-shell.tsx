@@ -1,6 +1,6 @@
 "use client";
 
-import { X } from "lucide-react";
+import { PanelLeft, X } from "lucide-react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import {
@@ -23,7 +23,13 @@ import {
   SidebarInset,
   SidebarProvider,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useBackgroundChatNotifications } from "@/hooks/use-background-chat-notifications";
 import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -51,7 +57,11 @@ const RouteContentShell = memo(function RouteContentShell({
 }: {
   children: ReactNode;
 }) {
+  const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const { target, closeWorkspaceSettings } = useWorkspaceSettings();
+  // The sidebar is offcanvas, so when hidden there is nothing in the panel to
+  // reopen it with — surface a persistent control in the content area.
+  const sidebarHidden = isMobile ? !openMobile : state === "collapsed";
 
   useEffect(() => {
     if (!target) {
@@ -68,6 +78,25 @@ const RouteContentShell = memo(function RouteContentShell({
 
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
+      {sidebarHidden ? (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={toggleSidebar}
+              className="absolute left-2.5 top-2.5 z-30 h-8 w-8 bg-background/80 shadow-sm backdrop-blur"
+              aria-label="Open panel"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={4}>
+            Open panel
+          </TooltipContent>
+        </Tooltip>
+      ) : null}
       {children}
       {target ? (
         <div
