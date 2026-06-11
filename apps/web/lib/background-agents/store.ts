@@ -242,6 +242,9 @@ export async function listBackgroundAgents(
 
   const triggersByAgent = new Map<string, BackgroundAgentTrigger[]>();
   for (const trigger of triggers) {
+    // Loop-bound triggers (loopId set, agentId null) are skipped here —
+    // they are not associated with a specific background agent.
+    if (!trigger.agentId) continue;
     const current = triggersByAgent.get(trigger.agentId) ?? [];
     current.push(trigger);
     triggersByAgent.set(trigger.agentId, current);

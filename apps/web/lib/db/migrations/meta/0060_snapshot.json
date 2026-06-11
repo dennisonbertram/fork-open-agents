@@ -1,6 +1,6 @@
 {
-  "id": "16e1521f-e099-4e8a-bb24-8f7c871eab82",
-  "prevId": "1b9976df-01be-432f-84b0-96e9c42e09cb",
+  "id": "a90e6cf2-7cd0-4bba-bf88-3cc41145d19e",
+  "prevId": "16e1521f-e099-4e8a-bb24-8f7c871eab82",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1037,6 +1037,13 @@
         },
         "tool_authoring_enabled": {
           "name": "tool_authoring_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "github_tools_enabled": {
+          "name": "github_tools_enabled",
           "type": "boolean",
           "primaryKey": false,
           "notNull": true,
