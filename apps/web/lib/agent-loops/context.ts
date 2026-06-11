@@ -5,6 +5,10 @@
  *   Merges `output` under the `nodeId` key in `context`.
  *   Enforces the 64KB cap by dropping the OLDEST node keys first
  *   (insertion-order, Object.keys order).
+ *   If, after dropping all older keys, the single remaining new key still
+ *   exceeds the cap on its own, the value is replaced with a truncation marker
+ *   object { truncated: true, byteSize: <original serialized size> } so the
+ *   persisted context always stays ≤ 64KB.
  *   Never throws.
  *
  * lookupContextPath(context, path) → { found: true; value } | { found: false }
@@ -71,12 +75,11 @@ export function mergeStepOutput(
     return { context: candidate, truncated: false };
   }
 
-  // Over cap — drop oldest keys until we fit
+  // Over cap — drop oldest keys until we fit.
+  // The newest key (nodeId) is always last in insertion order; we never drop it.
   const keys = Object.keys(candidate);
   let dropIdx = 0;
   while (byteSize(candidate) > CONTEXT_CAP_BYTES && dropIdx < keys.length - 1) {
-    // Never drop the most-recently-added key (the one we just inserted).
-    // It is always the last key in the object.
     const keyToDrop = keys[dropIdx];
     const trimmed: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(candidate)) {
@@ -86,6 +89,18 @@ export function mergeStepOutput(
     }
     candidate = trimmed;
     dropIdx++;
+  }
+
+  // After dropping all older keys, if the singleton context still exceeds the
+  // cap the new value alone is too large. Replace it with a truncation marker
+  // so the persisted context is always ≤ 64KB. Keep the nodeId key so
+  // downstream lookups get found:true and see the marker rather than silently
+  // reading absent/stale data.
+  if (byteSize(candidate) > CONTEXT_CAP_BYTES) {
+    const originalSize = byteSize(candidate);
+    candidate = {
+      [nodeId]: { truncated: true, byteSize: originalSize },
+    };
   }
 
   return { context: candidate, truncated: true };

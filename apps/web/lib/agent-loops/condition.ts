@@ -8,10 +8,13 @@
  * Ops:
  *   eq / neq   — deep-equal for primitives; no type coercion; type mismatch → error
  *   gt/gte/lt/lte — numbers only; strings or mixed → condition_type_mismatch
- *   exists     — found check only (null counts as present)
+ *   exists     — found check only (null counts as present).
+ *                SPECIAL: missing path → ok:true result:false (never an error).
+ *                All other ops: missing path → condition_path_missing.
  *   contains   — string includes substring OR array includes value; other types → type mismatch
  *
- * Missing path → condition_path_missing (NEVER a silent false).
+ * Missing path → condition_path_missing (NEVER a silent false), EXCEPT for `exists`.
+ * For `exists`, missing path IS the answer (false), not an error condition.
  *
  * No I/O, no DB, no eval.
  */
@@ -52,14 +55,14 @@ export function evaluateCondition(
 ): EvaluateConditionResult {
   const { path, op, value: condValue } = condition;
 
-  // exists is the only op that treats missing path as an error (same as the
-  // rest, but the lookup is the source of truth — null counts as found).
+  // exists is the only op where a missing path is NOT an error —
+  // it is the answer (false). This allows loop condition nodes like
+  // "context.issues exists? false → end" to route the false branch on
+  // the first iteration before the key has been populated.
+  // null counts as present (exists → true).
   if (op === "exists") {
     const lookup = lookupContextPath(context, path);
-    if (!lookup.found) {
-      return missingPath();
-    }
-    return ok(true);
+    return ok(lookup.found);
   }
 
   // All other ops require the path to be present
