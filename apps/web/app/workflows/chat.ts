@@ -547,15 +547,77 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+// Tight credit phrases that unambiguously indicate a provider billing/quota
+// rejection. Bare words like "quota", "insufficient", or "402" are intentionally
+// excluded to avoid false positives from unrelated runtime messages.
+// These phrases are only matched when provider context is present (see
+// hasProviderContext below).
+const PROVIDER_CREDIT_PHRASES: readonly string[] = [
+  "out of credits",
+  "insufficient credits",
+  "insufficient_quota",
+  "insufficient funds",
+  "exceeded your current quota",
+  "credit balance is too low",
+  "payment required",
+  "402 payment required",
+] as const;
+
+// Tight auth phrases covering common direct-provider API key rejections.
+// Bare "401" is excluded; only anchored forms "401 unauthorized" and "http 401"
+// are matched. These phrases are specific enough that any occurrence (even
+// without wrapper text) is treated as a provider auth rejection.
+const PROVIDER_AUTH_PHRASES: readonly string[] = [
+  "invalid or revoked",
+  "authentication_error",
+  "invalid_api_key",
+  "incorrect api key provided",
+  "invalid x-api-key",
+  "401 unauthorized",
+  "http 401",
+] as const;
+
+// Provider context markers produced by the error-compose block at the workflow
+// step level (~line 2498): "No output generated…\n\nProvider error: <msg>".
+function hasProviderContext(lc: string): boolean {
+  return lc.includes("provider error:") || lc.includes("no output generated");
+}
+
+function matchesAnyPhrase(lc: string, phrases: readonly string[]): boolean {
+  return phrases.some((phrase) => lc.includes(phrase));
+}
+
 function getUserFacingWorkflowErrorMessage(error: unknown): string {
   const message = getErrorMessage(error);
+  const lc = message.toLowerCase();
 
+  // Gateway free-credits branch — runs FIRST so it always wins over the
+  // generic credit branch below.
   if (
     message.includes("Free credits temporarily have restricted access") ||
     message.includes("RestrictedModelsError") ||
     message.includes("no_providers_available")
   ) {
     return "The model call failed in Vercel AI Gateway because free credits are temporarily restricted for this project. Add paid AI Gateway credits or switch to a model/provider with available credits, then retry.";
+  }
+
+  // Provider auth failure: the model provider rejected the request because the
+  // API key is invalid or revoked. Auth phrases are specific enough that any
+  // occurrence — whether in the composed "Provider error: …" form or as the
+  // raw standalone message from the provider — is a valid match. There is no
+  // additional provider-context guard here to preserve the raw-throw case
+  // (e.g., agentStreamError = new Error("Invalid or revoked access token")).
+  if (matchesAnyPhrase(lc, PROVIDER_AUTH_PHRASES)) {
+    return "The model provider rejected the request — the API key is invalid or has been revoked. Re-enter the key in Settings → Models and try again.";
+  }
+
+  // Provider credits / quota exhausted: the provider account is out of credits
+  // or over quota. Match only when a tight credit phrase is present AND there is
+  // provider context ("Provider error:" or "No output generated") to avoid
+  // swallowing unrelated messages (e.g. "payment required" from an internal HTTP
+  // call or "quota exceeded" from a disk-quota log line).
+  if (matchesAnyPhrase(lc, PROVIDER_CREDIT_PHRASES) && hasProviderContext(lc)) {
+    return "The model provider account is out of credits or over quota. Add credits to your provider account or switch to a different model or provider, then retry.";
   }
 
   return getSetupErrorMessage(error);
