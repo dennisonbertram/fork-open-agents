@@ -89,7 +89,7 @@ let priorVisitCounts: Record<string, number> = {};
 let advanceReturns = 1;
 
 // Unique constraint enforcement
-let uniqueAttemptStore: Set<string> = new Set();
+let uniqueAttemptStore = new Set<string>();
 let throwOnDuplicate = false;
 
 let counter = 500;
@@ -282,13 +282,11 @@ const executeMock = mock(
 );
 
 let startThrows: Error | null = null;
-const startMock = mock(
-  async (_wf: unknown, args: [{ stepRunId: string }]) => {
-    if (startThrows) throw startThrows;
-    workflowStartCalls.push(args[0]);
-    return { runId: `wf-${counter}` };
-  },
-);
+const startMock = mock(async (_wf: unknown, args: [{ stepRunId: string }]) => {
+  if (startThrows) throw startThrows;
+  workflowStartCalls.push(args[0]);
+  return { runId: `wf-${counter}` };
+});
 
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getCtxMock,
@@ -454,7 +452,10 @@ describe("REG-347-02: createAgentLoopStepRun unique violation → graceful dupli
 
   test("REG-347-02b: unique-violation → agent-loop.chain.skipped emitted with duplicate_advance reason", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "reg-step-cond", workflowRunId: "wf-1" });
+    await runAgentLoopStep({
+      stepRunId: "reg-step-cond",
+      workflowRunId: "wf-1",
+    });
 
     const skipEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.chain.skipped",
@@ -466,7 +467,10 @@ describe("REG-347-02: createAgentLoopStepRun unique violation → graceful dupli
 
   test("REG-347-02c: unique-violation → zero workflow dispatches", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "reg-step-cond", workflowRunId: "wf-1" });
+    await runAgentLoopStep({
+      stepRunId: "reg-step-cond",
+      workflowRunId: "wf-1",
+    });
     expect(workflowStartCalls.length).toBe(0);
   });
 });

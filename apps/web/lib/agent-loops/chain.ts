@@ -262,7 +262,8 @@ export async function runAgentLoopStep(
       eventName: "agent-loop.chain.skipped",
       status: "info",
       level: "warn",
-      summary: "Chain skipped: definition snapshot could not be re-parsed after execution",
+      summary:
+        "Chain skipped: definition snapshot could not be re-parsed after execution",
       payload: { reason: "snapshot_invalid", stepRunId },
       workflowRunId,
     });

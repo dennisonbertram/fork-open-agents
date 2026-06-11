@@ -99,7 +99,7 @@ let stepRunIdToStepRun: Record<string, AgentLoopStepRun> = {};
 
 // Unique constraint store: Set of "loopRunId:nodeId:attempt"
 // This simulates the real DB uniqueIndex on (loopRunId, nodeId, attempt).
-let uniqueAttemptStore: Set<string> = new Set();
+let uniqueAttemptStore = new Set<string>();
 
 // Whether the second createAgentLoopStepRun call should throw a unique violation
 let createStepRunThrowsOnDuplicate = false;
@@ -255,7 +255,7 @@ const updateAgentLoopStepRunMock = mock(
   },
 );
 
-const pauseLoopRunMock = mock(async (runId: string, _userId: string) => {
+const pauseLoopRunMock = mock(async (_runId: string, _userId: string) => {
   if (
     currentLoopRun.status !== "running" &&
     currentLoopRun.status !== "queued"
@@ -304,7 +304,13 @@ const retryCurrentStepMock = mock(
       nodeKind,
       attempt: nextAttempt,
     });
-    const newStepRun = makeStepRun({ id, nodeId, nodeKind, attempt: nextAttempt, status: "queued" });
+    const newStepRun = makeStepRun({
+      id,
+      nodeId,
+      nodeKind,
+      attempt: nextAttempt,
+      status: "queued",
+    });
     stepRunIdToNodeId[id] = nodeId;
     stepRunIdToStepRun[id] = newStepRun;
 
@@ -561,12 +567,10 @@ describe("BT-347-01: cycle revisit — second visit to same node must use attemp
   test("BT-347-01: 3-step cycle — first visit attempt 1, second visit attempt 2, third visit attempt 3", async () => {
     // Reset and set up a clean cycle scenario without the unique store guard
     createStepRunThrowsOnDuplicate = false;
-    priorStepRunCountForNode = {};
-
     // Simulate advancing through the cycle three times.
     // We test the attempt values passed to createAgentLoopStepRun.
     // Simulate: at condition step with 0 prior work visits → dispatch to work attempt 1
-    priorStepRunCountForNode["run-pr347:work"] = 0;
+    priorStepRunCountForNode = { "run-pr347:work": 0 };
 
     const condStepRun1 = makeStepRun({
       id: "step-cond-a",
@@ -810,9 +814,7 @@ describe("BT-347-03: retryCurrentStep always creates attempt n+1 relative to exi
     const { retryCurrentStep } = await chainPromise;
     await retryCurrentStep("run-pr347", "user-1");
 
-    const creation = recordedStepRunCreations.find(
-      (c) => c.nodeId === "work",
-    );
+    const creation = recordedStepRunCreations.find((c) => c.nodeId === "work");
     expect(creation).toBeDefined();
     expect(creation?.attempt).toBe(2);
   });
@@ -835,9 +837,7 @@ describe("BT-347-03: retryCurrentStep always creates attempt n+1 relative to exi
     const { retryCurrentStep } = await chainPromise;
     await retryCurrentStep("run-pr347", "user-1");
 
-    const creation = recordedStepRunCreations.find(
-      (c) => c.nodeId === "work",
-    );
+    const creation = recordedStepRunCreations.find((c) => c.nodeId === "work");
     expect(creation?.attempt).toBe(3);
   });
 });
@@ -896,9 +896,7 @@ describe("BT-347-04: unparseable definitionSnapshot → skipped event with reaso
     const skipEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.chain.skipped",
     );
-    const payload = skipEvent?.payload as
-      | Record<string, unknown>
-      | undefined;
+    const payload = skipEvent?.payload as Record<string, unknown> | undefined;
     expect(payload?.["reason"]).toBe("snapshot_invalid");
   });
 
