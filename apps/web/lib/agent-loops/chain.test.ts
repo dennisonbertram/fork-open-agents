@@ -64,7 +64,12 @@ type AdvanceRunInput = {
 let recordedEvents: EventInput[] = [];
 let recordedRunStatusUpdates: RunStatusInput[] = [];
 let recordedAdvanceCalls: AdvanceRunInput[] = [];
-let recordedStepRunCreations: { loopRunId: string; nodeId: string; nodeKind: string; attempt: number }[] = [];
+let recordedStepRunCreations: {
+  loopRunId: string;
+  nodeId: string;
+  nodeKind: string;
+  attempt: number;
+}[] = [];
 let workflowStartCalls: Array<{ stepRunId: string }> = [];
 
 // ── Store mock state ──────────────────────────────────────────────────────────
@@ -98,10 +103,13 @@ let executorOutcomes: Record<string, ExecutorOutcome> = {};
 // Track which nodeIds were executed
 let executedNodeIds: string[] = [];
 // Whether the executor should simulate an end-node finalizing the run
-let endNodeIds: Set<string> = new Set();
+let endNodeIds = new Set<string>();
 
 const executeAgentLoopStepMock = mock(
-  async (params: { stepRunId: string; workflowRunId: string }): Promise<ExecutorOutcome> => {
+  async (params: {
+    stepRunId: string;
+    workflowRunId: string;
+  }): Promise<ExecutorOutcome> => {
     // Find the node by stepRunId (via currentStepRun mapping)
     const nodeId = stepRunIdToNodeId[params.stepRunId] ?? currentStepRun.nodeId;
     executedNodeIds.push(nodeId);
@@ -109,7 +117,10 @@ const executeAgentLoopStepMock = mock(
     // Simulate end node finalizing the run
     if (endNodeIds.has(nodeId)) {
       currentLoopRun = { ...currentLoopRun, status: "completed" };
-      recordedRunStatusUpdates.push({ runId: currentLoopRun.id, status: "completed" });
+      recordedRunStatusUpdates.push({
+        runId: currentLoopRun.id,
+        status: "completed",
+      });
     }
 
     const result = executorOutcomes[nodeId] ?? { outcome: "success" };
@@ -122,17 +133,15 @@ let stepRunIdToNodeId: Record<string, string> = {};
 
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
-const getAgentLoopStepRunWithContextMock = mock(
-  async (stepRunId: string) => {
-    // Return context for the given stepRunId
-    const stepRun = stepRunIdToStepRun[stepRunId] ?? currentStepRun;
-    return {
-      stepRun,
-      loopRun: currentLoopRun,
-      loop: currentLoop,
-    };
-  },
-);
+const getAgentLoopStepRunWithContextMock = mock(async (stepRunId: string) => {
+  // Return context for the given stepRunId
+  const stepRun = stepRunIdToStepRun[stepRunId] ?? currentStepRun;
+  return {
+    stepRun,
+    loopRun: currentLoopRun,
+    loop: currentLoop,
+  };
+});
 
 // Maps stepRunId → stepRun object
 let stepRunIdToStepRun: Record<string, AgentLoopStepRun> = {};
@@ -143,12 +152,20 @@ const updateAgentLoopRunStatusMock = mock(
     currentLoopRun = {
       ...currentLoopRun,
       status: input.status as AgentLoopRun["status"],
-      ...(input.currentNodeId !== undefined ? { currentNodeId: input.currentNodeId } : {}),
-      ...(input.currentStepRunId !== undefined ? { currentStepRunId: input.currentStepRunId } : {}),
+      ...(input.currentNodeId !== undefined
+        ? { currentNodeId: input.currentNodeId }
+        : {}),
+      ...(input.currentStepRunId !== undefined
+        ? { currentStepRunId: input.currentStepRunId }
+        : {}),
       ...(input.errorKind !== undefined ? { errorKind: input.errorKind } : {}),
-      ...(input.errorMessage !== undefined ? { errorMessage: input.errorMessage } : {}),
+      ...(input.errorMessage !== undefined
+        ? { errorMessage: input.errorMessage }
+        : {}),
       ...(input.stepCount !== undefined ? { stepCount: input.stepCount } : {}),
-      ...(input.iterationCount !== undefined ? { iterationCount: input.iterationCount } : {}),
+      ...(input.iterationCount !== undefined
+        ? { iterationCount: input.iterationCount }
+        : {}),
     };
     return currentLoopRun;
   },
@@ -160,7 +177,12 @@ const recordAgentLoopEventMock = mock(async (input: EventInput) => {
 });
 
 const createAgentLoopStepRunMock = mock(
-  async (input: { loopRunId: string; nodeId: string; nodeKind: string; attempt?: number }) => {
+  async (input: {
+    loopRunId: string;
+    nodeId: string;
+    nodeKind: string;
+    attempt?: number;
+  }) => {
     const id = nextStepRunId();
     recordedStepRunCreations.push({
       loopRunId: input.loopRunId,
@@ -205,13 +227,16 @@ const countStepRunsForNodeMock = mock(
   },
 );
 
-const updateAgentLoopStepRunMock = mock(async (input: unknown) => {
+const _updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
   return currentStepRun;
 });
 
 // Pause/resume/cancel/retry store mocks
 const pauseLoopRunMock = mock(async (runId: string, _userId: string) => {
-  if (currentLoopRun.status !== "running" && currentLoopRun.status !== "queued") {
+  if (
+    currentLoopRun.status !== "running" &&
+    currentLoopRun.status !== "queued"
+  ) {
     throw new Error(`Cannot pause run in status: ${currentLoopRun.status}`);
   }
   currentLoopRun = { ...currentLoopRun, status: "paused" };
@@ -241,20 +266,29 @@ const resumeLoopRunMock = mock(async (runId: string, _userId: string) => {
 const retryCurrentStepMock = mock(
   async (params: { runId: string; userId: string }) => {
     const { runId } = params;
-    if (currentLoopRun.status !== "failed" && currentLoopRun.status !== "stalled") {
+    if (
+      currentLoopRun.status !== "failed" &&
+      currentLoopRun.status !== "stalled"
+    ) {
       throw new Error(`Cannot retry run in status: ${currentLoopRun.status}`);
     }
     // Find the current step run to get nodeId/nodeKind and attempt
     const failedStepRun = currentLoopRun.currentStepRunId
       ? stepRunIdToStepRun[currentLoopRun.currentStepRunId]
       : undefined;
-    const nodeId = currentLoopRun.currentNodeId ?? failedStepRun?.nodeId ?? "work";
+    const nodeId =
+      currentLoopRun.currentNodeId ?? failedStepRun?.nodeId ?? "work";
     const nodeKind = failedStepRun?.nodeKind ?? "agent_step";
     const nextAttempt = (failedStepRun?.attempt ?? 1) + 1;
 
     // Create a new step run (simulates the store creating attempt n+1)
     const id = nextStepRunId();
-    recordedStepRunCreations.push({ loopRunId: runId, nodeId, nodeKind, attempt: nextAttempt });
+    recordedStepRunCreations.push({
+      loopRunId: runId,
+      nodeId,
+      nodeKind,
+      attempt: nextAttempt,
+    });
     const newStepRun: AgentLoopStepRun = makeStepRun({
       id,
       loopRunId: runId,
@@ -266,7 +300,11 @@ const retryCurrentStepMock = mock(
     stepRunIdToNodeId[id] = nodeId;
     stepRunIdToStepRun[id] = newStepRun;
 
-    currentLoopRun = { ...currentLoopRun, status: "running", currentStepRunId: id };
+    currentLoopRun = {
+      ...currentLoopRun,
+      status: "running",
+      currentStepRunId: id,
+    };
     recordedRunStatusUpdates.push({ runId, status: "running" });
 
     return newStepRun;
@@ -327,14 +365,37 @@ function makeCanonicalDefinition() {
   return {
     nodes: [
       { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-      { id: "github_check", kind: "github_check", label: "Check Issues", position: { x: 1, y: 0 }, check: { kind: "list_issues" } },
-      { id: "condition", kind: "condition", label: "Has Issues?", position: { x: 2, y: 0 }, condition: { path: "github_check.openIssueCount", op: "gt", value: 0 } },
-      { id: "agent_step", kind: "agent_step", label: "Implement", position: { x: 3, y: 0 }, instructions: "Do the work" },
+      {
+        id: "github_check",
+        kind: "github_check",
+        label: "Check Issues",
+        position: { x: 1, y: 0 },
+        check: { kind: "list_issues" },
+      },
+      {
+        id: "condition",
+        kind: "condition",
+        label: "Has Issues?",
+        position: { x: 2, y: 0 },
+        condition: { path: "github_check.openIssueCount", op: "gt", value: 0 },
+      },
+      {
+        id: "agent_step",
+        kind: "agent_step",
+        label: "Implement",
+        position: { x: 3, y: 0 },
+        instructions: "Do the work",
+      },
       { id: "end", kind: "end", label: "End", position: { x: 4, y: 0 } },
     ],
     edges: [
       { id: "e1", source: "start", target: "github_check", when: "success" },
-      { id: "e2", source: "github_check", target: "condition", when: "success" },
+      {
+        id: "e2",
+        source: "github_check",
+        target: "condition",
+        when: "success",
+      },
       { id: "e3", source: "condition", target: "agent_step", when: "true" },
       { id: "e4", source: "condition", target: "github_check", when: "false" }, // loop back
       { id: "e5", source: "agent_step", target: "end", when: "success" },
@@ -387,7 +448,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
   };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-run-1",
     loopRunId: "loop-run-1",
@@ -472,42 +535,63 @@ describe("BT-C01: canonical walk — start → github_check (false) → github_c
     currentStepRun = makeStepRun({ id: "step-run-1", nodeId: "start" });
     stepRunIdToNodeId["step-run-1"] = "start";
     stepRunIdToStepRun["step-run-1"] = currentStepRun;
-    currentLoopRun = makeLoopRun({ status: "queued", currentNodeId: "start", currentStepRunId: "step-run-1" });
+    currentLoopRun = makeLoopRun({
+      status: "queued",
+      currentNodeId: "start",
+      currentStepRunId: "step-run-1",
+    });
   });
 
   test("BT-C01: run transitions queued → running on first step", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
     // Should have transitioned to running
-    const runningUpdate = recordedRunStatusUpdates.find(u => u.status === "running");
+    const runningUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "running",
+    );
     expect(runningUpdate).toBeDefined();
   });
 
   test("BT-C01: agent-loop.run.started emitted exactly once for first step", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const startedEvents = recordedEvents.filter(e => e.eventName === "agent-loop.run.started");
+    const startedEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.run.started",
+    );
     expect(startedEvents.length).toBe(1);
   });
 
   test("BT-C01: start node — executor called, dispatch fired, agent-loop.edge.evaluated emitted", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
     // Executor must have been called with the start step run
     expect(executedNodeIds).toContain("start");
 
     // An edge evaluated event should have been emitted
-    const edgeEvent = recordedEvents.find(e => e.eventName === "agent-loop.edge.evaluated");
+    const edgeEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.edge.evaluated",
+    );
     expect(edgeEvent).toBeDefined();
 
     // Workflow should have been dispatched for next step
     expect(workflowStartCalls.length).toBe(1);
 
     // A chain dispatched event should have been emitted
-    const dispatchedEvent = recordedEvents.find(e => e.eventName === "agent-loop.chain.dispatched");
+    const dispatchedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.dispatched",
+    );
     expect(dispatchedEvent).toBeDefined();
   });
 
@@ -516,7 +600,10 @@ describe("BT-C01: canonical walk — start → github_check (false) → github_c
     // Simulate a prior step run exists for github_check (making it a loop)
     priorStepRunCountForNode["loop-run-1:github_check"] = 1;
 
-    const conditionStepRun = makeStepRun({ id: "step-run-cond", nodeId: "condition" });
+    const conditionStepRun = makeStepRun({
+      id: "step-run-cond",
+      nodeId: "condition",
+    });
     stepRunIdToNodeId["step-run-cond"] = "condition";
     stepRunIdToStepRun["step-run-cond"] = conditionStepRun;
     currentStepRun = conditionStepRun;
@@ -530,7 +617,10 @@ describe("BT-C01: canonical walk — start → github_check (false) → github_c
     executorOutcomes["condition"] = { outcome: "false" }; // false → github_check loop
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-cond", workflowRunId: "wf-run-2" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-cond",
+      workflowRunId: "wf-run-2",
+    });
 
     // advance call should have iterationCount = 1
     const advanceCall = recordedAdvanceCalls[recordedAdvanceCalls.length - 1];
@@ -548,8 +638,19 @@ describe("BT-C02: failure stop — failed step, no failure edge → run failed",
     // Use a simple graph with no failure edges
     const definition = {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "work", kind: "agent_step", label: "Work", position: { x: 1, y: 0 }, instructions: "do it" },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "work",
+          kind: "agent_step",
+          label: "Work",
+          position: { x: 1, y: 0 },
+          instructions: "do it",
+        },
         { id: "end", kind: "end", label: "End", position: { x: 2, y: 0 } },
       ],
       edges: [
@@ -580,16 +681,24 @@ describe("BT-C02: failure stop — failed step, no failure edge → run failed",
 
   test("BT-C02: run fails with step errorKind when no failure edge exists", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate).toBeDefined();
     expect(failedUpdate?.errorKind).toBe("sandbox_unavailable");
   });
 
   test("BT-C02: zero dispatches when failure has no edge", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-1",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(workflowStartCalls.length).toBe(0);
   });
@@ -603,9 +712,26 @@ describe("BT-C03: failure routed — failed step WITH failure edge → continues
 
     const definition = {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "work", kind: "agent_step", label: "Work", position: { x: 1, y: 0 }, instructions: "do it" },
-        { id: "error_handler", kind: "agent_step", label: "Handle Error", position: { x: 2, y: 0 }, instructions: "handle" },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "work",
+          kind: "agent_step",
+          label: "Work",
+          position: { x: 1, y: 0 },
+          instructions: "do it",
+        },
+        {
+          id: "error_handler",
+          kind: "agent_step",
+          label: "Handle Error",
+          position: { x: 2, y: 0 },
+          instructions: "handle",
+        },
         { id: "end", kind: "end", label: "End", position: { x: 3, y: 0 } },
       ],
       edges: [
@@ -637,10 +763,15 @@ describe("BT-C03: failure routed — failed step WITH failure edge → continues
 
   test("BT-C03: failure edge exists → run NOT failed, dispatch to error_handler", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-2", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-2",
+      workflowRunId: "wf-run-1",
+    });
 
     // Run should NOT be in failed status
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate).toBeUndefined();
 
     // Should have dispatched the next step
@@ -661,8 +792,19 @@ describe("BT-C04: chain_route_missing — dangling/null route on success", () =>
     // A graph where the success edge target doesn't exist in nodes (dangling)
     const definition = {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "work", kind: "agent_step", label: "Work", position: { x: 1, y: 0 }, instructions: "do it" },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "work",
+          kind: "agent_step",
+          label: "Work",
+          position: { x: 1, y: 0 },
+          instructions: "do it",
+        },
         // No "next" node declared
       ],
       edges: [
@@ -688,26 +830,37 @@ describe("BT-C04: chain_route_missing — dangling/null route on success", () =>
 
   test("BT-C04: dangling success edge → run failed with chain_route_missing", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-3", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-3",
+      workflowRunId: "wf-run-1",
+    });
 
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate).toBeDefined();
     expect(failedUpdate?.errorKind).toBe("chain_route_missing");
   });
 
   test("BT-C04: chain_route_missing event emitted", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-3", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-3",
+      workflowRunId: "wf-run-1",
+    });
 
     const routeMissingEvent = recordedEvents.find(
-      e => e.eventName === "agent-loop.chain.route_missing",
+      (e) => e.eventName === "agent-loop.chain.route_missing",
     );
     expect(routeMissingEvent).toBeDefined();
   });
 
   test("BT-C04: no dispatch when route is missing", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-work-3", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-work-3",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(workflowStartCalls.length).toBe(0);
   });
@@ -734,8 +887,19 @@ describe("BT-C05: guardrails", () => {
   function makeDefinitionWithWork() {
     return {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
-        { id: "work", kind: "agent_step", label: "Work", position: { x: 1, y: 0 }, instructions: "do it" },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "work",
+          kind: "agent_step",
+          label: "Work",
+          position: { x: 1, y: 0 },
+          instructions: "do it",
+        },
         { id: "end", kind: "end", label: "End", position: { x: 2, y: 0 } },
       ],
       edges: [
@@ -757,17 +921,23 @@ describe("BT-C05: guardrails", () => {
       currentNodeId: "work",
       currentStepRunId: "step-guard-1",
       stepCount: 50, // exactly at default maxStepsPerRun ceiling
-      guardrails: null,
     });
     currentLoop = makeLoop({ guardrails: null });
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-guard-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-guard-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const trippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.guardrail.tripped");
+    const trippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.guardrail.tripped",
+    );
     expect(trippedEvent).toBeDefined();
 
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate).toBeDefined();
     expect(failedUpdate?.errorKind).toBe("guardrail_exceeded");
 
@@ -784,17 +954,23 @@ describe("BT-C05: guardrails", () => {
       currentStepRunId: "step-guard-2",
       stepCount: 5,
       iterationCount: 10, // exactly at default maxIterations
-      guardrails: null,
     });
     currentLoop = makeLoop({ guardrails: null });
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-guard-2", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-guard-2",
+      workflowRunId: "wf-run-1",
+    });
 
-    const trippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.guardrail.tripped");
+    const trippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.guardrail.tripped",
+    );
     expect(trippedEvent).toBeDefined();
 
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate).toBeDefined();
     expect(failedUpdate?.errorKind).toBe("guardrail_exceeded");
   });
@@ -808,18 +984,24 @@ describe("BT-C05: guardrails", () => {
       currentStepRunId: "step-guard-3",
       stepCount: 5,
       iterationCount: 0,
-      startedAt: new Date(Date.now() - (3 * 60 * 60 * 1000)), // 3 hours ago > 2h default
-      guardrails: null,
+      startedAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago > 2h default
     });
     currentLoop = makeLoop({ guardrails: null });
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-guard-3", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-guard-3",
+      workflowRunId: "wf-run-1",
+    });
 
-    const trippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.guardrail.tripped");
+    const trippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.guardrail.tripped",
+    );
     expect(trippedEvent).toBeDefined();
 
-    const failedUpdate = recordedRunStatusUpdates.find(u => u.status === "failed");
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
     expect(failedUpdate?.errorKind).toBe("guardrail_exceeded");
   });
 
@@ -840,7 +1022,9 @@ describe("BT-C05: guardrails", () => {
 // ── BT-C06: Cooperative — paused/cancelled before execution ──────────────────
 
 describe("BT-C06: cooperative check — paused/cancelled → skipped, no execution", () => {
-  function makeInactiveRun(status: "paused" | "cancelled" | "completed" | "failed") {
+  function makeInactiveRun(
+    status: "paused" | "cancelled" | "completed" | "failed",
+  ) {
     return makeLoopRun({
       status,
       currentNodeId: "work",
@@ -851,7 +1035,11 @@ describe("BT-C06: cooperative check — paused/cancelled → skipped, no executi
   beforeEach(() => {
     resetAll();
 
-    const sr = makeStepRun({ id: "step-inactive-1", nodeId: "work", nodeKind: "agent_step" });
+    const sr = makeStepRun({
+      id: "step-inactive-1",
+      nodeId: "work",
+      nodeKind: "agent_step",
+    });
     stepRunIdToNodeId["step-inactive-1"] = "work";
     stepRunIdToStepRun["step-inactive-1"] = sr;
     currentStepRun = sr;
@@ -862,12 +1050,17 @@ describe("BT-C06: cooperative check — paused/cancelled → skipped, no executi
     currentLoopRun = makeInactiveRun("paused");
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-inactive-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-inactive-1",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(executedNodeIds.length).toBe(0);
     expect(workflowStartCalls.length).toBe(0);
 
-    const skippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.chain.skipped");
+    const skippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.skipped",
+    );
     expect(skippedEvent).toBeDefined();
   });
 
@@ -875,12 +1068,17 @@ describe("BT-C06: cooperative check — paused/cancelled → skipped, no executi
     currentLoopRun = makeInactiveRun("cancelled");
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-inactive-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-inactive-1",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(executedNodeIds.length).toBe(0);
     expect(workflowStartCalls.length).toBe(0);
 
-    const skippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.chain.skipped");
+    const skippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.skipped",
+    );
     expect(skippedEvent).toBeDefined();
   });
 
@@ -888,10 +1086,15 @@ describe("BT-C06: cooperative check — paused/cancelled → skipped, no executi
     currentLoopRun = makeInactiveRun("completed");
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-inactive-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-inactive-1",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(executedNodeIds.length).toBe(0);
-    const skippedEvent = recordedEvents.find(e => e.eventName === "agent-loop.chain.skipped");
+    const skippedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.skipped",
+    );
     expect(skippedEvent).toBeDefined();
   });
 });
@@ -912,9 +1115,14 @@ describe("BT-C07: cooperative check — queued → running transition", () => {
 
   test("BT-C07: queued run transitions to running before execution", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const runningUpdate = recordedRunStatusUpdates.find(u => u.status === "running");
+    const runningUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "running",
+    );
     expect(runningUpdate).toBeDefined();
     // Running update should come BEFORE any execution (executor called AFTER status change)
     expect(executedNodeIds).toContain("start");
@@ -922,9 +1130,14 @@ describe("BT-C07: cooperative check — queued → running transition", () => {
 
   test("BT-C07: run.started event emitted exactly once for queued run", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const startedEvents = recordedEvents.filter(e => e.eventName === "agent-loop.run.started");
+    const startedEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.run.started",
+    );
     expect(startedEvents.length).toBe(1);
   });
 
@@ -932,9 +1145,14 @@ describe("BT-C07: cooperative check — queued → running transition", () => {
     currentLoopRun = makeLoopRun({ status: "running" });
 
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
-    const startedEvents = recordedEvents.filter(e => e.eventName === "agent-loop.run.started");
+    const startedEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.run.started",
+    );
     expect(startedEvents.length).toBe(0);
   });
 });
@@ -948,7 +1166,10 @@ describe("BT-C08: double-advance — conditional update returns 0 rows → no se
     currentStepRun = makeStepRun({ id: "step-run-1", nodeId: "start" });
     stepRunIdToNodeId["step-run-1"] = "start";
     stepRunIdToStepRun["step-run-1"] = currentStepRun;
-    currentLoopRun = makeLoopRun({ status: "running", currentStepRunId: "step-run-1" });
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      currentStepRunId: "step-run-1",
+    });
     currentLoop = makeLoop();
     executorOutcomes["start"] = { outcome: "success" };
     advanceRunRowsUpdated = 0; // Simulate 0 rows updated (already advanced)
@@ -956,14 +1177,17 @@ describe("BT-C08: double-advance — conditional update returns 0 rows → no se
 
   test("BT-C08: when advanceRunToNextStep returns false → no dispatch, duplicate_advance event", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
     // No dispatch should happen
     expect(workflowStartCalls.length).toBe(0);
 
     // Should record a skipped/duplicate event
     const skipEvent = recordedEvents.find(
-      e => e.eventName === "agent-loop.chain.skipped",
+      (e) => e.eventName === "agent-loop.chain.skipped",
     );
     expect(skipEvent).toBeDefined();
     // Check that the reason indicates duplicate_advance
@@ -981,7 +1205,10 @@ describe("BT-C09: dispatch-throw — start() throws → dispatch_failed, run rec
     currentStepRun = makeStepRun({ id: "step-run-1", nodeId: "start" });
     stepRunIdToNodeId["step-run-1"] = "start";
     stepRunIdToStepRun["step-run-1"] = currentStepRun;
-    currentLoopRun = makeLoopRun({ status: "running", currentStepRunId: "step-run-1" });
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      currentStepRunId: "step-run-1",
+    });
     currentLoop = makeLoop();
     executorOutcomes["start"] = { outcome: "success" };
     workflowStartThrows = new Error("Workflow service unavailable");
@@ -989,20 +1216,28 @@ describe("BT-C09: dispatch-throw — start() throws → dispatch_failed, run rec
 
   test("BT-C09: dispatch_failed event recorded on start() throw", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
     const dispatchFailedEvent = recordedEvents.find(
-      e => e.eventName === "agent-loop.chain.dispatch_failed",
+      (e) => e.eventName === "agent-loop.chain.dispatch_failed",
     );
     expect(dispatchFailedEvent).toBeDefined();
   });
 
   test("BT-C09: run remains in running status (recoverable) after dispatch failure", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+    });
 
     // Run should NOT be failed — it remains in a recoverable state
-    const finalRunUpdate = recordedRunStatusUpdates.filter(u => u.status === "failed");
+    const finalRunUpdate = recordedRunStatusUpdates.filter(
+      (u) => u.status === "failed",
+    );
     expect(finalRunUpdate.length).toBe(0);
   });
 });
@@ -1022,7 +1257,9 @@ describe("BT-C10: control plane transitions", () => {
     await pauseLoopRun("loop-run-1", "user-1");
 
     expect(currentLoopRun.status).toBe("paused");
-    const pausedEvent = recordedEvents.find(e => e.eventName === "agent-loop.run.paused");
+    const pausedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.run.paused",
+    );
     expect(pausedEvent).toBeDefined();
   });
 
@@ -1039,7 +1276,9 @@ describe("BT-C10: control plane transitions", () => {
     await cancelLoopRun("loop-run-1", "user-1");
 
     expect(currentLoopRun.status).toBe("cancelled");
-    const cancelledEvent = recordedEvents.find(e => e.eventName === "agent-loop.run.cancelled");
+    const cancelledEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.run.cancelled",
+    );
     expect(cancelledEvent).toBeDefined();
   });
 
@@ -1058,15 +1297,24 @@ describe("BT-C10: control plane transitions", () => {
 
   // Resume
   test("BT-C10: resume from paused → running + event + re-dispatch if step queued", async () => {
-    const queuedStepRun = makeStepRun({ id: "step-queued", nodeId: "work", status: "queued" });
+    const queuedStepRun = makeStepRun({
+      id: "step-queued",
+      nodeId: "work",
+      status: "queued",
+    });
     stepRunIdToStepRun["step-queued"] = queuedStepRun;
-    currentLoopRun = makeLoopRun({ status: "paused", currentStepRunId: "step-queued" });
+    currentLoopRun = makeLoopRun({
+      status: "paused",
+      currentStepRunId: "step-queued",
+    });
 
     const { resumeLoopRun } = await chainPromise;
     await resumeLoopRun("loop-run-1", "user-1");
 
     expect(currentLoopRun.status).toBe("running");
-    const resumedEvent = recordedEvents.find(e => e.eventName === "agent-loop.run.resumed");
+    const resumedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.run.resumed",
+    );
     expect(resumedEvent).toBeDefined();
     // Re-dispatch should have happened
     expect(workflowStartCalls.length).toBe(1);
@@ -1099,7 +1347,9 @@ describe("BT-C10: control plane transitions", () => {
     await retryCurrentStep("loop-run-1", "user-1");
 
     // A new step run should have been created with attempt 2
-    const newStepCreation = recordedStepRunCreations.find(c => c.nodeId === "work");
+    const newStepCreation = recordedStepRunCreations.find(
+      (c) => c.nodeId === "work",
+    );
     expect(newStepCreation).toBeDefined();
     expect(newStepCreation?.attempt).toBe(2);
 
@@ -1123,7 +1373,11 @@ describe("BT-C11: end node — no dispatch after run completion", () => {
   beforeEach(() => {
     resetAll();
 
-    const endStepRun = makeStepRun({ id: "step-end-1", nodeId: "end", nodeKind: "end" });
+    const endStepRun = makeStepRun({
+      id: "step-end-1",
+      nodeId: "end",
+      nodeKind: "end",
+    });
     stepRunIdToNodeId["step-end-1"] = "end";
     stepRunIdToStepRun["step-end-1"] = endStepRun;
     currentStepRun = endStepRun;
@@ -1141,18 +1395,26 @@ describe("BT-C11: end node — no dispatch after run completion", () => {
 
   test("BT-C11: end node step run → no edge evaluation, no dispatch", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-end-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-end-1",
+      workflowRunId: "wf-run-1",
+    });
 
     expect(workflowStartCalls.length).toBe(0);
 
     // No edge.evaluated event should be emitted for end nodes
-    const edgeEvents = recordedEvents.filter(e => e.eventName === "agent-loop.edge.evaluated");
+    const edgeEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.edge.evaluated",
+    );
     expect(edgeEvents.length).toBe(0);
   });
 
   test("BT-C11: run remains completed after end node", async () => {
     const { runAgentLoopStep } = await chainPromise;
-    await runAgentLoopStep({ stepRunId: "step-end-1", workflowRunId: "wf-run-1" });
+    await runAgentLoopStep({
+      stepRunId: "step-end-1",
+      workflowRunId: "wf-run-1",
+    });
 
     // Run should be completed (set by executor mock) and not re-transitioned
     expect(currentLoopRun.status).toBe("completed");

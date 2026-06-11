@@ -708,18 +708,11 @@ export async function resumeLoopRun(
       startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
       updatedAt: now,
     })
-    .where(
-      and(
-        eq(agentLoopRuns.id, runId),
-        eq(agentLoopRuns.status, "paused"),
-      ),
-    )
+    .where(and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.status, "paused")))
     .returning();
 
   if (!run) {
-    throw new Error(
-      `Cannot resume run ${runId}: not in paused status`,
-    );
+    throw new Error(`Cannot resume run ${runId}: not in paused status`);
   }
 
   return run;
@@ -763,9 +756,7 @@ export async function retryCurrentStep(params: {
   });
 
   if (!failedStepRun) {
-    throw new Error(
-      `Cannot retry: step run ${run.currentStepRunId} not found`,
-    );
+    throw new Error(`Cannot retry: step run ${run.currentStepRunId} not found`);
   }
 
   // Count attempts so far to compute n+1

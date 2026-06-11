@@ -18,11 +18,13 @@
 import "server-only";
 
 import { start } from "workflow/api";
-import { runAgentLoopStepWorkflow } from "@/app/workflows/agent-loop-step";
-import { GUARDRAIL_DEFAULTS, GUARDRAIL_CEILINGS } from "./types";
-import type { LoopGuardrails } from "./types";
+import {
+  GUARDRAIL_DEFAULTS,
+  GUARDRAIL_CEILINGS,
+  loopDefinitionSchema,
+  type LoopGuardrails,
+} from "./types";
 import { evaluateEdges } from "./edge-evaluator";
-import { loopDefinitionSchema } from "./types";
 import {
   getAgentLoopStepRunWithContext,
   updateAgentLoopRunStatus,
@@ -62,9 +64,12 @@ export type ResolvedGuardrails = {
 export function resolveGuardrails(
   userGuardrails: Partial<LoopGuardrails> | null | undefined,
 ): ResolvedGuardrails {
-  const steps = userGuardrails?.maxStepsPerRun ?? GUARDRAIL_DEFAULTS.maxStepsPerRun;
-  const iters = userGuardrails?.maxIterations ?? GUARDRAIL_DEFAULTS.maxIterations;
-  const duration = userGuardrails?.maxRunDurationMs ?? GUARDRAIL_DEFAULTS.maxRunDurationMs;
+  const steps =
+    userGuardrails?.maxStepsPerRun ?? GUARDRAIL_DEFAULTS.maxStepsPerRun;
+  const iters =
+    userGuardrails?.maxIterations ?? GUARDRAIL_DEFAULTS.maxIterations;
+  const duration =
+    userGuardrails?.maxRunDurationMs ?? GUARDRAIL_DEFAULTS.maxRunDurationMs;
 
   return {
     maxStepsPerRun: Math.min(steps, GUARDRAIL_CEILINGS.maxStepsPerRun),
@@ -101,7 +106,12 @@ export async function runAgentLoopStep(
 
   // ── 2. Cooperative pre-check ───────────────────────────────────────────────
 
-  const nonRunningStatuses = new Set(["paused", "cancelled", "completed", "failed"]);
+  const nonRunningStatuses = new Set([
+    "paused",
+    "cancelled",
+    "completed",
+    "failed",
+  ]);
   if (nonRunningStatuses.has(loopRun.status)) {
     await recordAgentLoopEvent({
       loopRunId,
@@ -207,7 +217,9 @@ export async function runAgentLoopStep(
   // We check by looking at the result: if the node was "end", there's no
   // outgoing edge — we check the outcome + whether run is now completed.
   // Actually, we check via the definition snapshot to avoid re-loading.
-  const snapshotParse = loopDefinitionSchema.safeParse(loopRun.definitionSnapshot);
+  const snapshotParse = loopDefinitionSchema.safeParse(
+    loopRun.definitionSnapshot,
+  );
   if (!snapshotParse.success) {
     // Should not happen (step-executor handles this) but be defensive
     return;
@@ -390,6 +402,11 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   // ── 7g. Dispatch next step workflow ────────────────────────────────────────
 
   try {
+    // Dynamic import breaks the cycle: chain.ts ← agent-loop-step.ts ← chain.ts.
+    // The workflow file imports runAgentLoopStep from this module, so we cannot
+    // statically import the workflow file here without creating a circular dep.
+    const { runAgentLoopStepWorkflow } =
+      await import("@/app/workflows/agent-loop-step");
     await start(runAgentLoopStepWorkflow, [{ stepRunId: nextStepRun.id }]);
 
     await recordAgentLoopEvent({
@@ -443,7 +460,7 @@ export async function pauseLoopRun(
   runId: string,
   userId: string,
 ): Promise<void> {
-  const run = await storePauseLoopRun(runId, userId);
+  await storePauseLoopRun(runId, userId);
 
   await recordAgentLoopEvent({
     loopRunId: runId,
@@ -453,8 +470,6 @@ export async function pauseLoopRun(
     summary: "Loop run paused",
     payload: { runId, userId },
   });
-
-  void run; // used for type narrowing only; actual state is in DB
 }
 
 /**
@@ -464,7 +479,7 @@ export async function cancelLoopRun(
   runId: string,
   userId: string,
 ): Promise<void> {
-  const run = await storeCancelLoopRun(runId, userId);
+  await storeCancelLoopRun(runId, userId);
 
   await recordAgentLoopEvent({
     loopRunId: runId,
@@ -474,8 +489,6 @@ export async function cancelLoopRun(
     summary: "Loop run cancelled",
     payload: { runId, userId },
   });
-
-  void run;
 }
 
 /**
@@ -506,6 +519,8 @@ export async function resumeLoopRun(
   // Re-dispatch current step if it is still queued
   if (run.currentStepRunId) {
     try {
+      const { runAgentLoopStepWorkflow } =
+        await import("@/app/workflows/agent-loop-step");
       await start(runAgentLoopStepWorkflow, [
         { stepRunId: run.currentStepRunId },
       ]);
@@ -552,10 +567,17 @@ export async function retryCurrentStep(
     status: "info",
     level: "info",
     summary: `Retrying step: attempt ${newStepRun.attempt}`,
-    payload: { runId, userId, newStepRunId: newStepRun.id, attempt: newStepRun.attempt },
+    payload: {
+      runId,
+      userId,
+      newStepRunId: newStepRun.id,
+      attempt: newStepRun.attempt,
+    },
   });
 
   try {
+    const { runAgentLoopStepWorkflow } =
+      await import("@/app/workflows/agent-loop-step");
     await start(runAgentLoopStepWorkflow, [{ stepRunId: newStepRun.id }]);
 
     await recordAgentLoopEvent({
