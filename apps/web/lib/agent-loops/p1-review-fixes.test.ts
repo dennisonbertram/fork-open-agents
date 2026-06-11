@@ -23,7 +23,11 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentLoop, AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
+import type {
+  AgentLoop,
+  AgentLoopRun,
+  AgentLoopStepRun,
+} from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -100,14 +104,17 @@ let verifyRepoAccessResult: {
 };
 
 const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
-const mintInstallationTokenMock = mock(
-  async () => ({ token: "ghs_test_token" }),
-);
+const mintInstallationTokenMock = mock(async () => ({
+  token: "ghs_test_token",
+}));
 const revokeInstallationTokenMock = mock(async () => undefined);
 
 // withScopedInstallationOctokit — controlled per test via createCommitMock
-let createCommitMockResult: { ok: boolean; commitSha?: string; error?: string } =
-  { ok: true, commitSha: "sha999" };
+let createCommitMockResult: {
+  ok: boolean;
+  commitSha?: string;
+  error?: string;
+} = { ok: true, commitSha: "sha999" };
 let createCommitMockShouldThrow: Error | null = null;
 
 const createCommitMock = mock(async () => {
@@ -212,7 +219,11 @@ let openAgentResultSequence: Array<{
   rawFinishReason: string;
   steps: Array<{ toolCalls: unknown[] }>;
   response: { messages: unknown[] };
-  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
   totalUsage: {
     promptTokens: number;
     completionTokens: number;
@@ -303,7 +314,9 @@ function makeAgentStepNode(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-p1-1",
     loopRunId: "run-p1-1",
@@ -444,7 +457,9 @@ describe("BT-346-01: own-node branch wins over prior-step branch in context", ()
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -479,7 +494,9 @@ describe("BT-346-02: latest prior-step branch found via insertion-order scan", (
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -518,7 +535,9 @@ describe("BT-346-03: non-object and missing-branch entries in context are skippe
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -554,7 +573,9 @@ describe("BT-346-04: fallback to repo defaultBranch when no context branch found
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -606,7 +627,9 @@ describe("BT-346-05: generate returning tool-calls then stop → loop runs to co
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -628,7 +651,9 @@ describe("BT-346-05: generate returning tool-calls then stop → loop runs to co
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -664,7 +689,9 @@ describe("BT-346-06: tool-loop max iterations exceeded → typed workflow_failed
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -681,7 +708,9 @@ describe("BT-346-06: tool-loop max iterations exceeded → typed workflow_failed
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -709,7 +738,9 @@ describe("BT-346-07: timeout still enforced (AbortError → workflow_failed)", (
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -739,7 +770,9 @@ describe("BT-346-08: createCommit returns { ok: false } → step fails with comm
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -753,7 +786,9 @@ describe("BT-346-08: createCommit returns { ok: false } → step fails with comm
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -767,7 +802,9 @@ describe("BT-346-08: createCommit returns { ok: false } → step fails with comm
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -782,7 +819,9 @@ describe("BT-346-08: createCommit returns { ok: false } → step fails with comm
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -809,7 +848,9 @@ describe("BT-346-09: createCommit throws → step fails with commit_failed", () 
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -835,7 +876,9 @@ describe("BT-346-10: commit failure → sandbox still disposed", () => {
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -860,7 +903,9 @@ describe("BT-346-11: commit failure → step.commit.failed event (not .completed
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -877,7 +922,9 @@ describe("BT-346-11: commit failure → step.commit.failed event (not .completed
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -894,7 +941,9 @@ describe("BT-346-11: commit failure → step.commit.failed event (not .completed
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),
@@ -923,7 +972,9 @@ describe("BT-346-12: no-changes path unaffected by commit failure handling", () 
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
       loopRunId: "run-p1-1",
-      node: makeAgentStepNode() as Parameters<typeof executeAgentStep>[0]["node"],
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
       loopRun: currentLoopRun,
       loop: currentLoop,
       startedAt: Date.now(),

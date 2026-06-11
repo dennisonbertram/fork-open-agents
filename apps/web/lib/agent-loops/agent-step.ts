@@ -6,13 +6,16 @@
  * Flow:
  *   1. Verify repo access (write) — installation_missing / permission_missing
  *   2. Mint installation token (contents:write, scoped to repo)
- *   3. Connect sandbox named agent_loop_<stepRunId>; clone repo with token;
- *      check out branch from context (path <nodeId>.branch) or default branch.
+ *   3. Resolve working branch via resolveWorkingBranch (see below).
+ *      Connect sandbox named agent_loop_<stepRunId>; clone repo with token.
  *      Sandbox connect failure → sandbox_unavailable.
  *   4. Record agent-loop.step.sandbox.started event.
  *   5. Build prompt via buildLoopStepPrompt.
- *   6. Run openAgent (classic tool policy, bounded steps + timeout).
- *      Timeout/abort → typed workflow_failed failure.
+ *   6. Run openAgent in a bounded loop:
+ *        Loop until finishReason !== "tool-calls", up to AGENT_MAX_LOOP_STEPS.
+ *        Each iteration appends response messages so the next call sees
+ *        tool results.  Exhausting the bound → typed workflow_failed failure.
+ *        AbortError / timeout → typed workflow_failed failure.
  *   7. Record agent-loop.step.agent.completed event with usage summary.
  *   8. Read /tmp/loop-step-output.json from sandbox:
  *        - missing / ENOENT → step_output_invalid
@@ -23,17 +26,28 @@
  *        - non-zero exit → checks_failed; record agent-loop.step.check.completed
  *        - zero exit → record agent-loop.step.check.completed (success)
  *  10. If file changes present: stage all, build commit intent, createCommit
- *        via withScopedInstallationOctokit, record agent-loop.step.commit.completed.
- *        Branch for commit: output JSON "branch" field, then checked-out branch,
- *        then access.defaultBranch.
+ *        via withScopedInstallationOctokit.
+ *        - commit ok → record agent-loop.step.commit.completed
+ *        - commit failed (ok:false OR throws) → typed commit_failed failure;
+ *          record agent-loop.step.commit.failed (error level)
+ *        Branch for commit: output JSON "branch" field, then working branch.
  *  11. Merge validated output into run context via mergeStepOutput +
  *        updateAgentLoopRunContext; persist stepOutput; mark succeeded.
  *  12. ALWAYS dispose sandbox in finally — including all failure paths.
  *
- * Branch-declaration convention:
+ * Working-branch resolution (resolveWorkingBranch):
+ *   Priority order:
+ *   (1) context[nodeId].branch  — re-run of same node keeps its own branch
+ *   (2) scan context entries in INSERTION ORDER, take the LAST entry whose
+ *       value is a plain object with a non-empty string "branch" field —
+ *       this allows a downstream agent_step to continue on the branch
+ *       declared by the most-recently-completed producing step
+ *   (3) access.defaultBranch    — repo default branch (fallback)
+ *
+ * Branch-declaration convention (output JSON):
  *   The agent writes a "branch" field to /tmp/loop-step-output.json.
  *   The executor reads that field to know which branch to commit/push to.
- *   Fallback: context path <nodeId>.branch, then access.defaultBranch.
+ *   This overrides the working branch for the commit only.
  *
  * Redaction:
  *   The installation token is never included in any event payload or stepOutput.
@@ -64,13 +78,15 @@ import {
   DEFAULT_SANDBOX_TIMEOUT_MS,
   DEFAULT_SANDBOX_VCPUS,
 } from "@/lib/sandbox/config";
-import { mergeStepOutput, lookupContextPath } from "./context";
+import { mergeStepOutput } from "./context";
+import { resolveWorkingBranch } from "./resolve-working-branch";
 import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunContext,
 } from "./store";
 import { buildLoopStepPrompt } from "./loop-step-prompt";
+import type { ModelMessage } from "ai";
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
 import type { AgentStepNode } from "./types";
 import type { StepExecutionResult } from "./step-executor";
@@ -89,6 +105,15 @@ const CHECK_COMMAND_TIMEOUT_MS = 120_000;
 
 /** Path inside the sandbox where the agent writes its output JSON. */
 const STEP_OUTPUT_PATH = "/tmp/loop-step-output.json";
+
+/**
+ * Maximum number of openAgent.generate iterations before giving up.
+ * Mirrors the DEFAULT_AGENT_MAX_STEPS bound used by runMutationAgent in
+ * background-agents/executor.ts.  A single call may return "tool-calls"
+ * (meaning the model wants to see tool results before continuing); we loop
+ * until finishReason is no longer "tool-calls" or we exhaust this bound.
+ */
+const AGENT_MAX_LOOP_STEPS = 8;
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -296,17 +321,16 @@ export async function executeAgentStep(
   }
 
   // ── 3. Determine working branch ───────────────────────────────────────────────
-  // Check context for <nodeId>.branch (set by a prior step in its output JSON),
-  // then fall back to the access default branch.
+  // Resolution order (see module-level doc and resolveWorkingBranch):
+  //   (1) context[nodeId].branch — re-run of same node keeps its own branch
+  //   (2) last insertion-order context entry with a non-empty string branch field
+  //   (3) access.defaultBranch — repo default branch fallback
 
-  const contextBranchLookup = lookupContextPath(
-    loopRun.context ?? {},
-    `${node.id}.branch`,
+  const workingBranch = resolveWorkingBranch(
+    (loopRun.context ?? {}) as Record<string, unknown>,
+    node.id,
+    accessResult.defaultBranch,
   );
-  const workingBranch =
-    contextBranchLookup.found && typeof contextBranchLookup.value === "string"
-      ? contextBranchLookup.value
-      : accessResult.defaultBranch;
 
   // ── 4. Connect sandbox ────────────────────────────────────────────────────────
 
@@ -382,32 +406,62 @@ export async function executeAgentStep(
       branch: workingBranch,
     });
 
-    // ── 5c. Run openAgent ────────────────────────────────────────────────────
+    // ── 5c. Run openAgent in a bounded loop ─────────────────────────────────
+    // A single generate call may return finishReason "tool-calls", meaning
+    // the model wants to see tool results before it is done. We keep looping
+    // until finishReason is no longer "tool-calls", or until we exceed
+    // AGENT_MAX_LOOP_STEPS. This mirrors the runMutationAgent pattern in
+    // background-agents/executor.ts.
 
     let agentResult: Awaited<ReturnType<typeof openAgent.generate>>;
+    const sandboxState = (sandbox as { getState?: () => unknown }).getState?.();
+    const agentOptions = {
+      sandbox: sandboxState
+        ? {
+            state: sandboxState as Parameters<
+              typeof openAgent.generate
+            >[0]["options"]["sandbox"]["state"],
+            workingDirectory: sandbox.workingDirectory,
+            currentBranch: sandbox.currentBranch,
+            environmentDetails: sandbox.environmentDetails,
+          }
+        : undefined,
+      runtimeMode: "classic" as const,
+      customInstructions:
+        "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
+    };
+
+    // Accumulate messages across turns so the next call sees prior tool results.
+    const agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
+
     try {
-      const sandboxState = (
-        sandbox as { getState?: () => unknown }
-      ).getState?.();
-      agentResult = await openAgent.generate({
-        messages: [{ role: "user", content: prompt }],
-        options: {
-          sandbox: sandboxState
-            ? {
-                state: sandboxState as Parameters<
-                  typeof openAgent.generate
-                >[0]["options"]["sandbox"]["state"],
-                workingDirectory: sandbox.workingDirectory,
-                currentBranch: sandbox.currentBranch,
-                environmentDetails: sandbox.environmentDetails,
-              }
-            : undefined,
-          runtimeMode: "classic",
-          customInstructions:
-            "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
-        },
-        timeout: { totalMs: AGENT_STEP_TIMEOUT_MS },
-      } as Parameters<typeof openAgent.generate>[0]);
+      let loopStep = 0;
+      while (true) {
+        loopStep++;
+        agentResult = await openAgent.generate({
+          messages: agentMessages,
+          options: agentOptions,
+          timeout: { totalMs: AGENT_STEP_TIMEOUT_MS },
+        } as Parameters<typeof openAgent.generate>[0]);
+
+        // Append model response messages so tool results are visible next turn.
+        if (agentResult.response?.messages?.length) {
+          agentMessages.push(...agentResult.response.messages);
+        }
+
+        if (agentResult.finishReason !== "tool-calls") {
+          // Agent has stopped requesting tool calls — exit loop.
+          break;
+        }
+
+        if (loopStep >= AGENT_MAX_LOOP_STEPS) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "workflow_failed",
+            errorMessage: `Agent step exhausted ${AGENT_MAX_LOOP_STEPS} steps without finishing`,
+          });
+        }
+      }
     } catch (err) {
       const isAbort =
         err instanceof Error &&
@@ -569,56 +623,96 @@ export async function executeAgentStep(
       });
 
       if (intentResult.ok) {
-        const commitResult = await withScopedInstallationOctokit({
-          installationId: accessResult.installationId,
-          repositoryId: accessResult.repositoryId,
-          permissions: { contents: "write" },
-          operation: async (octokit) =>
-            createCommit({
-              octokit,
-              owner: intentResult.intent.owner,
-              repo: intentResult.intent.repo,
-              branch: intentResult.intent.branch,
-              expectedHeadSha: intentResult.intent.expectedHeadSha,
-              message: intentResult.intent.message,
-              files: intentResult.intent.files,
-              ...(intentResult.intent.baseBranch
-                ? { baseBranch: intentResult.intent.baseBranch }
-                : {}),
-              ...(intentResult.intent.coAuthor
-                ? { coAuthor: intentResult.intent.coAuthor }
-                : {}),
-            }),
-        });
-
-        if (commitResult.ok) {
-          // Record branch + sha in the step output for downstream steps
-          parsedOutput = {
-            ...parsedOutput,
-            branch: outputBranch,
-            commitSha: commitResult.commitSha,
-          };
-
+        let commitResult: Awaited<ReturnType<typeof createCommit>>;
+        try {
+          commitResult = (await withScopedInstallationOctokit({
+            installationId: accessResult.installationId,
+            repositoryId: accessResult.repositoryId,
+            permissions: { contents: "write" },
+            operation: async (octokit) =>
+              createCommit({
+                octokit,
+                owner: intentResult.intent.owner,
+                repo: intentResult.intent.repo,
+                branch: intentResult.intent.branch,
+                expectedHeadSha: intentResult.intent.expectedHeadSha,
+                message: intentResult.intent.message,
+                files: intentResult.intent.files,
+                ...(intentResult.intent.baseBranch
+                  ? { baseBranch: intentResult.intent.baseBranch }
+                  : {}),
+                ...(intentResult.intent.coAuthor
+                  ? { coAuthor: intentResult.intent.coAuthor }
+                  : {}),
+              }),
+          })) as Awaited<ReturnType<typeof createCommit>>;
+        } catch (commitErr) {
+          const reason =
+            commitErr instanceof Error ? commitErr.message : String(commitErr);
           await recordAgentLoopEvent({
             loopRunId,
             stepRunId,
             nodeId: node.id,
-            eventName: "agent-loop.step.commit.completed",
-            status: "succeeded",
-            level: "info",
-            summary: `Committed changes to ${outputBranch}`,
-            payload: {
-              branch: outputBranch,
-              sha: commitResult.commitSha,
-              fileCount: intentResult.intent.files.length,
-            },
+            eventName: "agent-loop.step.commit.failed",
+            status: "failed",
+            level: "error",
+            summary: `Commit failed: ${reason}`,
+            payload: { branch: outputBranch, reason },
             workflowRunId,
           });
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "commit_failed",
+            errorMessage: `Commit failed: ${reason}`,
+          });
         }
-        // If commit fails (non-ok), we still proceed — partial success is acceptable
-        // as the agent's work is complete; the commit failure is non-blocking.
+
+        if (!commitResult.ok) {
+          const reason =
+            (commitResult as { error?: string }).error ??
+            "unknown commit error";
+          await recordAgentLoopEvent({
+            loopRunId,
+            stepRunId,
+            nodeId: node.id,
+            eventName: "agent-loop.step.commit.failed",
+            status: "failed",
+            level: "error",
+            summary: `Commit failed: ${reason}`,
+            payload: { branch: outputBranch, reason },
+            workflowRunId,
+          });
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "commit_failed",
+            errorMessage: `Commit failed: ${reason}`,
+          });
+        }
+
+        // Commit succeeded — record branch + sha in the step output for downstream steps
+        parsedOutput = {
+          ...parsedOutput,
+          branch: outputBranch,
+          commitSha: commitResult.commitSha,
+        };
+
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId: node.id,
+          eventName: "agent-loop.step.commit.completed",
+          status: "succeeded",
+          level: "info",
+          summary: `Committed changes to ${outputBranch}`,
+          payload: {
+            branch: outputBranch,
+            sha: commitResult.commitSha,
+            fileCount: intentResult.intent.files.length,
+          },
+          workflowRunId,
+        });
       }
-      // If intentResult is not ok (e.g. empty), proceed without commit
+      // If intentResult is not ok (e.g. empty diff), proceed without commit
     }
 
     // ── 5h. Merge output into run context + persist ──────────────────────────
