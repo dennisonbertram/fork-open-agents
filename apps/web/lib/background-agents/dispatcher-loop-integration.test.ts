@@ -4,6 +4,9 @@
  * BT-326-12: cron sweep includes due loop trigger + updates nextRunAt
  * BT-326-13: agent-trigger path is UNCHANGED (existing dispatcher behavior preserved)
  * BT-326-15: loop event trigger matches + bridge called
+ * BT-326-16: loop-bound webhook.error trigger → bridge called, createRunForTrigger NOT called
+ * BT-326-17: agent-bound webhook.error trigger behavior unchanged
+ * BT-326-18 (regression): loop-bound webhook.error trigger NEVER reaches createRunForTrigger
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -29,8 +32,12 @@ let agentScheduleRows: Array<{
   agent: BackgroundAgentWithTriggers;
   trigger: BackgroundAgentWithTriggers["triggers"][number];
 }> = [];
+let webhookRow: {
+  agent: BackgroundAgentWithTriggers;
+  trigger: BackgroundAgentWithTriggers["triggers"][number];
+} | null = null;
 const listMatchingTriggersForEvent = mock(async () => matchingAgentRows);
-const getWebhookTriggerByPublicId = mock(async () => null);
+const getWebhookTriggerByPublicId = mock(async () => webhookRow);
 const listEnabledScheduleTriggers = mock(async () => agentScheduleRows);
 const updateBackgroundAgentRunStatus = mock(async () => undefined);
 const advanceTriggerScheduleState = mock(async () => undefined);
@@ -243,6 +250,7 @@ function resetIntegrationMocks() {
   workflowRunId = "workflow-1";
   matchingAgentRows = [];
   agentScheduleRows = [];
+  webhookRow = null;
   loopForTriggerResult = activeLoop;
   loopDispatchResult = { created: true, runId: "loop-run-1" };
   start.mockClear();
@@ -250,6 +258,7 @@ function resetIntegrationMocks() {
   recordBackgroundAgentEvent.mockClear();
   listMatchingTriggersForEvent.mockClear();
   listEnabledScheduleTriggers.mockClear();
+  getWebhookTriggerByPublicId.mockClear();
   advanceTriggerScheduleState.mockClear();
   recordTriggerSkipReason.mockClear();
   getAgentLoopById.mockClear();
@@ -375,5 +384,124 @@ describe("dispatchBackgroundTriggerEvent — loop trigger branch", () => {
     expect(result.created).toBe(1);
     // Loop bridge NOT called for agent trigger
     expect(dispatchLoopRunForTrigger).not.toHaveBeenCalled();
+  });
+});
+
+// ── BT-326-16/17/18: dispatchWebhookErrorEvent loop branch ────────────────────
+
+describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
+  beforeEach(resetIntegrationMocks);
+
+  // Fixture: a loop-bound webhook.error trigger row returned by getWebhookTriggerByPublicId
+  const loopWebhookTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
+    id: "trigger-loop-webhook",
+    agentId: null,
+    loopId: "loop-webhook-1",
+    userId: "user-1",
+    name: "Loop webhook error",
+    kind: "webhook.error",
+    status: "enabled",
+    conditions: {},
+    schedule: null,
+    webhookPublicId: "wh_loop_123",
+    webhookSecretHash: "hash-abc",
+    lastRunAt: null,
+    nextRunAt: null,
+    lastSkipReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const agentWebhookTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
+    id: "trigger-agent-webhook",
+    agentId: "agent-loop-int",
+    loopId: null,
+    userId: "user-1",
+    name: "Agent webhook error",
+    kind: "webhook.error",
+    status: "enabled",
+    conditions: {},
+    schedule: null,
+    webhookPublicId: "wh_agent_456",
+    webhookSecretHash: "hash-xyz",
+    lastRunAt: null,
+    nextRunAt: null,
+    lastSkipReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  test("BT-326-16: loop-bound webhook.error trigger calls bridge, NOT createRunForTrigger, loopRunIds populated", async () => {
+    // Arrange: getWebhookTriggerByPublicId returns a loop-bound trigger row.
+    // The agent row accompanying it has status "enabled" (required by the guard)
+    // and loopId on the trigger is set to "loop-webhook-1".
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTrigger,
+    };
+    loopForTriggerResult = { ...activeLoop, id: "loop-webhook-1" };
+    loopDispatchResult = { created: true, runId: "loop-run-webhook-1" };
+
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_123",
+      event: {
+        externalId: "err-loop-1",
+        title: "Unhandled error",
+        message: "TypeError: cannot read property",
+        occurredAt: "2026-06-11T10:00:00.000Z",
+      },
+      requestId: "req-loop-webhook",
+    });
+
+    // Bridge must be called with the loop and trigger
+    expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
+    const bridgeCall = dispatchLoopRunForTrigger.mock.calls[0]?.[0] as {
+      loop: { id: string };
+      trigger: { id: string; loopId: string | null };
+      event: { source: string; kind: string; externalId: string | null | undefined };
+    };
+    expect(bridgeCall.trigger.loopId).toBe("loop-webhook-1");
+    expect(bridgeCall.event.source).toBe("webhook");
+    expect(bridgeCall.event.kind).toBe("webhook.error");
+    expect(bridgeCall.event.externalId).toBe("err-loop-1");
+
+    // Agent path must NOT be called
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+
+    // Loop run id must appear in result
+    expect(result.loopRunIds).toContain("loop-run-webhook-1");
+    expect(result.enabled).toBe(true);
+    expect(result.matched).toBe(1);
+  });
+
+  test("BT-326-17: agent-bound webhook.error trigger behavior unchanged — createRunForTrigger called, bridge NOT called", async () => {
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: agentWebhookTrigger,
+    };
+
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_agent_456",
+      event: {
+        externalId: "err-agent-1",
+        title: "Unhandled error",
+        message: "ReferenceError",
+        occurredAt: "2026-06-11T10:00:00.000Z",
+      },
+      requestId: "req-agent-webhook",
+    });
+
+    // Agent path called as before
+    expect(createRunForTrigger).toHaveBeenCalledTimes(1);
+    // Bridge NOT called for agent trigger
+    expect(dispatchLoopRunForTrigger).not.toHaveBeenCalled();
+
+    expect(result.created).toBe(1);
+    expect(result.loopRunIds).toEqual([]);
+    expect(result.runIds).toContain("run-agent-1");
   });
 });
