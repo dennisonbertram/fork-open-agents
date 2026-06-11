@@ -24,6 +24,7 @@
  *   VR-13  condition node requires condition config
  *   VR-14  condition ops other than exists require value
  *   VR-15  Structural zod validation
+ *   VR-17  No duplicate node ids within a definition
  *
  * No eval, no RegExp expression parsing, no I/O, no DB.
  */
@@ -95,6 +96,26 @@ export function validateLoopDefinition(
 
   const def = parseResult.data;
   const errors: LoopValidationError[] = [];
+
+  // VR-17: no duplicate node ids — checked before building nodeMap so that all
+  // downstream rules operate on a structurally valid id set. Two nodes sharing
+  // an id would silently collapse in the map (the second overwrites the first),
+  // causing VR-01/VR-02 counts, VR-04 outgoing-edge checks, and VR-08 BFS to
+  // produce misleading results.
+  const seenNodeIds = new Map<string, LoopNode>();
+  for (const node of def.nodes) {
+    const existing = seenNodeIds.get(node.id);
+    if (existing !== undefined) {
+      errors.push({
+        kind: "loop_invalid",
+        rule: "duplicate_node_id",
+        message: `Duplicate node id "${node.id}" (kinds: ${existing.kind}, ${node.kind}). Node ids must be unique within a definition.`,
+        nodeId: node.id,
+      });
+    } else {
+      seenNodeIds.set(node.id, node);
+    }
+  }
 
   // Build node map for fast lookup. We intentionally use Map (not a plain
   // object) to avoid prototype-pollution risks.

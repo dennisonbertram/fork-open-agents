@@ -287,4 +287,10 @@ export type LoopValidationError =
       kind: "loop_invalid";
       rule: "schema_error";
       message: string;
+    }
+  | {
+      kind: "loop_invalid";
+      rule: "duplicate_node_id";
+      message: string;
+      nodeId: string;
     };
