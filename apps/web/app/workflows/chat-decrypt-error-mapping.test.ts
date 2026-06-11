@@ -552,4 +552,61 @@ describe("provider auth / credit error → actionable user message mapping", () 
     // Must BE the generic fallback for unknown errors
     expect(delta).toBe("Workspace setup failed. Try again in a moment.");
   });
+
+  test("composed 'No output generated' + 'Provider error: 429' does NOT route to auth-key message", async () => {
+    // A rate-limit error must NOT produce the auth-key guidance
+    const rateLimitError = new Error(
+      "No output generated from model\n\nProvider error: 429 Too Many Requests",
+    );
+    inferenceProfileError = rateLimitError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check their API key — it is a rate-limit, not an auth error
+    expect(delta.toLowerCase()).not.toContain("api key");
+    // Must NOT be the billing/quota message either
+    expect(delta.toLowerCase()).not.toContain("billing");
+  });
+
+  test("'insufficient permissions' does NOT route to billing message", async () => {
+    // An OAuth/ACL scope error must NOT produce billing guidance
+    const permissionsError = new Error(
+      "insufficient permissions: the access token does not have write permission",
+    );
+    inferenceProfileError = permissionsError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check billing/credits — it is an OAuth error, not billing
+    expect(delta.toLowerCase()).not.toContain("billing");
+    expect(delta.toLowerCase()).not.toContain("credits");
+  });
 });
