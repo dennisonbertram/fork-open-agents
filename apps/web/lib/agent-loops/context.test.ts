@@ -86,14 +86,13 @@ describe("mergeStepOutput — CT-04 under cap", () => {
 
 describe("mergeStepOutput — CT-05 over cap drops oldest keys", () => {
   test("drops the oldest node key first when adding output would exceed 64KB", () => {
-    // Fill context with two large node outputs that together are under cap,
-    // then add a third that pushes it over the cap.
-    const largeValue = "x".repeat(20 * 1024); // 20KB string
+    // Each 22KB value. Two nodes = 44KB (under cap). Adding a third = ~66KB (over).
+    const largeValue = "x".repeat(22 * 1024); // 22KB string
     let ctx: Record<string, unknown> = {};
-    // Add node-A (oldest), then node-B
+    // Add node-A (oldest), then node-B — together ~44KB (under cap)
     ctx = mergeStepOutput(ctx, "node-A", { data: largeValue }).context;
     ctx = mergeStepOutput(ctx, "node-B", { data: largeValue }).context;
-    // Now add node-C which would push us over 64KB
+    // Now add node-C which pushes it over 64KB
     const result = mergeStepOutput(ctx, "node-C", { data: largeValue });
     // Must be truncated
     expect(result.truncated).toBe(true);
@@ -108,7 +107,7 @@ describe("mergeStepOutput — CT-05 over cap drops oldest keys", () => {
 
 describe("mergeStepOutput — CT-06 after truncation is under cap", () => {
   test("serialized context after truncation is under 64KB", () => {
-    const largeValue = "x".repeat(20 * 1024);
+    const largeValue = "x".repeat(22 * 1024);
     let ctx: Record<string, unknown> = {};
     ctx = mergeStepOutput(ctx, "node-A", { data: largeValue }).context;
     ctx = mergeStepOutput(ctx, "node-B", { data: largeValue }).context;
