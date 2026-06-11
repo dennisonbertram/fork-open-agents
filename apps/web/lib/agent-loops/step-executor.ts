@@ -412,11 +412,7 @@ export async function executeAgentLoopStep(params: {
         });
       }
       const rawPr = lookup.value;
-      if (
-        typeof rawPr !== "number" ||
-        !Number.isInteger(rawPr) ||
-        rawPr <= 0
-      ) {
+      if (typeof rawPr !== "number" || !Number.isInteger(rawPr) || rawPr <= 0) {
         return recordStepFailure({
           ...failureCtx,
           errorKind: "condition_type_mismatch",
