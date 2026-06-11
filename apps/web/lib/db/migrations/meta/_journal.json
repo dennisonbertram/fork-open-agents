@@ -421,6 +421,13 @@
       "when": 1781190453660,
       "tag": "0059_tense_maverick",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1781211145481,
+      "tag": "0060_natural_jocasta",
+      "breakpoints": true
     }
   ]
 }
