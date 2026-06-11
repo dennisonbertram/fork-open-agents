@@ -104,6 +104,12 @@ const spies = {
   resolveComposioToolsForChat: mock(
     async (): Promise<unknown> => ({ status: "off" as const }),
   ),
+  resolveGitHubToolsForChat: mock(
+    async (): Promise<unknown> => ({
+      status: "off" as const,
+      reason: "not_enabled" as const,
+    }),
+  ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
   recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
@@ -397,6 +403,10 @@ mock.module("@/lib/observability/events", () => ({
 
 mock.module("@/lib/composio/session", () => ({
   resolveComposioToolsForChat: spies.resolveComposioToolsForChat,
+}));
+
+mock.module("@/lib/github/tools", () => ({
+  resolveGitHubToolsForChat: spies.resolveGitHubToolsForChat,
 }));
 
 mock.module("./chat-sandbox-runtime", () => ({
@@ -759,7 +769,10 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions());
 
-    expect(agentStreamTools).toBe(composioTools);
+    // mergeExtraTools returns a fresh object ({ ...composioTools }) so Composio
+    // and GitHub tools can coexist without clobbering; assert structural
+    // equality rather than reference identity.
+    expect(agentStreamTools).toEqual(composioTools);
     expect(spies.emitSessionEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventName: "composio.profile.selected",

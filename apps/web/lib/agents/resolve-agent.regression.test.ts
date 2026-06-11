@@ -31,6 +31,7 @@ type AgentRow = {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 };
 
 const mockListAgentsForUser = mock(
@@ -81,6 +82,7 @@ function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
     composioProfileId: null,
     managedRuntimeProfileId: null,
     toolAuthoringEnabled: false,
+    githubToolsEnabled: false,
     ...overrides,
   };
 }
@@ -280,6 +282,45 @@ describe("Regression: ResolvedAgent never has undefined fields", () => {
     expect(resolved.modelId).not.toBeUndefined();
     expect(resolved.instructions).not.toBeUndefined();
     expect(resolved.builtinToolNames).not.toBeUndefined();
+  });
+});
+
+// ─── Regression N1: githubToolsEnabled field propagation ─────────────────────
+
+describe("Regression: githubToolsEnabled propagates through rowToResolvedAgent", () => {
+  beforeEach(() => {
+    mockListAgentsForUser.mockReset();
+    mockGetUserPreferences.mockReset();
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "anthropic/claude-opus-4",
+      defaultSubagentModelId: null,
+      defaultInferenceProfileId: null,
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+  });
+
+  it("REG-N1a: DB row with githubToolsEnabled=true yields resolved.githubToolsEnabled===true", async () => {
+    mockListAgentsForUser.mockResolvedValue([
+      makeAgent({ id: "row-github-on", githubToolsEnabled: true }),
+    ]);
+
+    const resolved = await resolveAgentForRole({ userId: "u1", role: "main" });
+
+    expect(resolved.githubToolsEnabled).toBe(true);
+  });
+
+  it("REG-N1b: synthetic fallback (no DB rows) yields resolved.githubToolsEnabled===false", async () => {
+    mockListAgentsForUser.mockResolvedValue([]);
+
+    const resolved = await resolveAgentForRole({ userId: "u1", role: "main" });
+
+    expect(resolved.githubToolsEnabled).toBe(false);
   });
 });
 

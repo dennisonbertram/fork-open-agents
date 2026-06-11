@@ -1760,6 +1760,14 @@ export const agents = pgTable(
       .notNull()
       .default(false),
 
+    // --- #317 native GitHub agent tools ---
+    // Enables GitHub tools for this agent, off by default.
+    // Gating happens at the web factory (resolveGitHubToolsForChat); not wired
+    // through the agent package tool policy.
+    githubToolsEnabled: boolean("github_tools_enabled")
+      .notNull()
+      .default(false),
+
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
