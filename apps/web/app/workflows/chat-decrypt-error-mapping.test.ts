@@ -361,3 +361,195 @@ describe("decrypt error → actionable user message mapping (BT-009)", () => {
     expect(delta.toLowerCase()).toContain("settings");
   });
 });
+
+describe("provider auth / credit error → actionable user message mapping", () => {
+  // When a model provider returns an auth or credit/quota error, the
+  // setup-error delta must surface an actionable message instead of the
+  // generic "Workspace setup failed. Try again in a moment."
+
+  test("provider auth failure 'Invalid or revoked access token' surfaces actionable message", async () => {
+    const authError = new Error("Invalid or revoked access token");
+    inferenceProfileError = authError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about API key
+    expect(delta.toLowerCase()).toContain("api key");
+    // Must NOT expose the raw token-like phrase
+    expect(delta).not.toContain("access token");
+  });
+
+  test("provider auth failure composed 'No output generated' + 'Provider error:' surfaces actionable message", async () => {
+    const composedAuthError = new Error(
+      "No output generated from model\n\nProvider error: Invalid or revoked access token",
+    );
+    inferenceProfileError = composedAuthError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about API key
+    expect(delta.toLowerCase()).toContain("api key");
+    // Must NOT expose the raw token-like phrase
+    expect(delta).not.toContain("access token");
+  });
+
+  test("provider credit/quota failure with 'insufficient' surfaces actionable message", async () => {
+    const creditError = new Error("Insufficient credits for this request");
+    inferenceProfileError = creditError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about billing/quota
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("provider credit/quota failure with 'quota' surfaces actionable message", async () => {
+    const quotaError = new Error("Quota exceeded for this model");
+    inferenceProfileError = quotaError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about billing/quota
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("provider credit/quota failure with 'credits' surfaces actionable message", async () => {
+    const creditError = new Error("Out of credits");
+    inferenceProfileError = creditError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about billing/quota
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("provider credit/quota failure with 402 status surfaces actionable message", async () => {
+    const http402Error = new Error("HTTP 402: Payment Required");
+    inferenceProfileError = http402Error;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about billing/quota
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("generic fallback is preserved for unknown errors", async () => {
+    const unknownError = new Error("Something completely unexpected happened");
+    inferenceProfileError = unknownError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must BE the generic fallback for unknown errors
+    expect(delta).toBe("Workspace setup failed. Try again in a moment.");
+  });
+});

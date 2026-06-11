@@ -540,6 +540,20 @@ function getSetupErrorMessage(error: unknown): string {
     return getComposioUserFacingError(message);
   }
 
+  // Provider auth failures (API key rejected / access token invalid)
+  if (
+    message.includes("Invalid or revoked") ||
+    (message.includes("No output generated") &&
+      message.includes("Provider error:"))
+  ) {
+    return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
+  }
+
+  // Provider credit / quota / billing failures
+  if (message.includes("402") || /insufficient|quota|credit/i.test(message)) {
+    return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
+  }
+
   return "Workspace setup failed. Try again in a moment.";
 }
 
