@@ -288,14 +288,29 @@ const startMock = mock(async (_wf: unknown, args: [{ stepRunId: string }]) => {
   return { runId: `wf-${counter}` };
 });
 
+// getAgentLoopRunWithLoop — post-execution status re-check (no flip in these tests)
+const getAgentLoopRunWithLoopMock = mock(async (_runId: string) => ({
+  run: currentLoopRun,
+  loop: currentLoop,
+}));
+
+// getMaxAttemptForNode — sparse-safe attempt; proxy off priorVisitCounts for existing tests
+const getMaxAttemptForNodeMock = mock(
+  async (params: { loopRunId: string; nodeId: string }): Promise<number> => {
+    return priorVisitCounts[`${params.loopRunId}:${params.nodeId}`] ?? 0;
+  },
+);
+
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getCtxMock,
+  getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
   updateAgentLoopStepRun: updateStepRunMock,
   recordAgentLoopEvent: recordEventMock,
   createAgentLoopStepRun: createStepRunMock,
   advanceRunToNextStep: advanceMock,
   countStepRunsForNode: countNodeMock,
+  getMaxAttemptForNode: getMaxAttemptForNodeMock,
   pauseLoopRun: mock(async (_r: string, _u: string) => {
     currentLoopRun = { ...currentLoopRun, status: "paused" };
     return currentLoopRun;
@@ -379,12 +394,14 @@ function reset() {
   stepRunIdToStepRun["reg-step-cond"] = currentStepRun;
 
   getCtxMock.mockClear();
+  getAgentLoopRunWithLoopMock.mockClear();
   updateRunStatusMock.mockClear();
   updateStepRunMock.mockClear();
   recordEventMock.mockClear();
   createStepRunMock.mockClear();
   advanceMock.mockClear();
   countNodeMock.mockClear();
+  getMaxAttemptForNodeMock.mockClear();
   executeMock.mockClear();
   startMock.mockClear();
 }

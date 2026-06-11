@@ -246,14 +246,27 @@ const workflowStartMock = mock(
   },
 );
 
+// getAgentLoopRunWithLoop — for post-execution status re-check
+const getAgentLoopRunWithLoopMock = mock(async (_runId: string) => ({
+  run: currentLoopRun,
+  loop: currentLoop,
+}));
+
+// getMaxAttemptForNode — sparse-safe attempt computation
+const getMaxAttemptForNodeMock = mock(
+  async (_params: { loopRunId: string; nodeId: string }) => 0,
+);
+
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getCtxMock,
+  getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
   updateAgentLoopStepRun: mock(async (_input: unknown) => currentStepRun),
   recordAgentLoopEvent: recordEventMock,
   createAgentLoopStepRun: createStepRunMock,
   advanceRunToNextStep: advanceMock,
   countStepRunsForNode: countStepRunsMock,
+  getMaxAttemptForNode: getMaxAttemptForNodeMock,
   pauseLoopRun: mock(async (_runId: string, _: string) => {
     if (
       currentLoopRun.status !== "running" &&
@@ -329,11 +342,13 @@ function reset() {
   stepRunIdToStepRun["step-1"] = currentStepRun;
 
   getCtxMock.mockClear();
+  getAgentLoopRunWithLoopMock.mockClear();
   updateRunStatusMock.mockClear();
   recordEventMock.mockClear();
   createStepRunMock.mockClear();
   advanceMock.mockClear();
   countStepRunsMock.mockClear();
+  getMaxAttemptForNodeMock.mockClear();
   executeStepMock.mockClear();
   workflowStartMock.mockClear();
 }

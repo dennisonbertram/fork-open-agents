@@ -46,12 +46,14 @@ import {
 import { evaluateEdges } from "./edge-evaluator";
 import {
   getAgentLoopStepRunWithContext,
+  getAgentLoopRunWithLoop,
   updateAgentLoopRunStatus,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   createAgentLoopStepRun,
   advanceRunToNextStep,
   countStepRunsForNode,
+  getMaxAttemptForNode,
   pauseLoopRun as storePauseLoopRun,
   cancelLoopRun as storeCancelLoopRun,
   resumeLoopRun as storeResumeLoopRun,
@@ -239,6 +241,37 @@ export async function runAgentLoopStep(
 
   const result = await executeAgentLoopStep({ stepRunId, workflowRunId });
 
+  // ── 5b. Re-check run status after execution ────────────────────────────────
+  //
+  // A pause or cancel may have landed DURING the (potentially long) step
+  // execution.  The status we loaded in step 1 is now stale.  Re-load the
+  // run so we use the current status for the advance decision below.
+  //
+  // Why reload here and not earlier?  Earlier re-loads would require an extra
+  // round-trip before every execution.  The cooperative pre-check in step 2
+  // handles the common "already paused before dispatch" case; this re-check
+  // covers the narrower "pause landed mid-execution" window.
+  const reloadedCtx = await getAgentLoopRunWithLoop(loopRunId);
+  const postExecStatus = reloadedCtx?.run.status ?? loopRun.status;
+
+  // Cancelled / completed / failed during execution: no advance, no dispatch.
+  // Record a skipped event with the new status for observability.
+  const nonAdvanceStatuses = new Set(["cancelled", "completed", "failed"]);
+  if (nonAdvanceStatuses.has(postExecStatus)) {
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId,
+      eventName: "agent-loop.chain.skipped",
+      status: "info",
+      level: "info",
+      summary: `Chain skipped: run status changed to ${postExecStatus} during step execution`,
+      payload: { reason: "status_changed_during_step", status: postExecStatus, stepRunId },
+      workflowRunId,
+    });
+    return;
+  }
+
   // ── 6. Check if executor already finalized the run (end node) ─────────────
 
   // Re-load loopRun to see if status changed (end node sets it to completed)
@@ -279,6 +312,15 @@ export async function runAgentLoopStep(
   }
 
   // ── 7. Advance: evaluate edges + dispatch ─────────────────────────────────
+  //
+  // If run was paused DURING execution, we still perform the advance bookkeeping
+  // (edge evaluation, step run creation, advanceRunToNextStep) so that
+  // currentStepRunId points at the QUEUED next step.  resumeLoopRun then
+  // re-dispatches that queued step and the chain resumes cleanly.
+  // We pass pausedMidExecution=true to skip the start() call and instead
+  // record a paused_before_dispatch event.
+
+  const pausedMidExecution = postExecStatus === "paused";
 
   await advanceLoopRun({
     stepRunId,
@@ -291,6 +333,7 @@ export async function runAgentLoopStep(
     currentStepCount: loopRun.stepCount,
     currentIterationCount: loopRun.iterationCount,
     nodeKind: node?.kind ?? "unknown",
+    pausedMidExecution,
   });
 }
 
@@ -307,16 +350,25 @@ type AdvanceParams = {
   currentStepCount: number;
   currentIterationCount: number;
   nodeKind: string;
+  /**
+   * True when the run was paused DURING step execution (i.e. the pause landed
+   * between executeAgentLoopStep starting and returning).  Advance bookkeeping
+   * is still performed so that currentStepRunId points at the queued next step,
+   * but the workflow dispatch is suppressed — resumeLoopRun re-dispatches it.
+   */
+  pausedMidExecution?: boolean;
 };
 
 /**
  * Post-execution routing:
  * 1. evaluateEdges → nextNodeId
  * 2. If nextNodeId null → fail run (route missing / step's errorKind)
- * 3. Count prior visits to nextNodeId for iteration counting
- * 4. Atomic advance (conditional WHERE currentStepRunId = stepRunId)
- * 5. If 0 rows updated → duplicate advance — skip dispatch
- * 6. Create next step run + dispatch workflow
+ * 3. Count prior visits to nextNodeId for iteration counting (countStepRunsForNode)
+ * 4. Compute next attempt via MAX(attempt)+1 (getMaxAttemptForNode — sparse-safe)
+ * 5. Atomic advance (conditional WHERE currentStepRunId = stepRunId)
+ * 6. If 0 rows updated → duplicate advance — skip dispatch
+ * 7. If pausedMidExecution → record paused_before_dispatch, no start() call
+ * 8. Create next step run + dispatch workflow
  */
 async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   const {
@@ -330,6 +382,7 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     currentStepCount,
     currentIterationCount,
     nodeKind,
+    pausedMidExecution = false,
   } = params;
 
   // ── 7a. Evaluate edges ────────────────────────────────────────────────────
@@ -390,9 +443,10 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     return;
   }
 
-  // ── 7c. Iteration counting ─────────────────────────────────────────────────
+  // ── 7c. Iteration counting + attempt computation ──────────────────────────
 
-  // If ANY prior step run exists for (loopRunId, nextNodeId), it's a loop
+  // countStepRunsForNode → used ONLY for iteration detection.
+  // If ANY prior step run exists for (loopRunId, nextNodeId), it's a loop.
   const priorVisits = await countStepRunsForNode({
     loopRunId,
     nodeId: nextNodeId,
@@ -409,25 +463,35 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
 
   // ── 7e. Create the next step run ─────────────────────────────────────────
   //
-  // attempt = priorVisits + 1:
-  //   - First visit to this node:  priorVisits = 0 → attempt 1
-  //   - Cycle revisit (loop-back): priorVisits = N → attempt N+1
+  // attempt = MAX(existing attempts) + 1:
+  //   - First visit to this node:  MAX = 0 (no rows) → attempt 1
+  //   - Cycle revisit (loop-back): MAX = N → attempt N+1
   //
-  // This guarantees that the UNIQUE index on (loopRunId, nodeId, attempt) is
+  // MAX-based computation is sparse-safe: if attempts {1,3} exist (e.g.
+  // a prior skip left a gap), COUNT would give 2 → attempt 3 → collision
+  // with the existing row.  MAX gives 3 → attempt 4, always safe.
+  //
+  // This guarantees the UNIQUE index on (loopRunId, nodeId, attempt) is
   // never violated by normal cycle traversal.
   //
-  // Race defence: if two concurrent invocations both computed the same
-  // priorVisits before either inserted, their inserts would have the same
+  // Race defence: if two concurrent invocations both computed the same MAX
+  // before either inserted, their inserts would have the same
   // (loopRunId, nodeId, attempt) and the DB would throw a unique-constraint
   // error (PG code 23505).  We catch that here and treat it identically to
-  // the advanceRunToNextStep returning false — one winner, one graceful skip.
+  // advanceRunToNextStep returning false — one winner, one graceful skip.
+  const maxAttemptSoFar = await getMaxAttemptForNode({
+    loopRunId,
+    nodeId: nextNodeId,
+  });
+  const nextAttempt = maxAttemptSoFar + 1;
+
   let nextStepRun: Awaited<ReturnType<typeof createAgentLoopStepRun>>;
   try {
     nextStepRun = await createAgentLoopStepRun({
       loopRunId,
       nodeId: nextNodeId,
       nodeKind: nextNodeKind,
-      attempt: priorVisits + 1,
+      attempt: nextAttempt,
     });
   } catch (insertErr) {
     // Unique-constraint violation on (loopRunId, nodeId, attempt):
@@ -487,7 +551,34 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     return;
   }
 
-  // ── 7g. Dispatch next step workflow ────────────────────────────────────────
+  // ── 7g. Pause mid-execution: bookkeeping done, skip dispatch ─────────────
+  //
+  // If the run was paused DURING step execution, advance bookkeeping has now
+  // completed (edge evaluated, step run created, advanceRunToNextStep updated
+  // currentStepRunId to the queued next step).  We must NOT dispatch the
+  // workflow — the run is paused and resumeLoopRun will re-dispatch the queued
+  // step when the operator resumes.  This leaves the chain in a clean state
+  // with no stall and no extra dispatch.
+  if (pausedMidExecution) {
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId,
+      eventName: "agent-loop.chain.paused_before_dispatch",
+      status: "info",
+      level: "info",
+      summary: `Chain paused before dispatch of next step ${nextNodeId}; resume will re-dispatch`,
+      payload: {
+        nextNodeId,
+        nextStepRunId: nextStepRun.id,
+        nodeKind: nextNodeKind,
+      },
+      workflowRunId,
+    });
+    return;
+  }
+
+  // ── 7h. Dispatch next step workflow ────────────────────────────────────────
 
   try {
     // Dynamic import breaks the cycle: chain.ts ← agent-loop-step.ts ← chain.ts.
@@ -591,12 +682,19 @@ export async function cancelLoopRun(
 
 /**
  * Resumes a paused loop run. If currentStepRunId is queued, re-dispatches it.
- * If it has already succeeded (pause landed after execution, before advance),
- * the run will be picked up by the stall sweep — document this edge case.
  *
- * Note: if a step completed but advance had not yet fired when pause landed,
- * the run will be left in running state with no pending dispatch. The stall
- * sweep (M1-10) will detect the stall and route it for recovery.
+ * Pause-mid-execution clean resume:
+ * When runAgentLoopStep detects a pause mid-execution, it still performs all
+ * advance bookkeeping (edge evaluation, step run creation, advanceRunToNextStep)
+ * so that currentStepRunId points at the QUEUED next step.  This means
+ * resumeLoopRun re-dispatches the queued step immediately on resume and the
+ * chain continues without any stall-sweep involvement.
+ *
+ * Stall edge case (pre-Finding-1 behaviour, now avoided for mid-execution pauses):
+ * If a step had completed but advance had not yet fired when pause landed,
+ * the run was left in running state with no pending dispatch. The stall sweep
+ * (M1-10) handles this residual case. After Finding 1, this window is narrowed:
+ * mid-execution pauses produce a queued next step that resume can pick up.
  *
  * Interim dispatch-failure recovery (Nit 3):
  * After a chain.dispatch_failed event the run stays "running" with a queued
