@@ -1,0 +1,43 @@
+# CODEOWNERS for fork-open-agents
+#
+# This file documents the high-risk surfaces named in the Production Release
+# Runbook (auth, ownership, secrets, billing, inference, GitHub App, sandbox,
+# workflows, migrations). Changes to these paths warrant extra scrutiny.
+#
+# Today this is a solo project, so a single owner is listed. Once a second
+# regular reviewer exists, enable "Require review from Code Owners" in branch
+# protection so these paths automatically request that reviewer.
+
+# Default owner for everything not matched below.
+*                                   @dennisonbertram
+
+# --- High-risk surfaces ------------------------------------------------------
+
+# Auth / OAuth / sessions
+/apps/web/lib/auth/                 @dennisonbertram
+
+# Database schema and migrations (irreversible / data-loss risk)
+/apps/web/lib/db/schema.ts          @dennisonbertram
+/apps/web/lib/db/migrations/        @dennisonbertram
+/apps/web/lib/db/migrate.ts         @dennisonbertram
+
+# Inference / model wiring
+/apps/web/lib/inference/            @dennisonbertram
+/packages/agent/                    @dennisonbertram
+
+# GitHub App / webhook flows
+/apps/web/lib/github/               @dennisonbertram
+
+# Sandbox lifecycle and managed runtime
+/apps/web/lib/sandbox/              @dennisonbertram
+/apps/web/lib/managed-runtime/      @dennisonbertram
+/packages/sandbox/                  @dennisonbertram
+
+# Background agents
+/apps/web/lib/background-agents/    @dennisonbertram
+
+# CI / deploy / pipeline configuration
+/.github/                           @dennisonbertram
+/turbo.json                         @dennisonbertram
+/init.sh                            @dennisonbertram
+/scripts/                           @dennisonbertram
