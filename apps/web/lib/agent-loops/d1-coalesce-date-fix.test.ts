@@ -346,10 +346,18 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
 
     // db.select().from().where() for MAX(attempt) aggregate
     // retryCurrentStep uses: db.select({maxAttempt}).from(...).where(...)
-    // Our fromMock returns {where: ...} but needs to return [{maxAttempt: 1}]
-    const whereForSelect = mock(() => Promise.resolve([{ maxAttempt: 1 }]));
-    const fromForSelect = mock(() => ({ where: whereForSelect }));
-    selectMock.mockImplementationOnce((_fields?: unknown) => ({
+    // Cast to unknown to avoid Bun mock type mismatch with the overridden return shape.
+    const whereForSelect = mock(() =>
+      Promise.resolve([{ maxAttempt: 1 }]),
+    ) as unknown as typeof whereMockLeft;
+    const fromForSelect = mock(() => ({
+      where: whereForSelect,
+    })) as unknown as typeof fromMock;
+    (
+      selectMock.mockImplementationOnce as (
+        impl: (_fields?: unknown) => { from: typeof fromForSelect },
+      ) => typeof selectMock
+    )((_fields?: unknown) => ({
       from: fromForSelect,
     }));
 
@@ -357,7 +365,12 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
     returningMock.mockImplementationOnce(() => [newStep]);
 
     // Update run (db.update without .returning() for the COALESCE write in retryCurrentStep)
-    updateSetMock.mockImplementationOnce((setVals: unknown) => {
+    // Cast to unknown to avoid mock type mismatch — where() returns void here.
+    (
+      updateSetMock.mockImplementationOnce as (
+        impl: (setVals: unknown) => unknown,
+      ) => typeof updateSetMock
+    )((setVals: unknown) => {
       updateSetCapture.push(setVals);
       return { where: mock(() => Promise.resolve()) };
     });
