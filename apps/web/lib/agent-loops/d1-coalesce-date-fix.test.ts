@@ -310,7 +310,9 @@ describe("D1-002: resumeLoopRun — COALESCE startedAt uses NOW() not a Date par
   test("resumeLoopRun: startedAt SQL object contains NOW() literal, not a Date chunk", async () => {
     // resumeLoopRun always transitions to "running" with a COALESCE startedAt.
     // The fix must eliminate the JS Date bind parameter.
-    returningMock.mockImplementationOnce(() => [makeLoopRun({ status: "running" })]);
+    returningMock.mockImplementationOnce(() => [
+      makeLoopRun({ status: "running" }),
+    ]);
     queryResult = [makeLoopRun({ status: "paused" })];
 
     const store = await storePromise;
@@ -345,9 +347,7 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
     // db.select().from().where() for MAX(attempt) aggregate
     // retryCurrentStep uses: db.select({maxAttempt}).from(...).where(...)
     // Our fromMock returns {where: ...} but needs to return [{maxAttempt: 1}]
-    const whereForSelect = mock(() =>
-      Promise.resolve([{ maxAttempt: 1 }]),
-    );
+    const whereForSelect = mock(() => Promise.resolve([{ maxAttempt: 1 }]));
     const fromForSelect = mock(() => ({ where: whereForSelect }));
     selectMock.mockImplementationOnce((_fields?: unknown) => ({
       from: fromForSelect,
