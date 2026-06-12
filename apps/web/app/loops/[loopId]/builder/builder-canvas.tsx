@@ -7,15 +7,19 @@
  * - ReactFlowProvider + ReactFlow with custom nodeTypes/edgeTypes
  * - dotted Background, Controls, MiniMap with per-kind accent colors
  * - fitView on load
- * - Top bar: loop name, dirty indicator, Save button, Back link, ErrorIndicator
+ * - Top bar: loop name, dirty indicator, Save button, Back link, ErrorIndicator,
+ *   LoopSettingsPanel gear button
  * - Left palette panel: click-to-add for agent_step, github_check, condition, end
  * - Edge creation: onConnect opens WhenPicker to pick when value
- * - Edge click: changes edge when value via picker
+ * - Edge click: opens WhenPicker pre-populated with current value for editing
+ * - Node deletion: prompts DeleteNodeDialog naming attached edge count
+ * - NodeConfigPanel: docked right-side panel, selection-driven
+ * - BuilderErrorContext: provides nodeErrorsById map to loop-nodes
  * - Leave-page guard when dirty (beforeunload)
  * - Dark mode: colorMode driven by the app's ThemeContext (html .dark class)
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -27,6 +31,7 @@ import {
   useReactFlow,
   type Connection,
   type ColorMode,
+  type EdgeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowLeft, Bot, Flag, Github, GitBranch, Save } from "lucide-react";
@@ -40,9 +45,15 @@ import { WhenEdge } from "./when-edge";
 import type { WhenValue } from "./when-picker";
 import { WhenPicker } from "./when-picker";
 import { ErrorIndicator } from "./error-indicator";
+import { NodeConfigPanel } from "./node-config-panel-component";
+import { LoopSettingsPanel } from "./loop-settings-panel-component";
+import { DeleteNodeDialog } from "./delete-node-dialog";
+import { BuilderErrorContext } from "./builder-error-context";
+import { nodeErrorsById } from "./node-config-panel";
 import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
-import type { LoopDefinition } from "@/lib/agent-loops/types";
+import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
+import type { LoopFlowEdge } from "./definition-mapping";
 
 const edgeTypes = {
   when: WhenEdge,
@@ -63,15 +74,31 @@ type PendingConnection = {
   screenPosition: { x: number; y: number };
 };
 
+// Tracks an edge being edited (when-change, not just creation)
+type PendingEdgeEdit = {
+  edgeId: string;
+  sourceNodeId: string;
+  screenPosition: { x: number; y: number };
+};
+
+// Tracks node pending deletion
+type PendingNodeDelete = {
+  nodeId: string;
+  nodeName: string;
+  edgeCount: number;
+};
+
 type BuilderCanvasInnerProps = {
   loopId: string;
   loopName: string;
+  loopGuardrails?: LoopGuardrails;
   store: ReturnType<typeof createLoopBuilderStore>;
 };
 
 function BuilderCanvasInner({
   loopId,
   loopName,
+  loopGuardrails,
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
@@ -89,10 +116,21 @@ function BuilderCanvasInner({
   const legalWhenValues = useStore(store, (s) => s.legalWhenValues);
   const markClean = useStore(store, (s) => s.markClean);
   const currentDefinition = useStore(store, (s) => s.currentDefinition);
+  const updateEdgeWhen = useStore(store, (s) => s.updateEdgeWhen);
 
   const [saving, setSaving] = useState(false);
   const [pendingConnection, setPendingConnection] =
     useState<PendingConnection | null>(null);
+  const [pendingEdgeEdit, setPendingEdgeEdit] =
+    useState<PendingEdgeEdit | null>(null);
+  const [pendingNodeDelete, setPendingNodeDelete] =
+    useState<PendingNodeDelete | null>(null);
+
+  // Compute nodeErrorsById for the error context
+  const errorsById = useMemo(
+    () => nodeErrorsById(validationErrors),
+    [validationErrors],
+  );
 
   // Leave-page guard
   useEffect(() => {
@@ -116,7 +154,6 @@ function BuilderCanvasInner({
   // Edge connection: show picker before committing
   const handleConnect = useCallback((connection: Connection) => {
     if (!connection.source || !connection.target) return;
-    // Get viewport center as anchor for picker
     const el = document.querySelector(".react-flow__renderer");
     const rect = el?.getBoundingClientRect();
     setPendingConnection({
@@ -130,13 +167,84 @@ function BuilderCanvasInner({
   }, []);
 
   function handleWhenPick(when: WhenValue) {
-    if (!pendingConnection) return;
-    connectEdge({
-      source: pendingConnection.source,
-      target: pendingConnection.target,
-      when,
-    });
-    setPendingConnection(null);
+    if (pendingConnection) {
+      connectEdge({
+        source: pendingConnection.source,
+        target: pendingConnection.target,
+        when,
+      });
+      setPendingConnection(null);
+    } else if (pendingEdgeEdit) {
+      updateEdgeWhen(pendingEdgeEdit.edgeId, when);
+      setPendingEdgeEdit(null);
+    }
+  }
+
+  // Edge click: open picker pre-populated for editing the when value
+  const handleEdgeClick: EdgeMouseHandler<LoopFlowEdge> = useCallback(
+    (_event, edge) => {
+      const el = document.querySelector(".react-flow__renderer");
+      const rect = el?.getBoundingClientRect();
+      setPendingEdgeEdit({
+        edgeId: edge.id,
+        sourceNodeId: edge.source,
+        screenPosition: {
+          x: (rect?.left ?? 0) + (rect?.width ?? 300) / 2,
+          y: (rect?.top ?? 0) + (rect?.height ?? 200) / 2,
+        },
+      });
+    },
+    [],
+  );
+
+  // Node deletion via Delete key — intercept before React Flow removes the node
+  // We use onNodesChange and check for "remove" changes to prompt the dialog.
+  // The actual deletion is deferred until the user confirms.
+  const handleNodesChangeWithGuard = useCallback(
+    (changes: Parameters<typeof onNodesChange>[0]) => {
+      const removeChanges = changes.filter((c) => c.type === "remove");
+      const otherChanges = changes.filter((c) => c.type !== "remove");
+
+      // Apply non-remove changes immediately
+      if (otherChanges.length > 0) {
+        onNodesChange(otherChanges);
+      }
+
+      // For remove changes, prompt dialog for the first one
+      if (removeChanges.length > 0) {
+        const first = removeChanges[0]!;
+        if (first.type === "remove") {
+          const node = nodes.find((n) => n.id === first.id);
+          const attachedEdges = edges.filter(
+            (e) => e.source === first.id || e.target === first.id,
+          );
+          setPendingNodeDelete({
+            nodeId: first.id,
+            nodeName: node?.data?.label ?? first.id,
+            edgeCount: attachedEdges.length,
+          });
+        }
+      }
+    },
+    [nodes, edges, onNodesChange],
+  );
+
+  function confirmNodeDelete() {
+    if (!pendingNodeDelete) return;
+    // Apply the remove change
+    onNodesChange([{ id: pendingNodeDelete.nodeId, type: "remove" }]);
+    // Also remove attached edges
+    const attachedEdgeChanges = edges
+      .filter(
+        (e) =>
+          e.source === pendingNodeDelete.nodeId ||
+          e.target === pendingNodeDelete.nodeId,
+      )
+      .map((e) => ({ id: e.id, type: "remove" as const }));
+    if (attachedEdgeChanges.length > 0) {
+      onEdgesChange(attachedEdgeChanges);
+    }
+    setPendingNodeDelete(null);
   }
 
   // Palette node insertion — lands at viewport center; store handles collision avoidance
@@ -181,161 +289,194 @@ function BuilderCanvasInner({
     }
   }
 
-  const pendingOptions = pendingConnection
-    ? legalWhenValues(pendingConnection.source)
+  const pickerOpen = Boolean(pendingConnection ?? pendingEdgeEdit);
+  const pickerSourceNodeId =
+    pendingConnection?.source ?? pendingEdgeEdit?.sourceNodeId ?? null;
+  const pendingOptions = pickerSourceNodeId
+    ? legalWhenValues(pickerSourceNodeId)
     : [];
 
   return (
-    <div className="flex h-screen flex-col bg-background">
-      {/* Top bar */}
-      <div className="flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
-        <Link
-          href={`/loops/${loopId}`}
-          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="size-4" />
-          {loopName}
-        </Link>
-
-        <span className="text-muted-foreground">·</span>
-        <span className="text-sm font-medium">Builder</span>
-
-        {isDirty && (
-          <span className="rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-            Unsaved changes
-          </span>
-        )}
-
-        <div className="ml-auto flex items-center gap-2">
-          <ErrorIndicator errors={validationErrors} />
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={!isDirty || validationErrors.length > 0 || saving}
+    <BuilderErrorContext.Provider value={errorsById}>
+      <div className="flex h-screen flex-col bg-background">
+        {/* Top bar */}
+        <div className="relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+          <Link
+            href={`/loops/${loopId}`}
+            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           >
-            <Save className="mr-1.5 size-3.5" />
-            {saving ? "Saving…" : "Save"}
-          </Button>
-        </div>
-      </div>
+            <ArrowLeft className="size-4" />
+            {loopName}
+          </Link>
 
-      {/* Canvas */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Node palette */}
-        <div className="flex w-48 shrink-0 flex-col gap-1 border-r border-border p-3">
-          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-            Add node
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start gap-2 text-xs text-violet-700 dark:text-violet-300"
-            onClick={() => handleAddNode("agent_step")}
-          >
-            <Bot className="size-4" />
-            Agent step
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start gap-2 text-xs text-slate-600 dark:text-slate-300"
-            onClick={() => handleAddNode("github_check")}
-          >
-            <Github className="size-4" />
-            GitHub check
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start gap-2 text-xs text-amber-700 dark:text-amber-300"
-            onClick={() => handleAddNode("condition")}
-          >
-            <GitBranch className="size-4" />
-            Condition
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="justify-start gap-2 text-xs text-neutral-600 dark:text-neutral-300"
-            onClick={() => handleAddNode("end")}
-          >
-            <Flag className="size-4" />
-            End
-          </Button>
-        </div>
+          <span className="text-muted-foreground">·</span>
+          <span className="text-sm font-medium">Builder</span>
 
-        {/* React Flow canvas */}
-        <div className="relative flex-1">
-          <ReactFlow
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={handleConnect}
-            nodeTypes={nodeTypes}
-            edgeTypes={edgeTypes}
-            colorMode={colorMode}
-            fitView
-            deleteKeyCode={["Delete", "Backspace"]}
-          >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={16}
-              size={1}
-              className="opacity-50"
-            />
-            <Controls className="nodrag" />
-            <MiniMap
-              className="nodrag"
-              nodeColor={(node) => {
-                const kind = (node.data as { kind?: string } | undefined)?.kind;
-                return kind ? (kindMiniMapColor[kind] ?? "#b1b1b7") : "#b1b1b7";
-              }}
-              maskColor={
-                colorMode === "dark"
-                  ? "rgb(0 0 0 / 0.6)"
-                  : "rgb(240 240 240 / 0.6)"
-              }
-            />
-
-            {/* Empty state hint */}
-            {nodes.length === 0 && (
-              <Panel position="top-center">
-                <p className="rounded-md border border-dashed border-border bg-background/80 px-4 py-3 text-sm text-muted-foreground backdrop-blur-sm">
-                  Add steps from the palette, connect them, then Save
-                </p>
-              </Panel>
-            )}
-          </ReactFlow>
-
-          {/* When picker */}
-          {pendingConnection && (
-            <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
-              <div className="pointer-events-auto">
-                <WhenPicker
-                  open={Boolean(pendingConnection)}
-                  onClose={() => setPendingConnection(null)}
-                  options={pendingOptions}
-                  onPick={handleWhenPick}
-                />
-              </div>
-            </div>
+          {isDirty && (
+            <span className="rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+              Unsaved changes
+            </span>
           )}
+
+          <div className="ml-auto flex items-center gap-2">
+            <ErrorIndicator errors={validationErrors} />
+            <LoopSettingsPanel
+              loopId={loopId}
+              loopName={loopName}
+              guardrails={loopGuardrails}
+            />
+            <Button
+              size="sm"
+              onClick={() => void handleSave()}
+              disabled={!isDirty || validationErrors.length > 0 || saving}
+            >
+              <Save className="mr-1.5 size-3.5" />
+              {saving ? "Saving…" : "Save"}
+            </Button>
+          </div>
         </div>
+
+        {/* Canvas + panels */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Node palette */}
+          <div className="flex w-48 shrink-0 flex-col gap-1 border-r border-border p-3">
+            <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              Add node
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start gap-2 text-xs text-violet-700 dark:text-violet-300"
+              onClick={() => handleAddNode("agent_step")}
+            >
+              <Bot className="size-4" />
+              Agent step
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start gap-2 text-xs text-slate-600 dark:text-slate-300"
+              onClick={() => handleAddNode("github_check")}
+            >
+              <Github className="size-4" />
+              GitHub check
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start gap-2 text-xs text-amber-700 dark:text-amber-300"
+              onClick={() => handleAddNode("condition")}
+            >
+              <GitBranch className="size-4" />
+              Condition
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="justify-start gap-2 text-xs text-neutral-600 dark:text-neutral-300"
+              onClick={() => handleAddNode("end")}
+            >
+              <Flag className="size-4" />
+              End
+            </Button>
+          </div>
+
+          {/* React Flow canvas */}
+          <div className="relative flex-1">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={handleNodesChangeWithGuard}
+              onEdgesChange={onEdgesChange}
+              onConnect={handleConnect}
+              onEdgeClick={handleEdgeClick}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              colorMode={colorMode}
+              fitView
+              deleteKeyCode={["Delete", "Backspace"]}
+            >
+              <Background
+                variant={BackgroundVariant.Dots}
+                gap={16}
+                size={1}
+                className="opacity-50"
+              />
+              <Controls className="nodrag" />
+              <MiniMap
+                className="nodrag"
+                nodeColor={(node) => {
+                  const kind = (node.data as { kind?: string } | undefined)
+                    ?.kind;
+                  return kind
+                    ? (kindMiniMapColor[kind] ?? "#b1b1b7")
+                    : "#b1b1b7";
+                }}
+                maskColor={
+                  colorMode === "dark"
+                    ? "rgb(0 0 0 / 0.6)"
+                    : "rgb(240 240 240 / 0.6)"
+                }
+              />
+
+              {/* Empty state hint */}
+              {nodes.length === 0 && (
+                <Panel position="top-center">
+                  <p className="rounded-md border border-dashed border-border bg-background/80 px-4 py-3 text-sm text-muted-foreground backdrop-blur-sm">
+                    Add steps from the palette, connect them, then Save
+                  </p>
+                </Panel>
+              )}
+            </ReactFlow>
+
+            {/* When picker (new connection) */}
+            {pickerOpen && (
+              <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+                <div className="pointer-events-auto">
+                  <WhenPicker
+                    open={pickerOpen}
+                    onClose={() => {
+                      setPendingConnection(null);
+                      setPendingEdgeEdit(null);
+                    }}
+                    options={pendingOptions}
+                    onPick={handleWhenPick}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Node config panel (docked right) */}
+          <NodeConfigPanel store={store} />
+        </div>
+
+        {/* Node delete confirmation dialog */}
+        {pendingNodeDelete && (
+          <DeleteNodeDialog
+            open={Boolean(pendingNodeDelete)}
+            nodeName={pendingNodeDelete.nodeName}
+            edgeCount={pendingNodeDelete.edgeCount}
+            onConfirm={confirmNodeDelete}
+            onCancel={() => setPendingNodeDelete(null)}
+          />
+        )}
       </div>
-    </div>
+    </BuilderErrorContext.Provider>
   );
 }
 
 type BuilderCanvasProps = {
   loopId: string;
   loopName: string;
+  loopGuardrails?: LoopGuardrails;
   definition: LoopDefinition;
 };
 
 export function BuilderCanvas({
   loopId,
   loopName,
+  loopGuardrails,
   definition,
 }: BuilderCanvasProps) {
   // Create store once and initialize with the definition
@@ -374,6 +515,7 @@ export function BuilderCanvas({
       <BuilderCanvasInner
         loopId={loopId}
         loopName={loopName}
+        loopGuardrails={loopGuardrails}
         store={storeRef.current}
       />
     </ReactFlowProvider>

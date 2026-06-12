@@ -13,14 +13,19 @@
  * Config summaries (first 60 chars of instructions, check kind, condition path op value).
  * Handles are rendered with BaseHandle; interactive elements use nodrag class.
  *
- * ADD-ONLY run-state props (optional — builder behavior is 100% unchanged when absent):
- *   data.runStatus?    — "unvisited"|"running"|"succeeded"|"failed"|"skipped"
- *   data.visitCount?   — number of times this node has been visited in the run
- *   data.isCurrent?    — true when this is the active execution node
+ * Two orthogonal overlay systems compose here:
  *
- * When runStatus is absent, all overlays are invisible and structure is identical
- * to the original builder rendering. A parallel worker may add selection/config
- * behavior — this file intentionally avoids structural rewrites.
+ * 1. Error badges (builder only) — from BuilderErrorContext + NodeErrorBadge:
+ *    - useNodeErrors reads from context; context defaults to {} so run-graph
+ *      usage (no provider) safely returns [] with no badge rendered.
+ *
+ * 2. Run-state overlays (run graph) — from node.data optional props:
+ *    data.runStatus?    — "unvisited"|"running"|"succeeded"|"failed"|"skipped"
+ *    data.visitCount?   — number of times this node has been visited in the run
+ *    data.isCurrent?    — true when this is the active execution node
+ *
+ * When runStatus is absent, all run overlays are invisible and structure is
+ * identical to the original builder rendering.
  */
 
 import { Position, type NodeProps } from "@xyflow/react";
@@ -50,6 +55,8 @@ import {
   shouldShowVisitPill,
   type NodeRunStatus,
 } from "./run-overlays";
+import { useNodeErrors } from "./builder-error-context";
+import { NodeErrorBadge } from "./node-error-badge";
 
 // ── Accent border helper ───────────────────────────────────────────────────────
 
@@ -147,6 +154,11 @@ function SourceHandle() {
 type StartNodeProps = NodeProps & { data: StartNode & RunStateOverlay };
 
 export function StartNodeComponent({ data, selected }: StartNodeProps) {
+  // Error badges: from context (builder only; degrades to [] when no provider)
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
+
+  // Run overlays: from node.data props (run graph only; absent in builder)
   const overlay: RunStateOverlay = {
     runStatus: data.runStatus,
     visitCount: data.visitCount,
@@ -159,8 +171,9 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
     <BaseNode
       selected={selected}
       className={cn(
-        "min-w-[140px] max-w-[200px]",
+        "relative min-w-[140px] max-w-[200px]",
         kindAccent.start,
+        errorCount > 0 && "ring-2 ring-red-500/60",
         wrapperClass,
       )}
     >
@@ -180,6 +193,7 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
         start
       </p>
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -189,11 +203,16 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
 type AgentStepNodeProps = NodeProps & { data: AgentStepNode & RunStateOverlay };
 
 export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
+  // Error badges: from context (builder only; degrades to [] when no provider)
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
+
   const summary = data.instructions
     ? data.instructions.slice(0, 60) +
       (data.instructions.length > 60 ? "…" : "")
     : undefined;
 
+  // Run overlays: from node.data props (run graph only; absent in builder)
   const overlay: RunStateOverlay = {
     runStatus: data.runStatus,
     visitCount: data.visitCount,
@@ -206,8 +225,9 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
     <BaseNode
       selected={selected}
       className={cn(
-        "min-w-[200px] max-w-[280px]",
+        "relative min-w-[200px] max-w-[280px]",
         kindAccent.agent_step,
+        errorCount > 0 && "ring-2 ring-red-500/60",
         wrapperClass,
       )}
     >
@@ -230,6 +250,7 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -244,6 +265,10 @@ export function GithubCheckNodeComponent({
   data,
   selected,
 }: GithubCheckNodeProps) {
+  // Error badges: from context (builder only; degrades to [] when no provider)
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
+
   let checkSummary: string | undefined;
   if (data.check) {
     const kindLabel = data.check.kind.replaceAll("_", " ");
@@ -254,6 +279,7 @@ export function GithubCheckNodeComponent({
     }
   }
 
+  // Run overlays: from node.data props (run graph only; absent in builder)
   const overlay: RunStateOverlay = {
     runStatus: data.runStatus,
     visitCount: data.visitCount,
@@ -266,8 +292,9 @@ export function GithubCheckNodeComponent({
     <BaseNode
       selected={selected}
       className={cn(
-        "min-w-[200px] max-w-[280px]",
+        "relative min-w-[200px] max-w-[280px]",
         kindAccent.github_check,
+        errorCount > 0 && "ring-2 ring-red-500/60",
         wrapperClass,
       )}
     >
@@ -288,6 +315,7 @@ export function GithubCheckNodeComponent({
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -299,11 +327,16 @@ type ConditionNodeProps = NodeProps & {
 };
 
 export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
+  // Error badges: from context (builder only; degrades to [] when no provider)
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
+
   const cond = data.condition;
   const condSummary = cond
     ? `${cond.path || "…"} ${cond.op}${cond.value !== undefined ? ` ${String(cond.value)}` : ""}`
     : undefined;
 
+  // Run overlays: from node.data props (run graph only; absent in builder)
   const overlay: RunStateOverlay = {
     runStatus: data.runStatus,
     visitCount: data.visitCount,
@@ -316,8 +349,9 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
     <BaseNode
       selected={selected}
       className={cn(
-        "min-w-[200px] max-w-[280px]",
+        "relative min-w-[200px] max-w-[280px]",
         kindAccent.condition,
+        errorCount > 0 && "ring-2 ring-red-500/60",
         wrapperClass,
       )}
     >
@@ -340,6 +374,7 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -349,6 +384,11 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
 type EndNodeProps = NodeProps & { data: EndNode & RunStateOverlay };
 
 export function EndNodeComponent({ data, selected }: EndNodeProps) {
+  // Error badges: from context (builder only; degrades to [] when no provider)
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
+
+  // Run overlays: from node.data props (run graph only; absent in builder)
   const overlay: RunStateOverlay = {
     runStatus: data.runStatus,
     visitCount: data.visitCount,
@@ -361,8 +401,9 @@ export function EndNodeComponent({ data, selected }: EndNodeProps) {
     <BaseNode
       selected={selected}
       className={cn(
-        "min-w-[140px] max-w-[200px]",
+        "relative min-w-[140px] max-w-[200px]",
         kindAccent.end,
+        errorCount > 0 && "ring-2 ring-red-500/60",
         wrapperClass,
       )}
     >
@@ -382,6 +423,7 @@ export function EndNodeComponent({ data, selected }: EndNodeProps) {
         end
       </p>
       <TargetHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }

@@ -14,6 +14,7 @@ import { nanoid } from "nanoid";
 import { createStore } from "zustand/vanilla";
 import type {
   LoopDefinition,
+  LoopNode,
   LoopNodeKind,
   LoopValidationError,
 } from "@/lib/agent-loops/types";
@@ -58,6 +59,20 @@ export interface LoopBuilderState {
     target: string;
     when: WhenValue;
   }) => string;
+
+  /**
+   * Update config fields on an existing node by id.
+   * Merges partial fields into the node's data, marks dirty, and revalidates.
+   * No-op if the nodeId does not exist.
+   */
+  updateNodeConfig: (nodeId: string, patch: Partial<LoopNode>) => void;
+
+  /**
+   * Change the `when` value of an existing edge by id.
+   * Marks dirty and revalidates.
+   * No-op if the edgeId does not exist.
+   */
+  updateEdgeWhen: (edgeId: string, when: WhenValue) => void;
 
   // Edge when legality
   legalWhenValues: (sourceNodeId: string) => WhenValue[];
@@ -246,6 +261,47 @@ export function createLoopBuilderStore() {
       return id;
     },
 
+    updateNodeConfig(nodeId, patch) {
+      const idx = get().nodes.findIndex((n) => n.id === nodeId);
+      if (idx === -1) return;
+      const node = get().nodes[idx]!;
+      const updatedData = { ...node.data, ...patch } as LoopNode;
+      const nextNodes = [
+        ...get().nodes.slice(0, idx),
+        { ...node, data: updatedData },
+        ...get().nodes.slice(idx + 1),
+      ];
+      const def = flowToDefinition(nextNodes, get().edges);
+      const validResult = validateLoopDefinition(def);
+      set({
+        nodes: nextNodes,
+        isDirty: true,
+        validationErrors: validResult.ok ? [] : validResult.errors,
+      });
+    },
+
+    updateEdgeWhen(edgeId, when: WhenValue) {
+      const idx = get().edges.findIndex((e) => e.id === edgeId);
+      if (idx === -1) return;
+      const edge = get().edges[idx]!;
+      const updatedEdge: LoopFlowEdge = {
+        ...edge,
+        data: { ...edge.data, when },
+      };
+      const nextEdges = [
+        ...get().edges.slice(0, idx),
+        updatedEdge,
+        ...get().edges.slice(idx + 1),
+      ];
+      const def = flowToDefinition(get().nodes, nextEdges);
+      const validResult = validateLoopDefinition(def);
+      set({
+        edges: nextEdges,
+        isDirty: true,
+        validationErrors: validResult.ok ? [] : validResult.errors,
+      });
+    },
+
     legalWhenValues(sourceNodeId) {
       const node = get().nodes.find((n) => n.id === sourceNodeId);
       if (!node) return [...NON_CONDITION_WHEN_VALUES];
@@ -259,6 +315,12 @@ export function createLoopBuilderStore() {
     },
   }));
 }
+
+// ── Type alias for store instance ─────────────────────────────────────────────
+
+export type CreateLoopBuilderStoreReturn = ReturnType<
+  typeof createLoopBuilderStore
+>;
 
 // ── Default singleton store (for non-test usage) ──────────────────────────────
 
