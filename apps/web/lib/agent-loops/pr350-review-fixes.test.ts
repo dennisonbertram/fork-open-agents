@@ -29,6 +29,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
+import type { RunControlError as RunControlErrorType } from "./run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -65,9 +66,8 @@ describe("BT-350-01: RunControlError is exported with kind discriminator", () =>
 describe("BT-350-09: mapControlError maps RunControlError{kind:not_found} to 404", () => {
   test("RunControlError not_found → 404 response with error body", async () => {
     const { RunControlError } = await import("./run-controls-error");
-    const { mapControlError } = await import(
-      "../../app/api/agent-loop-runs/[runId]/_lib/map-control-error"
-    );
+    const { mapControlError } =
+      await import("../../app/api/agent-loop-runs/[runId]/_lib/map-control-error");
     const err = new RunControlError("not_found", "Run xyz not found");
     const resp = mapControlError(err);
     expect(resp.status).toBe(404);
@@ -77,9 +77,8 @@ describe("BT-350-09: mapControlError maps RunControlError{kind:not_found} to 404
 describe("BT-350-10: mapControlError maps RunControlError{kind:illegal_transition} to 409", () => {
   test("RunControlError illegal_transition → 409 with errorKind in body", async () => {
     const { RunControlError } = await import("./run-controls-error");
-    const { mapControlError } = await import(
-      "../../app/api/agent-loop-runs/[runId]/_lib/map-control-error"
-    );
+    const { mapControlError } =
+      await import("../../app/api/agent-loop-runs/[runId]/_lib/map-control-error");
     const err = new RunControlError(
       "illegal_transition",
       "Cannot pause: not pausable",
@@ -93,11 +92,12 @@ describe("BT-350-10: mapControlError maps RunControlError{kind:illegal_transitio
 
 describe("BT-350-11: mapControlError rethrows non-RunControlError errors", () => {
   test("plain Error that is not RunControlError → rethrows (becomes 500)", async () => {
-    const { mapControlError } = await import(
-      "../../app/api/agent-loop-runs/[runId]/_lib/map-control-error"
-    );
+    const { mapControlError } =
+      await import("../../app/api/agent-loop-runs/[runId]/_lib/map-control-error");
     const unexpected = new Error("database connection lost");
-    expect(() => mapControlError(unexpected)).toThrow("database connection lost");
+    expect(() => mapControlError(unexpected)).toThrow(
+      "database connection lost",
+    );
   });
 });
 
@@ -130,7 +130,10 @@ mock.module("@/lib/db/client", () => ({
     select: selectMock,
     query: {
       agentLoopRuns: { findFirst: findFirstMock },
-      agentLoopStepRuns: { findFirst: findFirstMock, findMany: mock(async () => selectReturning) },
+      agentLoopStepRuns: {
+        findFirst: findFirstMock,
+        findMany: mock(async () => selectReturning),
+      },
     },
   },
 }));
@@ -176,7 +179,7 @@ describe("BT-350-02: pauseLoopRun — unknown runId → RunControlError{kind:not
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("not_found");
+    expect((thrown as RunControlErrorType).kind).toBe("not_found");
   });
 });
 
@@ -200,7 +203,7 @@ describe("BT-350-03: pauseLoopRun — non-owned run in pausable state → RunCon
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("not_found");
+    expect((thrown as RunControlErrorType).kind).toBe("not_found");
   });
 });
 
@@ -228,7 +231,7 @@ describe("BT-350-04: pauseLoopRun — own run in wrong state → RunControlError
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("illegal_transition");
+    expect((thrown as RunControlErrorType).kind).toBe("illegal_transition");
   });
 });
 
@@ -248,7 +251,7 @@ describe("BT-350-05: cancelLoopRun — non-owned run → RunControlError{kind:no
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("not_found");
+    expect((thrown as RunControlErrorType).kind).toBe("not_found");
   });
 });
 
@@ -256,7 +259,9 @@ describe("BT-350-06: cancelLoopRun — own run in wrong state → RunControlErro
   test("0-row update + re-check finds owned run → illegal_transition", async () => {
     resetStoreMocks();
     updateReturning = [];
-    selectReturning = [{ id: "run-cancelled", userId: "user-1", status: "cancelled" }];
+    selectReturning = [
+      { id: "run-cancelled", userId: "user-1", status: "cancelled" },
+    ];
 
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
@@ -268,7 +273,7 @@ describe("BT-350-06: cancelLoopRun — own run in wrong state → RunControlErro
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("illegal_transition");
+    expect((thrown as RunControlErrorType).kind).toBe("illegal_transition");
   });
 });
 
@@ -288,7 +293,7 @@ describe("BT-350-07: resumeLoopRun — non-owned run → RunControlError{kind:no
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("not_found");
+    expect((thrown as RunControlErrorType).kind).toBe("not_found");
   });
 });
 
@@ -296,7 +301,9 @@ describe("BT-350-08: resumeLoopRun — own run in wrong state → RunControlErro
   test("0-row update + re-check finds owned run in running state → illegal_transition", async () => {
     resetStoreMocks();
     updateReturning = [];
-    selectReturning = [{ id: "run-running", userId: "user-1", status: "running" }];
+    selectReturning = [
+      { id: "run-running", userId: "user-1", status: "running" },
+    ];
 
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
@@ -308,7 +315,7 @@ describe("BT-350-08: resumeLoopRun — own run in wrong state → RunControlErro
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(RunControlError);
-    expect((thrown as RunControlError).kind).toBe("illegal_transition");
+    expect((thrown as RunControlErrorType).kind).toBe("illegal_transition");
   });
 });
 
