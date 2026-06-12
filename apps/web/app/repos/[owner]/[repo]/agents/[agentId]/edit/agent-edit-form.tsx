@@ -14,6 +14,15 @@ import { AgentSpecEditor } from "../../agent-spec-editor";
 // Re-export for testing
 export { buildAgentPayload as buildEditPatch };
 
+type ManualTestResponse = {
+  enabled: boolean;
+  matched: number;
+  created: number;
+  duplicates: number;
+  runIds: string[];
+  error?: string;
+};
+
 type AgentEditFormProps = {
   agent: BackgroundAgentWithTriggers;
   owner: string;
@@ -28,6 +37,7 @@ type AgentEditFormProps = {
 export function AgentEditForm({ agent, owner, repo }: AgentEditFormProps) {
   const router = useRouter();
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const form = buildFormFromAgent(agent);
   const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
@@ -62,14 +72,33 @@ export function AgentEditForm({ agent, owner, repo }: AgentEditFormProps) {
   }
 
   async function handleRunTest() {
-    await fetch(`/api/background-agents/${agent.id}/test`, {
-      method: "POST",
-    });
+    setRunError(null);
+    try {
+      const res = await fetch(`/api/background-agents/${agent.id}/test`, {
+        method: "POST",
+      });
+      const body = (await res.json()) as ManualTestResponse;
+      if (!res.ok) {
+        setRunError(body.error ?? "Failed to start test run");
+        return;
+      }
+      const runId = body.runIds[0];
+      if (!runId) {
+        setRunError("No background run was created for this test");
+        return;
+      }
+      router.push(`/background-runs/${runId}`);
+    } catch (err) {
+      setRunError(
+        err instanceof Error ? err.message : "Failed to start test run",
+      );
+    }
   }
 
   return (
     <div className="space-y-6">
       <AgentSpecEditor
+        mode="edit"
         repoOwner={owner}
         repoName={repo}
         initialName={form.name}
@@ -91,6 +120,11 @@ export function AgentEditForm({ agent, owner, repo }: AgentEditFormProps) {
       {saveError && (
         <p className="text-sm text-destructive" role="alert">
           {saveError}
+        </p>
+      )}
+      {runError && (
+        <p className="text-sm text-destructive" role="alert">
+          {runError}
         </p>
       )}
     </div>

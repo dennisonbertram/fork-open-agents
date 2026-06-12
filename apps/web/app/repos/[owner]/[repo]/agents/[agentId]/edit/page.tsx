@@ -32,7 +32,13 @@ export default async function AgentEditPage({ params }: AgentEditPageProps) {
     notFound();
   }
 
-  const detailHref = `/repos/${owner}/${repo}/agents/${agentId}`;
+  // Guard against URL-param mismatch. Visiting /repos/<other>/<repo>/agents/<id>/edit
+  // must not allow saving to a different repo than the one the agent belongs to.
+  if (agent.repoOwner !== owner || agent.repoName !== repo) {
+    notFound();
+  }
+
+  const detailHref = `/repos/${agent.repoOwner}/${agent.repoName}/agents/${agentId}`;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -42,10 +48,10 @@ export default async function AgentEditPage({ params }: AgentEditPageProps) {
           <div>
             <div className="flex items-center gap-2">
               <Link
-                href={`/repos/${owner}/${repo}/agents`}
+                href={`/repos/${agent.repoOwner}/${agent.repoName}/agents`}
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
-                {owner}/{repo} agents
+                {agent.repoOwner}/{agent.repoName} agents
               </Link>
               <span className="text-muted-foreground">/</span>
               <Link
@@ -62,7 +68,7 @@ export default async function AgentEditPage({ params }: AgentEditPageProps) {
               <span className="text-muted-foreground">{agent.name}</span>
             </h1>
             <p className="mt-1 font-mono text-sm text-muted-foreground">
-              {owner}/{repo}
+              {agent.repoOwner}/{agent.repoName}
             </p>
           </div>
           <Button asChild variant="ghost" size="sm">
@@ -70,8 +76,12 @@ export default async function AgentEditPage({ params }: AgentEditPageProps) {
           </Button>
         </div>
 
-        {/* Edit form */}
-        <AgentEditForm agent={agent} owner={owner} repo={repo} />
+        {/* Edit form — pass agent's own owner/repo, never URL params */}
+        <AgentEditForm
+          agent={agent}
+          owner={agent.repoOwner}
+          repo={agent.repoName}
+        />
       </div>
     </main>
   );
