@@ -456,7 +456,7 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("Project agents");
     expect(html).toContain("Activity");
     // Workflows window MUST NOT appear when flag is off
-    expect(html).not.toContain("aria-label=\"Workflows window\"");
+    expect(html).not.toContain('aria-label="Workflows window"');
     // listAgentLoops MUST NOT be called when flag is off
     expect(listAgentLoops).not.toHaveBeenCalled();
   });

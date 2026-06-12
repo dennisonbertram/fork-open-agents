@@ -43,7 +43,9 @@ describe("DashboardStatusPill — loop status extension", () => {
 
   // BT-PILL-004: archived → muted (no emerald, no amber, no red)
   test("BT-PILL-004: archived status renders with muted color classes", () => {
-    const html = renderToStaticMarkup(<DashboardStatusPill status="archived" />);
+    const html = renderToStaticMarkup(
+      <DashboardStatusPill status="archived" />,
+    );
 
     expect(html).toContain("archived");
     expect(html).not.toContain("emerald");

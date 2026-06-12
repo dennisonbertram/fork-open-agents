@@ -22,7 +22,9 @@ type WorkflowsWindowProps = {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /** Exported for test use — computes the collapsed summary line. */
-export function buildWorkflowsSummary(loops: Pick<AgentLoop, "status">[]): string {
+export function buildWorkflowsSummary(
+  loops: Pick<AgentLoop, "status">[],
+): string {
   const total = loops.length;
   const active = loops.filter((l) => l.status === "active").length;
   const loopWord = total === 1 ? "workflow" : "workflows";
@@ -135,5 +137,11 @@ export async function WorkflowsWindow({
     }
   }
 
-  return <WorkflowsWindowView loops={loops} repoOwner={repoOwner} repoName={repoName} />;
+  return (
+    <WorkflowsWindowView
+      loops={loops}
+      repoOwner={repoOwner}
+      repoName={repoName}
+    />
+  );
 }
