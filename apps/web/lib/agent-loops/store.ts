@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -238,6 +238,51 @@ export async function getOwnedAgentLoop(params: {
     ),
   });
   return loop ?? null;
+}
+
+/**
+ * Looks up a loop by its id WITHOUT ownership scoping.
+ * Used by the dispatcher to load a loop-bound trigger's target loop where
+ * the trigger row's userId is authoritative (not the caller's session).
+ */
+export async function getAgentLoopById(
+  loopId: string,
+): Promise<AgentLoop | null> {
+  const loop = await db.query.agentLoops.findFirst({
+    where: eq(agentLoops.id, loopId),
+  });
+  return loop ?? null;
+}
+
+/**
+ * Returns the id of the most-recently-created active run for the loop, or null
+ * if no run is in queued, running, or paused status.
+ *
+ * Returning the run id (rather than a boolean) allows callers to record
+ * skip events against the active run's id, satisfying the FK constraint on
+ * agent_loop_events.loop_run_id → agent_loop_runs.id.
+ * (Single-active-run rule enforcement in M1-07 dispatcher bridge.)
+ */
+export async function hasActiveRunForLoop(
+  loopId: string,
+): Promise<string | null> {
+  const activeStatuses: AgentLoopRun["status"][] = [
+    "queued",
+    "running",
+    "paused",
+  ];
+  const [row] = await db
+    .select({ id: agentLoopRuns.id })
+    .from(agentLoopRuns)
+    .where(
+      and(
+        eq(agentLoopRuns.loopId, loopId),
+        inArray(agentLoopRuns.status, activeStatuses),
+      ),
+    )
+    .orderBy(desc(agentLoopRuns.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 // ── agentLoopRuns ─────────────────────────────────────────────────────────────
