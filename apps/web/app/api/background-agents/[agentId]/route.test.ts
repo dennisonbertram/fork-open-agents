@@ -183,4 +183,32 @@ describe("/api/background-agents/[agentId]", () => {
 
     expect(response.status).toBe(404);
   });
+
+  test("PATCH returns 400 with field-level details for an invalid schedule.cron trigger", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      new Request("http://localhost/api/background-agents/agent-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          triggers: [
+            {
+              name: "Daily cron",
+              kind: "schedule.cron",
+              schedule: "not-a-valid-cron",
+            },
+          ],
+        }),
+      }),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBeDefined();
+    // Must include field-level details — not just a generic message
+    expect(body.details).toBeDefined();
+    expect(updateBackgroundAgent).not.toHaveBeenCalled();
+  });
 });

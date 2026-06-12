@@ -25,7 +25,10 @@ export async function PATCH(req: Request, context: RouteContext) {
   const parsed = updateBackgroundAgentSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid background agent update" },
+      {
+        error: "Invalid background agent update",
+        details: parsed.error.flatten(),
+      },
       { status: 400 },
     );
   }
