@@ -23,6 +23,7 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
+import { mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -2082,6 +2083,7 @@ const runAgentStep = async (
   const { webAgent } = await import("@/app/config");
   const { resolveComposioToolsForChat } =
     await import("@/lib/composio/session");
+  const { resolveGitHubToolsForChat } = await import("@/lib/github/tools");
   const { emitSessionEvent } = await import("@/lib/observability/events");
 
   const abortController = new AbortController();
@@ -2233,10 +2235,102 @@ const runAgentStep = async (
       throw error;
     }
 
+    let githubTools: ToolSet | undefined;
+    try {
+      const githubResult = await resolveGitHubToolsForChat({
+        userId,
+        chatId,
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+      });
+      if (githubResult.status === "ready") {
+        githubTools = githubResult.tools;
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.selected",
+          status: "succeeded",
+          summary: `GitHub tools selected for ${githubResult.repoOwner}/${githubResult.repoName}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            repoOwner: githubResult.repoOwner,
+            repoName: githubResult.repoName,
+            toolCount: Object.keys(githubResult.tools).length,
+          },
+        });
+      } else if (
+        githubResult.status === "off" &&
+        githubResult.reason === "access_denied"
+      ) {
+        // Opted-in user whose repo access check failed — surface for observability
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.access_denied",
+          status: "failed",
+          summary:
+            "GitHub tools access denied — check app installation and repo permissions.",
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            reason: githubResult.reason,
+            accessDeniedReason: githubResult.accessDeniedReason ?? null,
+          },
+        });
+      }
+      // Benign off cases (not_enabled, no_repo, non_classic_runtime) emit nothing
+    } catch (error) {
+      // Non-fatal: emit observability event and continue without GitHub tools
+      // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
+      const errorKind =
+        error instanceof Error && error.name === "GitHubToolsSetupError"
+          ? "setup_error"
+          : "unknown";
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "github.tools.failed",
+        status: "failed",
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Unknown error resolving GitHub tools.",
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          errorKind,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      // Swallow — chat continues without GitHub tools
+    }
+
+    // Merge composio and github tools into one set — prevents either from
+    // clobbering the other when only one spread was used previously.
+    const mergedExtraTools = mergeExtraTools(composioTools, githubTools);
+
     const result = await webAgent.stream({
       messages,
       options: stepAgentOptions,
-      ...(composioTools ? { tools: composioTools } : {}),
+      ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,
     });
 
