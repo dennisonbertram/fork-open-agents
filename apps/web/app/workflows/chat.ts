@@ -518,11 +518,11 @@ const PROVIDER_AUTH_PHRASES: readonly string[] = [
 ];
 
 // Phrase-list for provider credit / quota / billing signals. Deliberately
-// excludes OAuth/ACL errors ("insufficient permissions", "insufficient scope")
-// and filesystem errors ("disk quota exceeded writing /tmp") by using specific
-// phrases rather than loose regex alternatives. "quota exceeded for" matches
-// real provider quota messages (e.g. "Quota exceeded for this model") without
-// matching disk-path quota strings that lack the trailing "for".
+// excludes OAuth/ACL errors ("insufficient permissions", "insufficient scope").
+// Filesystem quota errors ("disk quota exceeded writing /tmp") are excluded by
+// the FILESYSTEM_QUOTA_RE negative guard applied at the call site rather than
+// by narrowing the phrase list — this lets us match all bare "quota exceeded"
+// and "quota_exceeded" forms that real providers emit.
 const PROVIDER_CREDIT_PHRASES: readonly string[] = [
   "out of credits",
   "insufficient credits",
@@ -531,12 +531,20 @@ const PROVIDER_CREDIT_PHRASES: readonly string[] = [
   "insufficient funds",
   "credit balance is too low",
   "exceeded your current quota",
-  "quota exceeded for",
+  "quota exceeded",
+  "quota_exceeded",
   "http 402",
   "status 402",
   "payment required",
   "402 payment",
 ];
+
+// Negative guard for the credit branch: filesystem quota errors share the
+// phrase "quota exceeded" but are not provider billing errors. "disk quota" is
+// the dominant filesystem signal in sandbox contexts (ext4, NFS, Docker tmpfs).
+// We keep this guard minimal — no evidence of "inode quota" or "user quota"
+// appearing in sandbox error logs — so we don't over-block.
+const FILESYSTEM_QUOTA_RE = /disk quota/i;
 
 /** Returns true if `message` contains any of `phrases` (case-insensitive). */
 function matchesAnyPhrase(
@@ -597,10 +605,13 @@ function getSetupErrorMessage(error: unknown): string {
   }
 
   // Provider credit / quota / billing failures.
-  // Uses PROVIDER_CREDIT_PHRASES which excludes OAuth/ACL errors like
-  // "insufficient permissions" and filesystem errors like
-  // "disk quota exceeded writing /tmp". See phrase-list comments above.
-  if (matchesAnyPhrase(message, PROVIDER_CREDIT_PHRASES)) {
+  // Uses PROVIDER_CREDIT_PHRASES with a filesystem-quota negative guard: if the
+  // message contains "disk quota" (case-insensitive) it is a sandbox disk-space
+  // error, not a provider billing error, and falls through to the generic message.
+  if (
+    matchesAnyPhrase(message, PROVIDER_CREDIT_PHRASES) &&
+    !FILESYSTEM_QUOTA_RE.test(message)
+  ) {
     return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
   }
 
