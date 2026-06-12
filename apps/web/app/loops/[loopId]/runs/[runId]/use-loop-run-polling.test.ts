@@ -17,8 +17,12 @@ import { describe, expect, test } from "bun:test";
 
 const pollingModulePromise = import("./use-loop-run-polling");
 
-const ACTIVE_STATUSES = ["queued", "running", "paused"] as const;
-const TERMINAL_STATUSES = ["completed", "failed", "cancelled", "stalled"] as const;
+const TERMINAL_STATUSES = [
+  "completed",
+  "failed",
+  "cancelled",
+  "stalled",
+] as const;
 
 describe("computeLoopRunRefreshInterval", () => {
   // BT-LOOPS-014: queued → 2000ms
