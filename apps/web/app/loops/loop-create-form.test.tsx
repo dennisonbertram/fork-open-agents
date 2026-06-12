@@ -27,8 +27,16 @@ describe("LoopCreateForm", () => {
   test("BT-LOOPS-006: renders structured validation errors from definition JSON editor", async () => {
     const { LoopCreateForm } = await formModulePromise;
     const mockErrors = [
-      { kind: "loop_invalid" as const, rule: "no_start" as const, message: "Definition must have exactly one start node." },
-      { kind: "loop_invalid" as const, rule: "no_end" as const, message: "Definition must have at least one end node." },
+      {
+        kind: "loop_invalid" as const,
+        rule: "no_start" as const,
+        message: "Definition must have exactly one start node.",
+      },
+      {
+        kind: "loop_invalid" as const,
+        rule: "no_end" as const,
+        message: "Definition must have at least one end node.",
+      },
     ];
     const html = renderToStaticMarkup(
       <LoopCreateForm initialValidationErrors={mockErrors} />,

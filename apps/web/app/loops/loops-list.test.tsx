@@ -59,7 +59,12 @@ describe("LoopsList", () => {
   // BT-LOOPS-001: cards render name, repo badge, status
   test("BT-LOOPS-001: renders loop cards with name, repo, and status when loops present", async () => {
     _swrOverride = {
-      data: { loops: [makeLoop(), makeLoop({ id: "loop_2", name: "Second Loop", status: "paused" })] },
+      data: {
+        loops: [
+          makeLoop(),
+          makeLoop({ id: "loop_2", name: "Second Loop", status: "paused" }),
+        ],
+      },
       isLoading: false,
     };
     const { LoopsList } = await loopsListModulePromise;
