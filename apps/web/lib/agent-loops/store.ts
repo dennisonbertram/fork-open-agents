@@ -756,16 +756,11 @@ export async function pauseLoopRun(
     const [existing] = await db
       .select({ id: agentLoopRuns.id })
       .from(agentLoopRuns)
-      .where(
-        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
-      )
+      .where(and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)))
       .limit(1);
 
     if (!existing) {
-      throw new RunControlError(
-        "not_found",
-        `Loop run not found: ${runId}`,
-      );
+      throw new RunControlError("not_found", `Loop run not found: ${runId}`);
     }
 
     throw new RunControlError(
@@ -814,16 +809,11 @@ export async function cancelLoopRun(
     const [existing] = await db
       .select({ id: agentLoopRuns.id })
       .from(agentLoopRuns)
-      .where(
-        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
-      )
+      .where(and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)))
       .limit(1);
 
     if (!existing) {
-      throw new RunControlError(
-        "not_found",
-        `Loop run not found: ${runId}`,
-      );
+      throw new RunControlError("not_found", `Loop run not found: ${runId}`);
     }
 
     throw new RunControlError(
@@ -880,16 +870,11 @@ export async function resumeLoopRun(
     const [existing] = await db
       .select({ id: agentLoopRuns.id })
       .from(agentLoopRuns)
-      .where(
-        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
-      )
+      .where(and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)))
       .limit(1);
 
     if (!existing) {
-      throw new RunControlError(
-        "not_found",
-        `Loop run not found: ${runId}`,
-      );
+      throw new RunControlError("not_found", `Loop run not found: ${runId}`);
     }
 
     throw new RunControlError(
