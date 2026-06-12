@@ -30,6 +30,7 @@ type AgentRow = {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 };
 
 const mockListAgentsForUser = mock(
@@ -81,6 +82,7 @@ function makeAgent(overrides: Partial<AgentRow> = {}): AgentRow {
     composioProfileId: null,
     managedRuntimeProfileId: null,
     toolAuthoringEnabled: false,
+    githubToolsEnabled: false,
     ...overrides,
   };
 }

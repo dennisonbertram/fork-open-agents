@@ -26,6 +26,7 @@ export interface AgentRow {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 }
 
 /**
@@ -53,6 +54,7 @@ export interface ResolvedAgent {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 }
 
 export interface PickScopeKeys {
@@ -165,6 +167,7 @@ export async function resolveAgentForRole(
     composioProfileId: null,
     managedRuntimeProfileId: prefs.defaultManagedRuntimeProfileId,
     toolAuthoringEnabled: false,
+    githubToolsEnabled: false,
   };
 }
 
@@ -194,5 +197,6 @@ function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
     composioProfileId: row.composioProfileId,
     managedRuntimeProfileId: row.managedRuntimeProfileId,
     toolAuthoringEnabled: row.toolAuthoringEnabled,
+    githubToolsEnabled: row.githubToolsEnabled,
   };
 }

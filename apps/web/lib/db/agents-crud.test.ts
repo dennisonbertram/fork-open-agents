@@ -13,6 +13,7 @@ mock.module("server-only", () => ({}));
 // ── Shared state for fake DB ─────────────────────────────────────────────────
 let fakeSelectRows: unknown[] = [];
 let lastInsertValues: unknown = null;
+let lastOnConflictOpts: unknown = null;
 
 // ── Mock DB client ────────────────────────────────────────────────────────────
 mock.module("@/lib/db/client", () => ({
@@ -28,7 +29,10 @@ mock.module("@/lib/db/client", () => ({
       values: (vals: unknown) => {
         lastInsertValues = vals;
         return {
-          onConflictDoUpdate: (_opts: unknown) => Promise.resolve(),
+          onConflictDoUpdate: (opts: unknown) => {
+            lastOnConflictOpts = opts;
+            return Promise.resolve();
+          },
         };
       },
     }),
@@ -51,6 +55,7 @@ mock.module("@/lib/db/schema", () => ({
     instructions: "instructions_col",
     managedRuntimeProfileId: "managed_runtime_profile_id_col",
     composioProfileId: "composio_profile_id_col",
+    githubToolsEnabled: "github_tools_enabled_col",
     updatedAt: "updated_at_col",
   },
 }));
@@ -67,6 +72,7 @@ const { getUserDefaultAgent, upsertUserDefaultAgent, deleteUserDefaultAgent } =
 beforeEach(() => {
   fakeSelectRows = [];
   lastInsertValues = null;
+  lastOnConflictOpts = null;
 });
 
 // BT-A-001: getUserDefaultAgent is exported and callable
@@ -163,5 +169,60 @@ describe("deleteUserDefaultAgent", () => {
     for (const role of ["main", "explorer", "executor", "design"] as const) {
       await expect(deleteUserDefaultAgent("u1", role)).resolves.toBeUndefined();
     }
+  });
+});
+
+// BT-A-004: githubToolsEnabled threading
+describe("upsertUserDefaultAgent — githubToolsEnabled field (BT-A-004)", () => {
+  it("BT-A-004a: patch { githubToolsEnabled: true } inserts a row with githubToolsEnabled===true", async () => {
+    await upsertUserDefaultAgent("u1", "main", { githubToolsEnabled: true });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.githubToolsEnabled).toBe(true);
+  });
+
+  it("BT-A-004b: patch { githubToolsEnabled: false } inserts a row with githubToolsEnabled===false", async () => {
+    await upsertUserDefaultAgent("u1", "main", { githubToolsEnabled: false });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.githubToolsEnabled).toBe(false);
+  });
+
+  it("BT-A-004c: empty patch defaults githubToolsEnabled to false in the inserted row", async () => {
+    await upsertUserDefaultAgent("u1", "main", {});
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.githubToolsEnabled).toBe(false);
+  });
+
+  it("BT-A-004d: onConflictDoUpdate.set includes githubToolsEnabled", async () => {
+    await upsertUserDefaultAgent("u1", "main", { githubToolsEnabled: true });
+    const opts = lastOnConflictOpts as {
+      set?: Record<string, unknown>;
+    } | null;
+    expect(opts).not.toBeNull();
+    expect(opts?.set).toHaveProperty("githubToolsEnabled");
+    expect(opts?.set?.githubToolsEnabled).toBe(true);
+  });
+
+  // BT-A-004e: documents the full-row-replace contract. upsertUserDefaultAgent
+  // is NOT a partial patch — a save that omits githubToolsEnabled resets the
+  // column to false (both the insert row and the onConflict set use
+  // `patch.githubToolsEnabled ?? false`). The Main editor's handleSave always
+  // includes the field, so this is safe in the shipped UI; this test locks in
+  // the contract so a future refactor to partial-patch is a conscious choice,
+  // not a silent regression that would clobber an enabled gate.
+  it("BT-A-004e: a save omitting githubToolsEnabled resets it to false (full-row-replace contract)", async () => {
+    // First: enable the gate.
+    await upsertUserDefaultAgent("u1", "main", { githubToolsEnabled: true });
+    expect(
+      (lastInsertValues as Record<string, unknown>).githubToolsEnabled,
+    ).toBe(true);
+
+    // Then: an unrelated save that omits githubToolsEnabled. Under the
+    // full-row-replace upsert, both the insert row and the conflict set fall
+    // back to false — so the gate would be reset if the UI ever omitted it.
+    await upsertUserDefaultAgent("u1", "main", { modelId: "anthropic/x" });
+    const inserted = lastInsertValues as Record<string, unknown>;
+    expect(inserted.githubToolsEnabled).toBe(false);
+    const opts = lastOnConflictOpts as { set?: Record<string, unknown> } | null;
+    expect(opts?.set?.githubToolsEnabled).toBe(false);
   });
 });
