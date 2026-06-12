@@ -71,7 +71,10 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
           {
             errorKind: "active_run",
             message:
-              "A run is already active for this loop. Wait for it to complete or cancel it first.",
+              "This loop already has an active or paused run. Wait for it to complete, resume, or cancel it before starting a new run.",
+            ...(result.activeRunId !== undefined
+              ? { activeRunId: result.activeRunId }
+              : {}),
           },
           { status: 409 },
         );

@@ -116,11 +116,10 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
   const [activeRunNotice, setActiveRunNotice] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  const { data: loopData } = useSWR<GetAgentLoopResponse>(
-    `/api/agent-loops/${loopId}`,
-    fetchJson,
-    { fallbackData: initialLoopData },
-  );
+  const { data: loopData, mutate: mutateLoopData } =
+    useSWR<GetAgentLoopResponse>(`/api/agent-loops/${loopId}`, fetchJson, {
+      fallbackData: initialLoopData,
+    });
   const { data: runsData } = useSWR<ListAgentLoopRunsResponse>(
     `/api/agent-loops/${loopId}/runs`,
     fetchJson,
@@ -145,11 +144,18 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
           activeRunId?: string;
         };
         if (body.errorKind === "active_run") {
-          // Surface a non-destructive notice instead of an error toast
+          // Surface a non-destructive notice instead of an error toast.
+          // The API returns activeRunId when available (includes paused runs).
+          // Fall back to searching the local runs list for running, queued,
+          // OR paused runs — hasActiveRunForLoop counts all three.
           const activeId =
             body.activeRunId ??
-            runs.find((r) => r.status === "running" || r.status === "queued")
-              ?.id;
+            runs.find(
+              (r) =>
+                r.status === "running" ||
+                r.status === "queued" ||
+                r.status === "paused",
+            )?.id;
           setActiveRunNotice(activeId ?? "unknown");
           return;
         }
@@ -189,6 +195,18 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         };
         toast.error(body.message ?? "Failed to update loop status.");
       } else {
+        const body = (await res.json().catch(() => null)) as {
+          loop?: GetAgentLoopResponse["loop"];
+        } | null;
+        if (body?.loop) {
+          await mutateLoopData(
+            (current) => (current ? { ...current, loop: body.loop! } : current),
+            false,
+          );
+        } else {
+          // Revalidate from server if response body is unavailable
+          await mutateLoopData();
+        }
         toast.success(`Loop status updated to ${newStatus}`);
       }
     } catch {
@@ -232,14 +250,15 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         {/* Active run notice (409) */}
         {activeRunNotice && (
           <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-            A run is already active:{" "}
+            This loop already has an active or paused run:{" "}
             <Link
               href={`/loops/${loopId}/runs/${activeRunNotice}`}
               className="font-mono underline"
             >
               {activeRunNotice}
             </Link>
-            . Wait for it to complete or cancel it before starting a new run.
+            . Wait for it to complete, resume, or cancel it before starting a
+            new run.
           </div>
         )}
 

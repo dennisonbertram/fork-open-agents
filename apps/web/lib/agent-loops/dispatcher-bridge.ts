@@ -38,15 +38,25 @@ export type LoopDispatchSkipReason =
 export type LoopDispatchResult =
   | {
       skipped: true;
-      reason: LoopDispatchSkipReason;
+      reason: Exclude<LoopDispatchSkipReason, "active_run">;
       runId?: undefined;
       created?: undefined;
+      activeRunId?: undefined;
+    }
+  | {
+      skipped: true;
+      reason: "active_run";
+      runId?: undefined;
+      created?: undefined;
+      /** The id of the existing active/paused run that caused the skip. */
+      activeRunId: string;
     }
   | {
       skipped?: false;
       reason?: undefined;
       created: boolean;
       runId: string;
+      activeRunId?: undefined;
     };
 
 export type DispatchLoopRunForTriggerParams = {
@@ -142,7 +152,7 @@ async function dispatchLoopRun(params: {
       },
       requestId: requestId ?? null,
     });
-    return { skipped: true, reason: "active_run" };
+    return { skipped: true, reason: "active_run", activeRunId };
   }
 
   // Create the run (idempotent).
@@ -361,7 +371,7 @@ export async function dispatchManualAgentLoopStart(params: {
   // Single-active-run rule (checked before idempotency key to give a clean signal)
   const activeRunId = await hasActiveRunForLoop(loop.id);
   if (activeRunId) {
-    return { skipped: true, reason: "active_run" };
+    return { skipped: true, reason: "active_run", activeRunId };
   }
 
   // Manual idempotency: use requestId as the stable key if provided, otherwise random.

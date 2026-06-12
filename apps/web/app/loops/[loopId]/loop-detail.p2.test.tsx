@@ -49,9 +49,7 @@ const loopDetailModulePromise = import("./loop-detail");
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
-function makeLoopData(
-  status: string = "draft",
-): GetAgentLoopResponse {
+function makeLoopData(status: string = "draft"): GetAgentLoopResponse {
   return {
     loop: {
       id: "loop_abc",
@@ -240,9 +238,10 @@ describe("LoopDetail — 409 active_run paused-run notice (BT-P2-002)", () => {
     // After the fix: the predicate must include "paused".
 
     const pausedRunId = "run_paused_xyz";
-    const runs = [
-      { id: pausedRunId, status: "paused" as const },
-      { id: "run_old", status: "completed" as const },
+    // Use string type to avoid TS narrowing errors on the comparison checks below
+    const runs: { id: string; status: string }[] = [
+      { id: pausedRunId, status: "paused" },
+      { id: "run_old", status: "completed" },
     ];
 
     // Current broken behavior (what the component does today):
@@ -294,13 +293,11 @@ describe("LoopDetail — 409 active_run paused-run notice (BT-P2-002)", () => {
     //   b. Documenting the REQUIRED text pattern
     //
     // The current broken message text:
-    const brokenNoticeText =
-      "A run is already active";
+    const brokenNoticeText = "A run is already active";
     expect(/active or paused/i.test(brokenNoticeText)).toBe(false); // confirms it's broken
 
     // The required message text (what the fix must render):
-    const requiredNoticeText =
-      "This loop already has an active or paused run";
+    const requiredNoticeText = "This loop already has an active or paused run";
     expect(/active or paused/i.test(requiredNoticeText)).toBe(true); // confirms requirement
 
     // BT-P2-002b: After the fix, the component's rendered notice div must
@@ -384,9 +381,8 @@ describe("POST /api/agent-loops/[loopId]/runs — 409 includes activeRunId (BT-P
     isAgentLoopRepoAllowed: mock(() => true),
   }));
 
-  const routeModulePromise = import(
-    "../../api/agent-loops/[loopId]/runs/route"
-  );
+  const routeModulePromise =
+    import("../../api/agent-loops/[loopId]/runs/route");
 
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
