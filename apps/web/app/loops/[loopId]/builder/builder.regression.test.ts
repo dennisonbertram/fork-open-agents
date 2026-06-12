@@ -260,8 +260,18 @@ describe("regression: edge when value preserved through graph changes", () => {
 describe("regression (Defect 1): dimensions/select changes NEVER flip isDirty", () => {
   const FRESH_DEF = {
     nodes: [
-      { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
-      { id: "e", kind: "end" as const, label: "End", position: { x: 300, y: 0 } },
+      {
+        id: "s",
+        kind: "start" as const,
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "e",
+        kind: "end" as const,
+        label: "End",
+        position: { x: 300, y: 0 },
+      },
     ],
     edges: [{ id: "ed1", source: "s", target: "e", when: "always" as const }],
   };
@@ -305,7 +315,12 @@ describe("regression (Defect 1): dimensions/select changes NEVER flip isDirty", 
 
     // Then: position change (user drag — SHOULD dirty)
     store.getState().onNodesChange([
-      { id: "s", type: "position", position: { x: 99, y: 99 }, dragging: false },
+      {
+        id: "s",
+        type: "position",
+        position: { x: 99, y: 99 },
+        dragging: false,
+      },
     ]);
     expect(store.getState().isDirty).toBe(true);
   });
@@ -322,7 +337,7 @@ describe("regression (Defect 4): addNode never produces overlapping positions", 
       for (let j = i + 1; j < positions.length; j++) {
         const a = positions[i]!;
         const b = positions[j]!;
-        const d = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
         if (d < min) min = d;
       }
     }

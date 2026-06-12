@@ -101,29 +101,36 @@ const OFFSET_STEP = 40;
  * that is at least COLLISION_RADIUS away from every existing node.
  * Cascades by (OFFSET_STEP, OFFSET_STEP) until a free slot is found.
  */
+function isColliding(
+  candidate: { x: number; y: number },
+  others: Array<{ x: number; y: number }>,
+): boolean {
+  for (const ep of others) {
+    if (Math.hypot(ep.x - candidate.x, ep.y - candidate.y) < COLLISION_RADIUS) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function findFreePosition(
   desired: { x: number; y: number },
   existingPositions: Array<{ x: number; y: number }>,
 ): { x: number; y: number } {
-  let pos = { x: desired.x, y: desired.y };
-  let attempts = 0;
   const maxAttempts = 100;
-
-  while (attempts < maxAttempts) {
-    const collides = existingPositions.some((ep) => {
-      const dx = ep.x - pos.x;
-      const dy = ep.y - pos.y;
-      return Math.sqrt(dx * dx + dy * dy) < COLLISION_RADIUS;
-    });
-    if (!collides) return pos;
-    pos = {
-      x: pos.x + OFFSET_STEP,
-      y: pos.y + OFFSET_STEP,
+  for (let i = 0; i < maxAttempts; i++) {
+    const candidate = {
+      x: desired.x + i * OFFSET_STEP,
+      y: desired.y + i * OFFSET_STEP,
     };
-    attempts++;
+    if (!isColliding(candidate, existingPositions)) {
+      return candidate;
+    }
   }
-
-  return pos;
+  return {
+    x: desired.x + maxAttempts * OFFSET_STEP,
+    y: desired.y + maxAttempts * OFFSET_STEP,
+  };
 }
 
 // ── Store factory (exported for testing) ─────────────────────────────────────

@@ -270,9 +270,9 @@ describe("BT-D1: onNodesChange — dimensions and select changes do not mark dir
     store.getState().initialize(VALID_DEF);
     expect(store.getState().isDirty).toBe(false);
 
-    store.getState().onNodesChange([
-      { id: "start-1", type: "select", selected: true },
-    ]);
+    store
+      .getState()
+      .onNodesChange([{ id: "start-1", type: "select", selected: true }]);
 
     expect(store.getState().isDirty).toBe(false);
   });
@@ -352,7 +352,7 @@ describe("BT-D4: addNode — findFreePosition avoids overlapping existing nodes"
       a: { x: number; y: number },
       b: { x: number; y: number },
     ): number {
-      return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+      return Math.hypot(a.x - b.x, a.y - b.y);
     }
 
     expect(dist(n1.position, n2.position)).toBeGreaterThan(OVERLAP_THRESHOLD);
