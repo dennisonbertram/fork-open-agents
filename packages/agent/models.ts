@@ -15,16 +15,27 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
-  // Adaptive thinking is supported for Anthropic 4.6 and later.
-  // Extract the version number from the model ID (e.g., "claude-opus-4.8" -> 4.8).
-  // The version pattern is after "claude-" and before any "-" that follows.
+  // Adaptive thinking is supported for Claude 4.6 and later (4.x dotted format).
+  //
+  // Two distinct Anthropic model id formats exist:
+  //   - Claude 3.x: claude-{major}-{minor}-{family}  e.g. claude-3-7-sonnet, claude-3-5-haiku
+  //     These always use the LEGACY thinking path — never adaptive.
+  //   - Claude 4.x+: claude-{family}-{major}[.{minor}]  e.g. claude-opus-4.8, claude-sonnet-4.6
+  //     These use adaptive thinking at 4.6+.
+  //
+  // The regex `/claude-[a-z]+-(\d+)(?:\.(\d+))?(?:-|$)/i` anchors on a NON-DIGIT family word
+  // between "claude-" and the version number, so 3.x ids (where a digit follows "claude-")
+  // do not match and safely return false.
+  //
   // Examples:
-  //   - "claude-opus-4.8" -> major=4, minor=8 -> true (8 >= 6)
-  //   - "claude-opus-4.5" -> major=4, minor=5 -> false (5 < 6)
-  //   - "claude-opus-4" -> major=4, minor=0 -> false (0 < 6)
-  //   - "claude-haiku-4.5" -> major=4, minor=5 -> false (5 < 6)
+  //   - "claude-opus-4.8"   → family="opus", major=4, minor=8  → true  (8 >= 6)
+  //   - "claude-sonnet-4.6" → family="sonnet", major=4, minor=6 → true  (6 >= 6)
+  //   - "claude-opus-4.5"   → family="opus", major=4, minor=5  → false (5 < 6)
+  //   - "claude-opus-4"     → family="opus", major=4, minor=0  → false (0 < 6)
+  //   - "claude-3-7-sonnet" → no [a-z]+ between "claude-" and digit → no match → false
+  //   - "claude-3-5-haiku"  → same → no match → false
 
-  const versionMatch = modelId.match(/claude-\w+-(\d+)\.?(\d*)/);
+  const versionMatch = modelId.match(/claude-[a-z]+-(\d+)(?:\.(\d+))?(?:-|$)/i);
   if (!versionMatch || !versionMatch[1]) {
     return false;
   }
