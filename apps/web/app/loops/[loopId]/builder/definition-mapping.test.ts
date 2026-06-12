@@ -8,17 +8,25 @@
 
 import { describe, expect, it } from "bun:test";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
-import {
-  definitionToFlow,
-  flowToDefinition,
-} from "./definition-mapping";
+import { definitionToFlow, flowToDefinition } from "./definition-mapping";
 
 // ── Fixture definitions ────────────────────────────────────────────────────────
 
 const SIMPLE_DEF: LoopDefinition = {
   nodes: [
-    { id: "start-1", kind: "start", label: "Start", position: { x: 100, y: 200 } },
-    { id: "step-1", kind: "agent_step", label: "My Step", position: { x: 300, y: 200 }, instructions: "Do something useful" },
+    {
+      id: "start-1",
+      kind: "start",
+      label: "Start",
+      position: { x: 100, y: 200 },
+    },
+    {
+      id: "step-1",
+      kind: "agent_step",
+      label: "My Step",
+      position: { x: 300, y: 200 },
+      instructions: "Do something useful",
+    },
     { id: "end-1", kind: "end", label: "End", position: { x: 500, y: 200 } },
   ],
   edges: [
@@ -37,8 +45,18 @@ const CONDITION_DEF: LoopDefinition = {
       position: { x: 200, y: 0 },
       condition: { path: "status", op: "eq", value: "open" },
     },
-    { id: "end-success", kind: "end", label: "Done", position: { x: 400, y: -100 } },
-    { id: "end-fail", kind: "end", label: "Fail", position: { x: 400, y: 100 } },
+    {
+      id: "end-success",
+      kind: "end",
+      label: "Done",
+      position: { x: 400, y: -100 },
+    },
+    {
+      id: "end-fail",
+      kind: "end",
+      label: "Fail",
+      position: { x: 400, y: 100 },
+    },
   ],
   edges: [
     { id: "e-1", source: "start-1", target: "cond-1", when: "always" },
@@ -143,7 +161,9 @@ describe("opaque config field preservation", () => {
     const agentNode = result.nodes.find((n) => n.id === "a");
     expect(agentNode).toBeDefined();
     if (agentNode?.kind === "agent_step") {
-      expect(agentNode.instructions).toBe("Complex instructions with lots of text here");
+      expect(agentNode.instructions).toBe(
+        "Complex instructions with lots of text here",
+      );
       expect(agentNode.checkCommand).toBe("bun test");
     }
   });
@@ -154,7 +174,11 @@ describe("opaque config field preservation", () => {
     const condNode = result.nodes.find((n) => n.id === "cond-1");
     expect(condNode).toBeDefined();
     if (condNode?.kind === "condition") {
-      expect(condNode.condition).toEqual({ path: "status", op: "eq", value: "open" });
+      expect(condNode.condition).toEqual({
+        path: "status",
+        op: "eq",
+        value: "open",
+      });
     }
   });
 });
@@ -166,7 +190,9 @@ describe("position preservation", () => {
     const { nodes, edges } = definitionToFlow(SIMPLE_DEF);
     const result = flowToDefinition(nodes, edges);
     for (const originalNode of SIMPLE_DEF.nodes) {
-      const roundTrippedNode = result.nodes.find((n) => n.id === originalNode.id);
+      const roundTrippedNode = result.nodes.find(
+        (n) => n.id === originalNode.id,
+      );
       expect(roundTrippedNode?.position).toEqual(originalNode.position);
     }
   });

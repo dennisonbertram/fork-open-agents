@@ -7,7 +7,7 @@
  * BT-009: edge when-legality (condition → true/false; others → success/failure/always)
  */
 
-import { describe, expect, it, beforeEach } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 import { createLoopBuilderStore } from "./use-loop-builder";
 
@@ -17,9 +17,7 @@ const VALID_DEF: LoopDefinition = {
     { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
     { id: "end-1", kind: "end", label: "End", position: { x: 200, y: 0 } },
   ],
-  edges: [
-    { id: "e-1", source: "start-1", target: "end-1", when: "always" },
-  ],
+  edges: [{ id: "e-1", source: "start-1", target: "end-1", when: "always" }],
 };
 
 describe("createLoopBuilderStore — initialization", () => {
@@ -102,7 +100,9 @@ describe("createLoopBuilderStore — connectEdge with when", () => {
     const store = createLoopBuilderStore();
     store.getState().initialize(VALID_DEF);
     store.getState().addNode("agent_step", { x: 100, y: 100 });
-    const agentNode = store.getState().nodes.find((n) => n.data?.kind === "agent_step");
+    const agentNode = store
+      .getState()
+      .nodes.find((n) => n.data?.kind === "agent_step");
     expect(agentNode).toBeDefined();
 
     // Connect start-1 → agentNode with "always"
@@ -123,9 +123,9 @@ describe("createLoopBuilderStore — connectEdge with when", () => {
     const store = createLoopBuilderStore();
     store.getState().initialize(VALID_DEF);
     store.getState().addNode("end", { x: 300, y: 0 });
-    const newEnd = store.getState().nodes.find(
-      (n, i) => n.data?.kind === "end" && i > 0,
-    );
+    const newEnd = store
+      .getState()
+      .nodes.find((n, i) => n.data?.kind === "end" && i > 0);
     store.getState().connectEdge({
       source: "start-1",
       target: newEnd?.id ?? "end-1",
@@ -158,7 +158,12 @@ describe("createLoopBuilderStore — edge when legality", () => {
     store.getState().initialize({
       nodes: [
         { id: "start-1", kind: "start", label: "S", position: { x: 0, y: 0 } },
-        { id: "cond-1", kind: "condition", label: "C", position: { x: 100, y: 0 } },
+        {
+          id: "cond-1",
+          kind: "condition",
+          label: "C",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "E", position: { x: 200, y: 0 } },
       ],
       edges: [],
@@ -177,7 +182,12 @@ describe("createLoopBuilderStore — edge when legality", () => {
     store.getState().initialize({
       nodes: [
         { id: "start-1", kind: "start", label: "S", position: { x: 0, y: 0 } },
-        { id: "step-1", kind: "agent_step", label: "A", position: { x: 100, y: 0 } },
+        {
+          id: "step-1",
+          kind: "agent_step",
+          label: "A",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "E", position: { x: 200, y: 0 } },
       ],
       edges: [],
@@ -201,7 +211,12 @@ describe("createLoopBuilderStore — edge when legality", () => {
     store.getState().initialize({
       nodes: [
         { id: "start-1", kind: "start", label: "S", position: { x: 0, y: 0 } },
-        { id: "gh-1", kind: "github_check", label: "GH", position: { x: 100, y: 0 } },
+        {
+          id: "gh-1",
+          kind: "github_check",
+          label: "GH",
+          position: { x: 100, y: 0 },
+        },
         { id: "end-1", kind: "end", label: "E", position: { x: 200, y: 0 } },
       ],
       edges: [],

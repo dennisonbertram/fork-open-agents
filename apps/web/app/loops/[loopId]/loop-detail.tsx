@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Play } from "lucide-react";
+import { ArrowLeft, Play, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -237,14 +237,22 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               {loop.repoOwner}/{loop.repoName}
             </p>
           </div>
-          <Button
-            onClick={handleRunNow}
-            disabled={runningNow || loop.status !== "active"}
-            size="sm"
-          >
-            <Play className="mr-2 h-4 w-4" />
-            {runningNow ? "Starting…" : "Run now"}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link href={`/loops/${loopId}/builder`}>
+              <Button variant="outline" size="sm">
+                <Workflow className="mr-2 h-4 w-4" />
+                Open builder
+              </Button>
+            </Link>
+            <Button
+              onClick={handleRunNow}
+              disabled={runningNow || loop.status !== "active"}
+              size="sm"
+            >
+              <Play className="mr-2 h-4 w-4" />
+              {runningNow ? "Starting…" : "Run now"}
+            </Button>
+          </div>
         </div>
 
         {/* Active run notice (409) */}
