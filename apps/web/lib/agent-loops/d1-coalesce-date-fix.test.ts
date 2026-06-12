@@ -118,6 +118,8 @@ mock.module("@/lib/db/client", () => ({
         insert: txInsertMock,
         update: txUpdateMock,
         delete: deleteMock,
+        // retryCurrentStep (non-queued path) calls tx.select() for MAX(attempt)
+        select: selectMock,
         query: {
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },
@@ -143,19 +145,50 @@ function resetMocks() {
   updateSetCapture.length = 0;
   insertMock.mockClear();
   updateMock.mockClear();
-  updateSetMock.mockClear();
+  // mockReset clears pending mockImplementationOnce queue in addition to call records
+  // so leftover one-shot implementations cannot bleed into the next test.
+  updateSetMock.mockReset();
+  updateSetMock.mockImplementation((setVals: unknown) => {
+    updateSetCapture.push(setVals);
+    return {
+      where: mock(() => ({
+        returning: mock(() => [
+          { ...(insertedValues[0] as object), ...(setVals as object) },
+        ]),
+      })),
+    };
+  });
   deleteMock.mockClear();
   findManyMock.mockClear();
-  findFirstMock.mockClear();
-  returningMock.mockClear();
+  findFirstMock.mockReset();
+  findFirstMock.mockImplementation(
+    async () => (queryResult[0] ?? null) as unknown,
+  );
+  returningMock.mockReset();
+  returningMock.mockImplementation(() => {
+    const first = insertedValues[0];
+    return first ? [first] : [];
+  });
   valuesMock.mockClear();
   onConflictDoNothingMock.mockClear();
   leftJoinMock.mockClear();
   whereMockLeft.mockClear();
   limitMockLeft.mockClear();
-  txFindFirstMock.mockClear();
+  txFindFirstMock.mockReset();
+  txFindFirstMock.mockImplementation(
+    async () => (queryResult[0] ?? null) as unknown,
+  );
   txUpdateMock.mockClear();
-  txUpdateSetMock.mockClear();
+  txUpdateSetMock.mockReset();
+  txUpdateSetMock.mockImplementation((setVals: unknown) => ({
+    where: mock(() => ({
+      returning: mock(() => [
+        { ...(insertedValues[0] as object), ...(setVals as object) },
+      ]),
+    })),
+  }));
+  selectMock.mockReset();
+  selectMock.mockImplementation((_fields?: unknown) => ({ from: fromMock }));
   txInsertMock.mockClear();
 }
 
@@ -333,20 +366,27 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
   beforeEach(resetMocks);
 
   test("retryCurrentStep: startedAt SQL object contains NOW() literal, not a Date chunk", async () => {
-    // retryCurrentStep loads the run, creates a new step, then updates the run
-    // to running with a COALESCE startedAt. The fix must eliminate the Date bind.
+    // retryCurrentStep runs inside db.transaction(). It:
+    //   1. tx.query.agentLoopRuns.findFirst  → the run (status "failed")
+    //   2. tx.query.agentLoopStepRuns.findFirst → the failed step (status "failed")
+    //      → takes the non-queued path (creates a new attempt)
+    //   3. tx.select({maxAttempt}).from(...).where(...) → MAX(attempt) = 1
+    //   4. tx.insert(agentLoopStepRuns).values(...).returning() → new step
+    //   5. tx.update(agentLoopRuns).set({status:"running", startedAt:COALESCE}).where().returning()
+    //
+    // The fix must ensure step 5's startedAt contains NOW() with no Date bind.
     const run = makeLoopRun({ status: "failed" });
-    const failedStep = makeStepRun();
+    const failedStep = makeStepRun({ status: "failed" });
     const newStep = makeStepRun({ id: "step-2", attempt: 2, status: "queued" });
 
-    // findFirst for run ownership check (agentLoopRuns.findFirst)
-    findFirstMock.mockResolvedValueOnce(run);
-    // findFirst for failed step run (agentLoopStepRuns.findFirst)
-    findFirstMock.mockResolvedValueOnce(failedStep);
+    // Wire tx.query.agentLoopRuns.findFirst → run (first call)
+    // Wire tx.query.agentLoopStepRuns.findFirst → failedStep (second call)
+    // Both tables share txFindFirstMock; use sequential one-shot responses.
+    txFindFirstMock.mockResolvedValueOnce(run);
+    txFindFirstMock.mockResolvedValueOnce(failedStep);
 
-    // db.select().from().where() for MAX(attempt) aggregate
-    // retryCurrentStep uses: db.select({maxAttempt}).from(...).where(...)
-    // Cast to unknown to avoid Bun mock type mismatch with the overridden return shape.
+    // tx.select({maxAttempt}).from(...).where(...) for MAX(attempt)
+    // selectMock is added to the tx object so this one-shot override applies.
     const whereForSelect = mock(() =>
       Promise.resolve([{ maxAttempt: 1 }]),
     ) as unknown as typeof whereMockLeft;
@@ -361,24 +401,27 @@ describe("D1-003: retryCurrentStep — COALESCE startedAt uses NOW() not a Date 
       from: fromForSelect,
     }));
 
-    // Insert new step run
+    // tx.insert().values().returning() → new step run
     returningMock.mockImplementationOnce(() => [newStep]);
 
-    // Update run (db.update without .returning() for the COALESCE write in retryCurrentStep)
-    // Cast to unknown to avoid mock type mismatch — where() returns void here.
-    (
-      updateSetMock.mockImplementationOnce as (
-        impl: (setVals: unknown) => unknown,
-      ) => typeof updateSetMock
-    )((setVals: unknown) => {
+    // tx.update().set().where().returning() for the COALESCE "running" transition.
+    // txUpdateSetMock captures setVals and returns a matching row so the code
+    // doesn't throw RunControlError("illegal_transition").
+    txUpdateSetMock.mockImplementationOnce((setVals: unknown) => {
       updateSetCapture.push(setVals);
-      return { where: mock(() => Promise.resolve()) };
+      return {
+        where: mock(() => ({
+          returning: mock(() => [
+            { ...(run as object), ...(setVals as object) },
+          ]),
+        })),
+      };
     });
 
     const store = await storePromise;
     await store.retryCurrentStep({ runId: "run-1", userId: "user-1" });
 
-    // Find the update that sets status=running (has startedAt)
+    // Find the update that sets status=running (has startedAt — the COALESCE write)
     const runningSetCall = (
       updateSetCapture as Array<Record<string, unknown>>
     ).find((c) => c.status === "running");
