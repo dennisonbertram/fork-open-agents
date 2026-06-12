@@ -242,6 +242,9 @@ export async function listBackgroundAgents(
 
   const triggersByAgent = new Map<string, BackgroundAgentTrigger[]>();
   for (const trigger of triggers) {
+    // Loop-bound triggers (loopId set, agentId null) are skipped here —
+    // they are not associated with a specific background agent.
+    if (!trigger.agentId) continue;
     const current = triggersByAgent.get(trigger.agentId) ?? [];
     current.push(trigger);
     triggersByAgent.set(trigger.agentId, current);
@@ -732,6 +735,33 @@ export async function listEnabledToolGrantsForAgent(
       agentRole: true,
       phase: true,
       status: true,
+    },
+  });
+}
+
+/**
+ * Lists triggers bound to a loop (loopId set, agentId null).
+ * Used by the M1-08 loop-detail route to include a trigger summary.
+ * Returns a minimal projection — no schedule/conditions secrets exposed.
+ */
+export async function listTriggersForLoop(
+  loopId: string,
+): Promise<
+  Pick<
+    BackgroundAgentTrigger,
+    "id" | "kind" | "status" | "conditions" | "schedule" | "createdAt"
+  >[]
+> {
+  return db.query.backgroundAgentTriggers.findMany({
+    where: eq(backgroundAgentTriggers.loopId, loopId),
+    orderBy: [desc(backgroundAgentTriggers.createdAt)],
+    columns: {
+      id: true,
+      kind: true,
+      status: true,
+      conditions: true,
+      schedule: true,
+      createdAt: true,
     },
   });
 }

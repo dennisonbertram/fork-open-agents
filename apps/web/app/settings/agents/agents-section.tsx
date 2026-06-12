@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingsSection } from "@/components/ui/settings-section";
 import {
@@ -35,6 +37,7 @@ type AgentPatch = {
   composioToolkitSlugs?: string[];
   instructions?: string | null;
   managedRuntimeProfileId?: string | null;
+  githubToolsEnabled?: boolean;
 };
 
 // ── Collapsed summary cell ────────────────────────────────────────────────────
@@ -95,6 +98,9 @@ function AgentEditor({
           "")
       : "",
   );
+  const [githubToolsEnabled, setGithubToolsEnabled] = useState<boolean>(
+    row.githubToolsEnabled,
+  );
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -107,6 +113,7 @@ function AgentEditor({
         composioToolkitSlugs: slugs,
         instructions: instructions.trim() || null,
         managedRuntimeProfileId: runtimeProfileId.trim() || null,
+        ...(row.key === "main" ? { githubToolsEnabled } : {}),
       };
 
       const res = await fetch("/api/settings/agents", {
@@ -238,6 +245,25 @@ function AgentEditor({
           </SelectContent>
         </Select>
       </div>
+
+      {/* GitHub tools — Main role only */}
+      {row.key === "main" ? (
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="agent-github-tools-enabled">GitHub tools</Label>
+            <p className="text-xs text-muted-foreground">
+              Let this agent read and act on GitHub issues, branches, and PRs
+              for repos you have access to.
+            </p>
+          </div>
+          <Switch
+            id="agent-github-tools-enabled"
+            checked={githubToolsEnabled}
+            onCheckedChange={setGithubToolsEnabled}
+            disabled={isBusy}
+          />
+        </div>
+      ) : null}
 
       {/* Footer actions */}
       <div className="flex items-center justify-between gap-3">

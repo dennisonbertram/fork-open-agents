@@ -41,3 +41,80 @@ jobs:
 
       - name: DB Check
         run: bun run --cwd apps/web db:check
+
+  # Compiles the Next.js app the same way Vercel does. Typecheck does not catch
+  # RSC/"use client" boundary errors, route export shape, or bundler failures;
+  # without this job those only surface on the production deploy from `main`.
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.14"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Placeholder env so `next build` can compile without a live database.
+      # This is a compile/bundle check, not an env-validation check.
+      - name: Build (next build)
+        run: bun run --cwd apps/web build:ci
+        env:
+          POSTGRES_URL: postgres://user:pass@localhost:5432/db
+          BETTER_AUTH_SECRET: ci_placeholder_secret_at_least_32_chars_long
+          ENCRYPTION_KEY: ci_placeholder_secret_at_least_32_chars_long
+          JWE_SECRET: ci_placeholder_secret_at_least_32_chars_long
+          GITHUB_CLIENT_SECRET: ci-placeholder
+          VERCEL_APP_CLIENT_SECRET: ci-placeholder
+          NEXT_PUBLIC_GITHUB_CLIENT_ID: ci-placeholder
+          NEXT_PUBLIC_VERCEL_APP_CLIENT_ID: ci-placeholder
+          NEXT_PUBLIC_AUTH_PROVIDERS: vercel
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  # PR-only guardrails: enforce the migration rollback rule and surface
+  # behavior changes that ship without tests. test-touch warns by default; set
+  # STRICT_TEST_TOUCH=1 here to make it blocking once desired.
+  guards:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.14"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Fetch base ref
+        run: git fetch --no-tags --depth=1 origin "$BASE_REF:refs/remotes/origin/$BASE_REF"
+        env:
+          BASE_REF: ${{ github.base_ref }}
+
+      - name: Migration safety
+        run: bun run check:migration-safety
+        env:
+          BASE_REF: origin/${{ github.base_ref }}
+
+      - name: Test-touch guard
+        run: bun run check:test-touch
+        env:
+          BASE_REF: origin/${{ github.base_ref }}

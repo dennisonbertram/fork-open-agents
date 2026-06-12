@@ -23,6 +23,7 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
+import { mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -499,6 +500,61 @@ function withModelMetadata(
   };
 }
 
+// Phrase-list approach for provider auth signals. Case-insensitive substring
+// matching is performed by matchesAnyPhrase. Covers API-key rejection, revoked
+// tokens, and HTTP 401 forms. Does NOT match rate-limit (429), timing strings
+// like "401ms", or unrelated "unauthorized" prose.
+const PROVIDER_AUTH_PHRASES: readonly string[] = [
+  "invalid api key",
+  "invalid or revoked",
+  "authentication_error",
+  "invalid_api_key",
+  "incorrect api key provided",
+  "invalid x-api-key",
+  "http 401",
+  "401 unauthorized",
+  "status 401",
+  "unauthorized",
+];
+
+// Phrase-list for provider credit / quota / billing signals. Deliberately
+// excludes OAuth/ACL errors ("insufficient permissions", "insufficient scope").
+// Filesystem quota errors ("disk quota exceeded writing /tmp") are excluded by
+// the FILESYSTEM_QUOTA_RE negative guard applied at the call site rather than
+// by narrowing the phrase list — this lets us match all bare "quota exceeded"
+// and "quota_exceeded" forms that real providers emit.
+const PROVIDER_CREDIT_PHRASES: readonly string[] = [
+  "out of credits",
+  "insufficient credits",
+  "insufficient_credits",
+  "insufficient_quota",
+  "insufficient funds",
+  "credit balance is too low",
+  "exceeded your current quota",
+  "quota exceeded",
+  "quota_exceeded",
+  "http 402",
+  "status 402",
+  "payment required",
+  "402 payment",
+];
+
+// Negative guard for the credit branch: filesystem quota errors share the
+// phrase "quota exceeded" but are not provider billing errors. "disk quota" is
+// the dominant filesystem signal in sandbox contexts (ext4, NFS, Docker tmpfs).
+// We keep this guard minimal — no evidence of "inode quota" or "user quota"
+// appearing in sandbox error logs — so we don't over-block.
+const FILESYSTEM_QUOTA_RE = /disk quota/i;
+
+/** Returns true if `message` contains any of `phrases` (case-insensitive). */
+function matchesAnyPhrase(
+  message: string,
+  phrases: readonly string[],
+): boolean {
+  const lower = message.toLowerCase();
+  return phrases.some((phrase) => lower.includes(phrase));
+}
+
 function getSetupErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   const name = error instanceof Error ? error.name : "";
@@ -538,6 +594,25 @@ function getSetupErrorMessage(error: unknown): string {
     message.includes("HTTP_Unauthorized")
   ) {
     return getComposioUserFacingError(message);
+  }
+
+  // Provider auth failures (API key rejected / access token invalid).
+  // Uses the shared PROVIDER_AUTH_PHRASES list so that rate-limit (429),
+  // service-unavailable (503), timing strings ("401ms"), and unrelated prose
+  // do not produce auth guidance.
+  if (matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES)) {
+    return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
+  }
+
+  // Provider credit / quota / billing failures.
+  // Uses PROVIDER_CREDIT_PHRASES with a filesystem-quota negative guard: if the
+  // message contains "disk quota" (case-insensitive) it is a sandbox disk-space
+  // error, not a provider billing error, and falls through to the generic message.
+  if (
+    matchesAnyPhrase(message, PROVIDER_CREDIT_PHRASES) &&
+    !FILESYSTEM_QUOTA_RE.test(message)
+  ) {
+    return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
   }
 
   return "Workspace setup failed. Try again in a moment.";
@@ -2043,6 +2118,7 @@ const runAgentStep = async (
   const { webAgent } = await import("@/app/config");
   const { resolveComposioToolsForChat } =
     await import("@/lib/composio/session");
+  const { resolveGitHubToolsForChat } = await import("@/lib/github/tools");
   const { emitSessionEvent } = await import("@/lib/observability/events");
 
   const abortController = new AbortController();
@@ -2194,10 +2270,102 @@ const runAgentStep = async (
       throw error;
     }
 
+    let githubTools: ToolSet | undefined;
+    try {
+      const githubResult = await resolveGitHubToolsForChat({
+        userId,
+        chatId,
+        runtimeMode: agentOptions.runtimeMode ?? "classic",
+      });
+      if (githubResult.status === "ready") {
+        githubTools = githubResult.tools;
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.selected",
+          status: "succeeded",
+          summary: `GitHub tools selected for ${githubResult.repoOwner}/${githubResult.repoName}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            repoOwner: githubResult.repoOwner,
+            repoName: githubResult.repoName,
+            toolCount: Object.keys(githubResult.tools).length,
+          },
+        });
+      } else if (
+        githubResult.status === "off" &&
+        githubResult.reason === "access_denied"
+      ) {
+        // Opted-in user whose repo access check failed — surface for observability
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.access_denied",
+          status: "failed",
+          summary:
+            "GitHub tools access denied — check app installation and repo permissions.",
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            reason: githubResult.reason,
+            accessDeniedReason: githubResult.accessDeniedReason ?? null,
+          },
+        });
+      }
+      // Benign off cases (not_enabled, no_repo, non_classic_runtime) emit nothing
+    } catch (error) {
+      // Non-fatal: emit observability event and continue without GitHub tools
+      // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
+      const errorKind =
+        error instanceof Error && error.name === "GitHubToolsSetupError"
+          ? "setup_error"
+          : "unknown";
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "github.tools.failed",
+        status: "failed",
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Unknown error resolving GitHub tools.",
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          errorKind,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      // Swallow — chat continues without GitHub tools
+    }
+
+    // Merge composio and github tools into one set — prevents either from
+    // clobbering the other when only one spread was used previously.
+    const mergedExtraTools = mergeExtraTools(composioTools, githubTools);
+
     const result = await webAgent.stream({
       messages,
       options: stepAgentOptions,
-      ...(composioTools ? { tools: composioTools } : {}),
+      ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,
     });
 

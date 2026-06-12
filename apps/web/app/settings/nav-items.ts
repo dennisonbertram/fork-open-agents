@@ -6,6 +6,7 @@ import {
   Boxes,
   Cable,
   Cpu,
+  RefreshCw,
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
@@ -86,6 +87,12 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         label: "Background agents",
         href: "/settings/background-agents",
         icon: Bot,
+      },
+      {
+        id: "loops",
+        label: "Loops",
+        href: "/loops",
+        icon: RefreshCw,
       },
       {
         id: "runtime-profiles",

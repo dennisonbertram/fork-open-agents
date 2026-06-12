@@ -100,6 +100,11 @@ mock.module("./store", () => ({
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
   listEnabledToolGrantsForAgent,
+  // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
+  listRepoBackgroundAgents: mock(async () => []),
+  listBackgroundAgents: mock(async () => []),
+  createBackgroundAgent: mock(async () => ({})),
+  updateBackgroundAgent: mock(async () => null),
 }));
 
 mock.module("./run-summary", () => ({

@@ -12,7 +12,6 @@ import {
   GitPullRequest,
   Loader2,
   Monitor,
-  PanelLeft,
   PanelLeftClose,
   Pencil,
   Plus,
@@ -999,75 +998,9 @@ export function InboxSidebar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Collapsed icon rail — only visible when sidebar is in icon mode */}
-      <div className="hidden group-data-[collapsible=icon]:flex flex-col items-center gap-1 py-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={toggleSidebar}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="Expand panel"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Expand panel
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (isMobile) {
-                  setOpenMobile(false);
-                }
-                onOpenNewSession();
-              }}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="New session"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            New session
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isCreatingSandboxFreeChat}
-              onClick={() => {
-                void handleCreateSandboxFreeChat();
-              }}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="Quick chat (no repo)"
-            >
-              {isCreatingSandboxFreeChat ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MessageSquare className="h-4 w-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Quick chat (no repo)
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Expanded header — hidden when sidebar is collapsed to icon rail */}
-      <div className="border-b border-border p-3 group-data-[collapsible=icon]:hidden">
+      {/* Header — always visible when the sidebar is open (offcanvas hides the
+          entire sidebar when collapsed, so no icon-rail guard is needed) */}
+      <div className="border-b border-border p-3">
         <div className="mb-3 flex items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1167,7 +1100,7 @@ export function InboxSidebar({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto group-data-[collapsible=icon]:hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {showLoadingSkeleton ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -1414,7 +1347,7 @@ export function InboxSidebar({
       </div>
 
       {sidebarUser ? (
-        <div className="border-t border-border p-3 group-data-[collapsible=icon]:hidden">
+        <div className="border-t border-border p-3">
           <div className="flex items-center gap-2 rounded-lg p-2">
             <Avatar className="h-9 w-9 shrink-0">
               {sidebarUser.avatar ? (

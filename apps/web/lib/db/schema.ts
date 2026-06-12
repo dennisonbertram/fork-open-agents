@@ -10,8 +10,10 @@ import {
   defaultChatComposioSelection,
   defaultComposioAgentDefaults,
 } from "@/lib/composio/types";
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -43,6 +45,9 @@ export type BackgroundAgentTriggerConditions = {
   labels?: string[];
   environments?: string[];
   severities?: string[];
+  // mergedOnly: true restricts github.pull_request triggers to merged-closed events only.
+  // Stored as JSONB — no migration needed. Not yet exposed in the UI (CODE-03).
+  mergedOnly?: boolean;
 };
 
 export type BackgroundAgentPermissions = {
@@ -904,13 +909,63 @@ export const backgroundAgents = pgTable(
   ],
 );
 
+// ── Agent Loops (M1-01) ─────────────────────────────────────────────────────
+// Four tables for the Agent Loops feature: agentLoops, agentLoopRuns,
+// agentLoopStepRuns, agentLoopEvents.
+// backgroundAgentTriggers is also altered: agentId made nullable, loopId
+// added, and a check constraint enforces exactly one of (agentId, loopId).
+// See docs/plans/agent-loops-epic.md §3 for the full column-level spec.
+
+export const agentLoops = pgTable(
+  "agent_loops",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    /** { nodes: LoopNode[], edges: LoopEdge[] } — validated on write by M1-02 */
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    status: text("status", {
+      enum: ["draft", "active", "paused", "archived"],
+    })
+      .notNull()
+      .default("draft"),
+    /**
+     * { maxStepsPerRun?, maxIterations?, maxRunDurationMs?, stepTimeoutMs? }
+     * Server-side ceilings applied regardless of user config.
+     */
+    guardrails: jsonb("guardrails").$type<Record<string, unknown>>(),
+    permissions: jsonb("permissions")
+      .$type<BackgroundAgentPermissions>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loops_user_idx").on(table.userId),
+    index("agent_loops_repo_idx").on(table.repoOwner, table.repoName),
+    index("agent_loops_status_idx").on(table.status),
+  ],
+);
+
 export const backgroundAgentTriggers = pgTable(
   "background_agent_triggers",
   {
     id: text("id").primaryKey(),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
+    // Nullable — exactly one of (agentId, loopId) must be non-null.
+    // The DB enforces this via the check constraint below.
+    agentId: text("agent_id").references(() => backgroundAgents.id, {
+      onDelete: "cascade",
+    }),
+    // Nullable FK to agentLoops; set when this trigger fires a loop run.
+    loopId: text("loop_id").references(() => agentLoops.id, {
+      onDelete: "cascade",
+    }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -945,12 +1000,19 @@ export const backgroundAgentTriggers = pgTable(
   },
   (table) => [
     index("background_agent_triggers_agent_idx").on(table.agentId),
+    index("background_agent_triggers_loop_idx").on(table.loopId),
     index("background_agent_triggers_user_kind_idx").on(
       table.userId,
       table.kind,
     ),
     uniqueIndex("background_agent_triggers_webhook_public_idx").on(
       table.webhookPublicId,
+    ),
+    // Exactly one of (agent_id, loop_id) must be set.
+    // Prevents orphaned triggers (neither) and ambiguous triggers (both).
+    check(
+      "background_agent_triggers_owner_check",
+      sql`num_nonnulls(agent_id, loop_id) = 1`,
     ),
   ],
 );
@@ -1196,6 +1258,170 @@ export const backgroundAgentToolSessions = pgTable(
   (table) => [
     index("background_agent_tool_sessions_run_idx").on(table.runId),
     index("background_agent_tool_sessions_user_idx").on(table.userId),
+  ],
+);
+
+// ── Agent Loop Runs ──────────────────────────────────────────────────────────
+
+export const agentLoopRuns = pgTable(
+  "agent_loop_runs",
+  {
+    id: text("id").primaryKey(),
+    loopId: text("loop_id")
+      .notNull()
+      .references(() => agentLoops.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: [
+        "queued",
+        "running",
+        "paused",
+        "completed",
+        "failed",
+        "cancelled",
+        "stalled",
+      ],
+    }).notNull(),
+    /** Frozen copy of loop.definition at run start */
+    definitionSnapshot: jsonb("definition_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    currentNodeId: text("current_node_id"),
+    currentStepRunId: text("current_step_run_id"),
+    /** Incremented when an edge targets an already-visited node */
+    iterationCount: integer("iteration_count").notNull().default(0),
+    /** Total steps executed */
+    stepCount: integer("step_count").notNull().default(0),
+    /** Shared state, keyed by node id */
+    context: jsonb("context")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    source: text("source", {
+      enum: ["github", "schedule", "webhook", "manual"],
+    }).notNull(),
+    triggerId: text("trigger_id").references(() => backgroundAgentTriggers.id, {
+      onDelete: "set null",
+    }),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    errorKind: text("error_kind"),
+    errorMessage: text("error_message"),
+    /** Most recent step's workflow run (correlation) */
+    workflowRunId: text("workflow_run_id"),
+    requestId: text("request_id"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_runs_loop_created_idx").on(table.loopId, table.createdAt),
+    index("agent_loop_runs_user_created_idx").on(table.userId, table.createdAt),
+    index("agent_loop_runs_status_idx").on(table.status),
+    uniqueIndex("agent_loop_runs_idempotency_idx").on(table.idempotencyKey),
+  ],
+);
+
+// ── Agent Loop Step Runs ──────────────────────────────────────────────────────
+
+export const agentLoopStepRuns = pgTable(
+  "agent_loop_step_runs",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    /** References a node in the run's definitionSnapshot */
+    nodeId: text("node_id").notNull(),
+    /** Denormalized from the node for query convenience */
+    nodeKind: text("node_kind").notNull(),
+    /** Bumped on retry (M3 watchdog) */
+    attempt: integer("attempt").notNull().default(1),
+    status: text("status", {
+      enum: ["queued", "running", "succeeded", "failed", "skipped"],
+    }).notNull(),
+    /** Context slice given to the step */
+    stepInput: jsonb("step_input").$type<Record<string, unknown>>(),
+    /** Validated output merged into run context */
+    stepOutput: jsonb("step_output").$type<Record<string, unknown>>(),
+    /** agent_loop_<stepRunId> — agent_step nodes only */
+    sandboxName: text("sandbox_name"),
+    /** Durable workflow correlation */
+    workflowRunId: text("workflow_run_id"),
+    errorKind: text("error_kind"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_step_runs_loop_run_created_idx").on(
+      table.loopRunId,
+      table.createdAt,
+    ),
+    uniqueIndex("agent_loop_step_runs_run_node_attempt_idx").on(
+      table.loopRunId,
+      table.nodeId,
+      table.attempt,
+    ),
+  ],
+);
+
+// ── Agent Loop Events ─────────────────────────────────────────────────────────
+// Mirror of backgroundAgentEvents: same redaction pipeline, same redactionStatus.
+
+export const agentLoopEvents = pgTable(
+  "agent_loop_events",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    stepRunId: text("step_run_id").references(() => agentLoopStepRuns.id, {
+      onDelete: "set null",
+    }),
+    nodeId: text("node_id"),
+    eventName: text("event_name").notNull(),
+    status: text("status", {
+      enum: [
+        "started",
+        "running",
+        "succeeded",
+        "failed",
+        "blocked",
+        "skipped",
+        "info",
+      ],
+    }).notNull(),
+    level: text("level", {
+      enum: ["info", "warn", "error"],
+    })
+      .notNull()
+      .default("info"),
+    summary: text("summary"),
+    /** Payload through the same redaction pipeline as backgroundAgentEvents */
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    redactionStatus: text("redaction_status", {
+      enum: ["not_required", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("passed"),
+    requestId: text("request_id"),
+    workflowRunId: text("workflow_run_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_events_loop_run_created_idx").on(
+      table.loopRunId,
+      table.createdAt,
+    ),
+    index("agent_loop_events_request_idx").on(table.requestId),
   ],
 );
 
@@ -1757,6 +1983,14 @@ export const agents = pgTable(
       .notNull()
       .default(false),
 
+    // --- #317 native GitHub agent tools ---
+    // Enables GitHub tools for this agent, off by default.
+    // Gating happens at the web factory (resolveGitHubToolsForChat); not wired
+    // through the agent package tool policy.
+    githubToolsEnabled: boolean("github_tools_enabled")
+      .notNull()
+      .default(false),
+
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1929,3 +2163,13 @@ export type WorkflowGoal = typeof workflowGoals.$inferSelect;
 export type NewWorkflowGoal = typeof workflowGoals.$inferInsert;
 export type WorkflowGoalEvent = typeof workflowGoalEvents.$inferSelect;
 export type NewWorkflowGoalEvent = typeof workflowGoalEvents.$inferInsert;
+
+// ── Agent Loops types ─────────────────────────────────────────────────────────
+export type AgentLoop = typeof agentLoops.$inferSelect;
+export type NewAgentLoop = typeof agentLoops.$inferInsert;
+export type AgentLoopRun = typeof agentLoopRuns.$inferSelect;
+export type NewAgentLoopRun = typeof agentLoopRuns.$inferInsert;
+export type AgentLoopStepRun = typeof agentLoopStepRuns.$inferSelect;
+export type NewAgentLoopStepRun = typeof agentLoopStepRuns.$inferInsert;
+export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
+export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;
