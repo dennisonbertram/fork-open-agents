@@ -8,31 +8,36 @@
  *
  * SNAPSHOT RULE: always uses run.definitionSnapshot, never the live loop definition.
  *
+ * Visual language: uses the SAME nodeTypes/edgeTypes as the builder, so the run
+ * view shares icons, kind accents, config summaries, and color language with the
+ * builder. Run-state is layered on top via optional add-only props:
+ *   node.data.runStatus, .visitCount, .isCurrent
+ *   edge.data.traversed, .mostRecent
+ *
  * Read-only mode:
  *   - nodesDraggable={false}
  *   - nodesConnectable={false}
  *   - elementsSelectable={true} (for node click → timeline focus)
  *   - No palette, no save
  *
- * Status overlays:
- *   - Current node: pulsing ring animation (animate-pulse) + processing badge
- *   - Succeeded: green tint ring
- *   - Failed: red ring + error badge
- *   - Skipped: muted/dimmed
- *   - Unvisited: muted/dimmed
+ * Status overlays (rendered inside builder node components):
+ *   - Current node: pulsing orange ring + "processing" badge
+ *   - Succeeded: green ring + "success" badge
+ *   - Failed: red ring + "error" badge
+ *   - Skipped/unvisited: dimmed (opacity-50)
  *   - Visit count badge (×N) when visitCount > 1
  *
- * Edge overlays:
- *   - Most-recent traversal: thicker (strokeWidth 4) + brighter color
- *   - Older traversed: normal (strokeWidth 2)
- *   - Untraversed: dimmed opacity
+ * Edge overlays (rendered inside WhenEdge component):
+ *   - Most-recent traversal: thicker stroke (4) + full opacity + animated dash
+ *   - Older traversed: normal stroke (2) + near-full opacity
+ *   - Untraversed: thin stroke + dimmed opacity
  *
  * MiniMap: per-node status color
  * Iteration meter: "Iteration 2/10 · Step 5/50"
- * aria-live status region for accessibility
+ * aria-live: announces node transitions
  */
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -53,6 +58,8 @@ import {
   type LoopFlowNode,
   type LoopFlowEdge,
 } from "@/app/loops/[loopId]/builder/definition-mapping";
+import { nodeTypes } from "@/app/loops/[loopId]/builder/loop-nodes";
+import { WhenEdge } from "@/app/loops/[loopId]/builder/when-edge";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 import type { AgentLoopStepRun, AgentLoopRun } from "@/lib/db/schema";
 import {
@@ -61,15 +68,13 @@ import {
   type RunGraphState,
 } from "./use-run-graph-state";
 
-// ── Status color mapping ───────────────────────────────────────────────────────
+// ── Edge types registry ────────────────────────────────────────────────────────
 
-const nodeStatusRingClass: Record<NodeRunStatus, string> = {
-  unvisited: "opacity-50",
-  running: "ring-2 ring-orange-400 animate-pulse",
-  succeeded: "ring-2 ring-emerald-500",
-  failed: "ring-2 ring-red-500",
-  skipped: "opacity-40",
+const edgeTypes = {
+  when: WhenEdge,
 };
+
+// ── Per-node status color for MiniMap ─────────────────────────────────────────
 
 const nodeStatusMiniMapColor: Record<NodeRunStatus, string> = {
   unvisited: "#b1b1b7",
@@ -89,16 +94,15 @@ const kindMiniMapColor: Record<string, string> = {
   end: "#a3a3a3",
 };
 
-// ── Overlay node wrapper ───────────────────────────────────────────────────────
+// ── Map run graph state into node.data and edge.data ──────────────────────────
 
 /**
- * We don't change the node's internal data — we apply overlay via className
- * on the outer div that React Flow renders.  We achieve this by passing
- * className through node.style / node.className (supported in RF12).
- * The simplest approach: inject a className string onto the RF node object
- * so the host div picks it up as an additional class.
+ * Merges run-state into each node's data so that the builder node components
+ * can render status badges, rings, and visit count pills.
+ * Builder rendering is unchanged when runStatus is absent; these props are
+ * add-only and never remove or replace existing data fields.
  */
-function applyNodeOverlays(
+function applyNodeRunState(
   nodes: LoopFlowNode[],
   graphState: RunGraphState,
 ): Node[] {
@@ -106,32 +110,27 @@ function applyNodeOverlays(
     const nodeState = graphState.nodes[node.id];
     const status: NodeRunStatus = nodeState?.status ?? "unvisited";
     const visitCount = nodeState?.visitCount ?? 0;
-
-    // Build overlay className
-    const ringClass = nodeStatusRingClass[status];
+    const isCurrent = node.id === graphState.currentNodeId;
 
     return {
       ...node,
-      // className gets applied to the React Flow wrapper div
-      className: `transition-all duration-200 rounded-md ${ringClass}`,
-      // Store overlay data for the node component to render badges
       data: {
         ...node.data,
-        _overlay: {
-          status,
-          visitCount,
-          isCurrentNode: node.id === graphState.currentNodeId,
-        },
+        // Add-only run-state props — consumed by loop-nodes.tsx overlays
+        runStatus: status,
+        visitCount,
+        isCurrent,
       },
     };
   });
 }
 
 /**
- * Apply edge overlays: traversed=brighter+thicker, mostRecent=brightest,
- * untraversed=dimmed.
+ * Merges traversal state into each edge's data so that WhenEdge can render
+ * traversal overlays (opacity, stroke width, animation).
+ * Builder WhenEdge rendering is unchanged when traversed/mostRecent are absent.
  */
-function applyEdgeOverlays(
+function applyEdgeRunState(
   edges: LoopFlowEdge[],
   graphState: RunGraphState,
 ): Edge[] {
@@ -140,26 +139,14 @@ function applyEdgeOverlays(
     const traversed = edgeState?.traversed ?? false;
     const mostRecent = edgeState?.mostRecent ?? false;
 
-    let opacity = 0.3;
-    let strokeWidth = 2;
-
-    if (mostRecent) {
-      opacity = 1;
-      strokeWidth = 4;
-    } else if (traversed) {
-      opacity = 0.85;
-      strokeWidth = 2;
-    }
-
     return {
       ...edge,
-      style: {
-        ...edge.style,
-        opacity,
-        strokeWidth,
-        transition: "opacity 0.2s, stroke-width 0.2s",
+      data: {
+        ...edge.data,
+        // Add-only run-state props — consumed by when-edge.tsx overlays
+        traversed,
+        mostRecent,
       },
-      animated: mostRecent,
     };
   });
 }
@@ -190,6 +177,49 @@ function IterationMeter({
       </span>
     </div>
   );
+}
+
+// ── aria-live announcement hook ────────────────────────────────────────────────
+
+/**
+ * Produces a human-readable announcement whenever the current node or its
+ * status changes. Returns null when there is no active transition.
+ */
+function useNodeTransitionAnnouncement(
+  currentNodeId: string | null,
+  graphState: RunGraphState,
+  definition: LoopDefinition,
+): string | null {
+  const nodeLabel = currentNodeId
+    ? (definition.nodes.find((n) => n.id === currentNodeId)?.label ??
+      currentNodeId)
+    : null;
+
+  const nodeStatus = currentNodeId
+    ? (graphState.nodes[currentNodeId]?.status ?? null)
+    : null;
+
+  const visitCount = currentNodeId
+    ? (graphState.nodes[currentNodeId]?.visitCount ?? 1)
+    : null;
+
+  if (!nodeLabel || !nodeStatus) return null;
+
+  const iterationSuffix =
+    visitCount && visitCount > 1 ? ` — iteration ${visitCount}` : "";
+
+  switch (nodeStatus) {
+    case "running":
+      return `${nodeLabel} running${iterationSuffix}`;
+    case "succeeded":
+      return `${nodeLabel} succeeded${iterationSuffix}`;
+    case "failed":
+      return `${nodeLabel} failed${iterationSuffix}`;
+    case "skipped":
+      return `${nodeLabel} skipped`;
+    default:
+      return null;
+  }
 }
 
 // ── Inner canvas (needs ReactFlow context) ─────────────────────────────────────
@@ -223,13 +253,14 @@ function RunGraphInner({
     [definitionSnapshot],
   );
 
+  // Merge run-state into node/edge data — fed to builder components
   const nodes = useMemo(
-    () => applyNodeOverlays(baseNodes, graphState),
+    () => applyNodeRunState(baseNodes, graphState),
     [baseNodes, graphState],
   );
 
   const edges = useMemo(
-    () => applyEdgeOverlays(baseEdges, graphState),
+    () => applyEdgeRunState(baseEdges, graphState),
     [baseEdges, graphState],
   );
 
@@ -240,17 +271,31 @@ function RunGraphInner({
     [onNodeClick],
   );
 
-  const currentNodeId = graphState.currentNodeId;
-  const currentNodeLabel = currentNodeId
-    ? (definitionSnapshot.nodes.find((n) => n.id === currentNodeId)?.label ??
-      currentNodeId)
-    : null;
+  // aria-live: announce node transitions
+  const announcement = useNodeTransitionAnnouncement(
+    graphState.currentNodeId,
+    graphState,
+    definitionSnapshot,
+  );
+
+  // Track the previous announcement to avoid repeating the same message
+  const prevAnnouncementRef = useRef<string | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (announcement && announcement !== prevAnnouncementRef.current) {
+      prevAnnouncementRef.current = announcement;
+      setLiveAnnouncement(announcement);
+    }
+  }, [announcement]);
 
   return (
     <div className="relative h-full w-full">
       <ReactFlow
         nodes={nodes}
         edges={edges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={true}
@@ -292,17 +337,15 @@ function RunGraphInner({
         </Panel>
       </ReactFlow>
 
-      {/* aria-live region for status announcements */}
-      {currentNodeLabel && (
-        <div
-          role="status"
-          aria-live="polite"
-          aria-atomic="true"
-          className="sr-only"
-        >
-          {`Step '${currentNodeLabel}' ${graphState.currentNodeId ? "running" : "done"}`}
-        </div>
-      )}
+      {/* aria-live region for node transition announcements */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        {liveAnnouncement ?? ""}
+      </div>
     </div>
   );
 }
@@ -325,6 +368,7 @@ export type RunGraphProps = {
  *
  * Drives overlays from the existing SWR poll data (no new fetches).
  * Snapshot rule: always uses definitionSnapshot, never the live definition.
+ * Visual language: shares the builder's nodeTypes and edgeTypes exactly.
  */
 export function RunGraph({
   definitionSnapshot,

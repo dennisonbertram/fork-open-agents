@@ -5,6 +5,13 @@
  *
  * Color coding: success=emerald, failure=red, true=sky, false=slate, always=muted.
  * Selected edge = thicker stroke + ring on badge.
+ *
+ * ADD-ONLY run-state props (optional — builder behavior 100% unchanged when absent):
+ *   data.traversed?   — true when this edge was traversed during a run
+ *   data.mostRecent?  — true when this edge was on the most-recent traversal path
+ *
+ * When traversed/mostRecent are absent, rendering is identical to the original
+ * builder behavior.
  */
 
 import {
@@ -15,8 +22,18 @@ import {
   type Edge,
 } from "@xyflow/react";
 import type { LoopFlowEdgeData } from "./definition-mapping";
+import { getEdgeTraversalStyle } from "./run-overlays";
 
-export type WhenEdge = Edge<LoopFlowEdgeData, "when">;
+// ── Add-only run-state fields for when-edge data ──────────────────────────────
+
+export type WhenEdgeRunOverlay = {
+  traversed?: boolean;
+  mostRecent?: boolean;
+};
+
+export type WhenEdgeData = LoopFlowEdgeData & WhenEdgeRunOverlay;
+
+export type WhenEdge = Edge<WhenEdgeData, "when">;
 
 const whenColors: Record<string, { badge: string; stroke: string }> = {
   success: {
@@ -66,11 +83,44 @@ export function WhenEdge({
   const when = data?.when ?? "always";
   const colors = whenColors[when] ?? whenColors.always!;
 
-  const edgeStyle = {
-    stroke: colors.stroke,
-    strokeWidth: selected ? 3 : 2,
-    transition: "stroke 0.2s, stroke-width 0.2s",
-  };
+  // Run-state overlay: only active when traversed/mostRecent are present.
+  // When absent, falls through to builder defaults (opacity=1, selected width).
+  const hasRunState =
+    data?.traversed !== undefined || data?.mostRecent !== undefined;
+
+  let edgeStyle: React.CSSProperties;
+
+  if (hasRunState) {
+    const traversalStyle = getEdgeTraversalStyle(
+      data?.traversed !== undefined || data?.mostRecent !== undefined
+        ? {
+            traversed: data?.traversed ?? false,
+            mostRecent: data?.mostRecent ?? false,
+          }
+        : undefined,
+    );
+    const isMostRecent = data?.mostRecent === true;
+    edgeStyle = {
+      stroke: colors.stroke,
+      strokeWidth: traversalStyle.strokeWidth,
+      opacity: traversalStyle.opacity,
+      transition: "opacity 0.2s, stroke-width 0.2s",
+      // Subtle animated dash for the most-recent traversal path
+      ...(isMostRecent
+        ? {
+            strokeDasharray: "6 3",
+            animation: "dash 0.8s linear infinite",
+          }
+        : {}),
+    };
+  } else {
+    // Builder default behavior — unchanged
+    edgeStyle = {
+      stroke: colors.stroke,
+      strokeWidth: selected ? 3 : 2,
+      transition: "stroke 0.2s, stroke-width 0.2s",
+    };
+  }
 
   return (
     <>

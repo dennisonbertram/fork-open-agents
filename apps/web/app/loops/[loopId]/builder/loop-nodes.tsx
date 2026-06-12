@@ -12,6 +12,15 @@
  *
  * Config summaries (first 60 chars of instructions, check kind, condition path op value).
  * Handles are rendered with BaseHandle; interactive elements use nodrag class.
+ *
+ * ADD-ONLY run-state props (optional — builder behavior is 100% unchanged when absent):
+ *   data.runStatus?    — "unvisited"|"running"|"succeeded"|"failed"|"skipped"
+ *   data.visitCount?   — number of times this node has been visited in the run
+ *   data.isCurrent?    — true when this is the active execution node
+ *
+ * When runStatus is absent, all overlays are invisible and structure is identical
+ * to the original builder rendering. A parallel worker may add selection/config
+ * behavior — this file intentionally avoids structural rewrites.
  */
 
 import { Position, type NodeProps } from "@xyflow/react";
@@ -23,6 +32,7 @@ import {
   NodeHeaderIcon,
   NodeHeaderTitle,
 } from "@/components/ui/flow/node-header";
+import { NodeHeaderStatus } from "@/components/ui/flow/node-header-status";
 import { cn } from "@/lib/utils";
 import type {
   AgentStepNode,
@@ -32,6 +42,14 @@ import type {
   StartNode,
 } from "@/lib/agent-loops/types";
 import type { LoopFlowNode } from "./definition-mapping";
+import {
+  mapRunStatusToHeaderStatus,
+  isNodeDimmed,
+  isNodePulsing,
+  hasFailedRing,
+  shouldShowVisitPill,
+  type NodeRunStatus,
+} from "./run-overlays";
 
 // ── Accent border helper ───────────────────────────────────────────────────────
 
@@ -50,6 +68,57 @@ const kindIconClass: Record<string, string> = {
   condition: "text-amber-600 dark:text-amber-400",
   end: "text-neutral-500",
 };
+
+// ── Run-state overlay types (add-only — builder nodes never pass these) ────────
+
+/**
+ * Optional run-state fields that can be mixed into node.data for the run view.
+ * When all are absent, node renders identically to the builder.
+ */
+export type RunStateOverlay = {
+  runStatus?: NodeRunStatus;
+  visitCount?: number;
+  isCurrent?: boolean;
+};
+
+// ── Run-state overlay helpers ─────────────────────────────────────────────────
+
+/**
+ * Computes the wrapper className additions for run-state overlays.
+ * Returns an empty string when no run-state is present.
+ */
+function runStateWrapperClass(overlay: RunStateOverlay): string {
+  const { runStatus, isCurrent } = overlay;
+  if (!runStatus) return "";
+
+  const parts: string[] = [];
+
+  if (isNodeDimmed(runStatus)) {
+    parts.push("opacity-50");
+  }
+
+  if (isNodePulsing(isCurrent)) {
+    parts.push("ring-2 ring-orange-400 animate-pulse rounded-md");
+  } else if (hasFailedRing(runStatus)) {
+    parts.push("ring-2 ring-red-500 rounded-md");
+  } else if (runStatus === "succeeded") {
+    parts.push("ring-2 ring-emerald-500 rounded-md");
+  }
+
+  return parts.join(" ");
+}
+
+/**
+ * VisitCountPill — rendered inside the header when visitCount > 1.
+ */
+function VisitCountPill({ visitCount }: { visitCount: number }) {
+  if (!shouldShowVisitPill(visitCount)) return null;
+  return (
+    <span className="ml-1 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-medium tabular-nums text-muted-foreground">
+      ×{visitCount}
+    </span>
+  );
+}
 
 // ── Shared target / source handles ────────────────────────────────────────────
 
@@ -75,13 +144,25 @@ function SourceHandle() {
 
 // ── Start node ─────────────────────────────────────────────────────────────────
 
-type StartNodeProps = NodeProps & { data: StartNode };
+type StartNodeProps = NodeProps & { data: StartNode & RunStateOverlay };
 
 export function StartNodeComponent({ data, selected }: StartNodeProps) {
+  const overlay: RunStateOverlay = {
+    runStatus: data.runStatus,
+    visitCount: data.visitCount,
+    isCurrent: data.isCurrent,
+  };
+  const headerStatus = mapRunStatusToHeaderStatus(overlay.runStatus);
+  const wrapperClass = runStateWrapperClass(overlay);
+
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[140px] max-w-[200px]", kindAccent.start)}
+      className={cn(
+        "min-w-[140px] max-w-[200px]",
+        kindAccent.start,
+        wrapperClass,
+      )}
     >
       <NodeHeader className="bg-emerald-500/5">
         <NodeHeaderIcon className={kindIconClass.start}>
@@ -89,7 +170,11 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
         </NodeHeaderIcon>
         <NodeHeaderTitle className="text-sm">
           {data.label || "Start"}
+          {overlay.visitCount !== undefined && (
+            <VisitCountPill visitCount={overlay.visitCount} />
+          )}
         </NodeHeaderTitle>
+        {headerStatus && <NodeHeaderStatus status={headerStatus} />}
       </NodeHeader>
       <p className="text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         start
@@ -101,18 +186,33 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
 
 // ── AgentStep node ─────────────────────────────────────────────────────────────
 
-type AgentStepNodeProps = NodeProps & { data: AgentStepNode };
+type AgentStepNodeProps = NodeProps & { data: AgentStepNode & RunStateOverlay };
 
-export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
+export function AgentStepNodeComponent({
+  data,
+  selected,
+}: AgentStepNodeProps) {
   const summary = data.instructions
     ? data.instructions.slice(0, 60) +
       (data.instructions.length > 60 ? "…" : "")
     : undefined;
 
+  const overlay: RunStateOverlay = {
+    runStatus: data.runStatus,
+    visitCount: data.visitCount,
+    isCurrent: data.isCurrent,
+  };
+  const headerStatus = mapRunStatusToHeaderStatus(overlay.runStatus);
+  const wrapperClass = runStateWrapperClass(overlay);
+
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.agent_step)}
+      className={cn(
+        "min-w-[200px] max-w-[280px]",
+        kindAccent.agent_step,
+        wrapperClass,
+      )}
     >
       <NodeHeader className="bg-violet-500/5">
         <NodeHeaderIcon className={kindIconClass.agent_step}>
@@ -120,7 +220,11 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
         </NodeHeaderIcon>
         <NodeHeaderTitle className="text-sm">
           {data.label || "Agent step"}
+          {overlay.visitCount !== undefined && (
+            <VisitCountPill visitCount={overlay.visitCount} />
+          )}
         </NodeHeaderTitle>
+        {headerStatus && <NodeHeaderStatus status={headerStatus} />}
       </NodeHeader>
       {summary && (
         <p className="line-clamp-2 text-[11px] text-muted-foreground">
@@ -135,7 +239,9 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
 
 // ── GithubCheck node ──────────────────────────────────────────────────────────
 
-type GithubCheckNodeProps = NodeProps & { data: GithubCheckNode };
+type GithubCheckNodeProps = NodeProps & {
+  data: GithubCheckNode & RunStateOverlay;
+};
 
 export function GithubCheckNodeComponent({
   data,
@@ -151,10 +257,22 @@ export function GithubCheckNodeComponent({
     }
   }
 
+  const overlay: RunStateOverlay = {
+    runStatus: data.runStatus,
+    visitCount: data.visitCount,
+    isCurrent: data.isCurrent,
+  };
+  const headerStatus = mapRunStatusToHeaderStatus(overlay.runStatus);
+  const wrapperClass = runStateWrapperClass(overlay);
+
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.github_check)}
+      className={cn(
+        "min-w-[200px] max-w-[280px]",
+        kindAccent.github_check,
+        wrapperClass,
+      )}
     >
       <NodeHeader className="bg-slate-500/5">
         <NodeHeaderIcon className={kindIconClass.github_check}>
@@ -162,7 +280,11 @@ export function GithubCheckNodeComponent({
         </NodeHeaderIcon>
         <NodeHeaderTitle className="text-sm">
           {data.label || "GitHub check"}
+          {overlay.visitCount !== undefined && (
+            <VisitCountPill visitCount={overlay.visitCount} />
+          )}
         </NodeHeaderTitle>
+        {headerStatus && <NodeHeaderStatus status={headerStatus} />}
       </NodeHeader>
       {checkSummary && (
         <p className="text-[11px] text-muted-foreground">{checkSummary}</p>
@@ -175,18 +297,35 @@ export function GithubCheckNodeComponent({
 
 // ── Condition node ─────────────────────────────────────────────────────────────
 
-type ConditionNodeProps = NodeProps & { data: ConditionNode };
+type ConditionNodeProps = NodeProps & {
+  data: ConditionNode & RunStateOverlay;
+};
 
-export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
+export function ConditionNodeComponent({
+  data,
+  selected,
+}: ConditionNodeProps) {
   const cond = data.condition;
   const condSummary = cond
     ? `${cond.path || "…"} ${cond.op}${cond.value !== undefined ? ` ${String(cond.value)}` : ""}`
     : undefined;
 
+  const overlay: RunStateOverlay = {
+    runStatus: data.runStatus,
+    visitCount: data.visitCount,
+    isCurrent: data.isCurrent,
+  };
+  const headerStatus = mapRunStatusToHeaderStatus(overlay.runStatus);
+  const wrapperClass = runStateWrapperClass(overlay);
+
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.condition)}
+      className={cn(
+        "min-w-[200px] max-w-[280px]",
+        kindAccent.condition,
+        wrapperClass,
+      )}
     >
       <NodeHeader className="bg-amber-500/5">
         <NodeHeaderIcon className={kindIconClass.condition}>
@@ -194,7 +333,11 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
         </NodeHeaderIcon>
         <NodeHeaderTitle className="text-sm">
           {data.label || "Condition"}
+          {overlay.visitCount !== undefined && (
+            <VisitCountPill visitCount={overlay.visitCount} />
+          )}
         </NodeHeaderTitle>
+        {headerStatus && <NodeHeaderStatus status={headerStatus} />}
       </NodeHeader>
       {condSummary && (
         <p className="truncate text-[11px] font-mono text-muted-foreground">
@@ -209,13 +352,25 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
 
 // ── End node ──────────────────────────────────────────────────────────────────
 
-type EndNodeProps = NodeProps & { data: EndNode };
+type EndNodeProps = NodeProps & { data: EndNode & RunStateOverlay };
 
 export function EndNodeComponent({ data, selected }: EndNodeProps) {
+  const overlay: RunStateOverlay = {
+    runStatus: data.runStatus,
+    visitCount: data.visitCount,
+    isCurrent: data.isCurrent,
+  };
+  const headerStatus = mapRunStatusToHeaderStatus(overlay.runStatus);
+  const wrapperClass = runStateWrapperClass(overlay);
+
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[140px] max-w-[200px]", kindAccent.end)}
+      className={cn(
+        "min-w-[140px] max-w-[200px]",
+        kindAccent.end,
+        wrapperClass,
+      )}
     >
       <NodeHeader className="bg-neutral-500/5">
         <NodeHeaderIcon className={kindIconClass.end}>
@@ -223,7 +378,11 @@ export function EndNodeComponent({ data, selected }: EndNodeProps) {
         </NodeHeaderIcon>
         <NodeHeaderTitle className="text-sm">
           {data.label || "End"}
+          {overlay.visitCount !== undefined && (
+            <VisitCountPill visitCount={overlay.visitCount} />
+          )}
         </NodeHeaderTitle>
+        {headerStatus && <NodeHeaderStatus status={headerStatus} />}
       </NodeHeader>
       <p className="text-center text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
         end
