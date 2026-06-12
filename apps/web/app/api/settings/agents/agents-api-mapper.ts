@@ -22,6 +22,8 @@ export const agentPatchSchema = z
     instructions: z.string().nullable().optional(),
     managedRuntimeProfileId: z.string().min(1).nullable().optional(),
     githubToolsEnabled: z.boolean().optional(),
+    /** Phase 6 (#242 / #388): enable the propose_composio_tool for this agent. Off by default. */
+    toolAuthoringEnabled: z.boolean().optional(),
   })
   .strict();
 

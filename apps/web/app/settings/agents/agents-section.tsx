@@ -43,6 +43,7 @@ type AgentPatch = {
   instructions?: string | null;
   managedRuntimeProfileId?: string | null;
   githubToolsEnabled?: boolean;
+  toolAuthoringEnabled?: boolean;
 };
 
 // ── Collapsed summary cell ────────────────────────────────────────────────────
@@ -106,6 +107,9 @@ function AgentEditor({
   const [githubToolsEnabled, setGithubToolsEnabled] = useState<boolean>(
     row.githubToolsEnabled,
   );
+  const [toolAuthoringEnabled, setToolAuthoringEnabled] = useState<boolean>(
+    row.toolAuthoringEnabled,
+  );
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -118,7 +122,9 @@ function AgentEditor({
         composioToolkitSlugs: slugs,
         instructions: instructions.trim() || null,
         managedRuntimeProfileId: runtimeProfileId.trim() || null,
-        ...(row.key === "main" ? { githubToolsEnabled } : {}),
+        ...(row.key === "main"
+          ? { githubToolsEnabled, toolAuthoringEnabled }
+          : {}),
       };
 
       const res = await fetch("/api/settings/agents", {
@@ -269,6 +275,25 @@ function AgentEditor({
             id="agent-github-tools-enabled"
             checked={githubToolsEnabled}
             onCheckedChange={setGithubToolsEnabled}
+            disabled={isBusy}
+          />
+        </div>
+      ) : null}
+
+      {/* Tool authoring — Main role only */}
+      {row.key === "main" ? (
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="agent-tool-authoring-enabled">Tool authoring</Label>
+            <p className="text-xs text-muted-foreground">
+              Let this agent propose new Composio tools. Proposals are recorded
+              for review and do not auto-enable tools.
+            </p>
+          </div>
+          <Switch
+            id="agent-tool-authoring-enabled"
+            checked={toolAuthoringEnabled}
+            onCheckedChange={setToolAuthoringEnabled}
             disabled={isBusy}
           />
         </div>

@@ -260,18 +260,25 @@ async function resolveChatModelRuntime(params: {
   // Mirror the skills plumbing pattern: resolve in the web layer, thread through
   // agentOptions → experimental_context → task tool.
   // Best-effort: failures log and fall back to null (today's behavior).
+  // Phase 6 (#242 / #388): also resolve the "main" agent to read toolAuthoringEnabled.
   let subagentRoster: SubagentRoster | null = null;
+  let mainAgentToolAuthoringEnabled = false;
+  let mainAgentId: string | null = null;
   try {
     const { resolveAgentForRole } = await import("@/lib/agents/resolve-agent");
     const scopeKeys = {
       userId: params.userId,
       sessionId: params.sessionId,
     };
-    const [explorerAgent, executorAgent, designAgent] = await Promise.all([
-      resolveAgentForRole({ ...scopeKeys, role: "explorer" }),
-      resolveAgentForRole({ ...scopeKeys, role: "executor" }),
-      resolveAgentForRole({ ...scopeKeys, role: "design" }),
-    ]);
+    const [mainAgent, explorerAgent, executorAgent, designAgent] =
+      await Promise.all([
+        resolveAgentForRole({ ...scopeKeys, role: "main" }),
+        resolveAgentForRole({ ...scopeKeys, role: "explorer" }),
+        resolveAgentForRole({ ...scopeKeys, role: "executor" }),
+        resolveAgentForRole({ ...scopeKeys, role: "design" }),
+      ]);
+    mainAgentToolAuthoringEnabled = mainAgent.toolAuthoringEnabled;
+    mainAgentId = mainAgent.agentId;
 
     const toRosterEntry = (
       resolved: Awaited<ReturnType<typeof resolveAgentForRole>>,
@@ -321,6 +328,31 @@ async function resolveChatModelRuntime(params: {
     subagentRoster = null;
   }
 
+  // ── Phase 6 (#242 / #388): build proposeToolAction closure ───────────────────
+  // Only constructed when toolAuthoringEnabled=true and a real agentId exists.
+  // The closure captures userId, chatId, and agentId per-request (safe — no
+  // cross-request sharing). The DB import is deferred so there is no module-level
+  // dependency on the DB from the agent package.
+  const proposeToolAction =
+    mainAgentToolAuthoringEnabled && mainAgentId !== null
+      ? async (input: {
+          toolkitSlug: string;
+          chatId?: string;
+          runId?: string;
+        }) => {
+          const { createProposedToolEntry } =
+            await import("@/lib/db/agent-tool-entries");
+          const entry = await createProposedToolEntry({
+            agentId: mainAgentId as string,
+            userId: params.userId,
+            toolkitSlug: input.toolkitSlug,
+            createdByChatId: params.chatId,
+            createdByRunId: input.runId ?? null,
+          });
+          return { entryId: entry.id };
+        }
+      : undefined;
+
   return {
     selectedModelId: getModelOptionSelectionId(
       selectedModelId ?? mainModelSelection.id,
@@ -338,6 +370,9 @@ async function resolveChatModelRuntime(params: {
         : {}),
       customInstructions: assistantFileLinkPrompt,
       ...(subagentRoster ? { subagentRoster } : {}),
+      ...(mainAgentToolAuthoringEnabled
+        ? { toolAuthoringEnabled: true, proposeToolAction }
+        : {}),
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
