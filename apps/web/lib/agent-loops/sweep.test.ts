@@ -85,6 +85,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   recordAgentLoopEvent,
   updateAgentLoopRunContext: mock(async () => undefined),
   retryCurrentStep: mock(async () => undefined),
+  listAgentLoopRuns: mock(async () => []),
 }));
 
 // Mock config module — AGENT_LOOPS_STALL_MINUTES controlled via env
@@ -97,6 +98,9 @@ mock.module("@/lib/agent-loops/config", () => ({
     }
     return 15;
   },
+  isAgentLoopsEnabled: mock(() => true),
+  isAgentLoopRepoAllowed: mock(() => true),
+  getAgentLoopsAllowedRepos: mock(() => []),
 }));
 
 const sweepModulePromise = import("./sweep");
