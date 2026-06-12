@@ -279,3 +279,46 @@ describe("regression: chat-only tool policy stability", () => {
     expect(withFalse).toEqual(withOmitted);
   });
 });
+
+// GT-001 – GT-005: GitHub tools system-prompt steer (githubToolsEnabled flag)
+describe("GitHub tools prompt steer (githubToolsEnabled)", () => {
+  // GT-001: when githubToolsEnabled=true the prompt includes the GitHub tools guidance
+  test("buildSystemPrompt with githubToolsEnabled:true includes github_list_issues steer", () => {
+    const prompt = buildSystemPrompt({ githubToolsEnabled: true });
+
+    expect(prompt).toContain("github_list_issues");
+    expect(prompt).toContain("Prefer these typed tools");
+  });
+
+  // GT-002: when githubToolsEnabled=false the steer is absent
+  test("buildSystemPrompt with githubToolsEnabled:false omits the GitHub tools steer", () => {
+    const prompt = buildSystemPrompt({ githubToolsEnabled: false });
+
+    expect(prompt).not.toContain("github_list_issues");
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+
+  // GT-003: when githubToolsEnabled is omitted (default) the steer is absent
+  test("buildSystemPrompt without githubToolsEnabled omits the GitHub tools steer", () => {
+    const prompt = buildSystemPrompt({});
+
+    expect(prompt).not.toContain("github_list_issues");
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+
+  // GT-004: prompt is byte-identical whether githubToolsEnabled is false or omitted
+  test("githubToolsEnabled:false produces the same prompt as omitting the flag", () => {
+    const withFalse = buildSystemPrompt({ githubToolsEnabled: false });
+    const withOmitted = buildSystemPrompt({});
+
+    expect(withFalse).toBe(withOmitted);
+  });
+
+  // GT-005: the GitHub steer section does NOT bleed into managed_runtime or sandboxFree prompts
+  // when githubToolsEnabled is absent — confirming zero behavior change when flag is off
+  test("managed_runtime prompt without githubToolsEnabled does not contain GitHub steer", () => {
+    const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+});

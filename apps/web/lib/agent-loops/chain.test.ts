@@ -251,10 +251,33 @@ const getMaxAttemptForNodeMock = mock(
   },
 );
 
+// conditionallyTransitionRunStatus — new in M1-10 race fix.
+// Returns the updated run (transition succeeded) by default.
+// Tests that need to simulate a race (0 rows) override this mock.
+const conditionallyTransitionRunStatusMock = mock(
+  async (params: {
+    runId: string;
+    toStatus: AgentLoopRun["status"];
+    fromStatuses: AgentLoopRun["status"][];
+  }): Promise<AgentLoopRun | null> => {
+    // Record as a status update so existing assertions still pass
+    recordedRunStatusUpdates.push({
+      runId: params.runId,
+      status: params.toStatus,
+    });
+    currentLoopRun = {
+      ...currentLoopRun,
+      status: params.toStatus,
+    };
+    return currentLoopRun;
+  },
+);
+
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   createAgentLoopStepRun: createAgentLoopStepRunMock,
@@ -439,6 +462,7 @@ function resetAll() {
   getAgentLoopStepRunWithContextMock.mockClear();
   getAgentLoopRunWithLoopMock.mockClear();
   updateAgentLoopRunStatusMock.mockClear();
+  conditionallyTransitionRunStatusMock.mockClear();
   updateAgentLoopStepRunMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   createAgentLoopStepRunMock.mockClear();

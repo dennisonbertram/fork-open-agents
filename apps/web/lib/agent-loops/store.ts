@@ -420,9 +420,11 @@ export async function updateAgentLoopRunStatus(params: {
   // Transitioning INTO running: only set startedAt when it is currently null
   // (prevents repeated "running" context-merge calls from resetting the timestamp
   // and corrupting duration accounting / the M1-06 wall-clock guardrail).
+  // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+  // driver's Bind() cannot serialize a Date instance (live-proof D1).
   const startedAtClause =
     params.status === "running"
-      ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})` }
+      ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())` }
       : {};
 
   const [run] = await db
@@ -482,6 +484,41 @@ export async function updateAgentLoopRunContext(params: {
     .returning();
 
   return run ?? null;
+}
+
+/**
+ * Sets the initial step pointer on a newly-created run row.
+ *
+ * Called by the dispatcher bridge immediately after creating the first (start-node)
+ * step run and BEFORE dispatching the workflow.  Without this call,
+ * currentNodeId and currentStepRunId stay NULL on the row, causing
+ * advanceRunToNextStep's conditional WHERE (currentStepRunId = fromStepRunId)
+ * to match 0 rows (NULL ≠ any value in SQL) — so the first advance always
+ * returns false and the chain dies after the start node.
+ *
+ * This helper intentionally only updates currentNodeId, currentStepRunId, and
+ * updatedAt.  It does NOT touch status or startedAt — those transitions are
+ * owned by chain.ts (queued→running conditional update) and are deliberate
+ * gate-checks that must not be bypassed here.
+ */
+export async function setInitialStepPointer(params: {
+  runId: string;
+  nodeId: string;
+  stepRunId: string;
+}): Promise<{ id: string } | null> {
+  const now = new Date();
+
+  const [row] = await db
+    .update(agentLoopRuns)
+    .set({
+      currentNodeId: params.nodeId,
+      currentStepRunId: params.stepRunId,
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.runId))
+    .returning({ id: agentLoopRuns.id });
+
+  return row ?? null;
 }
 
 // ── agentLoopStepRuns ─────────────────────────────────────────────────────────
@@ -852,8 +889,10 @@ export async function resumeLoopRun(
     .update(agentLoopRuns)
     .set({
       status: "running",
-      // COALESCE: preserve startedAt if already set
-      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      // COALESCE: preserve startedAt if already set.
+      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+      // driver's Bind() cannot serialize a Date instance (live-proof D1).
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
       updatedAt: now,
     })
     .where(
@@ -942,13 +981,65 @@ export async function retryCurrentStep(params: {
     // Snapshot the currentStepRunId we read — used in the conditional update
     const observedStepRunId = run.currentStepRunId;
 
-    // Find the current (failed) step run to get nodeKind
+    // Find the current step run to determine its status and nodeKind.
+    // The step run is called "failedStepRun" by convention, but it may be
+    // QUEUED (post-stall-advance case — see P1 fix below).
     const failedStepRun = await tx.query.agentLoopStepRuns.findFirst({
       where: eq(agentLoopStepRuns.id, observedStepRunId),
     });
 
     if (!failedStepRun) {
       throw new Error(`Cannot retry: step run ${observedStepRunId} not found`);
+    }
+
+    // ── P1 fix: queued currentStepRunId → re-dispatch, not n+1 ──────────────
+    //
+    // After sweep→in-flight-completion→post-stall-advance, the run is stalled
+    // with currentStepRunId pointing at a QUEUED step that was never dispatched
+    // (advance bookkeeping happened in chain.ts, but start() was suppressed by
+    // the stalledMidExecution guard).
+    //
+    // Creating attempt n+1 of a QUEUED step is wrong — the queued step has never
+    // executed, so there is nothing to retry; creating a new attempt would leave
+    // the existing queued row as an orphan and waste the completed work.
+    //
+    // Instead: transition the run to running and return the existing queued step
+    // run so the caller (run-controls.retryCurrentStep) can dispatch it directly.
+    //
+    // Concurrency safety: the conditional update is still guarded by
+    //   status IN ('failed', 'stalled') AND currentStepRunId = observedStepRunId
+    // so two concurrent retries cannot both succeed.
+    if (failedStepRun.status === "queued") {
+      const now = new Date();
+      const [updatedRunQueuedPath] = await tx
+        .update(agentLoopRuns)
+        .set({
+          status: "running",
+          // COALESCE: preserve startedAt if already set.
+          // D1 fix: use NOW() SQL function — the postgres v3 driver's Bind()
+          // cannot serialize a Date instance (live-proof D1).
+          startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(agentLoopRuns.id, params.runId),
+            inArray(agentLoopRuns.status, ["failed", "stalled"]),
+            eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          ),
+        )
+        .returning();
+
+      if (!updatedRunQueuedPath) {
+        throw new RunControlError(
+          "illegal_transition",
+          `Cannot retry run ${params.runId}: run status or step changed concurrently (TOCTOU race — retry rejected)`,
+        );
+      }
+
+      // Return the existing queued step run — the caller will dispatch it.
+      // No new step run is created, so no orphan risk.
+      return failedStepRun;
     }
 
     // Use MAX(attempt) to compute n+1 — sparse-safe: if attempts {1,3} exist,
@@ -1002,8 +1093,10 @@ export async function retryCurrentStep(params: {
       .set({
         status: "running",
         currentStepRunId: newStepRun.id,
-        // COALESCE: preserve startedAt if already set
-        startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+        // COALESCE: preserve startedAt if already set.
+        // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+        // driver's Bind() cannot serialize a Date instance (live-proof D1).
+        startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
         updatedAt: now,
       })
       .where(
@@ -1026,4 +1119,150 @@ export async function retryCurrentStep(params: {
 
     return newStepRun;
   });
+}
+
+/**
+ * Conditionally transitions a run's status to a new value ONLY IF the run's
+ * current DB status matches one of the allowed from-statuses.
+ *
+ * Returns the updated run when the transition succeeded (1 row), or null when
+ * 0 rows were updated (status changed underneath — e.g. cancel raced with
+ * the queued→running transition in chain.ts).
+ *
+ * Used by:
+ *   - chain.ts queued→running transition (M1-10 race fix): fromStatuses=["queued"]
+ *   - sweep stall transition: fromStatuses=["queued", "running"]
+ */
+export async function conditionallyTransitionRunStatus(params: {
+  runId: string;
+  toStatus: AgentLoopRun["status"];
+  fromStatuses: AgentLoopRun["status"][];
+  errorKind?: string | null;
+  errorMessage?: string | null;
+}): Promise<AgentLoopRun | null> {
+  const now = new Date();
+
+  const terminalStatuses = new Set<AgentLoopRun["status"]>([
+    "completed",
+    "failed",
+    "cancelled",
+    "stalled",
+  ]);
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: params.toStatus,
+      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+      // driver's Bind() cannot serialize a Date instance (live-proof D1).
+      ...(params.toStatus === "running"
+        ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())` }
+        : {}),
+      ...(terminalStatuses.has(params.toStatus) ? { finishedAt: now } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
+      ...(params.errorMessage !== undefined
+        ? { errorMessage: params.errorMessage }
+        : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, params.runId),
+        inArray(agentLoopRuns.status, params.fromStatuses),
+      ),
+    )
+    .returning();
+
+  return run ?? null;
+}
+
+// ── Stall sweep ───────────────────────────────────────────────────────────────
+
+export type StalledLoopRunCandidate = {
+  id: string;
+  status: "queued" | "running";
+  lastEventName: string | null;
+  lastEventAt: Date;
+};
+
+/**
+ * Finds active (queued/running) loop runs whose latest event is older than
+ * thresholdMinutes.  Paused and terminal runs are excluded.
+ *
+ * Uses a lateral-style subquery via Drizzle's max() aggregation: for each
+ * qualifying run, we join to agent_loop_events and pick MAX(created_at).
+ * Runs with no events at all are included (we use the run's own createdAt
+ * as the reference age so brand-new runs without events don't stall
+ * immediately — however runs that have never emitted an event after
+ * thresholdMinutes are considered stalled).
+ *
+ * Returns an array of candidates the sweep should mark stalled.
+ */
+export async function findStalledLoopRunCandidates(params: {
+  thresholdMinutes: number;
+}): Promise<StalledLoopRunCandidate[]> {
+  const cutoff = new Date(Date.now() - params.thresholdMinutes * 60 * 1000);
+
+  // Subquery: for each run, the MAX(event.createdAt) and the corresponding
+  // event name.  We use a raw SQL subquery via Drizzle's sql helper because
+  // Drizzle ORM does not expose LATERAL joins.
+  //
+  // Equivalent SQL:
+  //   SELECT r.id, r.status,
+  //     (SELECT e.event_name FROM agent_loop_events e
+  //       WHERE e.loop_run_id = r.id ORDER BY e.created_at DESC LIMIT 1) AS last_event_name,
+  //     COALESCE(
+  //       (SELECT MAX(e.created_at) FROM agent_loop_events e WHERE e.loop_run_id = r.id),
+  //       r.created_at
+  //     ) AS last_event_at
+  //   FROM agent_loop_runs r
+  //   WHERE r.status IN ('queued', 'running')
+  //   HAVING last_event_at < $cutoff
+  //
+  // We implement this with Drizzle select + raw SQL expressions.
+
+  const rows = await db
+    .select({
+      id: agentLoopRuns.id,
+      status: agentLoopRuns.status,
+      lastEventName: sql<string | null>`(
+        SELECT ${agentLoopEvents.eventName}
+        FROM ${agentLoopEvents}
+        WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}
+        ORDER BY ${agentLoopEvents.createdAt} DESC
+        LIMIT 1
+      )`,
+      lastEventAt: sql<Date>`COALESCE(
+        (SELECT MAX(${agentLoopEvents.createdAt})
+         FROM ${agentLoopEvents}
+         WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}),
+        ${agentLoopRuns.createdAt}
+      )`,
+    })
+    .from(agentLoopRuns)
+    .where(
+      and(
+        inArray(agentLoopRuns.status, ["queued", "running"]),
+        // Only include runs where the latest event (or createdAt) is before the cutoff.
+        // We embed this filter in a HAVING-equivalent by using a subquery in WHERE.
+        sql`COALESCE(
+          (SELECT MAX(${agentLoopEvents.createdAt})
+           FROM ${agentLoopEvents}
+           WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}),
+          ${agentLoopRuns.createdAt}
+        ) < ${cutoff.toISOString()}::timestamp`,
+      ),
+    );
+
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status as "queued" | "running",
+    lastEventName: row.lastEventName,
+    lastEventAt:
+      row.lastEventAt instanceof Date
+        ? row.lastEventAt
+        : new Date(row.lastEventAt),
+  }));
 }

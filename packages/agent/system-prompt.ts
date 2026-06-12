@@ -350,6 +350,13 @@ export interface BuildSystemPromptOptions {
   runtimeMode?: "classic" | "managed_runtime";
   /** When true, the session has no sandbox VM. Informs the agent it cannot execute code. */
   sandboxFree?: boolean;
+  /**
+   * When true, typed GitHub tools were injected for this step. Adds a prompt
+   * section steering the agent to prefer them over shell gh/curl for issue and
+   * PR metadata operations. Absent or false = no section added (zero behavior
+   * change when the tools are off).
+   */
+  githubToolsEnabled?: boolean;
 }
 
 const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
@@ -377,6 +384,12 @@ When the user asks to set up, build, adjust, infer, or test a managed runtime pr
 3. Present the draft to the user and wait for their approval before proceeding with any runtime setup or verification.
 
 Never skip the \`setup_managed_runtime_profile\` call when the intent is to configure a managed runtime profile. The draft card is the required review gate.`;
+
+export const GITHUB_TOOLS_PROMPT = `# GitHub Issue and Pull-Request Tools
+
+Typed GitHub tools are available for this repository: github_list_issues, github_create_issue, github_update_issue, github_comment_on_issue, github_set_issue_labels, github_close_issue. Prefer these typed tools over \`gh\`, \`curl\`, or raw GitHub API calls for reading, triaging, creating, commenting on, labeling, and closing issues — they run as the GitHub App with the correct scoped permission and an issue-only guard.
+
+Continue using shell git for repository mechanics (clone, branch, edit, diff, commit, push).`;
 
 /**
  * Build the skills section for the system prompt.
@@ -467,6 +480,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     );
     parts.push(`\nCurrent branch: ${options.currentBranch}`);
     parts.push(`\n${cloudSandboxInstructions}`);
+  }
+
+  if (options.githubToolsEnabled) {
+    parts.push(`\n${GITHUB_TOOLS_PROMPT}`);
   }
 
   if (options.customInstructions) {

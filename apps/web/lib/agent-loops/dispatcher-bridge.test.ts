@@ -72,6 +72,12 @@ const recordAgentLoopEvent = mock(async () => ({
   level: "info" as const,
   createdAt: new Date(),
 }));
+// setInitialStepPointer — new helper called by dispatchLoopRun after step run creation
+const setInitialStepPointer = mock(
+  async (_params: { runId: string; nodeId: string; stepRunId: string }) => ({
+    id: "loop-run-1",
+  }),
+);
 
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun,
@@ -80,6 +86,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopStepRun,
   updateAgentLoopRunStatus,
   recordAgentLoopEvent,
+  setInitialStepPointer,
 }));
 
 // ── Workflow mock ─────────────────────────────────────────────────────────────
@@ -229,6 +236,7 @@ function resetMocks() {
   createAgentLoopStepRun.mockClear();
   updateAgentLoopRunStatus.mockClear();
   recordAgentLoopEvent.mockClear();
+  setInitialStepPointer.mockClear();
 }
 
 // ── BT-326-01: happy path — trigger matches, run created, workflow dispatched ──

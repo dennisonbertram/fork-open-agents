@@ -2364,7 +2364,10 @@ const runAgentStep = async (
 
     const result = await webAgent.stream({
       messages,
-      options: stepAgentOptions,
+      options: {
+        ...stepAgentOptions,
+        githubToolsEnabled: githubTools !== undefined,
+      },
       ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,
     });

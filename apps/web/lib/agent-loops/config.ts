@@ -34,3 +34,20 @@ export function isAgentLoopRepoAllowed(owner: string, repo: string): boolean {
 
   return allowedRepos.has(normalizeRepoKey(owner, repo));
 }
+
+/**
+ * Returns the stall threshold in minutes.
+ * Runs with status queued/running whose latest event is older than this are
+ * considered stalled by the sweep.  Configurable via AGENT_LOOPS_STALL_MINUTES;
+ * defaults to 15.
+ */
+export function getAgentLoopsStallMinutes(): number {
+  const raw = process.env.AGENT_LOOPS_STALL_MINUTES?.trim();
+  if (raw) {
+    const parsed = parseInt(raw, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return 15;
+}

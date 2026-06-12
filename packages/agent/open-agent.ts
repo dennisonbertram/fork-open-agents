@@ -93,6 +93,12 @@ const callOptionsSchema = z.object({
    */
   toolAuthoringEnabled: z.boolean().optional(),
   /**
+   * Set by the web layer when typed GitHub tools were injected for this step;
+   * steers the prompt to prefer them over shell gh/curl for issue/PR metadata ops.
+   * Absent or false = no steer added (zero behavior change when tools are off).
+   */
+  githubToolsEnabled: z.boolean().optional(),
+  /**
    * Phase 6 (#242): web-provided action to record a proposed tool entry.
    * Injected into experimental_context so the tool has no direct DB dependency.
    * Only present when toolAuthoringEnabled=true.
@@ -288,6 +294,7 @@ export const openAgent = new ToolLoopAgent({
     // Phase 6 (#242): optional tool authoring gate + web-injected action
     const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
     const proposeToolAction = options.proposeToolAction;
+    const githubToolsEnabled = options.githubToolsEnabled ?? false;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -298,6 +305,7 @@ export const openAgent = new ToolLoopAgent({
       modelId: mainSelection.id,
       runtimeMode,
       sandboxFree,
+      githubToolsEnabled,
     });
 
     return {
