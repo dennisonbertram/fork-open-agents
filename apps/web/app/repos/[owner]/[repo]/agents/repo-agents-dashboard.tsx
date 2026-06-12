@@ -17,6 +17,10 @@ import {
   type BlankTemplate,
 } from "./agent-templates";
 import { TemplatePicker } from "./template-picker";
+import {
+  firstFieldError,
+  type FlattenedZodDetails,
+} from "@/lib/background-agents/validation-details";
 
 type ManualTestResponse = {
   enabled: boolean;
@@ -96,7 +100,11 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
-        throw new Error("Failed to create background agent");
+        const errorBody = (await response.json().catch(() => ({}))) as {
+          details?: FlattenedZodDetails;
+        };
+        const fieldError = firstFieldError(errorBody.details);
+        throw new Error(fieldError ?? "Failed to create background agent");
       }
       const body = (await response.json()) as CreateAgentResponse;
       setCreatedAgentId(body.agent.id);
