@@ -104,6 +104,13 @@ async function dispatchLoopRun(params: {
   };
   idempotencyKey: string;
   requestId?: string | null;
+  /**
+   * Explicit trigger id to store on the run row.
+   * When omitted, defaults to trigger.id (the FK-safe value for real trigger dispatches).
+   * Pass null for manual starts — "manual" is a synthetic placeholder id, not a real
+   * row in background_agent_triggers, and inserting it would violate the FK constraint.
+   */
+  triggerIdOverride?: string | null;
 }): Promise<LoopDispatchResult> {
   const { loop, trigger, event, idempotencyKey, requestId } = params;
 
@@ -114,11 +121,14 @@ async function dispatchLoopRun(params: {
   }
 
   // Single-active-run rule
-  const hasActive = await hasActiveRunForLoop(loop.id);
-  if (hasActive) {
-    // Record skip event with available context (no runId yet)
+  const activeRunId = await hasActiveRunForLoop(loop.id);
+  if (activeRunId) {
+    // Record skip event against the active run's id to satisfy the FK on
+    // agent_loop_events.loop_run_id → agent_loop_runs.id.
+    // Using the active run's id is also semantically correct: that run is why
+    // we are skipping this trigger delivery.
     await recordAgentLoopEvent({
-      loopRunId: "no-run",
+      loopRunId: activeRunId,
       eventName: "agent-loop.trigger.skipped_active_run",
       status: "info",
       level: "info",
@@ -135,14 +145,18 @@ async function dispatchLoopRun(params: {
     return { skipped: true, reason: "active_run" };
   }
 
-  // Create the run (idempotent)
+  // Create the run (idempotent).
+  // Use triggerIdOverride when explicitly provided (e.g. null for manual starts to
+  // avoid a FK violation — "manual" is not a real row in background_agent_triggers).
+  const runTriggerId =
+    "triggerIdOverride" in params ? params.triggerIdOverride : trigger.id;
   const result = await createAgentLoopRun({
     loopId: loop.id,
     userId: loop.userId,
     definitionSnapshot: loop.definition as Record<string, unknown>,
     source: event.source,
     idempotencyKey,
-    triggerId: trigger.id,
+    triggerId: runTriggerId,
     requestId: requestId ?? null,
   });
 
@@ -345,8 +359,8 @@ export async function dispatchManualAgentLoopStart(params: {
   }
 
   // Single-active-run rule (checked before idempotency key to give a clean signal)
-  const hasActive = await hasActiveRunForLoop(loop.id);
-  if (hasActive) {
+  const activeRunId = await hasActiveRunForLoop(loop.id);
+  if (activeRunId) {
     return { skipped: true, reason: "active_run" };
   }
 
@@ -355,7 +369,9 @@ export async function dispatchManualAgentLoopStart(params: {
   // but does not deduplicate across separate user clicks (intentional for manual start).
   const manualKey = `${loopId}:manual:${requestId ?? crypto.randomUUID()}`;
 
-  // Fake trigger id for observability (manual starts have no trigger row)
+  // Synthetic trigger placeholder for event payload observability.
+  // id is "manual" for payload context only — it is NOT stored as trigger_id in
+  // the run row (triggerIdOverride: null is passed below to avoid FK violation).
   const manualTrigger = {
     id: "manual",
     loopId,
@@ -379,5 +395,8 @@ export async function dispatchManualAgentLoopStart(params: {
     event,
     idempotencyKey: manualKey,
     requestId,
+    // Manual starts have no real trigger row — pass null to avoid FK violation
+    // (agent_loop_runs.trigger_id → background_agent_triggers.id).
+    triggerIdOverride: null,
   });
 }

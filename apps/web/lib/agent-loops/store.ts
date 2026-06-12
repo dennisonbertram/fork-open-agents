@@ -255,25 +255,34 @@ export async function getAgentLoopById(
 }
 
 /**
- * Returns true if the loop has at least one run in queued, running, or paused
- * status (single-active-run rule enforcement in M1-07 dispatcher bridge).
+ * Returns the id of the most-recently-created active run for the loop, or null
+ * if no run is in queued, running, or paused status.
+ *
+ * Returning the run id (rather than a boolean) allows callers to record
+ * skip events against the active run's id, satisfying the FK constraint on
+ * agent_loop_events.loop_run_id → agent_loop_runs.id.
+ * (Single-active-run rule enforcement in M1-07 dispatcher bridge.)
  */
-export async function hasActiveRunForLoop(loopId: string): Promise<boolean> {
+export async function hasActiveRunForLoop(
+  loopId: string,
+): Promise<string | null> {
   const activeStatuses: AgentLoopRun["status"][] = [
     "queued",
     "running",
     "paused",
   ];
   const [row] = await db
-    .select({ total: count() })
+    .select({ id: agentLoopRuns.id })
     .from(agentLoopRuns)
     .where(
       and(
         eq(agentLoopRuns.loopId, loopId),
         inArray(agentLoopRuns.status, activeStatuses),
       ),
-    );
-  return (row?.total ?? 0) > 0;
+    )
+    .orderBy(desc(agentLoopRuns.createdAt))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 // ── agentLoopRuns ─────────────────────────────────────────────────────────────
