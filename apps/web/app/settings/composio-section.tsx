@@ -347,6 +347,11 @@ function ProfileEditor({
         onChange={setToolkitSlugs}
         disabled={isSaving}
       />
+      {toolkitSlugs.length === 0 && name.trim() ? (
+        <p className="text-xs text-muted-foreground">
+          Select at least one tool to save this profile.
+        </p>
+      ) : null}
 
       {/* Advanced disclosure — closed by default */}
       <div className="border-t border-border/60 pt-2">
@@ -469,7 +474,7 @@ function ProfileEditor({
           type="button"
           size="sm"
           onClick={saveProfile}
-          disabled={isSaving || !name.trim()}
+          disabled={isSaving || !name.trim() || toolkitSlugs.length === 0}
           className="h-7 text-xs"
         >
           {isSaving ? <Loader2 className="animate-spin" /> : null}

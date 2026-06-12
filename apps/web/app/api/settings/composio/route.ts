@@ -93,6 +93,24 @@ export async function GET(req: Request) {
   } satisfies ComposioSettingsResponse);
 }
 
+function composioProfileErrorResponse(error: unknown): Response {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/unique|duplicate/i.test(message)) {
+    return Response.json(
+      { error: "A profile with that name already exists." },
+      { status: 409 },
+    );
+  }
+  if (/at least one toolkit/i.test(message)) {
+    return Response.json({ error: message }, { status: 400 });
+  }
+  console.error("[composio] Failed to save profile:", error);
+  return Response.json(
+    { error: "Failed to save Composio profile." },
+    { status: 400 },
+  );
+}
+
 export async function POST(req: Request) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
@@ -115,14 +133,13 @@ export async function POST(req: Request) {
   }
 
   try {
-    const profile = await createComposioToolProfile(authResult.userId, body);
+    const profile = await createComposioToolProfile(
+      authResult.userId,
+      parsed.data,
+    );
     return Response.json({ profile }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return Response.json(
-      { error: message || "Failed to create Composio profile" },
-      { status: 400 },
-    );
+    return composioProfileErrorResponse(error);
   }
 }
 
@@ -157,15 +174,19 @@ export async function PATCH(req: Request) {
   }
 
   if (parsed.data.profileId && parsed.data.profile) {
-    const profile = await updateComposioToolProfile(
-      authResult.userId,
-      parsed.data.profileId,
-      parsed.data.profile,
-    );
-    if (!profile) {
-      return Response.json({ error: "Profile not found" }, { status: 404 });
+    try {
+      const profile = await updateComposioToolProfile(
+        authResult.userId,
+        parsed.data.profileId,
+        parsed.data.profile,
+      );
+      if (!profile) {
+        return Response.json({ error: "Profile not found" }, { status: 404 });
+      }
+      updates.profile = profile;
+    } catch (error) {
+      return composioProfileErrorResponse(error);
     }
-    updates.profile = profile;
   }
 
   if (Object.keys(updates).length === 0) {
