@@ -550,6 +550,8 @@ function reset() {
 }
 
 const chainPromise = import("./chain");
+// Control-plane functions moved to run-controls.ts; REG-F2 now imports from run-controls.
+const runControlsPromise = import("./run-controls");
 
 // ── REG-F1: Pause-during-execution semantics are durable ────────────────────
 
@@ -659,7 +661,7 @@ describe("REG-F2-01: repeated wrong-userId calls always reject (not just first c
   });
 
   test("REG-F2-01: pauseLoopRun rejects on every call with wrong userId, not just the first", async () => {
-    const { pauseLoopRun } = await chainPromise;
+    const { pauseLoopRun } = await runControlsPromise;
 
     // Three separate calls with wrong userId — all must reject
     await expect(pauseLoopRun("run-reg-f347", "eve")).rejects.toThrow();
@@ -678,7 +680,7 @@ describe("REG-F2-02: cancel of unowned run is idempotent rejection (no partial m
   });
 
   test("REG-F2-02: cancelling unowned run then cancelling owned run: only the second succeeds", async () => {
-    const { cancelLoopRun } = await chainPromise;
+    const { cancelLoopRun } = await runControlsPromise;
 
     // Bad actor tries to cancel
     await expect(cancelLoopRun("run-reg-f347", "bad-actor")).rejects.toThrow();

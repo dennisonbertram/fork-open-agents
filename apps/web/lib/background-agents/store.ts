@@ -738,3 +738,30 @@ export async function listEnabledToolGrantsForAgent(
     },
   });
 }
+
+/**
+ * Lists triggers bound to a loop (loopId set, agentId null).
+ * Used by the M1-08 loop-detail route to include a trigger summary.
+ * Returns a minimal projection — no schedule/conditions secrets exposed.
+ */
+export async function listTriggersForLoop(
+  loopId: string,
+): Promise<
+  Pick<
+    BackgroundAgentTrigger,
+    "id" | "kind" | "status" | "conditions" | "schedule" | "createdAt"
+  >[]
+> {
+  return db.query.backgroundAgentTriggers.findMany({
+    where: eq(backgroundAgentTriggers.loopId, loopId),
+    orderBy: [desc(backgroundAgentTriggers.createdAt)],
+    columns: {
+      id: true,
+      kind: true,
+      status: true,
+      conditions: true,
+      schedule: true,
+      createdAt: true,
+    },
+  });
+}

@@ -31,7 +31,9 @@
  *
  * advanceLoopRun — exported for tests; handles post-execution routing.
  * resolveGuardrails — pure helper, testable independently.
- * pauseLoopRun / cancelLoopRun / resumeLoopRun / retryCurrentStep — control plane.
+ *
+ * Control-plane (pause/cancel/resume/retry) lives in run-controls.ts.
+ * That module is the canonical implementation; chain.ts does not re-export it.
  */
 
 import "server-only";
@@ -54,10 +56,6 @@ import {
   advanceRunToNextStep,
   countStepRunsForNode,
   getMaxAttemptForNode,
-  pauseLoopRun as storePauseLoopRun,
-  cancelLoopRun as storeCancelLoopRun,
-  resumeLoopRun as storeResumeLoopRun,
-  retryCurrentStep as storeRetryCurrentStep,
 } from "./store";
 import { executeAgentLoopStep } from "./step-executor";
 
@@ -642,181 +640,5 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     // Do NOT fail the run — leave it in running state with currentStepRunId
     // pointing at the queued next step. The stall sweep (M1-10) or a manual
     // pause→resume will pick it up.
-  }
-}
-
-// ── Control plane — pause/cancel/resume/retry ─────────────────────────────────
-
-/**
- * Pauses a running or queued loop run. Cooperative — takes effect at the next
- * step boundary (does not interrupt in-progress step execution).
- */
-export async function pauseLoopRun(
-  runId: string,
-  userId: string,
-): Promise<void> {
-  "use step";
-
-  await storePauseLoopRun(runId, userId);
-
-  await recordAgentLoopEvent({
-    loopRunId: runId,
-    eventName: "agent-loop.run.paused",
-    status: "info",
-    level: "info",
-    summary: "Loop run paused",
-    payload: { runId, userId },
-  });
-}
-
-/**
- * Cancels a running, queued, or paused loop run.
- */
-export async function cancelLoopRun(
-  runId: string,
-  userId: string,
-): Promise<void> {
-  "use step";
-
-  await storeCancelLoopRun(runId, userId);
-
-  await recordAgentLoopEvent({
-    loopRunId: runId,
-    eventName: "agent-loop.run.cancelled",
-    status: "info",
-    level: "info",
-    summary: "Loop run cancelled",
-    payload: { runId, userId },
-  });
-}
-
-/**
- * Resumes a paused loop run. If currentStepRunId is queued, re-dispatches it.
- *
- * Pause-mid-execution clean resume:
- * When runAgentLoopStep detects a pause mid-execution, it still performs all
- * advance bookkeeping (edge evaluation, step run creation, advanceRunToNextStep)
- * so that currentStepRunId points at the QUEUED next step.  This means
- * resumeLoopRun re-dispatches the queued step immediately on resume and the
- * chain continues without any stall-sweep involvement.
- *
- * Stall edge case (pre-Finding-1 behaviour, now avoided for mid-execution pauses):
- * If a step had completed but advance had not yet fired when pause landed,
- * the run was left in running state with no pending dispatch. The stall sweep
- * (M1-10) handles this residual case. After Finding 1, this window is narrowed:
- * mid-execution pauses produce a queued next step that resume can pick up.
- *
- * Interim dispatch-failure recovery (Nit 3):
- * After a chain.dispatch_failed event the run stays "running" with a queued
- * currentStepRunId.  retryCurrentStep requires "failed" or "stalled" and will
- * throw if called while the run is still "running".  Until the M1-10 stall
- * sweep is implemented, the only self-service recovery path is:
- *   1. pauseLoopRun  — transitions to "paused"
- *   2. resumeLoopRun — transitions to "running" AND re-dispatches the queued step
- */
-export async function resumeLoopRun(
-  runId: string,
-  userId: string,
-): Promise<void> {
-  "use step";
-
-  // Transition → running (throws if not paused)
-  const run = await storeResumeLoopRun(runId, userId);
-
-  await recordAgentLoopEvent({
-    loopRunId: runId,
-    eventName: "agent-loop.run.resumed",
-    status: "info",
-    level: "info",
-    summary: "Loop run resumed",
-    payload: { runId, userId },
-  });
-
-  // Re-dispatch current step if it is still queued
-  if (run.currentStepRunId) {
-    try {
-      const { runAgentLoopStepWorkflow } =
-        await import("@/app/workflows/agent-loop-step");
-      await start(runAgentLoopStepWorkflow, [
-        { stepRunId: run.currentStepRunId },
-      ]);
-
-      await recordAgentLoopEvent({
-        loopRunId: runId,
-        eventName: "agent-loop.chain.dispatched",
-        status: "info",
-        level: "info",
-        summary: `Re-dispatched step on resume: ${run.currentNodeId}`,
-        payload: { stepRunId: run.currentStepRunId, resumed: true },
-      });
-    } catch (err) {
-      await recordAgentLoopEvent({
-        loopRunId: runId,
-        eventName: "agent-loop.chain.dispatch_failed",
-        status: "failed",
-        level: "error",
-        summary: "Failed to re-dispatch step on resume",
-        payload: {
-          stepRunId: run.currentStepRunId,
-          error: err instanceof Error ? err.message : String(err),
-        },
-      });
-    }
-  }
-}
-
-/**
- * Retries the current (failed or stalled) step of a loop run.
- * Creates attempt n+1 of the current node and dispatches its workflow.
- */
-export async function retryCurrentStep(
-  runId: string,
-  userId: string,
-): Promise<void> {
-  "use step";
-
-  // Creates a new step run (attempt n+1) and transitions run to running.
-  // Throws if the run is not in a retryable status (failed/stalled).
-  const newStepRun = await storeRetryCurrentStep({ runId, userId });
-
-  await recordAgentLoopEvent({
-    loopRunId: runId,
-    eventName: "agent-loop.run.retry",
-    status: "info",
-    level: "info",
-    summary: `Retrying step: attempt ${newStepRun.attempt}`,
-    payload: {
-      runId,
-      userId,
-      newStepRunId: newStepRun.id,
-      attempt: newStepRun.attempt,
-    },
-  });
-
-  try {
-    const { runAgentLoopStepWorkflow } =
-      await import("@/app/workflows/agent-loop-step");
-    await start(runAgentLoopStepWorkflow, [{ stepRunId: newStepRun.id }]);
-
-    await recordAgentLoopEvent({
-      loopRunId: runId,
-      eventName: "agent-loop.chain.dispatched",
-      status: "info",
-      level: "info",
-      summary: `Dispatched retry step: ${newStepRun.nodeId} attempt ${newStepRun.attempt}`,
-      payload: { stepRunId: newStepRun.id, attempt: newStepRun.attempt },
-    });
-  } catch (err) {
-    await recordAgentLoopEvent({
-      loopRunId: runId,
-      eventName: "agent-loop.chain.dispatch_failed",
-      status: "failed",
-      level: "error",
-      summary: "Failed to dispatch retry step",
-      payload: {
-        stepRunId: newStepRun.id,
-        error: err instanceof Error ? err.message : String(err),
-      },
-    });
   }
 }

@@ -12,7 +12,7 @@
  * BT-C07: Cooperative — queued → running transition fires run.started exactly once
  * BT-C08: Double-advance — advance twice for same step → exactly one dispatch
  * BT-C09: Dispatch-throw — start() throws → dispatch_failed event, run recoverable
- * BT-C10: pause/resume/cancel/retry transitions (legal + illegal)
+ * BT-C10: pause/resume/cancel/retry transitions (legal + illegal) — MIGRATED to run-controls.test.ts
  * BT-C11: end node — no edge evaluation, no dispatch after run completion
  */
 
@@ -231,85 +231,9 @@ const updateAgentLoopStepRunMock = mock(async (_input: unknown) => {
   return currentStepRun;
 });
 
-// Pause/resume/cancel/retry store mocks
-const pauseLoopRunMock = mock(async (runId: string, _userId: string) => {
-  if (
-    currentLoopRun.status !== "running" &&
-    currentLoopRun.status !== "queued"
-  ) {
-    throw new Error(`Cannot pause run in status: ${currentLoopRun.status}`);
-  }
-  currentLoopRun = { ...currentLoopRun, status: "paused" };
-  recordedRunStatusUpdates.push({ runId, status: "paused" });
-  return currentLoopRun;
-});
-
-const cancelLoopRunMock = mock(async (runId: string, _userId: string) => {
-  const cancellableStatuses = new Set(["running", "queued", "paused"]);
-  if (!cancellableStatuses.has(currentLoopRun.status)) {
-    throw new Error(`Cannot cancel run in status: ${currentLoopRun.status}`);
-  }
-  currentLoopRun = { ...currentLoopRun, status: "cancelled" };
-  recordedRunStatusUpdates.push({ runId, status: "cancelled" });
-  return currentLoopRun;
-});
-
-const resumeLoopRunMock = mock(async (runId: string, _userId: string) => {
-  if (currentLoopRun.status !== "paused") {
-    throw new Error(`Cannot resume run in status: ${currentLoopRun.status}`);
-  }
-  currentLoopRun = { ...currentLoopRun, status: "running" };
-  recordedRunStatusUpdates.push({ runId, status: "running" });
-  return currentLoopRun;
-});
-
-const retryCurrentStepMock = mock(
-  async (params: { runId: string; userId: string }) => {
-    const { runId } = params;
-    if (
-      currentLoopRun.status !== "failed" &&
-      currentLoopRun.status !== "stalled"
-    ) {
-      throw new Error(`Cannot retry run in status: ${currentLoopRun.status}`);
-    }
-    // Find the current step run to get nodeId/nodeKind and attempt
-    const failedStepRun = currentLoopRun.currentStepRunId
-      ? stepRunIdToStepRun[currentLoopRun.currentStepRunId]
-      : undefined;
-    const nodeId =
-      currentLoopRun.currentNodeId ?? failedStepRun?.nodeId ?? "work";
-    const nodeKind = failedStepRun?.nodeKind ?? "agent_step";
-    const nextAttempt = (failedStepRun?.attempt ?? 1) + 1;
-
-    // Create a new step run (simulates the store creating attempt n+1)
-    const id = nextStepRunId();
-    recordedStepRunCreations.push({
-      loopRunId: runId,
-      nodeId,
-      nodeKind,
-      attempt: nextAttempt,
-    });
-    const newStepRun: AgentLoopStepRun = makeStepRun({
-      id,
-      loopRunId: runId,
-      nodeId,
-      nodeKind,
-      attempt: nextAttempt,
-      status: "queued",
-    });
-    stepRunIdToNodeId[id] = nodeId;
-    stepRunIdToStepRun[id] = newStepRun;
-
-    currentLoopRun = {
-      ...currentLoopRun,
-      status: "running",
-      currentStepRunId: id,
-    };
-    recordedRunStatusUpdates.push({ runId, status: "running" });
-
-    return newStepRun;
-  },
-);
+// Note: pause/cancel/resume/retry store mocks are not needed here — those
+// control-plane functions have been removed from chain.ts and live exclusively
+// in run-controls.ts. Tests for those behaviors are in run-controls.test.ts.
 
 // getAgentLoopRunWithLoop — for post-execution status re-check (Finding 1)
 // Returns the current loopRun (no status flip in these tests)
@@ -337,10 +261,6 @@ mock.module("./store", () => ({
   advanceRunToNextStep: advanceRunToNextStepMock,
   countStepRunsForNode: countStepRunsForNodeMock,
   getMaxAttemptForNode: getMaxAttemptForNodeMock,
-  pauseLoopRun: pauseLoopRunMock,
-  cancelLoopRun: cancelLoopRunMock,
-  resumeLoopRun: resumeLoopRunMock,
-  retryCurrentStep: retryCurrentStepMock,
 }));
 
 mock.module("./step-executor", () => ({
@@ -527,10 +447,6 @@ function resetAll() {
   getMaxAttemptForNodeMock.mockClear();
   executeAgentLoopStepMock.mockClear();
   workflowStartMock.mockClear();
-  pauseLoopRunMock.mockClear();
-  cancelLoopRunMock.mockClear();
-  resumeLoopRunMock.mockClear();
-  retryCurrentStepMock.mockClear();
 }
 
 // Import chain after all mocks are set up
@@ -1261,131 +1177,6 @@ describe("BT-C09: dispatch-throw — start() throws → dispatch_failed, run rec
       (u) => u.status === "failed",
     );
     expect(finalRunUpdate.length).toBe(0);
-  });
-});
-
-// ── BT-C10: pause/resume/cancel/retry transitions ────────────────────────────
-
-describe("BT-C10: control plane transitions", () => {
-  beforeEach(() => {
-    resetAll();
-    currentLoop = makeLoop();
-  });
-
-  // Pause
-  test("BT-C10: pause from running → paused + event", async () => {
-    currentLoopRun = makeLoopRun({ status: "running" });
-    const { pauseLoopRun } = await chainPromise;
-    await pauseLoopRun("loop-run-1", "user-1");
-
-    expect(currentLoopRun.status).toBe("paused");
-    const pausedEvent = recordedEvents.find(
-      (e) => e.eventName === "agent-loop.run.paused",
-    );
-    expect(pausedEvent).toBeDefined();
-  });
-
-  test("BT-C10: pause from completed → throws (illegal transition)", async () => {
-    currentLoopRun = makeLoopRun({ status: "completed" });
-    const { pauseLoopRun } = await chainPromise;
-    await expect(pauseLoopRun("loop-run-1", "user-1")).rejects.toThrow();
-  });
-
-  // Cancel
-  test("BT-C10: cancel from running → cancelled + event", async () => {
-    currentLoopRun = makeLoopRun({ status: "running" });
-    const { cancelLoopRun } = await chainPromise;
-    await cancelLoopRun("loop-run-1", "user-1");
-
-    expect(currentLoopRun.status).toBe("cancelled");
-    const cancelledEvent = recordedEvents.find(
-      (e) => e.eventName === "agent-loop.run.cancelled",
-    );
-    expect(cancelledEvent).toBeDefined();
-  });
-
-  test("BT-C10: cancel from paused → cancelled", async () => {
-    currentLoopRun = makeLoopRun({ status: "paused" });
-    const { cancelLoopRun } = await chainPromise;
-    await cancelLoopRun("loop-run-1", "user-1");
-    expect(currentLoopRun.status).toBe("cancelled");
-  });
-
-  test("BT-C10: cancel from completed → throws (illegal transition)", async () => {
-    currentLoopRun = makeLoopRun({ status: "completed" });
-    const { cancelLoopRun } = await chainPromise;
-    await expect(cancelLoopRun("loop-run-1", "user-1")).rejects.toThrow();
-  });
-
-  // Resume
-  test("BT-C10: resume from paused → running + event + re-dispatch if step queued", async () => {
-    const queuedStepRun = makeStepRun({
-      id: "step-queued",
-      nodeId: "work",
-      status: "queued",
-    });
-    stepRunIdToStepRun["step-queued"] = queuedStepRun;
-    currentLoopRun = makeLoopRun({
-      status: "paused",
-      currentStepRunId: "step-queued",
-    });
-
-    const { resumeLoopRun } = await chainPromise;
-    await resumeLoopRun("loop-run-1", "user-1");
-
-    expect(currentLoopRun.status).toBe("running");
-    const resumedEvent = recordedEvents.find(
-      (e) => e.eventName === "agent-loop.run.resumed",
-    );
-    expect(resumedEvent).toBeDefined();
-    // Re-dispatch should have happened
-    expect(workflowStartCalls.length).toBe(1);
-  });
-
-  test("BT-C10: resume from running → throws (illegal transition)", async () => {
-    currentLoopRun = makeLoopRun({ status: "running" });
-    const { resumeLoopRun } = await chainPromise;
-    await expect(resumeLoopRun("loop-run-1", "user-1")).rejects.toThrow();
-  });
-
-  // Retry
-  test("BT-C10: retry from failed → creates attempt n+1, dispatches, status running", async () => {
-    const failedStepRun = makeStepRun({
-      id: "step-failed",
-      nodeId: "work",
-      nodeKind: "agent_step",
-      status: "failed",
-      attempt: 1,
-      errorKind: "sandbox_unavailable",
-    });
-    stepRunIdToStepRun["step-failed"] = failedStepRun;
-    currentLoopRun = makeLoopRun({
-      status: "failed",
-      currentNodeId: "work",
-      currentStepRunId: "step-failed",
-    });
-
-    const { retryCurrentStep } = await chainPromise;
-    await retryCurrentStep("loop-run-1", "user-1");
-
-    // A new step run should have been created with attempt 2
-    const newStepCreation = recordedStepRunCreations.find(
-      (c) => c.nodeId === "work",
-    );
-    expect(newStepCreation).toBeDefined();
-    expect(newStepCreation?.attempt).toBe(2);
-
-    // Workflow should have been dispatched
-    expect(workflowStartCalls.length).toBe(1);
-
-    // Run status should be running
-    expect(currentLoopRun.status).toBe("running");
-  });
-
-  test("BT-C10: retry from running → throws (illegal transition)", async () => {
-    currentLoopRun = makeLoopRun({ status: "running" });
-    const { retryCurrentStep } = await chainPromise;
-    await expect(retryCurrentStep("loop-run-1", "user-1")).rejects.toThrow();
   });
 });
 

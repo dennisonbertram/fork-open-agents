@@ -32,6 +32,7 @@ describe("settings nav data", () => {
       "/settings/composio",
       "/settings/skills",
       "/settings/background-agents",
+      "/loops",
       "/settings/runtime-profiles",
     ]);
     expect(byId.insights).toEqual(["/settings/usage", "/settings/leaderboard"]);
@@ -53,8 +54,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(12);
-    expect(new Set(items.map((i) => i.id)).size).toBe(12);
+    expect(items).toHaveLength(13);
+    expect(new Set(items.map((i) => i.id)).size).toBe(13);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -116,5 +117,22 @@ describe("settings nav data", () => {
     const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
     const ids = toolsGroup?.items.map((i) => i.id);
     expect(ids).toContain("runtime-profiles");
+  });
+
+  // NAV-008: loops item resolves to /loops and is in the tools group
+  test("NAV-008: loops nav item resolves to /loops and is in the tools group (M1-09)", () => {
+    const item = findActiveNavItem("/loops");
+    expect(item?.id).toBe("loops");
+    expect(item?.href).toBe("/loops");
+    expect(item?.label).toBe("Loops");
+
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
+    expect(toolsGroup?.items.map((i) => i.id)).toContain("loops");
+  });
+
+  // NAV-009: loops item also resolves for nested loop routes
+  test("NAV-009: loops nav item is active for nested routes /loops/[loopId]", () => {
+    const item = findActiveNavItem("/loops/loop_abc123");
+    expect(item?.id).toBe("loops");
   });
 });
