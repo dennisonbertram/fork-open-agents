@@ -188,10 +188,7 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
 
 type AgentStepNodeProps = NodeProps & { data: AgentStepNode & RunStateOverlay };
 
-export function AgentStepNodeComponent({
-  data,
-  selected,
-}: AgentStepNodeProps) {
+export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
   const summary = data.instructions
     ? data.instructions.slice(0, 60) +
       (data.instructions.length > 60 ? "…" : "")
@@ -301,10 +298,7 @@ type ConditionNodeProps = NodeProps & {
   data: ConditionNode & RunStateOverlay;
 };
 
-export function ConditionNodeComponent({
-  data,
-  selected,
-}: ConditionNodeProps) {
+export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
   const cond = data.condition;
   const condSummary = cond
     ? `${cond.path || "…"} ${cond.op}${cond.value !== undefined ? ` ${String(cond.value)}` : ""}`

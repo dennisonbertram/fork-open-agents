@@ -106,7 +106,12 @@ describe("BT-LOOPS-048: hasFailedRing true only for failed", () => {
     expect(hasFailedRing("failed")).toBe(true);
   });
 
-  const others: NodeRunStatus[] = ["running", "succeeded", "skipped", "unvisited"];
+  const others: NodeRunStatus[] = [
+    "running",
+    "succeeded",
+    "skipped",
+    "unvisited",
+  ];
   for (const status of others) {
     test(`${status} → hasFailedRing false`, () => {
       expect(hasFailedRing(status)).toBe(false);
@@ -151,7 +156,10 @@ describe("BT-LOOPS-050: edge traversal style", () => {
   });
 
   test("traversed=false (untraversed) → opacity <= 0.4 (dimmed)", () => {
-    const style = getEdgeTraversalStyle({ traversed: false, mostRecent: false });
+    const style = getEdgeTraversalStyle({
+      traversed: false,
+      mostRecent: false,
+    });
     expect(style.opacity).toBeLessThanOrEqual(0.4);
   });
 
