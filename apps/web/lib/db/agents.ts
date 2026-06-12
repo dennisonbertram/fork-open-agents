@@ -49,6 +49,7 @@ export interface UserDefaultAgentPatch {
   composioProfileId?: string | null;
   instructions?: string | null;
   managedRuntimeProfileId?: string | null;
+  githubToolsEnabled?: boolean;
 }
 
 /**
@@ -103,6 +104,7 @@ export async function upsertUserDefaultAgent(
     composioProfileId: patch.composioProfileId ?? null,
     instructions: patch.instructions ?? null,
     managedRuntimeProfileId: patch.managedRuntimeProfileId ?? null,
+    githubToolsEnabled: patch.githubToolsEnabled ?? false,
     createdAt: now,
     updatedAt: now,
   };
@@ -118,6 +120,7 @@ export async function upsertUserDefaultAgent(
         composioProfileId: row.composioProfileId,
         instructions: row.instructions,
         managedRuntimeProfileId: row.managedRuntimeProfileId,
+        githubToolsEnabled: row.githubToolsEnabled,
         updatedAt: now,
       },
     });
