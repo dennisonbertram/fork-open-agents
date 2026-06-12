@@ -68,6 +68,16 @@ export async function parseChatRequestBody(
     };
   }
 
+  if (typeof parsed !== "object" || parsed === null) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: "messages must be a non-empty array" },
+        { status: 400 },
+      ),
+    };
+  }
+
   const body = parsed as Record<string, unknown>;
   if (!Array.isArray(body.messages) || body.messages.length === 0) {
     return {
