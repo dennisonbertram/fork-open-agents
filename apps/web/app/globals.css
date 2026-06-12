@@ -441,3 +441,25 @@
     transform: scaleX(1);
   }
 }
+
+/* ── Loop run-graph: animated dash on the most-recent traversal edge ───────────
+   Used by when-edge.tsx via inline style animation: "loop-edge-dash …".
+   @keyframes must live in the stylesheet — they cannot be defined in React
+   inline styles (silently ignored by the browser).
+   ~1 s crawl at linear infinite; reduced-motion disables it entirely.    */
+
+@keyframes loop-edge-dash {
+  from {
+    stroke-dashoffset: 18;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Disable the loop-edge-dash animation for users who prefer reduced motion */
+  [style*="loop-edge-dash"] {
+    animation: none !important;
+  }
+}
