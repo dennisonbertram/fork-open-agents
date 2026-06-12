@@ -10,11 +10,17 @@ export const metadata: Metadata = {
   description: "Create a new Agent Loop.",
 };
 
-export default async function NewLoopPage() {
+type NewLoopPageProps = {
+  searchParams: Promise<{ repoOwner?: string; repoName?: string }>;
+};
+
+export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
   const session = await getServerSession();
   if (!session?.user) {
     redirect("/");
   }
+
+  const { repoOwner, repoName } = await searchParams;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -32,7 +38,10 @@ export default async function NewLoopPage() {
             Define a multi-step agent workflow using JSON.
           </p>
         </div>
-        <LoopCreateForm />
+        <LoopCreateForm
+          initialRepoOwner={repoOwner}
+          initialRepoName={repoName}
+        />
       </div>
     </main>
   );

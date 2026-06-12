@@ -22,6 +22,19 @@ let repoRuns: Array<{
   createdAt: Date;
 }> = [];
 
+// Agent Loops mutable state — controlled per test
+let agentLoopsEnabled = false;
+let mockLoops: Array<{
+  id: string;
+  name: string;
+  status: "draft" | "active" | "paused" | "archived";
+  repoOwner: string;
+  repoName: string;
+  updatedAt: Date;
+  description: null;
+}> = [];
+let loopsFetchShouldThrow = false;
+
 const redirect = mock((_path: string) => {
   throw new Error("redirect");
 });
@@ -38,6 +51,21 @@ mock.module("@/lib/session/get-server-session", () => ({
 mock.module("@/lib/background-agents/store", () => ({
   listRepoBackgroundAgents,
   listBackgroundAgentRuns,
+}));
+
+// Agent Loops — controlled via mutable state per test.
+// Default: flag off + no loops so existing tests are unaffected.
+const listAgentLoops = mock(async () => {
+  if (loopsFetchShouldThrow) throw new Error("DB failed");
+  return mockLoops;
+});
+
+mock.module("@/lib/agent-loops/config", () => ({
+  isAgentLoopsEnabled: () => agentLoopsEnabled,
+}));
+
+mock.module("@/lib/agent-loops/store", () => ({
+  listAgentLoops,
 }));
 
 // Mock GitHub repo-dashboard helper — returns empty/connected defaults so
@@ -58,9 +86,13 @@ describe("RepoDashboardPage", () => {
     sessionUserId = "user-1";
     repoAgents = [];
     repoRuns = [];
+    agentLoopsEnabled = false;
+    mockLoops = [];
+    loopsFetchShouldThrow = false;
     redirect.mockClear();
     listRepoBackgroundAgents.mockClear();
     listBackgroundAgentRuns.mockClear();
+    listAgentLoops.mockClear();
   });
 
   // BT-001: unauthenticated visitor is redirected
@@ -404,5 +436,99 @@ describe("RepoDashboardPage", () => {
     // Count 2 agents and 1 run — these numbers should appear in the Overview window
     expect(html).toContain(">2<");
     expect(html).toContain(">1<");
+  });
+
+  // ── M2-05 Workflows window integration ─────────────────────────────────────
+
+  // BT-PAGE-WF-001: flag off → Workflows window absent, other windows intact
+  test("BT-PAGE-WF-001: when AGENT_LOOPS_ENABLED=false, Workflows window is absent but other windows render", async () => {
+    agentLoopsEnabled = false;
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Repo dashboard");
+    expect(html).toContain("Overview");
+    expect(html).toContain("Project agents");
+    expect(html).toContain("Activity");
+    // Workflows window MUST NOT appear when flag is off
+    expect(html).not.toContain('aria-label="Workflows window"');
+    // listAgentLoops MUST NOT be called when flag is off
+    expect(listAgentLoops).not.toHaveBeenCalled();
+  });
+
+  // BT-PAGE-WF-002: flag on + loops → Workflows window present with loop data
+  test("BT-PAGE-WF-002: when flag on and loops exist, Workflows window appears with loop names", async () => {
+    agentLoopsEnabled = true;
+    mockLoops = [
+      {
+        id: "loop-abc",
+        name: "CI pipeline loop",
+        status: "active",
+        repoOwner: "acme",
+        repoName: "widgets",
+        updatedAt: new Date("2026-06-01T00:00:00Z"),
+        description: null,
+      },
+    ];
+
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Workflows");
+    expect(html).toContain("CI pipeline loop");
+    expect(html).toContain("/loops/loop-abc");
+  });
+
+  // BT-PAGE-WF-003: loops fetch error → dashboard still renders
+  test("BT-PAGE-WF-003: loops fetch failure does not crash the dashboard (Promise.allSettled isolation)", async () => {
+    agentLoopsEnabled = true;
+    loopsFetchShouldThrow = true;
+
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    let html: string;
+    try {
+      html = renderToStaticMarkup(
+        await RepoDashboardPage({
+          params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+        }),
+      );
+    } catch {
+      throw new Error(
+        "Dashboard page crashed when loops fetch failed — Promise.allSettled isolation broken",
+      );
+    }
+
+    expect(html).toContain("Repo dashboard");
+    expect(html).toContain("Overview");
+    expect(html).toContain("Project agents");
+    expect(html).toContain("Activity");
+  });
+
+  // BT-PAGE-WF-004: listAgentLoops called with correct params
+  test("BT-PAGE-WF-004: when flag on, listAgentLoops is called with userId, repoOwner, repoName", async () => {
+    agentLoopsEnabled = true;
+    mockLoops = [];
+
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    await RepoDashboardPage({
+      params: Promise.resolve({ owner: "myorg", repo: "myrepo" }),
+    });
+
+    expect(listAgentLoops).toHaveBeenCalledWith("user-1", {
+      repoOwner: "myorg",
+      repoName: "myrepo",
+    });
   });
 });

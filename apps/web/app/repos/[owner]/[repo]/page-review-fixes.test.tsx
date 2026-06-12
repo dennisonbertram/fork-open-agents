@@ -54,6 +54,15 @@ mock.module("@/lib/github/repo-dashboard", () => ({
   }),
 }));
 
+// Agent Loops — flag off so this test file is not affected by the feature.
+mock.module("@/lib/agent-loops/config", () => ({
+  isAgentLoopsEnabled: () => false,
+}));
+
+mock.module("@/lib/agent-loops/store", () => ({
+  listAgentLoops: async () => [],
+}));
+
 const pageModulePromise = import("./page");
 
 describe("Page review-fix: BLOCKER 1 — partial-failure isolation in server component", () => {
