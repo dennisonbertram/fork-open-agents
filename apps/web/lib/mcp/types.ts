@@ -35,10 +35,23 @@ export const createMcpServerSchema = z.object({
 
 export type CreateMcpServerInput = z.infer<typeof createMcpServerSchema>;
 
-export const updateMcpServerSchema = createMcpServerSchema
-  .partial()
-  .strict()
-  .extend({
+// Build the update schema by hand so .partial() on the create schema does NOT
+// carry over the .default("http") on transport. In Zod 4, .partial() preserves
+// defaults, meaning updateMcpServerSchema.parse({ enabled: false }) would return
+// { transport: "http", enabled: false } — silently resetting an SSE server to HTTP.
+export const updateMcpServerSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required").max(100).optional(),
+    url: z
+      .string()
+      .url("Must be a valid URL")
+      .refine(isAllowedMcpUrl, {
+        message:
+          "URL must use https:// (or http://localhost / http://127.0.0.1 for local servers)",
+      })
+      .optional(),
+    /** No .default() here — omitting transport must not reset it to "http". */
+    transport: z.enum(["http", "sse"]).optional(),
     enabled: z.boolean().optional(),
     /** Passing null clears all headers. */
     headers: z
@@ -48,6 +61,7 @@ export const updateMcpServerSchema = createMcpServerSchema
       })
       .nullable()
       .optional(),
-  });
+  })
+  .strict();
 
 export type UpdateMcpServerInput = z.infer<typeof updateMcpServerSchema>;

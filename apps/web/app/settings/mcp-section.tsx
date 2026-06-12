@@ -117,10 +117,15 @@ function ServerEditor({
   const [transport, setTransport] = useState<"http" | "sse">(
     server?.transport ?? "http",
   );
-  // Header rows as array of [key, value] pairs
+  // Header rows as array of [key, value] pairs.
+  // For existing servers, rows are pre-filled with [key, ""] — values are write-only.
   const [headerRows, setHeaderRows] = useState<[string, string][]>(
     () => server?.headerKeys.map((k) => [k, ""] as [string, string]) ?? [],
   );
+  // Track whether the user actually changed the header rows so we only PATCH
+  // headers when intentionally modified. An unmodified edit must not send
+  // headers: [key, ""] pairs — that would overwrite stored secrets with "".
+  const [headersModified, setHeadersModified] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [generalError, setGeneralError] = useState<string | null>(null);
@@ -130,22 +135,26 @@ function ServerEditor({
 
   function addHeaderRow() {
     setHeaderRows((rows) => [...rows, ["", ""]]);
+    setHeadersModified(true);
   }
 
   function updateHeaderKey(index: number, value: string) {
     setHeaderRows((rows) =>
       rows.map((row, i) => (i === index ? [value, row[1]] : row)),
     );
+    setHeadersModified(true);
   }
 
   function updateHeaderValue(index: number, value: string) {
     setHeaderRows((rows) =>
       rows.map((row, i) => (i === index ? [row[0], value] : row)),
     );
+    setHeadersModified(true);
   }
 
   function removeHeaderRow(index: number) {
     setHeaderRows((rows) => rows.filter((_, i) => i !== index));
+    setHeadersModified(true);
   }
 
   /** Build headers record from non-empty key rows. */
@@ -170,12 +179,19 @@ function ServerEditor({
     };
 
     const headers = buildHeaders();
-    // For edits: always send headers (even empty object means "clear")
-    if (!isNew) {
+    if (isNew) {
+      // For new servers: only include headers if any were provided
+      if (headers) {
+        body.headers = headers;
+      }
+    } else if (headersModified) {
+      // For edits: only send headers when the user actually changed them.
+      // Sending unmodified pre-filled rows ([key, ""]) would overwrite stored
+      // secrets with empty strings. null means "clear all headers".
       body.headers = headers ?? null;
-    } else if (headers) {
-      body.headers = headers;
     }
+    // If headersModified is false (edit opened but headers not touched), omit
+    // the headers field entirely — the store will leave existing values intact.
 
     const endpoint = isNew
       ? "/api/settings/mcp-servers"
