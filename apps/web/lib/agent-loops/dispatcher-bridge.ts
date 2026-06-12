@@ -21,6 +21,7 @@ import {
   getOwnedAgentLoop,
   hasActiveRunForLoop,
   recordAgentLoopEvent,
+  setInitialStepPointer,
 } from "./store";
 import { isAgentLoopRepoAllowed, isAgentLoopsEnabled } from "./config";
 import { validateLoopDefinition } from "./validation";
@@ -231,6 +232,23 @@ async function dispatchLoopRun(params: {
     nodeId: startNode.id,
     nodeKind: startNode.kind,
     attempt: 1,
+  });
+
+  // Set the initial step pointer on the run row BEFORE dispatching.
+  //
+  // advanceRunToNextStep uses a conditional WHERE currentStepRunId = fromStepRunId.
+  // If currentStepRunId is NULL (the default after createAgentLoopRun), no row
+  // matches (NULL ≠ any value in SQL) → 0 rows updated → advance returns false
+  // → the chain records a duplicate_advance skip and never dispatches the second
+  // step.  Every run would die after its start node.
+  //
+  // We write only currentNodeId + currentStepRunId here.  Status and startedAt
+  // are owned by chain.ts's conditional queued→running transition and must not
+  // be touched here.
+  await setInitialStepPointer({
+    runId: loopRunId,
+    nodeId: startNode.id,
+    stepRunId: stepRun.id,
   });
 
   // Dispatch the first step workflow.

@@ -486,6 +486,41 @@ export async function updateAgentLoopRunContext(params: {
   return run ?? null;
 }
 
+/**
+ * Sets the initial step pointer on a newly-created run row.
+ *
+ * Called by the dispatcher bridge immediately after creating the first (start-node)
+ * step run and BEFORE dispatching the workflow.  Without this call,
+ * currentNodeId and currentStepRunId stay NULL on the row, causing
+ * advanceRunToNextStep's conditional WHERE (currentStepRunId = fromStepRunId)
+ * to match 0 rows (NULL ≠ any value in SQL) — so the first advance always
+ * returns false and the chain dies after the start node.
+ *
+ * This helper intentionally only updates currentNodeId, currentStepRunId, and
+ * updatedAt.  It does NOT touch status or startedAt — those transitions are
+ * owned by chain.ts (queued→running conditional update) and are deliberate
+ * gate-checks that must not be bypassed here.
+ */
+export async function setInitialStepPointer(params: {
+  runId: string;
+  nodeId: string;
+  stepRunId: string;
+}): Promise<{ id: string } | null> {
+  const now = new Date();
+
+  const [row] = await db
+    .update(agentLoopRuns)
+    .set({
+      currentNodeId: params.nodeId,
+      currentStepRunId: params.stepRunId,
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.runId))
+    .returning({ id: agentLoopRuns.id });
+
+  return row ?? null;
+}
+
 // ── agentLoopStepRuns ─────────────────────────────────────────────────────────
 
 // ── agentLoopStepRuns — read ──────────────────────────────────────────────────
