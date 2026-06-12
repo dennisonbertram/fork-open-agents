@@ -127,7 +127,8 @@ function buildListIssuesTool(ctx: {
     description: `List issues for the bound GitHub repository (${ctx.owner}/${ctx.repo}).
 This tool acts as the GitHub App and returns issues using the app installation token.
 Pull requests are automatically excluded — only true issues are returned.
-Provide state="open" (default), "closed", or "all".`,
+Provide state="open" (default), "closed", or "all".
+Prefer this over \`gh issue list\` / \`curl\` for listing issues.`,
     inputSchema: listIssuesInputSchema,
     execute: async ({ state, perPage }): Promise<IssueOutput> => {
       try {
@@ -225,7 +226,8 @@ function buildCreateIssueTool(ctx: {
 }) {
   return tool({
     description: `Create a new issue in the bound GitHub repository (${ctx.owner}/${ctx.repo}).
-This tool acts as the GitHub App via an installation token scoped to issues:write.`,
+This tool acts as the GitHub App via an installation token scoped to issues:write.
+Prefer this over \`gh\`/\`curl\`/the raw API for creating issues — it runs as the GitHub App with the correct scoped permission and an issue-only guard.`,
     inputSchema: createIssueInputSchema,
     execute: async ({
       title,
@@ -300,7 +302,8 @@ function buildUpdateIssueTool(ctx: {
 }) {
   return tool({
     description: `Update an existing issue in the bound GitHub repository (${ctx.owner}/${ctx.repo}).
-This tool acts as the GitHub App via an installation token scoped to issues:write.`,
+This tool acts as the GitHub App via an installation token scoped to issues:write.
+Prefer this over \`gh\`/\`curl\`/the raw API for updating issues — it runs as the GitHub App with the correct scoped permission and an issue-only guard.`,
     inputSchema: updateIssueInputSchema,
     execute: async ({
       issueNumber,
@@ -372,7 +375,8 @@ function buildCommentOnIssueTool(ctx: {
 }) {
   return tool({
     description: `Post a comment on an issue in the bound GitHub repository (${ctx.owner}/${ctx.repo}).
-This tool acts as the GitHub App via an installation token scoped to issues:write.`,
+This tool acts as the GitHub App via an installation token scoped to issues:write.
+Prefer this over \`gh\`/\`curl\`/the raw API for commenting on issues — it runs as the GitHub App with the correct scoped permission and an issue-only guard.`,
     inputSchema: commentOnIssueInputSchema,
     execute: async ({ issueNumber, body }): Promise<CommentOnIssueOutput> => {
       try {
@@ -438,7 +442,8 @@ function buildSetIssueLabelsTool(ctx: {
   return tool({
     description: `Replace all labels on an issue in the bound GitHub repository (${ctx.owner}/${ctx.repo}).
 This is a PUT operation — it replaces all existing labels. Pass an empty array to clear all labels.
-This tool acts as the GitHub App via an installation token scoped to issues:write.`,
+This tool acts as the GitHub App via an installation token scoped to issues:write.
+Prefer this over \`gh\`/\`curl\`/the raw API for setting issue labels — it runs as the GitHub App with the correct scoped permission and an issue-only guard.`,
     inputSchema: setIssueLabelsInputSchema,
     execute: async ({ issueNumber, labels }): Promise<SetIssueLabelsOutput> => {
       try {
@@ -504,7 +509,8 @@ function buildCloseIssueTool(ctx: {
 }) {
   return tool({
     description: `Close an issue in the bound GitHub repository (${ctx.owner}/${ctx.repo}).
-This tool acts as the GitHub App via an installation token scoped to issues:write.`,
+This tool acts as the GitHub App via an installation token scoped to issues:write.
+Prefer this over \`gh\`/\`curl\`/the raw API for closing issues — it runs as the GitHub App with the correct scoped permission and an issue-only guard.`,
     inputSchema: closeIssueInputSchema,
     execute: async ({
       issueNumber,
