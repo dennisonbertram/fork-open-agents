@@ -32,6 +32,8 @@ import type {
   StartNode,
 } from "@/lib/agent-loops/types";
 import type { LoopFlowNode } from "./definition-mapping";
+import { useNodeErrors } from "./builder-error-context";
+import { NodeErrorBadge } from "./node-error-badge";
 
 // ── Accent border helper ───────────────────────────────────────────────────────
 
@@ -78,10 +80,16 @@ function SourceHandle() {
 type StartNodeProps = NodeProps & { data: StartNode };
 
 export function StartNodeComponent({ data, selected }: StartNodeProps) {
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[140px] max-w-[200px]", kindAccent.start)}
+      className={cn(
+        "relative min-w-[140px] max-w-[200px]",
+        kindAccent.start,
+        errorCount > 0 && "ring-2 ring-red-500/60",
+      )}
     >
       <NodeHeader className="bg-emerald-500/5">
         <NodeHeaderIcon className={kindIconClass.start}>
@@ -95,6 +103,7 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
         start
       </p>
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -104,6 +113,8 @@ export function StartNodeComponent({ data, selected }: StartNodeProps) {
 type AgentStepNodeProps = NodeProps & { data: AgentStepNode };
 
 export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
   const summary = data.instructions
     ? data.instructions.slice(0, 60) +
       (data.instructions.length > 60 ? "…" : "")
@@ -112,7 +123,11 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.agent_step)}
+      className={cn(
+        "relative min-w-[200px] max-w-[280px]",
+        kindAccent.agent_step,
+        errorCount > 0 && "ring-2 ring-red-500/60",
+      )}
     >
       <NodeHeader className="bg-violet-500/5">
         <NodeHeaderIcon className={kindIconClass.agent_step}>
@@ -129,6 +144,7 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -141,6 +157,8 @@ export function GithubCheckNodeComponent({
   data,
   selected,
 }: GithubCheckNodeProps) {
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
   let checkSummary: string | undefined;
   if (data.check) {
     const kindLabel = data.check.kind.replaceAll("_", " ");
@@ -154,7 +172,11 @@ export function GithubCheckNodeComponent({
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.github_check)}
+      className={cn(
+        "relative min-w-[200px] max-w-[280px]",
+        kindAccent.github_check,
+        errorCount > 0 && "ring-2 ring-red-500/60",
+      )}
     >
       <NodeHeader className="bg-slate-500/5">
         <NodeHeaderIcon className={kindIconClass.github_check}>
@@ -169,6 +191,7 @@ export function GithubCheckNodeComponent({
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -178,6 +201,8 @@ export function GithubCheckNodeComponent({
 type ConditionNodeProps = NodeProps & { data: ConditionNode };
 
 export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
   const cond = data.condition;
   const condSummary = cond
     ? `${cond.path || "…"} ${cond.op}${cond.value !== undefined ? ` ${String(cond.value)}` : ""}`
@@ -186,7 +211,11 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[200px] max-w-[280px]", kindAccent.condition)}
+      className={cn(
+        "relative min-w-[200px] max-w-[280px]",
+        kindAccent.condition,
+        errorCount > 0 && "ring-2 ring-red-500/60",
+      )}
     >
       <NodeHeader className="bg-amber-500/5">
         <NodeHeaderIcon className={kindIconClass.condition}>
@@ -203,6 +232,7 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
       )}
       <TargetHandle />
       <SourceHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
@@ -212,10 +242,16 @@ export function ConditionNodeComponent({ data, selected }: ConditionNodeProps) {
 type EndNodeProps = NodeProps & { data: EndNode };
 
 export function EndNodeComponent({ data, selected }: EndNodeProps) {
+  const errors = useNodeErrors(data.id);
+  const errorCount = errors.length;
   return (
     <BaseNode
       selected={selected}
-      className={cn("min-w-[140px] max-w-[200px]", kindAccent.end)}
+      className={cn(
+        "relative min-w-[140px] max-w-[200px]",
+        kindAccent.end,
+        errorCount > 0 && "ring-2 ring-red-500/60",
+      )}
     >
       <NodeHeader className="bg-neutral-500/5">
         <NodeHeaderIcon className={kindIconClass.end}>
@@ -229,6 +265,7 @@ export function EndNodeComponent({ data, selected }: EndNodeProps) {
         end
       </p>
       <TargetHandle />
+      <NodeErrorBadge count={errorCount} />
     </BaseNode>
   );
 }
