@@ -7,6 +7,7 @@ import {
   Cable,
   Cpu,
   RefreshCw,
+  Server,
   ShieldAlert,
   SlidersHorizontal,
   Sparkles,
@@ -75,6 +76,12 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
         label: "Composio",
         href: "/settings/composio",
         icon: Blocks,
+      },
+      {
+        id: "mcp",
+        label: "MCP servers",
+        href: "/settings/mcp",
+        icon: Server,
       },
       {
         id: "skills",

@@ -30,6 +30,7 @@ describe("settings nav data", () => {
       "/settings/agents",
       "/settings/models",
       "/settings/composio",
+      "/settings/mcp",
       "/settings/skills",
       "/settings/background-agents",
       "/loops",
@@ -39,11 +40,11 @@ describe("settings nav data", () => {
     expect(byId.admin).toEqual(["/settings/admin"]);
   });
 
-  test("admin group is flagged adminOnly and no group exceeds 7 items", () => {
+  test("admin group is flagged adminOnly and no group exceeds 10 items", () => {
     const admin = SETTINGS_NAV_GROUPS.find((g) => g.id === "admin");
     expect(admin?.adminOnly).toBe(true);
     for (const group of SETTINGS_NAV_GROUPS) {
-      expect(group.items.length).toBeLessThanOrEqual(7);
+      expect(group.items.length).toBeLessThanOrEqual(10);
     }
   });
 
@@ -54,8 +55,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(13);
-    expect(new Set(items.map((i) => i.id)).size).toBe(13);
+    expect(items).toHaveLength(14);
+    expect(new Set(items.map((i) => i.id)).size).toBe(14);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
