@@ -27,6 +27,16 @@ type AgentEditFormProps = {
   agent: BackgroundAgentWithTriggers;
   owner: string;
   repo: string;
+  /**
+   * Pre-seeds saveError state. Used only in tests to verify the
+   * role="alert" error rendering without a live DOM re-render cycle.
+   */
+  _testSaveError?: string;
+  /**
+   * Pre-seeds runError state. Used only in tests to verify the
+   * role="alert" error rendering without a live DOM re-render cycle.
+   */
+  _testRunError?: string;
 };
 
 /**
@@ -34,10 +44,20 @@ type AgentEditFormProps = {
  * Pre-fills all fields from the agent via buildFormFromAgent, then PATCHes
  * the API on save.
  */
-export function AgentEditForm({ agent, owner, repo }: AgentEditFormProps) {
+export function AgentEditForm({
+  agent,
+  owner,
+  repo,
+  _testSaveError,
+  _testRunError,
+}: AgentEditFormProps) {
   const router = useRouter();
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(
+    _testSaveError ?? null,
+  );
+  const [runError, setRunError] = useState<string | null>(
+    _testRunError ?? null,
+  );
 
   const form = buildFormFromAgent(agent);
   const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
