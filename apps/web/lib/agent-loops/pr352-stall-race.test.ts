@@ -106,7 +106,10 @@ function nextId() {
 
 // ── Executor mock ─────────────────────────────────────────────────────────────
 
-let executorOutcomes: Record<string, { outcome: "success" | "failure" | "true" | "false"; errorKind?: string }> = {};
+let executorOutcomes: Record<
+  string,
+  { outcome: "success" | "failure" | "true" | "false"; errorKind?: string }
+> = {};
 let executedNodeIds: string[] = [];
 
 const executeAgentLoopStepMock = mock(
@@ -354,9 +357,15 @@ mock.module("./store", () => ({
   countStepRunsForNode: countStepRunsForNodeMock,
   getMaxAttemptForNode: getMaxAttemptForNodeMock,
   // Control-plane store functions used by run-controls.ts
-  pauseLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-  cancelLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-  resumeLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
+  pauseLoopRun: mock(async () => {
+    throw new RunControlError("illegal_transition", "test");
+  }),
+  cancelLoopRun: mock(async () => {
+    throw new RunControlError("illegal_transition", "test");
+  }),
+  resumeLoopRun: mock(async () => {
+    throw new RunControlError("illegal_transition", "test");
+  }),
   retryCurrentStep: retryCurrentStepStoreMock,
 }));
 
@@ -425,7 +434,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
   };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-p1-1",
     loopRunId: "run-p1",
@@ -552,7 +563,9 @@ describe("BT-P1-01: stalled during step execution — advance bookkeeping done, 
     const stalledEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.chain.stalled_before_dispatch",
     );
-    const payload = stalledEvent?.payload as Record<string, unknown> | undefined;
+    const payload = stalledEvent?.payload as
+      | Record<string, unknown>
+      | undefined;
     expect(payload?.["runStatus"]).toBe("stalled");
   });
 });
@@ -687,9 +700,15 @@ describe("BT-P1-02: retryCurrentStep with QUEUED currentStepRunId → re-dispatc
       advanceRunToNextStep: advanceRunToNextStepMock,
       countStepRunsForNode: countStepRunsForNodeMock,
       getMaxAttemptForNode: getMaxAttemptForNodeMock,
-      pauseLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-      cancelLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-      resumeLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
+      pauseLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
+      cancelLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
+      resumeLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
       retryCurrentStep: retryCurrentStepStoreMock,
     }));
     mock.module("workflow/api", () => ({ start: rcWorkflowStartMock }));
@@ -782,9 +801,15 @@ describe("BT-P1-03: retryCurrentStep with FAILED currentStepRunId → creates at
       advanceRunToNextStep: advanceRunToNextStepMock,
       countStepRunsForNode: countStepRunsForNodeMock,
       getMaxAttemptForNode: getMaxAttemptForNodeMock,
-      pauseLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-      cancelLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
-      resumeLoopRun: mock(async () => { throw new RunControlError("illegal_transition", "test"); }),
+      pauseLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
+      cancelLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
+      resumeLoopRun: mock(async () => {
+        throw new RunControlError("illegal_transition", "test");
+      }),
       retryCurrentStep: retryCurrentStepStoreMock,
     }));
     mock.module("workflow/api", () => ({ start: rcWorkflowStartMock }));
@@ -858,7 +883,9 @@ describe("BT-P1-03: retryCurrentStep with FAILED currentStepRunId → creates at
 
     // Classic failed→retry must still work
     expect(rcWorkflowStartCalls.length).toBe(1);
-    expect(rcWorkflowStartCalls[0]?.stepRunId).not.toBe("step-failed-classical");
+    expect(rcWorkflowStartCalls[0]?.stepRunId).not.toBe(
+      "step-failed-classical",
+    );
     expect(runControlsCurrentLoopRun.status).toBe("running");
   });
 });
