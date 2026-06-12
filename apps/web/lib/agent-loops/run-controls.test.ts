@@ -37,11 +37,7 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type {
-  AgentLoop,
-  AgentLoopRun,
-  AgentLoopStepRun,
-} from "@/lib/db/schema";
+import type { AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -209,24 +205,6 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 }));
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
-
-function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
-  return {
-    id: "loop-rc",
-    userId: "user-1",
-    name: "RC Test Loop",
-    description: null,
-    repoOwner: "acme",
-    repoName: "my-repo",
-    definition: {} as Record<string, unknown>,
-    status: "active",
-    guardrails: null,
-    permissions: {},
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
 
 function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
   return {

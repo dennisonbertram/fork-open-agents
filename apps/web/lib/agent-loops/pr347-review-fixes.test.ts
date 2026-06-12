@@ -520,6 +520,8 @@ function resetAll() {
 }
 
 const chainPromise = import("./chain");
+// retryCurrentStep moved to run-controls.ts; BT-347-03 now imports from there.
+const runControlsPromise = import("./run-controls");
 
 // ── BT-347-01: cycle-walk attempt increment ────────────────────────────────────
 
@@ -829,7 +831,7 @@ describe("BT-347-03: retryCurrentStep always creates attempt n+1 relative to exi
       currentStepRunId: "step-fail-1",
     });
 
-    const { retryCurrentStep } = await chainPromise;
+    const { retryCurrentStep } = await runControlsPromise;
     await retryCurrentStep("run-pr347", "user-1");
 
     const creation = recordedStepRunCreations.find((c) => c.nodeId === "work");
@@ -852,7 +854,7 @@ describe("BT-347-03: retryCurrentStep always creates attempt n+1 relative to exi
       currentStepRunId: "step-fail-2",
     });
 
-    const { retryCurrentStep } = await chainPromise;
+    const { retryCurrentStep } = await runControlsPromise;
     await retryCurrentStep("run-pr347", "user-1");
 
     const creation = recordedStepRunCreations.find((c) => c.nodeId === "work");

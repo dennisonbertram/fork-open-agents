@@ -407,6 +407,8 @@ function reset() {
 }
 
 const chainPromise = import("./chain");
+// retryCurrentStep moved to run-controls.ts; REG-347-05 now imports from there.
+const runControlsPromise = import("./run-controls");
 
 // ── REG-347-01: cycle attempt must be priorVisits + 1 (not 1) ─────────────────
 
@@ -650,7 +652,7 @@ describe("REG-347-05: retryCurrentStep attempt = failed step attempt + 1 (not al
       currentStepRunId: "reg-step-f1",
     });
 
-    const { retryCurrentStep } = await chainPromise;
+    const { retryCurrentStep } = await runControlsPromise;
     await retryCurrentStep("run-reg347", "user-1");
 
     const creation = recordedStepCreations.find((c) => c.nodeId === "work");
@@ -671,7 +673,7 @@ describe("REG-347-05: retryCurrentStep attempt = failed step attempt + 1 (not al
       currentStepRunId: "reg-step-f3",
     });
 
-    const { retryCurrentStep } = await chainPromise;
+    const { retryCurrentStep } = await runControlsPromise;
     await retryCurrentStep("run-reg347", "user-1");
 
     const creation = recordedStepCreations.find((c) => c.nodeId === "work");
