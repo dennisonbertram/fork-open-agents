@@ -12,24 +12,45 @@ type AuthResult =
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 
+type LoopRecord = {
+  id: string;
+  userId: string;
+  name: string;
+  description: null;
+  repoOwner: string;
+  repoName: string;
+  definition: Record<string, unknown>;
+  status: string;
+  guardrails: null;
+  permissions: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type CreateResult =
+  | { ok: true; loop: LoopRecord }
+  | { ok: false; errors: { kind: string; rule: string; message: string }[] };
+
 // Store mocks
-const createAgentLoop = mock(async () => ({
-  ok: true as const,
-  loop: {
-    id: "loop-1",
-    userId: "user-1",
-    name: "My Loop",
-    description: null,
-    repoOwner: "acme",
-    repoName: "widgets",
-    definition: { nodes: [], edges: [] },
-    status: "draft",
-    guardrails: null,
-    permissions: {},
-    createdAt: new Date("2024-01-01"),
-    updatedAt: new Date("2024-01-01"),
-  },
-}));
+const createAgentLoop = mock(
+  async (): Promise<CreateResult> => ({
+    ok: true as const,
+    loop: {
+      id: "loop-1",
+      userId: "user-1",
+      name: "My Loop",
+      description: null,
+      repoOwner: "acme",
+      repoName: "widgets",
+      definition: { nodes: [], edges: [] },
+      status: "draft",
+      guardrails: null,
+      permissions: {},
+      createdAt: new Date("2024-01-01"),
+      updatedAt: new Date("2024-01-01"),
+    },
+  }),
+);
 
 const listAgentLoops = mock(async () => [
   {

@@ -96,9 +96,10 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
         );
 
       default: {
-        const _exhaustive: never = result.reason;
+        // TypeScript exhaustive check — if this compiles, all reasons are handled.
+        const _exhaustive: never = result;
         return Response.json(
-          { error: "Unexpected skip reason" },
+          { error: `Unexpected skip reason: ${String(_exhaustive)}` },
           { status: 500 },
         );
       }

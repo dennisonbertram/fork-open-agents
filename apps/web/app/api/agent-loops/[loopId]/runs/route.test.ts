@@ -12,11 +12,26 @@ type AuthResult =
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 
-const dispatchManualAgentLoopStart = mock(async () => ({
-  skipped: false as const,
-  created: true,
-  runId: "run-1",
-}));
+type DispatchResult =
+  | { skipped: false; created: boolean; runId: string }
+  | {
+      skipped: true;
+      reason:
+        | "feature_disabled"
+        | "repo_not_allowed"
+        | "loop_inactive"
+        | "loop_invalid"
+        | "active_run"
+        | "ownership_fail";
+    };
+
+const dispatchManualAgentLoopStart = mock(
+  async (): Promise<DispatchResult> => ({
+    skipped: false as const,
+    created: true,
+    runId: "run-1",
+  }),
+);
 
 const listAgentLoopRuns = mock(async () => [
   {

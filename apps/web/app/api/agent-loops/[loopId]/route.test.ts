@@ -33,12 +33,22 @@ const loopFixture = {
   updatedAt: new Date("2024-01-01"),
 };
 
-const getOwnedAgentLoop = mock(async () => loopFixture);
-const updateAgentLoop = mock(async () => ({
-  ok: true as const,
-  loop: { ...loopFixture, name: "Updated Loop" },
-}));
-const deleteAgentLoop = mock(async () => true);
+const getOwnedAgentLoop = mock(
+  async () => loopFixture as typeof loopFixture | null,
+);
+const updateAgentLoop = mock(
+  async (): Promise<
+    | { ok: true; loop: (typeof loopFixture & { name: string }) | null }
+    | {
+        ok: false;
+        errors: { kind: "loop_invalid"; rule: string; message: string }[];
+      }
+  > => ({
+    ok: true as const,
+    loop: { ...loopFixture, name: "Updated Loop" },
+  }),
+);
+const deleteAgentLoop = mock(async (): Promise<boolean> => true);
 
 // Trigger summary stub
 const listTriggersForLoop = mock(async () => []);
