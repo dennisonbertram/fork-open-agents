@@ -174,6 +174,8 @@ mock.module("./store", () => ({
   advanceRunToNextStep: mock(async () => false),
   countStepRunsForNode: mock(async () => 0),
   getMaxAttemptForNode: mock(async () => 0),
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 mock.module("./step-executor", () => ({
