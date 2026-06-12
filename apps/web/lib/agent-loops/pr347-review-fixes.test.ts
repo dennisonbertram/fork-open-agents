@@ -341,6 +341,19 @@ mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  conditionallyTransitionRunStatus: mock(
+    async (params: { runId: string; toStatus: string }) => {
+      recordedRunStatusUpdates.push({
+        runId: params.runId,
+        status: params.toStatus,
+      });
+      currentLoopRun = {
+        ...currentLoopRun,
+        status: params.toStatus as AgentLoopRun["status"],
+      };
+      return currentLoopRun;
+    },
+  ),
   recordAgentLoopEvent: recordAgentLoopEventMock,
   createAgentLoopStepRun: createAgentLoopStepRunMock,
   advanceRunToNextStep: advanceRunToNextStepMock,

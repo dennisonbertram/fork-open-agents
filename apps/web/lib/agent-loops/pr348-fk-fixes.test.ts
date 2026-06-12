@@ -126,6 +126,9 @@ const createAgentLoopStepRunMock = mock(async () => ({
 
 const updateAgentLoopRunStatusMock = mock(async () => null);
 
+// setInitialStepPointer — new helper added in PR-352 fix
+const setInitialStepPointerMock = mock(async () => ({ id: "loop-run-fk" }));
+
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun: createAgentLoopRunMock,
   hasActiveRunForLoop: hasActiveRunForLoopMock,
@@ -133,6 +136,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopStepRun: createAgentLoopStepRunMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
+  setInitialStepPointer: setInitialStepPointerMock,
 }));
 
 // ── Workflow mock ─────────────────────────────────────────────────────────────

@@ -420,7 +420,65 @@ existing redaction pipeline with redactionStatus persisted. Run detail UI is
 the user-visible evidence surface (proof strip + timeline), matching the
 background-run page standard.
 
-## 11. Risks
+## 11. Debug Recipes
+
+Common investigation starting points for production incidents.
+
+### Stalled run investigation
+
+A run shows `status=stalled` in the UI:
+
+```bash
+# Find recent stalled runs with their last event
+SELECT r.id, r.loop_id, r.status, r.error_kind, r.error_message,
+       MAX(e.created_at) AS last_event_at,
+       EXTRACT(EPOCH FROM (now() - MAX(e.created_at)))/60 AS minutes_since_event
+FROM agent_loop_runs r
+LEFT JOIN agent_loop_events e ON e.loop_run_id = r.id
+WHERE r.status = 'stalled'
+GROUP BY r.id
+ORDER BY r.created_at DESC LIMIT 20;
+```
+
+Then check the sweep log for the sweep.completed event that caught it:
+- Server logs: grep for `[agent-loop.sweep.completed]` — shows `stalledCount`, `checkedCount`, `thresholdMinutes`
+- Events table: `SELECT * FROM agent_loop_events WHERE loop_run_id='<runId>' AND event_name IN ('agent-loop.run.stalled', 'agent-loop.sweep.completed') ORDER BY created_at;`
+
+Manual sweep trigger (requires `BACKGROUND_AGENTS_CRON_SECRET`):
+```bash
+curl -X POST https://<host>/api/agent-loops/sweep \
+  -H "Authorization: Bearer $BACKGROUND_AGENTS_CRON_SECRET"
+```
+
+### Cancel race investigation
+
+A run shows `status=cancelled` but no events after the cancel event:
+
+Check for `chain.skipped` event — this is the cooperative-skip path that fires when the queued→running conditional transition returns 0 rows:
+```sql
+SELECT * FROM agent_loop_events
+WHERE loop_run_id = '<runId>'
+  AND event_name = 'agent-loop.chain.skipped'
+ORDER BY created_at;
+```
+
+If present, the race fix worked correctly (cancel was honored). The payload includes `reason: "queued_to_running_race"`.
+
+### Dispatch failure investigation
+
+Events to check: `agent-loop.chain.dispatch_failed` — payload includes the `error` field with the start() exception message.
+
+### Observability correlation
+
+All events include `loopRunId` and `loopId`. For a full run timeline:
+```sql
+SELECT event_name, level, summary, created_at, payload
+FROM agent_loop_events
+WHERE loop_run_id = '<runId>'
+ORDER BY created_at;
+```
+
+## 12. Risks
 
 | Risk | Mitigation |
 |---|---|
