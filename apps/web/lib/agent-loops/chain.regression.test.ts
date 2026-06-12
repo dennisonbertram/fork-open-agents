@@ -316,6 +316,8 @@ mock.module("./store", () => ({
     };
     return sr;
   }),
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 mock.module("./step-executor", () => ({

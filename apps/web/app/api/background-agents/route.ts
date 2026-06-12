@@ -31,7 +31,7 @@ export async function POST(req: Request) {
   const parsed = createBackgroundAgentSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json(
-      { error: "Invalid background agent" },
+      { error: "Invalid background agent", details: parsed.error.flatten() },
       { status: 400 },
     );
   }

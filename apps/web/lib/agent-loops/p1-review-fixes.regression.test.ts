@@ -197,6 +197,9 @@ mock.module("./store", () => ({
   recordAgentLoopEvent: regRecordEventMock,
   updateAgentLoopRunStatus: mock(async () => ({})),
   updateAgentLoopRunContext: mock(async () => ({})),
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 mock.module("@/lib/github/access", () => ({

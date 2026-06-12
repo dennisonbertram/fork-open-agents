@@ -374,6 +374,10 @@ describe("POST /api/agent-loops/[loopId]/runs — 409 includes activeRunId (BT-P
 
   mock.module("@/lib/agent-loops/store", () => ({
     listAgentLoopRuns: mock(async () => []),
+    updateAgentLoopRunContext: mock(async () => undefined),
+    conditionallyTransitionRunStatus: mock(async () => null),
+    findStalledLoopRunCandidates: mock(async () => []),
+    retryCurrentStep: mock(async () => undefined),
   }));
 
   mock.module("@/lib/agent-loops/config", () => ({
