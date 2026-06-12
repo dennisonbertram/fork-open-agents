@@ -122,7 +122,12 @@ describe("BT-LOOPS-052: parallelIndex values within a group are unique and seque
     const def: LoopDefinition = {
       nodes: [
         { id: "start", kind: "start", label: "S", position: { x: 0, y: 0 } },
-        { id: "cond", kind: "condition", label: "C", position: { x: 200, y: 0 } },
+        {
+          id: "cond",
+          kind: "condition",
+          label: "C",
+          position: { x: 200, y: 0 },
+        },
         { id: "end", kind: "end", label: "E", position: { x: 400, y: 0 } },
       ],
       edges: [

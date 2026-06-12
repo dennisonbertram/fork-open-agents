@@ -19,7 +19,11 @@
 
 import { GUARDRAIL_DEFAULTS } from "@/lib/agent-loops/types";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
-import type { AgentLoopStepRun, AgentLoopRun, AgentLoopEvent } from "@/lib/db/schema";
+import type {
+  AgentLoopStepRun,
+  AgentLoopRun,
+  AgentLoopEvent,
+} from "@/lib/db/schema";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 

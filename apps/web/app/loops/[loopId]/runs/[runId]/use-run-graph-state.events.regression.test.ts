@@ -41,8 +41,18 @@ const PARALLEL_SNAPSHOT: LoopDefinition = {
 const LINEAR_SNAPSHOT: LoopDefinition = {
   nodes: [
     { id: "start", kind: "start", label: "S", position: { x: 0, y: 0 } },
-    { id: "step-a", kind: "agent_step", label: "A", position: { x: 200, y: 0 } },
-    { id: "step-b", kind: "agent_step", label: "B", position: { x: 400, y: 0 } },
+    {
+      id: "step-a",
+      kind: "agent_step",
+      label: "A",
+      position: { x: 200, y: 0 },
+    },
+    {
+      id: "step-b",
+      kind: "agent_step",
+      label: "B",
+      position: { x: 400, y: 0 },
+    },
     { id: "end", kind: "end", label: "E", position: { x: 600, y: 0 } },
   ],
   edges: [
@@ -66,7 +76,14 @@ function makeEdgeEvent(
     status: "info",
     level: "info",
     summary: "edge evaluated",
-    payload: { nodeId: "src", edgeId, outcome: "true", nextNodeId: "tgt", iterationCount: 0, nodeKind: "condition" },
+    payload: {
+      nodeId: "src",
+      edgeId,
+      outcome: "true",
+      nextNodeId: "tgt",
+      iterationCount: 0,
+      nodeKind: "condition",
+    },
     redactionStatus: "passed",
     requestId: null,
     workflowRunId: null,

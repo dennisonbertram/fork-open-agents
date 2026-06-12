@@ -209,7 +209,12 @@ describe("BT-LOOPS-041: parallel edges — events attribute exactly one, only th
         makeStep("sr-start", "start", new Date("2024-01-01T00:00:01Z")),
         makeStep("sr-a", "node-a", new Date("2024-01-01T00:00:02Z")),
         makeStep("sr-b", "node-b", new Date("2024-01-01T00:00:03Z")),
-        makeStep("sr-a2", "node-a", new Date("2024-01-01T00:00:04Z"), "running"),
+        makeStep(
+          "sr-a2",
+          "node-a",
+          new Date("2024-01-01T00:00:04Z"),
+          "running",
+        ),
       ],
       run: makeRun("node-a"),
       guardrails: null,

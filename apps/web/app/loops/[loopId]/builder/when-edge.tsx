@@ -42,7 +42,10 @@ export type WhenEdgeData = LoopFlowEdgeData & WhenEdgeRunOverlay;
  *
  * For a single edge (parallelCount=1) this always returns 0 (no change).
  */
-function parallelCurvature(parallelIndex: number, parallelCount: number): number {
+function parallelCurvature(
+  parallelIndex: number,
+  parallelCount: number,
+): number {
   if (parallelCount <= 1) return 0;
   // Step size chosen to be visually distinct without extreme arcs
   const step = 0.35;
@@ -54,7 +57,10 @@ function parallelCurvature(parallelIndex: number, parallelCount: number): number
  * Compute a perpendicular label Y-offset (px) so parallel edge labels don't
  * stack on top of each other. The middle edge stays at 0; others shift by ±step.
  */
-function parallelLabelOffset(parallelIndex: number, parallelCount: number): number {
+function parallelLabelOffset(
+  parallelIndex: number,
+  parallelCount: number,
+): number {
   if (parallelCount <= 1) return 0;
   const step = 18; // px per slot
   const mid = (parallelCount - 1) / 2;

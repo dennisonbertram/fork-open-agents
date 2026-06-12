@@ -81,8 +81,12 @@ describe("regression R3: parallelIndex assignment is stable when called twice on
     const { edges: edges2 } = definitionToFlow(PARALLEL_DEF);
 
     for (let i = 0; i < edges1.length; i++) {
-      expect(edges1[i]?.data?.parallelIndex).toBe(edges2[i]?.data?.parallelIndex);
-      expect(edges1[i]?.data?.parallelCount).toBe(edges2[i]?.data?.parallelCount);
+      expect(edges1[i]?.data?.parallelIndex).toBe(
+        edges2[i]?.data?.parallelIndex,
+      );
+      expect(edges1[i]?.data?.parallelCount).toBe(
+        edges2[i]?.data?.parallelCount,
+      );
     }
   });
 });
@@ -92,9 +96,7 @@ describe("regression R3: parallelIndex assignment is stable when called twice on
 describe("regression R4: definition with no edges does not crash definitionToFlow", () => {
   it("regression: empty edges array produces empty flow edges without error", () => {
     const def: LoopDefinition = {
-      nodes: [
-        { id: "s", kind: "start", label: "S", position: { x: 0, y: 0 } },
-      ],
+      nodes: [{ id: "s", kind: "start", label: "S", position: { x: 0, y: 0 } }],
       edges: [],
     };
 
