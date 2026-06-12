@@ -305,6 +305,15 @@ mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getCtxMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateRunStatusMock,
+  conditionallyTransitionRunStatus: mock(
+    async (params: { runId: string; toStatus: string }) => {
+      currentLoopRun = {
+        ...currentLoopRun,
+        status: params.toStatus as AgentLoopRun["status"],
+      };
+      return currentLoopRun;
+    },
+  ),
   updateAgentLoopStepRun: updateStepRunMock,
   recordAgentLoopEvent: recordEventMock,
   createAgentLoopStepRun: createStepRunMock,

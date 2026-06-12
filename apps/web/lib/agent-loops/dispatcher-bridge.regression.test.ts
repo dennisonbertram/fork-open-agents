@@ -73,6 +73,13 @@ const recordAgentLoopEvent = mock(async () => ({
   level: "info" as const,
   createdAt: new Date(),
 }));
+// setInitialStepPointer — new helper; regression tests do not assert on it
+// but it must be in the mock so the import resolves cleanly
+const setInitialStepPointer = mock(
+  async (_params: { runId: string; nodeId: string; stepRunId: string }) => ({
+    id: "loop-run-1",
+  }),
+);
 
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun,
@@ -81,6 +88,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopStepRun,
   updateAgentLoopRunStatus,
   recordAgentLoopEvent,
+  setInitialStepPointer,
 }));
 
 // ── Workflow mock ─────────────────────────────────────────────────────────────
@@ -187,6 +195,7 @@ function resetMocks() {
   createAgentLoopStepRun.mockClear();
   updateAgentLoopRunStatus.mockClear();
   recordAgentLoopEvent.mockClear();
+  setInitialStepPointer.mockClear();
 }
 
 describe("REGRESSION-326: loop dispatch gate order and result shape", () => {
