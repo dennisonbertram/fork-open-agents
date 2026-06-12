@@ -63,13 +63,19 @@ let loadedLoopRun: AgentLoopRun;
 let currentLoop: AgentLoop;
 let currentStepRun: AgentLoopStepRun;
 
-// Controls whether the conditional queued→running transition succeeds (1 row) or
-// is a no-op (0 rows = status changed underneath, e.g. cancelled).
-// -1 means unconditional (old behavior) — not used in tests; 0 = conditional miss
+// Controls whether the conditional queued→running transition succeeds or is
+// a no-op (null = 0 rows = status changed underneath, e.g. cancelled).
 let conditionalTransitionReturns: AgentLoopRun | null = null;
 
 // What getAgentLoopRunWithLoop returns AFTER execution (post-exec re-check)
 let postExecLoopRun: AgentLoopRun;
+
+// Track calls to conditionallyTransitionRunStatus
+let conditionalTransitionCalls: Array<{
+  runId: string;
+  toStatus: string;
+  fromStatuses: string[];
+}> = [];
 
 const simpleDefinition = {
   nodes: [
@@ -123,7 +129,9 @@ function makeLoop(): AgentLoop {
   };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-1",
     loopRunId: "run-race-1",
@@ -153,28 +161,39 @@ const getAgentLoopStepRunWithContextMock = mock(async (_stepRunId: string) => ({
   loop: currentLoop,
 }));
 
-// The CONDITIONAL version of updateAgentLoopRunStatus for queued→running:
-// Returns null when 0 rows updated (run status changed underneath).
-// Regular calls (non-conditional: guardrail, fail) return the run.
-let conditionalTransitionCallCount = 0;
+// The CONDITIONAL version of updateAgentLoopRunStatus (non-conditional calls)
 const updateAgentLoopRunStatusMock = mock(
   async (input: RunStatusInput): Promise<AgentLoopRun | null> => {
     recordedRunStatusUpdates.push(input);
-
-    // First call to status="running" is the conditional queued→running transition
-    if (input.status === "running" && conditionalTransitionCallCount === 0) {
-      conditionalTransitionCallCount++;
-      return conditionalTransitionReturns;
-    }
-
-    // All other calls succeed
     return { ...loadedLoopRun, status: input.status as AgentLoopRun["status"] };
+  },
+);
+
+// conditionallyTransitionRunStatus — returns null to simulate cancel race
+const conditionallyTransitionRunStatusMock = mock(
+  async (params: {
+    runId: string;
+    toStatus: AgentLoopRun["status"];
+    fromStatuses: AgentLoopRun["status"][];
+    errorKind?: string | null;
+    errorMessage?: string | null;
+  }): Promise<AgentLoopRun | null> => {
+    conditionalTransitionCalls.push({
+      runId: params.runId,
+      toStatus: params.toStatus,
+      fromStatuses: params.fromStatuses,
+    });
+    return conditionalTransitionReturns;
   },
 );
 
 const recordAgentLoopEventMock = mock(async (input: EventInput) => {
   recordedEvents.push(input);
-  return { id: `evt-${recordedEvents.length}`, ...input, createdAt: new Date() };
+  return {
+    id: `evt-${recordedEvents.length}`,
+    ...input,
+    createdAt: new Date(),
+  };
 });
 
 // After execution, getAgentLoopRunWithLoop is called for post-exec re-check
@@ -186,35 +205,38 @@ const getAgentLoopRunWithLoopMock = mock(async (_runId: string) => ({
 const advanceRunToNextStepMock = mock(async () => true);
 const countStepRunsForNodeMock = mock(async () => 0);
 const getMaxAttemptForNodeMock = mock(async () => 0);
-const createAgentLoopStepRunMock = mock(async (input: {
-  loopRunId: string;
-  nodeId: string;
-  nodeKind: string;
-  attempt: number;
-}) => ({
-  id: "step-next-1",
-  loopRunId: input.loopRunId,
-  nodeId: input.nodeId,
-  nodeKind: input.nodeKind,
-  attempt: input.attempt,
-  status: "queued" as const,
-  stepInput: null,
-  stepOutput: null,
-  sandboxName: null,
-  workflowRunId: null,
-  errorKind: null,
-  errorMessage: null,
-  startedAt: null,
-  finishedAt: null,
-  durationMs: null,
-  createdAt: new Date(),
-}));
+const createAgentLoopStepRunMock = mock(
+  async (input: {
+    loopRunId: string;
+    nodeId: string;
+    nodeKind: string;
+    attempt: number;
+  }) => ({
+    id: "step-next-1",
+    loopRunId: input.loopRunId,
+    nodeId: input.nodeId,
+    nodeKind: input.nodeKind,
+    attempt: input.attempt,
+    status: "queued" as const,
+    stepInput: null,
+    stepOutput: null,
+    sandboxName: null,
+    workflowRunId: null,
+    errorKind: null,
+    errorMessage: null,
+    startedAt: null,
+    finishedAt: null,
+    durationMs: null,
+    createdAt: new Date(),
+  }),
+);
 const updateAgentLoopStepRunMock = mock(async () => currentStepRun);
 
 mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: getAgentLoopStepRunWithContextMock,
   getAgentLoopRunWithLoop: getAgentLoopRunWithLoopMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   updateAgentLoopStepRun: updateAgentLoopStepRunMock,
   recordAgentLoopEvent: recordAgentLoopEventMock,
   createAgentLoopStepRun: createAgentLoopStepRunMock,
@@ -257,9 +279,9 @@ describe("BT-RACE01: cancel-after-load race — conditional queued→running tra
   beforeEach(() => {
     recordedEvents = [];
     recordedRunStatusUpdates = [];
+    conditionalTransitionCalls = [];
     executedStepRunIds = [];
     workflowStartCalls = [];
-    conditionalTransitionCallCount = 0;
 
     currentLoop = makeLoop();
     currentStepRun = makeStepRun({ nodeId: "start", nodeKind: "start" });
@@ -270,19 +292,28 @@ describe("BT-RACE01: cancel-after-load race — conditional queued→running tra
     // Post-exec run status (for the non-race path this would be "running")
     postExecLoopRun = makeLoopRun({ status: "running" });
 
-    getAgentLoopStepRunWithContextMock.mockImplementation(async (_stepRunId: string) => ({
-      stepRun: currentStepRun,
-      loopRun: loadedLoopRun,
-      loop: currentLoop,
-    }));
+    getAgentLoopStepRunWithContextMock.mockImplementation(
+      async (_stepRunId: string) => ({
+        stepRun: currentStepRun,
+        loopRun: loadedLoopRun,
+        loop: currentLoop,
+      }),
+    );
+    conditionallyTransitionRunStatusMock.mockImplementation(async (params) => {
+      conditionalTransitionCalls.push({
+        runId: params.runId,
+        toStatus: params.toStatus,
+        fromStatuses: params.fromStatuses,
+      });
+      return conditionalTransitionReturns;
+    });
     updateAgentLoopRunStatusMock.mockImplementation(
       async (input: RunStatusInput): Promise<AgentLoopRun | null> => {
         recordedRunStatusUpdates.push(input);
-        if (input.status === "running" && conditionalTransitionCallCount === 0) {
-          conditionalTransitionCallCount++;
-          return conditionalTransitionReturns;
-        }
-        return { ...loadedLoopRun, status: input.status as AgentLoopRun["status"] };
+        return {
+          ...loadedLoopRun,
+          status: input.status as AgentLoopRun["status"],
+        };
       },
     );
   });
@@ -330,9 +361,9 @@ describe("BT-RACE02: normal path (no cancel race) — queued→running still fir
   beforeEach(() => {
     recordedEvents = [];
     recordedRunStatusUpdates = [];
+    conditionalTransitionCalls = [];
     executedStepRunIds = [];
     workflowStartCalls = [];
-    conditionalTransitionCallCount = 0;
 
     currentLoop = makeLoop();
     currentStepRun = makeStepRun({ nodeId: "start", nodeKind: "start" });
@@ -342,19 +373,28 @@ describe("BT-RACE02: normal path (no cancel race) — queued→running still fir
     // Post-exec run is running
     postExecLoopRun = makeLoopRun({ status: "running" });
 
-    getAgentLoopStepRunWithContextMock.mockImplementation(async (_stepRunId: string) => ({
-      stepRun: currentStepRun,
-      loopRun: loadedLoopRun,
-      loop: currentLoop,
-    }));
+    getAgentLoopStepRunWithContextMock.mockImplementation(
+      async (_stepRunId: string) => ({
+        stepRun: currentStepRun,
+        loopRun: loadedLoopRun,
+        loop: currentLoop,
+      }),
+    );
+    conditionallyTransitionRunStatusMock.mockImplementation(async (params) => {
+      conditionalTransitionCalls.push({
+        runId: params.runId,
+        toStatus: params.toStatus,
+        fromStatuses: params.fromStatuses,
+      });
+      return conditionalTransitionReturns;
+    });
     updateAgentLoopRunStatusMock.mockImplementation(
       async (input: RunStatusInput): Promise<AgentLoopRun | null> => {
         recordedRunStatusUpdates.push(input);
-        if (input.status === "running" && conditionalTransitionCallCount === 0) {
-          conditionalTransitionCallCount++;
-          return conditionalTransitionReturns;
-        }
-        return { ...loadedLoopRun, status: input.status as AgentLoopRun["status"] };
+        return {
+          ...loadedLoopRun,
+          status: input.status as AgentLoopRun["status"],
+        };
       },
     );
   });
@@ -384,22 +424,24 @@ describe("BT-RACE03: already-running run still proceeds (no conditional transiti
   beforeEach(() => {
     recordedEvents = [];
     recordedRunStatusUpdates = [];
+    conditionalTransitionCalls = [];
     executedStepRunIds = [];
     workflowStartCalls = [];
-    conditionalTransitionCallCount = 0;
 
     currentLoop = makeLoop();
     currentStepRun = makeStepRun({ nodeId: "start", nodeKind: "start" });
     // Already running — no queued→running transition needed
     loadedLoopRun = makeLoopRun({ status: "running", startedAt: new Date() });
-    conditionalTransitionReturns = null; // won't be used
+    conditionalTransitionReturns = null; // won't be used (no transition for already-running)
     postExecLoopRun = makeLoopRun({ status: "running", startedAt: new Date() });
 
-    getAgentLoopStepRunWithContextMock.mockImplementation(async (_stepRunId: string) => ({
-      stepRun: currentStepRun,
-      loopRun: loadedLoopRun,
-      loop: currentLoop,
-    }));
+    getAgentLoopStepRunWithContextMock.mockImplementation(
+      async (_stepRunId: string) => ({
+        stepRun: currentStepRun,
+        loopRun: loadedLoopRun,
+        loop: currentLoop,
+      }),
+    );
   });
 
   test("BT-RACE03: already-running run proceeds to execute step without conditional transition", async () => {
@@ -409,10 +451,10 @@ describe("BT-RACE03: already-running run still proceeds (no conditional transiti
 
     // Step should have been executed
     expect(executedStepRunIds).toContain("step-1");
-    // No queued→running status update (run was already running)
-    const runningUpdates = recordedRunStatusUpdates.filter(
-      (u) => u.status === "running",
+    // No conditional transition (run was already running, not queued)
+    const toRunningTransitions = conditionalTransitionCalls.filter(
+      (u) => u.toStatus === "running",
     );
-    expect(runningUpdates).toHaveLength(0);
+    expect(toRunningTransitions).toHaveLength(0);
   });
 });

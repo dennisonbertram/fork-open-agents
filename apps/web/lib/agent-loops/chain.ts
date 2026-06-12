@@ -50,6 +50,7 @@ import {
   getAgentLoopStepRunWithContext,
   getAgentLoopRunWithLoop,
   updateAgentLoopRunStatus,
+  conditionallyTransitionRunStatus,
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   createAgentLoopStepRun,
@@ -149,13 +150,43 @@ export async function runAgentLoopStep(
     return;
   }
 
-  // ── 3. Queued → running transition ────────────────────────────────────────
+  // ── 3. Queued → running transition (CONDITIONAL) ─────────────────────────
+  //
+  // Race fix (M1-10): the run may have been cancelled or stalled between the
+  // load in step 1 and this transition.  We use a conditional UPDATE that
+  // only fires when the current DB status is still "queued".  If 0 rows are
+  // updated (status changed underneath), we treat this as the cooperative-skip
+  // path — the cancel/stall is the source of truth and the chain should not
+  // proceed.
+  //
+  // Without this guard (the pre-M1-10 behaviour), the unconditional UPDATE
+  // would overwrite a cancelled status back to "running", causing noisy DB
+  // constraint errors and an incorrect run page state.
 
   if (loopRun.status === "queued") {
-    await updateAgentLoopRunStatus({
+    const transitioned = await conditionallyTransitionRunStatus({
       runId: loopRunId,
-      status: "running",
+      toStatus: "running",
+      fromStatuses: ["queued"],
     });
+
+    if (!transitioned) {
+      // Status changed between load and this call (race: cancel/stall landed).
+      // Treat as a cooperative skip — emit an event and return without executing.
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId: ctx.stepRun.nodeId,
+        eventName: "agent-loop.chain.skipped",
+        status: "info",
+        level: "info",
+        summary:
+          "Chain skipped: run status changed before queued→running transition (cancel race)",
+        payload: { reason: "queued_to_running_race", stepRunId },
+        workflowRunId,
+      });
+      return;
+    }
 
     await recordAgentLoopEvent({
       loopRunId,
@@ -227,11 +258,24 @@ export async function runAgentLoopStep(
       finishedAt: guardrailNow,
     });
 
+    const guardrailErrorMessage = `Guardrail exceeded: ${whichGuardrail}`;
     await updateAgentLoopRunStatus({
       runId: loopRunId,
       status: "failed",
       errorKind: "guardrail_exceeded",
-      errorMessage: `Guardrail exceeded: ${whichGuardrail}`,
+      errorMessage: guardrailErrorMessage,
+    });
+
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId,
+      eventName: "agent-loop.run.failed",
+      status: "failed",
+      level: "error",
+      summary: guardrailErrorMessage,
+      payload: { errorKind: "guardrail_exceeded", whichGuardrail },
+      workflowRunId,
     });
 
     return;
@@ -417,11 +461,30 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
   if (nextNodeId === null) {
     if (outcome === "failure") {
       // Failed step with no failure edge → run failed with step's errorKind
+      const resolvedErrorKind = errorKind ?? "step_failed";
+      const resolvedErrorMessage = `Step failed with no failure edge: ${nodeId}`;
+
       await updateAgentLoopRunStatus({
         runId: loopRunId,
         status: "failed",
-        errorKind: errorKind ?? "step_failed",
-        errorMessage: `Step failed with no failure edge: ${nodeId}`,
+        errorKind: resolvedErrorKind,
+        errorMessage: resolvedErrorMessage,
+      });
+
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+        level: "error",
+        summary: resolvedErrorMessage,
+        payload: {
+          errorKind: resolvedErrorKind,
+          errorMessage: resolvedErrorMessage,
+          nodeId,
+        },
+        workflowRunId,
       });
     } else {
       // Successful/true/false outcome with no matching edge (dangling or graph gap)
@@ -437,11 +500,29 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         workflowRunId,
       });
 
+      const routeMissingMsg = `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`;
       await updateAgentLoopRunStatus({
         runId: loopRunId,
         status: "failed",
         errorKind: "chain_route_missing",
-        errorMessage: `No outgoing edge from '${nodeId}' for outcome '${outcome}' (dangling or missing edge)`,
+        errorMessage: routeMissingMsg,
+      });
+
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId,
+        eventName: "agent-loop.run.failed",
+        status: "failed",
+        level: "error",
+        summary: routeMissingMsg,
+        payload: {
+          errorKind: "chain_route_missing",
+          errorMessage: routeMissingMsg,
+          nodeId,
+          outcome,
+        },
+        workflowRunId,
       });
     }
     return;

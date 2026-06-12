@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import { join } from "path";
 
 const LIB_DIR = join(
@@ -28,7 +28,6 @@ const LIB_DIR = join(
 
 // Read all source files in lib/agent-loops (non-test .ts files)
 function readSourceFiles(): string {
-  const { readdirSync } = require("fs");
   const files = readdirSync(LIB_DIR).filter(
     (f: string) =>
       f.endsWith(".ts") &&
@@ -47,7 +46,6 @@ function readApiFiles(): string {
     "../../app/api/agent-loops/sweep",
   );
   try {
-    const { readdirSync } = require("fs");
     const files = readdirSync(sweepRouteDir).filter(
       (f: string) => f.endsWith(".ts") && !f.endsWith(".test.ts"),
     );
@@ -72,42 +70,96 @@ const M1_TAXONOMY: Array<{
 }> = [
   // Run lifecycle
   { name: "agent-loop.run.created", description: "Run created by dispatcher" },
-  { name: "agent-loop.run.started", description: "Run transitioned queued→running" },
+  {
+    name: "agent-loop.run.started",
+    description: "Run transitioned queued→running",
+  },
   { name: "agent-loop.run.completed", description: "Run reached end node" },
-  { name: "agent-loop.run.failed", description: "Run failed (via updateAgentLoopRunStatus calls)" },
+  {
+    name: "agent-loop.run.failed",
+    description: "Run failed (via updateAgentLoopRunStatus calls)",
+  },
   { name: "agent-loop.run.paused", description: "Run paused via API" },
   { name: "agent-loop.run.resumed", description: "Run resumed via API" },
   { name: "agent-loop.run.cancelled", description: "Run cancelled via API" },
-  { name: "agent-loop.run.stalled", description: "Run stalled (no event for threshold)" },
+  {
+    name: "agent-loop.run.stalled",
+    description: "Run stalled (no event for threshold)",
+  },
   { name: "agent-loop.run.retry", description: "Run retry initiated via API" },
 
   // Step lifecycle
   { name: "agent-loop.step.started", description: "Step execution started" },
-  { name: "agent-loop.step.completed", description: "Step completed successfully" },
+  {
+    name: "agent-loop.step.completed",
+    description: "Step completed successfully",
+  },
   { name: "agent-loop.step.failed", description: "Step failed" },
 
   // Agent step sub-events
-  { name: "agent-loop.step.sandbox.started", description: "Sandbox started for agent_step" },
-  { name: "agent-loop.step.agent.completed", description: "Agent completed within step" },
-  { name: "agent-loop.step.check.completed", description: "Check command completed" },
-  { name: "agent-loop.step.commit.completed", description: "Commit+push completed" },
+  {
+    name: "agent-loop.step.sandbox.started",
+    description: "Sandbox started for agent_step",
+  },
+  {
+    name: "agent-loop.step.agent.completed",
+    description: "Agent completed within step",
+  },
+  {
+    name: "agent-loop.step.check.completed",
+    description: "Check command completed",
+  },
+  {
+    name: "agent-loop.step.commit.completed",
+    description: "Commit+push completed",
+  },
   { name: "agent-loop.step.commit.failed", description: "Commit+push failed" },
 
   // Edge / chain
-  { name: "agent-loop.edge.evaluated", description: "Edge evaluated, next node resolved" },
-  { name: "agent-loop.guardrail.tripped", description: "Guardrail limit exceeded" },
-  { name: "agent-loop.chain.dispatched", description: "Next step workflow dispatched" },
-  { name: "agent-loop.chain.dispatch_failed", description: "Dispatch of next step failed" },
-  { name: "agent-loop.chain.skipped", description: "Chain execution skipped (cooperative)" },
-  { name: "agent-loop.chain.route_missing", description: "No matching outgoing edge" },
-  { name: "agent-loop.chain.paused_before_dispatch", description: "Paused mid-execution before dispatch" },
+  {
+    name: "agent-loop.edge.evaluated",
+    description: "Edge evaluated, next node resolved",
+  },
+  {
+    name: "agent-loop.guardrail.tripped",
+    description: "Guardrail limit exceeded",
+  },
+  {
+    name: "agent-loop.chain.dispatched",
+    description: "Next step workflow dispatched",
+  },
+  {
+    name: "agent-loop.chain.dispatch_failed",
+    description: "Dispatch of next step failed",
+  },
+  {
+    name: "agent-loop.chain.skipped",
+    description: "Chain execution skipped (cooperative)",
+  },
+  {
+    name: "agent-loop.chain.route_missing",
+    description: "No matching outgoing edge",
+  },
+  {
+    name: "agent-loop.chain.paused_before_dispatch",
+    description: "Paused mid-execution before dispatch",
+  },
 
   // Trigger
-  { name: "agent-loop.trigger.received", description: "Trigger received by dispatcher" },
-  { name: "agent-loop.trigger.skipped_active_run", description: "Trigger skipped due to active run" },
+  {
+    name: "agent-loop.trigger.received",
+    description: "Trigger received by dispatcher",
+  },
+  {
+    name: "agent-loop.trigger.skipped_active_run",
+    description: "Trigger skipped due to active run",
+  },
 
   // Sweep
-  { name: "agent-loop.sweep.completed", description: "Sweep completed, counts emitted" },
+  {
+    name: "agent-loop.sweep.completed",
+    description: "Sweep completed, counts emitted",
+  },
 
   // Deferred — context merge distinct event (truncation flag is part of step.completed payload)
   {
@@ -124,12 +176,9 @@ describe("M1 Event Taxonomy — source-literal presence", () => {
 
   for (const entry of M1_TAXONOMY) {
     if (entry.deferred) {
-      test.skip(
-        `DEFERRED: "${entry.name}" — ${entry.deferredReason}`,
-        () => {
-          // skipped
-        },
-      );
+      test.skip(`DEFERRED: "${entry.name}" — ${entry.deferredReason}`, () => {
+        // skipped
+      });
       continue;
     }
 

@@ -30,15 +30,23 @@ type EventInput = {
   payload?: unknown;
 };
 
-type RunStatusInput = {
+type ConditionalTransitionInput = {
   runId: string;
-  status: string;
+  toStatus: string;
+  fromStatuses: string[];
   errorKind?: string | null;
   errorMessage?: string | null;
 };
 
 let recordedEvents: EventInput[] = [];
-let recordedRunStatusUpdates: RunStatusInput[] = [];
+let recordedConditionalTransitions: ConditionalTransitionInput[] = [];
+
+// Controls what conditionallyTransitionRunStatus returns:
+// non-null = transition succeeded; null = 0 rows (race condition)
+let conditionalTransitionResult: { id: string; status: string } | null = {
+  id: "run-placeholder",
+  status: "stalled",
+};
 
 // ── Store mock state ──────────────────────────────────────────────────────────
 
@@ -52,11 +60,14 @@ let stalledCandidates: Array<{
 
 const findStalledLoopRunCandidates = mock(async () => stalledCandidates);
 
-const updateAgentLoopRunStatus = mock(
-  async (params: RunStatusInput) => ({
-    id: params.runId,
-    status: params.status,
-  }),
+const conditionallyTransitionRunStatus = mock(
+  async (params: ConditionalTransitionInput) => {
+    recordedConditionalTransitions.push(params);
+    if (conditionalTransitionResult) {
+      return { id: params.runId, status: params.toStatus };
+    }
+    return null;
+  },
 );
 
 const recordAgentLoopEvent = mock(async (input: EventInput) => {
@@ -70,7 +81,7 @@ const recordAgentLoopEvent = mock(async (input: EventInput) => {
 
 mock.module("@/lib/agent-loops/store", () => ({
   findStalledLoopRunCandidates,
-  updateAgentLoopRunStatus,
+  conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
 }));
 
@@ -115,17 +126,26 @@ function makeCandidate(opts: {
 describe("sweepStalledLoopRuns", () => {
   beforeEach(() => {
     recordedEvents = [];
-    recordedRunStatusUpdates = [];
+    recordedConditionalTransitions = [];
     stalledCandidates = [];
     findStalledLoopRunCandidates.mockClear();
-    updateAgentLoopRunStatus.mockClear();
+    conditionallyTransitionRunStatus.mockClear();
     recordAgentLoopEvent.mockClear();
 
-    findStalledLoopRunCandidates.mockImplementation(async () => stalledCandidates);
-    updateAgentLoopRunStatus.mockImplementation(async (params: RunStatusInput) => {
-      recordedRunStatusUpdates.push(params);
-      return { id: params.runId, status: params.status };
-    });
+    conditionalTransitionResult = { id: "run-placeholder", status: "stalled" };
+
+    findStalledLoopRunCandidates.mockImplementation(
+      async () => stalledCandidates,
+    );
+    conditionallyTransitionRunStatus.mockImplementation(
+      async (params: ConditionalTransitionInput) => {
+        recordedConditionalTransitions.push(params);
+        if (conditionalTransitionResult) {
+          return { id: params.runId, status: params.toStatus };
+        }
+        return null;
+      },
+    );
     recordAgentLoopEvent.mockImplementation(async (input: EventInput) => {
       recordedEvents.push(input);
       return {
@@ -147,11 +167,14 @@ describe("sweepStalledLoopRuns", () => {
 
     await sweepStalledLoopRuns();
 
-    const stalledUpdate = recordedRunStatusUpdates.find(
-      (u) => u.runId === "run-queued-1" && u.status === "stalled",
+    const stalledTransition = recordedConditionalTransitions.find(
+      (u) => u.runId === "run-queued-1" && u.toStatus === "stalled",
     );
-    expect(stalledUpdate).toBeDefined();
-    expect(stalledUpdate?.status).toBe("stalled");
+    expect(stalledTransition).toBeDefined();
+    expect(stalledTransition?.toStatus).toBe("stalled");
+    // fromStatuses must be queued/running (conditional — excludes paused/terminal)
+    expect(stalledTransition?.fromStatuses).toContain("queued");
+    expect(stalledTransition?.fromStatuses).toContain("running");
   });
 
   test("BT-SW02: past-threshold running run is marked stalled", async () => {
@@ -162,10 +185,10 @@ describe("sweepStalledLoopRuns", () => {
 
     await sweepStalledLoopRuns();
 
-    const stalledUpdate = recordedRunStatusUpdates.find(
-      (u) => u.runId === "run-running-1" && u.status === "stalled",
+    const stalledTransition = recordedConditionalTransitions.find(
+      (u) => u.runId === "run-running-1" && u.toStatus === "stalled",
     );
-    expect(stalledUpdate).toBeDefined();
+    expect(stalledTransition).toBeDefined();
   });
 
   test("BT-SW03: fresh active run (below threshold) is NOT stalled", async () => {
@@ -176,10 +199,10 @@ describe("sweepStalledLoopRuns", () => {
 
     await sweepStalledLoopRuns();
 
-    const stalledUpdates = recordedRunStatusUpdates.filter(
-      (u) => u.status === "stalled",
+    const stalledTransitions = recordedConditionalTransitions.filter(
+      (u) => u.toStatus === "stalled",
     );
-    expect(stalledUpdates).toHaveLength(0);
+    expect(stalledTransitions).toHaveLength(0);
   });
 
   test("BT-SW04: paused run is NOT a candidate (store excludes it)", async () => {
@@ -191,26 +214,26 @@ describe("sweepStalledLoopRuns", () => {
     await sweepStalledLoopRuns();
 
     // findStalledLoopRunCandidates should be called — and paused runs must not
-    // appear in any stall update.
+    // appear in any stall transition.
     expect(findStalledLoopRunCandidates).toHaveBeenCalled();
-    const stalledUpdates = recordedRunStatusUpdates.filter(
-      (u) => u.status === "stalled",
+    const stalledTransitions = recordedConditionalTransitions.filter(
+      (u) => u.toStatus === "stalled",
     );
-    expect(stalledUpdates).toHaveLength(0);
+    expect(stalledTransitions).toHaveLength(0);
   });
 
   test("BT-SW05: terminal runs are ignored", async () => {
     // Store only returns active (queued/running) candidates — terminal runs
-    // are excluded by the store query.  No stall updates should occur.
+    // are excluded by the store query.  No stall transitions should occur.
     stalledCandidates = [];
     const { sweepStalledLoopRuns } = await sweepModulePromise;
 
     await sweepStalledLoopRuns();
 
-    const stalledUpdates = recordedRunStatusUpdates.filter(
-      (u) => u.status === "stalled",
+    const stalledTransitions = recordedConditionalTransitions.filter(
+      (u) => u.toStatus === "stalled",
     );
-    expect(stalledUpdates).toHaveLength(0);
+    expect(stalledTransitions).toHaveLength(0);
   });
 
   test("BT-SW06: threshold config is respected (AGENT_LOOPS_STALL_MINUTES)", async () => {
@@ -242,18 +265,22 @@ describe("sweepStalledLoopRuns", () => {
     await sweepStalledLoopRuns();
 
     const stalledEvent = recordedEvents.find(
-      (e) => e.eventName === "agent-loop.run.stalled" && e.loopRunId === "run-stalled-ev",
+      (e) =>
+        e.eventName === "agent-loop.run.stalled" &&
+        e.loopRunId === "run-stalled-ev",
     );
     expect(stalledEvent).toBeDefined();
     expect(stalledEvent?.level).toBe("warn");
     expect(stalledEvent?.status).toBe("info");
 
     // Payload must include loopRunId, lastEventName, lastEventAgeMs
-    const payload = stalledEvent?.payload as Record<string, unknown> | undefined;
+    const payload = stalledEvent?.payload as
+      | Record<string, unknown>
+      | undefined;
     expect(payload?.loopRunId).toBe("run-stalled-ev");
     expect(payload?.lastEventName).toBe("agent-loop.step.started");
     expect(typeof payload?.lastEventAgeMs).toBe("number");
-    expect((payload?.lastEventAgeMs as number)).toBeGreaterThan(0);
+    expect(payload?.lastEventAgeMs as number).toBeGreaterThan(0);
   });
 
   test("BT-SW08: agent-loop.sweep.completed info event emitted once per sweep with counts", async () => {
@@ -275,7 +302,7 @@ describe("sweepStalledLoopRuns", () => {
     const payload = sweepEvent?.payload as Record<string, unknown> | undefined;
     expect(payload?.stalledCount).toBe(2);
     expect(typeof payload?.checkedCount).toBe("number");
-    expect((payload?.checkedCount as number)).toBeGreaterThanOrEqual(2);
+    expect(payload?.checkedCount as number).toBeGreaterThanOrEqual(2);
   });
 
   test("BT-SW09: idempotent — already-stalled run not re-stalled when store returns no candidates", async () => {
@@ -291,14 +318,14 @@ describe("sweepStalledLoopRuns", () => {
     // Second sweep: store now returns nothing (run already stalled)
     stalledCandidates = [];
     findStalledLoopRunCandidates.mockImplementation(async () => []);
-    recordedRunStatusUpdates = [];
+    recordedConditionalTransitions = [];
 
     await sweepStalledLoopRuns();
 
-    const stalledUpdates = recordedRunStatusUpdates.filter(
-      (u) => u.status === "stalled",
+    const stalledTransitions = recordedConditionalTransitions.filter(
+      (u) => u.toStatus === "stalled",
     );
-    expect(stalledUpdates).toHaveLength(0);
+    expect(stalledTransitions).toHaveLength(0);
   });
 
   test("BT-SW10: sweep returns correct stalled/checked counts", async () => {

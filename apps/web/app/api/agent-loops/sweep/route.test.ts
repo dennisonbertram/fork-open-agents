@@ -58,7 +58,9 @@ describe("GET /api/agent-loops/sweep", () => {
 
     expect(response.status).toBe(500);
     const body = await response.json();
-    expect(body).toMatchObject({ error: expect.stringContaining("CRON_SECRET") });
+    expect(body).toMatchObject({
+      error: expect.stringContaining("CRON_SECRET"),
+    });
     expect(sweepStalledLoopRuns).not.toHaveBeenCalled();
   });
 

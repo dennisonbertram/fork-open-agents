@@ -985,3 +985,147 @@ export async function retryCurrentStep(params: {
 
   return newStepRun;
 }
+
+/**
+ * Conditionally transitions a run's status to a new value ONLY IF the run's
+ * current DB status matches one of the allowed from-statuses.
+ *
+ * Returns the updated run when the transition succeeded (1 row), or null when
+ * 0 rows were updated (status changed underneath — e.g. cancel raced with
+ * the queued→running transition in chain.ts).
+ *
+ * Used by:
+ *   - chain.ts queued→running transition (M1-10 race fix): fromStatuses=["queued"]
+ *   - sweep stall transition: fromStatuses=["queued", "running"]
+ */
+export async function conditionallyTransitionRunStatus(params: {
+  runId: string;
+  toStatus: AgentLoopRun["status"];
+  fromStatuses: AgentLoopRun["status"][];
+  errorKind?: string | null;
+  errorMessage?: string | null;
+}): Promise<AgentLoopRun | null> {
+  const now = new Date();
+
+  const terminalStatuses = new Set<AgentLoopRun["status"]>([
+    "completed",
+    "failed",
+    "cancelled",
+    "stalled",
+  ]);
+
+  const [run] = await db
+    .update(agentLoopRuns)
+    .set({
+      status: params.toStatus,
+      ...(params.toStatus === "running"
+        ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})` }
+        : {}),
+      ...(terminalStatuses.has(params.toStatus) ? { finishedAt: now } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
+      ...(params.errorMessage !== undefined
+        ? { errorMessage: params.errorMessage }
+        : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, params.runId),
+        inArray(agentLoopRuns.status, params.fromStatuses),
+      ),
+    )
+    .returning();
+
+  return run ?? null;
+}
+
+// ── Stall sweep ───────────────────────────────────────────────────────────────
+
+export type StalledLoopRunCandidate = {
+  id: string;
+  status: "queued" | "running";
+  lastEventName: string | null;
+  lastEventAt: Date;
+};
+
+/**
+ * Finds active (queued/running) loop runs whose latest event is older than
+ * thresholdMinutes.  Paused and terminal runs are excluded.
+ *
+ * Uses a lateral-style subquery via Drizzle's max() aggregation: for each
+ * qualifying run, we join to agent_loop_events and pick MAX(created_at).
+ * Runs with no events at all are included (we use the run's own createdAt
+ * as the reference age so brand-new runs without events don't stall
+ * immediately — however runs that have never emitted an event after
+ * thresholdMinutes are considered stalled).
+ *
+ * Returns an array of candidates the sweep should mark stalled.
+ */
+export async function findStalledLoopRunCandidates(params: {
+  thresholdMinutes: number;
+}): Promise<StalledLoopRunCandidate[]> {
+  const cutoff = new Date(Date.now() - params.thresholdMinutes * 60 * 1000);
+
+  // Subquery: for each run, the MAX(event.createdAt) and the corresponding
+  // event name.  We use a raw SQL subquery via Drizzle's sql helper because
+  // Drizzle ORM does not expose LATERAL joins.
+  //
+  // Equivalent SQL:
+  //   SELECT r.id, r.status,
+  //     (SELECT e.event_name FROM agent_loop_events e
+  //       WHERE e.loop_run_id = r.id ORDER BY e.created_at DESC LIMIT 1) AS last_event_name,
+  //     COALESCE(
+  //       (SELECT MAX(e.created_at) FROM agent_loop_events e WHERE e.loop_run_id = r.id),
+  //       r.created_at
+  //     ) AS last_event_at
+  //   FROM agent_loop_runs r
+  //   WHERE r.status IN ('queued', 'running')
+  //   HAVING last_event_at < $cutoff
+  //
+  // We implement this with Drizzle select + raw SQL expressions.
+
+  const rows = await db
+    .select({
+      id: agentLoopRuns.id,
+      status: agentLoopRuns.status,
+      lastEventName: sql<string | null>`(
+        SELECT ${agentLoopEvents.eventName}
+        FROM ${agentLoopEvents}
+        WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}
+        ORDER BY ${agentLoopEvents.createdAt} DESC
+        LIMIT 1
+      )`,
+      lastEventAt: sql<Date>`COALESCE(
+        (SELECT MAX(${agentLoopEvents.createdAt})
+         FROM ${agentLoopEvents}
+         WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}),
+        ${agentLoopRuns.createdAt}
+      )`,
+    })
+    .from(agentLoopRuns)
+    .where(
+      and(
+        inArray(agentLoopRuns.status, ["queued", "running"]),
+        // Only include runs where the latest event (or createdAt) is before the cutoff.
+        // We embed this filter in a HAVING-equivalent by using a subquery in WHERE.
+        sql`COALESCE(
+          (SELECT MAX(${agentLoopEvents.createdAt})
+           FROM ${agentLoopEvents}
+           WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}),
+          ${agentLoopRuns.createdAt}
+        ) < ${cutoff}`,
+      ),
+    );
+
+  return rows.map((row) => ({
+    id: row.id,
+    status: row.status as "queued" | "running",
+    lastEventName: row.lastEventName,
+    lastEventAt:
+      row.lastEventAt instanceof Date
+        ? row.lastEventAt
+        : new Date(row.lastEventAt),
+  }));
+}
