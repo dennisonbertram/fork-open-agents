@@ -18,6 +18,11 @@ import {
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 import { useModelOptions } from "@/hooks/use-model-options";
+import {
+  INHERIT_SENTINEL,
+  fromSelectValue,
+  toSelectValue,
+} from "./inherit-select-value";
 import type { AgentRosterRow } from "./agents-roster";
 
 /** Map each role to a subtitle shown beneath the role name in the card. */
@@ -170,12 +175,16 @@ function AgentEditor({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Model
         </span>
-        <Select value={modelId} onValueChange={setModelId} disabled={isBusy}>
+        <Select
+          value={toSelectValue(modelId)}
+          onValueChange={(v) => setModelId(fromSelectValue(v))}
+          disabled={isBusy}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Inherit default" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Inherit default</SelectItem>
+            <SelectItem value={INHERIT_SENTINEL}>Inherit default</SelectItem>
             {modelOptions.map((opt) => (
               <SelectItem key={opt.id} value={opt.id}>
                 {opt.label}
@@ -228,15 +237,15 @@ function AgentEditor({
           Runtime profile
         </span>
         <Select
-          value={runtimeProfileId}
-          onValueChange={setRuntimeProfileId}
+          value={toSelectValue(runtimeProfileId)}
+          onValueChange={(v) => setRuntimeProfileId(fromSelectValue(v))}
           disabled={isBusy}
         >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Inherit default" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Inherit default</SelectItem>
+            <SelectItem value={INHERIT_SENTINEL}>Inherit default</SelectItem>
             {RUNTIME_PROFILES.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.displayName}

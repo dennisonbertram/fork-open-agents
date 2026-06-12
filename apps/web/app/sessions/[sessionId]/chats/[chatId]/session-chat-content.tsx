@@ -1206,9 +1206,6 @@ export function SessionChatContent({
   >(null);
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null,
-  );
   const hasMounted = useHasMounted();
   const {
     activeView,
@@ -1419,6 +1416,8 @@ export function SessionChatContent({
     workspaceStatus,
     hadInitialMessages,
     initialMessages,
+    selectedWorkflowId,
+    setSelectedWorkflowId,
   } = useSessionChatRuntimeContext();
   const {
     sandboxInfo,
