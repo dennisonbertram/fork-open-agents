@@ -173,9 +173,7 @@ export function LoopRunPreviewBody({
 
   if (!runs || runs.length === 0) {
     return (
-      <div className="mt-1 pl-4 text-xs text-muted-foreground">
-        No runs yet
-      </div>
+      <div className="mt-1 pl-4 text-xs text-muted-foreground">No runs yet</div>
     );
   }
 

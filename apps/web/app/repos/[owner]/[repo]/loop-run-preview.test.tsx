@@ -12,7 +12,6 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { act, renderHook } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 // ── Types mirroring what the component exports / accepts ──────────────────────
@@ -36,20 +35,16 @@ type RunRow = {
 
 // ── Track SWR key calls to verify no-fetch-before-expand ─────────────────────
 
-let capturedSwrKey: string | null | (() => string | null) | undefined;
 let mockRunsData: { runs: RunRow[] } | undefined;
 let mockSwrError: Error | undefined;
 let mockIsLoading = false;
 
 mock.module("swr", () => ({
-  default: (key: unknown) => {
-    capturedSwrKey = key as string | null | (() => string | null) | undefined;
-    return {
-      data: mockRunsData,
-      error: mockSwrError,
-      isLoading: mockIsLoading,
-    };
-  },
+  default: (_key: unknown) => ({
+    data: mockRunsData,
+    error: mockSwrError,
+    isLoading: mockIsLoading,
+  }),
 }));
 
 // Stub next/link and next/navigation
@@ -70,7 +65,7 @@ mock.module("next/link", () => ({
 }));
 
 mock.module("@/lib/swr", () => ({
-  fetcher: async (url: string) => {
+  fetcher: async (_url: string) => {
     if (mockSwrError) throw mockSwrError;
     return mockRunsData;
   },
@@ -81,7 +76,6 @@ const modulePromise = import("./loop-run-preview");
 
 describe("LoopRunPreview", () => {
   beforeEach(() => {
-    capturedSwrKey = undefined;
     mockRunsData = undefined;
     mockSwrError = undefined;
     mockIsLoading = false;
@@ -113,7 +107,9 @@ describe("LoopRunPreview", () => {
   test("BT-LRP-002: chevron disclosure button has aria-expanded=false when collapsed", async () => {
     const { LoopRunPreviewCollapsed } = await modulePromise;
 
-    const html = renderToStaticMarkup(<LoopRunPreviewCollapsed loopId="loop-1" />);
+    const html = renderToStaticMarkup(
+      <LoopRunPreviewCollapsed loopId="loop-1" />,
+    );
 
     // Should have a button with aria-expanded="false"
     expect(html).toContain('aria-expanded="false"');
@@ -126,7 +122,12 @@ describe("LoopRunPreview", () => {
     const { LoopRunPreviewBody } = await modulePromise;
 
     const html = renderToStaticMarkup(
-      <LoopRunPreviewBody loopId="loop-1" isLoading={true} runs={undefined} error={undefined} />,
+      <LoopRunPreviewBody
+        loopId="loop-1"
+        isLoading={true}
+        runs={undefined}
+        error={undefined}
+      />,
     );
 
     // 3 skeleton rows must be present
@@ -216,7 +217,8 @@ describe("LoopRunPreview", () => {
 
   // BT-LRP-007: aria-expanded toggles
   test("BT-LRP-007: aria-expanded is true after first expand", async () => {
-    const { LoopRunPreviewCollapsed, LoopRunPreviewExpanded } = await modulePromise;
+    const { LoopRunPreviewCollapsed, LoopRunPreviewExpanded } =
+      await modulePromise;
 
     // Collapsed state
     const collapsedHtml = renderToStaticMarkup(
