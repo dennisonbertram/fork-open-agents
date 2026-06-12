@@ -34,6 +34,8 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/background-agents/store", () => ({
   updateBackgroundAgent,
   deleteBackgroundAgent,
+  getOwnedBackgroundAgentWithTriggers: mock(async () => null),
+  listBackgroundAgentRuns: mock(async () => []),
 }));
 
 const routeModulePromise = import("./route");

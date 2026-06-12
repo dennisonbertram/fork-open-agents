@@ -107,6 +107,9 @@ mock.module("./store", () => ({
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: updateAgentLoopRunStatusMock,
   updateAgentLoopRunContext: updateAgentLoopRunContextMock,
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 // Access + app mocks

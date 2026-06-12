@@ -240,6 +240,8 @@ mock.module("./store", () => ({
   advanceRunToNextStep: advanceRunToNextStepMock,
   countStepRunsForNode: countStepRunsForNodeMock,
   getMaxAttemptForNode: getMaxAttemptForNodeMock,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 mock.module("./step-executor", () => ({
