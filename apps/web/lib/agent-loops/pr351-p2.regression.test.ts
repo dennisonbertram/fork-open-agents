@@ -56,6 +56,8 @@ mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopStepRun: mock(async () => ({ id: "step-1" })),
   updateAgentLoopRunStatus: mock(async () => null),
   recordAgentLoopEvent,
+  // setInitialStepPointer — new helper added in PR-352 fix
+  setInitialStepPointer: mock(async () => ({ id: "run-p2" })),
 }));
 
 mock.module("workflow/api", () => ({

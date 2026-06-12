@@ -103,6 +103,10 @@ const createAgentLoopStepRunRegMock = mock(async () => ({
   updatedAt: new Date(),
 }));
 
+// setInitialStepPointer — new helper added in PR-352 fix; included so the
+// store mock resolves cleanly when dispatcher-bridge.ts imports it.
+const setInitialStepPointerRegMock = mock(async () => ({ id: "reg-run" }));
+
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun: createAgentLoopRunRegMock,
   hasActiveRunForLoop: hasActiveRunForLoopRegMock,
@@ -110,6 +114,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopStepRun: createAgentLoopStepRunRegMock,
   updateAgentLoopRunStatus: mock(async () => null),
   recordAgentLoopEvent: recordAgentLoopEventRegMock,
+  setInitialStepPointer: setInitialStepPointerRegMock,
 }));
 
 // ── Workflow / config / validation mocks ──────────────────────────────────────
