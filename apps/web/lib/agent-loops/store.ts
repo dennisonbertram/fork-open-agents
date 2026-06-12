@@ -1252,7 +1252,7 @@ export async function findStalledLoopRunCandidates(params: {
            FROM ${agentLoopEvents}
            WHERE ${agentLoopEvents.loopRunId} = ${agentLoopRuns.id}),
           ${agentLoopRuns.createdAt}
-        ) < ${cutoff}`,
+        ) < ${cutoff.toISOString()}::timestamp`,
       ),
     );
 
