@@ -45,6 +45,11 @@ export interface ResolvedAgent {
    * drop model-variant overrides already wired through subagentModel.
    */
   fromDbRow: boolean;
+  /**
+   * The DB agents row id, or null when this is a synthetic fallback (no DB row).
+   * Required to attribute tool-entry proposals (agent_tool_entries.agent_id FK).
+   */
+  agentId: string | null;
   modelId: string | null;
   inferenceProfileId: string | null;
   instructions: string | null;
@@ -158,6 +163,7 @@ export async function resolveAgentForRole(
   return {
     role,
     fromDbRow: false,
+    agentId: null,
     modelId,
     inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
     instructions: null, // null = use built-in system prompt for the role
@@ -188,6 +194,7 @@ function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
   return {
     role: row.role,
     fromDbRow: true,
+    agentId: row.id,
     modelId: row.modelId,
     inferenceProfileId: row.inferenceProfileId,
     instructions: row.instructions,

@@ -52,6 +52,11 @@ export type AgentRosterRow = {
    * Only meaningful for the "main" role; sub-roles always get false.
    */
   githubToolsEnabled: boolean;
+  /**
+   * Whether tool authoring is enabled for this agent (propose_composio_tool).
+   * Only meaningful for the "main" role; sub-roles always get false.
+   */
+  toolAuthoringEnabled: boolean;
 };
 
 /** Minimal shape of a user_default agent row needed by the roster builder. */
@@ -63,6 +68,7 @@ export type UserDefaultAgentRowSummary = {
   instructions: string | null;
   managedRuntimeProfileId: string | null;
   githubToolsEnabled?: boolean;
+  toolAuthoringEnabled?: boolean;
 };
 
 export type BuildAgentRosterInput = {
@@ -238,6 +244,7 @@ export function buildAgentRoster({
       runtimeCustom,
       skillsLabel,
       githubToolsEnabled: agentRow?.githubToolsEnabled ?? false,
+      toolAuthoringEnabled: agentRow?.toolAuthoringEnabled ?? false,
     };
   });
 }
