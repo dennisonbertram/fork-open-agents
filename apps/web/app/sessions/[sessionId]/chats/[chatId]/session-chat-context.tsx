@@ -116,6 +116,10 @@ type SessionChatContextValue = {
   chat: UseChatHelpers<WebAgentUIMessage>;
   contextLimit: number | null;
   stopChatStream: () => void;
+  /** The currently selected workflow ID from the workflow picker, or null if none. */
+  selectedWorkflowId: string | null;
+  /** Update the selected workflow ID from the workflow picker. */
+  setSelectedWorkflowId: (id: string | null) => void;
   sandboxInfo: SandboxInfo | null;
   workspaceStatus: WebAgentWorkspaceStatusData | null;
   clearWorkspaceStatus: () => void;
@@ -231,6 +235,8 @@ type SessionChatRuntimeContextValue = Pick<
   | "retryChatStream"
   | "hadInitialMessages"
   | "initialMessages"
+  | "selectedWorkflowId"
+  | "setSelectedWorkflowId"
 >;
 
 type SessionChatWorkspaceContextValue = Pick<
@@ -371,6 +377,11 @@ export function SessionChatProvider({
     [modelOptions, selectedModelOptionId],
   );
   const hadInitialMessages = initialMessages.length > 0;
+
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null,
+  );
+
   const {
     chat,
     stopChatStream,
@@ -383,6 +394,7 @@ export function SessionChatProvider({
     initialMessages,
     initialChatActiveStreamId: initialChat.activeStreamId,
     contextLimit,
+    selectedWorkflowId,
   });
 
   const [sandboxInfo, setSandboxInfoState] = useState<SandboxInfo | null>(
@@ -1149,6 +1161,8 @@ export function SessionChatProvider({
       clearWorkspaceStatus,
       hadInitialMessages,
       initialMessages,
+      selectedWorkflowId,
+      setSelectedWorkflowId,
     }),
     [
       chat,
@@ -1159,6 +1173,8 @@ export function SessionChatProvider({
       clearWorkspaceStatus,
       hadInitialMessages,
       initialMessages,
+      selectedWorkflowId,
+      setSelectedWorkflowId,
     ],
   );
 
