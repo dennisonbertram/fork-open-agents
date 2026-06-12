@@ -390,8 +390,18 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
   // We will wire each new palette node into it via one legal outgoing edge.
   const BASE_DEF = {
     nodes: [
-      { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
-      { id: "e", kind: "end" as const, label: "End", position: { x: 400, y: 0 } },
+      {
+        id: "s",
+        kind: "start" as const,
+        label: "Start",
+        position: { x: 0, y: 0 },
+      },
+      {
+        id: "e",
+        kind: "end" as const,
+        label: "End",
+        position: { x: 400, y: 0 },
+      },
     ],
     edges: [{ id: "ed0", source: "s", target: "e", when: "always" as const }],
   };
@@ -422,11 +432,28 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
     const store = createLoopBuilderStore();
     store.getState().initialize({
       nodes: [
-        { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
-        { id: "e1", kind: "end" as const, label: "End1", position: { x: 400, y: -60 } },
-        { id: "e2", kind: "end" as const, label: "End2", position: { x: 400, y: 60 } },
+        {
+          id: "s",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "e1",
+          kind: "end" as const,
+          label: "End1",
+          position: { x: 400, y: -60 },
+        },
+        {
+          id: "e2",
+          kind: "end" as const,
+          label: "End2",
+          position: { x: 400, y: 60 },
+        },
       ],
-      edges: [{ id: "ed0", source: "s", target: "e1", when: "always" as const }],
+      edges: [
+        { id: "ed0", source: "s", target: "e1", when: "always" as const },
+      ],
     });
 
     const id = store.getState().addNode("condition", { x: 200, y: 0 });
@@ -465,7 +492,12 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
     // node data (with check config) to ensure schema validation passes.
     const def = {
       nodes: [
-        { id: "s", kind: "start" as const, label: "S", position: { x: 0, y: 0 } },
+        {
+          id: "s",
+          kind: "start" as const,
+          label: "S",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "g",
           kind: "github_check" as const,
@@ -473,7 +505,12 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
           position: { x: 100, y: 0 },
           check: { kind: "list_issues" as const, state: "open" as const },
         },
-        { id: "e", kind: "end" as const, label: "E", position: { x: 200, y: 0 } },
+        {
+          id: "e",
+          kind: "end" as const,
+          label: "E",
+          position: { x: 200, y: 0 },
+        },
       ],
       edges: [
         { id: "e1", source: "s", target: "g", when: "always" as const },
@@ -487,7 +524,12 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
   it("regression: condition default path satisfies conditionSchema min(1) (no schema_error in isolation)", () => {
     const def = {
       nodes: [
-        { id: "s", kind: "start" as const, label: "S", position: { x: 0, y: 0 } },
+        {
+          id: "s",
+          kind: "start" as const,
+          label: "S",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "c",
           kind: "condition" as const,
@@ -495,8 +537,18 @@ describe("regression (TASK-364P2): palette defaults never produce config or sche
           position: { x: 100, y: 0 },
           condition: { path: "previous_step.output", op: "exists" as const },
         },
-        { id: "e1", kind: "end" as const, label: "E1", position: { x: 200, y: -50 } },
-        { id: "e2", kind: "end" as const, label: "E2", position: { x: 200, y: 50 } },
+        {
+          id: "e1",
+          kind: "end" as const,
+          label: "E1",
+          position: { x: 200, y: -50 },
+        },
+        {
+          id: "e2",
+          kind: "end" as const,
+          label: "E2",
+          position: { x: 200, y: 50 },
+        },
       ],
       edges: [
         { id: "e1", source: "s", target: "c", when: "always" as const },

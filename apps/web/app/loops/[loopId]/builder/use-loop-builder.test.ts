@@ -425,7 +425,9 @@ describe("BT-P2a: github_check palette default — valid check config", () => {
 
     // Re-wire: s→gh, gh→e (the existing s→e edge stays for now; add gh→e)
     store.getState().connectEdge({ source: "s", target: ghId, when: "always" });
-    store.getState().connectEdge({ source: ghId, target: "e", when: "success" });
+    store
+      .getState()
+      .connectEdge({ source: ghId, target: "e", when: "success" });
 
     const def = store.getState().currentDefinition();
     const result = validateLoopDefinition(def);
@@ -497,8 +499,12 @@ describe("BT-P2b: condition palette default — non-empty path", () => {
     });
 
     const condId = store.getState().addNode("condition", { x: 150, y: 0 });
-    store.getState().connectEdge({ source: "s", target: condId, when: "always" });
-    store.getState().connectEdge({ source: condId, target: "e1", when: "true" });
+    store
+      .getState()
+      .connectEdge({ source: "s", target: condId, when: "always" });
+    store
+      .getState()
+      .connectEdge({ source: condId, target: "e1", when: "true" });
     store
       .getState()
       .connectEdge({ source: condId, target: "e2", when: "false" });
