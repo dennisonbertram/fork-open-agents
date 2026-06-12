@@ -11,6 +11,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
+import { validateLoopDefinition } from "@/lib/agent-loops/validation";
 import { createLoopBuilderStore } from "./use-loop-builder";
 
 // Minimal valid definition (start + end + edge)
@@ -370,5 +371,158 @@ describe("BT-D4: addNode — findFreePosition avoids overlapping existing nodes"
     expect(node).toBeDefined();
     expect(node.position.x).toBe(CENTER.x);
     expect(node.position.y).toBe(CENTER.y);
+  });
+});
+
+// ── BT-P2a: github_check palette default must have a valid check config ───────
+
+describe("BT-P2a: github_check palette default — valid check config", () => {
+  it("BT-P2a: new github_check node has a check config (not undefined)", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("github_check", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    expect(node?.data?.kind).toBe("github_check");
+    if (node?.data?.kind === "github_check") {
+      expect(node.data.check).toBeDefined();
+    }
+  });
+
+  it("BT-P2a: new github_check node check.kind is list_issues", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("github_check", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "github_check") {
+      expect(node.data.check?.kind).toBe("list_issues");
+    }
+  });
+
+  it("BT-P2a: new github_check node check.state is 'open'", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("github_check", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "github_check") {
+      if (node.data.check?.kind === "list_issues") {
+        expect(node.data.check.state).toBe("open");
+      }
+    }
+  });
+
+  it("BT-P2a: adding github_check to start→end graph + one outgoing edge → validateLoopDefinition ok:true", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({
+      nodes: [
+        { id: "s", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        { id: "e", kind: "end", label: "End", position: { x: 300, y: 0 } },
+      ],
+      edges: [{ id: "ed1", source: "s", target: "e", when: "always" }],
+    });
+
+    // Add github_check and wire: start→gh (always) + gh→end (success)
+    const ghId = store.getState().addNode("github_check", { x: 150, y: 0 });
+
+    // Re-wire: s→gh, gh→e (the existing s→e edge stays for now; add gh→e)
+    store.getState().connectEdge({ source: "s", target: ghId, when: "always" });
+    store.getState().connectEdge({ source: ghId, target: "e", when: "success" });
+
+    const def = store.getState().currentDefinition();
+    const result = validateLoopDefinition(def);
+    // There will be validation errors from duplicate when on start (two "always" edges)
+    // but MUST NOT include missing_node_config or schema_error for github_check
+    const hasGithubConfigError =
+      !result.ok &&
+      result.errors.some(
+        (err) =>
+          err.rule === "missing_node_config" &&
+          "nodeKind" in err &&
+          err.nodeKind === "github_check",
+      );
+    expect(hasGithubConfigError).toBe(false);
+
+    const hasSchemaError =
+      !result.ok && result.errors.some((err) => err.rule === "schema_error");
+    expect(hasSchemaError).toBe(false);
+  });
+
+  it("BT-P2a: github_check node card summary shows 'list issues' text (check.kind rendered)", () => {
+    // The card renders data.check?.kind.replaceAll('_', ' ') — verify default kind gives a non-empty summary
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("github_check", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "github_check") {
+      const checkKind = node.data.check?.kind;
+      expect(checkKind).toBeDefined();
+      const summary = checkKind?.replaceAll("_", " ");
+      expect(summary).toBe("list issues");
+    }
+  });
+});
+
+// ── BT-P2b: condition palette default must have a non-empty path ──────────────
+
+describe("BT-P2b: condition palette default — non-empty path", () => {
+  it("BT-P2b: new condition node has condition.path that is non-empty", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("condition", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "condition") {
+      expect(node.data.condition?.path).toBeTruthy();
+      expect(node.data.condition?.path.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("BT-P2b: new condition node has condition.op = 'exists'", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("condition", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "condition") {
+      expect(node.data.condition?.op).toBe("exists");
+    }
+  });
+
+  it("BT-P2b: adding condition to start→end graph + two outgoing edges (true/false) → no schema_error", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({
+      nodes: [
+        { id: "s", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        { id: "e1", kind: "end", label: "End1", position: { x: 300, y: -60 } },
+        { id: "e2", kind: "end", label: "End2", position: { x: 300, y: 60 } },
+      ],
+      edges: [{ id: "ed1", source: "s", target: "e1", when: "always" }],
+    });
+
+    const condId = store.getState().addNode("condition", { x: 150, y: 0 });
+    store.getState().connectEdge({ source: "s", target: condId, when: "always" });
+    store.getState().connectEdge({ source: condId, target: "e1", when: "true" });
+    store
+      .getState()
+      .connectEdge({ source: condId, target: "e2", when: "false" });
+
+    const def = store.getState().currentDefinition();
+    const result = validateLoopDefinition(def);
+    const hasSchemaError =
+      !result.ok && result.errors.some((err) => err.rule === "schema_error");
+    expect(hasSchemaError).toBe(false);
+    const hasMissingConfig =
+      !result.ok &&
+      result.errors.some((err) => err.rule === "missing_node_config");
+    expect(hasMissingConfig).toBe(false);
+  });
+
+  it("BT-P2b: condition default path is self-explanatory as a placeholder (contains a dot)", () => {
+    // The path should be something like 'previous_step.output' — contains a dot
+    // to signal it is a context reference, not an empty placeholder.
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const id = store.getState().addNode("condition", { x: 100, y: 100 });
+    const node = store.getState().nodes.find((n) => n.id === id);
+    if (node?.data?.kind === "condition") {
+      expect(node.data.condition?.path).toContain(".");
+    }
   });
 });
