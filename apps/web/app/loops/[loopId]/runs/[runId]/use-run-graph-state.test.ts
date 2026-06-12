@@ -20,10 +20,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  deriveRunGraphState,
-  type RunGraphInput,
-} from "./use-run-graph-state";
+import { deriveRunGraphState, type RunGraphInput } from "./use-run-graph-state";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────

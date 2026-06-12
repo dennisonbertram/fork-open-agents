@@ -15,6 +15,11 @@ import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 
+// Mock run-graph to avoid React Flow native bindings in SSR test environment
+mock.module("./[loopId]/runs/[runId]/run-graph", () => ({
+  RunGraph: () => null,
+}));
+
 // ── SWR mock ──────────────────────────────────────────────────────────────────
 
 type SWRState<T> = { data?: T; error?: Error; isLoading: boolean };

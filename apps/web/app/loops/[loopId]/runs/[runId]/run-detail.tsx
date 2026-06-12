@@ -1,12 +1,21 @@
 "use client";
 
-import { ArrowLeft, Clock3, Copy } from "lucide-react";
+import { useState } from "react";
+import {
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  Clock3,
+  Copy,
+} from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import type { AgentLoopStepRun, AgentLoopEvent } from "@/lib/db/schema";
+import { loopDefinitionSchema } from "@/lib/agent-loops/types";
 import { useLoopRunPolling } from "./use-loop-run-polling";
 import { RunActions } from "./run-actions";
+import { RunGraph } from "./run-graph";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -101,12 +110,21 @@ function ProofItem({
 function StepRow({
   step,
   isActive,
+  isHighlighted,
 }: {
   step: AgentLoopStepRun;
   isActive: boolean;
+  isHighlighted?: boolean;
 }) {
   return (
-    <div className={cn("grid gap-2 px-4 py-3", isActive && "bg-amber-500/5")}>
+    <div
+      id={`step-node-${step.nodeId}`}
+      className={cn(
+        "grid gap-2 px-4 py-3",
+        isActive && "bg-amber-500/5",
+        isHighlighted && "bg-violet-500/5 ring-1 ring-inset ring-violet-500/20",
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="truncate text-sm font-medium">{step.nodeId}</p>
@@ -209,6 +227,28 @@ export function RunDetail({
     | null
     | undefined;
 
+  // Graph: parse definitionSnapshot safely; collapse by default on small viewports
+  const [graphCollapsed, setGraphCollapsed] = useState(false);
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
+
+  // SNAPSHOT RULE: parse snapshot from the run, never from loop.definition
+  const definitionSnapshotResult = loopDefinitionSchema.safeParse(
+    run.definitionSnapshot,
+  );
+  const definitionSnapshot = definitionSnapshotResult.success
+    ? definitionSnapshotResult.data
+    : null;
+
+  // Node click → scroll timeline to first step for that node and highlight
+  function handleNodeClick(nodeId: string) {
+    setFocusedNodeId((prev) => (prev === nodeId ? null : nodeId));
+    // Scroll to the first step anchor for this node
+    const anchor = document.querySelector(`#step-node-${CSS.escape(nodeId)}`);
+    if (anchor) {
+      anchor.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }
+
   return (
     <main className="min-h-screen bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
@@ -294,11 +334,54 @@ export function RunDetail({
           </div>
         )}
 
+        {/* Live run graph — ABOVE timeline; collapsible */}
+        {definitionSnapshot && definitionSnapshot.nodes.length > 0 && (
+          <section className="rounded-md border border-border">
+            <button
+              type="button"
+              onClick={() => setGraphCollapsed((c) => !c)}
+              className="flex w-full items-center justify-between gap-3 border-b border-border px-4 py-3 text-left hover:bg-muted/20"
+            >
+              <h2 className="text-sm font-medium">Run graph</h2>
+              <div className="flex items-center gap-2">
+                {isActive && (
+                  <span className="text-xs text-muted-foreground">Live</span>
+                )}
+                {graphCollapsed ? (
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                )}
+              </div>
+            </button>
+            {!graphCollapsed && (
+              <div className="h-72 sm:h-96">
+                <RunGraph
+                  definitionSnapshot={definitionSnapshot}
+                  steps={steps}
+                  run={run}
+                  guardrails={guardrails ?? null}
+                  onNodeClick={handleNodeClick}
+                />
+              </div>
+            )}
+          </section>
+        )}
+
         {/* Step timeline */}
         <section className="rounded-md border border-border">
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <h2 className="text-sm font-medium">Step timeline</h2>
-            {isActive && (
+            {focusedNodeId && (
+              <button
+                type="button"
+                onClick={() => setFocusedNodeId(null)}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Clear filter
+              </button>
+            )}
+            {isActive && !focusedNodeId && (
               <span className="text-xs text-muted-foreground">Live</span>
             )}
           </div>
@@ -314,6 +397,9 @@ export function RunDetail({
                     key={step.id}
                     step={step}
                     isActive={step.id === run.currentStepRunId}
+                    isHighlighted={
+                      focusedNodeId !== null && step.nodeId === focusedNodeId
+                    }
                   />
                 ))}
               </div>
