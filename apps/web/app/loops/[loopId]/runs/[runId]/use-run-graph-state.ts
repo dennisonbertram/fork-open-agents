@@ -19,7 +19,7 @@
 
 import { GUARDRAIL_DEFAULTS } from "@/lib/agent-loops/types";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
-import type { AgentLoopStepRun, AgentLoopRun } from "@/lib/db/schema";
+import type { AgentLoopStepRun, AgentLoopRun, AgentLoopEvent } from "@/lib/db/schema";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -63,6 +63,13 @@ export type RunGraphInput = {
     "status" | "currentNodeId" | "iterationCount" | "stepCount"
   >;
   guardrails: Record<string, unknown> | null;
+  /**
+   * Optional: agent-loop events for this run (from the run-detail poll response).
+   * When present and containing `agent-loop.edge.evaluated` entries, those events
+   * are used as the PRIMARY source for edge traversal (exact edgeId attribution).
+   * Falls back to step-sequence inference when no edge.evaluated events are present.
+   */
+  events?: AgentLoopEvent[];
 };
 
 // ── Status priority for merging multiple step statuses for one node ────────────
@@ -103,7 +110,7 @@ function stepStatusToNodeStatus(
  * No side effects. Safe to call on every poll update.
  */
 export function deriveRunGraphState(input: RunGraphInput): RunGraphState {
-  const { definitionSnapshot, steps, run, guardrails } = input;
+  const { definitionSnapshot, steps, run, guardrails, events } = input;
 
   // ── 1. Initialize all nodes from SNAPSHOT as unvisited ─────────────────────
 
@@ -156,46 +163,78 @@ export function deriveRunGraphState(input: RunGraphInput): RunGraphState {
     }
   }
 
-  // ── 4. Derive edge traversal from step sequence ────────────────────────────
+  // ── 4. Derive edge traversal ──────────────────────────────────────────────
   //
-  // Build a lookup: (source, target) → edge id(s)
-  // Then walk consecutive step pairs.
-  // The most-recently traversed pair for each edge gets mostRecent=true.
+  // PRIMARY source: agent-loop.edge.evaluated events (exact edgeId attribution).
+  //   - Events are sorted by createdAt ascending.
+  //   - Each event's payload.edgeId is marked traversed.
+  //   - The LAST event's edgeId is mostRecent.
+  //
+  // FALLBACK (when no edge.evaluated events exist): step-sequence inference.
+  //   - Walk consecutive step pairs (step[i] → step[i+1]).
+  //   - All edges between those nodes are marked traversed.
+  //   - The last traversal index wins mostRecent.
+  //
+  // This ensures that when two parallel edges share (source, target) — e.g. a
+  // condition's "true" and "false" both loop back to the same node — the events
+  // attribute EXACTLY ONE edge via its edgeId, preventing both from being marked.
 
-  // Build adjacency lookup
-  type EdgeKey = `${string}->${string}`;
-  const edgeBySourceTarget = new Map<EdgeKey, string[]>();
-  for (const edge of definitionSnapshot.edges) {
-    const key: EdgeKey = `${edge.source}->${edge.target}`;
-    const existing = edgeBySourceTarget.get(key);
-    if (existing) {
-      existing.push(edge.id);
-    } else {
-      edgeBySourceTarget.set(key, [edge.id]);
-    }
-  }
+  // Extract edge.evaluated events, sorted by createdAt ascending
+  const edgeEvaluatedEvents = (events ?? [])
+    .filter((ev) => ev.eventName === "agent-loop.edge.evaluated")
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
 
-  // Walk consecutive step pairs and track traversal order
-  // Each traversal increments a counter; edges with the highest traversal
-  // index get mostRecent=true.
   const edgeLastTraversalIndex = new Map<string, number>();
   let traversalIndex = 0;
 
-  for (let i = 0; i < sortedSteps.length - 1; i++) {
-    const fromStep = sortedSteps[i];
-    const toStep = sortedSteps[i + 1];
-    if (!fromStep || !toStep) continue;
-
-    const key: EdgeKey = `${fromStep.nodeId}->${toStep.nodeId}`;
-    const matchingEdgeIds = edgeBySourceTarget.get(key);
-
-    if (matchingEdgeIds) {
+  if (edgeEvaluatedEvents.length > 0) {
+    // PRIMARY: use events — exact edgeId from each event's payload
+    for (const ev of edgeEvaluatedEvents) {
+      const edgeId = ev.payload["edgeId"];
+      if (typeof edgeId !== "string") continue;
+      const edgeState = edges[edgeId];
+      if (!edgeState) continue;
       traversalIndex++;
-      for (const edgeId of matchingEdgeIds) {
-        const edgeState = edges[edgeId];
-        if (edgeState) {
-          edgeState.traversed = true;
-          edgeLastTraversalIndex.set(edgeId, traversalIndex);
+      edgeState.traversed = true;
+      edgeLastTraversalIndex.set(edgeId, traversalIndex);
+    }
+  } else {
+    // FALLBACK: step-sequence inference (backward compat for older runs
+    // whose events lack edge.evaluated entries)
+    //
+    // Build adjacency lookup: (source, target) → edge id(s)
+    type EdgeKey = `${string}->${string}`;
+    const edgeBySourceTarget = new Map<EdgeKey, string[]>();
+    for (const edge of definitionSnapshot.edges) {
+      const key: EdgeKey = `${edge.source}->${edge.target}`;
+      const existing = edgeBySourceTarget.get(key);
+      if (existing) {
+        existing.push(edge.id);
+      } else {
+        edgeBySourceTarget.set(key, [edge.id]);
+      }
+    }
+
+    // Walk consecutive step pairs
+    for (let i = 0; i < sortedSteps.length - 1; i++) {
+      const fromStep = sortedSteps[i];
+      const toStep = sortedSteps[i + 1];
+      if (!fromStep || !toStep) continue;
+
+      const key: EdgeKey = `${fromStep.nodeId}->${toStep.nodeId}`;
+      const matchingEdgeIds = edgeBySourceTarget.get(key);
+
+      if (matchingEdgeIds) {
+        traversalIndex++;
+        for (const edgeId of matchingEdgeIds) {
+          const edgeState = edges[edgeId];
+          if (edgeState) {
+            edgeState.traversed = true;
+            edgeLastTraversalIndex.set(edgeId, traversalIndex);
+          }
         }
       }
     }

@@ -33,6 +33,34 @@ export type WhenEdgeRunOverlay = {
 
 export type WhenEdgeData = LoopFlowEdgeData & WhenEdgeRunOverlay;
 
+// ── Parallel-edge curvature offset ────────────────────────────────────────────
+
+/**
+ * Compute a curvature value for getBezierPath when multiple edges share the
+ * same (source, target) pair. The middle edge (index ⌊n/2⌋) gets curvature=0
+ * (straight / default), while edges above/below are offset by ±step each.
+ *
+ * For a single edge (parallelCount=1) this always returns 0 (no change).
+ */
+function parallelCurvature(parallelIndex: number, parallelCount: number): number {
+  if (parallelCount <= 1) return 0;
+  // Step size chosen to be visually distinct without extreme arcs
+  const step = 0.35;
+  const mid = (parallelCount - 1) / 2;
+  return (parallelIndex - mid) * step;
+}
+
+/**
+ * Compute a perpendicular label Y-offset (px) so parallel edge labels don't
+ * stack on top of each other. The middle edge stays at 0; others shift by ±step.
+ */
+function parallelLabelOffset(parallelIndex: number, parallelCount: number): number {
+  if (parallelCount <= 1) return 0;
+  const step = 18; // px per slot
+  const mid = (parallelCount - 1) / 2;
+  return (parallelIndex - mid) * step;
+}
+
 export type WhenEdge = Edge<WhenEdgeData, "when">;
 
 const whenColors: Record<string, { badge: string; stroke: string }> = {
@@ -71,6 +99,12 @@ export function WhenEdge({
   selected,
   id,
 }: EdgeProps<WhenEdge>) {
+  // Parallel-edge offsets: spread curvature + label Y when siblings share same (source,target)
+  const parallelIndex = data?.parallelIndex ?? 0;
+  const parallelCount = data?.parallelCount ?? 1;
+  const curvature = parallelCurvature(parallelIndex, parallelCount);
+  const labelYOffset = parallelLabelOffset(parallelIndex, parallelCount);
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -78,6 +112,7 @@ export function WhenEdge({
     targetX,
     targetY,
     targetPosition,
+    curvature: curvature !== 0 ? curvature : undefined,
   });
 
   const when = data?.when ?? "always";
@@ -131,7 +166,7 @@ export function WhenEdge({
         <div
           style={{
             position: "absolute",
-            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+            transform: `translate(-50%, -50%) translate(${labelX}px,${labelY + labelYOffset}px)`,
             pointerEvents: "all",
           }}
           className="nodrag nopan"

@@ -28,9 +28,20 @@ export type LoopFlowNodeData = LoopNode;
 
 /**
  * The data payload stored in each React Flow edge.
+ *
+ * parallelIndex / parallelCount are ADD-ONLY fields:
+ *   - parallelCount = number of edges sharing the same (source, target) pair.
+ *   - parallelIndex = 0-based index within that group (stable: follows edge order
+ *     in the definition).
+ *   - When parallelCount === 1, parallelIndex === 0 and the edge renders normally
+ *     (no curve or label offset). Builder behavior is 100% unchanged for singles.
+ *   - WhenEdge uses these to offset bezier curvature and label position so that
+ *     parallel edge labels never overlap.
  */
 export type LoopFlowEdgeData = {
   when: LoopEdge["when"];
+  parallelIndex: number;
+  parallelCount: number;
 };
 
 export type LoopFlowNode = Node<LoopFlowNodeData>;
@@ -54,13 +65,32 @@ export function definitionToFlow(def: LoopDefinition): {
     data: loopNode,
   }));
 
-  const edges: LoopFlowEdge[] = def.edges.map((loopEdge) => ({
-    id: loopEdge.id,
-    source: loopEdge.source,
-    target: loopEdge.target,
-    type: "when",
-    data: { when: loopEdge.when },
-  }));
+  // Compute parallel-edge groups: edges sharing the same (source, target) pair
+  // are parallel and need curve + label offsets to avoid visual overlap.
+  // Only same-direction pairs are grouped (A→B and B→A are independent channels).
+  type DirectedKey = `${string}->${string}`;
+  const groupCount = new Map<DirectedKey, number>();
+  for (const loopEdge of def.edges) {
+    const key: DirectedKey = `${loopEdge.source}->${loopEdge.target}`;
+    groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
+  }
+
+  // Assign each edge its parallelIndex within its group (stable: follows definition order)
+  const groupIndex = new Map<DirectedKey, number>();
+  const edges: LoopFlowEdge[] = def.edges.map((loopEdge) => {
+    const key: DirectedKey = `${loopEdge.source}->${loopEdge.target}`;
+    const parallelCount = groupCount.get(key) ?? 1;
+    const parallelIndex = groupIndex.get(key) ?? 0;
+    groupIndex.set(key, parallelIndex + 1);
+
+    return {
+      id: loopEdge.id,
+      source: loopEdge.source,
+      target: loopEdge.target,
+      type: "when",
+      data: { when: loopEdge.when, parallelIndex, parallelCount },
+    };
+  });
 
   return { nodes, edges };
 }
