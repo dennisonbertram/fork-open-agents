@@ -4,6 +4,7 @@ import { listAgentLoops } from "@/lib/agent-loops/store";
 import type { AgentLoop } from "@/lib/db/schema";
 import { CollapsibleDashboardCard } from "./collapsible-dashboard-card";
 import { DashboardStatusPill } from "./dashboard-status-pill";
+import { LoopRunPreview } from "./loop-run-preview";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -83,21 +84,23 @@ export function WorkflowsWindowView({
       ) : (
         <div className="divide-y divide-border">
           {loops.map((loop) => (
-            <Link
-              key={loop.id}
-              href={`/loops/${loop.id}`}
-              className="flex items-center justify-between gap-3 px-4 py-3 transition-colors hover:bg-muted/30"
-            >
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium">{loop.name}</p>
-                {loop.description ? (
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {loop.description}
-                  </p>
-                ) : null}
+            <div key={loop.id} className="px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <Link
+                  href={`/loops/${loop.id}`}
+                  className="min-w-0 flex-1 transition-colors hover:text-foreground"
+                >
+                  <p className="truncate text-sm font-medium">{loop.name}</p>
+                  {loop.description ? (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {loop.description}
+                    </p>
+                  ) : null}
+                </Link>
+                <DashboardStatusPill status={loop.status} />
               </div>
-              <DashboardStatusPill status={loop.status} />
-            </Link>
+              <LoopRunPreview loopId={loop.id} />
+            </div>
           ))}
         </div>
       )}
