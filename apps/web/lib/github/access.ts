@@ -17,6 +17,11 @@ export type RepoAccessResult =
       installationId: number;
       repositoryId: number;
       defaultBranch: string;
+      /** Resolved user permission level for the repo. "write" when the user
+       * has push, maintain, or admin access; "read" otherwise. Callers can use
+       * this to conditionally include write-grade tools without a second
+       * round-trip. */
+      userPermission: "read" | "write";
     }
   | { ok: false; reason: RepoAccessDeniedReason };
 
@@ -78,13 +83,19 @@ export async function verifyRepoAccess(params: {
 
   let repositoryId: number;
   let defaultBranch: string;
+  let resolvedUserPermission: "read" | "write" = "read";
   try {
     const userRepoResponse = await userOctokit.rest.repos.get({ owner, repo });
     repositoryId = userRepoResponse.data.id;
     defaultBranch = userRepoResponse.data.default_branch;
+    resolvedUserPermission = hasUserWritePermission(
+      userRepoResponse.data.permissions,
+    )
+      ? "write"
+      : "read";
     if (
       requiredUserPermission === "write" &&
-      !hasUserWritePermission(userRepoResponse.data.permissions)
+      resolvedUserPermission === "read"
     ) {
       return { ok: false, reason: "user_no_write" };
     }
@@ -131,6 +142,7 @@ export async function verifyRepoAccess(params: {
     installationId: installation.installationId,
     repositoryId,
     defaultBranch,
+    userPermission: resolvedUserPermission,
   };
 }
 
