@@ -15,7 +15,9 @@ describe("firstFieldError", () => {
       fieldErrors: { schedule: ["Invalid schedule expression"] },
       formErrors: [],
     };
-    expect(firstFieldError(details)).toBe("schedule: Invalid schedule expression");
+    expect(firstFieldError(details)).toBe(
+      "schedule: Invalid schedule expression",
+    );
   });
 
   test("returns only the first message when a field has multiple errors", () => {
