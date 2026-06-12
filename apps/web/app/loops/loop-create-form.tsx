@@ -16,6 +16,10 @@ import type { CreateAgentLoopResponse } from "@/app/api/agent-loops/types";
 type LoopCreateFormProps = {
   /** Pre-populated validation errors (e.g. from a server 400 response) */
   initialValidationErrors?: LoopValidationError[];
+  /** Pre-populate repo owner from query params (e.g. dashboard "New workflow" action) */
+  initialRepoOwner?: string;
+  /** Pre-populate repo name from query params (e.g. dashboard "New workflow" action) */
+  initialRepoName?: string;
 };
 
 // ── Validation error display ──────────────────────────────────────────────────
@@ -54,11 +58,13 @@ const DEFAULT_DEFINITION = JSON.stringify(
 
 export function LoopCreateForm({
   initialValidationErrors,
+  initialRepoOwner,
+  initialRepoName,
 }: LoopCreateFormProps) {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [repoOwner, setRepoOwner] = useState("");
-  const [repoName, setRepoName] = useState("");
+  const [repoOwner, setRepoOwner] = useState(initialRepoOwner ?? "");
+  const [repoName, setRepoName] = useState(initialRepoName ?? "");
   const [description, setDescription] = useState("");
   const [definitionText, setDefinitionText] = useState(DEFAULT_DEFINITION);
   const [validationErrors, setValidationErrors] = useState<
