@@ -571,6 +571,9 @@ function resetAll() {
 }
 
 const chainPromise = import("./chain");
+// Control-plane functions moved to run-controls.ts; BT-F1-02 and BT-F2 now
+// import from run-controls instead of chain.
+const runControlsPromise = import("./run-controls");
 
 // ── BT-F1: Re-check run status after step execution ──────────────────────────
 
@@ -660,7 +663,7 @@ describe("BT-F1-02: resume after pause-during-execution → re-dispatches the qu
   });
 
   test("BT-F1-02: resumeLoopRun re-dispatches the queued step (workflow start called once)", async () => {
-    const { resumeLoopRun } = await chainPromise;
+    const { resumeLoopRun } = await runControlsPromise;
     await resumeLoopRun("run-f347", "user-1");
 
     expect(workflowStartCalls.length).toBe(1);
@@ -668,7 +671,7 @@ describe("BT-F1-02: resume after pause-during-execution → re-dispatches the qu
   });
 
   test("BT-F1-02: resumeLoopRun transitions from paused to running", async () => {
-    const { resumeLoopRun } = await chainPromise;
+    const { resumeLoopRun } = await runControlsPromise;
     await resumeLoopRun("run-f347", "user-1");
 
     expect(currentLoopRun.status).toBe("running");
@@ -808,7 +811,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
   });
 
   test("BT-F2-01: pauseLoopRun with wrong userId → rejects with same error type as unknown run", async () => {
-    const { pauseLoopRun } = await chainPromise;
+    const { pauseLoopRun } = await runControlsPromise;
 
     // With correct userId — must work
     await expect(pauseLoopRun("run-f347", "user-1")).resolves.toBeUndefined();
@@ -821,7 +824,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
   });
 
   test("BT-F2-01: pauseLoopRun wrong userId → row is untouched (status remains running)", async () => {
-    const { pauseLoopRun } = await chainPromise;
+    const { pauseLoopRun } = await runControlsPromise;
 
     try {
       await pauseLoopRun("run-f347", "attacker-user");
@@ -834,7 +837,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
   });
 
   test("BT-F2-02: cancelLoopRun with wrong userId → rejects", async () => {
-    const { cancelLoopRun } = await chainPromise;
+    const { cancelLoopRun } = await runControlsPromise;
 
     await expect(cancelLoopRun("run-f347", "attacker-user")).rejects.toThrow();
     // Row untouched
@@ -843,7 +846,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
 
   test("BT-F2-03: resumeLoopRun with wrong userId → rejects", async () => {
     currentLoopRun = makeLoopRun({ status: "paused" });
-    const { resumeLoopRun } = await chainPromise;
+    const { resumeLoopRun } = await runControlsPromise;
 
     await expect(resumeLoopRun("run-f347", "attacker-user")).rejects.toThrow();
     expect(currentLoopRun.status).toBe("paused");
@@ -863,7 +866,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
       currentStepRunId: "step-failed",
     });
 
-    const { retryCurrentStep } = await chainPromise;
+    const { retryCurrentStep } = await runControlsPromise;
 
     await expect(
       retryCurrentStep("run-f347", "attacker-user"),
@@ -873,7 +876,7 @@ describe("BT-F2: store run-control functions reject wrong userId with same error
   });
 
   test("BT-F2-05: all four control functions work correctly with the correct userId", async () => {
-    const { pauseLoopRun, cancelLoopRun } = await chainPromise;
+    const { pauseLoopRun, cancelLoopRun } = await runControlsPromise;
 
     // Pause with correct user
     currentLoopRun = makeLoopRun({ status: "running" });
