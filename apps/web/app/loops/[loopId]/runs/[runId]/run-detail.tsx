@@ -361,6 +361,7 @@ export function RunDetail({
                   steps={steps}
                   run={run}
                   guardrails={guardrails ?? null}
+                  events={events}
                   onNodeClick={handleNodeClick}
                 />
               </div>

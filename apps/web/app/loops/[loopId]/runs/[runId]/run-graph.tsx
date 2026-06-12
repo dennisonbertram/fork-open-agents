@@ -61,7 +61,11 @@ import {
 import { nodeTypes } from "@/app/loops/[loopId]/builder/loop-nodes";
 import { WhenEdge } from "@/app/loops/[loopId]/builder/when-edge";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
-import type { AgentLoopStepRun, AgentLoopRun } from "@/lib/db/schema";
+import type {
+  AgentLoopEvent,
+  AgentLoopRun,
+  AgentLoopStepRun,
+} from "@/lib/db/schema";
 import {
   deriveRunGraphState,
   type NodeRunStatus,
@@ -360,6 +364,8 @@ export type RunGraphProps = {
     "status" | "currentNodeId" | "iterationCount" | "stepCount"
   >;
   guardrails: Record<string, unknown> | null;
+  /** Run events from the poll response — enables exact edge attribution. */
+  events?: AgentLoopEvent[];
   onNodeClick?: (nodeId: string) => void;
 };
 
@@ -375,6 +381,7 @@ export function RunGraph({
   steps,
   run,
   guardrails,
+  events,
   onNodeClick,
 }: RunGraphProps) {
   // Derive graph state on every render (pure function, cheap)
@@ -385,8 +392,9 @@ export function RunGraph({
         steps,
         run,
         guardrails,
+        events,
       }),
-    [definitionSnapshot, steps, run, guardrails],
+    [definitionSnapshot, steps, run, guardrails, events],
   );
 
   return (
