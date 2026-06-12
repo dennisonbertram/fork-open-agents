@@ -5,6 +5,8 @@
  * BT-007: validation errors update on graph change
  * BT-008: dirty tracking
  * BT-009: edge when-legality (condition → true/false; others → success/failure/always)
+ * BT-D1: dimensions/select change types do NOT mark isDirty (Defect 1)
+ * BT-D4: addNode with collision avoidance — 3 nodes never overlap (Defect 4)
  */
 
 import { describe, expect, it } from "bun:test";
@@ -238,5 +240,135 @@ describe("createLoopBuilderStore — markClean", () => {
     expect(store.getState().isDirty).toBe(true);
     store.getState().markClean();
     expect(store.getState().isDirty).toBe(false);
+  });
+});
+
+// ── Defect 1: dimensions/select changes must NOT mark dirty ──────────────────
+
+describe("BT-D1: onNodesChange — dimensions and select changes do not mark dirty", () => {
+  it("BT-D1: applying a 'dimensions' change type leaves isDirty false after initialization", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    expect(store.getState().isDirty).toBe(false);
+
+    // Simulate React Flow firing a 'dimensions' change on mount
+    store.getState().onNodesChange([
+      {
+        id: "start-1",
+        type: "dimensions",
+        dimensions: { width: 180, height: 60 },
+        resizing: false,
+        setAttributes: false,
+      },
+    ]);
+
+    expect(store.getState().isDirty).toBe(false);
+  });
+
+  it("BT-D1: applying a 'select' change type leaves isDirty false after initialization", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    expect(store.getState().isDirty).toBe(false);
+
+    store.getState().onNodesChange([
+      { id: "start-1", type: "select", selected: true },
+    ]);
+
+    expect(store.getState().isDirty).toBe(false);
+  });
+
+  it("BT-D1: a 'position' change (drag) DOES mark isDirty true", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    expect(store.getState().isDirty).toBe(false);
+
+    store.getState().onNodesChange([
+      {
+        id: "start-1",
+        type: "position",
+        position: { x: 50, y: 50 },
+        dragging: false,
+      },
+    ]);
+
+    expect(store.getState().isDirty).toBe(true);
+  });
+
+  it("BT-D1: a 'remove' change DOES mark isDirty true", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    expect(store.getState().isDirty).toBe(false);
+
+    store.getState().onNodesChange([{ id: "end-1", type: "remove" }]);
+
+    expect(store.getState().isDirty).toBe(true);
+  });
+
+  it("BT-D1: mixed changes where only dimensions present leave isDirty false", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    expect(store.getState().isDirty).toBe(false);
+
+    // Multiple dimension/select changes simultaneously (React Flow mount batch)
+    store.getState().onNodesChange([
+      {
+        id: "start-1",
+        type: "dimensions",
+        dimensions: { width: 180, height: 60 },
+        resizing: false,
+        setAttributes: false,
+      },
+      { id: "end-1", type: "select", selected: false },
+    ]);
+
+    expect(store.getState().isDirty).toBe(false);
+  });
+});
+
+// ── Defect 4: addNode collision avoidance ────────────────────────────────────
+
+describe("BT-D4: addNode — findFreePosition avoids overlapping existing nodes", () => {
+  const CENTER = { x: 400, y: 300 };
+  const OVERLAP_THRESHOLD = 120;
+
+  it("BT-D4: adding 3 nodes at the same center produces 3 non-overlapping positions", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+
+    const id1 = store.getState().addNode("agent_step", CENTER);
+    const id2 = store.getState().addNode("github_check", CENTER);
+    const id3 = store.getState().addNode("condition", CENTER);
+
+    const nodes = store.getState().nodes;
+    const n1 = nodes.find((n) => n.id === id1)!;
+    const n2 = nodes.find((n) => n.id === id2)!;
+    const n3 = nodes.find((n) => n.id === id3)!;
+
+    expect(n1).toBeDefined();
+    expect(n2).toBeDefined();
+    expect(n3).toBeDefined();
+
+    function dist(
+      a: { x: number; y: number },
+      b: { x: number; y: number },
+    ): number {
+      return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+    }
+
+    expect(dist(n1.position, n2.position)).toBeGreaterThan(OVERLAP_THRESHOLD);
+    expect(dist(n1.position, n3.position)).toBeGreaterThan(OVERLAP_THRESHOLD);
+    expect(dist(n2.position, n3.position)).toBeGreaterThan(OVERLAP_THRESHOLD);
+  });
+
+  it("BT-D4: first node at empty canvas lands exactly at the requested position", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+
+    const id = store.getState().addNode("agent_step", CENTER);
+    const node = store.getState().nodes.find((n) => n.id === id)!;
+
+    expect(node).toBeDefined();
+    expect(node.position.x).toBe(CENTER.x);
+    expect(node.position.y).toBe(CENTER.y);
   });
 });
