@@ -190,6 +190,8 @@ mock.module("./store", () => ({
   advanceRunToNextStep: mock(async () => false),
   countStepRunsForNode: mock(async () => 0),
   getMaxAttemptForNode: mock(async () => 0),
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 // These mocks allow chain.ts to load without errors for BT-RC05 export-checking

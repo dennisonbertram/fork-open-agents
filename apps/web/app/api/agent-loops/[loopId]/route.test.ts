@@ -63,11 +63,17 @@ mock.module("@/lib/agent-loops/store", () => ({
   getOwnedAgentLoop,
   updateAgentLoop,
   deleteAgentLoop,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled,
   isAgentLoopRepoAllowed: mock(() => true),
+  getAgentLoopsAllowedRepos: mock(() => null),
+  getAgentLoopsStallMinutes: mock(() => 15),
 }));
 
 mock.module("@/lib/background-agents/store", () => ({
