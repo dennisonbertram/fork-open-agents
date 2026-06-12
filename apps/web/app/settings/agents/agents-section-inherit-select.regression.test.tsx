@@ -40,7 +40,9 @@ describe("Regression WI-1: inherit-select sentinel helpers", () => {
     expect(toSelectValue("anthropic/claude-opus-4-5")).toBe(
       "anthropic/claude-opus-4-5",
     );
-    expect(toSelectValue("web-bun-agent-browser")).toBe("web-bun-agent-browser");
+    expect(toSelectValue("web-bun-agent-browser")).toBe(
+      "web-bun-agent-browser",
+    );
   });
 
   // REG-WI1-004: sentinel maps back to empty string
