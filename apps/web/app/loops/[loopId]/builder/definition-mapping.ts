@@ -40,8 +40,17 @@ export type LoopFlowNodeData = LoopNode;
  */
 export type LoopFlowEdgeData = {
   when: LoopEdge["when"];
-  parallelIndex: number;
-  parallelCount: number;
+  /**
+   * 0-based index within the parallel group (edges sharing the same source+target).
+   * Computed by definitionToFlow. Absent on edges created directly in the builder
+   * store (they go through flowToDefinition → definitionToFlow next render cycle).
+   */
+  parallelIndex?: number;
+  /**
+   * Number of edges in the parallel group. 1 means no siblings (no offset needed).
+   * Computed by definitionToFlow. Absent on edges created directly in the builder store.
+   */
+  parallelCount?: number;
 };
 
 export type LoopFlowNode = Node<LoopFlowNodeData>;
