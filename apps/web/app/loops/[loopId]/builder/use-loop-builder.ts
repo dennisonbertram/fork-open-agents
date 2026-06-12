@@ -77,14 +77,29 @@ function defaultNodeData(
     case "agent_step":
       return { id, kind: "agent_step", label: "Agent step", position };
     case "github_check":
-      return { id, kind: "github_check", label: "GitHub check", position };
+      return {
+        id,
+        kind: "github_check",
+        label: "GitHub check",
+        position,
+        // Default to list_issues/open — a genuinely runnable check that needs
+        // no required fields beyond kind. VR-12 requires check config; this
+        // satisfies it immediately so Save is never bricked before M2-02 panels.
+        check: { kind: "list_issues", state: "open" },
+      };
     case "condition":
       return {
         id,
         kind: "condition",
         label: "Condition",
         position,
-        condition: { path: "", op: "exists" },
+        // 'previous_step.output' is a self-explanatory placeholder: it names
+        // the context-reference pattern (dot-separated path), communicates
+        // "you need to fill this in", and uses op:exists which needs no value.
+        // At runtime, exists on a missing key deterministically routes false
+        // (safe M1 semantics). VR-13 requires condition config with path min(1);
+        // this satisfies it immediately so Save is never bricked before M2-02.
+        condition: { path: "previous_step.output", op: "exists" },
       };
     case "end":
       return { id, kind: "end", label: "End", position };

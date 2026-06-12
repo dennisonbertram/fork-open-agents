@@ -141,9 +141,15 @@ export function GithubCheckNodeComponent({
   data,
   selected,
 }: GithubCheckNodeProps) {
-  const checkSummary = data.check
-    ? data.check.kind.replaceAll("_", " ")
-    : undefined;
+  let checkSummary: string | undefined;
+  if (data.check) {
+    const kindLabel = data.check.kind.replaceAll("_", " ");
+    if (data.check.kind === "list_issues" && data.check.state) {
+      checkSummary = `${kindLabel} · ${data.check.state}`;
+    } else {
+      checkSummary = kindLabel;
+    }
+  }
 
   return (
     <BaseNode
