@@ -314,6 +314,18 @@ describe("AgentCard — status matrix", () => {
     expect(html).toContain("/repos/acme/widgets/agents/agent-42");
   });
 
+  test("BT-WI6: Edit button href ends with /edit", async () => {
+    const { AgentCard } = await cardModulePromise;
+    const agent = makeAgent({ id: "agent-42" });
+
+    const html = renderToStaticMarkup(
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
+    );
+
+    // Edit button must link to the edit page, not the detail page
+    expect(html).toContain("/repos/acme/widgets/agents/agent-42/edit");
+  });
+
   test("BT-167-003: run with resultSummary shows headline", async () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent();

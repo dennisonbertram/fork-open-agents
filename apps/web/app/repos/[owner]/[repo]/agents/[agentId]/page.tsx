@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Clock3, ExternalLink } from "lucide-react";
+import { Clock3, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -139,11 +139,19 @@ export default async function AgentDetailPage({
               {owner}/{repo}
             </p>
           </div>
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/repos/${owner}/${repo}/agents`}>
-              ← Back to agents
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button asChild variant="default" size="sm">
+              <Link href={`/repos/${owner}/${repo}/agents/${agentId}/edit`}>
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/repos/${owner}/${repo}/agents`}>
+                ← Back to agents
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Current state */}
@@ -197,6 +205,7 @@ export default async function AgentDetailPage({
               {agent.triggers.map((trigger) => {
                 const knownKinds: TriggerKind[] = [
                   "github.pull_request",
+                  "github.pull_request_review",
                   "github.issue",
                   "github.deployment_status",
                   "schedule.cron",
