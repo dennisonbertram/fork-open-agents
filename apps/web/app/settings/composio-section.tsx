@@ -40,6 +40,8 @@ import {
   shouldShowMainDefaultTip,
   profileRowSummary,
   AGENT_ROLE_DESCRIPTIONS,
+  canSaveProfile,
+  shouldShowZeroToolHint,
 } from "./composio-section-helpers";
 
 /** Where users manage Composio toolkits, auth configs, and connected accounts. */
@@ -347,7 +349,7 @@ function ProfileEditor({
         onChange={setToolkitSlugs}
         disabled={isSaving}
       />
-      {toolkitSlugs.length === 0 && name.trim() ? (
+      {shouldShowZeroToolHint(name, toolkitSlugs) ? (
         <p className="text-xs text-muted-foreground">
           Select at least one tool to save this profile.
         </p>
@@ -474,7 +476,7 @@ function ProfileEditor({
           type="button"
           size="sm"
           onClick={saveProfile}
-          disabled={isSaving || !name.trim() || toolkitSlugs.length === 0}
+          disabled={!canSaveProfile(name, toolkitSlugs, isSaving)}
           className="h-7 text-xs"
         >
           {isSaving ? <Loader2 className="animate-spin" /> : null}

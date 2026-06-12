@@ -93,14 +93,46 @@ export async function GET(req: Request) {
   } satisfies ComposioSettingsResponse);
 }
 
+/**
+ * Walk the error chain (error -> error.cause -> ...) looking for a postgres
+ * unique-constraint violation.
+ *
+ * DrizzleQueryError (drizzle-orm 0.45+) wraps every driver error in `cause`.
+ * Its own `message` is `"Failed query: <sql>\nparams: <values>"` which
+ * includes user-supplied data, so we must NOT run a "unique|duplicate" regex
+ * against it — a profile named e.g. "unique tools" would cause a false 409
+ * for any unrelated failure.
+ *
+ * Instead we:
+ *  1. Check `code === "23505"` (PostgreSQL unique_violation) at every node.
+ *  2. Check `message` for "unique|duplicate" only on nodes whose message does
+ *     NOT look like a DrizzleQueryError wrapper (i.e. does not start with
+ *     "Failed query:").  This covers direct application throws and non-Drizzle
+ *     driver stacks while avoiding the mislabelling edge case.
+ */
+function isUniqueConstraintError(error: unknown): boolean {
+  let current: unknown = error;
+  while (current instanceof Error) {
+    const pgCode = (current as Error & { code?: string }).code;
+    if (pgCode === "23505") return true;
+    const isDrizzleWrapper = current.message.startsWith("Failed query:");
+    if (!isDrizzleWrapper && /unique|duplicate/i.test(current.message)) {
+      return true;
+    }
+    current = current.cause;
+  }
+  return false;
+}
+
 function composioProfileErrorResponse(error: unknown): Response {
-  const message = error instanceof Error ? error.message : String(error);
-  if (/unique|duplicate/i.test(message)) {
+  if (isUniqueConstraintError(error)) {
     return Response.json(
       { error: "A profile with that name already exists." },
       { status: 409 },
     );
   }
+  // Surface domain-level validation messages that callers intentionally raise.
+  const message = error instanceof Error ? error.message : String(error);
   if (/at least one toolkit/i.test(message)) {
     return Response.json({ error: message }, { status: 400 });
   }

@@ -258,13 +258,26 @@ describe("/api/settings/composio", () => {
     expect(deletedProfileId).toBe("profile-1");
   });
 
-  // BUG 1: POST with duplicate name must return 409 with friendly message, never raw SQL
-  test("POST with duplicate profile name returns 409 with friendly message, not raw SQL", async () => {
+  // BUG 1: POST with duplicate name must return 409 even when drizzle wraps the
+  // real PG error in `cause` (DrizzleQueryError shape: message = "Failed query:
+  // <sql>\nparams: <params>", cause = PostgresError with code "23505").
+  test("POST with duplicate profile name (DrizzleQueryError via cause.code 23505) returns 409", async () => {
     const { POST } = await routeModulePromise;
 
-    createComposioToolProfileError = new Error(
-      'Failed query: insert into "composio_tool_profiles" (id, user_id, name, toolkit_slugs) values ($1, $2, $3, $4) -- params: some-uuid,user-1,GitHub,[github] duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+    // Realistic shape: DrizzleQueryError wraps the postgres driver error in cause.
+    const pgError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+      ),
+      { code: "23505" },
     );
+    const drizzleError = Object.assign(
+      new Error(
+        'Failed query: insert into "composio_tool_profiles" (id, user_id, name, toolkit_slugs) values ($1, $2, $3, $4)\nparams: some-uuid,user-1,GitHub,[github]',
+      ),
+      { cause: pgError },
+    );
+    createComposioToolProfileError = drizzleError;
 
     const response = await POST(
       request("POST", {
@@ -285,13 +298,53 @@ describe("/api/settings/composio", () => {
     expect(JSON.stringify(body)).not.toContain("Failed query");
   });
 
-  // BUG 2: PATCH with duplicate name must return 409 (currently unhandled → 500 empty body)
-  test("PATCH with duplicate profile name returns 409 with friendly message", async () => {
+  // Also verify that a profile whose name contains "unique" does NOT trigger 409
+  // when the error is actually unrelated (e.g. a generic DB failure) — the old
+  // regex would scan the SQL text and mismatch on the profile name itself.
+  test("POST generic server error with profile named 'unique tools' returns 400, not 409", async () => {
+    const { POST } = await routeModulePromise;
+
+    // Non-duplicate error — the DrizzleQueryError message includes the profile
+    // name "unique tools" in the SQL params text.
+    createComposioToolProfileError = new Error(
+      'Failed query: insert into "composio_tool_profiles" values ($1)\nparams: unique tools',
+    );
+
+    const response = await POST(
+      request("POST", {
+        name: "unique tools",
+        toolkitSlugs: ["github"],
+        authConfigIdsByToolkit: {},
+        connectedAccountIdsByToolkit: {},
+        workbenchEnabled: false,
+        allowInChatConnectionManagement: false,
+      }),
+    );
+
+    const body = (await response.json()) as { error: string };
+
+    // Must NOT be 409 — the error is not a real unique constraint violation.
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Failed to save Composio profile.");
+  });
+
+  // BUG 2: PATCH with duplicate name must return 409 with realistic DrizzleQueryError shape.
+  test("PATCH with duplicate profile name (DrizzleQueryError via cause.code 23505) returns 409", async () => {
     const { PATCH } = await routeModulePromise;
 
-    updateComposioToolProfileError = new Error(
-      'Failed query: update "composio_tool_profiles" set name = $1 where user_id = $2 and id = $3 -- params: GitHub,user-1,profile-2 duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+    const pgError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+      ),
+      { code: "23505" },
     );
+    const drizzleError = Object.assign(
+      new Error(
+        'Failed query: update "composio_tool_profiles" set name = $1 where user_id = $2 and id = $3\nparams: GitHub,user-1,profile-2',
+      ),
+      { cause: pgError },
+    );
+    updateComposioToolProfileError = drizzleError;
 
     const response = await PATCH(
       request("PATCH", {
