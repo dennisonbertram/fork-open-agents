@@ -244,6 +244,8 @@ mock.module("./store", () => ({
   advanceRunToNextStep: advanceRunToNextStepMock,
   countStepRunsForNode: countStepRunsForNodeMock,
   getMaxAttemptForNode: getMaxAttemptForNodeMock,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
   pauseLoopRun: mock(async () => {
     throw new RunControlError("illegal_transition", "test");
   }),

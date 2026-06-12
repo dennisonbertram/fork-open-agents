@@ -115,6 +115,10 @@ mock.module("@/lib/agent-loops/store", () => ({
   updateAgentLoopRunStatus: mock(async () => null),
   recordAgentLoopEvent: recordAgentLoopEventRegMock,
   setInitialStepPointer: setInitialStepPointerRegMock,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 // ── Workflow / config / validation mocks ──────────────────────────────────────

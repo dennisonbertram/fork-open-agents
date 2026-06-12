@@ -23,6 +23,7 @@
     "check": "ultracite check",
     "fix": "ultracite fix",
     "ci": "bun run check && bun run typecheck && bun run test:isolated && bun run --cwd apps/web db:check",
+    "test": "bun test --isolate",
     "test:isolated": "bun run scripts/test-isolated.ts",
     "test:verbose": "bun test --reporter=junit --reporter-outfile /dev/stdout",
     "test:contract": "bun test apps/web/tests/contract",

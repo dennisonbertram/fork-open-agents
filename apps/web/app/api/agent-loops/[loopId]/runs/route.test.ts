@@ -57,6 +57,10 @@ mock.module("@/lib/agent-loops/dispatcher-bridge", () => ({
 
 mock.module("@/lib/agent-loops/store", () => ({
   listAgentLoopRuns,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 mock.module("@/lib/agent-loops/config", () => ({

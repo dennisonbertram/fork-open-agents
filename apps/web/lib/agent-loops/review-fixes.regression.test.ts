@@ -220,6 +220,9 @@ mock.module("./store", () => ({
   recordAgentLoopEvent: regRecordEventMock,
   updateAgentLoopRunStatus: regUpdateRunStatusMock,
   updateAgentLoopRunContext: regUpdateRunContextMock,
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 let regVerifyResult: {
