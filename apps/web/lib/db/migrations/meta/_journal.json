@@ -435,6 +435,13 @@
       "when": 1781274302045,
       "tag": "0061_heavy_forgotten_one",
       "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1781299257862,
+      "tag": "0062_equal_karen_page",
+      "breakpoints": true
     }
   ]
 }
