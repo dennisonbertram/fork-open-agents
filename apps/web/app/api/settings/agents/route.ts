@@ -21,6 +21,7 @@ export type AgentSettingsRow = {
   instructions: string | null;
   managedRuntimeProfileId: string | null;
   githubToolsEnabled: boolean;
+  toolAuthoringEnabled: boolean;
 };
 
 export type AgentSettingsResponse = {
@@ -57,6 +58,7 @@ export async function GET() {
         instructions: null,
         managedRuntimeProfileId: null,
         githubToolsEnabled: false,
+        toolAuthoringEnabled: false,
       };
     }
     return {
@@ -67,6 +69,7 @@ export async function GET() {
       instructions: row.instructions,
       managedRuntimeProfileId: row.managedRuntimeProfileId,
       githubToolsEnabled: row.githubToolsEnabled,
+      toolAuthoringEnabled: row.toolAuthoringEnabled,
     };
   });
 
@@ -113,6 +116,7 @@ export async function PATCH(req: Request) {
     instructions: updated?.instructions ?? null,
     managedRuntimeProfileId: updated?.managedRuntimeProfileId ?? null,
     githubToolsEnabled: updated?.githubToolsEnabled ?? false,
+    toolAuthoringEnabled: updated?.toolAuthoringEnabled ?? false,
   };
 
   return Response.json({ agent: result });
