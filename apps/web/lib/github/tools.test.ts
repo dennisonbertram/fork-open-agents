@@ -63,6 +63,20 @@ let capturedUpdateArgs: Record<string, unknown> | null = null;
 let capturedCreateCommentArgs: Record<string, unknown> | null = null;
 let capturedSetLabelsArgs: Record<string, unknown> | null = null;
 
+// Controls what issues.get returns for the pre-flight PR check.
+// Default: a normal issue (no pull_request key) so existing mutation tests proceed.
+type MockIssueGetResult = {
+  data: {
+    number: number;
+    title: string;
+    state: string;
+    pull_request?: { url: string };
+  };
+};
+let mockIssueGetResult: MockIssueGetResult = {
+  data: { number: 1, title: "Some issue", state: "open" },
+};
+
 // Capture the search query used by github_list_issues (Search API)
 let capturedSearchQuery: string | null = null;
 
@@ -80,6 +94,9 @@ let mockSearchItems: MockSearchIssueItem[] = [];
 const mockOctokit = {
   rest: {
     issues: {
+      get: async (_args: Record<string, unknown>) => {
+        return mockIssueGetResult;
+      },
       create: async (args: Record<string, unknown>) => {
         capturedCreateArgs = args;
         return {
@@ -191,6 +208,10 @@ function resetToDefaults() {
     userPermission: "write",
   };
   mockSearchItems = [];
+  // Default: normal issue (no pull_request property) so existing mutation tests proceed
+  mockIssueGetResult = {
+    data: { number: 1, title: "Some issue", state: "open" },
+  };
   capturedScopedOctokitArgs = null;
   capturedCreateArgs = null;
   capturedUpdateArgs = null;
@@ -1060,5 +1081,173 @@ describe("write tool error paths — octokit throws → { ok: false, error: stri
     } finally {
       mockOctokit.rest.issues.create = origCreate;
     }
+  });
+});
+
+// ── PR-number guard: mutation tools must reject PR numbers ─────────────────────
+//
+// The GitHub Issues API shares its number namespace with pull requests.
+// issues.update, issues.createComment, and issues.setLabels all operate on PRs
+// too when given a PR number. The four mutation tools (update, comment,
+// set_labels, close) must pre-flight with issues.get and reject if the response
+// carries a pull_request property — without calling the underlying mutation.
+
+describe("PR-number guard — mutation tools reject PR numbers", () => {
+  // Helper: configure mockIssueGetResult to look like a PR
+  function setPrResult(issueNumber: number) {
+    mockIssueGetResult = {
+      data: {
+        number: issueNumber,
+        title: "Some PR",
+        state: "open",
+        pull_request: {
+          url: `https://api.github.com/repos/acme/my-repo/pulls/${issueNumber}`,
+        },
+      },
+    };
+  }
+
+  // github_update_issue ─────────────────────────────────────────────────────
+
+  test("github_update_issue: issues.get returns PR → ok:false (mentions 'pull request'), update NOT called", async () => {
+    setPrResult(42);
+    const tools = await getReadyTools();
+    const tool = tools["github_update_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 42,
+      title: "Should not update",
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    const error = (result as { ok: false; error: string }).error;
+    expect(error.toLowerCase()).toContain("pull request");
+    // Mutation must NOT have been called
+    expect(capturedUpdateArgs).toBeNull();
+  });
+
+  test("github_update_issue: issues.get returns normal issue → mutation proceeds, ok:true", async () => {
+    // mockIssueGetResult is already a non-PR (resetToDefaults sets it)
+    const tools = await getReadyTools();
+    const tool = tools["github_update_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 7,
+      title: "Updated title",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(capturedUpdateArgs).not.toBeNull();
+  });
+
+  // github_comment_on_issue ─────────────────────────────────────────────────
+
+  test("github_comment_on_issue: issues.get returns PR → ok:false (mentions 'pull request'), createComment NOT called", async () => {
+    setPrResult(55);
+    const tools = await getReadyTools();
+    const tool = tools["github_comment_on_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 55,
+      body: "Should not comment",
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    const error = (result as { ok: false; error: string }).error;
+    expect(error.toLowerCase()).toContain("pull request");
+    // Mutation must NOT have been called
+    expect(capturedCreateCommentArgs).toBeNull();
+  });
+
+  test("github_comment_on_issue: issues.get returns normal issue → mutation proceeds, ok:true", async () => {
+    const tools = await getReadyTools();
+    const tool = tools["github_comment_on_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 3,
+      body: "A comment",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(capturedCreateCommentArgs).not.toBeNull();
+  });
+
+  // github_set_issue_labels ─────────────────────────────────────────────────
+
+  test("github_set_issue_labels: issues.get returns PR → ok:false (mentions 'pull request'), setLabels NOT called", async () => {
+    setPrResult(77);
+    const tools = await getReadyTools();
+    const tool = tools["github_set_issue_labels"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 77,
+      labels: ["should-not-apply"],
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    const error = (result as { ok: false; error: string }).error;
+    expect(error.toLowerCase()).toContain("pull request");
+    // Mutation must NOT have been called
+    expect(capturedSetLabelsArgs).toBeNull();
+  });
+
+  test("github_set_issue_labels: issues.get returns normal issue → mutation proceeds, ok:true", async () => {
+    const tools = await getReadyTools();
+    const tool = tools["github_set_issue_labels"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 5,
+      labels: ["enhancement"],
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(capturedSetLabelsArgs).not.toBeNull();
+  });
+
+  // github_close_issue ──────────────────────────────────────────────────────
+
+  test("github_close_issue: issues.get returns PR → ok:false (mentions 'pull request'), update NOT called", async () => {
+    setPrResult(99);
+    const tools = await getReadyTools();
+    const tool = tools["github_close_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 99,
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    const error = (result as { ok: false; error: string }).error;
+    expect(error.toLowerCase()).toContain("pull request");
+    // Mutation must NOT have been called
+    expect(capturedUpdateArgs).toBeNull();
+  });
+
+  test("github_close_issue: issues.get returns normal issue → mutation proceeds, ok:true", async () => {
+    const tools = await getReadyTools();
+    const tool = tools["github_close_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 9,
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    expect(capturedUpdateArgs).not.toBeNull();
+  });
+
+  // Error message mentions the issue number ─────────────────────────────────
+
+  test("rejection message includes the issue number", async () => {
+    setPrResult(123);
+    const tools = await getReadyTools();
+    const tool = tools["github_update_issue"];
+
+    const result = await (tool as unknown as ToolExecutor).execute({
+      issueNumber: 123,
+      title: "nope",
+    });
+
+    expect(result).toMatchObject({ ok: false });
+    const error = (result as { ok: false; error: string }).error;
+    expect(error).toContain("123");
   });
 });

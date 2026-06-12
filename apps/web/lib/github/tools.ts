@@ -18,6 +18,48 @@ export class GitHubToolsSetupError extends Error {
   }
 }
 
+// ── PR pre-flight guard ────────────────────────────────────────────────────────
+
+/**
+ * Pre-flight guard: fetches the item by number and throws if the GitHub API
+ * indicates it is a pull request (presence of a pull_request field on the
+ * issue response). Must be called inside the same withScopedInstallationOctokit
+ * operation as the mutation so both share one scoped token. { issues: "write" }
+ * already implies read access, so no extra token is needed.
+ *
+ * NOTE: this adds one extra GET per mutation call. That cost is intentional —
+ * it prevents silently mutating pull requests when a PR number is passed, which
+ * would violate the tool contract (issue-only) and could cause destructive
+ * side effects (e.g. accidentally closing a PR).
+ */
+async function assertNotPullRequest(
+  octokit: {
+    rest: {
+      issues: {
+        get: (params: {
+          owner: string;
+          repo: string;
+          issue_number: number;
+        }) => Promise<{ data: { pull_request?: unknown } }>;
+      };
+    };
+  },
+  owner: string,
+  repo: string,
+  issueNumber: number,
+): Promise<void> {
+  const existing = await octokit.rest.issues.get({
+    owner,
+    repo,
+    issue_number: issueNumber,
+  });
+  if (existing.data.pull_request !== undefined) {
+    throw new Error(
+      `Issue #${issueNumber} is a pull request; this tool only operates on issues.`,
+    );
+  }
+}
+
 // ── Return type ────────────────────────────────────────────────────────────────
 
 /**
@@ -273,6 +315,12 @@ This tool acts as the GitHub App via an installation token scoped to issues:writ
           repositoryId: ctx.repositoryId,
           permissions: { issues: "write" },
           operation: async (octokit) => {
+            await assertNotPullRequest(
+              octokit,
+              ctx.owner,
+              ctx.repo,
+              issueNumber,
+            );
             const response = await octokit.rest.issues.update({
               owner: ctx.owner,
               repo: ctx.repo,
@@ -333,6 +381,12 @@ This tool acts as the GitHub App via an installation token scoped to issues:writ
           repositoryId: ctx.repositoryId,
           permissions: { issues: "write" },
           operation: async (octokit) => {
+            await assertNotPullRequest(
+              octokit,
+              ctx.owner,
+              ctx.repo,
+              issueNumber,
+            );
             const response = await octokit.rest.issues.createComment({
               owner: ctx.owner,
               repo: ctx.repo,
@@ -393,6 +447,12 @@ This tool acts as the GitHub App via an installation token scoped to issues:writ
           repositoryId: ctx.repositoryId,
           permissions: { issues: "write" },
           operation: async (octokit) => {
+            await assertNotPullRequest(
+              octokit,
+              ctx.owner,
+              ctx.repo,
+              issueNumber,
+            );
             const response = await octokit.rest.issues.setLabels({
               owner: ctx.owner,
               repo: ctx.repo,
@@ -462,6 +522,12 @@ This tool acts as the GitHub App via an installation token scoped to issues:writ
           repositoryId: ctx.repositoryId,
           permissions: { issues: "write" },
           operation: async (octokit) => {
+            await assertNotPullRequest(
+              octokit,
+              ctx.owner,
+              ctx.repo,
+              issueNumber,
+            );
             const response = await octokit.rest.issues.update({
               owner: ctx.owner,
               repo: ctx.repo,
