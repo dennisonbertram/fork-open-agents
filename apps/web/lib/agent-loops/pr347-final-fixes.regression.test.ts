@@ -373,6 +373,8 @@ mock.module("./store", () => ({
   cancelLoopRun: cancelLoopRunMock,
   resumeLoopRun: resumeLoopRunMock,
   retryCurrentStep: retryCurrentStepMock,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 mock.module("./step-executor", () => ({

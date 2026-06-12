@@ -82,6 +82,42 @@ export function shouldShowMainDefaultTip(
   return profiles.length > 0 && mainDefaultProfileId === null;
 }
 
+// ── Profile save guard ────────────────────────────────────────────────────
+
+/**
+ * Whether the Save button for a profile editor should be enabled.
+ *
+ * Saving is allowed only when:
+ * - The profile name is non-empty (after trimming)
+ * - At least one toolkit has been selected
+ * - The form is not already mid-save
+ */
+export function canSaveProfile(
+  name: string,
+  toolkitSlugs: string[],
+  isSaving: boolean,
+): boolean {
+  return !isSaving && name.trim().length > 0 && toolkitSlugs.length > 0;
+}
+
+/**
+ * Whether to show the "Select at least one tool" hint beneath the toolkit
+ * picker.
+ *
+ * The hint appears only when:
+ * - A non-blank name has been entered (user has started filling the form)
+ * - No toolkits are selected yet (the guard condition that would block saving)
+ *
+ * The hint is not shown when the name is blank so it doesn't fire on the
+ * untouched empty form.
+ */
+export function shouldShowZeroToolHint(
+  name: string,
+  toolkitSlugs: string[],
+): boolean {
+  return name.trim().length > 0 && toolkitSlugs.length === 0;
+}
+
 /**
  * One-line description for each agent role shown as tooltip/subtext in
  * the compact agent defaults row.

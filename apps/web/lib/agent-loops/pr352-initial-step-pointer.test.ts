@@ -194,6 +194,8 @@ mock.module("@/lib/agent-loops/store", () => ({
   getAgentLoopRunWithLoop,
   updateAgentLoopStepRun,
   conditionallyTransitionRunStatus,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 mock.module("./store", () => ({
@@ -211,6 +213,8 @@ mock.module("./store", () => ({
   getAgentLoopRunWithLoop,
   updateAgentLoopStepRun,
   conditionallyTransitionRunStatus,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
 }));
 
 // ── Executor mock ─────────────────────────────────────────────────────────────

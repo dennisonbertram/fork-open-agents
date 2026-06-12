@@ -1862,6 +1862,35 @@ export type RepositoryComposioSettings =
 export type NewRepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferInsert;
 
+// MCP server registrations — slice 1 of epic #371
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    transport: text("transport", { enum: ["http", "sse"] })
+      .notNull()
+      .default("http")
+      .$type<"http" | "sse">(),
+    /** AES-256-GCM encrypted JSON string of Record<string,string> headers. */
+    headersEncrypted: text("headers_encrypted"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("mcp_servers_user_idx").on(table.userId),
+    uniqueIndex("mcp_servers_user_name_idx").on(table.userId, table.name),
+  ],
+);
+
+export type McpServer = typeof mcpServers.$inferSelect;
+export type NewMcpServer = typeof mcpServers.$inferInsert;
+
 // User preferences for settings
 export const userPreferences = pgTable("user_preferences", {
   id: text("id").primaryKey(),

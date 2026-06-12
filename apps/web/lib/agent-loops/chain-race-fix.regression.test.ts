@@ -225,6 +225,9 @@ mock.module("./store", () => ({
   advanceRunToNextStep: advanceRunToNextStepMock,
   countStepRunsForNode: countStepRunsForNodeMock,
   getMaxAttemptForNode: getMaxAttemptForNodeMock,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 const executeAgentLoopStepMock = mock(

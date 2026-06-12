@@ -27,6 +27,8 @@ import { SchedulePreview, ScheduleValidationMessage } from "./schedule-preview";
 import { EventTriggerConditions } from "./event-trigger-conditions";
 
 type AgentSpecEditorProps = {
+  /** "create" (default) shows creation-oriented copy; "edit" shows update-oriented copy. */
+  mode?: "create" | "edit";
   repoOwner: string;
   repoName: string;
   initialName: string;
@@ -58,6 +60,7 @@ type AgentSpecEditorProps = {
  * - schedule.cron trigger mounts the schedule components from slice #164.
  */
 export function AgentSpecEditor({
+  mode = "create",
   repoOwner,
   repoName,
   initialName,
@@ -335,8 +338,9 @@ export function AgentSpecEditor({
             <div>
               <p className="font-medium">Enabled</p>
               <p className="text-muted-foreground">
-                New agents are created disabled. Enable after reviewing the
-                spec.
+                {mode === "edit"
+                  ? "Controls whether this agent runs when its trigger fires."
+                  : "New agents are created disabled. Enable after reviewing the spec."}
               </p>
             </div>
             <Switch checked={enabled} onCheckedChange={setEnabled} />
@@ -360,9 +364,13 @@ export function AgentSpecEditor({
           Run test
         </Button>
         <p className="text-xs text-muted-foreground">
-          {enabled
-            ? "Agent will be created enabled."
-            : "Agent will be created disabled (default)."}
+          {mode === "edit"
+            ? enabled
+              ? "Agent is enabled — will run when its trigger fires."
+              : "Agent is disabled — will not run until enabled."
+            : enabled
+              ? "Agent will be created enabled."
+              : "Agent will be created disabled (default)."}
         </p>
       </div>
     </div>
