@@ -109,7 +109,9 @@ export function WhenEdge({
       ...(isMostRecent
         ? {
             strokeDasharray: "6 3",
-            animation: "dash 0.8s linear infinite",
+            // loop-edge-dash is defined in globals.css — @keyframes cannot
+            // be declared in React inline styles (silently ignored by browsers)
+            animation: "loop-edge-dash 1s linear infinite",
           }
         : {}),
     };
