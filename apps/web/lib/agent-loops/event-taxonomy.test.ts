@@ -144,6 +144,10 @@ const M1_TAXONOMY: Array<{
     name: "agent-loop.chain.paused_before_dispatch",
     description: "Paused mid-execution before dispatch",
   },
+  {
+    name: "agent-loop.chain.stalled_before_dispatch",
+    description: "Stalled mid-execution before dispatch (sweep landed during step)",
+  },
 
   // Trigger
   {

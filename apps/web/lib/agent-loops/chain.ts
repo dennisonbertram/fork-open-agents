@@ -367,8 +367,15 @@ export async function runAgentLoopStep(
   // re-dispatches that queued step and the chain resumes cleanly.
   // We pass pausedMidExecution=true to skip the start() call and instead
   // record a paused_before_dispatch event.
+  //
+  // If the run was STALLED during execution (sweep marked it stalled while the
+  // in-flight step was still running), we apply the same bookkeeping-yes /
+  // dispatch-no treatment.  The operator's recovery path (retryCurrentStep) will
+  // re-dispatch the queued currentStepRunId.  A stalled_before_dispatch event is
+  // emitted with runStatus="stalled" in the payload for observability.
 
   const pausedMidExecution = postExecStatus === "paused";
+  const stalledMidExecution = postExecStatus === "stalled";
 
   await advanceLoopRun({
     stepRunId,
@@ -382,6 +389,7 @@ export async function runAgentLoopStep(
     currentIterationCount: loopRun.iterationCount,
     nodeKind: node?.kind ?? "unknown",
     pausedMidExecution,
+    stalledMidExecution,
   });
 }
 
@@ -405,6 +413,16 @@ type AdvanceParams = {
    * but the workflow dispatch is suppressed — resumeLoopRun re-dispatches it.
    */
   pausedMidExecution?: boolean;
+  /**
+   * True when the sweep marked the run stalled DURING step execution (i.e. the
+   * stall landed between executeAgentLoopStep starting and returning).  Advance
+   * bookkeeping is still performed (the step's completed work is preserved and
+   * currentStepRunId is updated to the queued next step), but the workflow
+   * dispatch is suppressed — retryCurrentStep will re-dispatch the queued step.
+   * A stalled_before_dispatch event is emitted with runStatus="stalled" visible
+   * in the payload.
+   */
+  stalledMidExecution?: boolean;
 };
 
 /**
@@ -431,6 +449,7 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     currentIterationCount,
     nodeKind,
     pausedMidExecution = false,
+    stalledMidExecution = false,
   } = params;
 
   // ── 7a. Evaluate edges ────────────────────────────────────────────────────
@@ -657,6 +676,37 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         nextNodeId,
         nextStepRunId: nextStepRun.id,
         nodeKind: nextNodeKind,
+      },
+      workflowRunId,
+    });
+    return;
+  }
+
+  // ── 7g-stall. Stall mid-execution: bookkeeping done, skip dispatch ────────
+  //
+  // If the sweep marked the run stalled DURING step execution, the bookkeeping
+  // above (edge evaluated, step run created, advanceRunToNextStep pointer update)
+  // preserves the completed work.  We must NOT dispatch the workflow — the run
+  // is stalled and retryCurrentStep will detect the QUEUED currentStepRunId and
+  // re-dispatch it without creating a new attempt.
+  //
+  // We emit a distinct stalled_before_dispatch event (not paused_before_dispatch)
+  // so observability tooling can distinguish the two cases.  runStatus is
+  // included in the payload so the event is self-describing.
+  if (stalledMidExecution) {
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId,
+      eventName: "agent-loop.chain.stalled_before_dispatch",
+      status: "info",
+      level: "warn",
+      summary: `Chain stalled before dispatch of next step ${nextNodeId}; retryCurrentStep will re-dispatch`,
+      payload: {
+        nextNodeId,
+        nextStepRunId: nextStepRun.id,
+        nodeKind: nextNodeKind,
+        runStatus: "stalled",
       },
       workflowRunId,
     });

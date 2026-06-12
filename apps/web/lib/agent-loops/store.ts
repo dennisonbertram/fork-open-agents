@@ -981,13 +981,65 @@ export async function retryCurrentStep(params: {
     // Snapshot the currentStepRunId we read — used in the conditional update
     const observedStepRunId = run.currentStepRunId;
 
-    // Find the current (failed) step run to get nodeKind
+    // Find the current step run to determine its status and nodeKind.
+    // The step run is called "failedStepRun" by convention, but it may be
+    // QUEUED (post-stall-advance case — see P1 fix below).
     const failedStepRun = await tx.query.agentLoopStepRuns.findFirst({
       where: eq(agentLoopStepRuns.id, observedStepRunId),
     });
 
     if (!failedStepRun) {
       throw new Error(`Cannot retry: step run ${observedStepRunId} not found`);
+    }
+
+    // ── P1 fix: queued currentStepRunId → re-dispatch, not n+1 ──────────────
+    //
+    // After sweep→in-flight-completion→post-stall-advance, the run is stalled
+    // with currentStepRunId pointing at a QUEUED step that was never dispatched
+    // (advance bookkeeping happened in chain.ts, but start() was suppressed by
+    // the stalledMidExecution guard).
+    //
+    // Creating attempt n+1 of a QUEUED step is wrong — the queued step has never
+    // executed, so there is nothing to retry; creating a new attempt would leave
+    // the existing queued row as an orphan and waste the completed work.
+    //
+    // Instead: transition the run to running and return the existing queued step
+    // run so the caller (run-controls.retryCurrentStep) can dispatch it directly.
+    //
+    // Concurrency safety: the conditional update is still guarded by
+    //   status IN ('failed', 'stalled') AND currentStepRunId = observedStepRunId
+    // so two concurrent retries cannot both succeed.
+    if (failedStepRun.status === "queued") {
+      const now = new Date();
+      const [updatedRunQueuedPath] = await tx
+        .update(agentLoopRuns)
+        .set({
+          status: "running",
+          // COALESCE: preserve startedAt if already set.
+          // D1 fix: use NOW() SQL function — the postgres v3 driver's Bind()
+          // cannot serialize a Date instance (live-proof D1).
+          startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(agentLoopRuns.id, params.runId),
+            inArray(agentLoopRuns.status, ["failed", "stalled"]),
+            eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          ),
+        )
+        .returning();
+
+      if (!updatedRunQueuedPath) {
+        throw new RunControlError(
+          "illegal_transition",
+          `Cannot retry run ${params.runId}: run status or step changed concurrently (TOCTOU race — retry rejected)`,
+        );
+      }
+
+      // Return the existing queued step run — the caller will dispatch it.
+      // No new step run is created, so no orphan risk.
+      return failedStepRun;
     }
 
     // Use MAX(attempt) to compute n+1 — sparse-safe: if attempts {1,3} exist,
