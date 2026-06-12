@@ -25,6 +25,7 @@ import {
   setChatWorkspaceStatus,
   subscribeChatWorkspaceStatus,
 } from "@/lib/workspace-status-store";
+import { buildChatRequestBody } from "./build-chat-request-body";
 
 const CHAT_UI_UPDATE_THROTTLE_MS = 75;
 
@@ -39,6 +40,7 @@ type UseSessionChatRuntimeParams = {
   initialMessages: WebAgentUIMessage[];
   initialChatActiveStreamId: string | null | undefined;
   contextLimit: number | null;
+  selectedWorkflowId: string | null;
 };
 
 type UseSessionChatRuntimeReturn = {
@@ -95,8 +97,10 @@ export function useSessionChatRuntime({
   initialMessages,
   initialChatActiveStreamId,
   contextLimit,
+  selectedWorkflowId,
 }: UseSessionChatRuntimeParams): UseSessionChatRuntimeReturn {
   const contextLimitRef = useRef<number | null>(contextLimit);
+  const selectedWorkflowIdRef = useRef<string | null>(selectedWorkflowId);
   const workspaceStatus = useSyncExternalStore(
     useCallback(
       (listener) => subscribeChatWorkspaceStatus(chatId, listener),
@@ -110,28 +114,28 @@ export function useSessionChatRuntime({
     contextLimitRef.current = contextLimit;
   }, [contextLimit]);
 
+  useEffect(() => {
+    selectedWorkflowIdRef.current = selectedWorkflowId;
+  }, [selectedWorkflowId]);
+
   const transport = useMemo(
     () =>
       new AbortableChatTransport({
         api: "/api/chat",
-        body: () => {
-          const requestContextLimit = contextLimitRef.current;
-          return {
+        body: () =>
+          buildChatRequestBody({
             sessionId,
             chatId,
-            ...(requestContextLimit !== null
-              ? {
-                  context: {
-                    contextLimit: requestContextLimit,
-                  },
-                }
-              : {}),
-          };
-        },
+            contextLimit: contextLimitRef.current,
+            selectedWorkflowId: selectedWorkflowIdRef.current,
+          }),
         prepareReconnectToStreamRequest: ({ id }) => ({
           api: `/api/chat/${id}/stream`,
         }),
       }),
+    // Refs (contextLimitRef, selectedWorkflowIdRef) are excluded from deps
+    // intentionally — they are updated via useEffect and avoid re-instantiating
+    // the transport on each state change. Only stable identifiers go here.
     [sessionId, chatId],
   );
 

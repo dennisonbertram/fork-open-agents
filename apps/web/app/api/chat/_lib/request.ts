@@ -58,15 +58,28 @@ type RequireChatIdentifiersResult =
 export async function parseChatRequestBody(
   req: Request,
 ): Promise<ParseChatRequestResult> {
+  let parsed: unknown;
   try {
-    const body = (await req.json()) as ChatRequestBody;
-    return { ok: true, body };
+    parsed = await req.json();
   } catch {
     return {
       ok: false,
       response: Response.json({ error: "Invalid JSON body" }, { status: 400 }),
     };
   }
+
+  const body = parsed as Record<string, unknown>;
+  if (!Array.isArray(body.messages) || body.messages.length === 0) {
+    return {
+      ok: false,
+      response: Response.json(
+        { error: "messages must be a non-empty array" },
+        { status: 400 },
+      ),
+    };
+  }
+
+  return { ok: true, body: body as unknown as ChatRequestBody };
 }
 
 export function requireChatIdentifiers(
