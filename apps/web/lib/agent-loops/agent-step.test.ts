@@ -127,6 +127,9 @@ mock.module("./store", () => ({
   recordAgentLoopEvent: recordAgentLoopEventMock,
   updateAgentLoopRunStatus: mock(async () => ({})),
   updateAgentLoopRunContext: updateAgentLoopRunContextMock,
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 // ── GitHub access + app mocks ─────────────────────────────────────────────────

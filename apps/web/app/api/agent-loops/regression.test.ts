@@ -45,6 +45,10 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoop,
   listAgentLoops,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  conditionallyTransitionRunStatus: mock(async () => null),
+  findStalledLoopRunCandidates: mock(async () => []),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 mock.module("@/lib/agent-loops/config", () => ({

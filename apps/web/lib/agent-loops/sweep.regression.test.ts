@@ -76,6 +76,8 @@ mock.module("@/lib/agent-loops/store", () => ({
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
+  updateAgentLoopRunContext: mock(async () => undefined),
+  retryCurrentStep: mock(async () => undefined),
 }));
 
 mock.module("@/lib/agent-loops/config", () => ({
