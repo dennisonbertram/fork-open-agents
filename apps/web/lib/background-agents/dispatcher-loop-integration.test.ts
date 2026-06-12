@@ -90,7 +90,7 @@ mock.module("@/lib/agent-loops/store", () => ({
     run: { id: "loop-run-1", status: "queued" },
     created: true,
   }),
-  hasActiveRunForLoop: async () => false,
+  hasActiveRunForLoop: async () => null,
   getOwnedAgentLoop: async () => loopForTriggerResult,
   createAgentLoopStepRun: async () => ({
     id: "step-run-1",
