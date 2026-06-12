@@ -174,7 +174,8 @@ describe("POST /api/agent-loops", () => {
         {
           kind: "loop_invalid" as const,
           rule: "no_start" as const,
-          message: "Loop definition must have exactly one start node; found none.",
+          message:
+            "Loop definition must have exactly one start node; found none.",
         },
       ],
     }));
@@ -254,9 +255,7 @@ describe("GET /api/agent-loops", () => {
     };
     const { GET } = await routeModulePromise;
 
-    const response = await GET(
-      new Request("http://localhost/api/agent-loops"),
-    );
+    const response = await GET(new Request("http://localhost/api/agent-loops"));
 
     expect(response.status).toBe(401);
   });
@@ -265,9 +264,7 @@ describe("GET /api/agent-loops", () => {
     isAgentLoopsEnabled.mockImplementation(() => false);
     const { GET } = await routeModulePromise;
 
-    const response = await GET(
-      new Request("http://localhost/api/agent-loops"),
-    );
+    const response = await GET(new Request("http://localhost/api/agent-loops"));
     const body = await response.json();
 
     expect(response.status).toBe(403);
@@ -277,9 +274,7 @@ describe("GET /api/agent-loops", () => {
   test("BT-009: lists owned loops for authenticated user", async () => {
     const { GET } = await routeModulePromise;
 
-    const response = await GET(
-      new Request("http://localhost/api/agent-loops"),
-    );
+    const response = await GET(new Request("http://localhost/api/agent-loops"));
     const body = await response.json();
 
     expect(response.status).toBe(200);

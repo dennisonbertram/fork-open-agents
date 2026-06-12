@@ -220,10 +220,32 @@ export async function deleteAgentLoop(
   return deleted.length > 0;
 }
 
-export async function listAgentLoops(userId: string): Promise<AgentLoop[]> {
+export async function listAgentLoops(
+  userId: string,
+  filter?: { repoOwner: string; repoName: string } | undefined,
+): Promise<AgentLoop[]> {
   return db.query.agentLoops.findMany({
-    where: eq(agentLoops.userId, userId),
+    where: filter
+      ? and(
+          eq(agentLoops.userId, userId),
+          eq(agentLoops.repoOwner, filter.repoOwner),
+          eq(agentLoops.repoName, filter.repoName),
+        )
+      : eq(agentLoops.userId, userId),
     orderBy: [desc(agentLoops.updatedAt)],
+  });
+}
+
+/**
+ * Lists step runs for a loop run, ordered by createdAt ascending.
+ * Used by the M1-08 poll endpoint to populate the run timeline.
+ */
+export async function listStepRunsForRun(
+  loopRunId: string,
+): Promise<AgentLoopStepRun[]> {
+  return db.query.agentLoopStepRuns.findMany({
+    where: eq(agentLoopStepRuns.loopRunId, loopRunId),
+    orderBy: [desc(agentLoopStepRuns.createdAt)],
   });
 }
 

@@ -243,9 +243,7 @@ describe("GET /api/agent-loops/[loopId]/runs", () => {
   test("BT-031: clamps limit param to 200", async () => {
     const { GET } = await routeModulePromise;
     await GET(
-      new Request(
-        "http://localhost/api/agent-loops/loop-1/runs?limit=500",
-      ),
+      new Request("http://localhost/api/agent-loops/loop-1/runs?limit=500"),
       context(),
     );
     expect(listAgentLoopRuns).toHaveBeenCalledWith(
