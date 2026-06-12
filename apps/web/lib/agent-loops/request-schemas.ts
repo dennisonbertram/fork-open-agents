@@ -5,9 +5,17 @@
  * Colocated in lib (not app/api) so tests can mock the entire lib module.
  */
 import { z } from "zod";
+import { loopGuardrailsSchema } from "./types";
 
 // Note: Zod v4 record schema requires (keyType, valueType) — z.record(z.string(), z.unknown())
 const recordSchema = z.record(z.string(), z.unknown());
+
+// Strict guardrails schema for API request bodies. All numeric ceiling fields
+// are validated as positive integers so strings like "never" are rejected at
+// the API boundary before they can reach the executor's Math.min() paths.
+// The object uses .strict() to reject unknown keys (no silent JSONB garbage).
+// Individual fields are optional — missing fields fall back to GUARDRAIL_DEFAULTS.
+const guardrailsBodySchema = loopGuardrailsSchema.nullable().optional();
 
 export const createAgentLoopBodySchema = z.object({
   name: z.string().min(1),
@@ -15,7 +23,7 @@ export const createAgentLoopBodySchema = z.object({
   repoOwner: z.string().min(1),
   repoName: z.string().min(1),
   definition: recordSchema,
-  guardrails: recordSchema.nullable().optional(),
+  guardrails: guardrailsBodySchema,
   permissions: recordSchema.optional(),
   status: z.enum(["draft", "active", "paused", "archived"]).optional(),
 });
@@ -26,7 +34,7 @@ export const updateAgentLoopBodySchema = z
     description: z.string().nullable().optional(),
     status: z.enum(["draft", "active", "paused", "archived"]).optional(),
     definition: recordSchema.optional(),
-    guardrails: recordSchema.nullable().optional(),
+    guardrails: guardrailsBodySchema,
     permissions: recordSchema.optional(),
   })
   .strict();

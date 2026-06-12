@@ -181,12 +181,14 @@ export type LoopDefinition = z.infer<typeof loopDefinitionSchema>;
 
 // ── LoopGuardrails schema ─────────────────────────────────────────────────────
 
-export const loopGuardrailsSchema = z.object({
-  maxStepsPerRun: z.number().int().positive().optional(),
-  maxIterations: z.number().int().positive().optional(),
-  maxRunDurationMs: z.number().int().positive().optional(),
-  stepTimeoutMs: z.number().int().positive().optional(),
-});
+export const loopGuardrailsSchema = z
+  .object({
+    maxStepsPerRun: z.number().int().positive().optional(),
+    maxIterations: z.number().int().positive().optional(),
+    maxRunDurationMs: z.number().int().positive().optional(),
+    stepTimeoutMs: z.number().int().positive().optional(),
+  })
+  .strict();
 
 export type LoopGuardrails = z.infer<typeof loopGuardrailsSchema>;
 

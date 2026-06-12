@@ -896,92 +896,134 @@ export async function resumeLoopRun(
  * Ownership is verified by loading the run with both runId AND userId in the
  * WHERE clause, so a mismatched userId is indistinguishable from a missing run
  * — no existence leak.
+ *
+ * The entire read/insert/update is executed inside a single transaction.
+ * The final run update is conditioned on the run still being in a retryable
+ * status (failed/stalled) AND still pointing at the same currentStepRunId
+ * observed at read time. If the conditional update matches 0 rows (a concurrent
+ * cancel/pause/other-retry changed the run between our read and update), the
+ * transaction rolls back — no orphan step run is left, and a
+ * RunControlError("illegal_transition") is thrown.
  */
 export async function retryCurrentStep(params: {
   runId: string;
   userId: string;
 }): Promise<AgentLoopStepRun> {
-  // Load the run — ownership-scoped: userId must match to prevent cross-user retry
-  const run = await db.query.agentLoopRuns.findFirst({
-    where: and(
-      eq(agentLoopRuns.id, params.runId),
-      eq(agentLoopRuns.userId, params.userId),
-    ),
-  });
-
-  if (!run) {
-    throw new RunControlError(
-      "not_found",
-      `Loop run not found: ${params.runId}`,
-    );
-  }
-
-  if (run.status !== "failed" && run.status !== "stalled") {
-    throw new RunControlError(
-      "illegal_transition",
-      `Cannot retry run ${params.runId}: not in a retryable status (failed/stalled), got: ${run.status}`,
-    );
-  }
-
-  if (!run.currentNodeId || !run.currentStepRunId) {
-    throw new RunControlError(
-      "illegal_transition",
-      `Cannot retry run ${params.runId}: missing currentNodeId or currentStepRunId`,
-    );
-  }
-
-  // Find the current (failed) step run to get nodeKind
-  const failedStepRun = await db.query.agentLoopStepRuns.findFirst({
-    where: eq(agentLoopStepRuns.id, run.currentStepRunId),
-  });
-
-  if (!failedStepRun) {
-    throw new Error(`Cannot retry: step run ${run.currentStepRunId} not found`);
-  }
-
-  // Use MAX(attempt) to compute n+1 — sparse-safe: if attempts {1,3} exist,
-  // MAX=3 → nextAttempt=4, whereas COUNT=2 → nextAttempt=3 would collide.
-  const [attemptRow] = await db
-    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
-    .from(agentLoopStepRuns)
-    .where(
-      and(
-        eq(agentLoopStepRuns.loopRunId, params.runId),
-        eq(agentLoopStepRuns.nodeId, run.currentNodeId),
+  return db.transaction(async (tx) => {
+    // Load the run inside the transaction — ownership-scoped
+    const run = await tx.query.agentLoopRuns.findFirst({
+      where: and(
+        eq(agentLoopRuns.id, params.runId),
+        eq(agentLoopRuns.userId, params.userId),
       ),
-    );
+    });
 
-  const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+    if (!run) {
+      throw new RunControlError(
+        "not_found",
+        `Loop run not found: ${params.runId}`,
+      );
+    }
 
-  // Create the new step run
-  const [newStepRun] = await db
-    .insert(agentLoopStepRuns)
-    .values({
-      id: nanoid(),
-      loopRunId: params.runId,
-      nodeId: run.currentNodeId,
-      nodeKind: failedStepRun.nodeKind,
-      attempt: nextAttempt,
-      status: "queued",
-    })
-    .returning();
+    if (run.status !== "failed" && run.status !== "stalled") {
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot retry run ${params.runId}: not in a retryable status (failed/stalled), got: ${run.status}`,
+      );
+    }
 
-  if (!newStepRun) {
-    throw new Error("Failed to create retry step run");
-  }
+    if (!run.currentNodeId || !run.currentStepRunId) {
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot retry run ${params.runId}: missing currentNodeId or currentStepRunId`,
+      );
+    }
 
-  // Transition the run to running and update currentStepRunId
-  const now = new Date();
-  await db
-    .update(agentLoopRuns)
-    .set({
-      status: "running",
-      currentStepRunId: newStepRun.id,
-      // COALESCE: preserve startedAt if already set
-      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
-      updatedAt: now,
-    })
-    .where(eq(agentLoopRuns.id, params.runId));
+    // Snapshot the currentStepRunId we read — used in the conditional update
+    const observedStepRunId = run.currentStepRunId;
 
-  return newStepRun;
+    // Find the current (failed) step run to get nodeKind
+    const failedStepRun = await tx.query.agentLoopStepRuns.findFirst({
+      where: eq(agentLoopStepRuns.id, observedStepRunId),
+    });
+
+    if (!failedStepRun) {
+      throw new Error(`Cannot retry: step run ${observedStepRunId} not found`);
+    }
+
+    // Use MAX(attempt) to compute n+1 — sparse-safe: if attempts {1,3} exist,
+    // MAX=3 → nextAttempt=4, whereas COUNT=2 → nextAttempt=3 would collide.
+    //
+    // Concurrency safety: two concurrent retries at READ COMMITTED isolation can
+    // both read the same MAX(attempt) and compute the same nextAttempt value.
+    // The unique index `agent_loop_step_runs_run_node_attempt_idx` on
+    // (loopRunId, nodeId, attempt) ensures only one INSERT succeeds — the second
+    // throws a unique-constraint violation, which aborts its transaction and rolls
+    // back the duplicate step row.  Duplicate-attempt rows are therefore
+    // impossible even under concurrent callers; no additional serialization is
+    // needed here.
+    const [attemptRow] = await tx
+      .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+      .from(agentLoopStepRuns)
+      .where(
+        and(
+          eq(agentLoopStepRuns.loopRunId, params.runId),
+          eq(agentLoopStepRuns.nodeId, run.currentNodeId),
+        ),
+      );
+
+    const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+
+    // Insert the new step run inside the transaction — rolled back automatically
+    // if the conditional update below matches 0 rows (race lost).
+    const [newStepRun] = await tx
+      .insert(agentLoopStepRuns)
+      .values({
+        id: nanoid(),
+        loopRunId: params.runId,
+        nodeId: run.currentNodeId,
+        nodeKind: failedStepRun.nodeKind,
+        attempt: nextAttempt,
+        status: "queued",
+      })
+      .returning();
+
+    if (!newStepRun) {
+      throw new Error("Failed to create retry step run");
+    }
+
+    // Conditional run update — only succeeds if the run is still in a
+    // retryable status AND still points at the step run we observed.
+    // If another action (cancel/pause/concurrent-retry) changed either field
+    // between our read and now, this matches 0 rows → race detected.
+    const now = new Date();
+    const [updatedRun] = await tx
+      .update(agentLoopRuns)
+      .set({
+        status: "running",
+        currentStepRunId: newStepRun.id,
+        // COALESCE: preserve startedAt if already set
+        startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.runId),
+          inArray(agentLoopRuns.status, ["failed", "stalled"]),
+          eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+        ),
+      )
+      .returning();
+
+    if (!updatedRun) {
+      // Concurrent control action changed the run status or currentStepRunId
+      // before our update. The transaction will roll back the inserted step run.
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot retry run ${params.runId}: run status or step changed concurrently (TOCTOU race — retry rejected)`,
+      );
+    }
+
+    return newStepRun;
+  });
 }

@@ -87,16 +87,34 @@ const selectMock = mock((_fields?: unknown) => ({ from: fromMock }));
 const txInsertMock = mock((_table: unknown) => ({
   values: valuesMock,
 }));
+// txUpdateReturning controls what the transaction update .returning() yields.
+// Default: mirrors inserted values + set values (existing behaviour).
+// Tests that simulate a TOCTOU race override this to return [].
+let txUpdateReturningOverride: unknown[] | null = null;
 const txUpdateMock = mock((_table: unknown) => ({
   set: mock((setVals: unknown) => ({
     where: mock(() => ({
-      returning: mock(() => [
-        { ...(insertedValues[0] as object), ...(setVals as object) },
-      ]),
+      returning: mock(() => {
+        if (txUpdateReturningOverride !== null) {
+          return txUpdateReturningOverride;
+        }
+        return [{ ...(insertedValues[0] as object), ...(setVals as object) }];
+      }),
     })),
   })),
 }));
 const txFindFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
+
+// txSelectResult controls what tx.select().from().where() returns.
+// Used by retryCurrentStep to compute MAX(attempt).
+// The real Drizzle query ends at .where() (no .limit()), so the mock must
+// make .where() itself return a thenable array.
+let txSelectResult: unknown[] = [{ maxAttempt: 1 }];
+const txSelectMock = mock((_fields?: unknown) => ({
+  from: mock(() => ({
+    where: mock(async () => txSelectResult),
+  })),
+}));
 
 mock.module("@/lib/db/client", () => ({
   db: {
@@ -127,9 +145,11 @@ mock.module("@/lib/db/client", () => ({
         insert: txInsertMock,
         update: txUpdateMock,
         delete: deleteMock,
+        select: txSelectMock,
         query: {
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },
+          agentLoopStepRuns: { findFirst: txFindFirstMock },
         },
       }),
     ),
@@ -160,11 +180,17 @@ function resetMocks() {
   _updatedSet = {};
   _deletedWhere = null;
   queryResult = [];
+  txUpdateReturningOverride = null;
+  txSelectResult = [{ maxAttempt: 1 }];
   insertMock.mockClear();
   updateMock.mockClear();
   deleteMock.mockClear();
   findManyMock.mockClear();
   findFirstMock.mockClear();
+  txFindFirstMock.mockClear();
+  txInsertMock.mockClear();
+  txUpdateMock.mockClear();
+  txSelectMock.mockClear();
   returningMock.mockClear();
   valuesMock.mockClear();
   onConflictDoNothingMock.mockClear();
@@ -666,6 +692,157 @@ describe("listAgentLoopEvents", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.loopRunId).toBe("run-1");
+  });
+});
+
+// ── retryCurrentStep — TOCTOU race protection (BT-P2-12/13) ──────────────────
+//
+// FINDING 2: the final run update must be conditional on the run still being in
+// a retryable status. If another action (cancel/pause/other-retry) changes the
+// status between our read and update, the update matches 0 rows — the function
+// must throw RunControlError("illegal_transition") and NOT leave an orphan step.
+
+describe("retryCurrentStep — TOCTOU race protection", () => {
+  beforeEach(resetMocks);
+
+  test("BT-P2-12: retryCurrentStep succeeds on the happy path (failed run, no race)", async () => {
+    // Set up: findFirst returns a failed run with currentNodeId and currentStepRunId
+    const run = makeLoopRun({
+      status: "failed",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+    });
+    const failedStep = makeStepRun({
+      id: "step-old",
+      loopRunId: "run-1",
+      nodeId: "work",
+      nodeKind: "agent_step",
+      attempt: 1,
+      status: "failed",
+    });
+
+    // tx.query.agentLoopRuns.findFirst → the failed run
+    // tx.query.agentLoopStepRuns.findFirst → the failed step
+    let txFindCount = 0;
+    txFindFirstMock.mockImplementation(async () => {
+      txFindCount++;
+      if (txFindCount === 1) return run;
+      if (txFindCount === 2) return failedStep;
+      return null;
+    });
+
+    // tx.select().from().where() → maxAttempt = 1
+    txSelectResult = [{ maxAttempt: 1 }];
+
+    // tx.insert returns the new step run
+    const newStep = makeStepRun({
+      id: "step-new",
+      attempt: 2,
+      status: "queued",
+    });
+    returningMock.mockImplementationOnce(() => [newStep]);
+
+    // tx.update returns the updated run row (conditional matched)
+    txUpdateReturningOverride = [
+      { ...run, status: "running", currentStepRunId: "step-new" },
+    ];
+
+    const store = await storePromise;
+    const result = await store.retryCurrentStep({
+      runId: "run-1",
+      userId: "user-1",
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.attempt).toBe(2);
+    expect(result.status).toBe("queued");
+  });
+
+  test("BT-P2-13: retryCurrentStep throws RunControlError(illegal_transition) when conditional update matches 0 rows (TOCTOU race)", async () => {
+    // The run is "failed" when we read it, but the conditional update returns
+    // 0 rows — simulating a concurrent cancel/pause changing the status.
+    const run = makeLoopRun({
+      status: "failed",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+    });
+    const failedStep = makeStepRun({
+      id: "step-old",
+      nodeId: "work",
+      nodeKind: "agent_step",
+      attempt: 1,
+      status: "failed",
+    });
+
+    let txFindCount = 0;
+    txFindFirstMock.mockImplementation(async () => {
+      txFindCount++;
+      if (txFindCount === 1) return run;
+      if (txFindCount === 2) return failedStep;
+      return null;
+    });
+
+    txSelectResult = [{ maxAttempt: 1 }];
+
+    const newStep = makeStepRun({
+      id: "step-new",
+      attempt: 2,
+      status: "queued",
+    });
+    returningMock.mockImplementationOnce(() => [newStep]);
+
+    // Conditional update returns NO rows — race lost
+    txUpdateReturningOverride = [];
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+
+    // First call — verifies the 0-row-update path throws RunControlError.
+    await expect(
+      store.retryCurrentStep({ runId: "run-1", userId: "user-1" }),
+    ).rejects.toThrow(RunControlError);
+
+    // Second call — confirms errorKind is "illegal_transition".
+    // Using .catch so that an absent throw is a test FAILURE (not a silent pass):
+    // if retryCurrentStep resolves, secondCallErr is the resolved value (not an
+    // error), the instanceof check fails, and the test fails — no silent green.
+    txFindCount = 0;
+    returningMock.mockImplementationOnce(() => [newStep]);
+    const secondCallErr = await store
+      .retryCurrentStep({ runId: "run-1", userId: "user-1" })
+      .catch((e: unknown) => e);
+    expect(secondCallErr).toBeInstanceOf(RunControlError);
+    if (secondCallErr instanceof RunControlError) {
+      expect(secondCallErr.kind).toBe("illegal_transition");
+    }
+  });
+
+  test("BT-P2-14: retryCurrentStep throws not_found when run does not exist", async () => {
+    // tx.query.agentLoopRuns.findFirst returns null (missing or wrong userId)
+    txFindFirstMock.mockResolvedValueOnce(null);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+
+    await expect(
+      store.retryCurrentStep({ runId: "run-missing", userId: "user-1" }),
+    ).rejects.toThrow(RunControlError);
+  });
+
+  test("BT-P2-15: retryCurrentStep throws illegal_transition when run is in running status", async () => {
+    const run = makeLoopRun({
+      status: "running",
+      currentNodeId: "work",
+      currentStepRunId: "step-1",
+    });
+    txFindFirstMock.mockResolvedValueOnce(run);
+
+    const store = await storePromise;
+    const { RunControlError } = await import("./run-controls-error");
+
+    await expect(
+      store.retryCurrentStep({ runId: "run-1", userId: "user-1" }),
+    ).rejects.toThrow(RunControlError);
   });
 });
 
