@@ -15,6 +15,7 @@
 
 import { describe, expect, it } from "bun:test";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
+import { validateLoopDefinition } from "@/lib/agent-loops/validation";
 import { definitionToFlow, flowToDefinition } from "./definition-mapping";
 import { createLoopBuilderStore } from "./use-loop-builder";
 
@@ -374,5 +375,136 @@ describe("regression (Defect 4): addNode never produces overlapping positions", 
 
     expect(node.position.x).toBe(target.x);
     expect(node.position.y).toBe(target.y);
+  });
+});
+
+// ── Regression: palette defaults never produce missing_node_config / schema_error ──
+//
+// If 2ee60f35 (fix: TASK-364P2 valid palette defaults) is reverted, the
+// github_check default loses its check config (VR-12 fires: missing_node_config)
+// and the condition default reverts to path:"" (VR-15 fires: schema_error for
+// path min(1)), bricking Save for the user on those node kinds.
+
+describe("regression (TASK-364P2): palette defaults never produce config or schema errors", () => {
+  // Minimal base graph that satisfies VR-01/VR-02 (exactly one start, one end).
+  // We will wire each new palette node into it via one legal outgoing edge.
+  const BASE_DEF = {
+    nodes: [
+      { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+      { id: "e", kind: "end" as const, label: "End", position: { x: 400, y: 0 } },
+    ],
+    edges: [{ id: "ed0", source: "s", target: "e", when: "always" as const }],
+  };
+
+  function noConfigOrSchemaErrors(
+    result: ReturnType<typeof validateLoopDefinition>,
+  ): boolean {
+    if (result.ok) return true;
+    return !result.errors.some(
+      (err) =>
+        err.rule === "missing_node_config" || err.rule === "schema_error",
+    );
+  }
+
+  it("regression: github_check palette default — no missing_node_config or schema_error after add+wire", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(BASE_DEF);
+
+    const id = store.getState().addNode("github_check", { x: 200, y: 0 });
+    store.getState().connectEdge({ source: id, target: "e", when: "success" });
+    store.getState().connectEdge({ source: "s", target: id, when: "always" });
+
+    const result = validateLoopDefinition(store.getState().currentDefinition());
+    expect(noConfigOrSchemaErrors(result)).toBe(true);
+  });
+
+  it("regression: condition palette default — no missing_node_config or schema_error after add+wire", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({
+      nodes: [
+        { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+        { id: "e1", kind: "end" as const, label: "End1", position: { x: 400, y: -60 } },
+        { id: "e2", kind: "end" as const, label: "End2", position: { x: 400, y: 60 } },
+      ],
+      edges: [{ id: "ed0", source: "s", target: "e1", when: "always" as const }],
+    });
+
+    const id = store.getState().addNode("condition", { x: 200, y: 0 });
+    store.getState().connectEdge({ source: "s", target: id, when: "always" });
+    store.getState().connectEdge({ source: id, target: "e1", when: "true" });
+    store.getState().connectEdge({ source: id, target: "e2", when: "false" });
+
+    const result = validateLoopDefinition(store.getState().currentDefinition());
+    expect(noConfigOrSchemaErrors(result)).toBe(true);
+  });
+
+  it("regression: agent_step palette default — no config or schema errors after add+wire", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(BASE_DEF);
+
+    const id = store.getState().addNode("agent_step", { x: 200, y: 0 });
+    store.getState().connectEdge({ source: id, target: "e", when: "success" });
+    store.getState().connectEdge({ source: "s", target: id, when: "always" });
+
+    const result = validateLoopDefinition(store.getState().currentDefinition());
+    expect(noConfigOrSchemaErrors(result)).toBe(true);
+  });
+
+  it("regression: end palette default — no config or schema errors after add", () => {
+    // End nodes need no outgoing edge (VR-04 exempts them) and no config.
+    const store = createLoopBuilderStore();
+    store.getState().initialize(BASE_DEF);
+    store.getState().addNode("end", { x: 200, y: 100 });
+
+    const result = validateLoopDefinition(store.getState().currentDefinition());
+    expect(noConfigOrSchemaErrors(result)).toBe(true);
+  });
+
+  it("regression: github_check default check.kind satisfies githubCheckSchema (no schema_error in isolation)", () => {
+    // Directly validate a definition containing only the default github_check
+    // node data (with check config) to ensure schema validation passes.
+    const def = {
+      nodes: [
+        { id: "s", kind: "start" as const, label: "S", position: { x: 0, y: 0 } },
+        {
+          id: "g",
+          kind: "github_check" as const,
+          label: "GH",
+          position: { x: 100, y: 0 },
+          check: { kind: "list_issues" as const, state: "open" as const },
+        },
+        { id: "e", kind: "end" as const, label: "E", position: { x: 200, y: 0 } },
+      ],
+      edges: [
+        { id: "e1", source: "s", target: "g", when: "always" as const },
+        { id: "e2", source: "g", target: "e", when: "success" as const },
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(true);
+  });
+
+  it("regression: condition default path satisfies conditionSchema min(1) (no schema_error in isolation)", () => {
+    const def = {
+      nodes: [
+        { id: "s", kind: "start" as const, label: "S", position: { x: 0, y: 0 } },
+        {
+          id: "c",
+          kind: "condition" as const,
+          label: "C",
+          position: { x: 100, y: 0 },
+          condition: { path: "previous_step.output", op: "exists" as const },
+        },
+        { id: "e1", kind: "end" as const, label: "E1", position: { x: 200, y: -50 } },
+        { id: "e2", kind: "end" as const, label: "E2", position: { x: 200, y: 50 } },
+      ],
+      edges: [
+        { id: "e1", source: "s", target: "c", when: "always" as const },
+        { id: "e2", source: "c", target: "e1", when: "true" as const },
+        { id: "e3", source: "c", target: "e2", when: "false" as const },
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(true);
   });
 });
