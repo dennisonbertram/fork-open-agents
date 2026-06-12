@@ -42,10 +42,7 @@ const KNOWN_RUN_IDS = new Set<string>();
  */
 const recordAgentLoopEventMock = mock(
   async (input: { loopRunId: string; eventName: string }) => {
-    if (
-      input.loopRunId === "no-run" ||
-      !KNOWN_RUN_IDS.has(input.loopRunId)
-    ) {
+    if (input.loopRunId === "no-run" || !KNOWN_RUN_IDS.has(input.loopRunId)) {
       throw new Error(
         `FK violation: agent_loop_events.loop_run_id="${input.loopRunId}" ` +
           `not in agent_loop_runs (known: [${[...KNOWN_RUN_IDS].join(",")}])`,
@@ -158,7 +155,12 @@ mock.module("@/lib/agent-loops/config", () => ({
 
 const validDefinition = {
   nodes: [
-    { id: "start-node", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    {
+      id: "start-node",
+      kind: "start",
+      label: "Start",
+      position: { x: 0, y: 0 },
+    },
     { id: "end-node", kind: "end", label: "End", position: { x: 100, y: 0 } },
   ],
   edges: [
@@ -261,7 +263,7 @@ describe("FK Bug A: active-run skip event loopRunId", () => {
         event: githubEvent,
         requestId: "req-fk-a1",
       });
-    } catch (e) {
+    } catch {
       threw = true;
     }
 
@@ -272,8 +274,8 @@ describe("FK Bug A: active-run skip event loopRunId", () => {
       recordAgentLoopEventMock.mock.calls as unknown as Array<
         [{ loopRunId: string; eventName: string }]
       >
-    ).find((args) =>
-      args[0].eventName === "agent-loop.trigger.skipped_active_run",
+    ).find(
+      (args) => args[0].eventName === "agent-loop.trigger.skipped_active_run",
     );
     expect(skipEventCall).toBeDefined();
     expect(skipEventCall?.[0].loopRunId).toBe("existing-run-fk-1");
@@ -298,7 +300,9 @@ describe("FK Bug A: active-run skip event loopRunId", () => {
     expect(hasActiveRunForLoopMock).toHaveBeenCalledWith("loop-fk-1");
     // Returned the run id, NOT a boolean
     const callResult = (
-      hasActiveRunForLoopMock.mock.results as Array<{ value: Promise<string | null> }>
+      hasActiveRunForLoopMock.mock.results as Array<{
+        value: Promise<string | null>;
+      }>
     )[0]?.value;
     expect(callResult).toBeDefined();
     // The result must resolve to the run id string

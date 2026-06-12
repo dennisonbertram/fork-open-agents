@@ -128,7 +128,12 @@ mock.module("@/lib/agent-loops/config", () => ({
 
 const regValidDefinition = {
   nodes: [
-    { id: "start-node", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    {
+      id: "start-node",
+      kind: "start",
+      label: "Start",
+      position: { x: 0, y: 0 },
+    },
     { id: "end-node", kind: "end", label: "End", position: { x: 100, y: 0 } },
   ],
   edges: [
@@ -233,7 +238,9 @@ describe("REGRESSION-348: FK violations in dispatcher-bridge", () => {
       recordAgentLoopEventRegMock.mock.calls as unknown as Array<
         [{ loopRunId: string; eventName: string }]
       >
-    ).find((args) => args[0].eventName === "agent-loop.trigger.skipped_active_run");
+    ).find(
+      (args) => args[0].eventName === "agent-loop.trigger.skipped_active_run",
+    );
     expect(skipCall).toBeDefined();
     expect(skipCall?.[0].loopRunId).toBe(existingRunId);
     expect(skipCall?.[0].loopRunId).not.toBe("no-run");
