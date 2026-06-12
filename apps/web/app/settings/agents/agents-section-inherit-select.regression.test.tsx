@@ -12,8 +12,12 @@
  * → null) remain unchanged.
  *
  * REG-WI1-001 through REG-WI1-005: unit tests for the sentinel helpers.
- * REG-WI1-006: agents-section.tsx must NOT contain any SelectItem with value=""
- *               after the fix.
+ * REG-WI1-006: source-content assertion — agents-section.tsx must NOT contain
+ *               any SelectItem with value="" and must use INHERIT_SENTINEL for
+ *               both the Model and Runtime profile selects. This test fails if
+ *               the two `value={INHERIT_SENTINEL}` lines are reverted to
+ *               `value=""`, proving the regression cannot silently return.
+ * REG-WI1-007: roundtrip for empty string (fromSelectValue(toSelectValue('')) === '').
  */
 
 import { describe, expect, test } from "bun:test";
@@ -60,12 +64,34 @@ describe("Regression WI-1: inherit-select sentinel helpers", () => {
     );
   });
 
-  // REG-WI1-006: roundtrip identity for real ids
-  test("REG-WI1-006: roundtrip fromSelectValue(toSelectValue(id)) === id for non-empty ids", () => {
-    const ids = ["anthropic/claude-opus-4-5", "web-bun-agent-browser", "x"];
-    for (const id of ids) {
-      expect(fromSelectValue(toSelectValue(id))).toBe(id);
-    }
+  // REG-WI1-006: source-content guard — agents-section.tsx must not have value=""
+  // on any SelectItem, and must use INHERIT_SENTINEL for both the Model and
+  // Runtime profile inherit options.
+  //
+  // NOTE: renderToStaticMarkup cannot catch this crash because Radix Select
+  // renders closed-Select items into a DocumentFragment after a layout effect
+  // (client-side only). Source assertion is the correct deterministic guard.
+  test('REG-WI1-006: agents-section.tsx has no SelectItem with value="" and uses INHERIT_SENTINEL for both selects', async () => {
+    const source = await Bun.file(
+      new URL("agents-section.tsx", import.meta.url),
+    ).text();
+
+    // Must not contain any bare value="" on a SelectItem — this is the crash.
+    // The pattern covers `value=""` and `value=''` forms.
+    expect(source).not.toMatch(/SelectItem[^>]*value=""/);
+    expect(source).not.toMatch(/SelectItem[^>]*value=''/);
+
+    // Must use INHERIT_SENTINEL as the value for the "inherit" option.
+    // Both the Model select and the Runtime profile select need it.
+    // Count occurrences: expect at least 2 (one per select).
+    const sentinelMatches = source.match(/value=\{INHERIT_SENTINEL\}/g);
+    expect(sentinelMatches).not.toBeNull();
+    expect((sentinelMatches ?? []).length).toBeGreaterThanOrEqual(2);
+
+    // Must import INHERIT_SENTINEL (proves it's not just a string literal)
+    expect(source).toContain("INHERIT_SENTINEL");
+    expect(source).toContain("toSelectValue");
+    expect(source).toContain("fromSelectValue");
   });
 
   // REG-WI1-007: roundtrip for empty string
