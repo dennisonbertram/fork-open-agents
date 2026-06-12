@@ -168,6 +168,7 @@ mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: mock(async () => null),
   getAgentLoopRunWithLoop: mock(async () => null),
   updateAgentLoopRunStatus: mock(async () => ({})),
+  conditionallyTransitionRunStatus: mock(async () => ({})),
   updateAgentLoopStepRun: mock(async () => ({})),
   createAgentLoopStepRun: mock(async () => ({})),
   advanceRunToNextStep: mock(async () => false),
