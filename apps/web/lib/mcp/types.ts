@@ -1,6 +1,18 @@
 import { z } from "zod";
 
 /**
+ * Thrown by the MCP store when a unique-constraint violation (pg code 23505)
+ * is detected on the mcp_servers name index. Routes match instanceof to return
+ * a friendly 409 without inspecting raw DB error messages.
+ */
+export class McpServerConflictError extends Error {
+  constructor() {
+    super("A server with that name already exists.");
+    this.name = "McpServerConflictError";
+  }
+}
+
+/**
  * Validates that a URL is either:
  * - https:// (any host, required for production MCP servers)
  * - http://localhost or http://127.0.0.1 (allowed for dev servers)

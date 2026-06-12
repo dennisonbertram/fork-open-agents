@@ -1,8 +1,8 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { createMcpServer, listMcpServers } from "@/lib/mcp/store";
-import { createMcpServerSchema } from "@/lib/mcp/types";
+import { McpServerConflictError, createMcpServerSchema } from "@/lib/mcp/types";
 
-export async function GET() {
+export async function GET(_req: Request) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -40,10 +40,7 @@ export async function POST(req: Request) {
     const server = await createMcpServer(authResult.userId, parsed.data);
     return Response.json({ server }, { status: 201 });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    // Duplicate name — friendly message, no SQL text
-    if (/unique|duplicate/i.test(message)) {
+    if (error instanceof McpServerConflictError) {
       return Response.json(
         { error: "A server with that name already exists." },
         { status: 409 },

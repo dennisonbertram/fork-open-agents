@@ -8,7 +8,27 @@ import {
 } from "@/lib/inference/encryption";
 import { db } from "@/lib/db/client";
 import { mcpServers } from "@/lib/db/schema";
-import type { CreateMcpServerInput, UpdateMcpServerInput } from "./types";
+import {
+  McpServerConflictError,
+  type CreateMcpServerInput,
+  type UpdateMcpServerInput,
+} from "./types";
+
+/**
+ * Returns true when `err` (or any error in its cause chain) is a PostgreSQL
+ * unique-constraint violation (SQLSTATE 23505). Drizzle-orm 0.45 wraps the
+ * pg error, so `err.message` is a "Failed query: …" string while the original
+ * pg error — with `.code === "23505"` — lives on `err.cause`.
+ */
+function isUniqueViolation(err: unknown): boolean {
+  let current: unknown = err;
+  while (current != null && typeof current === "object") {
+    const e = current as Record<string, unknown>;
+    if (e["code"] === "23505") return true;
+    current = e["cause"];
+  }
+  return false;
+}
 
 // ── Encryption helpers ────────────────────────────────────────────────────────
 
@@ -94,23 +114,28 @@ export async function createMcpServer(
       ? encryptMcpHeaders(input.headers)
       : null;
 
-  const [created] = await db
-    .insert(mcpServers)
-    .values({
-      id: nanoid(),
-      userId,
-      name: input.name,
-      url: input.url,
-      transport: input.transport,
-      headersEncrypted,
-    })
-    .returning();
+  try {
+    const [created] = await db
+      .insert(mcpServers)
+      .values({
+        id: nanoid(),
+        userId,
+        name: input.name,
+        url: input.url,
+        transport: input.transport,
+        headersEncrypted,
+      })
+      .returning();
 
-  if (!created) {
-    throw new Error("Failed to create MCP server");
+    if (!created) {
+      throw new Error("Failed to create MCP server");
+    }
+
+    return toSummary(created);
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new McpServerConflictError();
+    throw err;
   }
-
-  return toSummary(created);
 }
 
 export async function updateMcpServer(
@@ -143,13 +168,18 @@ export async function updateMcpServer(
     patch.headersEncrypted = encryptMcpHeaders(input.headers);
   }
 
-  const [updated] = await db
-    .update(mcpServers)
-    .set(patch)
-    .where(and(eq(mcpServers.userId, userId), eq(mcpServers.id, serverId)))
-    .returning();
+  try {
+    const [updated] = await db
+      .update(mcpServers)
+      .set(patch)
+      .where(and(eq(mcpServers.userId, userId), eq(mcpServers.id, serverId)))
+      .returning();
 
-  return updated ? toSummary(updated) : null;
+    return updated ? toSummary(updated) : null;
+  } catch (err) {
+    if (isUniqueViolation(err)) throw new McpServerConflictError();
+    throw err;
+  }
 }
 
 export async function deleteMcpServer(

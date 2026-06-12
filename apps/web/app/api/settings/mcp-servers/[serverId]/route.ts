@@ -1,6 +1,6 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { deleteMcpServer, updateMcpServer } from "@/lib/mcp/store";
-import { updateMcpServerSchema } from "@/lib/mcp/types";
+import { McpServerConflictError, updateMcpServerSchema } from "@/lib/mcp/types";
 
 interface RouteContext {
   params: Promise<{ serverId: string }>;
@@ -43,9 +43,7 @@ export async function PATCH(req: Request, context: RouteContext) {
     }
     return Response.json({ server });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (/unique|duplicate/i.test(message)) {
+    if (error instanceof McpServerConflictError) {
       return Response.json(
         { error: "A server with that name already exists." },
         { status: 409 },

@@ -9,6 +9,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { McpServerSummary } from "@/lib/mcp/store";
+import { McpServerConflictError } from "@/lib/mcp/types";
 
 // Allow server-only imports in test environment
 mock.module("server-only", () => ({}));
@@ -143,13 +144,12 @@ describe("POST /api/settings/mcp-servers", () => {
   });
 
   test("(4) duplicate name → 409 friendly message, no SQL text", async () => {
-    // Override createMcpServer to throw a duplicate key error
+    // The store detects pg code 23505 on the cause chain and rethrows as
+    // McpServerConflictError. The mock simulates that real store behaviour.
     mock.module("@/lib/mcp/store", () => ({
       listMcpServers: async () => storedServers,
       createMcpServer: async () => {
-        throw new Error(
-          'duplicate key value violates unique constraint "mcp_servers_user_name_idx"',
-        );
+        throw new McpServerConflictError();
       },
       updateMcpServer: async () => null,
       deleteMcpServer: async () => false,
