@@ -3,6 +3,7 @@
  * Written first (RED phase) — all tests fail before implementation.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { RunControlError } from "@/lib/agent-loops/run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -86,7 +87,8 @@ describe("POST /api/agent-loop-runs/[runId]/pause", () => {
 
   test("BT-047: returns 409 for illegal transition (run not in pausable status)", async () => {
     pauseLoopRun.mockImplementation(async () => {
-      throw new Error(
+      throw new RunControlError(
+        "illegal_transition",
         "Cannot pause run run-1: not in a pausable status (running/queued)",
       );
     });
@@ -104,13 +106,7 @@ describe("POST /api/agent-loop-runs/[runId]/pause", () => {
 
   test("BT-048: returns 404 for non-owned run (no existence leak)", async () => {
     pauseLoopRun.mockImplementation(async () => {
-      throw new Error("Cannot pause run run-999: not in a pausable status");
-    });
-    // When the run doesn't exist, the store also throws with the same message
-    // The route must treat "not found" as 404 in the ownership-scoped path.
-    // We simulate ownership-miss by having the throw message contain "not found"
-    pauseLoopRun.mockImplementation(async () => {
-      throw new Error("Run run-999 not found");
+      throw new RunControlError("not_found", "Loop run not found: run-999");
     });
     const { POST } = await pauseRoutePromise;
     const response = await POST(
@@ -163,7 +159,8 @@ describe("POST /api/agent-loop-runs/[runId]/cancel", () => {
 
   test("BT-051: returns 409 for illegal transition (run not in cancellable status)", async () => {
     cancelLoopRun.mockImplementation(async () => {
-      throw new Error(
+      throw new RunControlError(
+        "illegal_transition",
         "Cannot cancel run run-1: not in a cancellable status (running/queued/paused)",
       );
     });
@@ -220,7 +217,10 @@ describe("POST /api/agent-loop-runs/[runId]/resume", () => {
 
   test("BT-054: returns 409 for illegal transition (run not paused)", async () => {
     resumeLoopRun.mockImplementation(async () => {
-      throw new Error("Cannot resume run run-1: not in paused status");
+      throw new RunControlError(
+        "illegal_transition",
+        "Cannot resume run run-1: not in paused status",
+      );
     });
     const { POST } = await resumeRoutePromise;
     const response = await POST(
@@ -275,7 +275,8 @@ describe("POST /api/agent-loop-runs/[runId]/retry", () => {
 
   test("BT-057: returns 409 for illegal transition (run not in retryable status)", async () => {
     retryCurrentStep.mockImplementation(async () => {
-      throw new Error(
+      throw new RunControlError(
+        "illegal_transition",
         "Cannot retry run run-1: not in a retryable status (failed/stalled), got: running",
       );
     });
@@ -293,7 +294,7 @@ describe("POST /api/agent-loop-runs/[runId]/retry", () => {
 
   test("BT-058: returns 404 for non-owned run", async () => {
     retryCurrentStep.mockImplementation(async () => {
-      throw new Error("Run run-999 not found");
+      throw new RunControlError("not_found", "Loop run not found: run-999");
     });
     const { POST } = await retryRoutePromise;
     const response = await POST(

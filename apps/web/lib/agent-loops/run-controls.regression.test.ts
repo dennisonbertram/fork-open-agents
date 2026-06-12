@@ -29,6 +29,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
+import { RunControlError } from "./run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -65,13 +66,14 @@ function nextId() {
 const pauseLoopRunMock = mock(async (runId: string, userId: string) => {
   const owner = runOwnership[runId];
   if (!owner || owner !== userId) {
-    throw new Error(`Cannot pause run ${runId}: ownership check failed`);
+    throw new RunControlError("not_found", `Loop run not found: ${runId}`);
   }
   if (
     currentLoopRun.status !== "running" &&
     currentLoopRun.status !== "queued"
   ) {
-    throw new Error(
+    throw new RunControlError(
+      "illegal_transition",
       `Cannot pause run ${runId}: status ${currentLoopRun.status}`,
     );
   }
@@ -82,11 +84,14 @@ const pauseLoopRunMock = mock(async (runId: string, userId: string) => {
 const cancelLoopRunMock = mock(async (runId: string, userId: string) => {
   const owner = runOwnership[runId];
   if (!owner || owner !== userId) {
-    throw new Error(`Cannot cancel run ${runId}: ownership check failed`);
+    throw new RunControlError("not_found", `Loop run not found: ${runId}`);
   }
   const ok = new Set(["running", "queued", "paused"]);
   if (!ok.has(currentLoopRun.status)) {
-    throw new Error(`Cannot cancel: ${currentLoopRun.status}`);
+    throw new RunControlError(
+      "illegal_transition",
+      `Cannot cancel: ${currentLoopRun.status}`,
+    );
   }
   currentLoopRun = { ...currentLoopRun, status: "cancelled" };
   return currentLoopRun;
@@ -95,10 +100,13 @@ const cancelLoopRunMock = mock(async (runId: string, userId: string) => {
 const resumeLoopRunMock = mock(async (runId: string, userId: string) => {
   const owner = runOwnership[runId];
   if (!owner || owner !== userId) {
-    throw new Error(`Cannot resume run ${runId}: ownership check failed`);
+    throw new RunControlError("not_found", `Loop run not found: ${runId}`);
   }
   if (currentLoopRun.status !== "paused") {
-    throw new Error(`Cannot resume: ${currentLoopRun.status}`);
+    throw new RunControlError(
+      "illegal_transition",
+      `Cannot resume: ${currentLoopRun.status}`,
+    );
   }
   currentLoopRun = { ...currentLoopRun, status: "running" };
   return currentLoopRun;
@@ -109,13 +117,16 @@ const retryCurrentStepMock = mock(
     const { runId, userId } = params;
     const owner = runOwnership[runId];
     if (!owner || owner !== userId) {
-      throw new Error(`Run ${runId} not found`);
+      throw new RunControlError("not_found", `Loop run not found: ${runId}`);
     }
     if (
       currentLoopRun.status !== "failed" &&
       currentLoopRun.status !== "stalled"
     ) {
-      throw new Error(`Cannot retry: ${currentLoopRun.status}`);
+      throw new RunControlError(
+        "illegal_transition",
+        `Cannot retry: ${currentLoopRun.status}`,
+      );
     }
     const failed = currentLoopRun.currentStepRunId
       ? stepRunIdToStepRun[currentLoopRun.currentStepRunId]

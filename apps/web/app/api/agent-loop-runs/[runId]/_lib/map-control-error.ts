@@ -1,48 +1,31 @@
 /**
  * Maps run-control errors to HTTP responses.
  *
- * The store functions (via run-controls.ts) throw with structured messages:
- *   - "Run <id> not found" → 404 (ownership miss or non-existent)
- *   - "Cannot pause/cancel/resume/retry run <id>: ..." → 409 illegal transition
+ * The store functions (pauseLoopRun, cancelLoopRun, resumeLoopRun) and
+ * retryCurrentStep now throw RunControlError with a typed kind discriminator:
+ *   - kind="not_found"          → 404 (run missing OR not owned — no existence leak)
+ *   - kind="illegal_transition" → 409 (run exists, owned, wrong status)
+ *
+ * This mapper switches on the typed kind rather than fragile string matching,
+ * eliminating the class of bugs where a non-owned run could be misclassified
+ * as 409 (which would imply the run EXISTS — an existence leak).
  *
  * This helper centralises the mapping so each control route stays thin.
  */
 
-/** Returns true if the error message indicates a "not found" / ownership miss. */
-function isNotFoundError(message: string): boolean {
-  return (
-    message.includes("not found") ||
-    (message.includes("Run ") && message.includes("not found"))
-  );
-}
-
-/** Returns true if the error message indicates an illegal state transition. */
-function isIllegalTransitionError(message: string): boolean {
-  return (
-    message.startsWith("Cannot pause") ||
-    message.startsWith("Cannot cancel") ||
-    message.startsWith("Cannot resume") ||
-    message.startsWith("Cannot retry") ||
-    message.includes("not in a pausable status") ||
-    message.includes("not in a cancellable status") ||
-    message.includes("not in paused status") ||
-    message.includes("not in a retryable status") ||
-    message.includes("missing currentNodeId")
-  );
-}
+import { RunControlError } from "@/lib/agent-loops/run-controls-error";
 
 export function mapControlError(err: unknown): Response {
-  const message = err instanceof Error ? err.message : String(err);
+  if (err instanceof RunControlError) {
+    if (err.kind === "not_found") {
+      return Response.json({ error: "Loop run not found" }, { status: 404 });
+    }
 
-  if (isNotFoundError(message)) {
-    return Response.json({ error: "Loop run not found" }, { status: 404 });
-  }
-
-  if (isIllegalTransitionError(message)) {
+    // kind === "illegal_transition"
     return Response.json(
       {
         errorKind: "illegal_transition",
-        message,
+        message: err.message,
       },
       { status: 409 },
     );

@@ -169,10 +169,14 @@ describe("BT-350-02: pauseLoopRun — unknown runId → RunControlError{kind:not
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(store.pauseLoopRun("nonexistent-run", "user-1")).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "not_found",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.pauseLoopRun("nonexistent-run", "user-1");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("not_found");
   });
 });
 
@@ -189,12 +193,14 @@ describe("BT-350-03: pauseLoopRun — non-owned run in pausable state → RunCon
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.pauseLoopRun("run-owned-by-other", "attacker-user"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "not_found",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.pauseLoopRun("run-owned-by-other", "attacker-user");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("not_found");
   });
 });
 
@@ -215,12 +221,14 @@ describe("BT-350-04: pauseLoopRun — own run in wrong state → RunControlError
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.pauseLoopRun("run-completed", "user-1"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "illegal_transition",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.pauseLoopRun("run-completed", "user-1");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("illegal_transition");
   });
 });
 
@@ -233,12 +241,14 @@ describe("BT-350-05: cancelLoopRun — non-owned run → RunControlError{kind:no
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.cancelLoopRun("run-other", "attacker"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "not_found",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.cancelLoopRun("run-other", "attacker");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("not_found");
   });
 });
 
@@ -251,12 +261,14 @@ describe("BT-350-06: cancelLoopRun — own run in wrong state → RunControlErro
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.cancelLoopRun("run-cancelled", "user-1"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "illegal_transition",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.cancelLoopRun("run-cancelled", "user-1");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("illegal_transition");
   });
 });
 
@@ -269,12 +281,14 @@ describe("BT-350-07: resumeLoopRun — non-owned run → RunControlError{kind:no
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.resumeLoopRun("run-other", "attacker"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "not_found",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.resumeLoopRun("run-other", "attacker");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("not_found");
   });
 });
 
@@ -287,12 +301,14 @@ describe("BT-350-08: resumeLoopRun — own run in wrong state → RunControlErro
     const store = await storePromise;
     const { RunControlError } = await import("./run-controls-error");
 
-    await expect(
-      store.resumeLoopRun("run-running", "user-1"),
-    ).rejects.toSatisfy(
-      (err: unknown) =>
-        err instanceof RunControlError && err.kind === "illegal_transition",
-    );
+    let thrown: unknown = null;
+    try {
+      await store.resumeLoopRun("run-running", "user-1");
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(RunControlError);
+    expect((thrown as RunControlError).kind).toBe("illegal_transition");
   });
 });
 
@@ -304,37 +320,23 @@ describe("BT-350-12: listStepRunsForRun returns step runs ordered oldest→newes
     const t1 = new Date("2024-01-01T00:01:00Z");
     const t2 = new Date("2024-01-01T00:02:00Z");
 
-    // Reset all mocks for a clean state
     resetStoreMocks();
 
-    // Mock findMany to return steps in the ORDER the DB would return them
-    // after the fix (ascending). The test verifies the actual query order
-    // by checking the result sequence.
+    // Steps ordered oldest→newest (as the fixed query should return them)
     const steps = [
       { id: "step-1", loopRunId: "run-1", nodeId: "a", createdAt: t0 },
       { id: "step-2", loopRunId: "run-1", nodeId: "b", createdAt: t1 },
       { id: "step-3", loopRunId: "run-1", nodeId: "c", createdAt: t2 },
     ];
 
-    // Override findMany for this test to return steps in insertion order
-    const findManyMock = mock(async () => steps);
-    mock.module("@/lib/db/client", () => ({
-      db: {
-        update: updateMock,
-        select: selectMock,
-        query: {
-          agentLoopRuns: { findFirst: findFirstMock },
-          agentLoopStepRuns: {
-            findFirst: findFirstMock,
-            findMany: findManyMock,
-          },
-        },
-      },
-    }));
+    // The findMany mock already routes through selectReturning / findFirstMock;
+    // use the top-level findManyMock set via selectReturning.
+    // We set selectReturning to our ordered steps so the top-level findManyMock
+    // returns them in the declared order.
+    selectReturning = steps;
 
-    // Re-import store to pick up new mock
-    const store2 = await import("./store");
-    const result = await store2.listStepRunsForRun("run-1");
+    const store = await storePromise;
+    const result = await store.listStepRunsForRun("run-1");
 
     // Must be oldest→newest
     expect(result.length).toBe(3);

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -17,6 +17,7 @@ import {
   type NewAgentLoopStepRun,
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "@/lib/background-agents/redaction";
+import { RunControlError } from "./run-controls-error";
 import type { LoopValidationError } from "./types";
 import { validateLoopDefinition } from "./validation";
 
@@ -238,14 +239,14 @@ export async function listAgentLoops(
 
 /**
  * Lists step runs for a loop run, ordered by createdAt ascending.
- * Used by the M1-08 poll endpoint to populate the run timeline.
+ * Used by the M1-08 poll endpoint to populate the run timeline (oldest→newest).
  */
 export async function listStepRunsForRun(
   loopRunId: string,
 ): Promise<AgentLoopStepRun[]> {
   return db.query.agentLoopStepRuns.findMany({
     where: eq(agentLoopStepRuns.loopRunId, loopRunId),
-    orderBy: [desc(agentLoopStepRuns.createdAt)],
+    orderBy: [asc(agentLoopStepRuns.createdAt)],
   });
 }
 
@@ -720,7 +721,10 @@ export async function getMaxAttemptForNode(params: {
 
 /**
  * Transitions a run from running/queued to paused.
- * Throws if the run is not in a pausable status OR is not owned by userId.
+ * Throws RunControlError if the conditional UPDATE matches zero rows.
+ * Performs a re-check SELECT to distinguish:
+ *   - not_found: run doesn't exist or is not owned by userId (no existence leak)
+ *   - illegal_transition: run exists and is owned but not in a pausable status
  *
  * The WHERE clause includes userId so that a mismatched userId produces the
  * same "0 rows updated" outcome as a non-existent runId — no existence leak.
@@ -747,7 +751,25 @@ export async function pauseLoopRun(
     .returning();
 
   if (!run) {
-    throw new Error(
+    // Re-check: determine if the run exists and is owned by userId.
+    // A non-owned run must be indistinguishable from a missing run (not_found).
+    const [existing] = await db
+      .select({ id: agentLoopRuns.id })
+      .from(agentLoopRuns)
+      .where(
+        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
+      )
+      .limit(1);
+
+    if (!existing) {
+      throw new RunControlError(
+        "not_found",
+        `Loop run not found: ${runId}`,
+      );
+    }
+
+    throw new RunControlError(
+      "illegal_transition",
       `Cannot pause run ${runId}: not in a pausable status (running/queued)`,
     );
   }
@@ -757,7 +779,10 @@ export async function pauseLoopRun(
 
 /**
  * Transitions a run from running/queued/paused to cancelled.
- * Throws if the run is not in a cancellable status OR is not owned by userId.
+ * Throws RunControlError if the conditional UPDATE matches zero rows.
+ * Performs a re-check SELECT to distinguish:
+ *   - not_found: run doesn't exist or is not owned by userId (no existence leak)
+ *   - illegal_transition: run exists and is owned but not in a cancellable status
  *
  * The WHERE clause includes userId so that a mismatched userId produces the
  * same "0 rows updated" outcome as a non-existent runId — no existence leak.
@@ -785,7 +810,24 @@ export async function cancelLoopRun(
     .returning();
 
   if (!run) {
-    throw new Error(
+    // Re-check: determine if the run exists and is owned by userId.
+    const [existing] = await db
+      .select({ id: agentLoopRuns.id })
+      .from(agentLoopRuns)
+      .where(
+        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
+      )
+      .limit(1);
+
+    if (!existing) {
+      throw new RunControlError(
+        "not_found",
+        `Loop run not found: ${runId}`,
+      );
+    }
+
+    throw new RunControlError(
+      "illegal_transition",
       `Cannot cancel run ${runId}: not in a cancellable status (running/queued/paused)`,
     );
   }
@@ -795,7 +837,10 @@ export async function cancelLoopRun(
 
 /**
  * Transitions a run from paused to running.
- * Throws if the run is not paused OR is not owned by userId.
+ * Throws RunControlError if the conditional UPDATE matches zero rows.
+ * Performs a re-check SELECT to distinguish:
+ *   - not_found: run doesn't exist or is not owned by userId (no existence leak)
+ *   - illegal_transition: run exists and is owned but not in paused status
  *
  * The WHERE clause includes userId so that a mismatched userId produces the
  * same "0 rows updated" outcome as a non-existent runId — no existence leak.
@@ -831,7 +876,26 @@ export async function resumeLoopRun(
     .returning();
 
   if (!run) {
-    throw new Error(`Cannot resume run ${runId}: not in paused status`);
+    // Re-check: determine if the run exists and is owned by userId.
+    const [existing] = await db
+      .select({ id: agentLoopRuns.id })
+      .from(agentLoopRuns)
+      .where(
+        and(eq(agentLoopRuns.id, runId), eq(agentLoopRuns.userId, userId)),
+      )
+      .limit(1);
+
+    if (!existing) {
+      throw new RunControlError(
+        "not_found",
+        `Loop run not found: ${runId}`,
+      );
+    }
+
+    throw new RunControlError(
+      "illegal_transition",
+      `Cannot resume run ${runId}: not in paused status`,
+    );
   }
 
   return run;
@@ -861,17 +925,22 @@ export async function retryCurrentStep(params: {
   });
 
   if (!run) {
-    throw new Error(`Run ${params.runId} not found`);
+    throw new RunControlError(
+      "not_found",
+      `Loop run not found: ${params.runId}`,
+    );
   }
 
   if (run.status !== "failed" && run.status !== "stalled") {
-    throw new Error(
+    throw new RunControlError(
+      "illegal_transition",
       `Cannot retry run ${params.runId}: not in a retryable status (failed/stalled), got: ${run.status}`,
     );
   }
 
   if (!run.currentNodeId || !run.currentStepRunId) {
-    throw new Error(
+    throw new RunControlError(
+      "illegal_transition",
       `Cannot retry run ${params.runId}: missing currentNodeId or currentStepRunId`,
     );
   }

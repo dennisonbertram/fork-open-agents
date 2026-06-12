@@ -6,6 +6,7 @@
  * and the flag-gate before any store mutation.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { RunControlError } from "@/lib/agent-loops/run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -53,7 +54,10 @@ describe("Regression: pause control route", () => {
   test("REG-007: illegal transition returns 409 with errorKind=illegal_transition", async () => {
     // Prevents the error mapper from returning a generic 500 for illegal transitions.
     pauseLoopRun.mockImplementation(async () => {
-      throw new Error("Cannot pause run run-1: not in a pausable status");
+      throw new RunControlError(
+        "illegal_transition",
+        "Cannot pause run run-1: not in a pausable status",
+      );
     });
 
     const { POST } = await pauseRoutePromise;
@@ -72,7 +76,7 @@ describe("Regression: pause control route", () => {
   test("REG-008: not-found error returns 404 (no existence leak via 403)", async () => {
     // Prevents ownership mismatches from leaking a resource existence confirmation.
     pauseLoopRun.mockImplementation(async () => {
-      throw new Error("Run run-999 not found");
+      throw new RunControlError("not_found", "Loop run not found: run-999");
     });
 
     const { POST } = await pauseRoutePromise;
@@ -131,7 +135,10 @@ describe("Regression: cancel control route", () => {
 
   test("REG-011: cancel illegal transition returns 409", async () => {
     cancelLoopRun.mockImplementation(async () => {
-      throw new Error("Cannot cancel run run-1: not in a cancellable status");
+      throw new RunControlError(
+        "illegal_transition",
+        "Cannot cancel run run-1: not in a cancellable status",
+      );
     });
 
     const { POST } = await cancelRoutePromise;
