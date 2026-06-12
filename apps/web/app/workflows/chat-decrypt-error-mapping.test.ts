@@ -720,4 +720,159 @@ describe("provider auth / credit error → actionable user message mapping", () 
     // Must contain actionable guidance about API key
     expect(delta.toLowerCase()).toContain("api key");
   });
+
+  test("false positive fix: 'disk quota exceeded writing /tmp' does NOT route to billing message", async () => {
+    // A sandbox disk-space error that contains "quota exceeded" in a filesystem
+    // context must NOT produce provider-billing guidance. This is the composed form
+    // that arrives from the agent stream.
+    const diskQuotaError = new Error(
+      "No output generated. Check the stream for errors.\n\nProvider error: disk quota exceeded writing /tmp",
+    );
+    inferenceProfileError = diskQuotaError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check billing — this is a disk space error, not a credit error
+    expect(delta.toLowerCase()).not.toContain("billing");
+    expect(delta.toLowerCase()).not.toContain("credits");
+    // Must be the generic fallback (no specific routing)
+    expect(delta).toBe("Workspace setup failed. Try again in a moment.");
+  });
+
+  test("false negative fix: Anthropic 'credit balance is too low' surfaces billing message", async () => {
+    // Anthropic returns this exact phrase when the user's credit balance is
+    // exhausted. The previous matcher missed it; this ensures it is caught.
+    const anthropicCreditError = new Error(
+      "Your credit balance is too low to complete this request.",
+    );
+    inferenceProfileError = anthropicCreditError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable guidance about billing/credits
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("bare 'Quota exceeded.' surfaces billing message (generic provider form)", async () => {
+    // Generic provider quota error — bare "quota exceeded" with no trailing "for".
+    // Previously caught by quota.*exceeded regex; the narrow "quota exceeded for"
+    // phrase dropped this. Must route to billing, NOT the generic fallback.
+    const bareQuotaError = new Error("Quota exceeded.");
+    inferenceProfileError = bareQuotaError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable billing guidance
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  test("error-code form 'quota_exceeded' surfaces billing message", async () => {
+    // Provider error-code string used by some APIs (e.g. OpenAI-compatible).
+    // Must route to billing guidance, NOT the generic fallback.
+    const quotaCodeError = new Error(
+      "No output generated from model\n\nProvider error: quota_exceeded",
+    );
+    inferenceProfileError = quotaCodeError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must contain actionable billing guidance
+    expect(delta.toLowerCase()).toContain("billing");
+  });
+
+  // Regression guard: the disk-quota false-positive fix must remain intact.
+  // This is a copy of the existing false-positive test kept here as a guard
+  // alongside the new generic-quota tests.
+  test("regression guard: bare 'quota exceeded' inside 'disk quota exceeded' does NOT route to billing", async () => {
+    // The disk-quota negative guard must fire when the message contains
+    // "disk quota", even though "quota exceeded" is now in the phrase list.
+    const diskQuotaError = new Error(
+      "No output generated. Check the stream for errors.\n\nProvider error: disk quota exceeded writing /tmp",
+    );
+    inferenceProfileError = diskQuotaError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT tell the user to check billing — this is a disk space error
+    expect(delta.toLowerCase()).not.toContain("billing");
+    expect(delta.toLowerCase()).not.toContain("credits");
+    // Must be the generic fallback
+    expect(delta).toBe("Workspace setup failed. Try again in a moment.");
+  });
 });

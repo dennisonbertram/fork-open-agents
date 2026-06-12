@@ -599,8 +599,13 @@ export async function resolveGitHubToolsForChat(params: {
     return { status: "off", reason: "no_repo" };
   }
 
-  // Gate check: only enable when the agent row opts in
-  // PR1 scope: the UI writer that lets users flip githubToolsEnabled lands in PR2.
+  // Gate check: only enable when the agent row opts in.
+  // We resolve role "main" with sessionId but NO repoOwner/repoName, so with no
+  // session/repo-scoped override this resolves to the user_default/main row —
+  // the exact row the Settings → Agents "Main" card writes githubToolsEnabled
+  // to. If session/repo-scoped agent writers are ever added, re-examine whether
+  // the Settings toggle still governs this gate (it would then read the more
+  // specific row, not user_default).
   const agentRow = await resolveAgentForRole({
     userId: params.userId,
     role: "main",
