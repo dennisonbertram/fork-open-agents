@@ -21,6 +21,7 @@ export const agentPatchSchema = z
     composioProfileId: z.string().min(1).nullable().optional(),
     instructions: z.string().nullable().optional(),
     managedRuntimeProfileId: z.string().min(1).nullable().optional(),
+    githubToolsEnabled: z.boolean().optional(),
   })
   .strict();
 

@@ -20,6 +20,7 @@ export type AgentSettingsRow = {
   composioProfileId: string | null;
   instructions: string | null;
   managedRuntimeProfileId: string | null;
+  githubToolsEnabled: boolean;
 };
 
 export type AgentSettingsResponse = {
@@ -55,6 +56,7 @@ export async function GET() {
         composioProfileId: null,
         instructions: null,
         managedRuntimeProfileId: null,
+        githubToolsEnabled: false,
       };
     }
     return {
@@ -64,6 +66,7 @@ export async function GET() {
       composioProfileId: row.composioProfileId,
       instructions: row.instructions,
       managedRuntimeProfileId: row.managedRuntimeProfileId,
+      githubToolsEnabled: row.githubToolsEnabled,
     };
   });
 
@@ -109,6 +112,7 @@ export async function PATCH(req: Request) {
     composioProfileId: updated?.composioProfileId ?? null,
     instructions: updated?.instructions ?? null,
     managedRuntimeProfileId: updated?.managedRuntimeProfileId ?? null,
+    githubToolsEnabled: updated?.githubToolsEnabled ?? false,
   };
 
   return Response.json({ agent: result });
