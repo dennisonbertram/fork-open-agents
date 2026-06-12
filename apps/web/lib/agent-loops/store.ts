@@ -420,9 +420,11 @@ export async function updateAgentLoopRunStatus(params: {
   // Transitioning INTO running: only set startedAt when it is currently null
   // (prevents repeated "running" context-merge calls from resetting the timestamp
   // and corrupting duration accounting / the M1-06 wall-clock guardrail).
+  // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+  // driver's Bind() cannot serialize a Date instance (live-proof D1).
   const startedAtClause =
     params.status === "running"
-      ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})` }
+      ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())` }
       : {};
 
   const [run] = await db
@@ -852,8 +854,10 @@ export async function resumeLoopRun(
     .update(agentLoopRuns)
     .set({
       status: "running",
-      // COALESCE: preserve startedAt if already set
-      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      // COALESCE: preserve startedAt if already set.
+      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+      // driver's Bind() cannot serialize a Date instance (live-proof D1).
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
       updatedAt: now,
     })
     .where(
@@ -977,8 +981,10 @@ export async function retryCurrentStep(params: {
     .set({
       status: "running",
       currentStepRunId: newStepRun.id,
-      // COALESCE: preserve startedAt if already set
-      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})`,
+      // COALESCE: preserve startedAt if already set.
+      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+      // driver's Bind() cannot serialize a Date instance (live-proof D1).
+      startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
       updatedAt: now,
     })
     .where(eq(agentLoopRuns.id, params.runId));
@@ -1018,8 +1024,10 @@ export async function conditionallyTransitionRunStatus(params: {
     .update(agentLoopRuns)
     .set({
       status: params.toStatus,
+      // D1 fix: use NOW() SQL function, not a JS Date parameter — the postgres v3
+      // driver's Bind() cannot serialize a Date instance (live-proof D1).
       ...(params.toStatus === "running"
-        ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, ${now})` }
+        ? { startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())` }
         : {}),
       ...(terminalStatuses.has(params.toStatus) ? { finishedAt: now } : {}),
       ...(params.errorKind !== undefined
