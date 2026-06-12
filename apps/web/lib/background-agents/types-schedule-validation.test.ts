@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { createBackgroundAgentSchema } from "./types";
+import {
+  createBackgroundAgentSchema,
+  updateBackgroundAgentSchema,
+} from "./types";
 
 function basePayload(triggerOverrides: Record<string, unknown> = {}) {
   return {
@@ -123,6 +126,60 @@ describe("createBackgroundAgentSchema — schedule.cron trigger validation", () 
         },
       ],
     });
+    expect(result.success).toBe(true);
+  });
+});
+
+describe("updateBackgroundAgentSchema — schedule.cron trigger validation", () => {
+  test("rejects an invalid cron expression in the triggers update", () => {
+    const result = updateBackgroundAgentSchema.safeParse({
+      triggers: [
+        {
+          name: "Daily cron",
+          kind: "schedule.cron",
+          schedule: "not-a-valid-cron",
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join("."));
+      expect(paths.some((p) => p.includes("schedule"))).toBe(true);
+    }
+  });
+
+  test("rejects a 6-field cron expression in the triggers update", () => {
+    const result = updateBackgroundAgentSchema.safeParse({
+      triggers: [
+        {
+          name: "Daily cron",
+          kind: "schedule.cron",
+          schedule: "0 0 9 * * 1-5",
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      const paths = result.error.issues.map((i) => i.path.join("."));
+      expect(paths.some((p) => p.includes("schedule"))).toBe(true);
+    }
+  });
+
+  test("accepts a valid @daily schedule in the triggers update", () => {
+    const result = updateBackgroundAgentSchema.safeParse({
+      triggers: [
+        {
+          name: "Daily cron",
+          kind: "schedule.cron",
+          schedule: "@daily",
+        },
+      ],
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("accepts a partial update with no triggers field", () => {
+    const result = updateBackgroundAgentSchema.safeParse({ name: "New name" });
     expect(result.success).toBe(true);
   });
 });
