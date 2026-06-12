@@ -1797,9 +1797,7 @@ export const composioAgentSessions = pgTable(
     })
       .$type<ComposioAgentKey>()
       .notNull(),
-    profileId: text("profile_id")
-      .notNull()
-      .references(() => composioToolProfiles.id, { onDelete: "cascade" }),
+    profileId: text("profile_id").notNull(),
     configHash: text("config_hash").notNull(),
     composioSessionId: text("composio_session_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
