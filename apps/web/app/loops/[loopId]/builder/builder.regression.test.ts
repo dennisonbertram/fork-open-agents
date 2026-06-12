@@ -1,7 +1,7 @@
 /**
  * builder.regression.test.ts — regression harness for the loop builder.
  *
- * These tests would fail if the changes in e0077ab6 were reverted.
+ * These tests would fail if the changes in e0077ab6 or 3f8ec29c were reverted.
  * They catch different failure modes than the behavioral tests:
  *   - Multi-step round-trips (double-round-trip stability)
  *   - Edge reconstruction from graph mutations
@@ -9,6 +9,8 @@
  *   - defaultNodeData edge cases (condition gets placeholder config)
  *   - flowToDefinition throws on unknown kind (safety net)
  *   - canonicalization: adding/removing optional fields leaves no undefined keys
+ *   - Defect 1 regression: mount-time dimension/select changes never set dirty
+ *   - Defect 4 regression: cascading adds never produce overlapping nodes
  */
 
 import { describe, expect, it } from "bun:test";
@@ -250,5 +252,112 @@ describe("regression: edge when value preserved through graph changes", () => {
     );
     expect(trueEdge?.when).toBe("true");
     expect(falseEdge?.when).toBe("false");
+  });
+});
+
+// ── Regression: Defect 1 — dirty-on-mount ────────────────────────────────────
+
+describe("regression (Defect 1): dimensions/select changes NEVER flip isDirty", () => {
+  const FRESH_DEF = {
+    nodes: [
+      { id: "s", kind: "start" as const, label: "Start", position: { x: 0, y: 0 } },
+      { id: "e", kind: "end" as const, label: "End", position: { x: 300, y: 0 } },
+    ],
+    edges: [{ id: "ed1", source: "s", target: "e", when: "always" as const }],
+  };
+
+  it("regression: 10 batched dimension+select changes after init leave isDirty=false", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(FRESH_DEF);
+
+    // Simulate React Flow firing multiple mount-time changes
+    for (let i = 0; i < 10; i++) {
+      store.getState().onNodesChange([
+        {
+          id: "s",
+          type: "dimensions",
+          dimensions: { width: 180 + i, height: 60 },
+          resizing: false,
+          setAttributes: false,
+        },
+        { id: "e", type: "select", selected: false },
+      ]);
+    }
+
+    expect(store.getState().isDirty).toBe(false);
+  });
+
+  it("regression: position change after dimension changes correctly sets isDirty=true", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(FRESH_DEF);
+
+    // First: dimension change (should NOT dirty)
+    store.getState().onNodesChange([
+      {
+        id: "s",
+        type: "dimensions",
+        dimensions: { width: 180, height: 60 },
+        resizing: false,
+        setAttributes: false,
+      },
+    ]);
+    expect(store.getState().isDirty).toBe(false);
+
+    // Then: position change (user drag — SHOULD dirty)
+    store.getState().onNodesChange([
+      { id: "s", type: "position", position: { x: 99, y: 99 }, dragging: false },
+    ]);
+    expect(store.getState().isDirty).toBe(true);
+  });
+});
+
+// ── Regression: Defect 4 — collision avoidance ───────────────────────────────
+
+describe("regression (Defect 4): addNode never produces overlapping positions", () => {
+  const COLLISION_RADIUS = 120;
+
+  function pairwiseMinDist(positions: Array<{ x: number; y: number }>): number {
+    let min = Infinity;
+    for (let i = 0; i < positions.length; i++) {
+      for (let j = i + 1; j < positions.length; j++) {
+        const a = positions[i]!;
+        const b = positions[j]!;
+        const d = Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+        if (d < min) min = d;
+      }
+    }
+    return min;
+  }
+
+  it("regression: adding 6 nodes at the same center produces pairwise distance > 120px", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+    const center = { x: 500, y: 300 };
+
+    for (const kind of [
+      "agent_step",
+      "github_check",
+      "condition",
+      "end",
+      "agent_step",
+      "github_check",
+    ] as const) {
+      store.getState().addNode(kind, center);
+    }
+
+    const positions = store.getState().nodes.map((n) => n.position);
+    expect(pairwiseMinDist(positions)).toBeGreaterThan(COLLISION_RADIUS);
+  });
+
+  it("regression: addNode on empty canvas lands exactly at requested position (no spurious offset)", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize({ nodes: [], edges: [] });
+
+    const target = { x: 250, y: 175 };
+    const id = store.getState().addNode("agent_step", target);
+    const node = store.getState().nodes.find((n) => n.id === id)!;
+
+    expect(node.position.x).toBe(target.x);
+    expect(node.position.y).toBe(target.y);
   });
 });
