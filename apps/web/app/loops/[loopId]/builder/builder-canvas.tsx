@@ -12,7 +12,7 @@
  * - Edge creation: onConnect opens WhenPicker to pick when value
  * - Edge click: changes edge when value via picker
  * - Leave-page guard when dirty (beforeunload)
- * - Dark mode: colorMode="system" for React Flow
+ * - Dark mode: colorMode driven by the app's ThemeContext (html .dark class)
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -26,6 +26,7 @@ import {
   ReactFlowProvider,
   useReactFlow,
   type Connection,
+  type ColorMode,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { ArrowLeft, Bot, Flag, Github, GitBranch, Save } from "lucide-react";
@@ -33,6 +34,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
+import { useTheme } from "@/app/providers";
 import { nodeTypes } from "./loop-nodes";
 import { WhenEdge } from "./when-edge";
 import type { WhenValue } from "./when-picker";
@@ -73,6 +75,8 @@ function BuilderCanvasInner({
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
+  const { resolvedTheme } = useTheme();
+  const colorMode: ColorMode = resolvedTheme === "dark" ? "dark" : "light";
 
   const nodes = useStore(store, (s) => s.nodes);
   const edges = useStore(store, (s) => s.edges);
@@ -135,7 +139,7 @@ function BuilderCanvasInner({
     setPendingConnection(null);
   }
 
-  // Palette node insertion — lands near viewport center
+  // Palette node insertion — lands at viewport center; store handles collision avoidance
   const { screenToFlowPosition } = useReactFlow();
   function handleAddNode(
     kind: "agent_step" | "github_check" | "condition" | "end",
@@ -145,11 +149,7 @@ function BuilderCanvasInner({
     const centerX = (rect?.left ?? 0) + (rect?.width ?? 600) / 2;
     const centerY = (rect?.top ?? 0) + (rect?.height ?? 400) / 2;
     const position = screenToFlowPosition({ x: centerX, y: centerY });
-    // Slight random offset so multiple adds don't stack
-    addNode(kind, {
-      x: position.x + (Math.random() - 0.5) * 80,
-      y: position.y + (Math.random() - 0.5) * 80,
-    });
+    addNode(kind, position);
   }
 
   // Save
@@ -274,7 +274,7 @@ function BuilderCanvasInner({
             onConnect={handleConnect}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
-            colorMode="system"
+            colorMode={colorMode}
             fitView
             deleteKeyCode={["Delete", "Backspace"]}
           >
@@ -291,6 +291,11 @@ function BuilderCanvasInner({
                 const kind = (node.data as { kind?: string } | undefined)?.kind;
                 return kind ? (kindMiniMapColor[kind] ?? "#b1b1b7") : "#b1b1b7";
               }}
+              maskColor={
+                colorMode === "dark"
+                  ? "rgb(0 0 0 / 0.6)"
+                  : "rgb(240 240 240 / 0.6)"
+              }
             />
 
             {/* Empty state hint */}

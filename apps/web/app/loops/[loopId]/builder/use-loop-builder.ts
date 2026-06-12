@@ -91,6 +91,41 @@ function defaultNodeData(
   }
 }
 
+// ── Collision-free position helper ───────────────────────────────────────────
+
+const COLLISION_RADIUS = 120;
+const OFFSET_STEP = 40;
+
+/**
+ * Given a desired drop position and existing node positions, find a position
+ * that is at least COLLISION_RADIUS away from every existing node.
+ * Cascades by (OFFSET_STEP, OFFSET_STEP) until a free slot is found.
+ */
+function findFreePosition(
+  desired: { x: number; y: number },
+  existingPositions: Array<{ x: number; y: number }>,
+): { x: number; y: number } {
+  let pos = { x: desired.x, y: desired.y };
+  let attempts = 0;
+  const maxAttempts = 100;
+
+  while (attempts < maxAttempts) {
+    const collides = existingPositions.some((ep) => {
+      const dx = ep.x - pos.x;
+      const dy = ep.y - pos.y;
+      return Math.sqrt(dx * dx + dy * dy) < COLLISION_RADIUS;
+    });
+    if (!collides) return pos;
+    pos = {
+      x: pos.x + OFFSET_STEP,
+      y: pos.y + OFFSET_STEP,
+    };
+    attempts++;
+  }
+
+  return pos;
+}
+
 // ── Store factory (exported for testing) ─────────────────────────────────────
 
 export function createLoopBuilderStore() {
@@ -119,9 +154,14 @@ export function createLoopBuilderStore() {
       const nextNodes = applyNodeChanges<LoopFlowNode>(changes, get().nodes);
       const def = flowToDefinition(nextNodes, get().edges);
       const validResult = validateLoopDefinition(def);
+      // Only mark dirty for user mutations — ignore React Flow lifecycle events
+      // that fire on mount (dimensions measurement, selection state).
+      const hasMutation = changes.some(
+        (c) => c.type !== "dimensions" && c.type !== "select",
+      );
       set({
         nodes: nextNodes,
-        isDirty: true,
+        ...(hasMutation ? { isDirty: true } : {}),
         validationErrors: validResult.ok ? [] : validResult.errors,
       });
     },
@@ -142,11 +182,15 @@ export function createLoopBuilderStore() {
 
     addNode(kind, position) {
       const id = nanoid();
-      const data = defaultNodeData(id, kind, position);
+      const freePosition = findFreePosition(
+        position,
+        get().nodes.map((n) => n.position),
+      );
+      const data = defaultNodeData(id, kind, freePosition);
       const newNode: LoopFlowNode = {
         id,
         type: "loopNode",
-        position,
+        position: freePosition,
         data,
       };
       const nextNodes = [...get().nodes, newNode];
