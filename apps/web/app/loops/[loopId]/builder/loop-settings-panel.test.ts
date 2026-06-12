@@ -97,7 +97,10 @@ describe("BT-M2-LS-03: validateLoopSettings — guardrail values below ceilings 
   });
 
   it("BT-M2-LS-03b: missing guardrails (undefined) passes — they are optional", () => {
-    const result = validateLoopSettings({ name: "Test", guardrails: undefined });
+    const result = validateLoopSettings({
+      name: "Test",
+      guardrails: undefined,
+    });
     expect(result.ok).toBe(true);
   });
 

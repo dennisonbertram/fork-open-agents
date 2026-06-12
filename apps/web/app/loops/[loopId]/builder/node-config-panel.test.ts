@@ -269,9 +269,9 @@ describe("BT-M2-02: nodeErrorsById — error derivation keyed by nodeId", () => 
     if (!result.ok) {
       const byId = nodeErrorsById(result.errors);
       expect(byId["gh1"]).toBeDefined();
-      expect(
-        byId["gh1"]!.some((e) => e.rule === "missing_node_config"),
-      ).toBe(true);
+      expect(byId["gh1"]!.some((e) => e.rule === "missing_node_config")).toBe(
+        true,
+      );
     }
   });
 
