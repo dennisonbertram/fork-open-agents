@@ -48,7 +48,9 @@ describe("A — server validateLoopDefinition: INVALID fixtures → ok:false wit
       expect(result.ok).toBe(false);
       if (!result.ok) {
         const rules = result.errors.map((e) => e.rule);
-        expect(rules).toContain(fixture.rule);
+        // Cast fixture.rule to the union type — fixtures are authored correctly,
+        // and InvalidFixture.rule is typed as string to allow corpus extensibility.
+        expect(rules).toContain(fixture.rule as (typeof rules)[number]);
       }
     });
   }
