@@ -392,9 +392,13 @@ Work through each panel type in order:
 **10c — Edge `when` editing**
 
 1. Click the edge between `agent_step` and `github_check`.
-2. Change the `when` value (for example from `failure` to `success`).
+2. Change the `when` value from `failure` to `always`. (Do not use `success` here:
+   `agent_step` already has a `success` edge to `end` from S-3/S-9, so choosing
+   `success` would create a duplicate `(source, when)` pair, trigger VR-07
+   `duplicate_when`, and leave the Save button disabled.)
 3. Confirm the edge label updates on the canvas.
 4. Save.
+5. Change the edge back to `failure` so subsequent stages use a consistent graph.
 
 **10d — Delete-node dialog with edge count**
 
