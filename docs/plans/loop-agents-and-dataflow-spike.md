@@ -110,8 +110,12 @@ Two ways to relate the entities — recommend **(b)**:
    (none/read/write); `agent-step.ts` mints the installation token from the
    step's (or loop's) scopes via a pure tested mapper. A "file issues" step can
    now `gh issue create`.
-2. **P2 — Composio tools per step** (shared `AgentConfig` + runtime resolution +
-   shared config UI, incl. the nicer instructions editor).
+2. **P2 — Composio tools per step** ✅ **SHIPPED**: agent-step nodes carry
+   `composioToolkitSlugs`; the config panel reuses `ComposioToolkitPicker` under
+   a "Tools" section; `agent-step.ts` resolves them via the shared
+   `resolveComposioToolsForBgRun(agentId:null)` (gated by the user's connected
+   accounts + repo policy) and injects them into `openAgent.generate`. (The
+   nicer instructions editor shipped earlier as the Expand modal.)
 3. **P3 — Explicit data flow** (declared outputs, input autocomplete in
    condition/instructions, canvas chips).
 
