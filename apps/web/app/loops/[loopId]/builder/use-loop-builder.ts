@@ -53,6 +53,15 @@ export interface LoopBuilderState {
   addNode: (
     kind: Exclude<LoopNodeKind, "start">,
     position: { x: number; y: number },
+    opts?: {
+      /**
+       * When set, auto-connect an edge from this source node to the new node
+       * (using the first legal, not-yet-used `when`) so the node isn't an
+       * orphan. No edge is added if the source is an end node or has no legal
+       * `when` left.
+       */
+      connectFrom?: string;
+    },
   ) => string;
   connectEdge: (params: {
     source: string;
@@ -217,10 +226,18 @@ export function createLoopBuilderStore() {
       });
     },
 
-    addNode(kind, position) {
+    addNode(kind, position, opts) {
       const id = nanoid();
+      const sourceNode = opts?.connectFrom
+        ? get().nodes.find((n) => n.id === opts.connectFrom)
+        : undefined;
+      // When auto-connecting, place the new node just right of its source so the
+      // graph reads left-to-right; otherwise use the requested position.
+      const desired = sourceNode
+        ? { x: sourceNode.position.x + 300, y: sourceNode.position.y }
+        : position;
       const freePosition = findFreePosition(
-        position,
+        desired,
         get().nodes.map((n) => n.position),
       );
       const data = defaultNodeData(id, kind, freePosition);
@@ -230,11 +247,78 @@ export function createLoopBuilderStore() {
         position: freePosition,
         data,
       };
-      const nextNodes = [...get().nodes, newNode];
-      const def = flowToDefinition(nextNodes, get().edges);
+
+      // Auto-connect from the source so the new node isn't an orphan.
+      //
+      // Preferred: INSERT into the source's first outgoing edge (S→T becomes
+      // S→N→T) so the new node has BOTH an inbound and an outbound edge and the
+      // graph stays valid. Falls back to a plain S→N edge when the source has no
+      // outgoing edge yet. End nodes never get an outgoing edge.
+      let nextEdges = get().edges;
+      const firstUnusedWhen = (sourceId: string): WhenValue | undefined => {
+        const used = new Set(
+          get()
+            .edges.filter((e) => e.source === sourceId)
+            .map((e) => e.data?.when),
+        );
+        return get()
+          .legalWhenValues(sourceId)
+          .find((w) => !used.has(w));
+      };
+
+      if (sourceNode && sourceNode.data.kind !== "end") {
+        const splitEdge =
+          kind !== "end"
+            ? get().edges.find((e) => e.source === sourceNode.id)
+            : undefined;
+
+        if (splitEdge) {
+          // Insert N between source and the old target.
+          const oldTarget = splitEdge.target;
+          const forwardWhen: WhenValue =
+            kind === "condition" ? "true" : "success";
+          nextEdges = get().edges.map((e) =>
+            e.id === splitEdge.id ? { ...e, target: id } : e,
+          );
+          nextEdges = [
+            ...nextEdges,
+            {
+              id: nanoid(),
+              source: id,
+              target: oldTarget,
+              type: "when",
+              data: { when: forwardWhen },
+            },
+          ];
+        } else {
+          // Source has no outgoing edge (or we're adding an end): just link S→N.
+          const when = firstUnusedWhen(sourceNode.id);
+          if (when) {
+            nextEdges = [
+              ...get().edges,
+              {
+                id: nanoid(),
+                source: sourceNode.id,
+                target: id,
+                type: "when",
+                data: { when },
+              },
+            ];
+          }
+        }
+      }
+
+      // Select the new node (deselect others) so its config panel opens and a
+      // subsequent "add" chains from it.
+      const nextNodes = [
+        ...get().nodes.map((n) => (n.selected ? { ...n, selected: false } : n)),
+        { ...newNode, selected: true },
+      ];
+      const def = flowToDefinition(nextNodes, nextEdges);
       const validResult = validateLoopDefinition(def);
       set({
         nodes: nextNodes,
+        edges: nextEdges,
         isDirty: true,
         validationErrors: validResult.ok ? [] : validResult.errors,
       });

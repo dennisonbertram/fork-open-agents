@@ -296,17 +296,24 @@ function BuilderCanvasInner({
     setPendingNodeDelete(null);
   }
 
-  // Palette node insertion — lands at viewport center; store handles collision avoidance
+  // Palette node insertion. When a node is selected, auto-connect the new node
+  // after it (so it isn't a disconnected orphan); otherwise drop it at viewport
+  // center. The store handles collision avoidance and edge legality.
   const { screenToFlowPosition } = useReactFlow();
   function handleAddNode(
     kind: "agent_step" | "github_check" | "condition" | "end",
   ) {
+    const selected = nodes.find((n) => n.selected && n.data.kind !== "end");
     const el = document.querySelector(".react-flow__renderer");
     const rect = el?.getBoundingClientRect();
     const centerX = (rect?.left ?? 0) + (rect?.width ?? 600) / 2;
     const centerY = (rect?.top ?? 0) + (rect?.height ?? 400) / 2;
     const position = screenToFlowPosition({ x: centerX, y: centerY });
-    addNode(kind, position);
+    addNode(
+      kind,
+      position,
+      selected ? { connectFrom: selected.id } : undefined,
+    );
   }
 
   // Save
