@@ -20,30 +20,26 @@ mock.module("sonner", () => ({
 const formModulePromise = import("./loop-create-form");
 
 describe("LoopCreateForm query-param prefill", () => {
-  // BT-FORM-001: repoOwner and repoName props pre-populate fields
-  test("BT-FORM-001: when initialRepoOwner and initialRepoName are provided, fields are pre-populated", async () => {
+  // BT-FORM-001: repoOwner and repoName props pre-populate the repo combobox
+  test("BT-FORM-001: when initialRepoOwner and initialRepoName are provided, the repo combobox shows owner/repo", async () => {
     const { LoopCreateForm } = await formModulePromise;
 
     const html = renderToStaticMarkup(
       <LoopCreateForm initialRepoOwner="myorg" initialRepoName="myrepo" />,
     );
 
-    // The repo owner and repo name fields should have the prefilled values
-    expect(html).toContain('value="myorg"');
-    expect(html).toContain('value="myrepo"');
+    // The combobox trigger should display the prefilled owner/repo slug
+    expect(html).toContain("myorg/myrepo");
   });
 
-  // BT-FORM-002: without prefill props, fields are empty (existing behavior)
-  test("BT-FORM-002: when no prefill props provided, repo fields start empty", async () => {
+  // BT-FORM-002: without prefill props, the repo combobox shows its placeholder
+  test("BT-FORM-002: when no prefill props provided, the repo combobox is empty (placeholder shown)", async () => {
     const { LoopCreateForm } = await formModulePromise;
 
     const html = renderToStaticMarkup(<LoopCreateForm />);
 
-    // Fields should not have pre-populated values
-    expect(html).not.toContain('value="myorg"');
-    expect(html).not.toContain('value="myrepo"');
-    // Repo fields exist but empty
-    expect(html).toContain('id="repo-owner"');
-    expect(html).toContain('id="repo-name"');
+    expect(html).not.toContain("myorg/myrepo");
+    // Combobox renders its empty placeholder, not a pre-selected repo
+    expect(html).toContain("Select a repository");
   });
 });
