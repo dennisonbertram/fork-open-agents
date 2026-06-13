@@ -12,6 +12,10 @@ import { useState } from "react";
 import { Settings } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   GUARDRAIL_CEILINGS,
   GUARDRAIL_DEFAULTS,
@@ -48,12 +52,9 @@ function FieldLabel({
   children: React.ReactNode;
 }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      className="block text-xs font-medium text-foreground"
-    >
+    <Label htmlFor={htmlFor} className="text-xs">
       {children}
-    </label>
+    </Label>
   );
 }
 
@@ -99,13 +100,11 @@ function GuardrailNumberField({
   return (
     <div className="space-y-1">
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <input
+      <Input
         id={id}
         type="number"
-        className={cn(
-          "w-full rounded-md border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          error ? "border-red-400" : "border-input",
-        )}
+        className={cn(error ? "border-destructive" : undefined)}
+        aria-invalid={error ? true : undefined}
         value={value ?? ""}
         placeholder={String(placeholder)}
         min={1}
@@ -249,13 +248,11 @@ function LoopSettingsPanelContent({
       {/* Name */}
       <div className="space-y-1">
         <FieldLabel htmlFor="settings-name">Name</FieldLabel>
-        <input
+        <Input
           id="settings-name"
           type="text"
-          className={cn(
-            "w-full rounded-md border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-            fieldErrors["name"] ? "border-red-400" : "border-input",
-          )}
+          className={cn(fieldErrors["name"] ? "border-destructive" : undefined)}
+          aria-invalid={fieldErrors["name"] ? true : undefined}
           value={name}
           onChange={(e) => {
             setName(e.target.value);
@@ -272,9 +269,9 @@ function LoopSettingsPanelContent({
       {/* Description */}
       <div className="space-y-1">
         <FieldLabel htmlFor="settings-description">Description</FieldLabel>
-        <textarea
+        <Textarea
           id="settings-description"
-          className="min-h-[60px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-[60px] resize-y"
           value={description}
           onChange={(e) => setDescription(e.target.value)}
           placeholder="What does this loop do?"
@@ -361,12 +358,10 @@ function LoopSettingsPanelContent({
             pause the run.
           </FieldHelp>
         </div>
-        <input
+        <Switch
           id="watchdog-enabled"
-          type="checkbox"
-          className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
           checked={watchdogEnabled}
-          onChange={(e) => setWatchdogEnabled(e.target.checked)}
+          onCheckedChange={setWatchdogEnabled}
         />
       </div>
 
@@ -377,9 +372,9 @@ function LoopSettingsPanelContent({
             <FieldLabel htmlFor="watchdog-instructions">
               Watchdog instructions (optional)
             </FieldLabel>
-            <textarea
+            <Textarea
               id="watchdog-instructions"
-              className="min-h-[60px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-[60px] resize-y"
               value={watchdogInstructions}
               onChange={(e) => setWatchdogInstructions(e.target.value)}
               placeholder="e.g. Never retry deploy steps."
@@ -393,15 +388,17 @@ function LoopSettingsPanelContent({
             <FieldLabel htmlFor="watchdog-retry-budget">
               Retry budget per node
             </FieldLabel>
-            <input
+            <Input
               id="watchdog-retry-budget"
               type="number"
               className={cn(
-                "w-full rounded-md border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 fieldErrors["watchdog.watchdogRetryBudget"]
-                  ? "border-red-400"
-                  : "border-input",
+                  ? "border-destructive"
+                  : undefined,
               )}
+              aria-invalid={
+                fieldErrors["watchdog.watchdogRetryBudget"] ? true : undefined
+              }
               value={watchdogRetryBudget}
               min={0}
               max={WATCHDOG_RETRY_BUDGET_MAX}
