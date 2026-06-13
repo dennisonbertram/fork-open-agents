@@ -125,6 +125,8 @@ export type AgentStepParams = {
   loopRun: AgentLoopRun;
   loop: AgentLoop;
   startedAt: number;
+  /** Optional watchdog hint from the previous failed attempt (via stepInput.watchdogHint). */
+  watchdogHint?: string;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -265,6 +267,7 @@ export async function executeAgentStep(
     loopRun,
     loop,
     startedAt,
+    watchdogHint,
   } = params;
 
   const sandboxName = buildSandboxName(stepRunId);
@@ -404,6 +407,7 @@ export async function executeAgentStep(
       contextSlice,
       repo: `${loop.repoOwner}/${loop.repoName}`,
       branch: workingBranch,
+      watchdogHint,
     });
 
     // ── 5c. Run openAgent in a bounded loop ─────────────────────────────────

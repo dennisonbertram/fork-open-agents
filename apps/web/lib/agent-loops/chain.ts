@@ -386,6 +386,8 @@ export async function runAgentLoopStep(
     definition,
     outcome: result.outcome,
     errorKind: result.errorKind,
+    errorMessage: result.errorMessage,
+    attempt: ctx.stepRun.attempt,
     currentStepCount: loopRun.stepCount,
     currentIterationCount: loopRun.iterationCount,
     nodeKind: node?.kind ?? "unknown",
@@ -410,6 +412,10 @@ type AdvanceParams = {
   definition: ReturnType<typeof loopDefinitionSchema.parse>;
   outcome: "success" | "failure" | "true" | "false";
   errorKind?: string;
+  /** The error message from the step executor result — forwarded to watchdog for diagnosis context. */
+  errorMessage?: string;
+  /** The step attempt number — forwarded to watchdog for diagnosis context and persisted in the watchdog row. */
+  attempt: number;
   currentStepCount: number;
   currentIterationCount: number;
   nodeKind: string;
@@ -460,6 +466,8 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     definition,
     outcome,
     errorKind,
+    errorMessage,
+    attempt,
     currentStepCount,
     currentIterationCount,
     nodeKind,
@@ -517,9 +525,10 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
             stepRunId,
             nodeId,
             nodeKind,
-            attempt: 1, // best-effort: step attempt is not threaded here; watchdog uses it for context only
+            attempt,
             errorKind,
-            errorMessage: `Step failed with no failure edge: ${nodeId}`,
+            errorMessage:
+              errorMessage ?? `Step failed with no failure edge: ${nodeId}`,
             workflowRunId,
           });
           // Watchdog owns the state — do not also mark failed.

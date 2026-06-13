@@ -1299,3 +1299,134 @@ describe("BT-C11: end node — no dispatch after run completion", () => {
     expect(currentLoopRun.status).toBe("completed");
   });
 });
+
+// ── BT-C12: Watchdog branch — watchdogEnabled=true on failed step with no failure edge ──
+
+describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnabled=true", () => {
+  const definition = {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "work",
+        kind: "agent_step",
+        label: "Work",
+        position: { x: 1, y: 0 },
+        instructions: "do it",
+      },
+      { id: "end", kind: "end", label: "End", position: { x: 2, y: 0 } },
+    ],
+    edges: [
+      { id: "e1", source: "start", target: "work", when: "success" },
+      { id: "e2", source: "work", target: "end", when: "success" },
+      // No failure edge from work
+    ],
+  };
+
+  beforeEach(() => {
+    resetAll();
+
+    const workStepRun = makeStepRun({ id: "step-work-wd", nodeId: "work" });
+    stepRunIdToNodeId["step-work-wd"] = "work";
+    stepRunIdToStepRun["step-work-wd"] = workStepRun;
+    currentStepRun = workStepRun;
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      definitionSnapshot: definition as Record<string, unknown>,
+      currentNodeId: "work",
+      currentStepRunId: "step-work-wd",
+    });
+    // Enable watchdog on the loop
+    currentLoop = makeLoop({
+      watchdogEnabled: true,
+      watchdogRetryBudget: 2,
+    });
+
+    executorOutcomes["work"] = {
+      outcome: "failure",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed",
+    };
+
+    // Default: invokeWatchdog resolves with retry decision
+    invokeWatchdogMock.mockImplementation(async () => ({
+      invoked: true,
+      decision: "retry" as const,
+    }));
+  });
+
+  test("BT-C12a: watchdogEnabled=true → invokeWatchdog called, run NOT double-marked failed", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    // invokeWatchdog should have been called exactly once
+    expect(invokeWatchdogMock).toHaveBeenCalledTimes(1);
+
+    // The run should NOT be marked failed (watchdog owns state)
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
+    expect(failedUpdate).toBeUndefined();
+  });
+
+  test("BT-C12b: watchdogEnabled=true → invokeWatchdog receives real attempt and errorMessage", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    expect(invokeWatchdogMock).toHaveBeenCalledTimes(1);
+    const callArgs = invokeWatchdogMock.mock.calls[0]![0] as {
+      attempt: number;
+      errorMessage: string;
+    };
+    // attempt should be the stepRun.attempt (1), not hardcoded 1 from elsewhere
+    expect(callArgs.attempt).toBe(1);
+    // errorMessage should be the real error from the executor, not the fallback string
+    expect(callArgs.errorMessage).toBe("Sandbox failed");
+  });
+
+  test("BT-C12c: invokeWatchdog throws → fall back to fail-fast (watchdog bug safety)", async () => {
+    // Simulate watchdog bug: invokeWatchdog throws
+    invokeWatchdogMock.mockImplementation(async () => {
+      throw new Error("Watchdog internal bug");
+    });
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    // invokeWatchdog was called (and threw)
+    expect(invokeWatchdogMock).toHaveBeenCalledTimes(1);
+
+    // Fail-fast fallback: run should now be marked failed
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
+    expect(failedUpdate).toBeDefined();
+  });
+
+  test("BT-C12d: watchdogEnabled=false → invokeWatchdog NOT called, fail-fast applies", async () => {
+    currentLoop = makeLoop({ watchdogEnabled: false });
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-wd",
+      workflowRunId: "wf-run-1",
+    });
+
+    // Watchdog should not be called when disabled
+    expect(invokeWatchdogMock).not.toHaveBeenCalled();
+
+    // Fail-fast should apply
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
+    expect(failedUpdate).toBeDefined();
+  });
+});

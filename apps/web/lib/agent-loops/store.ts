@@ -1554,20 +1554,20 @@ export async function advanceToFailureEdge(params: {
   loopRunId: string;
   nodeId: string;
   snapshotDefinition: unknown;
-}): Promise<boolean> {
+}): Promise<AgentLoopStepRun | null> {
   const { evaluateEdges } = await import("./edge-evaluator");
   const { loopDefinitionSchema } = await import("./types");
 
   const parsed = loopDefinitionSchema.safeParse(params.snapshotDefinition);
   if (!parsed.success) {
-    return false;
+    return null;
   }
 
   const definition = parsed.data;
   const { nextNodeId } = evaluateEdges(definition, params.nodeId, "failure");
 
   if (!nextNodeId) {
-    return false;
+    return null;
   }
 
   // Find the next node's kind
@@ -1600,7 +1600,7 @@ export async function advanceToFailureEdge(params: {
     .returning();
 
   if (!nextStepRun) {
-    return false;
+    return null;
   }
 
   // Advance the run pointer
@@ -1616,7 +1616,7 @@ export async function advanceToFailureEdge(params: {
     })
     .where(eq(agentLoopRuns.id, params.loopRunId));
 
-  return true;
+  return nextStepRun;
 }
 
 /**

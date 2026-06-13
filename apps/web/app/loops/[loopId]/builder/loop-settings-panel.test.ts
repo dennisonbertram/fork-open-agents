@@ -12,7 +12,11 @@ import {
   GUARDRAIL_CEILINGS,
   GUARDRAIL_DEFAULTS,
 } from "@/lib/agent-loops/types";
-import { validateLoopSettings } from "./loop-settings-panel";
+import {
+  validateLoopSettings,
+  WATCHDOG_RETRY_BUDGET_MAX,
+  WATCHDOG_RETRY_BUDGET_DEFAULT,
+} from "./loop-settings-panel";
 
 describe("BT-M2-LS-01: validateLoopSettings — guardrail ceiling enforcement", () => {
   it("BT-M2-LS-01a: maxStepsPerRun above ceiling returns error", () => {
@@ -118,5 +122,78 @@ describe("BT-M2-LS-03: validateLoopSettings — guardrail values below ceilings 
       guardrails: { maxIterations: -1 },
     });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("BT-M2-LS-04: validateLoopSettings — watchdog validation (M3-01)", () => {
+  it("BT-M2-LS-04a: watchdog disabled — budget not validated even if out of range", () => {
+    // When watchdog is disabled, budget validation is skipped
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: { watchdogEnabled: false, watchdogRetryBudget: 99 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("BT-M2-LS-04b: watchdog enabled with budget within range passes", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: {
+        watchdogEnabled: true,
+        watchdogRetryBudget: WATCHDOG_RETRY_BUDGET_DEFAULT,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("BT-M2-LS-04c: watchdog enabled with budget above max returns error", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: {
+        watchdogEnabled: true,
+        watchdogRetryBudget: WATCHDOG_RETRY_BUDGET_MAX + 1,
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(
+        result.errors.some((e) => e.field === "watchdog.watchdogRetryBudget"),
+      ).toBe(true);
+    }
+  });
+
+  it("BT-M2-LS-04d: watchdog enabled with budget at ceiling (WATCHDOG_RETRY_BUDGET_MAX) passes", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: {
+        watchdogEnabled: true,
+        watchdogRetryBudget: WATCHDOG_RETRY_BUDGET_MAX,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("BT-M2-LS-04e: watchdog enabled with budget zero passes (budget=0 means no retries allowed)", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: { watchdogEnabled: true, watchdogRetryBudget: 0 },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("BT-M2-LS-04f: watchdog enabled with negative budget returns error", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: { watchdogEnabled: true, watchdogRetryBudget: -1 },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("BT-M2-LS-04g: watchdog enabled with no budget specified passes (budget is optional)", () => {
+    const result = validateLoopSettings({
+      name: "Test",
+      watchdog: { watchdogEnabled: true },
+    });
+    expect(result.ok).toBe(true);
   });
 });

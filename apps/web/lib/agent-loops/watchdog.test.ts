@@ -62,6 +62,8 @@ let lastRetryHint: string | undefined = undefined;
 let pauseCallCount = 0;
 let advanceCallCount = 0;
 let lastAdvanceNodeId: string | undefined = undefined;
+let dispatchCallCount = 0;
+let lastDispatchedStepRunId: string | undefined = undefined;
 
 // Controls retry count returned by countWatchdogRetryDecisions
 let mockRetryDecisionCount = 0;
@@ -140,19 +142,60 @@ const pauseLoopRunSystemMock = mock(async (_runId: string) => {
   pauseCallCount++;
 });
 
+// The return type is AgentLoopStepRun | null (null means no failure edge)
+type MockStepRun = {
+  id: string;
+  loopRunId: string;
+  nodeId: string;
+  nodeKind: string;
+  attempt: number;
+  status: string;
+  stepInput: null;
+  stepOutput: null;
+  sandboxName: null;
+  workflowRunId: null;
+  errorKind: null;
+  errorMessage: null;
+  startedAt: null;
+  finishedAt: null;
+  durationMs: null;
+  createdAt: Date;
+} | null;
+
 const advanceToFailureEdgeMock = mock(
   async (params: {
     loopRunId: string;
     nodeId: string;
     snapshotDefinition: unknown;
-  }) => {
+  }): Promise<MockStepRun> => {
     advanceCallCount++;
     lastAdvanceNodeId = params.nodeId;
-    return true;
+    // Return a mock step run (the success case)
+    return {
+      id: "failure-edge-step-run-1",
+      loopRunId: params.loopRunId,
+      nodeId: "node-b",
+      nodeKind: "agent_step",
+      attempt: 1,
+      status: "queued",
+      stepInput: null,
+      stepOutput: null,
+      sandboxName: null,
+      workflowRunId: null,
+      errorKind: null,
+      errorMessage: null,
+      startedAt: null,
+      finishedAt: null,
+      durationMs: null,
+      createdAt: new Date(),
+    };
   },
 );
 
-const dispatchStepWorkflowMock = mock(async (_stepRunId: string) => {});
+const dispatchStepWorkflowMock = mock(async (stepRunId: string) => {
+  dispatchCallCount++;
+  lastDispatchedStepRunId = stepRunId;
+});
 
 const recordAgentLoopEventMock = mock(
   async (input: {
@@ -312,6 +355,8 @@ function resetAll() {
   pauseCallCount = 0;
   advanceCallCount = 0;
   lastAdvanceNodeId = undefined;
+  dispatchCallCount = 0;
+  lastDispatchedStepRunId = undefined;
   mockRetryDecisionCount = 0;
   mockAgentDecision = { decision: "retry", diagnosis: "Test diagnosis" };
   watchdogRunIdCounter = 0;
@@ -325,6 +370,36 @@ function resetAll() {
   dispatchStepWorkflowMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   generateTextMock.mockClear();
+
+  // Reset advanceToFailureEdge to return a success step run by default
+  advanceToFailureEdgeMock.mockImplementation(
+    async (params: {
+      loopRunId: string;
+      nodeId: string;
+      snapshotDefinition: unknown;
+    }): Promise<MockStepRun> => {
+      advanceCallCount++;
+      lastAdvanceNodeId = params.nodeId;
+      return {
+        id: "failure-edge-step-run-1",
+        loopRunId: params.loopRunId,
+        nodeId: "node-b",
+        nodeKind: "agent_step",
+        attempt: 1,
+        status: "queued",
+        stepInput: null,
+        stepOutput: null,
+        sandboxName: null,
+        workflowRunId: null,
+        errorKind: null,
+        errorMessage: null,
+        startedAt: null,
+        finishedAt: null,
+        durationMs: null,
+        createdAt: new Date(),
+      };
+    },
+  );
 }
 
 // Import watchdog after all mocks are set up
@@ -587,6 +662,55 @@ describe("WD-04: skip decision with failure edge → advances to next node", () 
     );
     expect(decidedEvent?.level).toBe("info");
   });
+
+  test("WD-04: skip with failure edge dispatches the queued step run", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun();
+    mockAgentDecision = { decision: "skip", diagnosis: "Skip this step" };
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    // dispatchStepWorkflow should have been called with the step run id from advanceToFailureEdge
+    expect(dispatchCallCount).toBe(1);
+    expect(lastDispatchedStepRunId).toBe("failure-edge-step-run-1");
+  });
+
+  test("WD-04: skip with failure edge emits chain.dispatched event", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun();
+    mockAgentDecision = { decision: "skip", diagnosis: "Skip this step" };
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    const dispatchedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.dispatched",
+    );
+    expect(dispatchedEvent).toBeDefined();
+    const payload = dispatchedEvent?.payload as Record<string, unknown>;
+    expect(payload?.["via"]).toBe("watchdog_skip");
+  });
 });
 
 describe("WD-05: skip decision with no failure edge → pause (graceful)", () => {
@@ -619,12 +743,18 @@ describe("WD-05: skip decision with no failure edge → pause (graceful)", () =>
       diagnosis: "Skip but no failure edge",
     };
 
-    // Override: advanceToFailureEdge returns false (no failure edge exists)
-    advanceToFailureEdgeMock.mockImplementation(async () => {
-      advanceCallCount++;
-      lastAdvanceNodeId = "node-b";
-      return false;
-    });
+    // Override: advanceToFailureEdge returns null (no failure edge exists)
+    advanceToFailureEdgeMock.mockImplementation(
+      async (_params: {
+        loopRunId: string;
+        nodeId: string;
+        snapshotDefinition: unknown;
+      }): Promise<MockStepRun> => {
+        advanceCallCount++;
+        lastAdvanceNodeId = "node-b";
+        return null;
+      },
+    );
 
     await invokeWatchdog({
       loop,

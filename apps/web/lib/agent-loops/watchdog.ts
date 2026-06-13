@@ -306,7 +306,7 @@ export async function invokeWatchdog(
 
   try {
     const agentResult = await generateText({
-      model: gateway("anthropic/claude-haiku-4-5"),
+      model: gateway("anthropic/claude-haiku-4.5"),
       messages: [{ role: "user", content: prompt }],
       abortSignal: AbortSignal.timeout(WATCHDOG_AGENT_TIMEOUT_MS),
     });
@@ -392,28 +392,92 @@ export async function invokeWatchdog(
       // Dispatch the new step run
       try {
         await dispatchStepWorkflow(newStepRun.id);
+
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId,
+          eventName: "agent-loop.chain.dispatched",
+          status: "info",
+          level: "info",
+          summary: `Watchdog retry: dispatched step ${newStepRun.id} (attempt ${newStepRun.attempt})`,
+          payload: {
+            nextStepRunId: newStepRun.id,
+            nextAttempt: newStepRun.attempt,
+            hasHint: Boolean(hint),
+            via: "watchdog_retry",
+          },
+          workflowRunId,
+        });
       } catch {
-        // Dispatch failure is non-fatal — the step is queued, sweep will recover
+        // Dispatch failure is non-fatal — the step is queued, stall sweep will recover.
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId,
+          eventName: "agent-loop.chain.dispatch_failed",
+          status: "failed",
+          level: "error",
+          summary: `Watchdog retry: failed to dispatch step ${newStepRun.id}`,
+          payload: {
+            nextStepRunId: newStepRun.id,
+            via: "watchdog_retry",
+          },
+          workflowRunId,
+        });
       }
     } catch {
       // Retry failed — fall back to pause
       await pauseLoopRunSystem(loopRunId);
     }
   } else if (finalDecision === "skip") {
-    const advanced = await advanceToFailureEdge({
+    const advancedStepRun = await advanceToFailureEdge({
       loopRunId,
       nodeId,
       snapshotDefinition: loopRun.definitionSnapshot,
     });
 
-    if (!advanced) {
+    if (!advancedStepRun) {
       // No failure edge — pause (graceful, not an error)
       await pauseLoopRunSystem(loopRunId);
     } else {
-      // Dispatch the next step run
-      // The advanceToFailureEdge function updated currentStepRunId;
-      // we dispatch by re-reading the run — this is a best-effort path
-      // (the step is queued; sweep will recover if dispatch fails)
+      // Dispatch the queued step run that advanceToFailureEdge created
+      try {
+        await dispatchStepWorkflow(advancedStepRun.id);
+
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId,
+          eventName: "agent-loop.chain.dispatched",
+          status: "info",
+          level: "info",
+          summary: `Watchdog skip: dispatched next step ${advancedStepRun.nodeId}`,
+          payload: {
+            nextNodeId: advancedStepRun.nodeId,
+            nextStepRunId: advancedStepRun.id,
+            via: "watchdog_skip",
+          },
+          workflowRunId,
+        });
+      } catch {
+        // Dispatch failure — step is queued, stall sweep will recover.
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId,
+          eventName: "agent-loop.chain.dispatch_failed",
+          status: "failed",
+          level: "error",
+          summary: `Watchdog skip: failed to dispatch next step ${advancedStepRun.nodeId}`,
+          payload: {
+            nextNodeId: advancedStepRun.nodeId,
+            nextStepRunId: advancedStepRun.id,
+            via: "watchdog_skip",
+          },
+          workflowRunId,
+        });
+      }
     }
   } else {
     // pause

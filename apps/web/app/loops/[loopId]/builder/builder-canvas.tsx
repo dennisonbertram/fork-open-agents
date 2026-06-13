@@ -91,14 +91,22 @@ type PendingNodeDelete = {
 type BuilderCanvasInnerProps = {
   loopId: string;
   loopName: string;
+  loopDescription?: string | null;
   loopGuardrails?: LoopGuardrails;
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
   store: ReturnType<typeof createLoopBuilderStore>;
 };
 
 function BuilderCanvasInner({
   loopId,
   loopName,
+  loopDescription,
   loopGuardrails,
+  watchdogEnabled,
+  watchdogInstructions,
+  watchdogRetryBudget,
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
@@ -323,7 +331,11 @@ function BuilderCanvasInner({
             <LoopSettingsPanel
               loopId={loopId}
               loopName={loopName}
+              loopDescription={loopDescription}
               guardrails={loopGuardrails}
+              watchdogEnabled={watchdogEnabled}
+              watchdogInstructions={watchdogInstructions}
+              watchdogRetryBudget={watchdogRetryBudget}
             />
             <Button
               size="sm"
@@ -469,14 +481,22 @@ function BuilderCanvasInner({
 type BuilderCanvasProps = {
   loopId: string;
   loopName: string;
+  loopDescription?: string | null;
   loopGuardrails?: LoopGuardrails;
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
   definition: LoopDefinition;
 };
 
 export function BuilderCanvas({
   loopId,
   loopName,
+  loopDescription,
   loopGuardrails,
+  watchdogEnabled,
+  watchdogInstructions,
+  watchdogRetryBudget,
   definition,
 }: BuilderCanvasProps) {
   // Create store once and initialize with the definition
@@ -515,7 +535,11 @@ export function BuilderCanvas({
       <BuilderCanvasInner
         loopId={loopId}
         loopName={loopName}
+        loopDescription={loopDescription}
         loopGuardrails={loopGuardrails}
+        watchdogEnabled={watchdogEnabled}
+        watchdogInstructions={watchdogInstructions}
+        watchdogRetryBudget={watchdogRetryBudget}
         store={storeRef.current}
       />
     </ReactFlowProvider>
