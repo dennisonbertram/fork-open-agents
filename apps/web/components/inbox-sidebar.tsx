@@ -24,6 +24,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
+import { RepoSubGroups } from "@/components/inbox-sidebar-repo-subgroups";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -1313,6 +1314,14 @@ export function InboxSidebar({
                             />
                           ))}
                         </div>
+                        {hasRepo ? (
+                          <div className="ml-4 border-l border-border/40 pl-1.5">
+                            <RepoSubGroups
+                              repoOwner={groupRepoOwner}
+                              repoName={groupRepoName}
+                            />
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   </section>
