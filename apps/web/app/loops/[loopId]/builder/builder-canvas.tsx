@@ -314,6 +314,9 @@ function BuilderCanvasInner({
       position,
       selected ? { connectFrom: selected.id } : undefined,
     );
+    // Re-frame so the just-added node is visible (it can land off the current
+    // viewport, especially when auto-connected to the right of its source).
+    setTimeout(() => fitView({ duration: 300, ...LOOP_FIT_VIEW_OPTIONS }), 60);
   }
 
   // Save
@@ -403,6 +406,18 @@ function BuilderCanvasInner({
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Add node
             </p>
+            {(() => {
+              const selected = nodes.find(
+                (n) => n.selected && n.data.kind !== "end",
+              );
+              return (
+                <p className="mb-1 text-[11px] leading-snug text-muted-foreground">
+                  {selected
+                    ? `Inserts after “${selected.data.label}”`
+                    : "Select a node first to insert connected"}
+                </p>
+              );
+            })()}
             <Button
               variant="ghost"
               size="sm"
