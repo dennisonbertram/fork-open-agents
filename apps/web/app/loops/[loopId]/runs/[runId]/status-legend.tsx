@@ -7,10 +7,10 @@
  * canvas via <Panel position="bottom-left"> so it lives with the canvas and
  * disappears when the run-graph section is collapsed.
  *
- * Color tokens are sourced from run-graph-merge.ts (RUNNING_SWATCH_CLASS etc.)
- * which match the exact Tailwind classes used in loop-nodes.tsx runStateWrapperClass.
- * This ensures the legend can never silently drift from the actual node styling
- * (pinned by BT-LOOPS-053 in status-legend.test.tsx).
+ * Color tokens are sourced from run-overlays.ts (RUNNING_SWATCH_CLASS etc.)
+ * which are co-located with the RING_* constants consumed by runStateWrapperClass
+ * in loop-nodes.tsx. This ensures the legend cannot silently drift from the
+ * actual node styling (pinned by BT-LOOPS-053 in status-legend.test.tsx).
  *
  * Design: single-row flex (flex-wrap on narrow screens), gap-3, no border chrome.
  * It reads as a caption, not a card.
@@ -21,7 +21,7 @@ import {
   SUCCEEDED_SWATCH_CLASS,
   FAILED_SWATCH_CLASS,
   UNVISITED_SWATCH_CLASS,
-} from "./run-graph-merge";
+} from "@/app/loops/[loopId]/builder/run-overlays";
 
 // ── Individual legend item ────────────────────────────────────────────────────
 

@@ -34,6 +34,7 @@
  *
  * MiniMap: per-node status color
  * Iteration meter: "Iteration 2/10 · Step 5/50"
+ * Controls: top-left (explicit position to avoid collision with bottom-left StatusLegend Panel)
  * Status legend: bottom-left Panel with color key for first-time users
  * aria-live: announces node transitions
  */
@@ -262,7 +263,8 @@ function RunGraphInner({
           size={1}
           className="opacity-30"
         />
-        <Controls className="nodrag" />
+        {/* position="top-left" avoids collision with StatusLegend Panel at bottom-left */}
+        <Controls className="nodrag" position="top-left" />
         <MiniMap
           className="nodrag"
           nodeColor={(node) => {

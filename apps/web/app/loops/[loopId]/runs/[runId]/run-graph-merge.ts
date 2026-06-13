@@ -14,9 +14,10 @@
  *
  * Color-token exports:
  *   RUNNING_SWATCH_CLASS, SUCCEEDED_SWATCH_CLASS, FAILED_SWATCH_CLASS,
- *   UNVISITED_SWATCH_CLASS match the exact Tailwind tokens used in
- *   runStateWrapperClass (loop-nodes.tsx) and are consumed by StatusLegend
- *   so the legend can never silently drift from the actual node styling.
+ *   UNVISITED_SWATCH_CLASS are re-exported from run-overlays.ts where they now
+ *   live alongside the RING_* fragment constants that runStateWrapperClass
+ *   (loop-nodes.tsx) consumes. This co-location ensures the legend cannot
+ *   silently drift from the actual node ring styling.
  *   BT-LOOPS-053 pins this contract.
  */
 
@@ -27,26 +28,18 @@ import type {
 } from "@/app/loops/[loopId]/builder/definition-mapping";
 import type { RunGraphState, NodeRunStatus } from "./use-run-graph-state";
 
-// ── Shared color-token constants ───────────────────────────────────────────────
+// ── Re-export swatch constants from run-overlays (canonical home) ─────────────
 //
-// These match the Tailwind classes emitted by runStateWrapperClass in
-// loop-nodes.tsx. Exported so that StatusLegend and any future consumers can
-// reference them without duplicating strings — keeping the legend in sync with
-// the actual node styling by construction.
+// The constants live in run-overlays.ts alongside the RING_* class fragments
+// used by runStateWrapperClass in loop-nodes.tsx. Re-exporting here preserves
+// any existing import paths that already reference run-graph-merge.
 
-/** Running / current node: pulsing orange ring (matches ring-orange-400 + animate-pulse) */
-export const RUNNING_SWATCH_CLASS =
-  "size-2.5 rounded-full bg-orange-400 animate-pulse";
-
-/** Succeeded node: solid emerald dot (matches ring-emerald-500) */
-export const SUCCEEDED_SWATCH_CLASS = "size-2.5 rounded-full bg-emerald-500";
-
-/** Failed node: solid red dot (matches ring-red-500) */
-export const FAILED_SWATCH_CLASS = "size-2.5 rounded-full bg-red-500";
-
-/** Unvisited node: muted dot at reduced opacity (matches opacity-50 dimming) */
-export const UNVISITED_SWATCH_CLASS =
-  "size-2.5 rounded-full bg-muted-foreground/40";
+export {
+  RUNNING_SWATCH_CLASS,
+  SUCCEEDED_SWATCH_CLASS,
+  FAILED_SWATCH_CLASS,
+  UNVISITED_SWATCH_CLASS,
+} from "@/app/loops/[loopId]/builder/run-overlays";
 
 // ── applyNodeRunState ─────────────────────────────────────────────────────────
 
