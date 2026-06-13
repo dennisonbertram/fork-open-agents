@@ -202,6 +202,9 @@ export function flowToDefinition(
           ...(base.checkCommand !== undefined && {
             checkCommand: base.checkCommand,
           }),
+          ...(base.permissions !== undefined && {
+            permissions: base.permissions,
+          }),
         };
         return node;
       }

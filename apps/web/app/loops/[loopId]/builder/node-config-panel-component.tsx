@@ -204,6 +204,22 @@ function AgentStepConfig({
     }
   }
 
+  // ── GitHub access (B-P1): scopes the step's installation token ──────────────
+  const github = data.permissions?.github ?? {};
+  function setGithubPerm(
+    key: "contents" | "issues" | "pullRequests",
+    value: "read" | "write" | "",
+  ) {
+    const next: Record<string, "read" | "write"> = { ...github };
+    if (value === "") {
+      delete next[key];
+    } else {
+      next[key] = value;
+    }
+    const hasAny = Object.keys(next).length > 0;
+    onUpdate({ permissions: hasAny ? { github: next } : undefined });
+  }
+
   return (
     <div className="space-y-3">
       {/* Instructions */}
@@ -292,6 +308,40 @@ function AgentStepConfig({
         <FieldHelp>
           Runs in the sandbox after the agent completes. Non-zero exit fails the
           step and routes to the failure edge.
+        </FieldHelp>
+      </div>
+
+      {/* GitHub access — scopes the installation token this step runs with */}
+      <div className="space-y-1">
+        <FieldLabel>GitHub access</FieldLabel>
+        <div className="grid grid-cols-3 gap-2">
+          {(
+            [
+              { key: "contents", label: "Code" },
+              { key: "issues", label: "Issues" },
+              { key: "pullRequests", label: "Pull requests" },
+            ] as const
+          ).map(({ key, label }) => (
+            <label key={key} className="space-y-0.5 text-[11px]">
+              <span className="block text-muted-foreground">{label}</span>
+              <select
+                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                value={github[key] ?? ""}
+                onChange={(e) =>
+                  setGithubPerm(key, e.target.value as "read" | "write" | "")
+                }
+              >
+                <option value="">none</option>
+                <option value="read">read</option>
+                <option value="write">write</option>
+              </select>
+            </label>
+          ))}
+        </div>
+        <FieldHelp>
+          Grants this step&apos;s agent the access it needs — e.g. Issues:write
+          to run <code className="font-mono text-[10px]">gh issue create</code>.
+          Code is always writable for clone &amp; push.
         </FieldHelp>
       </div>
 

@@ -81,6 +81,10 @@ import {
 import { mergeStepOutput } from "./context";
 import { resolveWorkingBranch } from "./resolve-working-branch";
 import {
+  effectiveStepPermissions,
+  permissionsToInstallationToken,
+} from "./token-permissions";
+import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunContext,
@@ -303,16 +307,19 @@ export async function executeAgentStep(
     });
   }
 
-  // ── 2. Mint installation token (contents:write, scoped to this repo) ─────────
+  // ── 2. Mint installation token, scoped to this repo ──────────────────────────
+  // Token scopes come from the step's declared GitHub permissions (or the loop's
+  // as a default), so a step can e.g. create issues / open PRs. contents:write is
+  // always included for clone + push.
 
   let cloneToken: string;
   try {
     const scopedToken = await mintInstallationToken({
       installationId: accessResult.installationId,
       repositoryIds: [accessResult.repositoryId],
-      permissions: {
-        contents: "write",
-      },
+      permissions: permissionsToInstallationToken(
+        effectiveStepPermissions(node.permissions, loop.permissions),
+      ),
     });
     cloneToken = scopedToken.token;
   } catch (err) {
