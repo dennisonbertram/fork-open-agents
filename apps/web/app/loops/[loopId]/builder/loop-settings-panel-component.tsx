@@ -2,10 +2,10 @@
 
 /**
  * loop-settings-panel.tsx — Gear button in the builder top bar opens a docked
- * panel for editing loop-level settings: name, description, and guardrails.
+ * panel for editing loop-level settings: name, description, guardrails, and watchdog.
  *
- * Saves via PATCH /api/agent-loops/[loopId] which already supports name,
- * description, and guardrails in updateAgentLoopBodySchema.
+ * Saves via PATCH /api/agent-loops/[loopId] which supports name, description,
+ * guardrails, and watchdog fields (M3-01) in updateAgentLoopBodySchema.
  */
 
 import { useState } from "react";
@@ -17,7 +17,11 @@ import {
   GUARDRAIL_DEFAULTS,
   type LoopGuardrails,
 } from "@/lib/agent-loops/types";
-import { validateLoopSettings } from "./loop-settings-panel";
+import {
+  validateLoopSettings,
+  WATCHDOG_RETRY_BUDGET_DEFAULT,
+  WATCHDOG_RETRY_BUDGET_MAX,
+} from "./loop-settings-panel";
 import { cn } from "@/lib/utils";
 
 // ── Field sub-components ──────────────────────────────────────────────────────
@@ -110,6 +114,9 @@ type LoopSettingsPanelContentProps = {
   initialName: string;
   initialDescription?: string | null;
   initialGuardrails?: LoopGuardrails;
+  initialWatchdogEnabled?: boolean;
+  initialWatchdogInstructions?: string | null;
+  initialWatchdogRetryBudget?: number;
   onClose: () => void;
 };
 
@@ -118,12 +125,24 @@ function LoopSettingsPanelContent({
   initialName,
   initialDescription,
   initialGuardrails,
+  initialWatchdogEnabled = false,
+  initialWatchdogInstructions,
+  initialWatchdogRetryBudget,
   onClose,
 }: LoopSettingsPanelContentProps) {
   const [name, setName] = useState(initialName);
   const [description, setDescription] = useState(initialDescription ?? "");
   const [guardrails, setGuardrails] = useState<Partial<LoopGuardrails>>(
     initialGuardrails ?? {},
+  );
+  const [watchdogEnabled, setWatchdogEnabled] = useState(
+    initialWatchdogEnabled,
+  );
+  const [watchdogInstructions, setWatchdogInstructions] = useState(
+    initialWatchdogInstructions ?? "",
+  );
+  const [watchdogRetryBudget, setWatchdogRetryBudget] = useState<number>(
+    initialWatchdogRetryBudget ?? WATCHDOG_RETRY_BUDGET_DEFAULT,
   );
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<
@@ -154,6 +173,11 @@ function LoopSettingsPanelContent({
         Object.keys(guardrails).length > 0
           ? (guardrails as LoopGuardrails)
           : undefined,
+      watchdog: {
+        watchdogEnabled,
+        watchdogInstructions: watchdogInstructions || null,
+        watchdogRetryBudget,
+      },
     };
 
     const result = validateLoopSettings(input);
@@ -166,12 +190,27 @@ function LoopSettingsPanelContent({
       return;
     }
 
+    // Build the API payload — flatten watchdog fields for the PATCH endpoint
+    const apiPayload = {
+      name,
+      description: description || null,
+      guardrails:
+        Object.keys(guardrails).length > 0
+          ? (guardrails as LoopGuardrails)
+          : undefined,
+      watchdogEnabled,
+      watchdogInstructions: watchdogEnabled
+        ? watchdogInstructions || null
+        : null,
+      watchdogRetryBudget,
+    };
+
     setSaving(true);
     try {
       const res = await fetch(`/api/agent-loops/${loopId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify(apiPayload),
       });
 
       if (!res.ok) {
@@ -280,6 +319,96 @@ function LoopSettingsPanelContent({
         onChange={(v) => setGuardrailField("stepTimeoutMs", v)}
       />
 
+      <hr className="border-border" />
+
+      {/* Watchdog (M3-01) */}
+      <div className="space-y-1">
+        <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Watchdog
+        </p>
+      </div>
+
+      {/* Enable watchdog switch */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <FieldLabel htmlFor="watchdog-enabled">Enable watchdog</FieldLabel>
+          <FieldHelp>
+            When a step fails, an agent diagnoses it and can retry, skip, or
+            pause the run.
+          </FieldHelp>
+        </div>
+        <input
+          id="watchdog-enabled"
+          type="checkbox"
+          className="h-4 w-4 shrink-0 cursor-pointer accent-primary"
+          checked={watchdogEnabled}
+          onChange={(e) => setWatchdogEnabled(e.target.checked)}
+        />
+      </div>
+
+      {/* Progressive disclosure: show sub-fields only when watchdog is enabled */}
+      {watchdogEnabled && (
+        <>
+          <div className="space-y-1">
+            <FieldLabel htmlFor="watchdog-instructions">
+              Watchdog instructions (optional)
+            </FieldLabel>
+            <textarea
+              id="watchdog-instructions"
+              className="min-h-[60px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={watchdogInstructions}
+              onChange={(e) => setWatchdogInstructions(e.target.value)}
+              placeholder="e.g. Never retry deploy steps."
+            />
+            <FieldHelp>
+              Standing guidance appended to every watchdog diagnosis prompt.
+            </FieldHelp>
+          </div>
+
+          <div className="space-y-1">
+            <FieldLabel htmlFor="watchdog-retry-budget">
+              Retry budget per node
+            </FieldLabel>
+            <input
+              id="watchdog-retry-budget"
+              type="number"
+              className={cn(
+                "w-full rounded-md border bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                fieldErrors["watchdog.watchdogRetryBudget"]
+                  ? "border-red-400"
+                  : "border-input",
+              )}
+              value={watchdogRetryBudget}
+              min={0}
+              max={WATCHDOG_RETRY_BUDGET_MAX}
+              onChange={(e) => {
+                const n = parseInt(e.target.value, 10);
+                setWatchdogRetryBudget(
+                  Number.isNaN(n)
+                    ? WATCHDOG_RETRY_BUDGET_DEFAULT
+                    : Math.max(0, Math.min(n, WATCHDOG_RETRY_BUDGET_MAX)),
+                );
+                setFieldErrors((prev) => ({
+                  ...prev,
+                  "watchdog.watchdogRetryBudget": undefined,
+                }));
+              }}
+            />
+            {fieldErrors["watchdog.watchdogRetryBudget"] ? (
+              <FieldError
+                message={fieldErrors["watchdog.watchdogRetryBudget"]!}
+              />
+            ) : (
+              <FieldHelp>
+                Max retries the watchdog may apply per node (0–
+                {WATCHDOG_RETRY_BUDGET_MAX}). Default:{" "}
+                {WATCHDOG_RETRY_BUDGET_DEFAULT}.
+              </FieldHelp>
+            )}
+          </div>
+        </>
+      )}
+
       {/* Save */}
       <div className="flex gap-2">
         <Button
@@ -304,6 +433,10 @@ export type LoopSettingsPanelProps = {
   loopName: string;
   loopDescription?: string | null;
   guardrails?: LoopGuardrails;
+  /** M3-01 watchdog settings */
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
 };
 
 export function LoopSettingsPanel({
@@ -311,6 +444,9 @@ export function LoopSettingsPanel({
   loopName,
   loopDescription,
   guardrails,
+  watchdogEnabled,
+  watchdogInstructions,
+  watchdogRetryBudget,
 }: LoopSettingsPanelProps) {
   const [open, setOpen] = useState(false);
 
@@ -348,6 +484,9 @@ export function LoopSettingsPanel({
               initialName={loopName}
               initialDescription={loopDescription}
               initialGuardrails={guardrails}
+              initialWatchdogEnabled={watchdogEnabled}
+              initialWatchdogInstructions={watchdogInstructions}
+              initialWatchdogRetryBudget={watchdogRetryBudget}
               onClose={() => setOpen(false)}
             />
           </div>

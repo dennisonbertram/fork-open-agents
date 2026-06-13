@@ -196,6 +196,9 @@ const activeLoop = {
   permissions: {},
   name: "FK Test Loop",
   description: null,
+  watchdogEnabled: false,
+  watchdogInstructions: null,
+  watchdogRetryBudget: 2,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

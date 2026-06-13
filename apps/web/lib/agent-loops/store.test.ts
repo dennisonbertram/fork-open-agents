@@ -139,6 +139,10 @@ mock.module("@/lib/db/client", () => ({
         findMany: findManyMock,
         findFirst: findFirstMock,
       },
+      agentLoopWatchdogRuns: {
+        findMany: findManyMock,
+        findFirst: findFirstMock,
+      },
     },
     transaction: mock(async (fn: (tx: unknown) => Promise<unknown>) =>
       fn({
@@ -150,6 +154,7 @@ mock.module("@/lib/db/client", () => ({
           agentLoops: { findFirst: txFindFirstMock },
           agentLoopRuns: { findFirst: txFindFirstMock },
           agentLoopStepRuns: { findFirst: txFindFirstMock },
+          agentLoopWatchdogRuns: { findFirst: txFindFirstMock },
         },
       }),
     ),
@@ -163,12 +168,14 @@ const agentLoopsTable = Symbol("agentLoops");
 const agentLoopRunsTable = Symbol("agentLoopRuns");
 const agentLoopStepRunsTable = Symbol("agentLoopStepRuns");
 const agentLoopEventsTable = Symbol("agentLoopEvents");
+const agentLoopWatchdogRunsTable = Symbol("agentLoopWatchdogRuns");
 
 mock.module("@/lib/db/schema", () => ({
   agentLoops: agentLoopsTable,
   agentLoopRuns: agentLoopRunsTable,
   agentLoopStepRuns: agentLoopStepRunsTable,
   agentLoopEvents: agentLoopEventsTable,
+  agentLoopWatchdogRuns: agentLoopWatchdogRunsTable,
 }));
 
 // Import the store after all mocks are set up.

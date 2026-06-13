@@ -91,14 +91,22 @@ type PendingNodeDelete = {
 type BuilderCanvasInnerProps = {
   loopId: string;
   loopName: string;
+  loopDescription?: string | null;
   loopGuardrails?: LoopGuardrails;
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
   store: ReturnType<typeof createLoopBuilderStore>;
 };
 
 function BuilderCanvasInner({
   loopId,
   loopName,
+  loopDescription,
   loopGuardrails,
+  watchdogEnabled,
+  watchdogInstructions,
+  watchdogRetryBudget,
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
@@ -197,36 +205,69 @@ function BuilderCanvasInner({
     [],
   );
 
-  // Node deletion via Delete key — intercept before React Flow removes the node
-  // We use onNodesChange and check for "remove" changes to prompt the dialog.
-  // The actual deletion is deferred until the user confirms.
+  // Node deletion via Delete/Backspace key — handled by our own keydown listener
+  // on the canvas div rather than ReactFlow's built-in deleteKeyCode machinery.
+  //
+  // WHY: ReactFlow's deleteElements() fires onEdgesChange(remove) BEFORE
+  // onNodesChange(remove). With onEdgesChange wired directly (unguarded) and
+  // onNodesChange going through the dialog guard, a Delete+Cancel sequence
+  // stripped the connected edges while keeping the node — silent data loss.
+  //
+  // FIX: deleteKeyCode={null} disables ReactFlow's handler entirely. Our
+  // handler opens the dialog without touching the store. The store is only
+  // mutated atomically on CONFIRM (node + edges together) or not at all on
+  // CANCEL.
+  const handleCanvasKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+
+      // Guard: skip if focus is in a text input/textarea/select (or contenteditable)
+      const target = e.target as HTMLElement;
+      const tag = target.tagName.toUpperCase();
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      // Find the first selected node
+      const selectedNode = nodes.find((n) => n.selected);
+      if (!selectedNode) return;
+
+      // Don't open a second dialog if one is already pending
+      if (pendingNodeDelete) return;
+
+      e.preventDefault();
+
+      const attachedEdges = edges.filter(
+        (ed) => ed.source === selectedNode.id || ed.target === selectedNode.id,
+      );
+      setPendingNodeDelete({
+        nodeId: selectedNode.id,
+        nodeName: selectedNode.data?.label ?? selectedNode.id,
+        edgeCount: attachedEdges.length,
+      });
+    },
+    [nodes, edges, pendingNodeDelete],
+  );
+
+  // Pass-through for non-remove node changes only.
+  // Remove changes are handled exclusively through handleCanvasKeyDown +
+  // confirmNodeDelete so the store is never mutated before dialog confirmation.
   const handleNodesChangeWithGuard = useCallback(
     (changes: Parameters<typeof onNodesChange>[0]) => {
-      const removeChanges = changes.filter((c) => c.type === "remove");
       const otherChanges = changes.filter((c) => c.type !== "remove");
-
-      // Apply non-remove changes immediately
       if (otherChanges.length > 0) {
         onNodesChange(otherChanges);
       }
-
-      // For remove changes, prompt dialog for the first one
-      if (removeChanges.length > 0) {
-        const first = removeChanges[0]!;
-        if (first.type === "remove") {
-          const node = nodes.find((n) => n.id === first.id);
-          const attachedEdges = edges.filter(
-            (e) => e.source === first.id || e.target === first.id,
-          );
-          setPendingNodeDelete({
-            nodeId: first.id,
-            nodeName: node?.data?.label ?? first.id,
-            edgeCount: attachedEdges.length,
-          });
-        }
-      }
+      // Remove changes are silently dropped here — they can only arrive via
+      // ReactFlow internals (which we've disabled with deleteKeyCode={null}).
+      // All node deletions go through handleCanvasKeyDown → dialog → confirmNodeDelete.
     },
-    [nodes, edges, onNodesChange],
+    [onNodesChange],
   );
 
   function confirmNodeDelete() {
@@ -323,7 +364,11 @@ function BuilderCanvasInner({
             <LoopSettingsPanel
               loopId={loopId}
               loopName={loopName}
+              loopDescription={loopDescription}
               guardrails={loopGuardrails}
+              watchdogEnabled={watchdogEnabled}
+              watchdogInstructions={watchdogInstructions}
+              watchdogRetryBudget={watchdogRetryBudget}
             />
             <Button
               size="sm"
@@ -381,8 +426,16 @@ function BuilderCanvasInner({
             </Button>
           </div>
 
-          {/* React Flow canvas */}
-          <div className="relative flex-1">
+          {/* React Flow canvas — role="application" + tabIndex={-1} makes this
+              div focusable so our onKeyDown receives Delete/Backspace.
+              deleteKeyCode={null} disables ReactFlow's built-in handler. */}
+          <div
+            role="application"
+            aria-label="Loop flow canvas"
+            className="relative flex-1"
+            onKeyDown={handleCanvasKeyDown}
+            tabIndex={-1}
+          >
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -394,7 +447,7 @@ function BuilderCanvasInner({
               edgeTypes={edgeTypes}
               colorMode={colorMode}
               fitView
-              deleteKeyCode={["Delete", "Backspace"]}
+              deleteKeyCode={null}
             >
               <Background
                 variant={BackgroundVariant.Dots}
@@ -469,14 +522,22 @@ function BuilderCanvasInner({
 type BuilderCanvasProps = {
   loopId: string;
   loopName: string;
+  loopDescription?: string | null;
   loopGuardrails?: LoopGuardrails;
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
   definition: LoopDefinition;
 };
 
 export function BuilderCanvas({
   loopId,
   loopName,
+  loopDescription,
   loopGuardrails,
+  watchdogEnabled,
+  watchdogInstructions,
+  watchdogRetryBudget,
   definition,
 }: BuilderCanvasProps) {
   // Create store once and initialize with the definition
@@ -515,7 +576,11 @@ export function BuilderCanvas({
       <BuilderCanvasInner
         loopId={loopId}
         loopName={loopName}
+        loopDescription={loopDescription}
         loopGuardrails={loopGuardrails}
+        watchdogEnabled={watchdogEnabled}
+        watchdogInstructions={watchdogInstructions}
+        watchdogRetryBudget={watchdogRetryBudget}
         store={storeRef.current}
       />
     </ReactFlowProvider>

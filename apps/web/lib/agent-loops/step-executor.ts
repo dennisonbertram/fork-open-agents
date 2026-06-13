@@ -267,6 +267,13 @@ export async function executeAgentLoopStep(params: {
     // checkCommand, commit/push, disposal, and events internally.
     // On failure it records the step update + event and returns a typed result.
     // On success it records the step update + context merge + completion event.
+    // Extract watchdog hint from stepInput (set by retryCurrentStepForWatchdog)
+    const stepInputRaw = (stepRun.stepInput ?? {}) as Record<string, unknown>;
+    const watchdogHint =
+      typeof stepInputRaw["watchdogHint"] === "string"
+        ? stepInputRaw["watchdogHint"]
+        : undefined;
+
     return executeAgentStep({
       stepRunId,
       workflowRunId,
@@ -275,6 +282,7 @@ export async function executeAgentLoopStep(params: {
       loopRun,
       loop,
       startedAt,
+      watchdogHint,
     });
   }
 

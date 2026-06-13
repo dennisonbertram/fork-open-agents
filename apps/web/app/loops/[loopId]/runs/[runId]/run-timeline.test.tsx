@@ -122,6 +122,8 @@ function makeRunDetail(
         createdAt: new Date("2026-01-01T00:00:10.000Z"),
       },
     ],
+    // M3-02-B: watchdogRuns is now part of the response type; empty for non-watchdog runs
+    watchdogRuns: [],
     ...overrides,
   };
 }

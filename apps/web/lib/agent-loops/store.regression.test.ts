@@ -109,6 +109,7 @@ mock.module("@/lib/db/schema", () => ({
   agentLoopRuns: Symbol("agentLoopRuns"),
   agentLoopStepRuns: Symbol("agentLoopStepRuns"),
   agentLoopEvents: Symbol("agentLoopEvents"),
+  agentLoopWatchdogRuns: Symbol("agentLoopWatchdogRuns"),
 }));
 
 const storePromise = import("./store");
@@ -579,5 +580,91 @@ describe("REGRESSION-F4c: updateAgentLoopRunContext never produces a startedAt w
       expect(setCall?.startedAt).toBeUndefined();
       expect(setCall?.status).toBeUndefined();
     }
+  });
+});
+
+// ── ST-1 / ST-2: createAgentLoopWatchdogRun startedAt persistence (M3-01 follow-up B) ──
+// ST-1: with startedAt: new Date() → started_at is persisted (not dropped)
+// ST-2: without startedAt → started_at is null (not forced)
+describe("REGRESSION-ST: createAgentLoopWatchdogRun startedAt persistence (M3-01 follow-up B)", () => {
+  beforeEach(resetMocks);
+
+  test("ST-1: startedAt: new Date() is included in the insert values", async () => {
+    const now = new Date();
+    const watchdogRow = {
+      id: "wd-1",
+      loopRunId: "run-1",
+      stepRunId: null,
+      nodeId: "node-A",
+      status: "running",
+      attempt: 1,
+      budgetRemaining: 3,
+      decision: null,
+      diagnosis: null,
+      decisionPayload: null,
+      startedAt: now,
+      finishedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    returningMock.mockImplementationOnce(() => [watchdogRow]);
+
+    const store = await storePromise;
+    await store.createAgentLoopWatchdogRun({
+      loopRunId: "run-1",
+      nodeId: "node-A",
+      status: "running",
+      attempt: 1,
+      budgetRemaining: 3,
+      startedAt: now,
+    });
+
+    // The values passed to the DB insert must include startedAt
+    const insertedRow = valuesMock.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(insertedRow).toBeDefined();
+    expect(insertedRow?.startedAt).toBeInstanceOf(Date);
+    expect(insertedRow?.startedAt).toBe(now);
+  });
+
+  test("ST-2: without startedAt → inserted row does NOT include startedAt (or has undefined/null)", async () => {
+    const watchdogRow = {
+      id: "wd-2",
+      loopRunId: "run-1",
+      stepRunId: null,
+      nodeId: "node-A",
+      status: "decided",
+      attempt: 4,
+      budgetRemaining: 0,
+      decision: "pause",
+      diagnosis: "Budget exhausted",
+      decisionPayload: null,
+      startedAt: null,
+      finishedAt: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    returningMock.mockImplementationOnce(() => [watchdogRow]);
+
+    const store = await storePromise;
+    await store.createAgentLoopWatchdogRun({
+      loopRunId: "run-1",
+      nodeId: "node-A",
+      status: "decided",
+      attempt: 4,
+      budgetRemaining: 0,
+      decision: "pause",
+      diagnosis: "Budget exhausted",
+      // No startedAt — should be null/undefined in the insert
+    });
+
+    const insertedRow = valuesMock.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(insertedRow).toBeDefined();
+    // startedAt should be null or undefined (not a Date) when not provided
+    const startedAt = insertedRow?.startedAt;
+    expect(startedAt === null || startedAt === undefined).toBe(true);
   });
 });

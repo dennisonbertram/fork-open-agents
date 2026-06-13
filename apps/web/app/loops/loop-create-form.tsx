@@ -163,7 +163,7 @@ export function LoopCreateForm({
     <form onSubmit={handleSubmit} className="space-y-6">
       {/* name */}
       <div className="space-y-2">
-        <Label htmlFor="loop-name">name</Label>
+        <Label htmlFor="loop-name">Name</Label>
         <Input
           id="loop-name"
           value={name}

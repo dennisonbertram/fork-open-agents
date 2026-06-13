@@ -96,6 +96,8 @@ const getAgentLoopRunWithLoop = mock(
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
 const listAgentLoopEvents = mock(async () => eventsFixture);
+// M3-02-B: listWatchdogRunsForLoopRun is now called by route.ts
+const listWatchdogRunsForLoopRun = mock(async () => []);
 
 const isAgentLoopsEnabled = mock(() => true);
 
@@ -107,6 +109,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   getAgentLoopRunWithLoop,
   listStepRunsForRun,
   listAgentLoopEvents,
+  listWatchdogRunsForLoopRun,
   updateAgentLoopRunContext: mock(async () => undefined),
   conditionallyTransitionRunStatus: mock(async () => null),
   findStalledLoopRunCandidates: mock(async () => []),
