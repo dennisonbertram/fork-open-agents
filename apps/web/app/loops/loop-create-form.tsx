@@ -95,6 +95,11 @@ export function LoopCreateForm({
   const [jsonParseError, setJsonParseError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // When the form is opened from a specific repository (its owner+name are
+  // pre-supplied), the loop belongs to that repo — show it fixed rather than as
+  // a changeable picker. The picker only appears for a general "New loop".
+  const repoLocked = Boolean(initialRepoOwner && initialRepoName);
+
   // Validate on blur — client mirrors server validation, server is authoritative
   function handleDefinitionBlur() {
     setJsonParseError(null);
@@ -207,18 +212,24 @@ export function LoopCreateForm({
       {/* Repo */}
       <div className="space-y-2">
         <Label htmlFor="repo">Repository</Label>
-        <RepoCombobox
-          owner={repoOwner}
-          name={repoName}
-          onChange={(o, n) => {
-            setRepoOwner(o);
-            setRepoName(n);
-          }}
-        />
+        {repoLocked ? (
+          <div className="flex items-center rounded-md border border-input bg-muted/30 px-3 py-2 font-mono text-sm text-muted-foreground">
+            {repoOwner}/{repoName}
+          </div>
+        ) : (
+          <RepoCombobox
+            owner={repoOwner}
+            name={repoName}
+            onChange={(o, n) => {
+              setRepoOwner(o);
+              setRepoName(n);
+            }}
+          />
+        )}
         <p className="text-xs text-muted-foreground">
-          The GitHub repository this loop runs against. Pick one you&apos;ve
-          used before, or type any <code className="font-mono">owner/repo</code>
-          .
+          {repoLocked
+            ? "This loop runs against this repository."
+            : "The GitHub repository this loop runs against. Pick one you've used before, or type any owner/repo."}
         </p>
       </div>
 
