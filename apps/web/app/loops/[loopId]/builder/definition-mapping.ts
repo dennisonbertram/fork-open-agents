@@ -51,7 +51,46 @@ export type LoopFlowEdgeData = {
    * Computed by definitionToFlow. Absent on edges created directly in the builder store.
    */
   parallelCount?: number;
+  /**
+   * True when this edge points "backward" — its target sits at an earlier graph
+   * depth than its source (a loop-back / cycle-closing edge). Computed by
+   * definitionToFlow via BFS depth from the start node. ADD-ONLY: when absent the
+   * edge renders as a normal forward edge.
+   */
+  isLoopBack?: boolean;
 };
+
+// ── Loop-back detection ─────────────────────────────────────────────────────────
+
+/**
+ * BFS shortest-path depth of every node from the start node (depth 0).
+ * Nodes unreachable from start are absent from the map. Pure.
+ */
+export function computeNodeDepths(def: LoopDefinition): Map<string, number> {
+  const adjacency = new Map<string, string[]>();
+  for (const edge of def.edges) {
+    const list = adjacency.get(edge.source) ?? [];
+    list.push(edge.target);
+    adjacency.set(edge.source, list);
+  }
+  const start = def.nodes.find((n) => n.kind === "start") ?? def.nodes[0];
+  const depths = new Map<string, number>();
+  if (!start) return depths;
+
+  const queue: string[] = [start.id];
+  depths.set(start.id, 0);
+  while (queue.length > 0) {
+    const id = queue.shift() as string;
+    const depth = depths.get(id) ?? 0;
+    for (const next of adjacency.get(id) ?? []) {
+      if (!depths.has(next)) {
+        depths.set(next, depth + 1);
+        queue.push(next);
+      }
+    }
+  }
+  return depths;
+}
 
 export type LoopFlowNode = Node<LoopFlowNodeData>;
 export type LoopFlowEdge = Edge<LoopFlowEdgeData>;
@@ -84,6 +123,10 @@ export function definitionToFlow(def: LoopDefinition): {
     groupCount.set(key, (groupCount.get(key) ?? 0) + 1);
   }
 
+  // Depths drive loop-back detection: an edge whose target sits at an earlier
+  // depth than its source closes a cycle (points backward).
+  const depths = computeNodeDepths(def);
+
   // Assign each edge its parallelIndex within its group (stable: follows definition order)
   const groupIndex = new Map<DirectedKey, number>();
   const edges: LoopFlowEdge[] = def.edges.map((loopEdge) => {
@@ -92,12 +135,19 @@ export function definitionToFlow(def: LoopDefinition): {
     const parallelIndex = groupIndex.get(key) ?? 0;
     groupIndex.set(key, parallelIndex + 1);
 
+    const sourceDepth = depths.get(loopEdge.source);
+    const targetDepth = depths.get(loopEdge.target);
+    const isLoopBack =
+      sourceDepth !== undefined &&
+      targetDepth !== undefined &&
+      targetDepth < sourceDepth;
+
     return {
       id: loopEdge.id,
       source: loopEdge.source,
       target: loopEdge.target,
       type: "when",
-      data: { when: loopEdge.when, parallelIndex, parallelCount },
+      data: { when: loopEdge.when, parallelIndex, parallelCount, isLoopBack },
     };
   });
 

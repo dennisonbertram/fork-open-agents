@@ -49,8 +49,8 @@ export type DraftLoop = z.infer<typeof draftLoopSchema>;
 
 // ── Layout: assign positions by BFS depth from the start node ───────────────────
 
-const COL_GAP = 260;
-const ROW_GAP = 170;
+const COL_GAP = 340;
+const ROW_GAP = 220;
 
 /**
  * Assigns {x,y} to every node: x by graph depth from `start`, y by order within

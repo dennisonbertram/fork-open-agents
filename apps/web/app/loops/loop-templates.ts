@@ -244,13 +244,38 @@ const mergeWhenGreen: LoopTemplate = {
   },
 };
 
+/**
+ * Spread node positions so the canvas has comfortable breathing room between
+ * nodes (max node width is 200px; authored gaps were ~240-260, leaving labels
+ * cramped). Scaling positions widens every gap proportionally without touching
+ * graph structure.
+ */
+const SPACING_SCALE = 1.45;
+
+function spaced(definition: LoopDefinition): LoopDefinition {
+  return {
+    ...definition,
+    nodes: definition.nodes.map((node) => ({
+      ...node,
+      position: {
+        x: Math.round(node.position.x * SPACING_SCALE),
+        y: Math.round(node.position.y * SPACING_SCALE),
+      },
+    })),
+  };
+}
+
+function withSpacing(template: LoopTemplate): LoopTemplate {
+  return { ...template, definition: spaced(template.definition) };
+}
+
 /** All starter templates, in display order (simplest first). */
 export const LOOP_TEMPLATES: LoopTemplate[] = [
   reviewToIssues,
   backlogToPr,
   mergeWhenGreen,
   emailTriage,
-];
+].map(withSpacing);
 
 export function getLoopTemplate(slug: string): LoopTemplate | undefined {
   return LOOP_TEMPLATES.find((t) => t.slug === slug);

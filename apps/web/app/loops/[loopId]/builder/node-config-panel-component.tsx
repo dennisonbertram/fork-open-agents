@@ -20,7 +20,14 @@
  */
 
 import { useCallback, useState } from "react";
-import { X, Copy, Check, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  X,
+  Copy,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Maximize2,
+} from "lucide-react";
 import { useStore } from "zustand";
 import type { LoopFlowNode } from "./definition-mapping";
 import type { LoopValidationError } from "@/lib/agent-loops/types";
@@ -31,6 +38,15 @@ import {
 } from "./node-config-panel";
 import type { CreateLoopBuilderStoreReturn } from "./use-loop-builder";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 // ── Small reusable field components ──────────────────────────────────────────
 
@@ -159,6 +175,7 @@ function AgentStepConfig({
 }) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [instructionsExpanded, setInstructionsExpanded] = useState(false);
 
   if (node.data.kind !== "agent_step") return null;
 
@@ -191,7 +208,17 @@ function AgentStepConfig({
     <div className="space-y-3">
       {/* Instructions */}
       <div className="space-y-1">
-        <FieldLabel htmlFor="instructions">Instructions</FieldLabel>
+        <div className="flex items-center justify-between">
+          <FieldLabel htmlFor="instructions">Instructions</FieldLabel>
+          <button
+            type="button"
+            onClick={() => setInstructionsExpanded(true)}
+            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          >
+            <Maximize2 className="h-3 w-3" />
+            Expand
+          </button>
+        </div>
         <textarea
           id="instructions"
           className="min-h-[120px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -209,6 +236,44 @@ function AgentStepConfig({
           </code>{" "}
           to pass output to downstream nodes.
         </FieldHelp>
+
+        <Dialog
+          open={instructionsExpanded}
+          onOpenChange={setInstructionsExpanded}
+        >
+          <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Instructions — {data.label}</DialogTitle>
+              <DialogDescription>
+                What the agent should do in the sandbox for this step. Write
+                JSON to{" "}
+                <code className="font-mono text-xs">
+                  /tmp/loop-step-output.json
+                </code>{" "}
+                to pass output to downstream nodes.
+              </DialogDescription>
+            </DialogHeader>
+            <textarea
+              // biome-ignore lint/a11y/noAutofocus: focusing the editor is the point of expanding
+              autoFocus
+              className="min-h-[50vh] w-full flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={data.instructions ?? ""}
+              onChange={(e) =>
+                onUpdate({ instructions: e.target.value || undefined })
+              }
+              placeholder="Describe what the agent should do…"
+              aria-label="Instructions (expanded editor)"
+            />
+            <DialogFooter>
+              <Button
+                type="button"
+                onClick={() => setInstructionsExpanded(false)}
+              >
+                Done
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Check command */}
