@@ -262,4 +262,105 @@ describe("Watchdog surface — RunDetail", () => {
     // Should render an 'analyzing' state (case-insensitive check)
     expect(html.toLowerCase()).toContain("analyzing");
   });
+
+  // BT-LOOPS-M3-02B-U6: paused + latest watchdog decision = retry => no false Watchdog-paused heading
+  test("BT-LOOPS-M3-02B-U6: paused run with latest watchdog decision=retry does NOT render 'Watchdog paused this run'", async () => {
+    const { RunDetail } = await runDetailModulePromise;
+    // Sequence: watchdog issued retry (older) → run resumed → operator manually paused (newest watchdog row is retry)
+    const data = makeRunDetail({
+      run: {
+        id: "run_abc",
+        loopId: "loop_123",
+        userId: "user_1",
+        status: "paused",
+        definitionSnapshot: { nodes: [], edges: [] },
+        currentNodeId: "node_step1",
+        currentStepRunId: "step_1",
+        iterationCount: 2,
+        stepCount: 3,
+        context: {},
+        source: "manual",
+        triggerId: null,
+        idempotencyKey: "idempotency-key-1",
+        errorKind: null,
+        errorMessage: null,
+        workflowRunId: "wf_run_1",
+        requestId: "req_1",
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        finishedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      watchdogRuns: [
+        // Latest row (by createdAt): decision=retry — the watchdog said retry before the operator paused
+        makeWatchdogRun({
+          id: "wd-2",
+          status: "decided",
+          decision: "retry",
+          diagnosis: "Step failed with a transient error; retrying.",
+          budgetRemaining: 1,
+          createdAt: new Date("2026-01-01T00:00:20.000Z"),
+        }),
+        // Older row: decision=pause (earlier watchdog evaluation)
+        makeWatchdogRun({
+          id: "wd-1",
+          status: "decided",
+          decision: "pause",
+          diagnosis: "First pause.",
+          budgetRemaining: 2,
+          createdAt: new Date("2026-01-01T00:00:12.000Z"),
+        }),
+      ],
+    });
+
+    const html = renderToStaticMarkup(<RunDetail initialData={data} />);
+
+    // The banner MUST NOT falsely attribute a user-initiated pause to the watchdog
+    expect(html).not.toContain("Watchdog paused this run");
+  });
+
+  // BT-LOOPS-M3-02B-U7: paused + only pending/running watchdog row => no banner
+  test("BT-LOOPS-M3-02B-U7: paused run with only in-flight (pending/running) watchdog rows does NOT render 'Watchdog paused this run'", async () => {
+    const { RunDetail } = await runDetailModulePromise;
+    const data = makeRunDetail({
+      run: {
+        id: "run_abc",
+        loopId: "loop_123",
+        userId: "user_1",
+        status: "paused",
+        definitionSnapshot: { nodes: [], edges: [] },
+        currentNodeId: "node_step1",
+        currentStepRunId: "step_1",
+        iterationCount: 2,
+        stepCount: 3,
+        context: {},
+        source: "manual",
+        triggerId: null,
+        idempotencyKey: "idempotency-key-1",
+        errorKind: null,
+        errorMessage: null,
+        workflowRunId: "wf_run_1",
+        requestId: "req_1",
+        startedAt: new Date("2026-01-01T00:00:00.000Z"),
+        finishedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+      watchdogRuns: [
+        makeWatchdogRun({
+          id: "wd-pending",
+          status: "pending",
+          decision: null,
+          diagnosis: null,
+          finishedAt: null,
+          createdAt: new Date("2026-01-01T00:00:20.000Z"),
+        }),
+      ],
+    });
+
+    const html = renderToStaticMarkup(<RunDetail initialData={data} />);
+
+    // Only a pending row exists — should NOT show the 'paused by watchdog' banner
+    expect(html).not.toContain("Watchdog paused this run");
+  });
 });
