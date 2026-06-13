@@ -5,6 +5,7 @@ import {
   getAgentLoopRunWithLoop,
   listAgentLoopEvents,
   listStepRunsForRun,
+  listWatchdogRunsForLoopRun,
 } from "@/lib/agent-loops/store";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import { RunDetail } from "./run-detail";
@@ -38,9 +39,10 @@ export default async function LoopRunDetailPage({
     notFound();
   }
 
-  const [steps, events] = await Promise.all([
+  const [steps, events, watchdogRuns] = await Promise.all([
     listStepRunsForRun(runId),
     listAgentLoopEvents(runId),
+    listWatchdogRunsForLoopRun(runId),
   ]);
 
   const initialData: GetAgentLoopRunDetailResponse = {
@@ -54,6 +56,7 @@ export default async function LoopRunDetailPage({
     },
     steps,
     events,
+    watchdogRuns,
   };
 
   return <RunDetail initialData={initialData} />;

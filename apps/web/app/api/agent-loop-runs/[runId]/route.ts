@@ -3,6 +3,7 @@ import {
   getAgentLoopRunWithLoop,
   listAgentLoopEvents,
   listStepRunsForRun,
+  listWatchdogRunsForLoopRun,
 } from "@/lib/agent-loops/store";
 import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
@@ -17,7 +18,7 @@ type RouteContext = { params: Promise<{ runId: string }> };
  * GET /api/agent-loop-runs/[runId]
  *
  * The single poll target for the M1-09 run page.
- * Returns: { run, loop (summary), steps[], events[] }
+ * Returns: { run, loop (summary), steps[], events[], watchdogRuns[] }
  *
  * Ownership-scoped: returns 404 for non-owned or non-existent runs.
  * The route checks run.userId against the authenticated userId to enforce
@@ -53,10 +54,11 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
     return Response.json({ error: "Loop run not found" }, { status: 404 });
   }
 
-  // Fetch steps and events concurrently
-  const [steps, events] = await Promise.all([
+  // Fetch steps, events, and watchdog runs concurrently (after ownership check)
+  const [steps, events, watchdogRuns] = await Promise.all([
     listStepRunsForRun(runId),
     listAgentLoopEvents(runId),
+    listWatchdogRunsForLoopRun(runId),
   ]);
 
   const body: GetAgentLoopRunDetailResponse = {
@@ -70,6 +72,7 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
     },
     steps,
     events,
+    watchdogRuns,
   };
 
   return Response.json(body);
