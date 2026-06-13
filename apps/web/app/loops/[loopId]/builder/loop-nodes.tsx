@@ -46,6 +46,7 @@ import type {
   GithubCheckNode,
   StartNode,
 } from "@/lib/agent-loops/types";
+import { outputFieldNames } from "@/lib/agent-loops/output-refs";
 import type { LoopFlowNode } from "./definition-mapping";
 import {
   mapRunStatusToHeaderStatus,
@@ -251,6 +252,23 @@ export function AgentStepNodeComponent({ data, selected }: AgentStepNodeProps) {
           {summary}
         </p>
       )}
+      {(() => {
+        const outputs = outputFieldNames(data.outputSchema);
+        if (outputs.length === 0) return null;
+        return (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {outputs.map((field) => (
+              <span
+                key={field}
+                className="rounded bg-violet-500/10 px-1 py-0.5 font-mono text-[9px] text-violet-700 dark:text-violet-300"
+                title={`Output: context.${data.id}.${field}`}
+              >
+                {field}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
       <TargetHandle />
       <SourceHandle />
       <NodeErrorBadge count={errorCount} />

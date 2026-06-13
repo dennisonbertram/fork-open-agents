@@ -30,7 +30,11 @@ import {
 } from "lucide-react";
 import { useStore } from "zustand";
 import type { LoopFlowNode } from "./definition-mapping";
-import type { LoopValidationError } from "@/lib/agent-loops/types";
+import type {
+  LoopDefinition,
+  LoopValidationError,
+} from "@/lib/agent-loops/types";
+import { availableOutputRefs } from "@/lib/agent-loops/output-refs";
 import {
   conditionValueVisible,
   conditionValueType,
@@ -177,6 +181,8 @@ function AgentStepConfig({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [instructionsExpanded, setInstructionsExpanded] = useState(false);
+  const [newOutputName, setNewOutputName] = useState("");
+  const [newOutputType, setNewOutputType] = useState("string");
 
   if (node.data.kind !== "agent_step") return null;
 
@@ -219,6 +225,27 @@ function AgentStepConfig({
     }
     const hasAny = Object.keys(next).length > 0;
     onUpdate({ permissions: hasAny ? { github: next } : undefined });
+  }
+
+  // ── Declared outputs (B-P3): named fields this step writes to context ───────
+  const outputFields = Object.entries(
+    (data.outputSchema ?? {}) as Record<string, unknown>,
+  );
+  function addOutputField() {
+    const name = newOutputName.trim();
+    if (!name) return;
+    onUpdate({
+      outputSchema: { ...data.outputSchema, [name]: newOutputType },
+    });
+    setNewOutputName("");
+    setNewOutputType("string");
+  }
+  function removeOutputField(name: string) {
+    const next = { ...data.outputSchema } as Record<string, unknown>;
+    delete next[name];
+    onUpdate({
+      outputSchema: Object.keys(next).length > 0 ? next : undefined,
+    });
   }
 
   return (
@@ -360,6 +387,76 @@ function AgentStepConfig({
         <FieldHelp>
           External tools (e.g. Gmail, Slack) this step can use, from your
           connected Composio accounts.
+        </FieldHelp>
+      </div>
+
+      {/* Outputs — fields this step writes to context for downstream nodes */}
+      <div className="space-y-1">
+        <FieldLabel>Outputs</FieldLabel>
+        {outputFields.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {outputFields.map(([name]) => (
+              <span
+                key={name}
+                className="inline-flex items-center gap-1 rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] text-violet-700 dark:text-violet-300"
+              >
+                {name}
+                <button
+                  type="button"
+                  onClick={() => removeOutputField(name)}
+                  className="hover:text-foreground"
+                  aria-label={`Remove output ${name}`}
+                >
+                  <X className="h-2.5 w-2.5" />
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="flex gap-1.5">
+          <input
+            type="text"
+            value={newOutputName}
+            onChange={(e) => setNewOutputName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                addOutputField();
+              }
+            }}
+            placeholder="field name (e.g. passed)"
+            className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <select
+            value={newOutputType}
+            onChange={(e) => setNewOutputType(e.target.value)}
+            className="rounded-md border border-input bg-background px-1 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            <option value="string">string</option>
+            <option value="boolean">boolean</option>
+            <option value="number">number</option>
+            <option value="array">array</option>
+            <option value="object">object</option>
+          </select>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={addOutputField}
+          >
+            Add
+          </Button>
+        </div>
+        <FieldHelp>
+          Fields this step writes to{" "}
+          <code className="font-mono text-[10px]">
+            /tmp/loop-step-output.json
+          </code>
+          . Downstream nodes read them as{" "}
+          <code className="font-mono text-[10px]">
+            context.{node.id}.&lt;field&gt;
+          </code>
+          .
         </FieldHelp>
       </div>
 
@@ -673,10 +770,13 @@ function ConditionConfig({
   node,
   onUpdate,
   errors,
+  outputRefs = [],
 }: {
   node: LoopFlowNode;
   onUpdate: (patch: Record<string, unknown>) => void;
   errors: LoopValidationError[];
+  /** `<nodeId>.<field>` refs from upstream step outputs (B-P3 autocomplete). */
+  outputRefs?: string[];
 }) {
   if (node.data.kind !== "condition") return null;
 
@@ -711,14 +811,37 @@ function ConditionConfig({
         <input
           id="cond-path"
           type="text"
+          list="cond-path-refs"
           className="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={cond.path}
           onChange={(e) => handleUpdate("path", e.target.value)}
           placeholder="previous_step.output"
         />
+        {outputRefs.length > 0 ? (
+          <datalist id="cond-path-refs">
+            {outputRefs.map((ref) => (
+              <option key={ref} value={ref} />
+            ))}
+          </datalist>
+        ) : null}
+        {outputRefs.length > 0 ? (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            {outputRefs.map((ref) => (
+              <button
+                key={ref}
+                type="button"
+                onClick={() => handleUpdate("path", ref)}
+                className="rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {ref}
+              </button>
+            ))}
+          </div>
+        ) : null}
         <FieldHelp>
-          Dot-separated path into a node&apos;s output context. Example:{" "}
-          <code className="font-mono text-[10px]">step_id.openIssueCount</code>.
+          Dot-separated path into an upstream step&apos;s output. Click a
+          suggestion above, or type e.g.{" "}
+          <code className="font-mono text-[10px]">review.passed</code>.
         </FieldHelp>
       </div>
 
@@ -805,6 +928,23 @@ export function NodeConfigPanel({ store }: NodeConfigPanelProps) {
   // All node ids (for context-path hints in github_check config)
   const allNodeIds = nodes.map((n) => n.id);
 
+  // Available `<nodeId>.<field>` references from upstream step outputs — used to
+  // autocomplete condition paths (B-P3, explicit data flow).
+  const outputRefs = selectedNode
+    ? availableOutputRefs(
+        {
+          nodes: nodes.map((n) => n.data),
+          edges: edges.map((e) => ({
+            id: e.id,
+            source: e.source,
+            target: e.target,
+            when: e.data?.when ?? "always",
+          })),
+        } as LoopDefinition,
+        selectedNode.id,
+      )
+    : [];
+
   const nodeErrors = nodeErrorsById(validationErrors);
   const currentErrors = selectedNode ? (nodeErrors[selectedNode.id] ?? []) : [];
 
@@ -888,6 +1028,7 @@ export function NodeConfigPanel({ store }: NodeConfigPanelProps) {
                   node={selectedNode}
                   onUpdate={handleUpdate}
                   errors={currentErrors}
+                  outputRefs={outputRefs}
                 />
               )}
             </div>
