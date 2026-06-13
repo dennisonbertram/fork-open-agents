@@ -29,6 +29,7 @@ import {
   Panel,
   ReactFlowProvider,
   useReactFlow,
+  ViewportPortal,
   type Connection,
   type ColorMode,
   type EdgeMouseHandler,
@@ -52,6 +53,7 @@ import { BuilderErrorContext } from "./builder-error-context";
 import { nodeErrorsById } from "./node-config-panel";
 import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
+import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { LoopFlowEdge } from "./definition-mapping";
 
@@ -147,6 +149,21 @@ function BuilderCanvasInner({
     () => nodeErrorsById(validationErrors),
     [validationErrors],
   );
+
+  // Loop regions (cycles) → drawn as labelled frames so a loop reads as a loop.
+  const loopFrames = useMemo(() => {
+    const frameNodes: FrameNode[] = nodes.map((n) => ({
+      id: n.id,
+      kind: n.data.kind,
+      x: n.position.x,
+      y: n.position.y,
+      condition: n.data.kind === "condition" ? n.data.condition : undefined,
+    }));
+    return computeLoopFrames(
+      frameNodes,
+      edges.map((e) => ({ source: e.source, target: e.target })),
+    );
+  }, [nodes, edges]);
 
   // Leave-page guard
   useEffect(() => {
@@ -486,6 +503,27 @@ function BuilderCanvasInner({
                 size={1}
                 className="opacity-50"
               />
+              {/* Loop regions: a labelled dashed frame behind cyclic nodes so a
+                  loop reads as a loop, not a stray crossing line. Rendered in
+                  flow coordinates so it pans/zooms with the canvas. */}
+              <ViewportPortal>
+                {loopFrames.map((frame) => (
+                  <div
+                    key={frame.id}
+                    className="pointer-events-none absolute"
+                    style={{
+                      transform: `translate(${frame.x}px, ${frame.y}px)`,
+                      width: frame.width,
+                      height: frame.height,
+                    }}
+                  >
+                    <div className="h-full w-full rounded-xl border-2 border-dashed border-violet-500/40 bg-violet-500/[0.04]" />
+                    <span className="absolute left-2 top-0 -translate-y-1/2 rounded-full border border-violet-500/40 bg-background px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                      🔁 {frame.label}
+                    </span>
+                  </div>
+                ))}
+              </ViewportPortal>
               <Controls className="nodrag" />
               <MiniMap
                 className="nodrag"
