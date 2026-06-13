@@ -267,7 +267,7 @@ duplicate starts.
 LOOP_ID=<loopId>
 curl -s -X POST http://localhost:3001/api/agent-loops/$LOOP_ID/runs \
   -b "open_agents_test_user_id=dev-managed-runtime-user"
-# Expected: 202 Accepted, body contains runId and created timestamp
+# Expected: 202 Accepted, body contains runId and created: true
 ```
 
 Record the `runId` from the response.
@@ -311,11 +311,14 @@ runs list with its status and timestamp.
 ```bash
 RUN_ID=<runId from S-6>
 curl -s http://localhost:3001/api/agent-loop-runs/$RUN_ID \
-  -b "open_agents_test_user_id=dev-managed-runtime-user" | jq '.run.status, .events | length'
+  -b "open_agents_test_user_id=dev-managed-runtime-user" | jq '.run.status, (.events | length)'
 ```
 
 **Expected:** Run status (`queued`, `running`, `completed`, or `failed`) and an
-events array with at least a `run_started` entry.
+events array that eventually includes an `agent-loop.run.started` entry (immediately
+after the 202, only `agent-loop.trigger.received`, `agent-loop.run.created`, and
+`agent-loop.chain.dispatched` may be present; `agent-loop.run.started` is emitted
+by the chain executor when the run actually begins).
 
 Note: the run status enum is `queued | running | paused | completed | failed |
 cancelled | stalled`. There is no `succeeded` status at the run level —
