@@ -519,3 +519,81 @@ describe("dispatchManualAgentLoopStart", () => {
 
 // ── Agent path unchanged (BT-326-13) is covered by the existing dispatcher tests
 // which must remain green without modification — they are the regression gate.
+
+// ── REGRESSION: allowlist gate must pin to loop repo, not caller-supplied event repo ──
+
+describe("dispatchLoopRunForTrigger — repo-pin regression", () => {
+  beforeEach(resetMocks);
+
+  /**
+   * REGRESSION-326-repo-pin-001: false-skip scenario.
+   *
+   * The loop's repo IS in the allowlist. The caller-supplied event carries a
+   * DIFFERENT repo that is NOT in the allowlist. A correct implementation gates
+   * on loop.repoOwner/loop.repoName and dispatches the run. A regressed
+   * implementation that uses event.repoOwner ?? loop.repoOwner would gate on
+   * the caller-supplied (disallowed) repo and return repo_not_allowed — a
+   * silent no-fire for a loop whose actual repo is allowed.
+   */
+  test("REGRESSION-326-repo-pin-001: allowlist uses loop repo even when event carries a different (blocked) repo", async () => {
+    // Loop is on acme/widgets — in the allowlist.
+    // Event carries a different repo (external-org/other-repo) that is NOT allowed.
+    allowedRepos = "acme/widgets";
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    const result = await dispatchLoopRunForTrigger({
+      loop: { ...activeLoop, repoOwner: "acme", repoName: "widgets" },
+      trigger: enabledTrigger,
+      event: {
+        ...githubEvent,
+        // Caller-supplied payload repo differs from the loop's repo
+        repoOwner: "external-org",
+        repoName: "other-repo",
+      },
+      requestId: "req-pin-001",
+    });
+
+    // Must dispatch — loop repo is allowed
+    expect(result.skipped).toBeUndefined();
+    expect(result.created).toBe(true);
+    expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * REGRESSION-326-repo-pin-002: allowlist bypass scenario.
+   *
+   * The loop's repo is NOT in the allowlist. The caller supplies an event with
+   * an allowlisted repo. A correct implementation gates on loop.repoOwner/
+   * loop.repoName and returns repo_not_allowed. A regressed implementation
+   * would use the caller-supplied (allowlisted) repo and let the run through —
+   * defeating the operator rollout gate.
+   */
+  test("REGRESSION-326-repo-pin-002: allowlist cannot be bypassed by caller supplying an allowlisted event repo for a blocked loop", async () => {
+    // Loop is on blocked-org/secret-repo — NOT in the allowlist.
+    // Caller supplies event.repo = acme/widgets (which IS in the allowlist).
+    allowedRepos = "acme/widgets";
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    const result = await dispatchLoopRunForTrigger({
+      loop: {
+        ...activeLoop,
+        repoOwner: "blocked-org",
+        repoName: "secret-repo",
+      },
+      trigger: enabledTrigger,
+      event: {
+        ...githubEvent,
+        // Caller-supplied payload repo is allowlisted — must NOT bypass the gate
+        repoOwner: "acme",
+        repoName: "widgets",
+      },
+      requestId: "req-pin-002",
+    });
+
+    // Must be blocked — the loop's own repo is not in the allowlist
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("repo_not_allowed");
+    expect(createAgentLoopRun).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+});
