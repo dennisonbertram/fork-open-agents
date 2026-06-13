@@ -51,6 +51,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 
 // ── Small reusable field components ──────────────────────────────────────────
@@ -63,12 +73,9 @@ function FieldLabel({
   children: React.ReactNode;
 }) {
   return (
-    <label
-      htmlFor={htmlFor}
-      className="block text-xs font-medium text-foreground"
-    >
+    <Label htmlFor={htmlFor} className="text-xs">
       {children}
-    </label>
+    </Label>
   );
 }
 
@@ -154,10 +161,9 @@ function CommonFields({
       {/* Label */}
       <div className="space-y-1">
         <FieldLabel htmlFor="node-label">Label</FieldLabel>
-        <input
+        <Input
           id="node-label"
           type="text"
-          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           value={node.data.label}
           onChange={(e) => onUpdate({ label: e.target.value })}
         />
@@ -247,9 +253,9 @@ function AgentStepConfig({
             Expand
           </button>
         </div>
-        <textarea
+        <Textarea
           id="instructions"
-          className="min-h-[120px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-h-[120px] resize-y font-mono"
           value={data.instructions ?? ""}
           onChange={(e) =>
             onUpdate({ instructions: e.target.value || undefined })
@@ -281,10 +287,10 @@ function AgentStepConfig({
                 to pass output to downstream nodes.
               </DialogDescription>
             </DialogHeader>
-            <textarea
+            <Textarea
               // biome-ignore lint/a11y/noAutofocus: focusing the editor is the point of expanding
               autoFocus
-              className="min-h-[50vh] w-full flex-1 resize-none rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="min-h-[50vh] flex-1 resize-none font-mono"
               value={data.instructions ?? ""}
               onChange={(e) =>
                 onUpdate({ instructions: e.target.value || undefined })
@@ -307,10 +313,10 @@ function AgentStepConfig({
       {/* Check command */}
       <div className="space-y-1">
         <FieldLabel htmlFor="check-command">Check command</FieldLabel>
-        <input
+        <Input
           id="check-command"
           type="text"
-          className="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="font-mono"
           value={data.checkCommand ?? ""}
           onChange={(e) =>
             onUpdate({ checkCommand: e.target.value || undefined })
@@ -365,7 +371,7 @@ function AgentStepConfig({
           </div>
         ) : null}
         <div className="flex gap-1.5">
-          <input
+          <Input
             type="text"
             value={newOutputName}
             onChange={(e) => setNewOutputName(e.target.value)}
@@ -376,19 +382,24 @@ function AgentStepConfig({
               }
             }}
             placeholder="field name (e.g. passed)"
-            className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="min-w-0 flex-1 font-mono"
+            aria-label="Output field name"
           />
-          <select
-            value={newOutputType}
-            onChange={(e) => setNewOutputType(e.target.value)}
-            className="rounded-md border border-input bg-background px-1 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <option value="string">string</option>
-            <option value="boolean">boolean</option>
-            <option value="number">number</option>
-            <option value="array">array</option>
-            <option value="object">object</option>
-          </select>
+          <Select value={newOutputType} onValueChange={setNewOutputType}>
+            <SelectTrigger
+              className="w-[7.5rem]"
+              aria-label="Output field type"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="string">string</SelectItem>
+              <SelectItem value="boolean">boolean</SelectItem>
+              <SelectItem value="number">number</SelectItem>
+              <SelectItem value="array">array</SelectItem>
+              <SelectItem value="object">object</SelectItem>
+            </SelectContent>
+          </Select>
           <Button
             type="button"
             size="sm"
@@ -431,12 +442,13 @@ function AgentStepConfig({
             <FieldLabel htmlFor="output-schema">
               Output schema (JSON)
             </FieldLabel>
-            <textarea
+            <Textarea
               id="output-schema"
               className={cn(
-                "min-h-[80px] w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                jsonError ? "border-red-400" : "border-input",
+                "min-h-[80px] resize-y font-mono text-xs",
+                jsonError ? "border-destructive" : undefined,
               )}
+              aria-invalid={jsonError ? true : undefined}
               defaultValue={
                 data.outputSchema
                   ? JSON.stringify(data.outputSchema, null, 2)
@@ -529,18 +541,21 @@ function GithubCheckConfig({
       {/* Check kind */}
       <div className="space-y-1">
         <FieldLabel htmlFor="check-kind">Check kind</FieldLabel>
-        <select
-          id="check-kind"
-          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        <Select
           value={checkKind}
-          onChange={(e) => handleKindChange(e.target.value as GithubCheckKind)}
+          onValueChange={(v) => handleKindChange(v as GithubCheckKind)}
         >
-          {GITHUB_CHECK_KINDS.map((k) => (
-            <option key={k.value} value={k.value}>
-              {k.label}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger id="check-kind" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {GITHUB_CHECK_KINDS.map((k) => (
+              <SelectItem key={k.value} value={k.value}>
+                {k.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Kind-specific fields */}
@@ -548,15 +563,13 @@ function GithubCheckConfig({
         <>
           <div className="space-y-1">
             <FieldLabel htmlFor="issue-state">State</FieldLabel>
-            <select
-              id="issue-state"
-              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <Select
               value={
                 data.check?.kind === "list_issues"
                   ? (data.check.state ?? "open")
                   : "open"
               }
-              onChange={(e) =>
+              onValueChange={(v) =>
                 onUpdate({
                   check: {
                     kind: "list_issues",
@@ -564,23 +577,27 @@ function GithubCheckConfig({
                       data.check?.kind === "list_issues"
                         ? data.check.labels
                         : undefined,
-                    state: e.target.value as "open" | "closed",
+                    state: v as "open" | "closed",
                   },
                 })
               }
             >
-              <option value="open">open</option>
-              <option value="closed">closed</option>
-            </select>
+              <SelectTrigger id="issue-state" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="open">open</SelectItem>
+                <SelectItem value="closed">closed</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1">
             <FieldLabel htmlFor="issue-labels">
               Labels (comma-separated)
             </FieldLabel>
-            <input
+            <Input
               id="issue-labels"
               type="text"
-              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={
                 data.check?.kind === "list_issues" && data.check.labels
                   ? data.check.labels.join(", ")
@@ -616,10 +633,10 @@ function GithubCheckConfig({
           <FieldLabel htmlFor="pr-number-from">
             PR number from (context path)
           </FieldLabel>
-          <input
+          <Input
             id="pr-number-from"
             type="text"
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-mono"
             value={
               data.check?.kind === "pr_status" ? data.check.prNumberFrom : ""
             }
@@ -641,10 +658,9 @@ function GithubCheckConfig({
       {checkKind === "deployment_status" && (
         <div className="space-y-1">
           <FieldLabel htmlFor="environment">Environment (optional)</FieldLabel>
-          <input
+          <Input
             id="environment"
             type="text"
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             value={
               data.check?.kind === "deployment_status"
                 ? (data.check.environment ?? "")
@@ -669,10 +685,10 @@ function GithubCheckConfig({
       {checkKind === "ci_status" && (
         <div className="space-y-1">
           <FieldLabel htmlFor="ref-from">Ref from (context path)</FieldLabel>
-          <input
+          <Input
             id="ref-from"
             type="text"
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="font-mono"
             value={data.check?.kind === "ci_status" ? data.check.refFrom : ""}
             onChange={(e) =>
               onUpdate({
@@ -759,11 +775,11 @@ function ConditionConfig({
       {/* Path */}
       <div className="space-y-1">
         <FieldLabel htmlFor="cond-path">Context path</FieldLabel>
-        <input
+        <Input
           id="cond-path"
           type="text"
           list="cond-path-refs"
-          className="w-full rounded-md border border-input bg-background px-3 py-1.5 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="font-mono"
           value={cond.path}
           onChange={(e) => handleUpdate("path", e.target.value)}
           placeholder="previous_step.output"
@@ -799,18 +815,18 @@ function ConditionConfig({
       {/* Op */}
       <div className="space-y-1">
         <FieldLabel htmlFor="cond-op">Operator</FieldLabel>
-        <select
-          id="cond-op"
-          className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          value={op}
-          onChange={(e) => handleUpdate("op", e.target.value)}
-        >
-          {CONDITION_OPS.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+        <Select value={op} onValueChange={(v) => handleUpdate("op", v)}>
+          <SelectTrigger id="cond-op" className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {CONDITION_OPS.map((o) => (
+              <SelectItem key={o.value} value={o.value}>
+                {o.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <FieldHelp>
           The condition routes{" "}
           <span className="font-medium text-sky-700 dark:text-sky-300">
@@ -828,10 +844,9 @@ function ConditionConfig({
       {valueVisible && (
         <div className="space-y-1">
           <FieldLabel htmlFor="cond-value">Value</FieldLabel>
-          <input
+          <Input
             id="cond-value"
             type={valueInputType}
-            className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             defaultValue={cond.value !== undefined ? String(cond.value) : ""}
             onBlur={(e) => {
               const raw = e.target.value;
