@@ -53,6 +53,9 @@ import {
   isNodePulsing,
   hasFailedRing,
   shouldShowVisitPill,
+  RING_RUNNING_CLASS,
+  RING_FAILED_CLASS,
+  RING_SUCCEEDED_CLASS,
   type NodeRunStatus,
 } from "./run-overlays";
 import { useNodeErrors } from "./builder-error-context";
@@ -105,11 +108,11 @@ function runStateWrapperClass(overlay: RunStateOverlay): string {
   }
 
   if (isNodePulsing(isCurrent)) {
-    parts.push("ring-2 ring-orange-400 animate-pulse rounded-md");
+    parts.push(RING_RUNNING_CLASS);
   } else if (hasFailedRing(runStatus)) {
-    parts.push("ring-2 ring-red-500 rounded-md");
+    parts.push(RING_FAILED_CLASS);
   } else if (runStatus === "succeeded") {
-    parts.push("ring-2 ring-emerald-500 rounded-md");
+    parts.push(RING_SUCCEEDED_CLASS);
   }
 
   return parts.join(" ");
