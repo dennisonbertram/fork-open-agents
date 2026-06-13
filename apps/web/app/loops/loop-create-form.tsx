@@ -20,6 +20,14 @@ type LoopCreateFormProps = {
   initialRepoOwner?: string;
   /** Pre-populate repo name from query params (e.g. dashboard "New workflow" action) */
   initialRepoName?: string;
+  /** Pre-populate the loop name (e.g. from a chosen template or AI draft) */
+  initialName?: string;
+  /** Pre-populate the description (e.g. from a chosen template or AI draft) */
+  initialDescription?: string;
+  /** Pre-populate the definition JSON (e.g. from a chosen template or AI draft) */
+  initialDefinitionText?: string;
+  /** Where to send the user after a successful create. Defaults to the detail page. */
+  redirectTo?: "detail" | "builder";
 };
 
 // ── Validation error display ──────────────────────────────────────────────────
@@ -60,13 +68,19 @@ export function LoopCreateForm({
   initialValidationErrors,
   initialRepoOwner,
   initialRepoName,
+  initialName,
+  initialDescription,
+  initialDefinitionText,
+  redirectTo = "detail",
 }: LoopCreateFormProps) {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [repoOwner, setRepoOwner] = useState(initialRepoOwner ?? "");
   const [repoName, setRepoName] = useState(initialRepoName ?? "");
-  const [description, setDescription] = useState("");
-  const [definitionText, setDefinitionText] = useState(DEFAULT_DEFINITION);
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [definitionText, setDefinitionText] = useState(
+    initialDefinitionText ?? DEFAULT_DEFINITION,
+  );
   const [validationErrors, setValidationErrors] = useState<
     LoopValidationError[]
   >(initialValidationErrors ?? []);
@@ -151,7 +165,11 @@ export function LoopCreateForm({
 
       const { loop } = (await res.json()) as CreateAgentLoopResponse;
       toast.success(`Loop "${loop.name}" created.`);
-      router.push(`/loops/${loop.id}`);
+      router.push(
+        redirectTo === "builder"
+          ? `/loops/${loop.id}/builder`
+          : `/loops/${loop.id}`,
+      );
     } catch {
       toast.error("Failed to create loop. Please try again.");
     } finally {

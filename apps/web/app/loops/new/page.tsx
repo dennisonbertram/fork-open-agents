@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
-import { LoopCreateForm } from "../loop-create-form";
+import { LoopCreateExperience } from "../loop-create-experience";
 
 export const metadata: Metadata = {
   title: "New loop",
@@ -26,7 +26,7 @@ export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
 
   return (
     <main className="min-h-screen bg-background text-foreground">
-      <div className="mx-auto max-w-2xl space-y-6 px-4 py-8">
+      <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
         <div>
           <Link
             href="/loops"
@@ -37,11 +37,12 @@ export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
           </Link>
           <h1 className="text-2xl font-semibold">New loop</h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Define a multi-step agent workflow using JSON.
+            Start from a template, describe it in plain English, or build it
+            yourself.
           </p>
         </div>
         {enabled ? (
-          <LoopCreateForm
+          <LoopCreateExperience
             initialRepoOwner={repoOwner}
             initialRepoName={repoName}
           />
