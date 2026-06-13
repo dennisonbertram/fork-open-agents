@@ -92,27 +92,34 @@ function LoopSkeleton() {
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState() {
+function EmptyState({ createEnabled }: { createEnabled: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border p-12 text-center">
       <p className="text-sm font-medium text-muted-foreground">No loops yet</p>
       <p className="mt-1 text-xs text-muted-foreground">
         Create a loop to automate multi-step agent workflows.
       </p>
-      <Link
-        href="/loops/new"
-        className="mt-4 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-muted/20"
-      >
-        <Plus className="h-4 w-4" />
-        New loop
-      </Link>
+      {createEnabled && (
+        <Link
+          href="/loops/new"
+          className="mt-4 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-muted/20"
+        >
+          <Plus className="h-4 w-4" />
+          New loop
+        </Link>
+      )}
     </div>
   );
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-export function LoopsList() {
+type LoopsListProps = {
+  /** When false, hides "New loop" affordances (set server-side from isAgentLoopsEnabled). Defaults to true for backward compatibility. */
+  createEnabled?: boolean;
+};
+
+export function LoopsList({ createEnabled = true }: LoopsListProps) {
   const { data, error, isLoading } = useSWR<ListAgentLoopsResponse>(
     "/api/agent-loops",
     fetchJson,
@@ -149,7 +156,7 @@ export function LoopsList() {
   const loops = data?.loops ?? [];
 
   if (loops.length === 0) {
-    return <EmptyState />;
+    return <EmptyState createEnabled={createEnabled} />;
   }
 
   return (

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import { LoopCreateForm } from "../loop-create-form";
 
 export const metadata: Metadata = {
@@ -20,6 +21,7 @@ export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
     redirect("/");
   }
 
+  const enabled = isAgentLoopsEnabled();
   const { repoOwner, repoName } = await searchParams;
 
   return (
@@ -38,10 +40,21 @@ export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
             Define a multi-step agent workflow using JSON.
           </p>
         </div>
-        <LoopCreateForm
-          initialRepoOwner={repoOwner}
-          initialRepoName={repoName}
-        />
+        {enabled ? (
+          <LoopCreateForm
+            initialRepoOwner={repoOwner}
+            initialRepoName={repoName}
+          />
+        ) : (
+          <div className="rounded-md border border-border bg-muted/20 p-6">
+            <p className="text-sm font-medium">Loops are disabled</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Agent Loops are not enabled in this deployment. Set{" "}
+              <code className="font-mono">AGENT_LOOPS_ENABLED=true</code> to
+              enable them.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );
