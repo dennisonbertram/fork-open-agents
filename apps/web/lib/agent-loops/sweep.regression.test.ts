@@ -76,9 +76,16 @@ mock.module("@/lib/agent-loops/store", () => ({
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
+  getAgentLoopRunWithLoop: mock(async () => null),
   updateAgentLoopRunContext: mock(async () => undefined),
   retryCurrentStep: mock(async () => undefined),
   listAgentLoopRuns: mock(async () => []),
+}));
+
+// Mock watchdog module — sweep now imports invokeWatchdogForStall
+mock.module("@/lib/agent-loops/watchdog", () => ({
+  invokeWatchdog: mock(async () => ({ invoked: false })),
+  invokeWatchdogForStall: mock(async () => ({ invoked: false })),
 }));
 
 mock.module("@/lib/agent-loops/config", () => ({

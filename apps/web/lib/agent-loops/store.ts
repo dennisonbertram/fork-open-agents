@@ -1298,6 +1298,8 @@ export type CreateAgentLoopWatchdogRunInput = {
   decision?: NewAgentLoopWatchdogRun["decision"] | null;
   diagnosis?: string | null;
   decisionPayload?: { hint?: string } | null;
+  /** Set for status='running' rows so duration can be computed later (M3-01 follow-up B). */
+  startedAt?: Date | null;
 };
 
 export type UpdateAgentLoopWatchdogRunInput = {
@@ -1326,6 +1328,7 @@ export async function createAgentLoopWatchdogRun(
       decision: input.decision ?? null,
       diagnosis: input.diagnosis ?? null,
       decisionPayload: input.decisionPayload ?? null,
+      ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
     })
     .returning();
 
