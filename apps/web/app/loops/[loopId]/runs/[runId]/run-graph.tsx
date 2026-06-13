@@ -193,12 +193,18 @@ function RunGraphInner({
     setTimeout(() => fitView({ duration: 300 }), 100);
   }, [fitView]);
 
-  // LAYER 1: baseNodes/baseEdges — derived from the immutable definitionSnapshot.
-  // This memo re-runs ONLY when the snapshot object reference changes, which
-  // never happens during polling (polling only updates graphState). Because
-  // React Flow re-mounts a node iff its `id` changes, and ids come exclusively
-  // from the snapshot, no poll update can ever trigger a canvas remount.
-  // This separation is the structural guarantee; it is pinned by run-graph-merge.test.ts.
+  // LAYER 1: baseNodes/baseEdges — derived from the definitionSnapshot.
+  // The snapshot CONTENT is immutable (it was captured at run-start and never
+  // changes), but its object reference IS replaced on every SWR poll because
+  // run-detail.tsx re-derives it via an unmemoized loopDefinitionSchema.safeParse
+  // call on each render, and SWR replaces the whole payload every 2 s on live runs.
+  // Therefore this memo re-runs on every poll as well — that is expected and cheap.
+  //
+  // The no-remount guarantee does NOT rest on memo referential stability; it rests
+  // on node id stability: React Flow only re-mounts a node when its `id` changes,
+  // and ids come exclusively from the snapshot content (which never changes).
+  // applyNodeRunState / applyEdgeRunState preserve length, order, and ids on every
+  // overlay pass, and that contract is pinned by run-graph-merge.test.ts.
   const { nodes: baseNodes, edges: baseEdges } = useMemo(
     () => definitionToFlow(definitionSnapshot),
     [definitionSnapshot],
