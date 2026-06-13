@@ -321,10 +321,13 @@ export async function dispatchLoopRunForTrigger(
     return { skipped: true, reason: "feature_disabled" };
   }
 
-  // Gate 2: repo allowlist
-  const repoOwner = event.repoOwner ?? loop.repoOwner;
-  const repoName = event.repoName ?? loop.repoName;
-  if (!isAgentLoopRepoAllowed(repoOwner, repoName)) {
+  // Gate 2: repo allowlist — always check the loop's repo, never the caller's.
+  // The event.repoOwner/repoName fields may carry caller-supplied payload data
+  // (e.g. from a webhook body) which must not influence the gate. Using the
+  // loop's own values prevents both false-skips (payload repo differs from
+  // loop's allowlisted repo) and allowlist bypass (payload carries an
+  // allowlisted repo for a loop whose actual repo is NOT in the allowlist).
+  if (!isAgentLoopRepoAllowed(loop.repoOwner, loop.repoName)) {
     return { skipped: true, reason: "repo_not_allowed" };
   }
 

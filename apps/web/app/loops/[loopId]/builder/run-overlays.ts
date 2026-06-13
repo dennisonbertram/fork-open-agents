@@ -16,9 +16,60 @@
  *   hasFailedRing               — true for failed
  *   shouldShowVisitPill         — true when visitCount > 1
  *   getEdgeTraversalStyle       — returns opacity/strokeWidth for edge rendering
+ *
+ * Node ring color fragment constants (consumed by runStateWrapperClass in
+ * loop-nodes.tsx and by the swatch constants below):
+ *   RING_RUNNING_CLASS   — ring-orange-400 animate-pulse (current node)
+ *   RING_FAILED_CLASS    — ring-red-500 (failed node)
+ *   RING_SUCCEEDED_CLASS — ring-emerald-500 (succeeded node)
+ *
+ * Swatch constants for StatusLegend (sourced here so the legend shares the
+ * exact color tokens used in runStateWrapperClass — enforced by BT-LOOPS-053):
+ *   RUNNING_SWATCH_CLASS, SUCCEEDED_SWATCH_CLASS, FAILED_SWATCH_CLASS,
+ *   UNVISITED_SWATCH_CLASS
  */
 
 import type { NodeRunStatus } from "../runs/[runId]/use-run-graph-state";
+
+// ── Node ring color fragment constants ────────────────────────────────────────
+//
+// These are the exact Tailwind token fragments used in runStateWrapperClass
+// (loop-nodes.tsx). Exporting them here means:
+//   (a) The swatch constants below are derived from the same source of truth.
+//   (b) A future ring color change must go through these constants and will
+//       automatically update both the node wrapper and the legend.
+// Pinned by BT-LOOPS-053 (status-legend.test.tsx).
+
+/** Ring class fragment for the running/current node (orange-400 + pulse). */
+export const RING_RUNNING_CLASS =
+  "ring-2 ring-orange-400 animate-pulse rounded-md";
+
+/** Ring class fragment for a failed node (red-500 solid ring). */
+export const RING_FAILED_CLASS = "ring-2 ring-red-500 rounded-md";
+
+/** Ring class fragment for a succeeded node (emerald-500 solid ring). */
+export const RING_SUCCEEDED_CLASS = "ring-2 ring-emerald-500 rounded-md";
+
+// ── Status legend swatch constants ────────────────────────────────────────────
+//
+// Dot/swatch classes for StatusLegend — derived from the same color tokens as
+// the node rings above so the legend cannot drift from the actual node styling.
+// Consumers: status-legend.tsx (visual render), status-legend.test.tsx (pinned
+// by BT-LOOPS-053).
+
+/** Running / current node: pulsing orange dot (matches ring-orange-400 + animate-pulse) */
+export const RUNNING_SWATCH_CLASS =
+  "size-2.5 rounded-full bg-orange-400 animate-pulse";
+
+/** Succeeded node: solid emerald dot (matches ring-emerald-500) */
+export const SUCCEEDED_SWATCH_CLASS = "size-2.5 rounded-full bg-emerald-500";
+
+/** Failed node: solid red dot (matches ring-red-500) */
+export const FAILED_SWATCH_CLASS = "size-2.5 rounded-full bg-red-500";
+
+/** Unvisited node: muted dot at reduced opacity (matches opacity-50 dimming) */
+export const UNVISITED_SWATCH_CLASS =
+  "size-2.5 rounded-full bg-muted-foreground/40";
 
 // ── Re-export types for convenience ───────────────────────────────────────────
 
