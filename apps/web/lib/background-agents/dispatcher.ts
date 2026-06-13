@@ -242,9 +242,14 @@ export async function dispatchWebhookErrorEvent(params: {
       ...params.event,
       source: "webhook",
       kind: "webhook.error",
-      // Use repo from the loop, not from the (null) agent row.
-      repoOwner: params.event.repoOwner ?? loop.repoOwner,
-      repoName: params.event.repoName ?? loop.repoName,
+      // Pin repo to the loop unconditionally — never let the caller-supplied
+      // webhook payload override the loop's repo.  Using payload values here
+      // would allow an external caller to (a) cause a false-skip when a
+      // different-repo payload is posted and the loop's actual repo IS in the
+      // allowlist, or (b) bypass the allowlist gate by posting an allowlisted
+      // repo for a loop whose real repo is NOT in AGENT_LOOPS_ALLOWED_REPOS.
+      repoOwner: loop.repoOwner,
+      repoName: loop.repoName,
     };
     const loopResult = await dispatchLoopRunForTrigger({
       loop,
