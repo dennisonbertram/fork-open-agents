@@ -25,7 +25,7 @@ export default async function NewLoopPage({ searchParams }: NewLoopPageProps) {
   const { repoOwner, repoName } = await searchParams;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
         <div>
           <Link
