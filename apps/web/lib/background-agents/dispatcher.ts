@@ -132,8 +132,15 @@ export async function dispatchBackgroundTriggerEvent(params: {
     }
 
     // ── Agent-bound trigger branch (unchanged) ────────────────────────────────
+    // Agent is guaranteed non-null here: loop-bound rows took the branch above.
+    const agent = match.agent;
+    if (!agent) {
+      // Defensive guard: should not happen — row has neither loopId nor agent.
+      continue;
+    }
     const result = await createRunForTrigger({
-      ...match,
+      agent,
+      trigger: match.trigger,
       event: params.event,
       requestId: params.requestId,
     });
@@ -147,8 +154,8 @@ export async function dispatchBackgroundTriggerEvent(params: {
     created += 1;
     await recordBackgroundAgentEvent({
       runId: result.run.id,
-      agentId: match.agent.id,
-      userId: match.agent.userId,
+      agentId: agent.id,
+      userId: agent.userId,
       eventName: "background-agent.trigger.received",
       status: "info",
       summary: `Received ${params.event.kind} trigger.`,
@@ -163,8 +170,8 @@ export async function dispatchBackgroundTriggerEvent(params: {
     if (!workflowRunId) {
       await recordWorkflowStartFailure({
         runId: result.run.id,
-        agentId: match.agent.id,
-        userId: match.agent.userId,
+        agentId: agent.id,
+        userId: agent.userId,
         requestId: params.requestId ?? null,
       });
     }
@@ -203,11 +210,7 @@ export async function dispatchWebhookErrorEvent(params: {
   }
 
   const row = await getWebhookTriggerByPublicId(params.webhookPublicId);
-  if (
-    !row ||
-    row.agent.status !== "enabled" ||
-    row.trigger.status !== "enabled"
-  ) {
+  if (!row || row.trigger.status !== "enabled") {
     return {
       enabled: true,
       matched: 0,
@@ -218,25 +221,10 @@ export async function dispatchWebhookErrorEvent(params: {
     };
   }
 
-  const event: NormalizedBackgroundTriggerEvent = {
-    ...params.event,
-    source: "webhook",
-    kind: "webhook.error",
-    repoOwner: params.event.repoOwner ?? row.agent.repoOwner,
-    repoName: params.event.repoName ?? row.agent.repoName,
-  };
-  if (!isBackgroundAgentRepoAllowed(event.repoOwner, event.repoName)) {
-    return {
-      enabled: true,
-      matched: 0,
-      created: 0,
-      duplicates: 0,
-      runIds: [],
-      loopRunIds: [],
-    };
-  }
-
-  // ── Loop-bound webhook.error trigger branch (mirrors dispatchBackgroundTriggerEvent) ──
+  // ── Loop-bound webhook.error trigger branch ───────────────────────────────
+  // Check loopId BEFORE dereferencing row.agent (which is null for loop triggers).
+  // Loop rows skip the background-agents allowlist — loops use isAgentLoopRepoAllowed
+  // inside dispatchLoopRunForTrigger (different env var; double-gating is wrong).
   if (row.trigger.loopId) {
     const loop = await getAgentLoopById(row.trigger.loopId);
     if (!loop) {
@@ -250,11 +238,13 @@ export async function dispatchWebhookErrorEvent(params: {
         loopRunIds: [],
       };
     }
-    // Build the normalized event using repo from the loop (not the pseudo-agent row)
-    const loopEvent = {
-      ...event,
-      repoOwner: loop.repoOwner,
-      repoName: loop.repoName,
+    const loopEvent: NormalizedBackgroundTriggerEvent = {
+      ...params.event,
+      source: "webhook",
+      kind: "webhook.error",
+      // Use repo from the loop, not from the (null) agent row.
+      repoOwner: params.event.repoOwner ?? loop.repoOwner,
+      repoName: params.event.repoName ?? loop.repoName,
     };
     const loopResult = await dispatchLoopRunForTrigger({
       loop,
@@ -276,9 +266,40 @@ export async function dispatchWebhookErrorEvent(params: {
     };
   }
 
-  // ── Agent-bound webhook.error trigger branch (unchanged) ──────────────────────
+  // ── Agent-bound webhook.error trigger branch (unchanged) ──────────────────
+  // Agent is guaranteed non-null here: loop-bound rows took the branch above.
+  const agent = row.agent;
+  if (!agent || agent.status !== "enabled") {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+    };
+  }
+
+  const event: NormalizedBackgroundTriggerEvent = {
+    ...params.event,
+    source: "webhook",
+    kind: "webhook.error",
+    repoOwner: params.event.repoOwner ?? agent.repoOwner,
+    repoName: params.event.repoName ?? agent.repoName,
+  };
+  if (!isBackgroundAgentRepoAllowed(event.repoOwner, event.repoName)) {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+    };
+  }
+
   const result = await createRunForTrigger({
-    agent: row.agent,
+    agent,
     trigger: row.trigger,
     event,
     requestId: params.requestId,
@@ -297,8 +318,8 @@ export async function dispatchWebhookErrorEvent(params: {
 
   await recordBackgroundAgentEvent({
     runId: result.run.id,
-    agentId: row.agent.id,
-    userId: row.agent.userId,
+    agentId: agent.id,
+    userId: agent.userId,
     eventName: "background-agent.trigger.received",
     status: "info",
     summary: "Received webhook error trigger.",
@@ -313,8 +334,8 @@ export async function dispatchWebhookErrorEvent(params: {
   if (!workflowRunId) {
     await recordWorkflowStartFailure({
       runId: result.run.id,
-      agentId: row.agent.id,
-      userId: row.agent.userId,
+      agentId: agent.id,
+      userId: agent.userId,
       requestId: params.requestId ?? null,
     });
   }
@@ -460,20 +481,31 @@ export async function dispatchScheduledBackgroundAgents(params?: {
   const matchedRows: typeof allRows = [];
 
   // Separate rows into matched (will dispatch) and skipped (record skip reason).
-  // Repo allowlist uses the trigger row's repoOwner/repoName for loop triggers
-  // (the pseudo-agent row's fields reflect the loop's repo via the join).
+  // Loop-bound rows skip the background-agents allowlist — they use
+  // isAgentLoopRepoAllowed inside dispatchLoopRunForTrigger (different env var).
+  // Agent-bound rows use isBackgroundAgentRepoAllowed as before.
   for (const row of allRows) {
-    const repoAllowed = isBackgroundAgentRepoAllowed(
-      row.agent.repoOwner,
-      row.agent.repoName,
-    );
-    if (!repoAllowed) {
-      await recordTriggerSkipReason({
-        triggerId: row.trigger.id,
-        skipReason: "repo not in allowlist",
-      });
-      continue;
+    // Branch on loopId BEFORE accessing row.agent (null for loop triggers).
+    if (!row.trigger.loopId) {
+      // Agent-bound: guard non-null agent then check allowlist.
+      const agent = row.agent;
+      if (!agent) {
+        // Defensive: row has neither loopId nor agent — skip.
+        continue;
+      }
+      const repoAllowed = isBackgroundAgentRepoAllowed(
+        agent.repoOwner,
+        agent.repoName,
+      );
+      if (!repoAllowed) {
+        await recordTriggerSkipReason({
+          triggerId: row.trigger.id,
+          skipReason: "repo not in allowlist",
+        });
+        continue;
+      }
     }
+    // Loop-bound rows: allowlist check deferred to dispatchLoopRunForTrigger.
 
     const scheduleMatches = scheduleMatchesNow(row.trigger.schedule, now);
     if (!scheduleMatches) {
@@ -525,17 +557,23 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     }
 
     // ── Agent-bound schedule trigger (unchanged) ──────────────────────────
+    // Agent is guaranteed non-null here: loop-bound rows took the branch above.
+    const agent = row.agent;
+    if (!agent) {
+      // Defensive guard: should not happen — row has neither loopId nor agent.
+      continue;
+    }
     const event: NormalizedBackgroundTriggerEvent = {
       source: "schedule" satisfies BackgroundAgentRunSource,
       kind: "schedule.cron",
       externalId: getScheduleExternalId(row.trigger.id, now),
-      repoOwner: row.agent.repoOwner,
-      repoName: row.agent.repoName,
+      repoOwner: agent.repoOwner,
+      repoName: agent.repoName,
       action: "scheduled",
       occurredAt: now.toISOString(),
     };
     const result = await createRunForTrigger({
-      agent: row.agent,
+      agent,
       trigger: row.trigger,
       event,
       requestId: params?.requestId ?? null,
@@ -559,8 +597,8 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     created += 1;
     await recordBackgroundAgentEvent({
       runId: result.run.id,
-      agentId: row.agent.id,
-      userId: row.agent.userId,
+      agentId: agent.id,
+      userId: agent.userId,
       eventName: "background-agent.trigger.received",
       status: "info",
       summary: "Received schedule.cron trigger.",
@@ -575,8 +613,8 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     if (!workflowRunId) {
       await recordWorkflowStartFailure({
         runId: result.run.id,
-        agentId: row.agent.id,
-        userId: row.agent.userId,
+        agentId: agent.id,
+        userId: agent.userId,
         requestId: params?.requestId ?? null,
       });
     }
