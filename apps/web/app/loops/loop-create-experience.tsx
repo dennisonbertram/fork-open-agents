@@ -168,6 +168,7 @@ export function LoopCreateExperience({
           initialDescription={prefill.description}
           initialDefinitionText={JSON.stringify(prefill.definition, null, 2)}
           redirectTo="builder"
+          definitionCollapsible
         />
       </div>
     );
@@ -265,14 +266,22 @@ export function LoopCreateExperience({
         {aiError ? (
           <p className="text-xs text-red-700 dark:text-red-300">{aiError}</p>
         ) : null}
-        <Button
-          type="button"
-          onClick={generateFromDescription}
-          disabled={aiLoading}
-        >
-          <Wand2 className="mr-1.5 h-4 w-4" />
-          {aiLoading ? "Drafting…" : "Generate loop"}
-        </Button>
+        <div className="space-y-2">
+          <Button
+            type="button"
+            onClick={generateFromDescription}
+            disabled={aiLoading}
+          >
+            <Wand2 className="mr-1.5 h-4 w-4" />
+            {aiLoading ? "Drafting…" : "Generate loop"}
+          </Button>
+          {aiLoading ? (
+            <p className="text-xs text-muted-foreground">
+              Drafting your loop from your description — this usually takes
+              10–20 seconds.
+            </p>
+          ) : null}
+        </div>
       </TabsContent>
 
       {/* Blank / advanced */}

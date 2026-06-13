@@ -28,6 +28,12 @@ type LoopCreateFormProps = {
   initialDefinitionText?: string;
   /** Where to send the user after a successful create. Defaults to the detail page. */
   redirectTo?: "detail" | "builder";
+  /**
+   * When true (template / AI flows), the JSON definition editor is tucked
+   * behind an "Advanced" disclosure so first-timers aren't confronted with raw
+   * JSON. It auto-opens if the definition has errors.
+   */
+  definitionCollapsible?: boolean;
 };
 
 // ── Validation error display ──────────────────────────────────────────────────
@@ -72,6 +78,7 @@ export function LoopCreateForm({
   initialDescription,
   initialDefinitionText,
   redirectTo = "detail",
+  definitionCollapsible = false,
 }: LoopCreateFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialName ?? "");
@@ -227,28 +234,61 @@ export function LoopCreateForm({
       </div>
 
       {/* definition JSON editor */}
-      <div className="space-y-2">
-        <Label htmlFor="definition">Loop definition (JSON)</Label>
-        <p className="text-xs text-muted-foreground">
-          Paste or edit the loop definition JSON. Errors are validated on blur
-          before saving.
-        </p>
-        <Textarea
-          id="definition"
-          value={definitionText}
-          onChange={(e) => setDefinitionText(e.target.value)}
-          onBlur={handleDefinitionBlur}
-          className="min-h-48 font-mono text-xs"
-          spellCheck={false}
-          aria-label="Loop definition JSON"
-        />
-        {jsonParseError && (
-          <p className="text-xs text-red-700 dark:text-red-300">
-            {jsonParseError}
-          </p>
-        )}
-        <ValidationErrorList errors={validationErrors} />
-      </div>
+      {(() => {
+        const hasDefinitionError =
+          validationErrors.length > 0 || jsonParseError !== null;
+        const editor = (
+          <>
+            <Textarea
+              id="definition"
+              value={definitionText}
+              onChange={(e) => setDefinitionText(e.target.value)}
+              onBlur={handleDefinitionBlur}
+              className="min-h-48 font-mono text-xs"
+              spellCheck={false}
+              aria-label="Loop definition JSON"
+            />
+            {jsonParseError && (
+              <p className="text-xs text-red-700 dark:text-red-300">
+                {jsonParseError}
+              </p>
+            )}
+            <ValidationErrorList errors={validationErrors} />
+          </>
+        );
+
+        if (definitionCollapsible) {
+          return (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                You don&apos;t need to edit anything here — pick a repository
+                and create. You&apos;ll fine-tune each step visually in the
+                builder.
+              </p>
+              <details
+                open={hasDefinitionError || undefined}
+                className="rounded-md border border-border bg-muted/10 px-3 py-2"
+              >
+                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                  Advanced — edit the loop definition (JSON)
+                </summary>
+                <div className="mt-3 space-y-2">{editor}</div>
+              </details>
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-2">
+            <Label htmlFor="definition">Loop definition (JSON)</Label>
+            <p className="text-xs text-muted-foreground">
+              Paste or edit the loop definition JSON. Errors are validated on
+              blur before saving.
+            </p>
+            {editor}
+          </div>
+        );
+      })()}
 
       <div className="flex justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>

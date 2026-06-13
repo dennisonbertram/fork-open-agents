@@ -33,7 +33,7 @@ const reviewToIssues: LoopTemplate = {
   name: "Review to issues",
   description:
     "Review the repository, compile a list of problems, and file each one as a GitHub issue.",
-  suggestedTrigger: "On a new PR, or every 20 minutes",
+  suggestedTrigger: "When a new PR opens (or on a schedule you choose)",
   definition: {
     nodes: [
       { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
@@ -230,7 +230,7 @@ const mergeWhenGreen: LoopTemplate = {
         label: "Merge PR",
         position: { x: 720, y: 0 },
         instructions:
-          "Merge the PR once CI is green (`gh pr merge --squash`). Write {\"merged\": true} to /tmp/loop-step-output.json.",
+          'Merge the PR once CI is green (`gh pr merge --squash`). Write {"merged": true} to /tmp/loop-step-output.json.',
       },
       { id: "end", kind: "end", label: "Done", position: { x: 720, y: 200 } },
     ],
