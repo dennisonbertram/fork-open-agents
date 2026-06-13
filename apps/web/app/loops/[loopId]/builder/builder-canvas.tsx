@@ -40,6 +40,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useTheme } from "@/app/providers";
 import { nodeTypes } from "./loop-nodes";
 import { WhenEdge } from "./when-edge";
@@ -122,6 +123,11 @@ function BuilderCanvasInner({
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const colorMode: ColorMode = resolvedTheme === "dark" ? "dark" : "light";
+  // When the app sidebar is collapsed, the shell shows a floating "Open panel"
+  // toggle at the top-left — pad the builder top bar so it never overlaps the
+  // back-link.
+  const { state: sidebarState, isMobile: sidebarMobile } = useSidebar();
+  const sidebarCollapsed = !sidebarMobile && sidebarState === "collapsed";
 
   const nodes = useStore(store, (s) => s.nodes);
   const edges = useStore(store, (s) => s.edges);
@@ -376,7 +382,11 @@ function BuilderCanvasInner({
     <BuilderErrorContext.Provider value={errorsById}>
       <div className="flex h-screen flex-col bg-background">
         {/* Top bar */}
-        <div className="relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+        <div
+          className={`relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 ${
+            sidebarCollapsed ? "pl-14" : ""
+          }`}
+        >
           <Link
             href={`/loops/${loopId}`}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
