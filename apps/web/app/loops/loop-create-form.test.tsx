@@ -5,6 +5,7 @@
  *   BT-LOOPS-006: Structured validation errors render per-node/edge before save
  *   BT-LOOPS-007: Valid JSON textarea accepts and shows no errors
  *   BT-LOOPS-008: Invalid JSON text shows parse error before any request
+ *   BT-LOOPS-GATE-006: First label is title-case "Name" (REG-GATE-004)
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -65,5 +66,16 @@ describe("LoopCreateForm", () => {
     const html = renderToStaticMarkup(<LoopCreateForm />);
 
     expect(html).toContain("definition");
+  });
+
+  // BT-LOOPS-GATE-006 / REG-GATE-004: first label is title-case "Name"
+  test("BT-LOOPS-GATE-006: first label is title-case Name (not lowercase name)", async () => {
+    const { LoopCreateForm } = await formModulePromise;
+    const html = renderToStaticMarkup(<LoopCreateForm />);
+
+    // Must contain title-case label
+    expect(html).toContain(">Name<");
+    // The previous weak assertion still holds but is no longer sufficient alone
+    expect(html).toContain("name");
   });
 });
