@@ -2,17 +2,19 @@
  * Agent Loops — watchdog.ts (M3-01)
  *
  * invokeWatchdog({ loop, loopRun, stepRunId, nodeId, nodeKind, attempt, errorKind, errorMessage, workflowRunId })
+ * invokeWatchdogForStall({ ...invokeWatchdogParams, legalDecisions?: ['retry','pause'] })
  *
  * Flow:
  *   (a) Guard: !loop.watchdogEnabled → return { invoked: false }
  *   (b) Budget pre-check via countWatchdogRetryDecisions; if >= budget → forced pause (no agent call)
  *   (c) Create watchdog row status=running; emit agent-loop.watchdog.started
  *   (d) Build diagnosis prompt from error context, step I/O, loop events, snapshot, watchdog instructions
- *   (e) Invoke openAgent in classic mode with getChatOnlyTools() — no sandbox, no file/bash tools
- *       (v1 decision: watchdog decides from evidence in the prompt, not live investigation)
+ *   (e) Call generateText with gateway("anthropic/claude-haiku-4.5") — read-only, evidence-in-prompt only
+ *       (no tools, no sandbox in v1)
  *   (f) Parse decision with zod: { decision: retry|skip|pause, diagnosis, hint? }
  *       Any failure → pause with watchdog_output_invalid
  *       AbortError → pause with watchdog_timeout
+ *       If parsed decision is not in legalDecisions, coerce to 'pause'
  *   (g) Apply:
  *       retry → retryCurrentStepForWatchdog (hint persisted in stepInput)
  *       skip → advanceToFailureEdge from snapshot; if no failure edge → pause
@@ -25,7 +27,7 @@
  *   agent-loop.watchdog.decided — after decision applied (info for retry/skip, warn for pause)
  *
  * Error contract:
- *   invokeWatchdog never throws — all errors fall back to pause internally.
+ *   invokeWatchdog / invokeWatchdogForStall never throw — all errors fall back to pause internally.
  *   The chain.ts caller must additionally wrap in try/catch and fall back to
  *   fail-fast if this function itself throws (defense-in-depth).
  */
@@ -63,6 +65,13 @@ export type InvokeWatchdogParams = {
   errorKind?: string;
   errorMessage?: string;
   workflowRunId?: string | null;
+  /**
+   * Which decisions are legal for this invocation.
+   * Defaults to all three: ['retry', 'skip', 'pause'].
+   * For stall-sweep invocations, pass ['retry', 'pause'] to coerce an
+   * illegal 'skip' to 'pause' (a stalled run has no live failure edge to skip to).
+   */
+  legalDecisions?: ReadonlyArray<"retry" | "skip" | "pause">;
 };
 
 export type InvokeWatchdogResult = {
@@ -198,6 +207,7 @@ export async function invokeWatchdog(
     errorKind,
     errorMessage,
     workflowRunId,
+    legalDecisions = ["retry", "skip", "pause"],
   } = params;
 
   // (a) Guard: watchdog disabled → no-op
@@ -274,7 +284,7 @@ export async function invokeWatchdog(
     return { invoked: true, decision: "pause" };
   }
 
-  // (c) Create watchdog row status=running
+  // (c) Create watchdog row status=running — startedAt persisted for duration tracking (M3-01 follow-up B)
   const watchdogRow = await createAgentLoopWatchdogRun({
     loopRunId,
     stepRunId,
@@ -283,7 +293,7 @@ export async function invokeWatchdog(
     attempt,
     budgetRemaining,
     startedAt: new Date(),
-  } as Parameters<typeof createAgentLoopWatchdogRun>[0] & { startedAt?: Date });
+  });
 
   // (d) Build prompt
   // Get step input/output from the step run (best-effort — may be null)
@@ -341,10 +351,19 @@ export async function invokeWatchdog(
   }
 
   // (g) Apply decision
-  const finalDecision = decisionResult?.decision ?? "pause";
+  // Coerce illegal decisions: if the parsed decision is not in legalDecisions, force pause.
+  // This is used by stall-sweep invocations where 'skip' is illegal (no live failure edge).
+  let rawDecision = decisionResult?.decision ?? "pause";
+  let diagnosisNote = "";
+  if (decisionResult && !legalDecisions.includes(rawDecision)) {
+    diagnosisNote = ` (${rawDecision} illegal for this invocation — coerced to pause)`;
+    rawDecision = "pause";
+  }
+  const finalDecision = rawDecision;
   const diagnosis =
-    decisionResult?.diagnosis ?? "Watchdog fallback: pause applied";
-  const hint = decisionResult?.hint;
+    (decisionResult?.diagnosis ?? "Watchdog fallback: pause applied") +
+    diagnosisNote;
+  const hint = finalDecision === "retry" ? decisionResult?.hint : undefined;
 
   if (parseErrorKind) {
     // Invalid/timeout → pause
@@ -515,4 +534,33 @@ export async function invokeWatchdog(
   });
 
   return { invoked: true, decision: finalDecision };
+}
+
+/**
+ * Thin wrapper around invokeWatchdog for stall-sweep invocations.
+ *
+ * Differences from a failure-initiated invocation:
+ *   - errorKind is always 'stall_sweep'
+ *   - legalDecisions defaults to ['retry', 'pause'] — 'skip' is illegal for stalls
+ *     because there is no live failed-step failure edge to skip to; the LLM returning
+ *     'skip' is coerced to 'pause' inside invokeWatchdog.
+ *   - The stall retry MUST go through retryCurrentStepForWatchdog (the conditional
+ *     MAX(attempt)+1 path) so a sweep that raced a slow-but-alive workflow cannot
+ *     double-dispatch — this is inherited from invokeWatchdog's retry branch.
+ *   - Budget sharing: countWatchdogRetryDecisions is the shared per-node retry counter
+ *     (same table, same nodeId) so stall-initiated retries reduce the budget identically
+ *     to failure-initiated retries (see store.ts comment near countWatchdogRetryDecisions).
+ *
+ * Never throws — all errors fall back to pause via invokeWatchdog's error contract.
+ */
+export async function invokeWatchdogForStall(
+  params: InvokeWatchdogParams & {
+    legalDecisions?: ReadonlyArray<"retry" | "skip" | "pause">;
+  },
+): Promise<InvokeWatchdogResult> {
+  return invokeWatchdog({
+    ...params,
+    errorKind: params.errorKind ?? "stall_sweep",
+    legalDecisions: params.legalDecisions ?? ["retry", "pause"],
+  });
 }

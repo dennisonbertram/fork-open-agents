@@ -1,13 +1,27 @@
 /**
- * Agent Loops — stall sweep (M1-10)
+ * Agent Loops — stall sweep (M1-10, M3-02-A)
  *
  * sweepStalledLoopRuns():
  *   1. Load runs in queued/running status whose latest event is older than
  *      AGENT_LOOPS_STALL_MINUTES (default 15).
  *   2. For each candidate: conditional status transition queued/running → stalled.
  *      If 0 rows updated (race: already stalled/completed by another path) skip.
- *   3. Emit agent-loop.run.stalled (warn) per stalled run.
- *   4. Emit agent-loop.sweep.completed (info) once per sweep with counts.
+ *   3. If loop.watchdogEnabled AND run.currentStepRunId is set: invoke watchdog
+ *      for auto-triage (retry or pause-with-diagnosis) — wrapped in try/catch for
+ *      defense-in-depth (invokeWatchdogForStall already never throws, but a sweep
+ *      batch must never abort on one candidate).
+ *   4. Emit agent-loop.run.stalled (warn) per stalled run.
+ *   5. Emit agent-loop.sweep.completed (info) once per sweep with counts.
+ *
+ * Watchdog routing guard:
+ *   - getAgentLoopRunWithLoop is only called AFTER a successful conditional
+ *     transition (i.e. after `if (!updated) continue`). The race guard stays the
+ *     single gate — we never load the loop for a candidate that was already handled.
+ *   - retryCurrentStepForWatchdog (store.ts) throws if currentNodeId/currentStepRunId
+ *     is null, so we guard: skip watchdog if either is null.
+ *   - We intentionally do NOT extend findStalledLoopRunCandidates to JOIN loops —
+ *     a per-candidate getAgentLoopRunWithLoop is fine at sweep cardinality and keeps
+ *     the candidate type unchanged (simpler, no JOIN cost at low cardinality).
  *
  * Paused runs are explicitly excluded by the store query (paused is not active
  * for sweep purposes — a paused run is intentionally suspended, not stalled).
@@ -23,7 +37,9 @@ import {
   findStalledLoopRunCandidates,
   conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
+  getAgentLoopRunWithLoop,
 } from "./store";
+import { invokeWatchdogForStall } from "./watchdog";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -59,11 +75,44 @@ export async function sweepStalledLoopRuns(): Promise<SweepResult> {
     });
 
     if (!updated) {
-      // Race: run already transitioned by another path — skip event emission
+      // Race: run already transitioned by another path — skip event emission.
+      // The race guard is the gate: we never load the loop for skipped candidates.
       continue;
     }
 
     stalledCount++;
+
+    // ── M3-02-A: Watchdog routing ─────────────────────────────────────────────
+    // Load loop details per-candidate (only after a successful transition).
+    // Defense-in-depth: wrapped in try/catch so a watchdog error on one candidate
+    // never aborts the sweep batch (invokeWatchdogForStall itself never throws,
+    // but the outer try/catch catches any unexpected store errors).
+    try {
+      const detail = await getAgentLoopRunWithLoop(candidate.id);
+      if (
+        detail?.loop.watchdogEnabled &&
+        detail.run.currentStepRunId &&
+        detail.run.currentNodeId
+      ) {
+        await invokeWatchdogForStall({
+          loop: detail.loop,
+          loopRun: detail.run,
+          stepRunId: detail.run.currentStepRunId,
+          nodeId: detail.run.currentNodeId,
+          // nodeKind: we don't have it in the candidate — fall back to 'unknown'.
+          // A future enhancement could resolve it from the definitionSnapshot.
+          nodeKind: "unknown",
+          attempt: 0,
+          errorKind: "stall_sweep",
+          errorMessage: `Run stalled: last event ${candidate.lastEventName ?? "(none)"} ${Math.round(lastEventAgeMs / 60000)}m ago`,
+          workflowRunId: detail.run.workflowRunId,
+        });
+      }
+    } catch {
+      // Watchdog error must never abort the sweep batch.
+      // The stalled transition and event emission continue below.
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     await recordAgentLoopEvent({
       loopRunId: candidate.id,
