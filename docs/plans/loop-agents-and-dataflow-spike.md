@@ -116,8 +116,12 @@ Two ways to relate the entities — recommend **(b)**:
    `resolveComposioToolsForBgRun(agentId:null)` (gated by the user's connected
    accounts + repo policy) and injects them into `openAgent.generate`. (The
    nicer instructions editor shipped earlier as the Expand modal.)
-3. **P3 — Explicit data flow** (declared outputs, input autocomplete in
-   condition/instructions, canvas chips).
+3. **P3 — Explicit data flow** ✅ **SHIPPED**: agent-step config has an "Outputs"
+   editor (named field + type → `outputSchema`); declared outputs show as chips
+   on the node card; the condition "Context path" autocompletes from upstream
+   steps' outputs (`availableOutputRefs`, pure + tested) via a datalist +
+   clickable `<id>.<field>` chips. The `/tmp/loop-step-output.json` transport is
+   unchanged; the contract is now visible.
 
 ## Risks / open questions
 - **Complexity** (reviewer's concern): mitigated by (b) embedding config rather
@@ -134,3 +138,9 @@ Two ways to relate the entities — recommend **(b)**:
 Do **P1** first (per-step GitHub permissions + scoped token) — it's the smallest
 change that makes loop steps actually useful, and it validates the shared-config
 direction before investing in P2/P3.
+
+## Status: P1 + P2 + P3 all shipped (PR #406)
+The full convergence is in: per-step GitHub permissions (P1), per-step Composio
+tools (P2), and explicit declared outputs + condition autocomplete (P3). A loop
+agent-step can now reach GitHub with the right scopes, use external tools, and
+its data flow to downstream nodes is visible and auto-completable.
