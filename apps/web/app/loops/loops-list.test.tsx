@@ -7,6 +7,7 @@
  *   BT-LOOPS-003: Skeleton loading renders when data is undefined
  *   BT-LOOPS-004: Inline error state renders when fetch fails
  *   BT-LOOPS-005: Feature-disabled readiness verdict renders when flag is off
+ *   BT-LOOPS-GATE-005: EmptyState with createEnabled=false renders no /loops/new link (issue #392)
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -124,5 +125,26 @@ describe("LoopsList", () => {
     const html = renderToStaticMarkup(<LoopsList />);
 
     expect(html).toContain("disabled");
+  });
+
+  // BT-LOOPS-GATE-005: EmptyState with createEnabled=false has no /loops/new link
+  test("BT-LOOPS-GATE-005: EmptyState with createEnabled=false renders no /loops/new link", async () => {
+    _swrOverride = { data: { loops: [] }, isLoading: false };
+    const { LoopsList } = await loopsListModulePromise;
+    const html = renderToStaticMarkup(<LoopsList createEnabled={false} />);
+
+    // Empty state text still renders (explanation present)
+    expect(html).toContain("No loops");
+    // But no dead-end link to create form
+    expect(html).not.toContain("/loops/new");
+  });
+
+  // BT-LOOPS-002b: EmptyState with createEnabled=true (default) has /loops/new link
+  test("BT-LOOPS-002b: EmptyState with createEnabled=true (default) shows /loops/new link", async () => {
+    _swrOverride = { data: { loops: [] }, isLoading: false };
+    const { LoopsList } = await loopsListModulePromise;
+    const html = renderToStaticMarkup(<LoopsList createEnabled={true} />);
+
+    expect(html).toContain("/loops/new");
   });
 });

@@ -34,6 +34,8 @@
  *
  * MiniMap: per-node status color
  * Iteration meter: "Iteration 2/10 · Step 5/50"
+ * Controls: top-left (explicit position to avoid collision with bottom-left StatusLegend Panel)
+ * Status legend: bottom-left Panel with color key for first-time users
  * aria-live: announces node transitions
  */
 
@@ -49,15 +51,10 @@ import {
   useReactFlow,
   type ColorMode,
   type Node,
-  type Edge,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { useTheme } from "@/app/providers";
-import {
-  definitionToFlow,
-  type LoopFlowNode,
-  type LoopFlowEdge,
-} from "@/app/loops/[loopId]/builder/definition-mapping";
+import { definitionToFlow } from "@/app/loops/[loopId]/builder/definition-mapping";
 import { nodeTypes } from "@/app/loops/[loopId]/builder/loop-nodes";
 import { WhenEdge } from "@/app/loops/[loopId]/builder/when-edge";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
@@ -71,6 +68,8 @@ import {
   type NodeRunStatus,
   type RunGraphState,
 } from "./use-run-graph-state";
+import { applyNodeRunState, applyEdgeRunState } from "./run-graph-merge";
+import { StatusLegend } from "./status-legend";
 
 // ── Edge types registry ────────────────────────────────────────────────────────
 
@@ -97,63 +96,6 @@ const kindMiniMapColor: Record<string, string> = {
   condition: "#f59e0b",
   end: "#a3a3a3",
 };
-
-// ── Map run graph state into node.data and edge.data ──────────────────────────
-
-/**
- * Merges run-state into each node's data so that the builder node components
- * can render status badges, rings, and visit count pills.
- * Builder rendering is unchanged when runStatus is absent; these props are
- * add-only and never remove or replace existing data fields.
- */
-function applyNodeRunState(
-  nodes: LoopFlowNode[],
-  graphState: RunGraphState,
-): Node[] {
-  return nodes.map((node: LoopFlowNode) => {
-    const nodeState = graphState.nodes[node.id];
-    const status: NodeRunStatus = nodeState?.status ?? "unvisited";
-    const visitCount = nodeState?.visitCount ?? 0;
-    const isCurrent = node.id === graphState.currentNodeId;
-
-    return {
-      ...node,
-      data: {
-        ...node.data,
-        // Add-only run-state props — consumed by loop-nodes.tsx overlays
-        runStatus: status,
-        visitCount,
-        isCurrent,
-      },
-    };
-  });
-}
-
-/**
- * Merges traversal state into each edge's data so that WhenEdge can render
- * traversal overlays (opacity, stroke width, animation).
- * Builder WhenEdge rendering is unchanged when traversed/mostRecent are absent.
- */
-function applyEdgeRunState(
-  edges: LoopFlowEdge[],
-  graphState: RunGraphState,
-): Edge[] {
-  return edges.map((edge: LoopFlowEdge) => {
-    const edgeState = graphState.edges[edge.id];
-    const traversed = edgeState?.traversed ?? false;
-    const mostRecent = edgeState?.mostRecent ?? false;
-
-    return {
-      ...edge,
-      data: {
-        ...edge.data,
-        // Add-only run-state props — consumed by when-edge.tsx overlays
-        traversed,
-        mostRecent,
-      },
-    };
-  });
-}
 
 // ── Meter display ──────────────────────────────────────────────────────────────
 
@@ -251,13 +193,27 @@ function RunGraphInner({
     setTimeout(() => fitView({ duration: 300 }), 100);
   }, [fitView]);
 
-  // Derive nodes/edges from snapshot — stable shape, updated overlays
+  // LAYER 1: baseNodes/baseEdges — derived from the definitionSnapshot.
+  // The snapshot CONTENT is immutable (it was captured at run-start and never
+  // changes), but its object reference IS replaced on every SWR poll because
+  // run-detail.tsx re-derives it via an unmemoized loopDefinitionSchema.safeParse
+  // call on each render, and SWR replaces the whole payload every 2 s on live runs.
+  // Therefore this memo re-runs on every poll as well — that is expected and cheap.
+  //
+  // The no-remount guarantee does NOT rest on memo referential stability; it rests
+  // on node id stability: React Flow only re-mounts a node when its `id` changes,
+  // and ids come exclusively from the snapshot content (which never changes).
+  // applyNodeRunState / applyEdgeRunState preserve length, order, and ids on every
+  // overlay pass, and that contract is pinned by run-graph-merge.test.ts.
   const { nodes: baseNodes, edges: baseEdges } = useMemo(
     () => definitionToFlow(definitionSnapshot),
     [definitionSnapshot],
   );
 
-  // Merge run-state into node/edge data — fed to builder components
+  // LAYER 2: nodes/edges — overlay run-state data on top of the stable base arrays.
+  // This memo re-runs on every poll (graphState changes) but only mutates data
+  // fields — length, order, and ids are preserved by applyNodeRunState /
+  // applyEdgeRunState (pinned by run-graph-merge.test.ts BT-LOOPS-051).
   const nodes = useMemo(
     () => applyNodeRunState(baseNodes, graphState),
     [baseNodes, graphState],
@@ -313,7 +269,8 @@ function RunGraphInner({
           size={1}
           className="opacity-30"
         />
-        <Controls className="nodrag" />
+        {/* position="top-left" avoids collision with StatusLegend Panel at bottom-left */}
+        <Controls className="nodrag" position="top-left" />
         <MiniMap
           className="nodrag"
           nodeColor={(node) => {
@@ -330,7 +287,7 @@ function RunGraphInner({
           }
         />
 
-        {/* Iteration meter panel */}
+        {/* Iteration meter panel — bottom-center */}
         <Panel position="bottom-center">
           <IterationMeter
             iterationCount={graphState.meter.iterationCount}
@@ -338,6 +295,11 @@ function RunGraphInner({
             stepCount={graphState.meter.stepCount}
             maxStepsPerRun={graphState.meter.maxStepsPerRun}
           />
+        </Panel>
+
+        {/* Status legend — bottom-left; answers "what do the colors mean?" for first-time users */}
+        <Panel position="bottom-left">
+          <StatusLegend />
         </Panel>
       </ReactFlow>
 

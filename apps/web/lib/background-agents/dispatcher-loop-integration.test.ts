@@ -516,6 +516,176 @@ describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
   });
 });
 
+// ── INT-3b: REGRESSION — webhook loop branch pins repo to loop, not caller payload ──────────
+
+describe("REGRESSION-326-webhook-repo-pin: dispatchWebhookErrorEvent pins repo to loop", () => {
+  beforeEach(resetIntegrationMocks);
+
+  /**
+   * INT-3b-1: false-skip prevention.
+   *
+   * When the caller's webhook payload carries a repo that differs from the
+   * loop's repo, the normalized event passed to dispatchLoopRunForTrigger must
+   * use the loop's repo unconditionally.  The previous code used
+   * `event.repoOwner ?? loop.repoOwner`, which would pass the caller-supplied
+   * repo when it was non-null — causing the bridge's allowlist gate to evaluate
+   * against the wrong repo and silently skip (the exact #326 no-fire class).
+   *
+   * This test verifies that the bridge receives repoOwner/repoName pinned to
+   * the loop's values even when the caller supplies a different repo.
+   */
+  test("INT-3b-1: event passed to bridge carries loop's repo, not caller-supplied payload repo", async () => {
+    const loopWebhookTriggerPin: BackgroundAgentWithTriggers["triggers"][number] =
+      {
+        id: "trigger-loop-webhook-pin",
+        agentId: null,
+        loopId: "loop-webhook-pin",
+        userId: "user-1",
+        name: "Loop webhook pin test",
+        kind: "webhook.error",
+        status: "enabled",
+        conditions: {},
+        schedule: null,
+        webhookPublicId: "wh_loop_pin",
+        webhookSecretHash: "hash-pin",
+        lastRunAt: null,
+        nextRunAt: null,
+        lastSkipReason: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+    // Loop is on acme/widgets
+    const pinnedLoop = {
+      ...activeLoop,
+      id: "loop-webhook-pin",
+      repoOwner: "acme",
+      repoName: "widgets",
+    };
+
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTriggerPin,
+    };
+    loopForTriggerResult = pinnedLoop;
+    loopDispatchResult = { created: true, runId: "loop-run-pin-1" };
+
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_pin",
+      event: {
+        externalId: "err-pin-1",
+        title: "Error from different repo",
+        message: "Something failed",
+        occurredAt: "2026-06-12T10:00:00.000Z",
+        // Caller supplies a DIFFERENT repo than the loop's repo
+        repoOwner: "external-org",
+        repoName: "other-repo",
+      },
+      requestId: "req-pin-int-3b-1",
+    });
+
+    expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
+    const bridgeCall = (
+      dispatchLoopRunForTrigger.mock.calls[0] as unknown as [
+        {
+          loop: { repoOwner: string; repoName: string };
+          event: { repoOwner: string; repoName: string };
+        },
+      ]
+    )[0];
+    // The event repo MUST be the loop's repo, not the caller-supplied payload repo
+    expect(bridgeCall.event.repoOwner).toBe("acme");
+    expect(bridgeCall.event.repoName).toBe("widgets");
+    // Verify the caller-supplied values did NOT leak through
+    expect(bridgeCall.event.repoOwner).not.toBe("external-org");
+    expect(bridgeCall.event.repoName).not.toBe("other-repo");
+  });
+
+  /**
+   * INT-3b-2: allowlist bypass prevention.
+   *
+   * When the caller supplies an allowlisted repo in the event payload but the
+   * loop's actual repo is NOT allowlisted, pinning to loop.repo must block the
+   * dispatch.  This test verifies the CALLER cannot bypass AGENT_LOOPS_ALLOWED_REPOS
+   * by crafting an event payload with an allowlisted repo.
+   *
+   * Note: because dispatchLoopRunForTrigger is fully mocked in this integration
+   * test suite (it just returns loopDispatchResult), we cannot test the
+   * allowlist gate end-to-end here. That gate is covered by
+   * REGRESSION-326-repo-pin-002 in dispatcher-bridge.test.ts.  This test
+   * verifies the DISPATCHER correctly pins the repo before calling the bridge.
+   */
+  test("INT-3b-2: dispatcher does not leak caller-supplied allowlisted repo for a loop on a different repo", async () => {
+    const loopWebhookTriggerBypass: BackgroundAgentWithTriggers["triggers"][number] =
+      {
+        id: "trigger-loop-webhook-bypass",
+        agentId: null,
+        loopId: "loop-webhook-bypass",
+        userId: "user-1",
+        name: "Loop webhook bypass test",
+        kind: "webhook.error",
+        status: "enabled",
+        conditions: {},
+        schedule: null,
+        webhookPublicId: "wh_loop_bypass",
+        webhookSecretHash: "hash-bypass",
+        lastRunAt: null,
+        nextRunAt: null,
+        lastSkipReason: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+    // Loop is on blocked-org/secret-repo
+    const blockedLoop = {
+      ...activeLoop,
+      id: "loop-webhook-bypass",
+      repoOwner: "blocked-org",
+      repoName: "secret-repo",
+    };
+
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTriggerBypass,
+    };
+    loopForTriggerResult = blockedLoop;
+    loopDispatchResult = { created: true, runId: "loop-run-bypass-1" };
+
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_bypass",
+      event: {
+        externalId: "err-bypass-1",
+        title: "Bypass attempt",
+        message: "Trying to bypass allowlist",
+        occurredAt: "2026-06-12T10:00:00.000Z",
+        // Caller supplies allowlisted repo to try to bypass the gate
+        repoOwner: "acme",
+        repoName: "widgets",
+      },
+      requestId: "req-pin-int-3b-2",
+    });
+
+    expect(dispatchLoopRunForTrigger).toHaveBeenCalledTimes(1);
+    const bridgeCall = (
+      dispatchLoopRunForTrigger.mock.calls[0] as unknown as [
+        {
+          event: { repoOwner: string; repoName: string };
+        },
+      ]
+    )[0];
+    // The bridge must receive the loop's real repo, not the caller's allowlisted repo
+    expect(bridgeCall.event.repoOwner).toBe("blocked-org");
+    expect(bridgeCall.event.repoName).toBe("secret-repo");
+    // The caller-supplied allowlisted repo must NOT appear in the bridge call
+    expect(bridgeCall.event.repoOwner).not.toBe("acme");
+    expect(bridgeCall.event.repoName).not.toBe("widgets");
+  });
+});
+
 // ── BT-326-18: REGRESSION — loop-bound webhook.error never reaches createRunForTrigger ────
 
 describe("REGRESSION-326-webhook: loop-bound webhook.error dispatch isolation", () => {

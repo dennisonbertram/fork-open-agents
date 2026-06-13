@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
+  agentLoops,
   backgroundAgentEvents,
   backgroundAgentOutputs,
   backgroundAgentRuns,
@@ -293,24 +294,38 @@ export async function getOwnedBackgroundAgentWithTriggers(params: {
 
 export async function listMatchingTriggersForEvent(
   event: NormalizedBackgroundTriggerEvent,
-): Promise<Array<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger }>> {
+): Promise<
+  Array<{ agent: BackgroundAgent | null; trigger: BackgroundAgentTrigger }>
+> {
   const triggers = await db
     .select({
       trigger: backgroundAgentTriggers,
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(
       and(
         eq(backgroundAgentTriggers.kind, event.kind),
         eq(backgroundAgentTriggers.status, "enabled"),
-        eq(backgroundAgents.status, "enabled"),
-        sql`lower(${backgroundAgents.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
-        sql`lower(${backgroundAgents.repoName}) = ${event.repoName.toLowerCase()}`,
+        or(
+          and(
+            isNotNull(backgroundAgentTriggers.agentId),
+            eq(backgroundAgents.status, "enabled"),
+            sql`lower(${backgroundAgents.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
+            sql`lower(${backgroundAgents.repoName}) = ${event.repoName.toLowerCase()}`,
+          ),
+          and(
+            isNotNull(backgroundAgentTriggers.loopId),
+            eq(agentLoops.status, "active"),
+            sql`lower(${agentLoops.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
+            sql`lower(${agentLoops.repoName}) = ${event.repoName.toLowerCase()}`,
+          ),
+        ),
       ),
     );
 
@@ -614,7 +629,7 @@ export async function listBackgroundAgentOutputs(
 }
 
 export async function listEnabledScheduleTriggers(): Promise<
-  Array<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger }>
+  Array<{ agent: BackgroundAgent | null; trigger: BackgroundAgentTrigger }>
 > {
   return db
     .select({
@@ -622,32 +637,46 @@ export async function listEnabledScheduleTriggers(): Promise<
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(
       and(
         eq(backgroundAgentTriggers.kind, "schedule.cron"),
         eq(backgroundAgentTriggers.status, "enabled"),
-        eq(backgroundAgents.status, "enabled"),
+        or(
+          and(
+            isNotNull(backgroundAgentTriggers.agentId),
+            eq(backgroundAgents.status, "enabled"),
+          ),
+          and(
+            isNotNull(backgroundAgentTriggers.loopId),
+            eq(agentLoops.status, "active"),
+          ),
+        ),
       ),
     );
 }
 
 export async function getWebhookTriggerByPublicId(
   webhookPublicId: string,
-): Promise<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger } | null> {
+): Promise<{
+  agent: BackgroundAgent | null;
+  trigger: BackgroundAgentTrigger;
+} | null> {
   const [row] = await db
     .select({
       trigger: backgroundAgentTriggers,
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(eq(backgroundAgentTriggers.webhookPublicId, webhookPublicId))
     .limit(1);
 
