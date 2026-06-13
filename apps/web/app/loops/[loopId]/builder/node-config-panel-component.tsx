@@ -211,22 +211,6 @@ function AgentStepConfig({
     }
   }
 
-  // ── GitHub access (B-P1): scopes the step's installation token ──────────────
-  const github = data.permissions?.github ?? {};
-  function setGithubPerm(
-    key: "contents" | "issues" | "pullRequests",
-    value: "read" | "write" | "",
-  ) {
-    const next: Record<string, "read" | "write"> = { ...github };
-    if (value === "") {
-      delete next[key];
-    } else {
-      next[key] = value;
-    }
-    const hasAny = Object.keys(next).length > 0;
-    onUpdate({ permissions: hasAny ? { github: next } : undefined });
-  }
-
   // ── Declared outputs (B-P3): named fields this step writes to context ───────
   const outputFields = Object.entries(
     (data.outputSchema ?? {}) as Record<string, unknown>,
@@ -339,41 +323,7 @@ function AgentStepConfig({
         </FieldHelp>
       </div>
 
-      {/* GitHub access — scopes the installation token this step runs with */}
-      <div className="space-y-1">
-        <FieldLabel>GitHub access</FieldLabel>
-        <div className="grid grid-cols-3 gap-2">
-          {(
-            [
-              { key: "contents", label: "Code" },
-              { key: "issues", label: "Issues" },
-              { key: "pullRequests", label: "Pull requests" },
-            ] as const
-          ).map(({ key, label }) => (
-            <label key={key} className="space-y-0.5 text-[11px]">
-              <span className="block text-muted-foreground">{label}</span>
-              <select
-                className="w-full rounded-md border border-input bg-background px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                value={github[key] ?? ""}
-                onChange={(e) =>
-                  setGithubPerm(key, e.target.value as "read" | "write" | "")
-                }
-              >
-                <option value="">none</option>
-                <option value="read">read</option>
-                <option value="write">write</option>
-              </select>
-            </label>
-          ))}
-        </div>
-        <FieldHelp>
-          Grants this step&apos;s agent the access it needs — e.g. Issues:write
-          to run <code className="font-mono text-[10px]">gh issue create</code>.
-          Code is always writable for clone &amp; push.
-        </FieldHelp>
-      </div>
-
-      {/* Tools — Composio toolkits this step's agent may use */}
+      {/* Tools — Composio toolkits this step's agent may use (GitHub included) */}
       <div className="space-y-1">
         <FieldLabel>Tools</FieldLabel>
         <ComposioToolkitPicker
@@ -385,8 +335,9 @@ function AgentStepConfig({
           }
         />
         <FieldHelp>
-          External tools (e.g. Gmail, Slack) this step can use, from your
-          connected Composio accounts.
+          Tools this step&apos;s agent can use (GitHub, Gmail, Slack, …) from
+          your connected accounts. Add the GitHub toolkit to let it open issues
+          / PRs.
         </FieldHelp>
       </div>
 
