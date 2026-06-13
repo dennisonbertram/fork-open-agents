@@ -140,23 +140,30 @@ curl -s -X POST http://localhost:3001/api/agent-loops \
 
 ---
 
-### S-2 — GET round-trip byte-stability
+### S-2 — GET round-trip semantic stability
 
-**Purpose:** Confirm the definition returned by GET equals the definition sent
-in S-1 (byte-for-byte JSON stability via the canonical serializer in
-`builder/definition-mapping.ts`).
+**Purpose:** Confirm the definition returned by GET is semantically equal to
+the definition sent in S-1. Note: the definition is stored as Postgres `jsonb`,
+which normalises key order on write (for example, the GET response may return
+`edges` before `nodes` and reorder fields within node objects). Do not assert
+byte-identical JSON or a specific key order; instead compare semantically with
+`jq -S` (which sorts keys before diffing).
 
 ```bash
 LOOP_ID=<loopId from S-1>
+# Capture what was sent (paste the definition from S-1 into /tmp/sent.json first)
+cat /tmp/sent.json | jq -S . > /tmp/sent-sorted.json
+
 curl -s http://localhost:3001/api/agent-loops/$LOOP_ID \
-  -b "open_agents_test_user_id=dev-managed-runtime-user" | jq '.loop.definition'
+  -b "open_agents_test_user_id=dev-managed-runtime-user" \
+  | jq -S '.loop.definition' > /tmp/got-sorted.json
+
+diff /tmp/sent-sorted.json /tmp/got-sorted.json
+# Expected: no diff (semantic equality; key order may differ)
 ```
 
-**Expected:** The definition JSON matches the payload from S-1 with stable key
-order (nodes before edges, position before optional fields).
-
-**Evidence to capture:** Raw `jq` output confirming the definition is present
-and well-formed.
+**Evidence to capture:** The `diff` output (empty = pass) confirming the
+definition is semantically present and well-formed.
 
 ---
 
@@ -225,13 +232,13 @@ curl -s -X PATCH http://localhost:3001/api/agent-loops/$LOOP_ID \
 
 ### S-5 — Activate the loop
 
-**Purpose:** Move the loop from `inactive` to `active` status so it can accept
+**Purpose:** Move the loop from `draft` to `active` status so it can accept
 runs.
 
 **UI path:**
 
 1. On the loop detail page (`/loops/<loopId>`), find the status control.
-2. Change status from `inactive` to `active`.
+2. Change status from `draft` to `active` (the status Select shows Draft/Active/Paused/Archived).
 3. Confirm the page reflects `active` status.
 
 **API equivalent:**
@@ -307,8 +314,13 @@ curl -s http://localhost:3001/api/agent-loop-runs/$RUN_ID \
   -b "open_agents_test_user_id=dev-managed-runtime-user" | jq '.run.status, .events | length'
 ```
 
-**Expected:** Run status (`queued`, `running`, `succeeded`, or `failed`) and an
+**Expected:** Run status (`queued`, `running`, `completed`, or `failed`) and an
 events array with at least a `run_started` entry.
+
+Note: the run status enum is `queued | running | paused | completed | failed |
+cancelled | stalled`. There is no `succeeded` status at the run level —
+`succeeded` appears only at the step/event level. A healthy fast-path run
+finishes as `completed`.
 
 **Evidence to capture:** Run status and event count.
 
@@ -324,11 +336,16 @@ save, and confirm the round-trip.
 1. Navigate to `/loops/<loopId>/builder`.
 2. Confirm the canvas renders the current definition (the three-node graph from
    S-3: start → agent_step → end).
-3. From the node palette, drag a `github_check` node onto the canvas.
+3. From the node palette (left sidebar), **click** the `github_check` entry to
+   add it to the canvas. The palette is click-to-add, not drag-and-drop.
 4. Connect a `when`-labeled edge from the `agent_step` node to the new
    `github_check` node. Select `failure` as the `when` value.
-5. Click Save.
-6. Navigate away and return to the builder. Confirm the new node and edge are
+5. Connect a `when`-labeled edge from the `github_check` node to the `end`
+   node. Select `success` as the `when` value. This is required: every node
+   must have at least one outgoing edge (VR-04) or the client validation will
+   report an error and disable the Save button.
+6. Click Save.
+7. Navigate away and return to the builder. Confirm the new node and edges are
    present.
 
 ```bash
@@ -424,9 +441,14 @@ a run is in progress or after it completes.
    - The latest transition edge is dashed.
    - The iteration meter shows the current iteration count.
    - The page polls for updates automatically.
-3. After the run reaches a terminal status (`succeeded` or `failed`):
+3. After the run reaches a terminal status (`completed`, `failed`, `cancelled`,
+   or `stalled`):
    - Polling stops (no further network requests to the events endpoint).
    - The terminal node state is reflected in the graph.
+
+Note: the run status enum is `queued | running | paused | completed | failed |
+cancelled | stalled`. `succeeded` exists only at the step/event level; terminal
+run statuses are `completed`, `failed`, `cancelled`, and `stalled`.
 
 ```bash
 agent-browser --session loops-smoke snapshot -i \
@@ -446,8 +468,14 @@ fails, observe the failure, trigger a retry, and confirm a new attempt appears.
 **12a — Create a failing loop**
 
 Use the following definition, which includes a `github_check` `pr_status` node
-pointed at a nonexistent PR number (hard-coded `99999`) with no `failure` edge,
-so the run fails deterministically when the check returns a non-success result:
+with `prNumberFrom` set to the literal string `"99999"`. Because `prNumberFrom`
+is treated as a **context path** (resolved via `lookupContextPath` before any
+GitHub API call), and the run's context object has no key `"99999"`, the
+executor fails immediately with `errorKind: condition_path_missing` ("Context
+path '99999' not found"). No GitHub App or network call is needed — the failure
+is purely local. The loop also has no `failure` edge on `gh-check`, so the run
+transitions to `failed` deterministically (chain.ts: failed step + no failure
+edge → run failed).
 
 ```json
 {
@@ -484,14 +512,20 @@ curl -s -X POST http://localhost:3001/api/agent-loops/$FAILING_LOOP_ID/runs \
 
 Navigate to `/loops/<loopId>/runs/<runId>` and wait for the run to reach
 `failed` status. The `gh-check` node should be colored red. The timeline should
-show a failure event.
+show a `condition_path_missing` failure event — the step failed because the
+context path `"99999"` does not exist in the run's context object, not because
+of a GitHub API response. No GitHub App installation is required for this stage.
 
 **12c — Retry via the run-page button**
 
 1. On the run-detail page, find the Retry button.
 2. Click Retry.
-3. Confirm a new run record appears (attempt n+1). The run list at
-   `/loops/<loopId>` should show two runs; the newest is the retry attempt.
+3. Confirm the **same run** transitions: the run status changes from `failed`
+   to `running` (or `queued`) and the timeline gains two new events:
+   `agent-loop.run.retry` and `agent-loop.chain.dispatched`. The run list at
+   `/loops/<loopId>` still shows **one run** — retry does **not** create a new
+   run record. The retried step is attempt n+1 of the same current node, picked
+   up from the failed node (not from the beginning of the graph).
 
 **API equivalent for the retry:**
 
@@ -504,17 +538,24 @@ curl -s -X POST http://localhost:3001/api/agent-loop-runs/$RUN_ID/retry \
 
 **12d — Confirm the retry attempt in the timeline**
 
-Navigate to the new run's detail page. Confirm:
-- The run is attempt n+1 (visible in the run list order and/or a run metadata
-  field).
-- The run resumes from the beginning (no carryover from the failed attempt).
-- Events for the new attempt appear in the timeline.
+Stay on the same run's detail page (same `runId` — no navigation needed).
+Confirm:
+- The run status changed from `failed` to `running` or `queued`.
+- The timeline shows `agent-loop.run.retry` followed by
+  `agent-loop.chain.dispatched` as the two newest events.
+- The step attempt counter for `gh-check` increments (attempt n+1 of the same
+  node in the same run).
+- Because `prNumberFrom: "99999"` still resolves to `condition_path_missing`,
+  the retried step fails again with the same error — this is expected and
+  confirms the retry path is exercised correctly.
 
 **Evidence to capture:**
 - Screenshot of the failed run showing the red `gh-check` node.
 - HTTP 200 response from the retry endpoint.
-- Screenshot of the retry run list showing two entries.
-- Screenshot of the new run's timeline showing it is progressing.
+- Screenshot of the run timeline showing `agent-loop.run.retry` and
+  `agent-loop.chain.dispatched` events.
+- Confirmation that the run list at `/loops/<loopId>` still shows exactly one
+  run (same `runId`).
 
 ---
 
