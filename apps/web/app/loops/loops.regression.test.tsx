@@ -85,6 +85,8 @@ function makeRunDetail(): GetAgentLoopRunDetailResponse {
     },
     steps: [],
     events: [],
+    // M3-02-B: watchdogRuns is now required in GetAgentLoopRunDetailResponse
+    watchdogRuns: [],
   };
 }
 

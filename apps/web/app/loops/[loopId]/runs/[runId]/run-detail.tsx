@@ -11,11 +11,17 @@ import {
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
-import type { AgentLoopStepRun, AgentLoopEvent } from "@/lib/db/schema";
+import type {
+  AgentLoopEvent,
+  AgentLoopStepRun,
+  AgentLoopWatchdogRun,
+} from "@/lib/db/schema";
 import { loopDefinitionSchema } from "@/lib/agent-loops/types";
 import { useLoopRunPolling } from "./use-loop-run-polling";
 import { RunActions } from "./run-actions";
 import { RunGraph } from "./run-graph";
+import { PausedDiagnosisBanner } from "./paused-diagnosis-banner";
+import { WatchdogRow } from "./watchdog-row";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -206,6 +212,35 @@ function EventRow({ event }: { event: AgentLoopEvent }) {
   );
 }
 
+// ── Timeline interleave ───────────────────────────────────────────────────────
+
+type TimelineEntry =
+  | { kind: "step"; step: AgentLoopStepRun; ts: number }
+  | { kind: "watchdog"; watchdogRun: AgentLoopWatchdogRun; ts: number };
+
+/**
+ * Merge steps and watchdog runs into a single list ordered by createdAt.
+ * Steps use startedAt (fallback: createdAt); watchdog rows use createdAt.
+ */
+function buildInterleavedTimeline(
+  steps: AgentLoopStepRun[],
+  watchdogRuns: AgentLoopWatchdogRun[],
+): TimelineEntry[] {
+  const entries: TimelineEntry[] = [
+    ...steps.map((step) => ({
+      kind: "step" as const,
+      step,
+      ts: new Date(step.startedAt ?? step.createdAt).getTime(),
+    })),
+    ...watchdogRuns.map((wd) => ({
+      kind: "watchdog" as const,
+      watchdogRun: wd,
+      ts: new Date(wd.createdAt).getTime(),
+    })),
+  ];
+  return entries.sort((a, b) => a.ts - b.ts);
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function RunDetail({
@@ -215,7 +250,7 @@ export function RunDetail({
 }) {
   const { data, error } = useLoopRunPolling(initialData.run.id, initialData);
   const detail = data ?? initialData;
-  const { run, loop, steps, events } = detail;
+  const { run, loop, steps, events, watchdogRuns } = detail;
 
   const isActive =
     run.status === "queued" ||
@@ -320,6 +355,11 @@ export function RunDetail({
         {/* Run actions */}
         <RunActions runId={run.id} loopId={loop.id} status={run.status} />
 
+        {/* Watchdog diagnosis banner — only when paused with a watchdog decision */}
+        {run.status === "paused" && watchdogRuns.length > 0 && (
+          <PausedDiagnosisBanner watchdogRuns={watchdogRuns} />
+        )}
+
         {/* Error banner */}
         {run.errorKind && (
           <div className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
@@ -387,22 +427,30 @@ export function RunDetail({
             )}
           </div>
           <div aria-live="polite" aria-label="Active step status">
-            {steps.length === 0 ? (
+            {steps.length === 0 && watchdogRuns.length === 0 ? (
               <div className="p-8 text-center text-sm text-muted-foreground">
                 No steps recorded yet.
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {steps.map((step) => (
-                  <StepRow
-                    key={step.id}
-                    step={step}
-                    isActive={step.id === run.currentStepRunId}
-                    isHighlighted={
-                      focusedNodeId !== null && step.nodeId === focusedNodeId
-                    }
-                  />
-                ))}
+                {buildInterleavedTimeline(steps, watchdogRuns).map((entry) =>
+                  entry.kind === "step" ? (
+                    <StepRow
+                      key={`step-${entry.step.id}`}
+                      step={entry.step}
+                      isActive={entry.step.id === run.currentStepRunId}
+                      isHighlighted={
+                        focusedNodeId !== null &&
+                        entry.step.nodeId === focusedNodeId
+                      }
+                    />
+                  ) : (
+                    <WatchdogRow
+                      key={`watchdog-${entry.watchdogRun.id}`}
+                      watchdogRun={entry.watchdogRun}
+                    />
+                  ),
+                )}
               </div>
             )}
           </div>

@@ -13,6 +13,7 @@ import type {
   AgentLoopEvent,
   AgentLoopRun,
   AgentLoopStepRun,
+  AgentLoopWatchdogRun,
   BackgroundAgentTrigger,
 } from "@/lib/db/schema";
 import type { LoopValidationError } from "@/lib/agent-loops/types";
@@ -84,12 +85,14 @@ export type RunLoopSummary = {
  *   - loop: minimal summary (name, repo, guardrails)
  *   - steps: ordered step runs (timeline)
  *   - events: recent events (capped at 200)
+ *   - watchdogRuns: watchdog decisions ordered by createdAt asc (M3-02-B)
  */
 export type GetAgentLoopRunDetailResponse = {
   run: AgentLoopRun;
   loop: RunLoopSummary;
   steps: AgentLoopStepRun[];
   events: AgentLoopEvent[];
+  watchdogRuns: AgentLoopWatchdogRun[];
 };
 
 // ── Control plane ─────────────────────────────────────────────────────────────

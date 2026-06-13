@@ -1,6 +1,11 @@
 /**
- * Tests for GET /api/agent-loop-runs/[runId] — the poll target
- * Written first (RED phase) — all tests fail before implementation.
+ * Route tests for watchdog surface — M3-02-B
+ *
+ * Behavior contract:
+ *   BT-LOOPS-M3-02B-001: GET /api/agent-loop-runs/[runId] includes watchdogRuns[] in response
+ *   BT-LOOPS-M3-02B-002: watchdogRuns fetched concurrently (same Promise.all as steps/events)
+ *   BT-LOOPS-M3-02B-003: 403 (feature disabled) does NOT call listWatchdogRunsForLoopRun
+ *   BT-LOOPS-M3-02B-004: 404 (not-owned run) does NOT call listWatchdogRunsForLoopRun
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -17,7 +22,7 @@ const runAndLoopFixture = {
     id: "run-1",
     loopId: "loop-1",
     userId: "user-1",
-    status: "running" as const,
+    status: "paused" as const,
     source: "manual" as const,
     currentNodeId: "s1",
     currentStepRunId: "step-1",
@@ -47,6 +52,9 @@ const runAndLoopFixture = {
     definition: {},
     status: "active" as const,
     permissions: {},
+    watchdogEnabled: true,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 3,
     createdAt: new Date("2024-01-01"),
     updatedAt: new Date("2024-01-01"),
   },
@@ -91,13 +99,30 @@ const eventsFixture = [
   },
 ];
 
+const watchdogRunsFixture = [
+  {
+    id: "wd-1",
+    loopRunId: "run-1",
+    stepRunId: "step-1",
+    nodeId: "s1",
+    status: "decided" as const,
+    decision: "pause" as const,
+    diagnosis: "Step exceeded max retries without progress.",
+    decisionPayload: null,
+    attempt: 1,
+    budgetRemaining: 2,
+    startedAt: new Date("2024-01-01T00:01:00Z"),
+    finishedAt: new Date("2024-01-01T00:01:10Z"),
+    createdAt: new Date("2024-01-01T00:01:00Z"),
+  },
+];
+
 const getAgentLoopRunWithLoop = mock(
   async (): Promise<typeof runAndLoopFixture | null> => runAndLoopFixture,
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
 const listAgentLoopEvents = mock(async () => eventsFixture);
-// M3-02-B: listWatchdogRunsForLoopRun is now called by route.ts
-const listWatchdogRunsForLoopRun = mock(async () => []);
+const listWatchdogRunsForLoopRun = mock(async () => watchdogRunsFixture);
 
 const isAgentLoopsEnabled = mock(() => true);
 
@@ -128,7 +153,7 @@ function context(runId = "run-1") {
   };
 }
 
-describe("GET /api/agent-loop-runs/[runId]", () => {
+describe("GET /api/agent-loop-runs/[runId] — watchdog surface", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     isAgentLoopsEnabled.mockImplementation(() => true);
@@ -138,32 +163,14 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     listStepRunsForRun.mockImplementation(async () => stepRunsFixture);
     listAgentLoopEvents.mockClear();
     listAgentLoopEvents.mockImplementation(async () => eventsFixture);
-  });
-
-  test("BT-039: requires authentication", async () => {
-    authResult = {
-      ok: false,
-      response: Response.json({ error: "Not authenticated" }, { status: 401 }),
-    };
-    const { GET } = await routeModulePromise;
-    const response = await GET(
-      new Request("http://localhost/api/agent-loop-runs/run-1"),
-      context(),
+    listWatchdogRunsForLoopRun.mockClear();
+    listWatchdogRunsForLoopRun.mockImplementation(
+      async () => watchdogRunsFixture,
     );
-    expect(response.status).toBe(401);
   });
 
-  test("BT-040: returns 403 when feature flag disabled", async () => {
-    isAgentLoopsEnabled.mockImplementation(() => false);
-    const { GET } = await routeModulePromise;
-    const response = await GET(
-      new Request("http://localhost/api/agent-loop-runs/run-1"),
-      context(),
-    );
-    expect(response.status).toBe(403);
-  });
-
-  test("BT-041: returns run+loop summary+steps+events for owned run", async () => {
+  // BT-LOOPS-M3-02B-001: response includes watchdogRuns
+  test("BT-LOOPS-M3-02B-001: response includes watchdogRuns[] from listWatchdogRunsForLoopRun", async () => {
     const { GET } = await routeModulePromise;
     const response = await GET(
       new Request("http://localhost/api/agent-loop-runs/run-1"),
@@ -171,20 +178,44 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     );
     const body = await response.json();
     expect(response.status).toBe(200);
-    expect(body).toMatchObject({
-      run: { id: "run-1" },
-      loop: {
-        id: "loop-1",
-        name: "My Loop",
-        repoOwner: "acme",
-        repoName: "widgets",
-      },
-      steps: expect.any(Array),
-      events: expect.any(Array),
-    });
+    expect(body.run.id).toBe("run-1");
+    expect(Array.isArray(body.watchdogRuns)).toBe(true);
+    expect(body.watchdogRuns.length).toBe(1);
+    expect(body.watchdogRuns[0].id).toBe("wd-1");
+    expect(body.watchdogRuns[0].decision).toBe("pause");
+    expect(body.watchdogRuns[0].diagnosis).toBe(
+      "Step exceeded max retries without progress.",
+    );
   });
 
-  test("BT-042: returns 404 for non-owned run (no existence leak)", async () => {
+  // BT-LOOPS-M3-02B-002: watchdogRuns fetched (listWatchdogRunsForLoopRun called for owned runs)
+  test("BT-LOOPS-M3-02B-002: calls listWatchdogRunsForLoopRun for owned authorized runs", async () => {
+    const { GET } = await routeModulePromise;
+    await GET(
+      new Request("http://localhost/api/agent-loop-runs/run-1"),
+      context(),
+    );
+    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(1);
+    // Use type assertion to access mock call args (bun mock type is untyped tuple)
+    const firstCallArgs = listWatchdogRunsForLoopRun.mock
+      .calls[0] as unknown as [string];
+    expect(firstCallArgs[0]).toBe("run-1");
+  });
+
+  // BT-LOOPS-M3-02B-003: 403 (feature disabled) does NOT call listWatchdogRunsForLoopRun
+  test("BT-LOOPS-M3-02B-003: does NOT call listWatchdogRunsForLoopRun when feature disabled (403)", async () => {
+    isAgentLoopsEnabled.mockImplementation(() => false);
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      new Request("http://localhost/api/agent-loop-runs/run-1"),
+      context(),
+    );
+    expect(response.status).toBe(403);
+    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(0);
+  });
+
+  // BT-LOOPS-M3-02B-004: 404 (non-owned run) does NOT call listWatchdogRunsForLoopRun
+  test("BT-LOOPS-M3-02B-004: does NOT call listWatchdogRunsForLoopRun for non-owned run (404)", async () => {
     getAgentLoopRunWithLoop.mockImplementation(async () => null);
     const { GET } = await routeModulePromise;
     const response = await GET(
@@ -192,11 +223,11 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
       context("run-999"),
     );
     expect(response.status).toBe(404);
-    expect(response.status).not.toBe(403);
+    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(0);
   });
 
-  test("BT-043: returns 404 when run exists but belongs to different user", async () => {
-    // getAgentLoopRunWithLoop returns a run owned by user-2, not user-1
+  // BT-LOOPS-M3-02B-005: 404 for wrong-user run also does NOT call listWatchdogRunsForLoopRun
+  test("BT-LOOPS-M3-02B-005: does NOT call listWatchdogRunsForLoopRun for wrong-user run (404)", async () => {
     getAgentLoopRunWithLoop.mockImplementation(async () => ({
       ...runAndLoopFixture,
       run: { ...runAndLoopFixture.run, userId: "user-2" },
@@ -206,20 +237,7 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
       new Request("http://localhost/api/agent-loop-runs/run-1"),
       context(),
     );
-    // Must be 404, not 200 or 403 (no existence leak)
     expect(response.status).toBe(404);
-  });
-
-  test("BT-044: includes steps ordered correctly", async () => {
-    const { GET } = await routeModulePromise;
-    const response = await GET(
-      new Request("http://localhost/api/agent-loop-runs/run-1"),
-      context(),
-    );
-    const body = await response.json();
-    expect(response.status).toBe(200);
-    expect(body.steps).toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: "step-1" })]),
-    );
+    expect(listWatchdogRunsForLoopRun.mock.calls.length).toBe(0);
   });
 });
