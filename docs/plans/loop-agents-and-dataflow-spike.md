@@ -105,9 +105,11 @@ Two ways to relate the entities — recommend **(b)**:
   same readiness/allowlist checks.
 
 ## Phasing (smallest valuable first)
-1. **P1 — GitHub permissions per step** (fixes "can't reach GitHub"): surface the
-   `permissions` controls on the agent-step node; mint the scoped token from them.
-   Small, high value.
+1. **P1 — GitHub permissions per step** ✅ **SHIPPED**: agent-step nodes carry
+   `permissions`; the config panel exposes Code/Issues/Pull-requests
+   (none/read/write); `agent-step.ts` mints the installation token from the
+   step's (or loop's) scopes via a pure tested mapper. A "file issues" step can
+   now `gh issue create`.
 2. **P2 — Composio tools per step** (shared `AgentConfig` + runtime resolution +
    shared config UI, incl. the nicer instructions editor).
 3. **P3 — Explicit data flow** (declared outputs, input autocomplete in
