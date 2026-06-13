@@ -111,6 +111,10 @@ export function WhenEdge({
   const curvature = parallelCurvature(parallelIndex, parallelCount);
   const labelYOffset = parallelLabelOffset(parallelIndex, parallelCount);
 
+  // Loop-back edges close a cycle — give them a pronounced arc so the loop reads
+  // as a loop instead of a crossing line.
+  const isLoopBack = data?.isLoopBack === true;
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -118,11 +122,19 @@ export function WhenEdge({
     targetX,
     targetY,
     targetPosition,
-    curvature: curvature !== 0 ? curvature : undefined,
+    curvature: isLoopBack ? 0.65 : curvature !== 0 ? curvature : undefined,
   });
 
   const when = data?.when ?? "always";
-  const colors = whenColors[when] ?? whenColors.always!;
+  const loopBackColors = {
+    badge:
+      "bg-violet-500/15 text-violet-700 border-violet-500/40 dark:text-violet-300",
+    stroke: "#8b5cf6",
+  };
+  const colors = isLoopBack
+    ? loopBackColors
+    : (whenColors[when] ?? whenColors.always!);
+  const labelText = isLoopBack ? `↺ repeat (${when})` : when;
 
   // Run-state overlay: only active when traversed/mostRecent are present.
   // When absent, falls through to builder defaults (opacity=1, selected width).
@@ -147,7 +159,7 @@ export function WhenEdge({
       opacity: traversalStyle.opacity,
       transition: "opacity 0.2s, stroke-width 0.2s",
       // Subtle animated dash for the most-recent traversal path
-      ...(isMostRecent
+      ...(isMostRecent || isLoopBack
         ? {
             strokeDasharray: "6 3",
             // loop-edge-dash is defined in globals.css — @keyframes cannot
@@ -157,11 +169,18 @@ export function WhenEdge({
         : {}),
     };
   } else {
-    // Builder default behavior — unchanged
+    // Builder default behavior — unchanged for forward edges; loop-backs get a
+    // dashed, slightly heavier violet stroke so the cycle is unmistakable.
     edgeStyle = {
       stroke: colors.stroke,
-      strokeWidth: selected ? 3 : 2,
+      strokeWidth: selected ? 3 : isLoopBack ? 2.5 : 2,
       transition: "stroke 0.2s, stroke-width 0.2s",
+      ...(isLoopBack
+        ? {
+            strokeDasharray: "6 3",
+            animation: "loop-edge-dash 1s linear infinite",
+          }
+        : {}),
     };
   }
 
@@ -178,9 +197,9 @@ export function WhenEdge({
           className="nodrag nopan"
         >
           <span
-            className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-all ${colors.badge} ${selected ? "ring-2 ring-offset-1 ring-offset-background ring-current" : ""}`}
+            className={`inline-flex items-center whitespace-nowrap rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-all ${colors.badge} ${selected ? "ring-2 ring-offset-1 ring-offset-background ring-current" : ""}`}
           >
-            {when}
+            {labelText}
           </span>
         </div>
       </EdgeLabelRenderer>

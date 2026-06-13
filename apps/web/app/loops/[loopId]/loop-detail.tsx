@@ -217,17 +217,17 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
   }
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
             <Link
-              href="/loops"
+              href={`/repos/${loop.repoOwner}/${loop.repoName}/loops`}
               className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
-              Loops
+              {loop.repoOwner}/{loop.repoName}
             </Link>
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl font-semibold">{loop.name}</h1>

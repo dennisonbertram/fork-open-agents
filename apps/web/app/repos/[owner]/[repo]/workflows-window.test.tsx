@@ -9,7 +9,7 @@
  *   BT-WF-005: Collapsed summary shows "N workflows · N active" in header
  *   BT-WF-006: Status pill maps active→emerald, paused→amber, draft→neutral, archived→muted
  *   BT-WF-007: "New workflow" action links to /loops/new with repoOwner+repoName params
- *   BT-WF-008: WorkflowsWindow section has aria-label="Workflows window"
+ *   BT-WF-008: WorkflowsWindow section has aria-label="Loops window"
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -103,7 +103,7 @@ describe("WorkflowsWindow", () => {
       }),
     );
 
-    expect(html).toContain("Workflows");
+    expect(html).toContain("Loops");
     expect(html).toContain("Nightly deploy");
     expect(html).toContain("PR Review bot");
     expect(html).toContain("active");
@@ -127,13 +127,13 @@ describe("WorkflowsWindow", () => {
       }),
     );
 
-    expect(html).toContain("Workflows");
+    expect(html).toContain("Loops");
     // Empty state CTA links to /loops/new with repo params prefilled
     // HTML-encodes & as &amp; in static markup
     expect(html).toContain("repoOwner=acme");
     expect(html).toContain("repoName=widgets");
     // Some create/first workflow copy
-    expect(html).toMatch(/create.*workflow|first workflow/i);
+    expect(html).toMatch(/create.*loop|first loop/i);
   });
 
   // BT-WF-004: loops fetch failure does not break other windows
@@ -160,7 +160,7 @@ describe("WorkflowsWindow", () => {
     }
 
     // Renders Workflows window with an error/empty state, not crashing
-    expect(html).toContain("Workflows");
+    expect(html).toContain("Loops");
   });
 
   // BT-WF-005: summary text is computed and passed to CollapsibleDashboardCard
@@ -174,7 +174,7 @@ describe("WorkflowsWindow", () => {
       { status: "draft" },
     ]);
 
-    expect(summary).toContain("2 workflows");
+    expect(summary).toContain("2 loops");
     expect(summary).toContain("1 active");
   });
 
@@ -207,7 +207,7 @@ describe("WorkflowsWindow", () => {
   });
 
   // BT-WF-008: section aria-label
-  test("BT-WF-008: Workflows window section has aria-label containing Workflows", async () => {
+  test("BT-WF-008: Loops window section has aria-label containing Loops", async () => {
     agentLoopsEnabled = true;
     mockLoops = [];
 
@@ -220,6 +220,6 @@ describe("WorkflowsWindow", () => {
       }),
     );
 
-    expect(html).toMatch(/aria-label="[^"]*[Ww]orkflow/);
+    expect(html).toMatch(/aria-label="[^"]*[Ll]oops/);
   });
 });

@@ -251,3 +251,62 @@ describe("definitionToFlow output structure", () => {
     expect(startNode?.data?.label).toBe("Start");
   });
 });
+
+// ── Loop-back detection (BT-LOOPBACK) ──────────────────────────────────────────
+
+describe("loop-back edge detection", () => {
+  const CYCLE_DEF: LoopDefinition = {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "review",
+        kind: "agent_step",
+        label: "Review",
+        position: { x: 200, y: 0 },
+      },
+      {
+        id: "gate",
+        kind: "condition",
+        label: "Passed?",
+        position: { x: 400, y: 0 },
+        condition: { path: "review.passed", op: "eq", value: true },
+      },
+      {
+        id: "fix",
+        kind: "agent_step",
+        label: "Fix",
+        position: { x: 300, y: 160 },
+      },
+      { id: "end", kind: "end", label: "Done", position: { x: 600, y: 0 } },
+    ],
+    edges: [
+      { id: "e1", source: "start", target: "review", when: "always" },
+      { id: "e2", source: "review", target: "gate", when: "success" },
+      { id: "e3", source: "gate", target: "end", when: "true" },
+      { id: "e4", source: "gate", target: "fix", when: "false" },
+      { id: "e5", source: "fix", target: "review", when: "success" }, // loop-back
+    ],
+  };
+
+  it("BT-LOOPBACK-001: marks the cycle-closing edge as isLoopBack", () => {
+    const { edges } = definitionToFlow(CYCLE_DEF);
+    const byId = new Map(edges.map((e) => [e.id, e]));
+    // fix → review points back to an earlier depth: loop-back
+    expect(byId.get("e5")?.data?.isLoopBack).toBe(true);
+  });
+
+  it("BT-LOOPBACK-002: forward edges are NOT marked as loop-backs", () => {
+    const { edges } = definitionToFlow(CYCLE_DEF);
+    const byId = new Map(edges.map((e) => [e.id, e]));
+    for (const id of ["e1", "e2", "e3", "e4"]) {
+      expect(byId.get(id)?.data?.isLoopBack).toBe(false);
+    }
+  });
+
+  it("BT-LOOPBACK-003: a purely linear graph has no loop-backs", () => {
+    const { edges } = definitionToFlow(SIMPLE_DEF);
+    for (const edge of edges) {
+      expect(edge.data?.isLoopBack).toBe(false);
+    }
+  });
+});

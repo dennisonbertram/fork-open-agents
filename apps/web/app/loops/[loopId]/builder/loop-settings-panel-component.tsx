@@ -24,6 +24,20 @@ import {
 } from "./loop-settings-panel";
 import { cn } from "@/lib/utils";
 
+// ── Duration helpers — the UI works in minutes; guardrails are stored in ms ───
+
+const MS_PER_MIN = 60_000;
+
+/** Round a known ms value to whole minutes (for defaults/ceilings). */
+function msToMin(ms: number): number {
+  return Math.round(ms / MS_PER_MIN);
+}
+
+/** Round an optional ms value to whole minutes, preserving undefined. */
+function msToMinOpt(ms: number | undefined): number | undefined {
+  return ms === undefined ? undefined : Math.round(ms / MS_PER_MIN);
+}
+
 // ── Field sub-components ──────────────────────────────────────────────────────
 
 function FieldLabel({
@@ -300,23 +314,33 @@ function LoopSettingsPanelContent({
 
       <GuardrailNumberField
         id="max-run-duration"
-        label="Max run duration (ms)"
-        help={`Default: ${GUARDRAIL_DEFAULTS.maxRunDurationMs.toLocaleString()} ms (2 hours). No server ceiling.`}
-        value={guardrails.maxRunDurationMs}
-        placeholder={GUARDRAIL_DEFAULTS.maxRunDurationMs}
+        label="Max run duration (minutes)"
+        help={`Default: ${msToMin(GUARDRAIL_DEFAULTS.maxRunDurationMs)} minutes (2 hours). No server ceiling.`}
+        value={msToMinOpt(guardrails.maxRunDurationMs)}
+        placeholder={msToMin(GUARDRAIL_DEFAULTS.maxRunDurationMs)}
         error={fieldErrors["guardrails.maxRunDurationMs"]}
-        onChange={(v) => setGuardrailField("maxRunDurationMs", v)}
+        onChange={(v) =>
+          setGuardrailField(
+            "maxRunDurationMs",
+            v === undefined ? undefined : v * MS_PER_MIN,
+          )
+        }
       />
 
       <GuardrailNumberField
         id="step-timeout"
-        label="Step timeout (ms)"
-        help={`Default: ${GUARDRAIL_DEFAULTS.stepTimeoutMs.toLocaleString()} ms. Server enforces a ceiling of ${GUARDRAIL_CEILINGS.stepTimeoutMs.toLocaleString()} ms.`}
-        value={guardrails.stepTimeoutMs}
-        placeholder={GUARDRAIL_DEFAULTS.stepTimeoutMs}
-        ceiling={GUARDRAIL_CEILINGS.stepTimeoutMs}
+        label="Step timeout (minutes)"
+        help={`Default: ${msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)} minutes. Server allows up to ${msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)} minutes.`}
+        value={msToMinOpt(guardrails.stepTimeoutMs)}
+        placeholder={msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)}
+        ceiling={msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)}
         error={fieldErrors["guardrails.stepTimeoutMs"]}
-        onChange={(v) => setGuardrailField("stepTimeoutMs", v)}
+        onChange={(v) =>
+          setGuardrailField(
+            "stepTimeoutMs",
+            v === undefined ? undefined : v * MS_PER_MIN,
+          )
+        }
       />
 
       <hr className="border-border" />

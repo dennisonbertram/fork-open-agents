@@ -29,6 +29,7 @@ import {
   Panel,
   ReactFlowProvider,
   useReactFlow,
+  ViewportPortal,
   type Connection,
   type ColorMode,
   type EdgeMouseHandler,
@@ -39,6 +40,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
+import { useSidebar } from "@/components/ui/sidebar";
 import { useTheme } from "@/app/providers";
 import { nodeTypes } from "./loop-nodes";
 import { WhenEdge } from "./when-edge";
@@ -52,12 +54,21 @@ import { BuilderErrorContext } from "./builder-error-context";
 import { nodeErrorsById } from "./node-config-panel";
 import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
+import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { LoopFlowEdge } from "./definition-mapping";
 
 const edgeTypes = {
   when: WhenEdge,
 };
+
+// Fit-view clamp: keep the auto-fit from zooming out so far that node labels and
+// the loop-back arc become unreadable. Wide graphs pan instead of shrinking.
+const LOOP_FIT_VIEW_OPTIONS = {
+  padding: 0.2,
+  minZoom: 0.6,
+  maxZoom: 1.1,
+} as const;
 
 // Per-kind accent color for MiniMap nodes
 const kindMiniMapColor: Record<string, string> = {
@@ -112,6 +123,11 @@ function BuilderCanvasInner({
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const colorMode: ColorMode = resolvedTheme === "dark" ? "dark" : "light";
+  // When the app sidebar is collapsed, the shell shows a floating "Open panel"
+  // toggle at the top-left — pad the builder top bar so it never overlaps the
+  // back-link.
+  const { state: sidebarState, isMobile: sidebarMobile } = useSidebar();
+  const sidebarCollapsed = !sidebarMobile && sidebarState === "collapsed";
 
   const nodes = useStore(store, (s) => s.nodes);
   const edges = useStore(store, (s) => s.edges);
@@ -140,6 +156,21 @@ function BuilderCanvasInner({
     [validationErrors],
   );
 
+  // Loop regions (cycles) → drawn as labelled frames so a loop reads as a loop.
+  const loopFrames = useMemo(() => {
+    const frameNodes: FrameNode[] = nodes.map((n) => ({
+      id: n.id,
+      kind: n.data.kind,
+      x: n.position.x,
+      y: n.position.y,
+      condition: n.data.kind === "condition" ? n.data.condition : undefined,
+    }));
+    return computeLoopFrames(
+      frameNodes,
+      edges.map((e) => ({ source: e.source, target: e.target })),
+    );
+  }, [nodes, edges]);
+
   // Leave-page guard
   useEffect(() => {
     if (!isDirty) return;
@@ -156,7 +187,7 @@ function BuilderCanvasInner({
   useEffect(() => {
     if (didFitRef.current || nodes.length === 0) return;
     didFitRef.current = true;
-    setTimeout(() => fitView({ duration: 300 }), 100);
+    setTimeout(() => fitView({ duration: 300, ...LOOP_FIT_VIEW_OPTIONS }), 100);
   }, [fitView, nodes.length]);
 
   // Edge connection: show picker before committing
@@ -288,17 +319,27 @@ function BuilderCanvasInner({
     setPendingNodeDelete(null);
   }
 
-  // Palette node insertion — lands at viewport center; store handles collision avoidance
+  // Palette node insertion. When a node is selected, auto-connect the new node
+  // after it (so it isn't a disconnected orphan); otherwise drop it at viewport
+  // center. The store handles collision avoidance and edge legality.
   const { screenToFlowPosition } = useReactFlow();
   function handleAddNode(
     kind: "agent_step" | "github_check" | "condition" | "end",
   ) {
+    const selected = nodes.find((n) => n.selected && n.data.kind !== "end");
     const el = document.querySelector(".react-flow__renderer");
     const rect = el?.getBoundingClientRect();
     const centerX = (rect?.left ?? 0) + (rect?.width ?? 600) / 2;
     const centerY = (rect?.top ?? 0) + (rect?.height ?? 400) / 2;
     const position = screenToFlowPosition({ x: centerX, y: centerY });
-    addNode(kind, position);
+    addNode(
+      kind,
+      position,
+      selected ? { connectFrom: selected.id } : undefined,
+    );
+    // Re-frame so the just-added node is visible (it can land off the current
+    // viewport, especially when auto-connected to the right of its source).
+    setTimeout(() => fitView({ duration: 300, ...LOOP_FIT_VIEW_OPTIONS }), 60);
   }
 
   // Save
@@ -341,7 +382,11 @@ function BuilderCanvasInner({
     <BuilderErrorContext.Provider value={errorsById}>
       <div className="flex h-screen flex-col bg-background">
         {/* Top bar */}
-        <div className="relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4">
+        <div
+          className={`relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 ${
+            sidebarCollapsed ? "pl-14" : ""
+          }`}
+        >
           <Link
             href={`/loops/${loopId}`}
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
@@ -388,6 +433,18 @@ function BuilderCanvasInner({
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               Add node
             </p>
+            {(() => {
+              const selected = nodes.find(
+                (n) => n.selected && n.data.kind !== "end",
+              );
+              return (
+                <p className="mb-1 text-[11px] leading-snug text-muted-foreground">
+                  {selected
+                    ? `Inserts after “${selected.data.label}”`
+                    : "Select a node first to insert connected"}
+                </p>
+              );
+            })()}
             <Button
               variant="ghost"
               size="sm"
@@ -447,6 +504,7 @@ function BuilderCanvasInner({
               edgeTypes={edgeTypes}
               colorMode={colorMode}
               fitView
+              fitViewOptions={LOOP_FIT_VIEW_OPTIONS}
               deleteKeyCode={null}
             >
               <Background
@@ -455,6 +513,27 @@ function BuilderCanvasInner({
                 size={1}
                 className="opacity-50"
               />
+              {/* Loop regions: a labelled dashed frame behind cyclic nodes so a
+                  loop reads as a loop, not a stray crossing line. Rendered in
+                  flow coordinates so it pans/zooms with the canvas. */}
+              <ViewportPortal>
+                {loopFrames.map((frame) => (
+                  <div
+                    key={frame.id}
+                    className="pointer-events-none absolute"
+                    style={{
+                      transform: `translate(${frame.x}px, ${frame.y}px)`,
+                      width: frame.width,
+                      height: frame.height,
+                    }}
+                  >
+                    <div className="h-full w-full rounded-xl border-2 border-dashed border-violet-500/40 bg-violet-500/[0.04]" />
+                    <span className="absolute left-2 top-0 -translate-y-1/2 rounded-full border border-violet-500/40 bg-background px-2 py-0.5 text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                      🔁 {frame.label}
+                    </span>
+                  </div>
+                ))}
+              </ViewportPortal>
               <Controls className="nodrag" />
               <MiniMap
                 className="nodrag"
