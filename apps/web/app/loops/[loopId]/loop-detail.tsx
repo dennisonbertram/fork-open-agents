@@ -223,11 +223,11 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
             <Link
-              href="/loops"
+              href={`/repos/${loop.repoOwner}/${loop.repoName}/loops`}
               className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" />
-              Loops
+              {loop.repoOwner}/{loop.repoName}
             </Link>
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl font-semibold">{loop.name}</h1>
