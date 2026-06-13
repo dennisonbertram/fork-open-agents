@@ -39,7 +39,7 @@ export default async function RepoLoopsPage({ params }: RepoLoopsPageProps) {
             </Link>
             <h1 className="text-2xl font-semibold">Loops</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Multi-step agent workflows that run against{" "}
+              Multi-step agent loops that run against{" "}
               <span className="font-mono">
                 {owner}/{repo}
               </span>
