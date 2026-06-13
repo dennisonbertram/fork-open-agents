@@ -59,6 +59,14 @@ const edgeTypes = {
   when: WhenEdge,
 };
 
+// Fit-view clamp: keep the auto-fit from zooming out so far that node labels and
+// the loop-back arc become unreadable. Wide graphs pan instead of shrinking.
+const LOOP_FIT_VIEW_OPTIONS = {
+  padding: 0.2,
+  minZoom: 0.6,
+  maxZoom: 1.1,
+} as const;
+
 // Per-kind accent color for MiniMap nodes
 const kindMiniMapColor: Record<string, string> = {
   start: "#10b981",
@@ -156,7 +164,7 @@ function BuilderCanvasInner({
   useEffect(() => {
     if (didFitRef.current || nodes.length === 0) return;
     didFitRef.current = true;
-    setTimeout(() => fitView({ duration: 300 }), 100);
+    setTimeout(() => fitView({ duration: 300, ...LOOP_FIT_VIEW_OPTIONS }), 100);
   }, [fitView, nodes.length]);
 
   // Edge connection: show picker before committing
@@ -447,6 +455,7 @@ function BuilderCanvasInner({
               edgeTypes={edgeTypes}
               colorMode={colorMode}
               fitView
+              fitViewOptions={LOOP_FIT_VIEW_OPTIONS}
               deleteKeyCode={null}
             >
               <Background
