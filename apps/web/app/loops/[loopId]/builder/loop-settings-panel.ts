@@ -10,10 +10,22 @@ import { GUARDRAIL_CEILINGS } from "@/lib/agent-loops/types";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** M3-01 watchdog budget ceiling: max retries per node (0–5). */
+export const WATCHDOG_RETRY_BUDGET_MAX = 5;
+/** M3-01 watchdog budget default value. */
+export const WATCHDOG_RETRY_BUDGET_DEFAULT = 2;
+
+export type WatchdogSettings = {
+  watchdogEnabled: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
+};
+
 export type LoopSettingsInput = {
   name: string;
   description?: string | null;
   guardrails?: LoopGuardrails;
+  watchdog?: WatchdogSettings;
 };
 
 export type LoopSettingsValidationError = {
@@ -96,6 +108,24 @@ export function validateLoopSettings(
         errors.push({
           field: "guardrails.maxRunDurationMs",
           message: "maxRunDurationMs must be a positive integer.",
+        });
+      }
+    }
+  }
+
+  // Watchdog validation (M3-01)
+  if (input.watchdog?.watchdogEnabled) {
+    const budget = input.watchdog.watchdogRetryBudget;
+    if (budget !== undefined) {
+      if (!Number.isInteger(budget) || budget < 0) {
+        errors.push({
+          field: "watchdog.watchdogRetryBudget",
+          message: "Retry budget must be a non-negative integer.",
+        });
+      } else if (budget > WATCHDOG_RETRY_BUDGET_MAX) {
+        errors.push({
+          field: "watchdog.watchdogRetryBudget",
+          message: `Retry budget cannot exceed ${WATCHDOG_RETRY_BUDGET_MAX}.`,
         });
       }
     }

@@ -8,13 +8,16 @@ import {
   agentLoopRuns,
   agentLoops,
   agentLoopStepRuns,
+  agentLoopWatchdogRuns,
   type AgentLoop,
   type AgentLoopEvent,
   type AgentLoopRun,
   type AgentLoopStepRun,
+  type AgentLoopWatchdogRun,
   type NewAgentLoopEvent,
   type NewAgentLoopRun,
   type NewAgentLoopStepRun,
+  type NewAgentLoopWatchdogRun,
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "@/lib/background-agents/redaction";
 import { RunControlError } from "./run-controls-error";
@@ -72,6 +75,9 @@ export type UpdateAgentLoopInput = Partial<
     | "guardrails"
     | "permissions"
     | "definition"
+    | "watchdogEnabled"
+    | "watchdogInstructions"
+    | "watchdogRetryBudget"
   >
 >;
 
@@ -198,6 +204,19 @@ export async function updateAgentLoop(
           : {}),
         ...(input.permissions !== undefined
           ? { permissions: input.permissions }
+          : {}),
+        ...(input.watchdogEnabled !== undefined
+          ? { watchdogEnabled: input.watchdogEnabled }
+          : {}),
+        ...(input.watchdogInstructions !== undefined
+          ? {
+              watchdogInstructions: normalizeOptionalText(
+                input.watchdogInstructions,
+              ),
+            }
+          : {}),
+        ...(input.watchdogRetryBudget !== undefined
+          ? { watchdogRetryBudget: input.watchdogRetryBudget }
           : {}),
         updatedAt: new Date(),
       })
@@ -1265,4 +1284,349 @@ export async function findStalledLoopRunCandidates(params: {
         ? row.lastEventAt
         : new Date(row.lastEventAt),
   }));
+}
+
+// ── Watchdog store (M3-01) ─────────────────────────────────────────────────────
+
+export type CreateAgentLoopWatchdogRunInput = {
+  loopRunId: string;
+  stepRunId?: string | null;
+  nodeId: string;
+  status: NewAgentLoopWatchdogRun["status"];
+  attempt: number;
+  budgetRemaining: number;
+  decision?: NewAgentLoopWatchdogRun["decision"] | null;
+  diagnosis?: string | null;
+  decisionPayload?: { hint?: string } | null;
+};
+
+export type UpdateAgentLoopWatchdogRunInput = {
+  id: string;
+  status?: AgentLoopWatchdogRun["status"];
+  decision?: AgentLoopWatchdogRun["decision"] | null;
+  diagnosis?: string | null;
+  decisionPayload?: { hint?: string } | null;
+  startedAt?: Date | null;
+  finishedAt?: Date | null;
+};
+
+export async function createAgentLoopWatchdogRun(
+  input: CreateAgentLoopWatchdogRunInput,
+): Promise<AgentLoopWatchdogRun> {
+  const [row] = await db
+    .insert(agentLoopWatchdogRuns)
+    .values({
+      id: nanoid(),
+      loopRunId: input.loopRunId,
+      stepRunId: input.stepRunId ?? null,
+      nodeId: input.nodeId,
+      status: input.status,
+      attempt: input.attempt,
+      budgetRemaining: input.budgetRemaining,
+      decision: input.decision ?? null,
+      diagnosis: input.diagnosis ?? null,
+      decisionPayload: input.decisionPayload ?? null,
+    })
+    .returning();
+
+  if (!row) {
+    throw new Error("Failed to create watchdog run");
+  }
+
+  return row;
+}
+
+export async function updateAgentLoopWatchdogRun(
+  input: UpdateAgentLoopWatchdogRunInput,
+): Promise<void> {
+  await db
+    .update(agentLoopWatchdogRuns)
+    .set({
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.decision !== undefined ? { decision: input.decision } : {}),
+      ...(input.diagnosis !== undefined ? { diagnosis: input.diagnosis } : {}),
+      ...(input.decisionPayload !== undefined
+        ? { decisionPayload: input.decisionPayload }
+        : {}),
+      ...(input.startedAt !== undefined ? { startedAt: input.startedAt } : {}),
+      ...(input.finishedAt !== undefined
+        ? { finishedAt: input.finishedAt }
+        : {}),
+    })
+    .where(eq(agentLoopWatchdogRuns.id, input.id));
+}
+
+/**
+ * Counts watchdog decisions with decision='retry' for a (loopRunId, nodeId) pair.
+ *
+ * This counter is the per-node retry budget shared by BOTH failure-initiated and
+ * stall-initiated watchdog retries (M3-02 stall watchdog depends on this shared
+ * counter — do not split it by error source). The watchdogRetryBudget on the loop
+ * is the ceiling for this count.
+ */
+export async function countWatchdogRetryDecisions(params: {
+  loopRunId: string;
+  nodeId: string;
+}): Promise<number> {
+  const [row] = await db
+    .select({ total: count() })
+    .from(agentLoopWatchdogRuns)
+    .where(
+      and(
+        eq(agentLoopWatchdogRuns.loopRunId, params.loopRunId),
+        eq(agentLoopWatchdogRuns.nodeId, params.nodeId),
+        eq(agentLoopWatchdogRuns.decision, "retry"),
+      ),
+    );
+
+  return row?.total ?? 0;
+}
+
+/**
+ * Lists all watchdog runs for a loop run, ordered oldest first.
+ * Consumed by the M3-02 API (timeline surface).
+ */
+export async function listWatchdogRunsForLoopRun(
+  loopRunId: string,
+): Promise<AgentLoopWatchdogRun[]> {
+  return db.query.agentLoopWatchdogRuns.findMany({
+    where: eq(agentLoopWatchdogRuns.loopRunId, loopRunId),
+    orderBy: [asc(agentLoopWatchdogRuns.createdAt)],
+  });
+}
+
+/**
+ * System-path retry (watchdog-initiated): creates attempt n+1 of the current step,
+ * persisting an optional watchdog hint into stepInput.watchdogHint.
+ *
+ * IMPORTANT: Unlike retryCurrentStep, this function does NOT verify userId ownership —
+ * it is a system path only and must NOT be exposed through any API route.
+ * The hint is treated as untrusted (comes from model output) — it is length-capped
+ * at 2000 chars and passed through redactBackgroundAgentPayload.
+ *
+ * Uses the same TOCTOU-safe transactional MAX(attempt)+1 pattern as retryCurrentStep.
+ */
+export async function retryCurrentStepForWatchdog(params: {
+  runId: string;
+  hint?: string;
+}): Promise<AgentLoopStepRun> {
+  return db.transaction(async (tx) => {
+    const run = await tx.query.agentLoopRuns.findFirst({
+      where: eq(agentLoopRuns.id, params.runId),
+    });
+
+    if (!run) {
+      throw new Error(`Watchdog retry: loop run not found: ${params.runId}`);
+    }
+
+    if (!run.currentNodeId || !run.currentStepRunId) {
+      throw new Error(
+        `Watchdog retry: run ${params.runId} missing currentNodeId or currentStepRunId`,
+      );
+    }
+
+    const currentStepRun = await tx.query.agentLoopStepRuns.findFirst({
+      where: eq(agentLoopStepRuns.id, run.currentStepRunId),
+    });
+
+    if (!currentStepRun) {
+      throw new Error(
+        `Watchdog retry: step run ${run.currentStepRunId} not found`,
+      );
+    }
+
+    // Use MAX(attempt)+1 — same sparse-safe pattern as retryCurrentStep
+    const [attemptRow] = await tx
+      .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+      .from(agentLoopStepRuns)
+      .where(
+        and(
+          eq(agentLoopStepRuns.loopRunId, params.runId),
+          eq(agentLoopStepRuns.nodeId, run.currentNodeId),
+        ),
+      );
+
+    const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+
+    // Sanitize hint: cap length and redact (untrusted model output)
+    const MAX_HINT_LENGTH = 2000;
+    let sanitizedHint: string | undefined = undefined;
+    if (params.hint) {
+      const capped =
+        params.hint.length > MAX_HINT_LENGTH
+          ? params.hint.slice(0, MAX_HINT_LENGTH)
+          : params.hint;
+      const redacted = redactBackgroundAgentPayload({ watchdogHint: capped });
+      sanitizedHint =
+        typeof redacted["watchdogHint"] === "string"
+          ? redacted["watchdogHint"]
+          : capped;
+    }
+
+    // Build stepInput merging the hint
+    const baseStepInput = (currentStepRun.stepInput ?? {}) as Record<
+      string,
+      unknown
+    >;
+    const stepInput: Record<string, unknown> = sanitizedHint
+      ? { ...baseStepInput, watchdogHint: sanitizedHint }
+      : { ...baseStepInput };
+
+    const [newStepRun] = await tx
+      .insert(agentLoopStepRuns)
+      .values({
+        id: nanoid(),
+        loopRunId: params.runId,
+        nodeId: run.currentNodeId,
+        nodeKind: currentStepRun.nodeKind,
+        attempt: nextAttempt,
+        status: "queued",
+        stepInput: Object.keys(stepInput).length > 0 ? stepInput : null,
+      })
+      .returning();
+
+    if (!newStepRun) {
+      throw new Error("Watchdog retry: failed to insert new step run");
+    }
+
+    // Conditional update: transition run to running, guarded on same currentStepRunId
+    const now = new Date();
+    const observedStepRunId = run.currentStepRunId;
+    const [updatedRun] = await tx
+      .update(agentLoopRuns)
+      .set({
+        status: "running",
+        currentStepRunId: newStepRun.id,
+        startedAt: sql`COALESCE(${agentLoopRuns.startedAt}, NOW())`,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(agentLoopRuns.id, params.runId),
+          inArray(agentLoopRuns.status, ["failed", "stalled", "running"]),
+          eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+        ),
+      )
+      .returning();
+
+    if (!updatedRun) {
+      throw new Error(
+        `Watchdog retry: run ${params.runId} status changed concurrently (TOCTOU race — rejected)`,
+      );
+    }
+
+    return newStepRun;
+  });
+}
+
+/**
+ * System-initiated pause (no userId ownership check).
+ * Used by the watchdog when it decides to pause the run.
+ * Never exposed through any API route — system path only.
+ */
+export async function pauseLoopRunSystem(runId: string): Promise<void> {
+  const now = new Date();
+
+  await db
+    .update(agentLoopRuns)
+    .set({
+      status: "paused",
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentLoopRuns.id, runId),
+        sql`${agentLoopRuns.status} IN ('running', 'queued', 'failed', 'stalled')`,
+      ),
+    );
+}
+
+/**
+ * Advances the run to the failure-edge target from a given nodeId, using the
+ * definition snapshot as the source of truth (not loop.definition).
+ *
+ * Returns true if a failure edge exists and advance succeeded; false if no
+ * failure edge exists (caller should fall back to pause).
+ *
+ * Used by the watchdog skip path.
+ */
+export async function advanceToFailureEdge(params: {
+  loopRunId: string;
+  nodeId: string;
+  snapshotDefinition: unknown;
+}): Promise<boolean> {
+  const { evaluateEdges } = await import("./edge-evaluator");
+  const { loopDefinitionSchema } = await import("./types");
+
+  const parsed = loopDefinitionSchema.safeParse(params.snapshotDefinition);
+  if (!parsed.success) {
+    return false;
+  }
+
+  const definition = parsed.data;
+  const { nextNodeId } = evaluateEdges(definition, params.nodeId, "failure");
+
+  if (!nextNodeId) {
+    return false;
+  }
+
+  // Find the next node's kind
+  const nextNode = definition.nodes.find((n) => n.id === nextNodeId);
+  const nextNodeKind = nextNode?.kind ?? "unknown";
+
+  // Compute next attempt (MAX+1 sparse-safe)
+  const [attemptRow] = await db
+    .select({ maxAttempt: sql<number>`MAX(${agentLoopStepRuns.attempt})` })
+    .from(agentLoopStepRuns)
+    .where(
+      and(
+        eq(agentLoopStepRuns.loopRunId, params.loopRunId),
+        eq(agentLoopStepRuns.nodeId, nextNodeId),
+      ),
+    );
+  const nextAttempt = (attemptRow?.maxAttempt ?? 0) + 1;
+
+  // Create next step run
+  const [nextStepRun] = await db
+    .insert(agentLoopStepRuns)
+    .values({
+      id: nanoid(),
+      loopRunId: params.loopRunId,
+      nodeId: nextNodeId,
+      nodeKind: nextNodeKind,
+      attempt: nextAttempt,
+      status: "queued",
+    })
+    .returning();
+
+  if (!nextStepRun) {
+    return false;
+  }
+
+  // Advance the run pointer
+  const now = new Date();
+  await db
+    .update(agentLoopRuns)
+    .set({
+      currentNodeId: nextNodeId,
+      currentStepRunId: nextStepRun.id,
+      stepCount: sql`${agentLoopRuns.stepCount} + 1`,
+      status: "running",
+      updatedAt: now,
+    })
+    .where(eq(agentLoopRuns.id, params.loopRunId));
+
+  return true;
+}
+
+/**
+ * Dispatches the step workflow for a given step run ID.
+ * Factored from run-controls.ts dispatch pattern.
+ * Used by watchdog retry and skip paths.
+ */
+export async function dispatchStepWorkflow(stepRunId: string): Promise<void> {
+  const { start } = await import("workflow/api");
+  const { runAgentLoopStepWorkflow } =
+    await import("@/app/workflows/agent-loop-step");
+  await start(runAgentLoopStepWorkflow, [{ stepRunId }]);
 }

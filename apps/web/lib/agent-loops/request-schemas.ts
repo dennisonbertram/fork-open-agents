@@ -36,6 +36,10 @@ export const updateAgentLoopBodySchema = z
     definition: recordSchema.optional(),
     guardrails: guardrailsBodySchema,
     permissions: recordSchema.optional(),
+    // M3-01 watchdog fields
+    watchdogEnabled: z.boolean().optional(),
+    watchdogInstructions: z.string().nullable().optional(),
+    watchdogRetryBudget: z.number().int().min(0).max(5).optional(),
   })
   .strict();
 

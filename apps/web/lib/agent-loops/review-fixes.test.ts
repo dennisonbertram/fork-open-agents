@@ -378,6 +378,32 @@ mock.module("./store", () => ({
   conditionallyTransitionRunStatus: mock(async () => null),
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
+  // watchdog stubs (M3-01)
+  createAgentLoopWatchdogRun: mock(async () => ({
+    id: "wdr-stub",
+    loopId: "loop-1",
+    loopRunId: "run-1",
+    stepRunId: null,
+    nodeId: null,
+    attempt: 1,
+    decision: null,
+    diagnosis: null,
+    hint: null,
+    failReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })),
+  updateAgentLoopWatchdogRun: mock(async () => undefined),
+  countWatchdogRetryDecisions: mock(async () => 0),
+  listWatchdogRunsForLoopRun: mock(async () => []),
+  retryCurrentStepForWatchdog: mock(async () => undefined),
+  pauseLoopRunSystem: mock(async () => undefined),
+  advanceToFailureEdge: mock(async () => false),
+  dispatchStepWorkflow: mock(async () => undefined),
+}));
+
+mock.module("./watchdog", () => ({
+  invokeWatchdog: mock(async () => ({ invoked: false })),
 }));
 
 // GitHub access/app mocks for executor tests
@@ -522,6 +548,9 @@ function makeF3F4Loop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     status: "active",
     guardrails: null,
     permissions: {},
+    watchdogEnabled: false,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 2,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

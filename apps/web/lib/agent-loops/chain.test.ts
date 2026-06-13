@@ -287,6 +287,28 @@ mock.module("./store", () => ({
   updateAgentLoopRunContext: mock(async () => undefined),
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
+  // M3-01 watchdog store stubs (not exercised by chain tests directly)
+  createAgentLoopWatchdogRun: mock(async () => ({ id: "wd-run-1" })),
+  updateAgentLoopWatchdogRun: mock(async () => undefined),
+  countWatchdogRetryDecisions: mock(async () => 0),
+  retryCurrentStepForWatchdog: mock(async () => ({
+    id: "new-step-1",
+    attempt: 2,
+    nodeId: "n1",
+  })),
+  pauseLoopRunSystem: mock(async () => undefined),
+  advanceToFailureEdge: mock(async () => true),
+  dispatchStepWorkflow: mock(async () => undefined),
+  listWatchdogRunsForLoopRun: mock(async () => []),
+}));
+
+// M3-01: mock the watchdog module so chain.ts can import it without real DB
+const invokeWatchdogMock = mock(async (_params: unknown) => ({
+  invoked: true,
+  decision: "retry" as const,
+}));
+mock.module("./watchdog", () => ({
+  invokeWatchdog: invokeWatchdogMock,
 }));
 
 mock.module("./step-executor", () => ({
@@ -368,7 +390,19 @@ function makeCanonicalDefinition() {
   };
 }
 
-function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
+function makeLoop(
+  overrides: Partial<
+    AgentLoop & {
+      watchdogEnabled?: boolean;
+      watchdogInstructions?: string | null;
+      watchdogRetryBudget?: number;
+    }
+  > = {},
+): AgentLoop & {
+  watchdogEnabled: boolean;
+  watchdogInstructions: string | null;
+  watchdogRetryBudget: number;
+} {
   return {
     id: "loop-1",
     userId: "user-1",
@@ -380,6 +414,10 @@ function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     status: "active",
     guardrails: null,
     permissions: {},
+    // M3-01 watchdog fields — disabled by default so existing tests are unchanged
+    watchdogEnabled: false,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 2,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -474,6 +512,7 @@ function resetAll() {
   getMaxAttemptForNodeMock.mockClear();
   executeAgentLoopStepMock.mockClear();
   workflowStartMock.mockClear();
+  invokeWatchdogMock.mockClear();
 }
 
 // Import chain after all mocks are set up

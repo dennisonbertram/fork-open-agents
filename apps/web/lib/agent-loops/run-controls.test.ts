@@ -192,6 +192,32 @@ mock.module("./store", () => ({
   getMaxAttemptForNode: mock(async () => 0),
   updateAgentLoopRunContext: mock(async () => undefined),
   findStalledLoopRunCandidates: mock(async () => []),
+  // watchdog stubs (M3-01)
+  createAgentLoopWatchdogRun: mock(async () => ({
+    id: "wdr-stub",
+    loopId: "loop-1",
+    loopRunId: "run-1",
+    stepRunId: null,
+    nodeId: null,
+    attempt: 1,
+    decision: null,
+    diagnosis: null,
+    hint: null,
+    failReason: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  })),
+  updateAgentLoopWatchdogRun: mock(async () => undefined),
+  countWatchdogRetryDecisions: mock(async () => 0),
+  listWatchdogRunsForLoopRun: mock(async () => []),
+  retryCurrentStepForWatchdog: mock(async () => undefined),
+  pauseLoopRunSystem: mock(async () => undefined),
+  advanceToFailureEdge: mock(async () => false),
+  dispatchStepWorkflow: mock(async () => undefined),
+}));
+
+mock.module("./watchdog", () => ({
+  invokeWatchdog: mock(async () => ({ invoked: false })),
 }));
 
 // These mocks allow chain.ts to load without errors for BT-RC05 export-checking

@@ -58,7 +58,7 @@ function readApiFiles(): string {
 }
 
 /**
- * M1 event taxonomy from epic #319 §10.
+ * M1/M3 event taxonomy from epic #319 §10 and M3-01.
  *
  * Each entry: { name, source: where it's emitted, deferred?: true if M2/M3 }
  */
@@ -173,6 +173,16 @@ const M1_TAXONOMY: Array<{
     deferred: true,
     deferredReason:
       "M1 surfaces truncation as a payload field in step.completed; a distinct context.merged event is deferred to M2 when the live view needs it as a separate timeline entry",
+  },
+
+  // M3-01 Watchdog events
+  {
+    name: "agent-loop.watchdog.started",
+    description: "Watchdog started for a failed step (M3-01)",
+  },
+  {
+    name: "agent-loop.watchdog.decided",
+    description: "Watchdog made a decision: retry, skip, or pause (M3-01)",
   },
 ];
 

@@ -943,6 +943,15 @@ export const agentLoops = pgTable(
       .$type<BackgroundAgentPermissions>()
       .notNull()
       .default({}),
+    /**
+     * M3-01 Watchdog fields.
+     * watchdogEnabled: gate — when false (default) watchdog is completely off.
+     * watchdogInstructions: standing guidance appended to every watchdog prompt.
+     * watchdogRetryBudget: max retry decisions per node across the run (shared by failure + stall).
+     */
+    watchdogEnabled: boolean("watchdog_enabled").notNull().default(false),
+    watchdogInstructions: text("watchdog_instructions"),
+    watchdogRetryBudget: integer("watchdog_retry_budget").notNull().default(2),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -2191,6 +2200,53 @@ export type NewWorkflowGoal = typeof workflowGoals.$inferInsert;
 export type WorkflowGoalEvent = typeof workflowGoalEvents.$inferSelect;
 export type NewWorkflowGoalEvent = typeof workflowGoalEvents.$inferInsert;
 
+// ── Agent Loop Watchdog Runs (M3-01) ──────────────────────────────────────────
+
+/**
+ * Records each watchdog invocation for a failed step.
+ * Decision: retry | skip | pause.
+ * Budget queries: count rows WHERE decision='retry' AND loopRunId=? AND nodeId=?
+ * (budget is shared by failure- AND stall-initiated retries — M3-02 depends on this).
+ */
+export const agentLoopWatchdogRuns = pgTable(
+  "agent_loop_watchdog_runs",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    stepRunId: text("step_run_id").references(() => agentLoopStepRuns.id, {
+      onDelete: "set null",
+    }),
+    /** Budget queries are per-node (shared budget across all watchdog invocations for that node) */
+    nodeId: text("node_id").notNull(),
+    status: text("status", {
+      enum: ["pending", "running", "decided", "failed"],
+    }).notNull(),
+    decision: text("decision", {
+      enum: ["retry", "skip", "pause"],
+    }),
+    /** Redacted before persist — comes from model output (untrusted) */
+    diagnosis: text("diagnosis"),
+    /** { hint?: string } — persisted for retry decisions */
+    decisionPayload: jsonb("decision_payload").$type<{ hint?: string }>(),
+    /** The failed step's attempt number at the time of watchdog invocation */
+    attempt: integer("attempt").notNull(),
+    /** Budget remaining BEFORE this invocation (watchdogRetryBudget - prior retries) */
+    budgetRemaining: integer("budget_remaining").notNull(),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_watchdog_runs_loop_run_idx").on(table.loopRunId),
+    index("agent_loop_watchdog_runs_loop_node_idx").on(
+      table.loopRunId,
+      table.nodeId,
+    ),
+  ],
+);
+
 // ── Agent Loops types ─────────────────────────────────────────────────────────
 export type AgentLoop = typeof agentLoops.$inferSelect;
 export type NewAgentLoop = typeof agentLoops.$inferInsert;
@@ -2200,3 +2256,5 @@ export type AgentLoopStepRun = typeof agentLoopStepRuns.$inferSelect;
 export type NewAgentLoopStepRun = typeof agentLoopStepRuns.$inferInsert;
 export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
 export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;
+export type AgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferSelect;
+export type NewAgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferInsert;

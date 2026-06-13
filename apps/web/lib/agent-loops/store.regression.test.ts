@@ -109,6 +109,7 @@ mock.module("@/lib/db/schema", () => ({
   agentLoopRuns: Symbol("agentLoopRuns"),
   agentLoopStepRuns: Symbol("agentLoopStepRuns"),
   agentLoopEvents: Symbol("agentLoopEvents"),
+  agentLoopWatchdogRuns: Symbol("agentLoopWatchdogRuns"),
 }));
 
 const storePromise = import("./store");
