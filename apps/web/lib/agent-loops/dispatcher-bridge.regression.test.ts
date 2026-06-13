@@ -51,6 +51,9 @@ const getOwnedAgentLoop = mock(async () => ({
   permissions: {},
   name: "My Loop",
   description: null,
+  watchdogEnabled: false,
+  watchdogInstructions: null,
+  watchdogRetryBudget: 2,
   createdAt: new Date(),
   updatedAt: new Date(),
 }));
@@ -153,6 +156,9 @@ const activeLoop = {
   permissions: {},
   name: "My Loop",
   description: null,
+  watchdogEnabled: false,
+  watchdogInstructions: null,
+  watchdogRetryBudget: 2,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

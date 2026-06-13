@@ -159,4 +159,30 @@ describe("buildLoopStepPrompt", () => {
 
     expect(prompt).toContain("/tmp/loop-step-output.json");
   });
+
+  test("BP-011: prompt includes watchdog hint section when stepInput.watchdogHint is present", () => {
+    const prompt = buildLoopStepPrompt({
+      node: baseNode,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "main",
+      watchdogHint: "Try using exponential backoff for the API calls.",
+    });
+
+    expect(prompt).toContain("Watchdog hint");
+    expect(prompt).toContain(
+      "Try using exponential backoff for the API calls.",
+    );
+  });
+
+  test("BP-012: prompt does NOT include watchdog hint section when watchdogHint is absent", () => {
+    const prompt = buildLoopStepPrompt({
+      node: baseNode,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "main",
+    });
+
+    expect(prompt).not.toContain("Watchdog hint");
+  });
 });

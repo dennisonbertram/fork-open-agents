@@ -24,6 +24,8 @@ export type BuildLoopStepPromptParams = {
   contextSlice: Record<string, unknown>;
   repo: string;
   branch: string;
+  /** When set, appends a watchdog hint section from the previous failed attempt. */
+  watchdogHint?: string;
 };
 
 /**
@@ -38,7 +40,7 @@ export type BuildLoopStepPromptParams = {
  *   received in this prompt.
  */
 export function buildLoopStepPrompt(params: BuildLoopStepPromptParams): string {
-  const { node, contextSlice, repo, branch } = params;
+  const { node, contextSlice, repo, branch, watchdogHint } = params;
 
   const instructionsSection = node.instructions
     ? `## Your Instructions\n\n${node.instructions}\n`
@@ -85,7 +87,13 @@ JSON, the step will be marked as failed.
   directory). Restrict all file writes to the working directory.
 `;
 
-  return [
+  const watchdogHintSection = watchdogHint
+    ? `## Watchdog hint from the previous failed attempt\n\n` +
+      `> ${watchdogHint.replace(/\n/g, "\n> ")}\n\n` +
+      `Apply this guidance when working on this attempt.\n`
+    : null;
+
+  const sections: (string | null)[] = [
     `# Agent Loop Step`,
     "",
     "You are running inside an unattended agent loop step. Work autonomously,",
@@ -93,8 +101,11 @@ JSON, the step will be marked as failed.
     "",
     repoSection,
     contextSection,
+    watchdogHintSection,
     instructionsSection,
     outputContract,
     prohibitions,
-  ].join("\n");
+  ];
+
+  return sections.filter((s): s is string => s !== null).join("\n");
 }

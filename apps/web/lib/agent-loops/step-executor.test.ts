@@ -367,6 +367,9 @@ function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     permissions: {
       github: { issues: "read", checks: "read", deployments: "read" },
     },
+    watchdogEnabled: false,
+    watchdogInstructions: null,
+    watchdogRetryBudget: 2,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

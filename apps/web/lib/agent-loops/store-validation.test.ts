@@ -100,12 +100,14 @@ const agentLoopsTable = Symbol("agentLoops");
 const agentLoopRunsTable = Symbol("agentLoopRuns");
 const agentLoopStepRunsTable = Symbol("agentLoopStepRuns");
 const agentLoopEventsTable = Symbol("agentLoopEvents");
+const agentLoopWatchdogRunsTable = Symbol("agentLoopWatchdogRuns");
 
 mock.module("@/lib/db/schema", () => ({
   agentLoops: agentLoopsTable,
   agentLoopRuns: agentLoopRunsTable,
   agentLoopStepRuns: agentLoopStepRunsTable,
   agentLoopEvents: agentLoopEventsTable,
+  agentLoopWatchdogRuns: agentLoopWatchdogRunsTable,
 }));
 
 const storePromise = import("./store");

@@ -44,6 +44,15 @@ export default async function BuilderPage({ params }: BuilderPageProps) {
     <BuilderCanvas
       loopId={loopId}
       loopName={loop.name}
+      loopDescription={loop.description}
+      loopGuardrails={
+        loop.guardrails as
+          | import("@/lib/agent-loops/types").LoopGuardrails
+          | undefined
+      }
+      watchdogEnabled={loop.watchdogEnabled ?? false}
+      watchdogInstructions={loop.watchdogInstructions}
+      watchdogRetryBudget={loop.watchdogRetryBudget ?? 2}
       definition={definition}
     />
   );

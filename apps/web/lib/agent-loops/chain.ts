@@ -59,6 +59,7 @@ import {
   getMaxAttemptForNode,
 } from "./store";
 import { executeAgentLoopStep } from "./step-executor";
+import { invokeWatchdog } from "./watchdog";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -385,9 +386,17 @@ export async function runAgentLoopStep(
     definition,
     outcome: result.outcome,
     errorKind: result.errorKind,
+    errorMessage: result.errorMessage,
+    attempt: ctx.stepRun.attempt,
     currentStepCount: loopRun.stepCount,
     currentIterationCount: loopRun.iterationCount,
     nodeKind: node?.kind ?? "unknown",
+    loop: loop as import("@/lib/db/schema").AgentLoop & {
+      watchdogEnabled: boolean;
+      watchdogInstructions: string | null;
+      watchdogRetryBudget: number;
+    },
+    loopRun,
     pausedMidExecution,
     stalledMidExecution,
   });
@@ -403,9 +412,21 @@ type AdvanceParams = {
   definition: ReturnType<typeof loopDefinitionSchema.parse>;
   outcome: "success" | "failure" | "true" | "false";
   errorKind?: string;
+  /** The error message from the step executor result — forwarded to watchdog for diagnosis context. */
+  errorMessage?: string;
+  /** The step attempt number — forwarded to watchdog for diagnosis context and persisted in the watchdog row. */
+  attempt: number;
   currentStepCount: number;
   currentIterationCount: number;
   nodeKind: string;
+  /** The full loop object — threaded through for watchdog invocation on failure. */
+  loop: import("@/lib/db/schema").AgentLoop & {
+    watchdogEnabled: boolean;
+    watchdogInstructions: string | null;
+    watchdogRetryBudget: number;
+  };
+  /** The full loop run — threaded through for watchdog invocation on failure. */
+  loopRun: import("@/lib/db/schema").AgentLoopRun;
   /**
    * True when the run was paused DURING step execution (i.e. the pause landed
    * between executeAgentLoopStep starting and returning).  Advance bookkeeping
@@ -445,9 +466,13 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
     definition,
     outcome,
     errorKind,
+    errorMessage,
+    attempt,
     currentStepCount,
     currentIterationCount,
     nodeKind,
+    loop,
+    loopRun,
     pausedMidExecution = false,
     stalledMidExecution = false,
   } = params;
@@ -479,7 +504,45 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
 
   if (nextNodeId === null) {
     if (outcome === "failure") {
-      // Failed step with no failure edge → run failed with step's errorKind
+      // Failed step with no failure edge.
+      // Branch: watchdog enabled → invoke watchdog (which owns the resulting state).
+      //         watchdog disabled → fail-fast (existing M1 behavior, byte-for-byte).
+      const loopWithWatchdog = loop as typeof loop & {
+        watchdogEnabled?: boolean;
+        watchdogInstructions?: string | null;
+        watchdogRetryBudget?: number;
+      };
+      const watchdogEnabled = loopWithWatchdog.watchdogEnabled === true;
+
+      if (watchdogEnabled) {
+        // Watchdog path: invoke watchdog; it owns the run's resulting state.
+        // If invokeWatchdog itself throws (a watchdog bug), fall back to fail-fast
+        // so a watchdog bug never permanently wedges a run.
+        try {
+          await invokeWatchdog({
+            loop: loop as Parameters<typeof invokeWatchdog>[0]["loop"],
+            loopRun,
+            stepRunId,
+            nodeId,
+            nodeKind,
+            attempt,
+            errorKind,
+            errorMessage:
+              errorMessage ?? `Step failed with no failure edge: ${nodeId}`,
+            workflowRunId,
+          });
+          // Watchdog owns the state — do not also mark failed.
+          return;
+        } catch (watchdogErr) {
+          // Watchdog threw unexpectedly — fall through to fail-fast below.
+          console.error(
+            "[agent-loop.chain] Watchdog threw; falling back to fail-fast",
+            watchdogErr,
+          );
+        }
+      }
+
+      // Fail-fast path (watchdog disabled or watchdog threw)
       const resolvedErrorKind = errorKind ?? "step_failed";
       const resolvedErrorMessage = `Step failed with no failure edge: ${nodeId}`;
 
