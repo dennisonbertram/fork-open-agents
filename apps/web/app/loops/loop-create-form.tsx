@@ -199,27 +199,35 @@ export function LoopCreateForm({
       </div>
 
       {/* Repo */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="repo-owner">Repository owner</Label>
-          <Input
-            id="repo-owner"
-            value={repoOwner}
-            onChange={(e) => setRepoOwner(e.target.value)}
-            placeholder="acme"
-            required
-          />
+      <div className="space-y-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-2">
+            <Label htmlFor="repo-owner">Repository owner</Label>
+            <Input
+              id="repo-owner"
+              value={repoOwner}
+              onChange={(e) => setRepoOwner(e.target.value)}
+              placeholder="acme"
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="repo-name">Repository name</Label>
+            <Input
+              id="repo-name"
+              value={repoName}
+              onChange={(e) => setRepoName(e.target.value)}
+              placeholder="widgets"
+              required
+            />
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="repo-name">Repository name</Label>
-          <Input
-            id="repo-name"
-            value={repoName}
-            onChange={(e) => setRepoName(e.target.value)}
-            placeholder="widgets"
-            required
-          />
-        </div>
+        <p className="text-xs text-muted-foreground">
+          The GitHub repo this loop runs against — e.g. for{" "}
+          <code className="font-mono">acme/widgets</code>, owner is{" "}
+          <code className="font-mono">acme</code> and name is{" "}
+          <code className="font-mono">widgets</code>.
+        </p>
       </div>
 
       {/* Description */}
