@@ -47,6 +47,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 
 // ── Small reusable field components ──────────────────────────────────────────
 
@@ -342,6 +343,23 @@ function AgentStepConfig({
           Grants this step&apos;s agent the access it needs — e.g. Issues:write
           to run <code className="font-mono text-[10px]">gh issue create</code>.
           Code is always writable for clone &amp; push.
+        </FieldHelp>
+      </div>
+
+      {/* Tools — Composio toolkits this step's agent may use */}
+      <div className="space-y-1">
+        <FieldLabel>Tools</FieldLabel>
+        <ComposioToolkitPicker
+          selectedSlugs={data.composioToolkitSlugs ?? []}
+          onChange={(slugs) =>
+            onUpdate({
+              composioToolkitSlugs: slugs.length > 0 ? slugs : undefined,
+            })
+          }
+        />
+        <FieldHelp>
+          External tools (e.g. Gmail, Slack) this step can use, from your
+          connected Composio accounts.
         </FieldHelp>
       </div>
 

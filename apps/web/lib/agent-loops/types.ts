@@ -132,6 +132,12 @@ export const agentStepNodeSchema = z.object({
   outputSchema: jsonSchemaLiteSchema.optional(),
   checkCommand: z.string().optional(),
   permissions: stepPermissionsSchema.optional(),
+  /**
+   * Composio toolkit slugs this step's agent may use (B-P2). Resolved at run
+   * time via resolveComposioToolsForBgRun, gated by the user's connected
+   * accounts + repo policy. Empty/absent = no external tools.
+   */
+  composioToolkitSlugs: z.array(z.string()).optional(),
 });
 
 export const githubCheckNodeSchema = z.object({

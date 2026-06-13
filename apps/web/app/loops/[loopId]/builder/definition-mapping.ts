@@ -205,6 +205,9 @@ export function flowToDefinition(
           ...(base.permissions !== undefined && {
             permissions: base.permissions,
           }),
+          ...(base.composioToolkitSlugs !== undefined && {
+            composioToolkitSlugs: base.composioToolkitSlugs,
+          }),
         };
         return node;
       }
