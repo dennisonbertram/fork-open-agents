@@ -1299,6 +1299,17 @@ export function InboxSidebar({
                       }`}
                     >
                       <div className="overflow-hidden">
+                        {/* Repo resources (Agents, Loops) sit ABOVE the session
+                            list so the repo's tooling is the first thing under
+                            the repo, not buried below its branches. */}
+                        {hasRepo ? (
+                          <div className="ml-4 border-l border-border/40 pl-1.5">
+                            <RepoSubGroups
+                              repoOwner={groupRepoOwner}
+                              repoName={groupRepoName}
+                            />
+                          </div>
+                        ) : null}
                         <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
                           {group.sessions.map((session) => (
                             <SessionRow
@@ -1314,14 +1325,6 @@ export function InboxSidebar({
                             />
                           ))}
                         </div>
-                        {hasRepo ? (
-                          <div className="ml-4 border-l border-border/40 pl-1.5">
-                            <RepoSubGroups
-                              repoOwner={groupRepoOwner}
-                              repoName={groupRepoName}
-                            />
-                          </div>
-                        ) : null}
                       </div>
                     </div>
                   </section>

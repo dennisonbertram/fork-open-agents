@@ -103,12 +103,41 @@ export const startNodeSchema = z.object({
   kind: z.literal("start"),
 });
 
+/**
+ * Per-step GitHub permissions (B-P1). Mirrors BackgroundAgentPermissions so a
+ * loop agent_step can be granted the same scopes as a background agent — e.g.
+ * issues:write so the agent can `gh issue create`, pull_requests:write to open
+ * PRs. Structurally identical to BackgroundAgentPermissions (db/schema.ts).
+ */
+export const stepPermissionsSchema = z
+  .object({
+    github: z
+      .object({
+        contents: z.enum(["read", "write"]).optional(),
+        pullRequests: z.enum(["read", "write"]).optional(),
+        issues: z.enum(["read", "write"]).optional(),
+        deployments: z.literal("read").optional(),
+        statuses: z.literal("read").optional(),
+        checks: z.literal("read").optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 export const agentStepNodeSchema = z.object({
   ...baseNodeFields,
   kind: z.literal("agent_step"),
   instructions: z.string().optional(),
   outputSchema: jsonSchemaLiteSchema.optional(),
   checkCommand: z.string().optional(),
+  permissions: stepPermissionsSchema.optional(),
+  /**
+   * Composio toolkit slugs this step's agent may use (B-P2). Resolved at run
+   * time via resolveComposioToolsForBgRun, gated by the user's connected
+   * accounts + repo policy. Empty/absent = no external tools.
+   */
+  composioToolkitSlugs: z.array(z.string()).optional(),
 });
 
 export const githubCheckNodeSchema = z.object({

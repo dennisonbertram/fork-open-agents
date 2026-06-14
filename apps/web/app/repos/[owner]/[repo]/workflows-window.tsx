@@ -28,12 +28,16 @@ export function buildWorkflowsSummary(
 ): string {
   const total = loops.length;
   const active = loops.filter((l) => l.status === "active").length;
-  const loopWord = total === 1 ? "workflow" : "workflows";
+  const loopWord = total === 1 ? "loop" : "loops";
   return `${total} ${loopWord} · ${active} active`;
 }
 
 function newWorkflowHref(repoOwner: string, repoName: string): string {
   return `/loops/new?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`;
+}
+
+function repoLoopsHref(repoOwner: string, repoName: string): string {
+  return `/repos/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}/loops`;
 }
 
 // ── Presentational component (sync) ───────────────────────────────────────────
@@ -53,32 +57,43 @@ export function WorkflowsWindowView({
 }) {
   const summary = buildWorkflowsSummary(loops);
   const newHref = newWorkflowHref(repoOwner, repoName);
+  const allHref = repoLoopsHref(repoOwner, repoName);
 
   const action = (
-    <Link
-      href={newHref}
-      className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
-    >
-      New workflow
-    </Link>
+    <div className="flex items-center gap-1.5">
+      {loops.length > 0 ? (
+        <Link
+          href={allHref}
+          className="rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+        >
+          See all
+        </Link>
+      ) : null}
+      <Link
+        href={newHref}
+        className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+      >
+        New loop
+      </Link>
+    </div>
   );
 
   return (
     <CollapsibleDashboardCard
       cardKey="workflows"
-      title="Workflows"
+      title="Loops"
       summary={summary}
       action={action}
-      ariaLabel="Workflows window"
+      ariaLabel="Loops window"
     >
       {loops.length === 0 ? (
         <div className="p-8 text-center text-sm text-muted-foreground">
-          <p>No workflows configured for this repository.</p>
+          <p>No loops configured for this repository.</p>
           <Link
             href={newHref}
             className="mt-3 inline-block rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium hover:bg-muted/40 hover:text-foreground"
           >
-            Create your first workflow
+            Create your first loop
           </Link>
         </div>
       ) : (

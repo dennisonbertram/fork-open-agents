@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { validateLoopDefinition } from "@/lib/agent-loops/validation";
 import type { LoopValidationError } from "@/lib/agent-loops/types";
 import type { CreateAgentLoopResponse } from "@/app/api/agent-loops/types";
+import { RepoCombobox } from "./repo-combobox";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,20 @@ type LoopCreateFormProps = {
   initialRepoOwner?: string;
   /** Pre-populate repo name from query params (e.g. dashboard "New workflow" action) */
   initialRepoName?: string;
+  /** Pre-populate the loop name (e.g. from a chosen template or AI draft) */
+  initialName?: string;
+  /** Pre-populate the description (e.g. from a chosen template or AI draft) */
+  initialDescription?: string;
+  /** Pre-populate the definition JSON (e.g. from a chosen template or AI draft) */
+  initialDefinitionText?: string;
+  /** Where to send the user after a successful create. Defaults to the detail page. */
+  redirectTo?: "detail" | "builder";
+  /**
+   * When true (template / AI flows), the JSON definition editor is tucked
+   * behind an "Advanced" disclosure so first-timers aren't confronted with raw
+   * JSON. It auto-opens if the definition has errors.
+   */
+  definitionCollapsible?: boolean;
 };
 
 // ── Validation error display ──────────────────────────────────────────────────
@@ -60,18 +75,30 @@ export function LoopCreateForm({
   initialValidationErrors,
   initialRepoOwner,
   initialRepoName,
+  initialName,
+  initialDescription,
+  initialDefinitionText,
+  redirectTo = "detail",
+  definitionCollapsible = false,
 }: LoopCreateFormProps) {
   const router = useRouter();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [repoOwner, setRepoOwner] = useState(initialRepoOwner ?? "");
   const [repoName, setRepoName] = useState(initialRepoName ?? "");
-  const [description, setDescription] = useState("");
-  const [definitionText, setDefinitionText] = useState(DEFAULT_DEFINITION);
+  const [description, setDescription] = useState(initialDescription ?? "");
+  const [definitionText, setDefinitionText] = useState(
+    initialDefinitionText ?? DEFAULT_DEFINITION,
+  );
   const [validationErrors, setValidationErrors] = useState<
     LoopValidationError[]
   >(initialValidationErrors ?? []);
   const [jsonParseError, setJsonParseError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // When the form is opened from a specific repository (its owner+name are
+  // pre-supplied), the loop belongs to that repo — show it fixed rather than as
+  // a changeable picker. The picker only appears for a general "New loop".
+  const repoLocked = Boolean(initialRepoOwner && initialRepoName);
 
   // Validate on blur — client mirrors server validation, server is authoritative
   function handleDefinitionBlur() {
@@ -96,6 +123,11 @@ export function LoopCreateForm({
     e.preventDefault();
     setJsonParseError(null);
     setValidationErrors([]);
+
+    if (!repoOwner || !repoName) {
+      toast.error("Pick a repository (owner/repo) for this loop.");
+      return;
+    }
 
     let definition: unknown;
     try {
@@ -151,7 +183,11 @@ export function LoopCreateForm({
 
       const { loop } = (await res.json()) as CreateAgentLoopResponse;
       toast.success(`Loop "${loop.name}" created.`);
-      router.push(`/loops/${loop.id}`);
+      router.push(
+        redirectTo === "builder"
+          ? `/loops/${loop.id}/builder`
+          : `/loops/${loop.id}`,
+      );
     } catch {
       toast.error("Failed to create loop. Please try again.");
     } finally {
@@ -174,27 +210,27 @@ export function LoopCreateForm({
       </div>
 
       {/* Repo */}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="space-y-2">
-          <Label htmlFor="repo-owner">Repository owner</Label>
-          <Input
-            id="repo-owner"
-            value={repoOwner}
-            onChange={(e) => setRepoOwner(e.target.value)}
-            placeholder="acme"
-            required
+      <div className="space-y-2">
+        <Label htmlFor="repo">Repository</Label>
+        {repoLocked ? (
+          <div className="flex items-center rounded-md border border-input bg-muted/30 px-3 py-2 font-mono text-sm text-muted-foreground">
+            {repoOwner}/{repoName}
+          </div>
+        ) : (
+          <RepoCombobox
+            owner={repoOwner}
+            name={repoName}
+            onChange={(o, n) => {
+              setRepoOwner(o);
+              setRepoName(n);
+            }}
           />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="repo-name">Repository name</Label>
-          <Input
-            id="repo-name"
-            value={repoName}
-            onChange={(e) => setRepoName(e.target.value)}
-            placeholder="widgets"
-            required
-          />
-        </div>
+        )}
+        <p className="text-xs text-muted-foreground">
+          {repoLocked
+            ? "This loop runs against this repository."
+            : "The GitHub repository this loop runs against. Pick one you've used before, or type any owner/repo."}
+        </p>
       </div>
 
       {/* Description */}
@@ -209,28 +245,61 @@ export function LoopCreateForm({
       </div>
 
       {/* definition JSON editor */}
-      <div className="space-y-2">
-        <Label htmlFor="definition">Loop definition (JSON)</Label>
-        <p className="text-xs text-muted-foreground">
-          Paste or edit the loop definition JSON. Errors are validated on blur
-          before saving.
-        </p>
-        <Textarea
-          id="definition"
-          value={definitionText}
-          onChange={(e) => setDefinitionText(e.target.value)}
-          onBlur={handleDefinitionBlur}
-          className="min-h-48 font-mono text-xs"
-          spellCheck={false}
-          aria-label="Loop definition JSON"
-        />
-        {jsonParseError && (
-          <p className="text-xs text-red-700 dark:text-red-300">
-            {jsonParseError}
-          </p>
-        )}
-        <ValidationErrorList errors={validationErrors} />
-      </div>
+      {(() => {
+        const hasDefinitionError =
+          validationErrors.length > 0 || jsonParseError !== null;
+        const editor = (
+          <>
+            <Textarea
+              id="definition"
+              value={definitionText}
+              onChange={(e) => setDefinitionText(e.target.value)}
+              onBlur={handleDefinitionBlur}
+              className="min-h-48 font-mono text-xs"
+              spellCheck={false}
+              aria-label="Loop definition JSON"
+            />
+            {jsonParseError && (
+              <p className="text-xs text-red-700 dark:text-red-300">
+                {jsonParseError}
+              </p>
+            )}
+            <ValidationErrorList errors={validationErrors} />
+          </>
+        );
+
+        if (definitionCollapsible) {
+          return (
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">
+                You don&apos;t need to edit anything here — pick a repository
+                and create. You&apos;ll fine-tune each step visually in the
+                builder.
+              </p>
+              <details
+                open={hasDefinitionError || undefined}
+                className="rounded-md border border-border bg-muted/10 px-3 py-2"
+              >
+                <summary className="cursor-pointer text-sm text-muted-foreground hover:text-foreground">
+                  Advanced — edit the loop definition (JSON)
+                </summary>
+                <div className="mt-3 space-y-2">{editor}</div>
+              </details>
+            </div>
+          );
+        }
+
+        return (
+          <div className="space-y-2">
+            <Label htmlFor="definition">Loop definition (JSON)</Label>
+            <p className="text-xs text-muted-foreground">
+              Paste or edit the loop definition JSON. Errors are validated on
+              blur before saving.
+            </p>
+            {editor}
+          </div>
+        );
+      })()}
 
       <div className="flex justify-end gap-3">
         <Button type="button" variant="outline" onClick={() => router.back()}>

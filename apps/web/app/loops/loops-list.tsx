@@ -92,7 +92,13 @@ function LoopSkeleton() {
 
 // ── Empty state ───────────────────────────────────────────────────────────────
 
-function EmptyState({ createEnabled }: { createEnabled: boolean }) {
+function EmptyState({
+  createEnabled,
+  newHref,
+}: {
+  createEnabled: boolean;
+  newHref: string;
+}) {
   return (
     <div className="flex flex-col items-center justify-center rounded-md border border-dashed border-border p-12 text-center">
       <p className="text-sm font-medium text-muted-foreground">No loops yet</p>
@@ -101,7 +107,7 @@ function EmptyState({ createEnabled }: { createEnabled: boolean }) {
       </p>
       {createEnabled && (
         <Link
-          href="/loops/new"
+          href={newHref}
           className="mt-4 inline-flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-muted/20"
         >
           <Plus className="h-4 w-4" />
@@ -117,11 +123,22 @@ function EmptyState({ createEnabled }: { createEnabled: boolean }) {
 type LoopsListProps = {
   /** When false, hides "New loop" affordances (set server-side from isAgentLoopsEnabled). Defaults to true for backward compatibility. */
   createEnabled?: boolean;
+  /** When set, scopes the list to a single repository (both must be provided). */
+  repoOwner?: string;
+  repoName?: string;
 };
 
-export function LoopsList({ createEnabled = true }: LoopsListProps) {
+export function LoopsList({
+  createEnabled = true,
+  repoOwner,
+  repoName,
+}: LoopsListProps) {
+  const listUrl =
+    repoOwner && repoName
+      ? `/api/agent-loops?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`
+      : "/api/agent-loops";
   const { data, error, isLoading } = useSWR<ListAgentLoopsResponse>(
-    "/api/agent-loops",
+    listUrl,
     fetchJson,
   );
 
@@ -154,16 +171,56 @@ export function LoopsList({ createEnabled = true }: LoopsListProps) {
   }
 
   const loops = data?.loops ?? [];
+  const newHref =
+    repoOwner && repoName
+      ? `/loops/new?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`
+      : "/loops/new";
 
   if (loops.length === 0) {
-    return <EmptyState createEnabled={createEnabled} />;
+    return <EmptyState createEnabled={createEnabled} newHref={newHref} />;
+  }
+
+  // Repo-scoped view: flat list. Global view: group by repo so it reads as a
+  // cross-repo overview, with each group header linking into that repo's loops.
+  const isRepoScoped = Boolean(repoOwner && repoName);
+  if (isRepoScoped) {
+    return (
+      <div className="space-y-3">
+        {loops.map((loop) => (
+          <LoopCard key={loop.id} loop={loop} />
+        ))}
+      </div>
+    );
+  }
+
+  const groups = new Map<string, AgentLoop[]>();
+  for (const loop of loops) {
+    const key = `${loop.repoOwner}/${loop.repoName}`;
+    const list = groups.get(key) ?? [];
+    list.push(loop);
+    groups.set(key, list);
   }
 
   return (
-    <div className="space-y-3">
-      {loops.map((loop) => (
-        <LoopCard key={loop.id} loop={loop} />
-      ))}
+    <div className="space-y-6">
+      {Array.from(groups.entries()).map(([repoKey, repoLoops]) => {
+        const first = repoLoops[0];
+        return (
+          <div key={repoKey} className="space-y-2">
+            <Link
+              href={`/repos/${first?.repoOwner}/${first?.repoName}/loops`}
+              className="inline-flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground"
+            >
+              {repoKey}
+            </Link>
+            <div className="space-y-3">
+              {repoLoops.map((loop) => (
+                <LoopCard key={loop.id} loop={loop} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

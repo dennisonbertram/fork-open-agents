@@ -532,3 +532,70 @@ describe("BT-P2b: condition palette default — non-empty path", () => {
     }
   });
 });
+
+// ── Auto-connect on add: insert-into-edge (BT-AUTOCONNECT) ─────────────────────
+
+describe("createLoopBuilderStore — addNode auto-connect (insert-into-edge)", () => {
+  it("BT-AUTOCONNECT-001: inserting an agent_step from a node splits its edge (S→N→T) and stays valid", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF); // start-1 →(always) end-1
+
+    const newId = store
+      .getState()
+      .addNode("agent_step", { x: 100, y: 0 }, { connectFrom: "start-1" });
+
+    const edges = store.getState().edges;
+    const intoNew = edges.find((e) => e.target === newId);
+    const outOfNew = edges.find((e) => e.source === newId);
+    // S→N retains the original edge (rewired target); N→T forward edge added
+    expect(intoNew?.source).toBe("start-1");
+    expect(intoNew?.data?.when).toBe("always");
+    expect(outOfNew?.target).toBe("end-1");
+    expect(outOfNew?.data?.when).toBe("success");
+    // New node has both inbound and outbound → no orphan, graph valid
+    expect(store.getState().validationErrors).toHaveLength(0);
+  });
+
+  it("BT-AUTOCONNECT-002: the new node is selected (deselecting others) for chaining", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    const newId = store
+      .getState()
+      .addNode("agent_step", { x: 100, y: 0 }, { connectFrom: "start-1" });
+    const selected = store.getState().nodes.filter((n) => n.selected);
+    expect(selected).toHaveLength(1);
+    expect(selected[0]?.id).toBe(newId);
+  });
+
+  it("BT-AUTOCONNECT-003: without connectFrom no edge is added (orphan, unchanged behavior)", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    const edgesBefore = store.getState().edges.length;
+    store.getState().addNode("agent_step", { x: 100, y: 0 });
+    expect(store.getState().edges).toHaveLength(edgesBefore);
+  });
+
+  it("BT-AUTOCONNECT-004: never connects FROM an end node", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    const edgesBefore = store.getState().edges.length;
+    store
+      .getState()
+      .addNode("agent_step", { x: 100, y: 0 }, { connectFrom: "end-1" });
+    expect(store.getState().edges).toHaveLength(edgesBefore);
+  });
+
+  it("BT-AUTOCONNECT-005: chained inserts (start→a→b→end) keep the graph valid", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    const a = store
+      .getState()
+      .addNode("agent_step", { x: 100, y: 0 }, { connectFrom: "start-1" });
+    // 'a' is now selected; chain a second step off it
+    store
+      .getState()
+      .addNode("agent_step", { x: 200, y: 0 }, { connectFrom: a });
+    expect(store.getState().validationErrors).toHaveLength(0);
+    expect(store.getState().nodes).toHaveLength(4); // start, end, a, b
+  });
+});

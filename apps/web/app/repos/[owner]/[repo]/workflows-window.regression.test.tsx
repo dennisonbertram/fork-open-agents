@@ -70,8 +70,8 @@ describe("WorkflowsWindow regressions", () => {
     const { buildWorkflowsSummary } = await windowModulePromise;
 
     const summary = buildWorkflowsSummary([{ status: "active" }]);
-    expect(summary).toContain("1 workflow");
-    expect(summary).not.toContain("1 workflows");
+    expect(summary).toContain("1 loop");
+    expect(summary).not.toContain("1 loops");
   });
 
   // REG-WF-003: loop row renders /loops/[id] deep link
@@ -161,8 +161,8 @@ describe("WorkflowsWindow regressions", () => {
     }
 
     // Renders the Workflows section, not an exception
-    expect(html).toContain("Workflows");
+    expect(html).toContain("Loops");
     // Empty state copy
-    expect(html).toMatch(/no workflows|create.*workflow/i);
+    expect(html).toMatch(/no loops|create.*loop/i);
   });
 });

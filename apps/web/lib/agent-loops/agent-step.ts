@@ -81,6 +81,11 @@ import {
 import { mergeStepOutput } from "./context";
 import { resolveWorkingBranch } from "./resolve-working-branch";
 import {
+  effectiveStepPermissions,
+  permissionsToInstallationToken,
+} from "./token-permissions";
+import { resolveComposioToolsForBgRun } from "@/lib/background-agents/composio-tools";
+import {
   updateAgentLoopStepRun,
   recordAgentLoopEvent,
   updateAgentLoopRunContext,
@@ -303,16 +308,19 @@ export async function executeAgentStep(
     });
   }
 
-  // ── 2. Mint installation token (contents:write, scoped to this repo) ─────────
+  // ── 2. Mint installation token, scoped to this repo ──────────────────────────
+  // Token scopes come from the step's declared GitHub permissions (or the loop's
+  // as a default), so a step can e.g. create issues / open PRs. contents:write is
+  // always included for clone + push.
 
   let cloneToken: string;
   try {
     const scopedToken = await mintInstallationToken({
       installationId: accessResult.installationId,
       repositoryIds: [accessResult.repositoryId],
-      permissions: {
-        contents: "write",
-      },
+      permissions: permissionsToInstallationToken(
+        effectiveStepPermissions(node.permissions, loop.permissions),
+      ),
     });
     cloneToken = scopedToken.token;
   } catch (err) {
@@ -435,6 +443,24 @@ export async function executeAgentStep(
         "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
     };
 
+    // Resolve any Composio tools this step is granted (B-P2). Gated by the
+    // user's connected accounts + repo policy; non-fatal (skips on off/error).
+    let composioTools: import("ai").ToolSet | undefined;
+    const toolkitSlugs = node.composioToolkitSlugs ?? [];
+    if (toolkitSlugs.length > 0) {
+      const composioResult = await resolveComposioToolsForBgRun({
+        agentId: null,
+        runId: loopRun.id,
+        userId: loopRun.userId,
+        slugs: toolkitSlugs,
+        repoOwner: loop.repoOwner,
+        repoName: loop.repoName,
+      });
+      if (composioResult.status === "ready") {
+        composioTools = composioResult.tools;
+      }
+    }
+
     // Accumulate messages across turns so the next call sees prior tool results.
     const agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
 
@@ -446,6 +472,7 @@ export async function executeAgentStep(
           messages: agentMessages,
           options: agentOptions,
           timeout: { totalMs: AGENT_STEP_TIMEOUT_MS },
+          ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
         // Append model response messages so tool results are visible next turn.

@@ -20,13 +20,13 @@ export default async function LoopsPage() {
   const enabled = isAgentLoopsEnabled();
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h1 className="text-2xl font-semibold">Loops</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Multi-step agent workflows that iterate over your repositories.
+              Multi-step agent loops across your repositories.
             </p>
           </div>
           {enabled && (
