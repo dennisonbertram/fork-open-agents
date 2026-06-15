@@ -164,9 +164,7 @@ function buildDirectToolUseSummary(params: {
   };
 }
 
-export function summarizeExternalToolUse(
-  parts: unknown,
-): ExternalToolUse {
+export function summarizeExternalToolUse(parts: unknown): ExternalToolUse {
   const toolNames: string[] = [];
   const seenToolNames = new Set<string>();
   let count = 0;
@@ -179,10 +177,7 @@ export function summarizeExternalToolUse(
     // Only count successful tool calls. Failed or denied calls do not
     // contribute to proof completion — they represent errors, not valid
     // external-tool work.
-    if (
-      part.state === "output-error" ||
-      part.state === "output-denied"
-    ) {
+    if (part.state === "output-error" || part.state === "output-denied") {
       continue;
     }
 

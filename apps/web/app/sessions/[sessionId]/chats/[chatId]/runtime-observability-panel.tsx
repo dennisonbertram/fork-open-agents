@@ -490,9 +490,7 @@ export function RuntimeActorsSection({
             status="completed"
             title="External tools"
           >
-            <p>
-              Coordinator completed work via external API tools.
-            </p>
+            <p>Coordinator completed work via external API tools.</p>
             <p className="truncate">
               {externalToolUse.count} call
               {externalToolUse.count === 1 ? "" : "s"} ·{" "}

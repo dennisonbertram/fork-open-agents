@@ -163,8 +163,7 @@ export async function GET(req: Request, context: RouteContext) {
     workers: extractManagedRuntimeWorkersFromMessages(workerMessages),
     directToolUse:
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
-    externalToolUse:
-      summarizeExternalToolUseFromMessages(workerMessages),
+    externalToolUse: summarizeExternalToolUseFromMessages(workerMessages),
     services,
     browserRuns,
     workflowGoals,
