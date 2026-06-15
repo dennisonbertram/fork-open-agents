@@ -5,9 +5,7 @@ import {
   upsertRepositorySettings,
 } from "@/lib/db/repository-settings";
 import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
-import {
-  isManagedRuntimeProfileId,
-} from "@open-agents/sandbox/managed-runtime-profiles";
+import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import {
   repoSettingsPatchSchema,
   ALLOWED_VCPU_VALUES,
@@ -48,7 +46,10 @@ const ALL_NULL_SETTINGS = {
 
 // ── GET ────────────────────────────────────────────────────────────────────────
 
-export async function GET(_req: Request, context: RouteContext): Promise<Response> {
+export async function GET(
+  _req: Request,
+  context: RouteContext,
+): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -72,7 +73,10 @@ export async function GET(_req: Request, context: RouteContext): Promise<Respons
 
 // ── PATCH ──────────────────────────────────────────────────────────────────────
 
-export async function PATCH(req: Request, context: RouteContext): Promise<Response> {
+export async function PATCH(
+  req: Request,
+  context: RouteContext,
+): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -98,7 +102,10 @@ export async function PATCH(req: Request, context: RouteContext): Promise<Respon
   const parsedBody = repoSettingsPatchSchema.safeParse(body);
   if (!parsedBody.success) {
     return Response.json(
-      { error: "Invalid repository settings", details: parsedBody.error.issues },
+      {
+        error: "Invalid repository settings",
+        details: parsedBody.error.issues,
+      },
       { status: 400 },
     );
   }
@@ -124,7 +131,9 @@ export async function PATCH(req: Request, context: RouteContext): Promise<Respon
     !ALLOWED_VCPU_VALUES.has(patch.vcpus)
   ) {
     return Response.json(
-      { error: `Invalid vcpus — allowed values: ${[...ALLOWED_VCPU_VALUES].join(", ")}` },
+      {
+        error: `Invalid vcpus — allowed values: ${[...ALLOWED_VCPU_VALUES].join(", ")}`,
+      },
       { status: 400 },
     );
   }
@@ -150,7 +159,12 @@ export async function PATCH(req: Request, context: RouteContext): Promise<Respon
   }
 
   // Upsert settings (undefined fields are omitted = left unchanged)
-  await upsertRepositorySettings({ userId, repoOwner, repoName, settings: patch });
+  await upsertRepositorySettings({
+    userId,
+    repoOwner,
+    repoName,
+    settings: patch,
+  });
 
   // Return refreshed resolved + raw
   const [resolved, raw] = await Promise.all([
@@ -163,7 +177,10 @@ export async function PATCH(req: Request, context: RouteContext): Promise<Respon
 
 // ── DELETE — reset all overrides to inherit ───────────────────────────────────
 
-export async function DELETE(_req: Request, context: RouteContext): Promise<Response> {
+export async function DELETE(
+  _req: Request,
+  context: RouteContext,
+): Promise<Response> {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;

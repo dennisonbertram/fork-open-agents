@@ -16,13 +16,15 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
-import type { ResolvedRepoDefaults, RepoSettingsSlice } from "@/lib/repo-settings/resolve-repo-defaults";
+import type {
+  ResolvedRepoDefaults,
+  RepoSettingsSlice,
+} from "@/lib/repo-settings/resolve-repo-defaults";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/status";
 import {
   VCPU_OPTIONS,
   RUNTIME_MODE_OPTIONS,
-  buildPatchBody,
   type RepoEditState,
 } from "./repo-settings-form";
 
@@ -183,7 +185,8 @@ export function RepoSettingsSection({
   }
 
   // Effective values for rendering (resolved = what's active; raw = what's overridden)
-  const effectiveAutoCommitPush = state.autoCommitPush ?? resolved.autoCommitPush;
+  const effectiveAutoCommitPush =
+    state.autoCommitPush ?? resolved.autoCommitPush;
 
   return (
     <div className="space-y-6">
@@ -218,7 +221,7 @@ export function RepoSettingsSection({
               }}
               placeholder={
                 raw?.defaultBranch == null
-                  ? resolved.defaultBranch ?? "Repository default"
+                  ? (resolved.defaultBranch ?? "Repository default")
                   : undefined
               }
               disabled={isSaving}
@@ -227,7 +230,12 @@ export function RepoSettingsSection({
             {state.defaultBranch === null && <InheritedTag />}
             {state.defaultBranch !== null && (
               <ResetButton
-                onClick={() => void handleBooleanField("defaultBranch" as keyof RepoEditState, null)}
+                onClick={() =>
+                  void handleBooleanField(
+                    "defaultBranch" as keyof RepoEditState,
+                    null,
+                  )
+                }
                 disabled={isSaving}
               />
             )}
@@ -331,7 +339,10 @@ export function RepoSettingsSection({
               }}
               disabled={isSaving}
             >
-              <SelectTrigger id="repo-runtime-mode" className="h-8 w-44 text-sm">
+              <SelectTrigger
+                id="repo-runtime-mode"
+                className="h-8 w-44 text-sm"
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -364,7 +375,8 @@ export function RepoSettingsSection({
           <div className="flex items-center gap-1.5">
             <Select
               value={
-                state.managedRuntimeProfileId ?? resolved.managedRuntimeProfileId
+                state.managedRuntimeProfileId ??
+                resolved.managedRuntimeProfileId
               }
               onValueChange={(val) => {
                 setState((prev) => ({ ...prev, managedRuntimeProfileId: val }));
@@ -459,7 +471,9 @@ export function RepoSettingsSection({
               id="repo-auto-commit-push"
               checked={state.autoCommitPush ?? resolved.autoCommitPush}
               onCheckedChange={(checked) => {
-                const next = { autoCommitPush: checked } as Partial<RepoEditState>;
+                const next = {
+                  autoCommitPush: checked,
+                } as Partial<RepoEditState>;
                 // Enforce invariant: autoCreatePr cannot be true when autoCommitPush is false
                 if (!checked && (state.autoCreatePr ?? resolved.autoCreatePr)) {
                   next.autoCreatePr = false;
@@ -531,12 +545,12 @@ export function RepoSettingsSection({
               </span>
             )}
             {integrations.github.status !== "connected" && (
-              <a
+              <Link
                 href="/settings/connections"
                 className="text-xs text-primary underline-offset-2 hover:underline"
               >
                 Connect GitHub
-              </a>
+              </Link>
             )}
           </div>
         </SettingRow>
@@ -556,12 +570,12 @@ export function RepoSettingsSection({
               ) : null}
             </span>
           ) : (
-            <a
+            <Link
               href="/settings/connections"
               className="text-sm text-primary underline-offset-2 hover:underline"
             >
               Link Vercel project
-            </a>
+            </Link>
           )}
         </SettingRow>
 
@@ -594,7 +608,10 @@ export function RepoSettingsSection({
               value={confirmText}
               onChange={(e) => setConfirmText(e.currentTarget.value)}
               placeholder={confirmTarget}
-              className={cn("h-8 w-48 font-mono text-sm", "border-destructive/30")}
+              className={cn(
+                "h-8 w-48 font-mono text-sm",
+                "border-destructive/30",
+              )}
               aria-label={`Type ${confirmTarget} to confirm reset`}
               disabled={isResetting}
             />

@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  resolveRepoDefaults,
-} from "@/lib/repo-settings/resolve-repo-defaults";
+import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import { getRepositorySettings } from "@/lib/db/repository-settings";
 import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
 import { hasGitHubAccount } from "@/lib/github/users";

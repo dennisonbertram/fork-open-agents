@@ -60,10 +60,7 @@ export const RUNTIME_MODE_OPTIONS: Array<{
 export const repoSettingsPatchSchema = z.object({
   fullClone: z.boolean().nullable().optional(),
   prewarmEnabled: z.boolean().nullable().optional(),
-  runtimeMode: z
-    .enum(["classic", "managed_runtime"])
-    .nullable()
-    .optional(),
+  runtimeMode: z.enum(["classic", "managed_runtime"]).nullable().optional(),
   managedRuntimeProfileId: z.string().min(1).nullable().optional(),
   vcpus: z.number().int().positive().nullable().optional(),
   autoCommitPush: z.boolean().nullable().optional(),
@@ -102,7 +99,10 @@ export function buildPatchBody(
 /**
  * Returns true when any field in state differs from the corresponding field in base.
  */
-export function computeDirty(state: RepoEditState, base: RepoEditState): boolean {
+export function computeDirty(
+  state: RepoEditState,
+  base: RepoEditState,
+): boolean {
   const keys = Object.keys(state) as Array<keyof RepoEditState>;
   return keys.some((key) => state[key] !== base[key]);
 }
