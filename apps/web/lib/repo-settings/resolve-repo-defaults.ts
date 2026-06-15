@@ -20,9 +20,7 @@
 
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { getRepositorySettings } from "@/lib/db/repository-settings";
-import {
-  DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
-} from "@open-agents/sandbox/managed-runtime-profiles";
+import { DEFAULT_MANAGED_RUNTIME_PROFILE_ID } from "@open-agents/sandbox/managed-runtime-profiles";
 import { DEFAULT_SANDBOX_VCPUS } from "@/lib/sandbox/config";
 
 // ── Types ──────────────────────────────────────────────────────────────────────

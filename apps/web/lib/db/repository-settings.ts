@@ -3,10 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "./client";
-import {
-  repositorySettings,
-  type RepositorySettings,
-} from "./schema";
+import { repositorySettings, type RepositorySettings } from "./schema";
 
 // ── Normalization ──────────────────────────────────────────────────────────────
 
@@ -52,17 +49,14 @@ export async function getRepositorySettings(params: {
   repoOwner: string;
   repoName: string;
 }): Promise<RepositorySettings | undefined> {
-  return db.query.repository_settings.findFirst({
+  return db.query.repositorySettings.findFirst({
     where: and(
       eq(repositorySettings.userId, params.userId),
       eq(
         repositorySettings.repoOwner,
         normalizeRepositoryPart(params.repoOwner),
       ),
-      eq(
-        repositorySettings.repoName,
-        normalizeRepositoryPart(params.repoName),
-      ),
+      eq(repositorySettings.repoName, normalizeRepositoryPart(params.repoName)),
     ),
   });
 }

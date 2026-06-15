@@ -56,7 +56,7 @@ let upsertResult: FakeRow[] = [fakeReturnRow];
 mock.module("@/lib/db/client", () => ({
   db: {
     query: {
-      repository_settings: {
+      repositorySettings: {
         findFirst: async (_opts: unknown) => findFirstResult,
       },
     },
