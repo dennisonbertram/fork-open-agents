@@ -38,6 +38,12 @@ export type ManagedRuntimeDirectToolUse = {
   warning: string | null;
 };
 
+export type ExternalToolUse = {
+  observed: boolean;
+  count: number;
+  toolNames: string[];
+};
+
 const DIRECT_COORDINATOR_REPO_TOOLS = new Map<string, string>([
   ["tool-read", "Read"],
   ["tool-write", "Write"],
@@ -156,6 +162,66 @@ function buildDirectToolUseSummary(params: {
     toolLabels,
     warning,
   };
+}
+
+export function summarizeExternalToolUse(
+  parts: unknown,
+): ExternalToolUse {
+  const toolNames: string[] = [];
+  const seenToolNames = new Set<string>();
+  let count = 0;
+
+  for (const part of getMessageParts(parts)) {
+    if (!isRecord(part) || part.type !== "dynamic-tool") {
+      continue;
+    }
+
+    // Only count successful tool calls. Failed or denied calls do not
+    // contribute to proof completion — they represent errors, not valid
+    // external-tool work.
+    if (
+      part.state === "output-error" ||
+      part.state === "output-denied"
+    ) {
+      continue;
+    }
+
+    if (part.state !== "output-available") {
+      continue;
+    }
+
+    count += 1;
+    const toolName = getString(part.toolName) ?? "unknown";
+    if (!seenToolNames.has(toolName)) {
+      seenToolNames.add(toolName);
+      toolNames.push(toolName);
+    }
+  }
+
+  return { observed: count > 0, count, toolNames };
+}
+
+export function summarizeExternalToolUseFromMessages(
+  messages: ManagedRuntimeWorkerMessageLike[],
+): ExternalToolUse {
+  const toolNames: string[] = [];
+  const seenToolNames = new Set<string>();
+  let count = 0;
+
+  for (const message of messages) {
+    const summary = summarizeExternalToolUse(message.parts);
+    count += summary.count;
+    for (const toolName of summary.toolNames) {
+      if (seenToolNames.has(toolName)) {
+        continue;
+      }
+
+      seenToolNames.add(toolName);
+      toolNames.push(toolName);
+    }
+  }
+
+  return { observed: count > 0, count, toolNames };
 }
 
 export function extractManagedRuntimeWorkersFromParts(

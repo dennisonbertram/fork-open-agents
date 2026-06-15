@@ -109,6 +109,12 @@ export type ManagedRuntimeDirectToolUseJson = {
   warning: string | null;
 };
 
+export type ExternalToolUseJson = {
+  observed: boolean;
+  count: number;
+  toolNames: string[];
+};
+
 export type RuntimeServiceJson = {
   id: string;
   kind: string;
@@ -160,6 +166,7 @@ export type SessionObservabilityResponse = {
   workflowRuns: WorkflowRunJson[];
   workers: ManagedRuntimeWorkerJson[];
   directToolUse: ManagedRuntimeDirectToolUseJson;
+  externalToolUse: ExternalToolUseJson;
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
   workflowGoals: WorkflowGoalJson[];
