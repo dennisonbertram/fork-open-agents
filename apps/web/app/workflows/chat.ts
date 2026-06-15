@@ -2360,7 +2360,7 @@ const runAgentStep = async (
           },
         });
       }
-      // Benign off cases (not_enabled, no_repo, non_classic_runtime) emit nothing
+      // Benign off cases (not_enabled, no_repo) emit nothing
     } catch (error) {
       // Non-fatal: emit observability event and continue without GitHub tools
       // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.

@@ -69,8 +69,7 @@ async function assertNotPullRequest(
 export type GitHubToolsOffReason =
   | "not_enabled"
   | "no_repo"
-  | "access_denied"
-  | "non_classic_runtime";
+  | "access_denied";
 
 export type ResolvedGitHubTools =
   | {
@@ -565,32 +564,20 @@ Prefer this over \`gh\`/\`curl\`/the raw API for closing issues — it runs as t
  * Resolves GitHub tools for a chat step. Mirrors resolveComposioToolsForChat.
  *
  * Returns { status: "off", reason } when:
- *  - runtimeMode is non-classic (managed_runtime — tools are dropped by agent allowlist)
  *  - No repo is bound to the session
  *  - The githubToolsEnabled gate is off on the agent row
  *  - Repo access is denied (user or app permission issue)
  *
- * The reason field distinguishes benign cases (not_enabled, no_repo,
- * non_classic_runtime) from misconfiguration (access_denied) for observability.
+ * The reason field distinguishes benign cases (not_enabled, no_repo) from
+ * misconfiguration (access_denied) for observability.
  *
  * Throws GitHubToolsSetupError on unexpected failures.
- *
- * NOTE: classic runtime mode only. In managed_runtime mode, the agent-package
- * tool allowlist (packages/agent/open-agent.ts) drops injected tools anyway.
- * PR1 scope: githubToolsEnabled can only be set true via direct DB write; the
- * settings UI writer that lets users enable this gate lands in PR2.
  */
 export async function resolveGitHubToolsForChat(params: {
   userId: string;
   chatId: string;
   runtimeMode?: "classic" | "managed_runtime";
 }): Promise<ResolvedGitHubTools> {
-  // GitHub tools are classic-mode only — managed_runtime drops injected tools
-  // at the agent-package layer, so skip the session/access/mint round-trip.
-  if (params.runtimeMode && params.runtimeMode !== "classic") {
-    return { status: "off", reason: "non_classic_runtime" };
-  }
-
   const chat = await getChatById(params.chatId);
   if (!chat) {
     throw new GitHubToolsSetupError("Chat not found for GitHub tool setup.");
