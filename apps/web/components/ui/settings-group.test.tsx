@@ -101,3 +101,65 @@ describe("SettingRow", () => {
     expect(html).not.toContain('data-slot="setting-row-control"');
   });
 });
+
+describe("Regression", () => {
+  test("REG-001: SettingsGroup data-slot attributes are present for CSS selectors", () => {
+    // If these slots are removed, downstream CSS targeting data-slot will silently break
+    const html = renderToStaticMarkup(
+      <SettingsGroup title="Models" description="Default model settings.">
+        <SettingRow label="Chat model">
+          <button type="button">Pick</button>
+        </SettingRow>
+      </SettingsGroup>,
+    );
+    expect(html).toContain('data-slot="settings-group"');
+    expect(html).toContain('data-slot="settings-group-header"');
+    expect(html).toContain('data-slot="settings-group-rows"');
+    expect(html).toContain('data-slot="setting-row"');
+    expect(html).toContain('data-slot="setting-row-control"');
+  });
+
+  test("REG-002: SettingRow without htmlFor uses span not label element", () => {
+    // If someone changes the conditional to always emit a <label>, the for= attribute
+    // mismatch silently degrades a11y for rows without a paired control id.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Info only" />,
+    );
+    // No label element (which would have for= attribute) should be present
+    expect(html).not.toContain("<label");
+    // But the label text must still appear in a span
+    expect(html).toContain("Info only");
+  });
+
+  test("REG-003: default tone=default does not emit destructive classes", () => {
+    // Catches accidental regression where danger styling leaks into default groups
+    const html = renderToStaticMarkup(
+      <SettingsGroup title="Normal section" />,
+    );
+    expect(html).not.toContain("border-destructive/30");
+    expect(html).not.toContain("text-destructive");
+  });
+
+  test("REG-004: SettingsGroup passes extra className through to root element", () => {
+    // Ensures spread props work correctly for customization
+    const html = renderToStaticMarkup(
+      <SettingsGroup title="Custom" className="my-custom-class" />,
+    );
+    expect(html).toContain("my-custom-class");
+  });
+
+  test("REG-005: SettingsGroup children appear inside the rows div, not the header", () => {
+    // Catches structural regressions where children land in the wrong slot
+    const html = renderToStaticMarkup(
+      <SettingsGroup title="Group">
+        <div id="my-row-child">ROW_CONTENT</div>
+      </SettingsGroup>,
+    );
+    // Verify rows div contains the child
+    const rowsMatch = html.match(/data-slot="settings-group-rows"[^>]*>([\s\S]*?)<\/div>/);
+    expect(rowsMatch).toBeTruthy();
+    if (rowsMatch) {
+      expect(rowsMatch[1]).toContain("ROW_CONTENT");
+    }
+  });
+});
