@@ -2310,7 +2310,6 @@ const runAgentStep = async (
       const githubResult = await resolveGitHubToolsForChat({
         userId,
         chatId,
-        runtimeMode: agentOptions.runtimeMode ?? "classic",
       });
       if (githubResult.status === "ready") {
         githubTools = githubResult.tools;

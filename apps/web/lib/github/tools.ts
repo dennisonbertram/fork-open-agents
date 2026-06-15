@@ -66,10 +66,7 @@ async function assertNotPullRequest(
  * Reason values for the "off" variant — lets callers distinguish benign cases
  * (not_enabled, no_repo) from misconfiguration (access_denied) for observability.
  */
-export type GitHubToolsOffReason =
-  | "not_enabled"
-  | "no_repo"
-  | "access_denied";
+export type GitHubToolsOffReason = "not_enabled" | "no_repo" | "access_denied";
 
 export type ResolvedGitHubTools =
   | {
@@ -576,7 +573,6 @@ Prefer this over \`gh\`/\`curl\`/the raw API for closing issues — it runs as t
 export async function resolveGitHubToolsForChat(params: {
   userId: string;
   chatId: string;
-  runtimeMode?: "classic" | "managed_runtime";
 }): Promise<ResolvedGitHubTools> {
   const chat = await getChatById(params.chatId);
   if (!chat) {
