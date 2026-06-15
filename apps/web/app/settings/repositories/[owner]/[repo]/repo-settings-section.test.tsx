@@ -228,9 +228,9 @@ describe("RepoSettingsSection render", () => {
       // direct "underline" class (not prefixed by hover: or focus:)
       /(?:^|\s|")underline(?:\s|")/.test(linkChunk) ||
       // or it is rendered as a Button-style element with variant that implies underline
-      linkChunk.includes("underline-offset") &&
+      (linkChunk.includes("underline-offset") &&
         !linkChunk.includes("hover:underline") &&
-        linkChunk.includes("underline");
+        linkChunk.includes("underline"));
     expect(hasRestingUnderline).toBe(true);
   });
 
@@ -243,6 +243,50 @@ describe("RepoSettingsSection render", () => {
 });
 
 describe("Regression", () => {
+  test("REG-SECT-004: all integration links have a resting underline (not just hover:underline)", async () => {
+    const { RepoSettingsSection } = await sectionModule;
+
+    // Vercel not-linked renders the "Link Vercel project" anchor
+    const htmlNoVercel = renderToStaticMarkup(
+      <RepoSettingsSection {...makeProps({ vercelLinked: false })} />,
+    );
+    // GitHub not-connected renders the "Connect GitHub" anchor
+    const htmlNoGitHub = renderToStaticMarkup(
+      <RepoSettingsSection
+        {...makeProps({ githubStatus: "not_connected", vercelLinked: true })}
+      />,
+    );
+    // Composio "Manage tools" is always present
+    const htmlBase = renderToStaticMarkup(
+      <RepoSettingsSection {...makeProps()} />,
+    );
+
+    function extractLinkClasses(html: string, href: string): string {
+      // Grab up to 300 chars around the href to capture the opening <a> tag
+      const idx = html.indexOf(href);
+      if (idx === -1) return "";
+      return html.slice(Math.max(0, idx - 250), idx + href.length + 10);
+    }
+
+    const composioChunk = extractLinkClasses(htmlBase, "/settings/composio");
+    const vercelChunk = extractLinkClasses(
+      htmlNoVercel,
+      "/settings/connections",
+    );
+    const githubChunk = extractLinkClasses(
+      htmlNoGitHub,
+      "/settings/connections",
+    );
+
+    // Each chunk must contain bare "underline" (not just "hover:underline")
+    const hasRestingUnderline = (chunk: string) =>
+      /(?:^|\s|")underline(?:\s|")/.test(chunk);
+
+    expect(hasRestingUnderline(composioChunk)).toBe(true);
+    expect(hasRestingUnderline(vercelChunk)).toBe(true);
+    expect(hasRestingUnderline(githubChunk)).toBe(true);
+  });
+
   test("REG-SECT-001: section renders without crashing with minimal props", async () => {
     const { RepoSettingsSection } = await sectionModule;
     expect(() =>
