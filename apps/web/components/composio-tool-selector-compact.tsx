@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings } from "lucide-react";
+import { Github, Settings } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
@@ -12,7 +12,6 @@ import {
   ToolIconStack,
   buildToolIconItems,
 } from "@/components/tool-icon-stack";
-import { Github } from "lucide-react";
 import {
   Popover,
   PopoverContent,
