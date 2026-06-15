@@ -269,3 +269,64 @@ describe("Finding 2 — Width + responsive: controlClassName prop", () => {
 });
 
 // Finding 3 — Skeleton tests live in apps/web/app/settings/preferences-section-skeleton.test.tsx
+
+describe("Regression — review findings", () => {
+  test("REG-A11Y-001: SettingRow without description never emits an id on the p element", () => {
+    // If description is absent, no id attribute should appear on any <p> — prevents
+    // stray ids cluttering the DOM when aria-describedby is irrelevant.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Toggle">
+        <button type="button">Click</button>
+      </SettingRow>,
+    );
+    // No <p> should be present at all when description is absent
+    expect(html).not.toContain("<p");
+  });
+
+  test("REG-A11Y-002: aria-describedby is NOT injected when description is absent", () => {
+    // Catches a regression where aria-describedby is injected even without a description.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Toggle">
+        <button type="button">Click</button>
+      </SettingRow>,
+    );
+    expect(html).not.toContain("aria-describedby");
+  });
+
+  test("REG-A11Y-003: SettingRow with description but no children renders description without crashing", () => {
+    // No children edge case — description must still render, no aria injection attempted.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Info" description="Some helpful context." />,
+    );
+    expect(html).toContain("Some helpful context.");
+    // No aria-describedby should appear since there is no control child
+    expect(html).not.toContain("aria-describedby");
+  });
+
+  test("REG-CTRL-001: SettingRow without controlClassName retains shrink-0 on the control wrapper", () => {
+    // Toggle/switch rows that don't pass controlClassName must still have shrink-0
+    // to prevent the control from stretching on sm+ breakpoints.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Enable feature">
+        <button type="button" role="switch">Toggle</button>
+      </SettingRow>,
+    );
+    const controlMatch = html.match(
+      /data-slot="setting-row-control"[^>]*class="([^"]+)"/,
+    );
+    expect(controlMatch).not.toBeNull();
+    expect(controlMatch![1]).toContain("shrink-0");
+  });
+
+  test("REG-CTRL-002: responsive classes are present even when extra className is passed via className prop", () => {
+    // Catches a regression where cn() might override the default responsive classes.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" className="my-extra-class">
+        <button type="button">Save</button>
+      </SettingRow>,
+    );
+    expect(html).toContain("flex-col");
+    expect(html).toContain("sm:flex-row");
+    expect(html).toContain("my-extra-class");
+  });
+});

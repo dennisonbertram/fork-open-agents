@@ -64,4 +64,35 @@ describe("Finding 3 — Skeleton: Appearance block mirrors new single-card struc
     expect(html).toContain("sm:grid-cols-2"); // Defaults section still has this
     expect(html).toContain("space-y-3"); // Git automation section still has this
   });
+
+  test("REG-SKEL-002: Appearance card retains its border and rounded corners on future refactors", () => {
+    // If someone removes the SettingsGroup wrapper and falls back to a plain div,
+    // this test catches the regression by asserting the card classes are in the
+    // Appearance region (before the first divider).
+    const html = renderToStaticMarkup(<PreferencesSectionSkeleton />);
+    const firstDividerIdx = html.indexOf("border-t");
+    const appearanceRegion = html.slice(0, firstDividerIdx);
+    // SettingsGroup card emits these classes on the section element
+    expect(appearanceRegion).toContain("rounded-xl");
+    expect(appearanceRegion).toContain("overflow-hidden");
+  });
+
+  test("REG-SKEL-003: Appearance skeleton row has both a label-height and a control-height skeleton", () => {
+    // After fix, the Appearance skeleton row contains two Skeleton elements:
+    // one for the label (~h-4) and one for the control (~h-9).
+    // Catching a future simplification that drops one of them and causes a shift.
+    const html = renderToStaticMarkup(<PreferencesSectionSkeleton />);
+    const firstDividerIdx = html.indexOf("border-t");
+    const appearanceRegion = html.slice(0, firstDividerIdx);
+    // Count Skeleton (data-slot="skeleton") elements in the Appearance card rows area
+    const rowsStart = appearanceRegion.indexOf(
+      'data-slot="settings-group-rows"',
+    );
+    expect(rowsStart).toBeGreaterThan(-1);
+    const rowsRegion = appearanceRegion.slice(rowsStart);
+    const skeletonCount = (rowsRegion.match(/data-slot="skeleton"/g) ?? [])
+      .length;
+    // Expect at least 2 skeletons: label line + control
+    expect(skeletonCount).toBeGreaterThanOrEqual(2);
+  });
 });
