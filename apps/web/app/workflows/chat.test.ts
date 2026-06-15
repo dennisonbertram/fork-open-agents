@@ -1161,6 +1161,68 @@ describe("runAgentWorkflow", () => {
     });
   });
 
+  test("regression(issue-416): does not mark proof completed when worker failed but external tools completed", async () => {
+    // Regression for the bug where failed > 0 AND completed === 0 AND
+    // externalToolsCompleted > 0 would incorrectly return 'completed'.
+    // The outer if fires because failed > 0; the inner guard must also check
+    // failed === 0 so external tools cannot mask a failed managed worker.
+    agentAssistantParts = [
+      { type: "text", text: "Done." },
+      // A managed worker that failed
+      {
+        ...managedWorkerTaskPart(),
+        state: "output-error",
+      },
+      // Two successful external (Composio/dynamic) tool calls
+      {
+        type: "dynamic-tool",
+        state: "output-available",
+        toolName: "github_create_file",
+      },
+      {
+        type: "dynamic-tool",
+        state: "output-available",
+        toolName: "github_push_files",
+      },
+    ];
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofPart = writtenChunks.find(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    // External tools must NOT elevate proof to 'completed' when a managed
+    // worker was attempted and failed (failed=1, completed=0).
+    expect(proofPart).toMatchObject({
+      type: "data-runtime-proof",
+      data: {
+        status: "incomplete",
+        workerEvidence: {
+          failed: 1,
+          completed: 0,
+        },
+      },
+    });
+  });
+
   test("streams transient workspace setup status from runtime prep", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(async (params) => {
       writtenChunks.push({ type: "start", messageId: params.assistantId });

@@ -1083,10 +1083,13 @@ function getRuntimeProofStatus(params: {
     params.workerEvidence.failed > 0 ||
     params.coordinatorDirectToolUseObserved
   ) {
-    // External tools can satisfy proof when no worker completed AND no
-    // direct tool use was observed at the coordinator level
+    // External tools can satisfy proof when no worker was ever attempted
+    // (completed === 0 AND failed === 0) AND no direct tool use was observed
+    // at the coordinator level. Failed workers mean the managed runtime was
+    // attempted but errored; external tools cannot mask that failure.
     if (
       params.workerEvidence.completed === 0 &&
+      params.workerEvidence.failed === 0 &&
       externalToolsValid &&
       !params.coordinatorDirectToolUseObserved
     ) {
