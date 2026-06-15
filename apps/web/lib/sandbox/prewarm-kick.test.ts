@@ -134,8 +134,77 @@ describe("kickSandboxPrewarmWorkflow", () => {
       expect(spies.start).toHaveBeenCalledTimes(1);
       // Inline fallback runs prewarmSessionSandbox
       expect(spies.prewarmSessionSandbox).toHaveBeenCalledTimes(1);
-      const fallbackCall = spies.prewarmSessionSandbox.mock.calls[0] as [{ sessionId: string; userId: string }];
+      const fallbackCall = spies.prewarmSessionSandbox.mock.calls[0] as unknown as [{ sessionId: string; userId: string }];
       expect(fallbackCall[0]).toMatchObject({ sessionId: "session-1", userId: "user-1" });
+    });
+  });
+
+  // ── Regression tests ───────────────────────────────────────────────────────
+
+  describe("REG-K001: runId format — must start with prewarm: prefix for traceability", () => {
+    test("the runId passed to start() starts with prewarm:", async () => {
+      const { kickSandboxPrewarmWorkflow } = await kickModulePromise;
+
+      const scheduledCallbacks: Array<() => Promise<void>> = [];
+      kickSandboxPrewarmWorkflow({
+        sessionId: "session-1",
+        userId: "user-1",
+        scheduleBackgroundWork: (cb) => scheduledCallbacks.push(cb),
+      });
+
+      await scheduledCallbacks[0]?.();
+
+      const startCalls = spies.start.mock.calls as unknown as Array<[unknown, [string, string, string]]>;
+      const runId = startCalls[0]?.[1]?.[2] ?? "";
+      expect(runId).toMatch(/^prewarm:\d+:/);
+    });
+  });
+
+  describe("REG-K002: workflow is invoked with correct argument order [sessionId, userId, runId]", () => {
+    test("start arguments are in the correct order to match sandboxPrewarmWorkflow signature", async () => {
+      const { kickSandboxPrewarmWorkflow } = await kickModulePromise;
+
+      const scheduledCallbacks: Array<() => Promise<void>> = [];
+      kickSandboxPrewarmWorkflow({
+        sessionId: "my-session",
+        userId: "my-user",
+        scheduleBackgroundWork: (cb) => scheduledCallbacks.push(cb),
+      });
+
+      await scheduledCallbacks[0]?.();
+
+      const startCalls = spies.start.mock.calls as unknown as Array<[unknown, [string, string, string]]>;
+      const args = startCalls[0]?.[1];
+      expect(args?.[0]).toBe("my-session"); // sessionId first
+      expect(args?.[1]).toBe("my-user");    // userId second
+      // runId third — just validate it's a string
+      expect(typeof args?.[2]).toBe("string");
+    });
+  });
+
+  describe("REG-K003: clearSessionPrewarmRunId is called on start() failure", () => {
+    test("clearSessionPrewarmRunId is called with the correct runId before the inline fallback", async () => {
+      spies.start.mockImplementationOnce(async () => {
+        throw new Error("start failed");
+      });
+
+      const { kickSandboxPrewarmWorkflow } = await kickModulePromise;
+
+      const scheduledCallbacks: Array<() => Promise<void>> = [];
+      kickSandboxPrewarmWorkflow({
+        sessionId: "session-1",
+        userId: "user-1",
+        scheduleBackgroundWork: (cb) => scheduledCallbacks.push(cb),
+      });
+
+      await scheduledCallbacks[0]?.();
+
+      // clearSessionPrewarmRunId must have been called
+      expect(spies.clearSessionPrewarmRunId).toHaveBeenCalledTimes(1);
+      const clearCall = spies.clearSessionPrewarmRunId.mock.calls[0] as [string, string];
+      expect(clearCall[0]).toBe("session-1");
+      // The runId should match the pattern
+      expect(clearCall[1]).toMatch(/^prewarm:/);
     });
   });
 });
