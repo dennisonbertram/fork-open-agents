@@ -936,6 +936,11 @@ describe("runAgentWorkflow", () => {
             toolLabels: [],
             warning: null,
           },
+          externalToolUse: {
+            observed: false,
+            count: 0,
+            toolNames: [],
+          },
           evidence: [
             "Managed runtime was selected for this workflow.",
             "Workflow, sandbox, and profile run attribution were recorded.",
