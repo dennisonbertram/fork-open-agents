@@ -164,3 +164,108 @@ describe("Regression", () => {
     expect(rowsRegion).toContain("ROW_CONTENT");
   });
 });
+
+describe("Finding 1 — A11y: aria-describedby association", () => {
+  test("BT-A11Y-001: description <p> gets an id when description prop is provided", () => {
+    // The description <p> must have an id so aria-describedby can reference it.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" description="Saved in this browser only.">
+        <button type="button" id="ctrl">Save</button>
+      </SettingRow>,
+    );
+    // The description paragraph must have an id attribute
+    const pMatch = html.match(/<p[^>]*id="([^"]+)"[^>]*>/);
+    expect(pMatch).not.toBeNull();
+  });
+
+  test("BT-A11Y-002: single-child control gets aria-describedby matching description id", () => {
+    // The sole child element must receive aria-describedby equal to the description <p> id.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" description="Saved in this browser only.">
+        <button type="button" id="ctrl">Save</button>
+      </SettingRow>,
+    );
+    // Extract the description paragraph id
+    const pMatch = html.match(/<p[^>]*id="([^"]+)"[^>]*>/);
+    expect(pMatch).not.toBeNull();
+    const descId = pMatch![1];
+    // The control must carry a matching aria-describedby
+    expect(html).toContain(`aria-describedby="${descId}"`);
+  });
+
+  test("BT-A11Y-003: existing aria-describedby on child is preserved (merged) not dropped", () => {
+    // If the child already has aria-describedby="existing-id", it must remain in the output.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" description="Saved in this browser only.">
+        <button type="button" id="ctrl" aria-describedby="existing-id">Save</button>
+      </SettingRow>,
+    );
+    expect(html).toContain("existing-id");
+    // The description id should also be present (merged, not replaced)
+    const pMatch = html.match(/<p[^>]*id="([^"]+)"[^>]*>/);
+    expect(pMatch).not.toBeNull();
+    const descId = pMatch![1];
+    expect(html).toContain(descId);
+  });
+
+  test("BT-A11Y-004: no crash and description still rendered when children is not a single element", () => {
+    // If children is a fragment or multiple elements, we must not crash; description renders normally.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" description="Saved in this browser only.">
+        <button type="button">A</button>
+        <button type="button">B</button>
+      </SettingRow>,
+    );
+    expect(html).toContain("Saved in this browser only.");
+  });
+});
+
+describe("Finding 2 — Width + responsive: controlClassName prop", () => {
+  test("BT-CTRL-001: controlClassName is applied to the control wrapper div class attribute", () => {
+    // The control slot div must carry the className passed via controlClassName.
+    // We verify this by checking the data-slot="setting-row-control" div's class attribute.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" controlClassName="w-full sm:max-w-xs">
+        <button type="button">Save</button>
+      </SettingRow>,
+    );
+    // Extract the setting-row-control div's class attribute
+    const controlMatch = html.match(
+      /data-slot="setting-row-control"[^>]*class="([^"]+)"/,
+    );
+    expect(controlMatch).not.toBeNull();
+    expect(controlMatch![1]).toContain("w-full");
+    expect(controlMatch![1]).toContain("sm:max-w-xs");
+  });
+
+  test("BT-CTRL-002: SettingRow root uses responsive flex layout (flex-col + sm:flex-row)", () => {
+    // The row must switch from column-stacked on mobile to side-by-side on sm+.
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme">
+        <button type="button">Save</button>
+      </SettingRow>,
+    );
+    // Must contain the responsive flex classes
+    expect(html).toContain("flex-col");
+    expect(html).toContain("sm:flex-row");
+  });
+
+  test("BT-CTRL-003: control wrapper class attribute contains controlClassName classes (not a stray DOM attr)", () => {
+    // This confirms controlClassName is applied as className (not a raw DOM attribute like controlclassname).
+    const html = renderToStaticMarkup(
+      <SettingRow label="Theme" controlClassName="SENTINEL_CLASS_XYZ">
+        <button type="button">Save</button>
+      </SettingRow>,
+    );
+    // SENTINEL_CLASS_XYZ must appear inside the class attribute of the control wrapper
+    const controlMatch = html.match(
+      /data-slot="setting-row-control"[^>]*class="([^"]+)"/,
+    );
+    expect(controlMatch).not.toBeNull();
+    expect(controlMatch![1]).toContain("SENTINEL_CLASS_XYZ");
+    // Must NOT appear as a raw DOM attribute name
+    expect(html).not.toContain('controlclassname=');
+  });
+});
+
+// Finding 3 — Skeleton tests live in apps/web/app/settings/preferences-section-skeleton.test.tsx
