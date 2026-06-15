@@ -41,6 +41,7 @@ interface SessionStarterProps {
     branch?: string;
     cloneUrl?: string;
     isNewBranch: boolean;
+    fullClone: boolean;
     sandboxType: SandboxType;
     autoCommitPush: boolean;
     autoCreatePr: boolean;
@@ -82,6 +83,7 @@ export function SessionStarter({
   const [autoCommitPush, setAutoCommitPush] = useState<boolean | null>(null);
   const [autoCreatePr, setAutoCreatePr] = useState<boolean | null>(null);
   const [gitSettingsExpanded, setGitSettingsExpanded] = useState(false);
+  const [fullClone, setFullClone] = useState(false);
   const sandboxType = preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE;
   const sandboxName =
     SANDBOX_OPTIONS.find((s) => s.id === sandboxType)?.name ?? sandboxType;
@@ -223,6 +225,7 @@ export function SessionStarter({
           ? `https://github.com/${selectedOwner}/${selectedRepo}`
           : undefined,
       isNewBranch: mode === "repo" ? isNewBranch : false,
+      fullClone: mode === "repo" ? fullClone : false,
       sandboxType,
       autoCommitPush: effectiveAutoCommitPush,
       autoCreatePr: effectiveAutoCommitPush ? effectiveAutoCreatePr : false,
@@ -381,6 +384,22 @@ export function SessionStarter({
                   />
                 </div>
               )}
+            </div>
+            <div className="border-t border-border/50 dark:border-white/[0.06]">
+              <div className="flex items-center justify-between gap-4 px-3 py-2">
+                <div className="space-y-0.5">
+                  <p className="text-sm font-medium">Full clone</p>
+                  <p className="text-xs text-muted-foreground">
+                    Include full git history (slower start). Off uses a fast
+                    shallow clone.
+                  </p>
+                </div>
+                <Switch
+                  checked={fullClone}
+                  onCheckedChange={setFullClone}
+                  disabled={controlsDisabled}
+                />
+              </div>
             </div>
           </div>
         )}

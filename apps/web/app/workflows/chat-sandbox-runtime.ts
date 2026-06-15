@@ -775,6 +775,8 @@ export async function resolveChatSandboxRuntime(params: {
         persistent: true,
         resume: true,
         createIfMissing: true,
+        // Default shallow clone; opt into full git history per session.
+        ...(session.fullClone ? { cloneDepth: 0 } : {}),
       },
     });
   } finally {

@@ -283,6 +283,9 @@ export const sessions = pgTable(
     vercelTeamSlug: text("vercel_team_slug"),
     // Whether this session uses a new auto-generated branch
     isNewBranch: boolean("is_new_branch").default(false).notNull(),
+    // When true, clone the full git history into the sandbox instead of a
+    // shallow (depth 1) clone. Default shallow for fast cold starts.
+    fullClone: boolean("full_clone").default(false).notNull(),
     // Optional per-session override for auto commit + push behavior.
     // null means "use the user's default preference".
     autoCommitPushOverride: boolean("auto_commit_push_override"),
