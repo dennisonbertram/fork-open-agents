@@ -35,6 +35,12 @@ export interface AgentContext {
    * Absent or null = synthetic fallback (today's behavior unchanged).
    */
   subagentRoster?: SubagentRoster;
+  /**
+   * True when authenticated GitHub tools (native `github_*` or Composio
+   * `GITHUB_*`) are in this step's toolset. The web_fetch tool uses it to block
+   * unauthenticated calls to GitHub hosts and steer the model to those tools.
+   */
+  githubToolAvailable?: boolean;
 }
 
 export interface SandboxExecutionContext {
