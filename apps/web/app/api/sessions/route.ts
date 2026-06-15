@@ -7,6 +7,7 @@ import {
   getSessionsWithUnreadByUserId,
   getUsedSessionTitles,
 } from "@/lib/db/sessions";
+import { kickSandboxPrewarmWorkflow } from "@/lib/sandbox/prewarm-kick";
 import {
   getVercelProjectLinkByRepo,
   upsertVercelProjectLink,
@@ -412,6 +413,13 @@ export async function POST(req: Request) {
         },
       },
     });
+
+    if (hasRepo) {
+      kickSandboxPrewarmWorkflow({
+        sessionId: result.session.id,
+        userId: session.user.id,
+      });
+    }
 
     return Response.json(result);
   } catch (error) {

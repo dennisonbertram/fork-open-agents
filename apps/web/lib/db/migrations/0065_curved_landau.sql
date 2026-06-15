@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "sandbox_prewarm_run_id" text;

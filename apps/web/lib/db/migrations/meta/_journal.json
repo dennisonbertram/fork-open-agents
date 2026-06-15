@@ -456,6 +456,13 @@
       "when": 1781548580016,
       "tag": "0064_medical_mentor",
       "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1781551212950,
+      "tag": "0065_curved_landau",
+      "breakpoints": true
     }
   ]
 }

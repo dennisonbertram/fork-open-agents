@@ -123,7 +123,7 @@ function buildSandboxSource(session: SessionRecord): SandboxState["source"] {
   };
 }
 
-function buildSandboxState(session: SessionRecord): SandboxState {
+export function buildSandboxState(session: SessionRecord): SandboxState {
   const existingState = session.sandboxState;
   const sandboxName =
     getResumableSandboxName(existingState) ?? getSessionSandboxName(session.id);
@@ -137,7 +137,7 @@ function buildSandboxState(session: SessionRecord): SandboxState {
   };
 }
 
-async function getGitUser(userId: string) {
+export async function getGitUser(userId: string) {
   const profile = await getGitHubUserProfile(userId);
   const githubNoreplyEmail =
     profile?.externalUserId && profile.username
@@ -150,7 +150,7 @@ async function getGitUser(userId: string) {
   };
 }
 
-async function installSessionGlobalSkills(params: {
+export async function installSessionGlobalSkills(params: {
   session: SessionRecord;
   sandbox: Sandbox;
   didSetupWorkspace: boolean;
@@ -177,7 +177,7 @@ async function installSessionGlobalSkills(params: {
   }
 }
 
-async function loadSessionSkills(params: {
+export async function loadSessionSkills(params: {
   sessionId: string;
   sandboxState: SandboxState;
   sandbox: Sandbox;

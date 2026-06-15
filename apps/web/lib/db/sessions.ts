@@ -333,6 +333,44 @@ export async function claimSessionLifecycleRunId(
   return Boolean(updated);
 }
 
+/**
+ * Atomically claims the session sandbox pre-warm lease when no run is currently
+ * recorded. Returns true when the claim succeeds.
+ */
+export async function claimSessionPrewarmRunId(
+  sessionId: string,
+  runId: string,
+) {
+  const [updated] = await db
+    .update(sessions)
+    .set({ sandboxPrewarmRunId: runId, updatedAt: new Date() })
+    .where(
+      and(eq(sessions.id, sessionId), isNull(sessions.sandboxPrewarmRunId)),
+    )
+    .returning({ id: sessions.id });
+
+  return Boolean(updated);
+}
+
+/**
+ * Clears the sandbox pre-warm run ID only if it currently equals runId.
+ * Used to release the lease after the workflow completes or fails.
+ */
+export async function clearSessionPrewarmRunId(
+  sessionId: string,
+  runId: string,
+) {
+  await db
+    .update(sessions)
+    .set({ sandboxPrewarmRunId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(sessions.id, sessionId),
+        eq(sessions.sandboxPrewarmRunId, runId),
+      ),
+    );
+}
+
 export async function deleteSession(sessionId: string) {
   await db.delete(sessions).where(eq(sessions.id, sessionId));
 }
