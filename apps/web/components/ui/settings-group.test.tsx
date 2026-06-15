@@ -26,11 +26,13 @@ describe("SettingsGroup", () => {
     );
     // The header should not contain a <p> tag when description is absent
     expect(html).not.toContain("How Open Agents looks");
-    // Validate no stray description paragraph appears
-    const headerMatch = html.match(/data-slot="settings-group-header"[^>]*>(.*)/s);
-    if (headerMatch) {
-      // description <p> should not be present in the header area
-      expect(headerMatch[1]).not.toContain("<p");
+    // Validate no stray description paragraph appears in the header slot
+    // (Use indexOf instead of regex s-flag for ES2015 compat)
+    const headerStart = html.indexOf('data-slot="settings-group-header"');
+    const headerEnd = html.indexOf('data-slot="settings-group-rows"');
+    if (headerStart !== -1 && headerEnd !== -1) {
+      const headerRegion = html.slice(headerStart, headerEnd);
+      expect(headerRegion).not.toContain("<p");
     }
   });
 
@@ -155,11 +157,10 @@ describe("Regression", () => {
         <div id="my-row-child">ROW_CONTENT</div>
       </SettingsGroup>,
     );
-    // Verify rows div contains the child
-    const rowsMatch = html.match(/data-slot="settings-group-rows"[^>]*>([\s\S]*?)<\/div>/);
-    expect(rowsMatch).toBeTruthy();
-    if (rowsMatch) {
-      expect(rowsMatch[1]).toContain("ROW_CONTENT");
-    }
+    // Verify rows div contains the child (no s-flag for ES2015 compat)
+    const rowsStart = html.indexOf('data-slot="settings-group-rows"');
+    expect(rowsStart).toBeGreaterThan(-1);
+    const rowsRegion = html.slice(rowsStart);
+    expect(rowsRegion).toContain("ROW_CONTENT");
   });
 });
