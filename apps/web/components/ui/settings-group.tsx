@@ -57,6 +57,8 @@ export interface SettingRowProps extends React.ComponentProps<"div"> {
   label: string;
   description?: string;
   htmlFor?: string;
+  /** Optional className forwarded to the control-slot wrapper div. */
+  controlClassName?: string;
   children?: React.ReactNode;
 }
 
@@ -64,15 +66,37 @@ export function SettingRow({
   label,
   description,
   htmlFor,
+  controlClassName,
   className,
   children,
   ...props
 }: SettingRowProps) {
+  const descId = React.useId();
+
+  // Determine whether we have a single React element child so we can
+  // safely clone it and inject aria-describedby. Fragments, arrays, and
+  // non-elements are left as-is (no crash, description still rendered).
+  const singleElement =
+    description &&
+    React.Children.count(children) === 1 &&
+    React.isValidElement(children)
+      ? (children as React.ReactElement<Record<string, unknown>>)
+      : null;
+
+  const controlChild =
+    singleElement && description
+      ? React.cloneElement(singleElement, {
+          "aria-describedby": singleElement.props["aria-describedby"]
+            ? `${singleElement.props["aria-describedby"]} ${descId}`
+            : descId,
+        })
+      : children;
+
   return (
     <div
       data-slot="setting-row"
       className={cn(
-        "flex items-center justify-between gap-4 px-5 py-4",
+        "flex flex-col items-start gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4",
         className,
       )}
       {...props}
@@ -86,14 +110,20 @@ export function SettingRow({
           <span className="text-sm font-medium">{label}</span>
         )}
         {description ? (
-          <p className="text-pretty text-sm text-muted-foreground">
+          <p
+            id={descId}
+            className="text-pretty text-sm text-muted-foreground"
+          >
             {description}
           </p>
         ) : null}
       </div>
       {children ? (
-        <div data-slot="setting-row-control" className="shrink-0">
-          {children}
+        <div
+          data-slot="setting-row-control"
+          className={cn("shrink-0", controlClassName)}
+        >
+          {controlChild}
         </div>
       ) : null}
     </div>
