@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SettingsGroup, SettingRow } from "@/components/ui/settings-group";
 import {
   Select,
   SelectContent,
@@ -111,13 +112,16 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
 export function PreferencesSectionSkeleton() {
   return (
     <div className="space-y-8">
-      <div className="space-y-4">
-        <GroupHeader>Appearance</GroupHeader>
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+      {/* Appearance — mirrors the single SettingsGroup card used in the loaded UI */}
+      <SettingsGroup title="Appearance">
+        <div className="flex flex-col items-start gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 space-y-1.5">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3.5 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-9 w-full sm:max-w-xs" />
         </div>
-      </div>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
@@ -452,10 +456,16 @@ export function PreferencesSection() {
   return (
     <div className="space-y-8">
       {/* ── 1. Appearance ── */}
-      <div className="space-y-4">
-        <GroupHeader>Appearance</GroupHeader>
-        <div className="grid gap-2 sm:max-w-xs">
-          <Label htmlFor="appearance">Theme</Label>
+      <SettingsGroup
+        title="Appearance"
+        description="How Open Agents looks in this browser."
+      >
+        <SettingRow
+          label="Theme"
+          htmlFor="appearance"
+          description="Saved in this browser only — it doesn't follow you to other devices."
+          controlClassName="w-full sm:max-w-xs"
+        >
           <Select value={theme} onValueChange={handleThemeChange}>
             <SelectTrigger id="appearance" className="w-full">
               <SelectValue placeholder="Select a theme" />
@@ -468,12 +478,8 @@ export function PreferencesSection() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Saved in this browser only — it doesn&apos;t follow you to other
-            devices.
-          </p>
-        </div>
-      </div>
+        </SettingRow>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 

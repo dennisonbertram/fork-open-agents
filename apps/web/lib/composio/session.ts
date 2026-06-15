@@ -48,6 +48,12 @@ export type ResolvedComposioTools =
       composioSessionId: string;
       configHash: string;
       reusedSession: boolean;
+      /**
+       * Selected direct-list toolkits that have no ACTIVE connected account.
+       * Their tools are still offered but cannot authenticate, so the chat
+       * surfaces a "not connected" warning. Undefined on the profile path.
+       */
+      disconnectedToolkits?: string[];
     };
 
 /**
