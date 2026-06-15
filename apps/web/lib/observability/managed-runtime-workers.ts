@@ -248,6 +248,14 @@ export function summarizeManagedRuntimeDirectToolUse(
       continue;
     }
 
+    // Skip tool-task parts: worker output that may embed bash/read/write
+    // sub-records is NOT coordinator direct tool use. The coordinator's tool
+    // policy (MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES) explicitly excludes
+    // bash/read/write/edit/grep/glob — any appearance here is a worker artifact.
+    if (part.type === "tool-task") {
+      continue;
+    }
+
     if (!DIRECT_COORDINATOR_REPO_TOOLS.has(part.type)) {
       continue;
     }
