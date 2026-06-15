@@ -547,7 +547,7 @@ export function RepoSettingsSection({
             {integrations.github.status !== "connected" && (
               <Link
                 href="/settings/connections"
-                className="text-xs text-primary underline-offset-2 hover:underline"
+                className="text-xs text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
               >
                 Connect GitHub
               </Link>
@@ -572,7 +572,7 @@ export function RepoSettingsSection({
           ) : (
             <Link
               href="/settings/connections"
-              className="text-sm text-primary underline-offset-2 hover:underline"
+              className="text-sm text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
             >
               Link Vercel project
             </Link>
@@ -586,7 +586,7 @@ export function RepoSettingsSection({
         >
           <Link
             href={integrations.composioHref}
-            className="text-sm text-primary underline-offset-2 hover:underline"
+            className="text-sm text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
           >
             Manage tools
           </Link>
