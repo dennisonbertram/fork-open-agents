@@ -4,6 +4,8 @@ import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
   summarizeManagedRuntimeDirectToolUseFromMessages,
+  summarizeExternalToolUse,
+  summarizeExternalToolUseFromMessages,
 } from "./managed-runtime-workers";
 
 describe("extractManagedRuntimeWorkersFromMessages", () => {
@@ -336,6 +338,94 @@ describe("extractManagedRuntimeWorkersFromMessages", () => {
       toolTypes: [],
       toolLabels: [],
       warning: null,
+    });
+  });
+});
+
+describe("summarizeExternalToolUse", () => {
+  test("returns observed=false for parts with no dynamic-tool entries", () => {
+    const result = summarizeExternalToolUse([
+      { type: "tool-bash", state: "output-available" },
+    ]);
+    expect(result).toEqual({ observed: false, count: 0, toolNames: [] });
+  });
+
+  test("counts successful dynamic-tool parts", () => {
+    const result = summarizeExternalToolUse([
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_PULL_REQUEST",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 3,
+      toolNames: ["GITHUB_CREATE_ISSUE", "GITHUB_CREATE_PULL_REQUEST"],
+    });
+  });
+
+  test("skips failed dynamic-tool parts", () => {
+    const result = summarizeExternalToolUse([
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_UPDATE_ISSUE",
+        state: "output-error",
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 1,
+      toolNames: ["GITHUB_CREATE_ISSUE"],
+    });
+  });
+});
+
+describe("summarizeExternalToolUseFromMessages", () => {
+  test("aggregates across persisted messages", () => {
+    const result = summarizeExternalToolUseFromMessages([
+      {
+        id: "assistant-1",
+        parts: [
+          {
+            type: "dynamic-tool",
+            toolName: "GITHUB_CREATE_ISSUE",
+            state: "output-available",
+          },
+        ],
+      },
+      {
+        id: "assistant-2",
+        parts: {
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "GITHUB_CREATE_PR",
+              state: "output-available",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 2,
+      toolNames: ["GITHUB_CREATE_ISSUE", "GITHUB_CREATE_PR"],
     });
   });
 });

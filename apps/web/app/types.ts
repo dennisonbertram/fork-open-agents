@@ -119,6 +119,11 @@ export type WebAgentRuntimeProofData = {
     toolLabels: string[];
     warning: string | null;
   };
+  externalToolUse: {
+    observed: boolean;
+    count: number;
+    toolNames: string[];
+  };
   evidence: string[];
   serviceEvidence: {
     total: number;

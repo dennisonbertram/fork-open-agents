@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/composio/errors";
 import { cn } from "@/lib/utils";
 import {
+  type ExternalToolUseJson,
   type ManagedRuntimeDirectToolUseJson,
   type ManagedRuntimeCommandObservationJson,
   type ManagedRuntimeProfileRunJson,
@@ -400,6 +402,7 @@ export function RuntimeActorsSection({
   workers,
   directToolUse,
   events,
+  externalToolUse,
 }: {
   runtimeMode: RuntimeMode | null | undefined;
   latestWorkflow: WorkflowRunJson | null;
@@ -407,6 +410,7 @@ export function RuntimeActorsSection({
   workers: ManagedRuntimeWorkerJson[];
   directToolUse?: ManagedRuntimeDirectToolUseJson | null;
   events: SessionEventJson[];
+  externalToolUse?: ExternalToolUseJson | null;
 }) {
   const isManagedRuntime = runtimeMode === "managed_runtime";
   const workerActors = isManagedRuntime
@@ -480,6 +484,19 @@ export function RuntimeActorsSection({
               )}
             </ActorRow>
           ))
+        ) : externalToolUse?.observed ? (
+          <ActorRow
+            icon={<Wrench className="h-3.5 w-3.5" />}
+            status="completed"
+            title="External tools"
+          >
+            <p>Coordinator completed work via external API tools.</p>
+            <p className="truncate">
+              {externalToolUse.count} call
+              {externalToolUse.count === 1 ? "" : "s"} ·{" "}
+              {externalToolUse.toolNames.join(", ")}
+            </p>
+          </ActorRow>
         ) : (
           <div className="border-b border-border/60 px-3 py-3 last:border-b-0">
             <div className="flex items-start gap-2">
@@ -504,7 +521,7 @@ export function RuntimeActorsSection({
 function LikelyIssue({ events }: { events: SessionEventJson[] }) {
   const composioEvent = events.find(
     (event) =>
-      event.eventName.startsWith("composio.") ||
+      (event.eventName.startsWith("composio.") && event.status === "failed") ||
       getComposioErrorKind(event.summary) !== "unknown",
   );
   const failedEvent = events.find((event) => event.status === "failed");
@@ -641,6 +658,7 @@ export function RuntimeObservabilityPanel({
             latestProfileRun={latestProfileRun}
             latestWorkflow={latestWorkflow}
             directToolUse={data?.directToolUse}
+            externalToolUse={data?.externalToolUse}
             runtimeMode={data?.runtimeMode}
             workers={data?.workers ?? []}
           />
