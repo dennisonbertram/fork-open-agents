@@ -1,9 +1,28 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { getSandbox, shellEscape } from "./utils";
+import { getGithubToolAvailable, getSandbox, shellEscape } from "./utils";
 
 const TIMEOUT_MS = 30_000;
 export const MAX_BODY_LENGTH = 10_000;
+
+/**
+ * GitHub hosts where the authenticated GitHub tools are the correct path.
+ * Exact-match only so lookalikes (`github.com.evil.com`) and raw-content hosts
+ * (`raw.githubusercontent.com`, used for legitimate file downloads) are not
+ * caught.
+ */
+const GITHUB_TOOL_HOSTS = new Set([
+  "github.com",
+  "www.github.com",
+  "api.github.com",
+]);
+
+export function isGitHubToolHost(hostname: string): boolean {
+  return GITHUB_TOOL_HOSTS.has(hostname.toLowerCase());
+}
+
+const GITHUB_TOOL_REDIRECT_ERROR =
+  "Fetch blocked for GitHub: use the connected GitHub tools (github_* / GITHUB_*) instead of web_fetch. They authenticate as the user and work on private repositories; web_fetch is unauthenticated and returns 404 for private GitHub resources.";
 
 type Ipv4Address = [number, number, number, number];
 type Ipv6Address = [
@@ -263,10 +282,20 @@ EXAMPLES:
     { url, method = "GET", headers, body },
     { experimental_context, abortSignal },
   ) => {
+    const parsedUrl = new URL(url);
+
+    // Steer to the authenticated GitHub tools instead of unauthenticated
+    // web_fetch when both are available — otherwise the model 404s on private
+    // GitHub resources (see the issue-#942 run that fetched api.github.com).
+    if (
+      getGithubToolAvailable(experimental_context) &&
+      isGitHubToolHost(parsedUrl.hostname)
+    ) {
+      return { success: false, error: GITHUB_TOOL_REDIRECT_ERROR };
+    }
+
     const sandbox = await getSandbox(experimental_context, "web_fetch");
     const workingDirectory = sandbox.workingDirectory;
-
-    const parsedUrl = new URL(url);
     if (
       await resolvesToPrivateHost({
         hostname: parsedUrl.hostname,

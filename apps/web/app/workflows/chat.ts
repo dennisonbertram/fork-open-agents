@@ -23,7 +23,7 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
-import { mergeExtraTools } from "./merge-extra-tools";
+import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -52,6 +52,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
@@ -137,7 +138,11 @@ const convertMessages = async (
 ): Promise<ModelMessage[]> => {
   "use step";
   const { webAgent } = await import("@/app/config");
-  const dedupedMessages = messages.map(dedupeMessageReasoning);
+  // Drop orphaned tool-calls (e.g. an approved web_fetch that never executed
+  // before a new user turn) so conversion never emits a tool-call without a
+  // paired tool-result, which the provider rejects and which wedges the chat.
+  const sanitizedMessages = sanitizeInterruptedToolCalls(messages);
+  const dedupedMessages = sanitizedMessages.map(dedupeMessageReasoning);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
     {
@@ -649,6 +654,14 @@ function getSetupErrorMessage(error: unknown): string {
     !FILESYSTEM_QUOTA_RE.test(message)
   ) {
     return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
+  }
+
+  // A tool call was left without a result (e.g. an approved web_fetch that never
+  // executed) so the provider rejects the request. Message conversion now repairs
+  // this on the next turn, so guide the user to retry instead of surfacing the
+  // raw provider error or the misleading generic "Workspace setup failed".
+  if (message.includes("No tool output found for function call")) {
+    return "A tool call in this chat was interrupted before it finished. Send your message again to continue.";
   }
 
   return "Workspace setup failed. Try again in a moment.";
@@ -2304,6 +2317,35 @@ const runAgentStep = async (
             composioSessionId: composioResult.composioSessionId,
           },
         });
+
+        // Warn when a selected toolkit has no connected account — its tools are
+        // offered but cannot authenticate (e.g. GitHub picked but never linked).
+        const disconnectedToolkits = composioResult.disconnectedToolkits ?? [];
+        if (disconnectedToolkits.length > 0) {
+          await emitSessionEvent({
+            sessionId,
+            chatId,
+            userId,
+            source: "workflow",
+            actorType: "coordinator",
+            eventName: "composio.toolkit.not_connected",
+            status: "failed",
+            summary: `Selected Composio ${
+              disconnectedToolkits.length === 1 ? "toolkit is" : "toolkits are"
+            } not connected: ${disconnectedToolkits.join(", ")}. Connect ${
+              disconnectedToolkits.length === 1 ? "it" : "them"
+            } in settings — those tools cannot authenticate until then.`,
+            requestId,
+            workflowRunId,
+            sandboxName: stepSandboxName,
+            managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+            payload: {
+              stepNumber,
+              disconnectedToolkits,
+              composioSessionId: composioResult.composioSessionId,
+            },
+          });
+        }
       }
     } catch (error) {
       await emitSessionEvent({
@@ -2418,11 +2460,17 @@ const runAgentStep = async (
     // clobbering the other when only one spread was used previously.
     const mergedExtraTools = mergeExtraTools(composioTools, githubTools);
 
+    // True when any authenticated GitHub tool — native `github_*` or Composio
+    // `GITHUB_*` — is in the toolset. Drives the prompt steer and the web_fetch
+    // guardrail so the agent uses those tools instead of unauthenticated fetch.
+    const githubToolAvailable = hasGithubTool(mergedExtraTools);
+
     const result = await webAgent.stream({
       messages,
       options: {
         ...stepAgentOptions,
         githubToolsEnabled: githubTools !== undefined,
+        githubToolAvailable,
       },
       ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,

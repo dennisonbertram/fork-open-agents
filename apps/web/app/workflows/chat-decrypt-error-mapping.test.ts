@@ -529,6 +529,63 @@ describe("provider auth / credit error → actionable user message mapping", () 
     expect(delta.toLowerCase()).toContain("billing");
   });
 
+  test("provider 'No tool output found for function call' surfaces an interrupted-tool message, not the generic fallback", async () => {
+    const orphanError = new Error(
+      "No tool output found for function call call_vvUJU5OVowt1r60JCAloNNWm.",
+    );
+    inferenceProfileError = orphanError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    // Must NOT be the generic fallback
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    // Must explain the interrupted tool call and tell the user to retry
+    expect(delta.toLowerCase()).toContain("interrupted");
+    // Must NOT leak the raw function-call id
+    expect(delta).not.toContain("call_vvUJU5OVowt1r60JCAloNNWm");
+  });
+
+  test("composed 'Provider error: No tool output found for function call' also surfaces the interrupted-tool message", async () => {
+    const composedOrphanError = new Error(
+      "No output generated from model\n\nProvider error: No tool output found for function call call_abc123.",
+    );
+    inferenceProfileError = composedOrphanError;
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta.toLowerCase()).toContain("interrupted");
+    expect(delta).not.toContain("call_abc123");
+  });
+
   test("generic fallback is preserved for unknown errors", async () => {
     const unknownError = new Error("Something completely unexpected happened");
     inferenceProfileError = unknownError;

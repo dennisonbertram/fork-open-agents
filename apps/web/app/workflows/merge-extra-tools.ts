@@ -19,3 +19,20 @@ export function mergeExtraTools(
   }
   return { ...composioTools, ...githubTools };
 }
+
+/**
+ * Match "github" as an underscore/dash-delimited token in a tool name so the
+ * detection covers native `github_*`, Composio `GITHUB_*`, and any prefixed
+ * variant (`COMPOSIO_GITHUB_*`) without matching unrelated names (`mygithub`).
+ */
+const GITHUB_TOOL_NAME = /(^|[_-])github([_-]|$)/i;
+
+/**
+ * Whether a toolset contains any authenticated GitHub tool. Used to enable the
+ * prompt steer + web_fetch guardrail that keep the agent off unauthenticated
+ * GitHub fetches when real GitHub tools are available.
+ */
+export function hasGithubTool(tools: ToolSet | undefined): boolean {
+  if (!tools) return false;
+  return Object.keys(tools).some((name) => GITHUB_TOOL_NAME.test(name));
+}
