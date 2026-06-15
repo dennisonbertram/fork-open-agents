@@ -210,6 +210,30 @@ describe("RepoSettingsSection render", () => {
     expect(html).toContain("/settings/composio");
   });
 
+  test("BT-SECT-009: Composio 'Manage tools' link has a resting underline affordance (not just hover)", async () => {
+    const { RepoSettingsSection } = await sectionModule;
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
+    // Extract the anchor tag for the composio link
+    const anchorMatch = html.match(
+      /href="\/settings\/composio"[^>]*>|<a[^>]*href="\/settings\/composio"[^>]*/,
+    );
+    expect(anchorMatch).not.toBeNull();
+    // The link must carry a resting (non-hover) underline class
+    // Acceptable patterns: "underline " alone, or "underline " combined with decoration-*
+    const linkChunk = html.slice(
+      Math.max(0, html.indexOf("/settings/composio") - 200),
+      html.indexOf("/settings/composio") + 50,
+    );
+    const hasRestingUnderline =
+      // direct "underline" class (not prefixed by hover: or focus:)
+      /(?:^|\s|")underline(?:\s|")/.test(linkChunk) ||
+      // or it is rendered as a Button-style element with variant that implies underline
+      linkChunk.includes("underline-offset") &&
+        !linkChunk.includes("hover:underline") &&
+        linkChunk.includes("underline");
+    expect(hasRestingUnderline).toBe(true);
+  });
+
   test("BT-SECT-006: danger-zone section has confirmation input", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
