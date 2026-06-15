@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SettingsGroup, SettingRow } from "@/components/ui/settings-group";
 import {
   Select,
   SelectContent,
@@ -452,10 +453,15 @@ export function PreferencesSection() {
   return (
     <div className="space-y-8">
       {/* ── 1. Appearance ── */}
-      <div className="space-y-4">
-        <GroupHeader>Appearance</GroupHeader>
-        <div className="grid gap-2 sm:max-w-xs">
-          <Label htmlFor="appearance">Theme</Label>
+      <SettingsGroup
+        title="Appearance"
+        description="How Open Agents looks in this browser."
+      >
+        <SettingRow
+          label="Theme"
+          htmlFor="appearance"
+          description="Saved in this browser only — it doesn't follow you to other devices."
+        >
           <Select value={theme} onValueChange={handleThemeChange}>
             <SelectTrigger id="appearance" className="w-full">
               <SelectValue placeholder="Select a theme" />
@@ -468,12 +474,8 @@ export function PreferencesSection() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Saved in this browser only — it doesn&apos;t follow you to other
-            devices.
-          </p>
-        </div>
-      </div>
+        </SettingRow>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
