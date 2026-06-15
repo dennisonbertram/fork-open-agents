@@ -102,47 +102,32 @@ function makeProps(
 describe("RepoSettingsSection render", () => {
   test("BT-SECT-001: renders General section heading", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore — JSX in test
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("General");
   });
 
   test("BT-SECT-001b: renders Clone &amp; runtime section heading", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     // Either "Clone" in a heading is enough
     expect(html.toLowerCase()).toContain("clone");
   });
 
   test("BT-SECT-001c: renders Git automation section heading", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("Git automation");
   });
 
   test("BT-SECT-001d: renders Integrations section heading", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("Integrations");
   });
 
   test("BT-SECT-001e: renders Danger zone section heading", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("Danger zone");
   });
 
@@ -150,7 +135,6 @@ describe("RepoSettingsSection render", () => {
     const { RepoSettingsSection } = await sectionModule;
     // fullClone raw=null means it's inherited
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection {...makeProps({ rawFullClone: null })} />,
     );
     expect(html).toContain("Inherited");
@@ -160,7 +144,6 @@ describe("RepoSettingsSection render", () => {
     const { RepoSettingsSection } = await sectionModule;
     // fullClone raw=true means it's overridden
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection {...makeProps({ rawFullClone: true })} />,
     );
     // The section renders, and fullClone is explicitly overridden
@@ -171,9 +154,11 @@ describe("RepoSettingsSection render", () => {
   test("BT-SECT-004: autoCreatePr switch has disabled attribute when autoCommitPush is off", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection
-        {...makeProps({ resolvedAutoCommitPush: false, rawAutoCommitPush: null })}
+        {...makeProps({
+          resolvedAutoCommitPush: false,
+          rawAutoCommitPush: null,
+        })}
       />,
     );
     // When autoCommitPush is off, autoCreatePr switch must be disabled
@@ -189,7 +174,6 @@ describe("RepoSettingsSection render", () => {
   test("BT-SECT-007a: renders GitHub connected status", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection {...makeProps({ githubStatus: "connected" })} />,
     );
     expect(html).toContain("GitHub");
@@ -199,10 +183,7 @@ describe("RepoSettingsSection render", () => {
   test("BT-SECT-007b: renders not-connected GitHub status", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection
-        {...makeProps({ githubStatus: "not_connected" })}
-      />,
+      <RepoSettingsSection {...makeProps({ githubStatus: "not_connected" })} />,
     );
     expect(html).toContain("GitHub");
   });
@@ -210,7 +191,6 @@ describe("RepoSettingsSection render", () => {
   test("BT-SECT-007c: renders Vercel linked project name", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection {...makeProps({ vercelLinked: true })} />,
     );
     expect(html).toContain("acme-web");
@@ -219,7 +199,6 @@ describe("RepoSettingsSection render", () => {
   test("BT-SECT-007d: renders Vercel not-linked state", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(
-      // @ts-ignore
       <RepoSettingsSection {...makeProps({ vercelLinked: false })} />,
     );
     expect(html).toContain("Vercel");
@@ -227,19 +206,13 @@ describe("RepoSettingsSection render", () => {
 
   test("BT-SECT-008: Composio link points to /settings/composio", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("/settings/composio");
   });
 
   test("BT-SECT-006: danger-zone section has confirmation input", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     // The typed double-confirm requires an input for confirmation text
     expect(html).toContain("acme/web");
   });
@@ -249,29 +222,20 @@ describe("Regression", () => {
   test("REG-SECT-001: section renders without crashing with minimal props", async () => {
     const { RepoSettingsSection } = await sectionModule;
     expect(() =>
-      renderToStaticMarkup(
-        // @ts-ignore
-        <RepoSettingsSection {...makeProps()} />,
-      ),
+      renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />),
     ).not.toThrow();
   });
 
   test("REG-SECT-002: uses SettingsGroup data-slot attributes (component is wired to primitive)", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain('data-slot="settings-group"');
     expect(html).toContain('data-slot="setting-row"');
   });
 
   test("REG-SECT-003: owner/repo identity shown in General section", async () => {
     const { RepoSettingsSection } = await sectionModule;
-    const html = renderToStaticMarkup(
-      // @ts-ignore
-      <RepoSettingsSection {...makeProps()} />,
-    );
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
     expect(html).toContain("acme");
     expect(html).toContain("web");
   });

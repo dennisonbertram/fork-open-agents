@@ -44,8 +44,7 @@ const mockRawSettings = {
   updatedAt: new Date("2026-01-01"),
 };
 
-let getRepositorySettingsResult: typeof mockRawSettings | undefined =
-  undefined; // default: no row
+let getRepositorySettingsResult: typeof mockRawSettings | undefined = undefined; // default: no row
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
