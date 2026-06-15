@@ -197,4 +197,32 @@ describe("extractManagedRuntimeWorkersFromMessages", () => {
         "Coordinator direct repo tool use observed: Bash, Edit. These actions did not run through a managed worker.",
     });
   });
+
+  test("does not count tool-task parts as coordinator direct tool use", () => {
+    const directToolUse = summarizeManagedRuntimeDirectToolUse([
+      {
+        type: "tool-task",
+        toolCallId: "task-1",
+        state: "output-available",
+        input: { subagentType: "executor", task: "Run tests" },
+        output: {
+          final: [],
+          toolCallCount: 1,
+          runtime: {
+            mode: "managed_runtime",
+            workerType: "executor",
+            sandboxName: "sbx_123",
+          },
+        },
+      },
+    ]);
+
+    expect(directToolUse).toEqual({
+      observed: false,
+      count: 0,
+      toolTypes: [],
+      toolLabels: [],
+      warning: null,
+    });
+  });
 });
