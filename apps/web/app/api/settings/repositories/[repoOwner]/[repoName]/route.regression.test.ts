@@ -36,8 +36,8 @@ const mockRawSettings = {
   runtimeMode: null,
   managedRuntimeProfileId: null,
   vcpus: null,
-  autoCommitPush: null,
-  autoCreatePr: null,
+  autoCommitPush: null as boolean | null,
+  autoCreatePr: null as boolean | null,
   defaultBranch: null,
   isNewBranch: null,
   createdAt: new Date("2026-01-01"),
@@ -45,6 +45,10 @@ const mockRawSettings = {
 };
 
 let getRepositorySettingsResult: typeof mockRawSettings | undefined = undefined; // default: no row
+let userPrefsResult: { autoCommitPush: boolean; autoCreatePr: boolean } = {
+  autoCommitPush: true,
+  autoCreatePr: false,
+};
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -77,6 +81,10 @@ mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
   }),
 }));
 
+mock.module("@/lib/db/user-preferences", () => ({
+  getUserPreferences: async () => userPrefsResult,
+}));
+
 mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
   isManagedRuntimeProfileId: (id: unknown) => id === "web-bun-agent-browser",
   listManagedRuntimeProfiles: () => [
@@ -94,6 +102,7 @@ beforeEach(() => {
   authResult = { ok: true, userId: "user-1" };
   lastUpsertParams = null;
   getRepositorySettingsResult = undefined;
+  userPrefsResult = { autoCommitPush: true, autoCreatePr: false };
 });
 
 describe("Regression — repo settings route", () => {
@@ -156,6 +165,25 @@ describe("Regression — repo settings route", () => {
     );
     expect(res.status).toBe(200);
     expect(lastUpsertParams!.settings.autoCreatePr).toBe(true);
+  });
+
+  test("REG-ROUTE-007: PATCH {autoCommitPush:false} rejected when effective autoCreatePr is true", async () => {
+    // Reverse direction of the cross-field invariant: turning auto-commit OFF must
+    // not leave auto-create-PR stranded ON. Here autoCreatePr is an active repo
+    // override (true); the PATCH only flips autoCommitPush to false.
+    getRepositorySettingsResult = { ...mockRawSettings, autoCreatePr: true };
+    const { PATCH } = await routeModule;
+    const res = await PATCH(
+      new Request("http://localhost/api/settings/repositories/acme/web", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ autoCommitPush: false }),
+      }),
+      makeContext(),
+    );
+    expect(res.status).toBe(400);
+    // Must reject BEFORE persisting the invalid combination.
+    expect(lastUpsertParams).toBeNull();
   });
 
   test("REG-ROUTE-004: invalid vcpus (string) always rejected", async () => {

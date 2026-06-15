@@ -71,7 +71,11 @@ describe("RG-001: null=inherit contract preserved on revert", () => {
     // If a refactor treats null as "false", this will fail:
     // result.autoCommitPush would be false instead of true.
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       { ...allNull(), autoCommitPush: null },
     );
     expect(result.autoCommitPush).toBe(true);
@@ -79,7 +83,11 @@ describe("RG-001: null=inherit contract preserved on revert", () => {
 
   it("repo null managedRuntimeProfileId + user custom → user value preserved", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "my-profile" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "my-profile",
+      },
       { ...allNull(), managedRuntimeProfileId: null },
     );
     expect(result.managedRuntimeProfileId).toBe("my-profile");
@@ -88,7 +96,11 @@ describe("RG-001: null=inherit contract preserved on revert", () => {
   it("repo null autoCreatePr + user true + autoCommitPush true → resolved true", () => {
     // repo null = inherit; user autoCreatePr=true; autoCommitPush=true → should be true
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "p",
+      },
       { ...allNull(), autoCreatePr: null },
     );
     expect(result.autoCreatePr).toBe(true);
@@ -101,7 +113,11 @@ describe("RG-002: autoCreatePr=false when autoCommitPush=false", () => {
   it("user autoCreatePr=true but autoCommitPush resolves false → autoCreatePr=false", () => {
     // If the cross-field rule is removed, result.autoCreatePr would be true.
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: true, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(result.autoCommitPush).toBe(false);
@@ -110,7 +126,11 @@ describe("RG-002: autoCreatePr=false when autoCommitPush=false", () => {
 
   it("repo autoCommitPush=false overrides user true → autoCreatePr still forced false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "p",
+      },
       { ...allNull(), autoCommitPush: false, autoCreatePr: true },
     );
     expect(result.autoCommitPush).toBe(false);
@@ -120,7 +140,11 @@ describe("RG-002: autoCreatePr=false when autoCommitPush=false", () => {
   it("autoCreatePr=true is allowed when autoCommitPush resolves true (not over-restricted)", () => {
     // Guard against accidentally forcing autoCreatePr=false unconditionally.
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(result.autoCreatePr).toBe(true);
@@ -132,7 +156,11 @@ describe("RG-002: autoCreatePr=false when autoCommitPush=false", () => {
 describe("RG-003: all ResolvedRepoDefaults fields are defined (not undefined)", () => {
   it("returned object has every expected key with a non-undefined value", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     // Every field must be present and not undefined
@@ -151,7 +179,11 @@ describe("RG-003: all ResolvedRepoDefaults fields are defined (not undefined)", 
   it("runtimeMode is always a string (never undefined)", () => {
     // Catches: forgetting to set runtimeMode = SYSTEM_DEFAULTS.runtimeMode
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(typeof result.runtimeMode).toBe("string");
@@ -166,7 +198,11 @@ describe("RG-004: system-only fields use system defaults when no repo override",
     // userPrefs.runtimeMode it gets undefined, which would break the resolved value.
     const result = mergeRepoDefaults(
       // Intentionally omit runtimeMode from userPrefs (it doesn't exist there)
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(result.runtimeMode).toBe("classic");
@@ -174,7 +210,11 @@ describe("RG-004: system-only fields use system defaults when no repo override",
 
   it("vcpus comes from system default when repo is null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(result.vcpus).toBeGreaterThan(0);
@@ -182,7 +222,11 @@ describe("RG-004: system-only fields use system defaults when no repo override",
 
   it("fullClone defaults to false from system when repo null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       allNull(),
     );
     expect(result.fullClone).toBe(false);
@@ -194,7 +238,11 @@ describe("RG-004: system-only fields use system defaults when no repo override",
 describe("RG-005: repository_settings wins over user_preferences on every shared field", () => {
   it("repo autoCommitPush=true beats user false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "user-p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "user-p",
+      },
       { ...allNull(), autoCommitPush: true },
     );
     expect(result.autoCommitPush).toBe(true);
@@ -202,7 +250,11 @@ describe("RG-005: repository_settings wins over user_preferences on every shared
 
   it("repo managedRuntimeProfileId beats user value", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "user-p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "user-p",
+      },
       { ...allNull(), managedRuntimeProfileId: "repo-p" },
     );
     expect(result.managedRuntimeProfileId).toBe("repo-p");
@@ -210,7 +262,11 @@ describe("RG-005: repository_settings wins over user_preferences on every shared
 
   it("repo runtimeMode=managed_runtime beats system classic", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "p" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "p",
+      },
       { ...allNull(), runtimeMode: "managed_runtime" },
     );
     expect(result.runtimeMode).toBe("managed_runtime");

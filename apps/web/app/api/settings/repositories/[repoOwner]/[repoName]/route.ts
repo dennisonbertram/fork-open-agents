@@ -5,6 +5,7 @@ import {
   upsertRepositorySettings,
 } from "@/lib/db/repository-settings";
 import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
+import { getUserPreferences } from "@/lib/db/user-preferences";
 import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import {
   repoSettingsPatchSchema,
@@ -138,20 +139,37 @@ export async function PATCH(
     );
   }
 
-  // Enforce cross-field invariant: autoCreatePr cannot be true when effective autoCommitPush is false
-  if (patch.autoCreatePr === true) {
-    // Determine effective autoCommitPush after the patch
-    const effectiveAutoCommitPush =
-      patch.autoCommitPush !== undefined
-        ? patch.autoCommitPush
-        : (await resolveRepoDefaults({ userId, repoOwner, repoName }))
-            .autoCommitPush;
+  // Enforce cross-field invariant in BOTH directions: after applying this patch,
+  // autoCreatePr must not be true while autoCommitPush is not true. This covers
+  // PATCH {autoCreatePr:true} AND PATCH {autoCommitPush:false}. Compute the full
+  // post-patch effective state per field, where undefined=unchanged (keep current
+  // override), null=inherit (fall through to user pref / system), value=override.
+  {
+    const [current, prefs] = await Promise.all([
+      getRepositorySettings({ userId, repoOwner, repoName }),
+      getUserPreferences(userId),
+    ]);
+    const postPatchOverride = <T>(
+      patchValue: T | null | undefined,
+      currentValue: T | null | undefined,
+    ): T | null =>
+      patchValue !== undefined ? patchValue : (currentValue ?? null);
 
-    if (!effectiveAutoCommitPush) {
+    // `?? ` only falls through on null/undefined, so an explicit `false` override is preserved.
+    const nextAutoCommitPush =
+      postPatchOverride(patch.autoCommitPush, current?.autoCommitPush) ??
+      prefs.autoCommitPush ??
+      false;
+    const nextAutoCreatePr =
+      postPatchOverride(patch.autoCreatePr, current?.autoCreatePr) ??
+      prefs.autoCreatePr ??
+      false;
+
+    if (nextAutoCreatePr === true && nextAutoCommitPush !== true) {
       return Response.json(
         {
           error:
-            "autoCreatePr cannot be true when autoCommitPush is false or inherited as false",
+            "autoCreatePr cannot be enabled while autoCommitPush is off (or inherited as off)",
         },
         { status: 400 },
       );

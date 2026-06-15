@@ -84,6 +84,14 @@ mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
   resolveRepoDefaults: async () => mockResolved,
 }));
 
+mock.module("@/lib/db/user-preferences", () => ({
+  // Match mockResolved (autoCommitPush=false) so the cross-field invariant tests hold.
+  getUserPreferences: async () => ({
+    autoCommitPush: false,
+    autoCreatePr: false,
+  }),
+}));
+
 mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
   isManagedRuntimeProfileId: (id: unknown) =>
     id === "web-bun-agent-browser" || id === "custom-profile",

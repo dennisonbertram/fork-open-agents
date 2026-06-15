@@ -19,23 +19,20 @@ const mockGetUserPreferences = mock(async (_userId: string) => ({
 }));
 
 const mockGetRepositorySettings = mock(
-  async (_params: {
-    userId: string;
-    repoOwner: string;
-    repoName: string;
-  }) => undefined as
-    | {
-        fullClone: boolean | null;
-        prewarmEnabled: boolean | null;
-        runtimeMode: "classic" | "managed_runtime" | null;
-        managedRuntimeProfileId: string | null;
-        vcpus: number | null;
-        autoCommitPush: boolean | null;
-        autoCreatePr: boolean | null;
-        defaultBranch: string | null;
-        isNewBranch: boolean | null;
-      }
-    | undefined,
+  async (_params: { userId: string; repoOwner: string; repoName: string }) =>
+    undefined as
+      | {
+          fullClone: boolean | null;
+          prewarmEnabled: boolean | null;
+          runtimeMode: "classic" | "managed_runtime" | null;
+          managedRuntimeProfileId: string | null;
+          vcpus: number | null;
+          autoCommitPush: boolean | null;
+          autoCreatePr: boolean | null;
+          defaultBranch: string | null;
+          isNewBranch: boolean | null;
+        }
+      | undefined,
 );
 
 mock.module("@/lib/db/user-preferences", () => ({
@@ -47,9 +44,8 @@ mock.module("@/lib/db/repository-settings", () => ({
 }));
 
 // ─── import after mocking ────────────────────────────────────────────────────
-const { mergeRepoDefaults, resolveRepoDefaults } = await import(
-  "./resolve-repo-defaults"
-);
+const { mergeRepoDefaults, resolveRepoDefaults } =
+  await import("./resolve-repo-defaults");
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -87,7 +83,11 @@ function makeRepoSettings(
 describe("mergeRepoDefaults — BT-001: all layers empty/null → system defaults", () => {
   it("BT-001: returns system default for autoCommitPush (false)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.autoCommitPush).toBe(false);
@@ -95,7 +95,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001b: returns system default for runtimeMode (classic)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.runtimeMode).toBe("classic");
@@ -103,7 +107,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001c: returns system default for managedRuntimeProfileId", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.managedRuntimeProfileId).toBe("web-bun-agent-browser");
@@ -111,7 +119,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001d: returns system default for vcpus", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     // vcpus comes from DEFAULT_SANDBOX_VCPUS constant
@@ -121,7 +133,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001e: returns system default for fullClone (false)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.fullClone).toBe(false);
@@ -129,7 +145,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001f: returns system default for prewarmEnabled (false)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.prewarmEnabled).toBe(false);
@@ -137,7 +157,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001g: returns system default for isNewBranch (false)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.isNewBranch).toBe(false);
@@ -145,7 +169,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001h: returns system default for defaultBranch (null)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.defaultBranch).toBeNull();
@@ -153,7 +181,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 
   it("BT-001i: returns system default for autoCreatePr (false)", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.autoCreatePr).toBe(false);
@@ -165,7 +197,11 @@ describe("mergeRepoDefaults — BT-001: all layers empty/null → system default
 describe("mergeRepoDefaults — BT-002: user_preferences layer wins", () => {
   it("BT-002a: user autoCommitPush=true wins over system false, repo null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.autoCommitPush).toBe(true);
@@ -173,7 +209,11 @@ describe("mergeRepoDefaults — BT-002: user_preferences layer wins", () => {
 
   it("BT-002b: user autoCreatePr=true wins over system false, repo null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.autoCreatePr).toBe(true);
@@ -181,7 +221,11 @@ describe("mergeRepoDefaults — BT-002: user_preferences layer wins", () => {
 
   it("BT-002c: user defaultManagedRuntimeProfileId wins over system, repo null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "custom-profile" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "custom-profile",
+      },
       makeRepoSettings(),
     );
     expect(result.managedRuntimeProfileId).toBe("custom-profile");
@@ -190,7 +234,11 @@ describe("mergeRepoDefaults — BT-002: user_preferences layer wins", () => {
   it("BT-002d: fields without user_preferences column still use system (runtimeMode)", () => {
     // runtimeMode has no user_preferences column, so system default is used
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.runtimeMode).toBe("classic");
@@ -202,7 +250,11 @@ describe("mergeRepoDefaults — BT-002: user_preferences layer wins", () => {
 describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () => {
   it("BT-003a: repo autoCommitPush=true wins over user false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ autoCommitPush: true }),
     );
     expect(result.autoCommitPush).toBe(true);
@@ -210,7 +262,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003b: repo runtimeMode=managed_runtime wins over system classic", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ runtimeMode: "managed_runtime" }),
     );
     expect(result.runtimeMode).toBe("managed_runtime");
@@ -218,7 +274,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003c: repo managedRuntimeProfileId wins over user-pref value", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "user-profile" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "user-profile",
+      },
       makeRepoSettings({ managedRuntimeProfileId: "repo-specific-profile" }),
     );
     expect(result.managedRuntimeProfileId).toBe("repo-specific-profile");
@@ -226,7 +286,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003d: repo vcpus wins over system default", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ vcpus: 8 }),
     );
     expect(result.vcpus).toBe(8);
@@ -234,7 +298,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003e: repo fullClone=true wins over system false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ fullClone: true }),
     );
     expect(result.fullClone).toBe(true);
@@ -242,7 +310,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003f: repo prewarmEnabled=true wins over system false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ prewarmEnabled: true }),
     );
     expect(result.prewarmEnabled).toBe(true);
@@ -250,7 +322,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003g: repo defaultBranch wins over system null", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ defaultBranch: "main" }),
     );
     expect(result.defaultBranch).toBe("main");
@@ -258,7 +334,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003h: repo isNewBranch=true wins over system false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ isNewBranch: true }),
     );
     expect(result.isNewBranch).toBe(true);
@@ -266,7 +346,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 
   it("BT-003i: repo autoCreatePr=true wins over user false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ autoCreatePr: true }),
     );
     // autoCommitPush resolves true, so autoCreatePr is allowed to be true
@@ -279,7 +363,11 @@ describe("mergeRepoDefaults — BT-003: repository_settings wins over all", () =
 describe("mergeRepoDefaults — BT-004: partial repo override", () => {
   it("BT-004: repo sets vcpus+fullClone; other fields inherit from user/system", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "custom-profile" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "custom-profile",
+      },
       makeRepoSettings({ vcpus: 2, fullClone: true }),
     );
     // repo fields
@@ -298,7 +386,11 @@ describe("mergeRepoDefaults — BT-004: partial repo override", () => {
 describe("mergeRepoDefaults — BT-005: autoCreatePr forced false when autoCommitPush resolves false", () => {
   it("BT-005a: autoCommitPush resolves false (system) + repo/user autoCreatePr=true → autoCreatePr=false", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: true, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ autoCreatePr: true }),
     );
     expect(result.autoCommitPush).toBe(false);
@@ -307,7 +399,11 @@ describe("mergeRepoDefaults — BT-005: autoCreatePr forced false when autoCommi
 
   it("BT-005b: autoCommitPush resolves true → autoCreatePr can be true", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings(),
     );
     expect(result.autoCommitPush).toBe(true);
@@ -316,7 +412,11 @@ describe("mergeRepoDefaults — BT-005: autoCreatePr forced false when autoCommi
 
   it("BT-005c: repo autoCommitPush=false overrides user true → autoCreatePr forced false too", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: true, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: true,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ autoCommitPush: false, autoCreatePr: true }),
     );
     expect(result.autoCommitPush).toBe(false);
@@ -331,7 +431,11 @@ describe("mergeRepoDefaults — BT-006: null=inherit contract", () => {
   it("BT-006a: repo null + user autoCommitPush=true → resolved true (null means inherit)", () => {
     // Core null=inherit contract: repo explicitly null does not override user layer
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "web-bun-agent-browser" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      },
       makeRepoSettings({ autoCommitPush: null }), // explicitly null = inherit
     );
     expect(result.autoCommitPush).toBe(true);
@@ -339,7 +443,11 @@ describe("mergeRepoDefaults — BT-006: null=inherit contract", () => {
 
   it("BT-006b: repo null + user managedRuntimeProfileId → user value preserved", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: false, autoCreatePr: false, defaultManagedRuntimeProfileId: "user-profile" },
+      {
+        autoCommitPush: false,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "user-profile",
+      },
       makeRepoSettings({ managedRuntimeProfileId: null }),
     );
     expect(result.managedRuntimeProfileId).toBe("user-profile");
@@ -347,7 +455,11 @@ describe("mergeRepoDefaults — BT-006: null=inherit contract", () => {
 
   it("BT-006c: repo null for every field → all system/user defaults win", () => {
     const result = mergeRepoDefaults(
-      { autoCommitPush: true, autoCreatePr: false, defaultManagedRuntimeProfileId: "custom-profile" },
+      {
+        autoCommitPush: true,
+        autoCreatePr: false,
+        defaultManagedRuntimeProfileId: "custom-profile",
+      },
       makeRepoSettings(), // all null
     );
     expect(result.autoCommitPush).toBe(true);
@@ -384,7 +496,11 @@ describe("resolveRepoDefaults — BT-007: async wrapper delegates to mergeRepoDe
 
   it("BT-007b: when repo settings row exists, repo values win", async () => {
     mockGetRepositorySettings.mockResolvedValue(
-      makeRepoSettings({ autoCommitPush: true, runtimeMode: "managed_runtime", vcpus: 4 }),
+      makeRepoSettings({
+        autoCommitPush: true,
+        runtimeMode: "managed_runtime",
+        vcpus: 4,
+      }),
     );
 
     const result = await resolveRepoDefaults({

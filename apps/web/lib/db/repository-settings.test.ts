@@ -83,9 +83,8 @@ mock.module("@/lib/db/schema", () => ({
 }));
 
 // ─── import after mocking ────────────────────────────────────────────────────
-const { getRepositorySettings, upsertRepositorySettings } = await import(
-  "./repository-settings"
-);
+const { getRepositorySettings, upsertRepositorySettings } =
+  await import("./repository-settings");
 
 // ─── BT-DB-001: getRepositorySettings ────────────────────────────────────────
 
