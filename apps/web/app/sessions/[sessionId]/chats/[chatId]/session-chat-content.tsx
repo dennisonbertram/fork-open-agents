@@ -4771,9 +4771,7 @@ export function SessionChatContent({
                               selection={chatInfo.composioSelection}
                               repoOwner={session.repoOwner}
                               repoName={session.repoName}
-                              githubConnected={
-                                !!(session.repoOwner && session.repoName)
-                              }
+                              githubConnected={!!session.cloneUrl}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }
