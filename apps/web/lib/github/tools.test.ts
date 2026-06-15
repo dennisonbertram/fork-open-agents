@@ -283,19 +283,23 @@ describe("resolveGitHubToolsForChat — factory gating", () => {
     }
   });
 
-  test("managed_runtime mode: returns { status: 'off', reason: 'non_classic_runtime' } without calling verifyRepoAccess", async () => {
+  test("managed_runtime mode: goes through full resolution flow and returns { status: 'ready' } when all gates pass", async () => {
+    // After the non_classic_runtime early-return guard was removed, managed_runtime
+    // sessions are no longer short-circuited. They run through the full resolution
+    // path (gate check, repo access) and return ready when everything passes.
     const result = await resolveGitHubToolsForChat({
       userId: "user-1",
       chatId: "chat-1",
-      runtimeMode: "managed_runtime",
     });
 
-    expect(result.status).toBe("off");
-    if (result.status === "off") {
-      expect(result.reason).toBe("non_classic_runtime");
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(Object.keys(result.tools)).toContain("github_list_issues");
+      expect(result.repoOwner).toBe("acme");
+      expect(result.repoName).toBe("my-repo");
     }
-    // verifyRepoAccess must NOT have been called (no token mint/revoke round-trip)
-    expect(verifyRepoAccessCallCount).toBe(0);
+    // verifyRepoAccess IS called — the early-return guard is gone
+    expect(verifyRepoAccessCallCount).toBe(1);
   });
 
   test("gate ON + access ok: returns { status: 'ready' } with github_list_issues tool present", async () => {

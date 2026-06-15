@@ -66,6 +66,7 @@ import type {
 import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
+  summarizeExternalToolUse,
   type ManagedRuntimeWorkerSnapshot,
 } from "@/lib/observability/managed-runtime-workers";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
@@ -960,6 +961,7 @@ function buildRuntimeProofData(params: {
   const coordinatorDirectToolUse = summarizeManagedRuntimeDirectToolUse(
     params.assistantParts,
   );
+  const externalToolUse = summarizeExternalToolUse(params.assistantParts);
   const serviceEvidence = summarizeRuntimeServiceEvidence(
     params.artifacts.services,
   );
@@ -1033,6 +1035,7 @@ function buildRuntimeProofData(params: {
     workflowStatus: params.workflowStatus,
     workerEvidence,
     coordinatorDirectToolUseObserved: coordinatorDirectToolUse.observed,
+    externalToolsCompleted: externalToolUse.count,
   });
 
   return {
@@ -1049,6 +1052,7 @@ function buildRuntimeProofData(params: {
     },
     workerEvidence,
     coordinatorDirectToolUse,
+    externalToolUse,
     evidence,
     serviceEvidence,
     browserEvidence,
@@ -1072,6 +1076,7 @@ function getRuntimeProofStatus(params: {
   workflowStatus: WorkflowRunStatus;
   workerEvidence: WebAgentRuntimeProofData["workerEvidence"];
   coordinatorDirectToolUseObserved: boolean;
+  externalToolsCompleted?: number;
 }): WebAgentRuntimeProofData["status"] {
   if (params.workflowStatus === "failed") {
     return "failed";
@@ -1081,11 +1086,28 @@ function getRuntimeProofStatus(params: {
     return "blocked";
   }
 
+  // External tools (Composio/GitHub API calls via dynamic-tool parts) are a
+  // valid completion path when no managed workers executed. The coordinator
+  // completed repo work through external API tools without needing a sandbox.
+  const externalToolsValid = (params.externalToolsCompleted ?? 0) > 0;
+
   if (
     params.workerEvidence.completed === 0 ||
     params.workerEvidence.failed > 0 ||
     params.coordinatorDirectToolUseObserved
   ) {
+    // External tools can satisfy proof when no worker was ever attempted
+    // (completed === 0 AND failed === 0) AND no direct tool use was observed
+    // at the coordinator level. Failed workers mean the managed runtime was
+    // attempted but errored; external tools cannot mask that failure.
+    if (
+      params.workerEvidence.completed === 0 &&
+      params.workerEvidence.failed === 0 &&
+      externalToolsValid &&
+      !params.coordinatorDirectToolUseObserved
+    ) {
+      return "completed";
+    }
     return "incomplete";
   }
 
@@ -2352,7 +2374,6 @@ const runAgentStep = async (
       const githubResult = await resolveGitHubToolsForChat({
         userId,
         chatId,
-        runtimeMode: agentOptions.runtimeMode ?? "classic",
       });
       if (githubResult.status === "ready") {
         githubTools = githubResult.tools;
@@ -2402,7 +2423,7 @@ const runAgentStep = async (
           },
         });
       }
-      // Benign off cases (not_enabled, no_repo, non_classic_runtime) emit nothing
+      // Benign off cases (not_enabled, no_repo) emit nothing
     } catch (error) {
       // Non-fatal: emit observability event and continue without GitHub tools
       // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
