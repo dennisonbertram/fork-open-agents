@@ -357,6 +357,13 @@ export interface BuildSystemPromptOptions {
    * change when the tools are off).
    */
   githubToolsEnabled?: boolean;
+  /**
+   * When true, authenticated GitHub tools (native `github_*` or Composio
+   * `GITHUB_*`) are available this step. Adds a section steering the agent to
+   * use them instead of the unauthenticated `web_fetch` tool for GitHub hosts.
+   * Absent or false = no section added.
+   */
+  githubToolAvailable?: boolean;
 }
 
 const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
@@ -390,6 +397,10 @@ export const GITHUB_TOOLS_PROMPT = `# GitHub Issue and Pull-Request Tools
 Typed GitHub tools are available for this repository: github_list_issues, github_create_issue, github_update_issue, github_comment_on_issue, github_set_issue_labels, github_close_issue. Prefer these typed tools over \`gh\`, \`curl\`, or raw GitHub API calls for reading, triaging, creating, commenting on, labeling, and closing issues — they run as the GitHub App with the correct scoped permission and an issue-only guard.
 
 Continue using shell git for repository mechanics (clone, branch, edit, diff, commit, push).`;
+
+export const GITHUB_TOOL_PREFERENCE_PROMPT = `# Use GitHub Tools, Not web_fetch, For GitHub
+
+Authenticated GitHub tools are connected for this session. For anything on github.com or api.github.com (issues, pull requests, repositories, file contents), use those tools — never the \`web_fetch\` tool. \`web_fetch\` is unauthenticated and returns 404 for private repositories, so it cannot see private issues or repos. Reserve \`web_fetch\` for non-GitHub URLs.`;
 
 /**
  * Build the skills section for the system prompt.
@@ -484,6 +495,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   if (options.githubToolsEnabled) {
     parts.push(`\n${GITHUB_TOOLS_PROMPT}`);
+  }
+
+  if (options.githubToolAvailable) {
+    parts.push(`\n${GITHUB_TOOL_PREFERENCE_PROMPT}`);
   }
 
   if (options.customInstructions) {

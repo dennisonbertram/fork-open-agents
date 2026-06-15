@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ToolSet } from "ai";
-import { mergeExtraTools } from "./merge-extra-tools";
+import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
 
 // Minimal stub tool that satisfies ToolSet value shape
 function stubTool(name: string) {
@@ -55,5 +55,42 @@ describe("mergeExtraTools — no-clobber merge for Composio + GitHub tools", () 
     const result = mergeExtraTools(composio, github);
 
     expect(result!["shared_tool"] as unknown).toBe(overriding as unknown);
+  });
+});
+
+describe("hasGithubTool — detects GitHub tools across naming variants", () => {
+  test("undefined toolset → false", () => {
+    expect(hasGithubTool(undefined)).toBe(false);
+  });
+
+  test("native github_* tools → true", () => {
+    const tools: ToolSet = {
+      github_list_issues: stubTool("github_list_issues") as never,
+    };
+    expect(hasGithubTool(tools)).toBe(true);
+  });
+
+  test("Composio GITHUB_* and COMPOSIO_GITHUB_* tools → true", () => {
+    expect(
+      hasGithubTool({
+        GITHUB_GET_AN_ISSUE: stubTool("GITHUB_GET_AN_ISSUE") as never,
+      }),
+    ).toBe(true);
+    expect(
+      hasGithubTool({
+        COMPOSIO_GITHUB_CREATE_ISSUE: stubTool(
+          "COMPOSIO_GITHUB_CREATE_ISSUE",
+        ) as never,
+      }),
+    ).toBe(true);
+  });
+
+  test("non-GitHub tools and lookalikes → false", () => {
+    expect(
+      hasGithubTool({
+        web_fetch: stubTool("web_fetch") as never,
+        mygithubthing: stubTool("mygithubthing") as never,
+      }),
+    ).toBe(false);
   });
 });

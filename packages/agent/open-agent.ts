@@ -99,6 +99,13 @@ const callOptionsSchema = z.object({
    */
   githubToolsEnabled: z.boolean().optional(),
   /**
+   * Set by the web layer when authenticated GitHub tools (native `github_*` or
+   * Composio `GITHUB_*`) are in this step's toolset. Steers the prompt and the
+   * web_fetch guardrail away from unauthenticated GitHub fetches. Absent or
+   * false = no steer and no guardrail (zero behavior change when off).
+   */
+  githubToolAvailable: z.boolean().optional(),
+  /**
    * Phase 6 (#242): web-provided action to record a proposed tool entry.
    * Injected into experimental_context so the tool has no direct DB dependency.
    * Only present when toolAuthoringEnabled=true.
@@ -295,6 +302,7 @@ export const openAgent = new ToolLoopAgent({
     const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
     const proposeToolAction = options.proposeToolAction;
     const githubToolsEnabled = options.githubToolsEnabled ?? false;
+    const githubToolAvailable = options.githubToolAvailable ?? false;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -306,6 +314,7 @@ export const openAgent = new ToolLoopAgent({
       runtimeMode,
       sandboxFree,
       githubToolsEnabled,
+      githubToolAvailable,
     });
 
     return {
@@ -326,6 +335,7 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         runtimeMode,
         managedRuntime,
+        githubToolAvailable,
         ...(subagentRoster ? { subagentRoster } : {}),
         // Phase 6: only inject when enabled; undefined = no authoring in this session
         ...(toolAuthoringEnabled && proposeToolAction
