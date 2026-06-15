@@ -6,6 +6,9 @@
 
 import { describe, expect, it, mock, beforeEach } from "bun:test";
 
+// ─── Silence server-only guard so module loads in test env ────────────────────
+mock.module("server-only", () => ({}));
+
 // ─── fakeDb infrastructure ────────────────────────────────────────────────────
 
 type FakeRow = {
@@ -26,7 +29,7 @@ type FakeRow = {
   updatedAt: Date;
 };
 
-let storedRows: FakeRow[] = [];
+let storedRows: unknown[] = [];
 
 const fakeReturnRow: FakeRow = {
   id: "row-1",
@@ -46,31 +49,38 @@ const fakeReturnRow: FakeRow = {
   updatedAt: new Date(),
 };
 
-// Simulate findFirst returning whatever matchFn picks
+// These are mutated per-test to control fake DB responses
 let findFirstResult: FakeRow | undefined = undefined;
-// Simulate insert().returning() result
 let upsertResult: FakeRow[] = [fakeReturnRow];
 
-const fakeDb = {
-  query: {
-    repository_settings: {
-      findFirst: async (_opts: unknown) => findFirstResult,
+mock.module("@/lib/db/client", () => ({
+  db: {
+    query: {
+      repository_settings: {
+        findFirst: async (_opts: unknown) => findFirstResult,
+      },
     },
+    insert: (_table: unknown) => ({
+      values: (row: unknown) => {
+        storedRows.push(row);
+        return {
+          onConflictDoUpdate: (_opts: unknown) => ({
+            returning: async () => upsertResult,
+          }),
+        };
+      },
+    }),
   },
-  insert: (_table: unknown) => ({
-    values: (row: unknown) => {
-      // capture row for normalization assertions
-      storedRows.push(row as FakeRow);
-      return {
-        onConflictDoUpdate: (_opts: unknown) => ({
-          returning: async () => upsertResult,
-        }),
-      };
-    },
-  }),
-};
+}));
 
-mock.module("./client", () => ({ db: fakeDb }));
+// ─── Minimal schema stub so drizzle column references resolve ─────────────────
+mock.module("@/lib/db/schema", () => ({
+  repositorySettings: {
+    userId: "user_id",
+    repoOwner: "repo_owner",
+    repoName: "repo_name",
+  },
+}));
 
 // ─── import after mocking ────────────────────────────────────────────────────
 const { getRepositorySettings, upsertRepositorySettings } = await import(
@@ -83,7 +93,7 @@ describe("getRepositorySettings", () => {
   beforeEach(() => {
     findFirstResult = undefined;
     storedRows = [];
-    upsertResult = [fakeReturnRow];
+    upsertResult = [{ ...fakeReturnRow }];
   });
 
   it("BT-DB-001: returns undefined when no row exists", async () => {
@@ -146,9 +156,9 @@ describe("upsertRepositorySettings", () => {
       repoName: "MyRepo",
       settings: {},
     });
-    const written = storedRows[0];
-    expect(written?.repoOwner).toBe("myorg");
-    expect(written?.repoName).toBe("myrepo");
+    const written = storedRows[0] as Record<string, unknown>;
+    expect(written["repoOwner"]).toBe("myorg");
+    expect(written["repoName"]).toBe("myrepo");
   });
 
   it("BT-DB-003b: normalizes owner/name trim+lowercase", async () => {
@@ -158,9 +168,9 @@ describe("upsertRepositorySettings", () => {
       repoName: "  MyRepo  ",
       settings: {},
     });
-    const written = storedRows[0];
-    expect(written?.repoOwner).toBe("myorg");
-    expect(written?.repoName).toBe("myrepo");
+    const written = storedRows[0] as Record<string, unknown>;
+    expect(written["repoOwner"]).toBe("myorg");
+    expect(written["repoName"]).toBe("myrepo");
   });
 
   it("BT-DB-004: spreads settings fields into the inserted row", async () => {
@@ -170,20 +180,20 @@ describe("upsertRepositorySettings", () => {
       repoName: "api",
       settings: { vcpus: 8, fullClone: true },
     });
-    const written = storedRows[0];
-    expect((written as unknown as Record<string, unknown>)["vcpus"]).toBe(8);
-    expect((written as unknown as Record<string, unknown>)["fullClone"]).toBe(true);
+    const written = storedRows[0] as Record<string, unknown>;
+    expect(written["vcpus"]).toBe(8);
+    expect(written["fullClone"]).toBe(true);
   });
 
   it("BT-DB-005: undefined settings fields are not present in the written row (subset upsert)", async () => {
-    // Only write vcpus — other fields should remain absent from the written values
+    // Only write vcpus — other fields should remain absent from the inserted values
     await upsertRepositorySettings({
       userId: "user-1",
       repoOwner: "acme",
       repoName: "api",
       settings: { vcpus: 2 },
     });
-    const written = storedRows[0] as unknown as Record<string, unknown>;
+    const written = storedRows[0] as Record<string, unknown>;
     // fullClone was not in settings, so it should NOT appear in the inserted values
     expect("fullClone" in written).toBe(false);
   });
@@ -195,7 +205,7 @@ describe("upsertRepositorySettings", () => {
       repoName: "api",
       settings: { autoCommitPush: null },
     });
-    const written = storedRows[0] as unknown as Record<string, unknown>;
+    const written = storedRows[0] as Record<string, unknown>;
     expect("autoCommitPush" in written).toBe(true);
     expect(written["autoCommitPush"]).toBeNull();
   });
