@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 
 type ComposioWorkspaceSettingsPanelProps = {
   repoOwner: string | null;
@@ -58,6 +59,11 @@ export function ComposioWorkspaceSettingsPanel({
   const [restrictsProfiles, setRestrictsProfiles] = useState(false);
   const [allowedProfileIds, setAllowedProfileIds] = useState<string[]>([]);
   const [blockedToolkits, setBlockedToolkits] = useState("");
+  // Active toolkits for this repo (subset of globally-connected). GitHub is
+  // default-on when the repo has never been configured (null).
+  const [selectedToolkitSlugs, setSelectedToolkitSlugs] = useState<string[]>(
+    [],
+  );
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -68,6 +74,8 @@ export function ComposioWorkspaceSettingsPanel({
     setAllowedProfileIds(settings?.allowedProfileIds ?? []);
     setRestrictsProfiles((settings?.allowedProfileIds.length ?? 0) > 0);
     setBlockedToolkits((settings?.blockedToolkitSlugs ?? []).join(", "));
+    // null/undefined = never configured → GitHub default-on.
+    setSelectedToolkitSlugs(settings?.selectedToolkitSlugs ?? ["github"]);
     setStatus(
       data
         ? settings
@@ -100,6 +108,7 @@ export function ComposioWorkspaceSettingsPanel({
           allowedProfileIds: restrictsProfiles ? allowedProfileIds : [],
           blockedToolkitSlugs: splitList(blockedToolkits),
           agentDefaults: data?.repositorySettings?.agentDefaults ?? {},
+          selectedToolkitSlugs,
         }),
       });
       const body = (await response.json().catch(() => null)) as
@@ -184,6 +193,25 @@ export function ComposioWorkspaceSettingsPanel({
                     Manage global integrations
                   </Link>
                 </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-lg border border-border/70 p-3">
+              <Label>Tools for this repository</Label>
+              <FieldHelp>
+                Choose which connected tools agents can use in every chat on
+                this repository. Only tools connected globally are shown. GitHub
+                is on by default.
+              </FieldHelp>
+              <div className="mt-2">
+                <ComposioToolkitPicker
+                  selectedSlugs={selectedToolkitSlugs}
+                  onChange={setSelectedToolkitSlugs}
+                  source="connected"
+                  repoOwner={repoOwner}
+                  repoName={repoName}
+                  disabled={isSaving}
+                />
               </div>
             </div>
 
