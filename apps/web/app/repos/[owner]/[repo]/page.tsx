@@ -144,13 +144,21 @@ export default async function RepoDashboardPage({
               </TabsTrigger>
             </TabsList>
             <TabsContent value="pull-requests">
-              <PullRequestsWindow summary={prSummary} owner={owner} repo={repo} />
+              <PullRequestsWindow
+                summary={prSummary}
+                owner={owner}
+                repo={repo}
+              />
             </TabsContent>
             <TabsContent value="issues">
               <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
             </TabsContent>
             <TabsContent value="actions">
-              <ActionsWindow summary={actionsSummary} owner={owner} repo={repo} />
+              <ActionsWindow
+                summary={actionsSummary}
+                owner={owner}
+                repo={repo}
+              />
             </TabsContent>
           </Tabs>
 
