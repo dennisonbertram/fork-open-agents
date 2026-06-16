@@ -55,7 +55,10 @@ describe("useRepoDefaults", () => {
 
   // BT-001: Returns parsed resolved defaults on success
   test("BT-001: returns defaults.resolved when the fetch succeeds", async () => {
-    swrState = { data: { resolved: SAMPLE_RESOLVED, raw: null }, isLoading: false };
+    swrState = {
+      data: { resolved: SAMPLE_RESOLVED, raw: null },
+      isLoading: false,
+    };
     const { useRepoDefaults } = await modulePromise;
     const result = useRepoDefaults({
       enabled: true,

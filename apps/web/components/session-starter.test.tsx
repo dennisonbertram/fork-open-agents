@@ -63,7 +63,11 @@ let mockRepoDefaultsCallCount = 0;
 let mockRepoDefaults: ResolvedRepoDefaults | undefined = undefined;
 
 mock.module("@/hooks/use-repo-defaults", () => ({
-  useRepoDefaults: (params: { enabled: boolean; repoOwner: string; repoName: string }) => {
+  useRepoDefaults: (params: {
+    enabled: boolean;
+    repoOwner: string;
+    repoName: string;
+  }) => {
     mockRepoDefaultsEnabled = params.enabled;
     mockRepoDefaultsCallCount += 1;
     return {
@@ -138,12 +142,6 @@ const DEFAULTS_COMMIT_PUSH_ON: ResolvedRepoDefaults = {
   isNewBranch: true,
 };
 
-const DEFAULTS_COMMIT_PUSH_OFF: ResolvedRepoDefaults = {
-  ...DEFAULTS_COMMIT_PUSH_ON,
-  autoCommitPush: false,
-  autoCreatePr: false,
-};
-
 describe("SessionStarter - repo defaults pre-fill", () => {
   beforeEach(() => {
     mockRepoDefaultsEnabled = false;
@@ -156,25 +154,18 @@ describe("SessionStarter - repo defaults pre-fill", () => {
     mockRepoDefaults = DEFAULTS_COMMIT_PUSH_ON;
 
     const { SessionStarter } = await modulePromise;
-    let submitted: Parameters<ConstructorParameters<typeof SessionStarter>[0]["onSubmit"]>[0] | null = null;
 
     const html = renderToStaticMarkup(
       <SessionStarter
-        onSubmit={(s) => {
-          submitted = s;
-        }}
+        onSubmit={() => {}}
         isLoading={false}
         lastRepo={{ owner: "testowner", repo: "testrepo" }}
       />,
     );
 
-    // Component renders without crash
+    // Component renders without crash — the mock repoDefaults is wired.
+    // Effective values are tested via pure logic in BT-SS-001b and BT-SS-001c.
     expect(html).toContain("Connect a repo");
-    // The mock useRepoDefaults must be accessible — if the import is missing, the
-    // component won't have the hook, so we assert the module wiring is present.
-    // We can't click in renderToStaticMarkup, so we import the pure logic and
-    // verify the effective value computation directly.
-    expect(html).toBeDefined();
   });
 
   // BT-SS-001b: Verify effective value computation with repoDefaults > user pref
@@ -266,28 +257,33 @@ describe("SessionStarter - repo defaults pre-fill", () => {
     const key = `${selectedOwner}/${selectedRepo}`;
 
     let isNewBranch = false;
-    let selectedBranch: string | null = null;
+    // Use a box object to avoid TypeScript's flow-narrowing losing track of the type
+    const branchRef = { value: null as string | null };
 
     function applyBranchDefaults(defaults: ResolvedRepoDefaults) {
       if (appliedKeys.has(key)) return; // already applied for this repo
       appliedKeys.add(key);
       isNewBranch = Boolean(defaults.isNewBranch);
       if (defaults.defaultBranch) {
-        selectedBranch = defaults.defaultBranch;
+        branchRef.value = defaults.defaultBranch;
       }
     }
 
     // First application — should apply
     applyBranchDefaults(DEFAULTS_COMMIT_PUSH_ON);
     expect(isNewBranch).toBe(true);
-    expect(selectedBranch).toBe("feat/main");
+    expect(branchRef.value).toBe("feat/main");
 
     // Second call with different values — should NOT clobber user edits
     isNewBranch = false; // user changed it
-    selectedBranch = "user-branch"; // user changed it
-    applyBranchDefaults({ ...DEFAULTS_COMMIT_PUSH_ON, isNewBranch: true, defaultBranch: "other" });
+    branchRef.value = "user-branch"; // user changed it
+    applyBranchDefaults({
+      ...DEFAULTS_COMMIT_PUSH_ON,
+      isNewBranch: true,
+      defaultBranch: "other",
+    });
     expect(isNewBranch).toBe(false); // user's change preserved
-    expect(selectedBranch).toBe("user-branch"); // user's change preserved
+    expect(branchRef.value).toBe("user-branch"); // user's change preserved
   });
 
   // BT-SS-002b: New repo selection allows re-applying branch defaults
@@ -312,17 +308,35 @@ describe("SessionStarter - repo defaults pre-fill", () => {
     let selectedBranch = "old-branch";
 
     // Apply for repo A
-    applyBranchDefaults("acme", "repo-a", DEFAULTS_COMMIT_PUSH_ON,
-      (v) => { isNewBranch = v; },
-      (v) => { selectedBranch = v; },
+    applyBranchDefaults(
+      "acme",
+      "repo-a",
+      DEFAULTS_COMMIT_PUSH_ON,
+      (v) => {
+        isNewBranch = v;
+      },
+      (v) => {
+        selectedBranch = v;
+      },
     );
     expect(isNewBranch).toBe(true);
     expect(selectedBranch).toBe("feat/main");
 
     // Switch to repo B — should apply fresh defaults
-    applyBranchDefaults("acme", "repo-b", { ...DEFAULTS_COMMIT_PUSH_ON, isNewBranch: false, defaultBranch: "develop" },
-      (v) => { isNewBranch = v; },
-      (v) => { selectedBranch = v; },
+    applyBranchDefaults(
+      "acme",
+      "repo-b",
+      {
+        ...DEFAULTS_COMMIT_PUSH_ON,
+        isNewBranch: false,
+        defaultBranch: "develop",
+      },
+      (v) => {
+        isNewBranch = v;
+      },
+      (v) => {
+        selectedBranch = v;
+      },
     );
     expect(isNewBranch).toBe(false);
     expect(selectedBranch).toBe("develop");
