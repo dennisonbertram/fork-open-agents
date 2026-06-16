@@ -11,6 +11,7 @@ import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import { listAgentLoops } from "@/lib/agent-loops/store";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   OverviewWindow,
   AgentsWindow,
@@ -130,11 +131,36 @@ export default async function RepoDashboardPage({
             repoName={repo}
           />
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <PullRequestsWindow summary={prSummary} owner={owner} repo={repo} />
-            <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
-            <ActionsWindow summary={actionsSummary} owner={owner} repo={repo} />
-          </div>
+          <Tabs defaultValue="pull-requests" className="w-full">
+            <TabsList className="w-full">
+              <TabsTrigger value="pull-requests" className="flex-1">
+                Pull Requests
+              </TabsTrigger>
+              <TabsTrigger value="issues" className="flex-1">
+                Issues
+              </TabsTrigger>
+              <TabsTrigger value="actions" className="flex-1">
+                Actions
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pull-requests">
+              <PullRequestsWindow
+                summary={prSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+            <TabsContent value="issues">
+              <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
+            </TabsContent>
+            <TabsContent value="actions">
+              <ActionsWindow
+                summary={actionsSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+          </Tabs>
 
           <AgentsWindow agents={agents} />
           {loopsEnabled ? (
