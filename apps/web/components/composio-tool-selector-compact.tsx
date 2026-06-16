@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings, Wrench } from "lucide-react";
+import { Github, Settings } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
@@ -8,6 +8,10 @@ import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
+import {
+  ToolIconStack,
+  buildToolIconItems,
+} from "@/components/tool-icon-stack";
 import {
   Popover,
   PopoverContent,
@@ -19,6 +23,7 @@ interface ComposioToolSelectorCompactProps {
   disabled?: boolean;
   repoOwner?: string | null;
   repoName?: string | null;
+  githubConnected?: boolean;
   onChange: (selection: ChatComposioSelection) => void;
 }
 
@@ -35,6 +40,7 @@ export function ComposioToolSelectorCompact({
   disabled = false,
   repoOwner,
   repoName,
+  githubConnected = false,
   onChange,
 }: ComposioToolSelectorCompactProps) {
   const settingsUrl =
@@ -93,18 +99,34 @@ export function ComposioToolSelectorCompact({
             (selectedProfile || hasDirectSlugs) && "text-foreground",
           )}
         >
-          <Wrench className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {hasDirectSlugs || selectedProfile
-              ? `Tools: ${summarizeChatTools(activeToolkits)}`
-              : "Tools: Off"}
-          </span>
+          <ToolIconStack
+            items={buildToolIconItems({
+              activeToolkits,
+              githubConnected,
+            })}
+            maxVisible={3}
+          />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         className="w-[360px] max-h-[480px] overflow-y-auto p-3"
       >
+        {githubConnected && (
+          <div className="mb-3 rounded-md border border-border/60 bg-muted/20 p-2">
+            <p className="mb-1 text-xs font-medium text-foreground">
+              Native connections
+            </p>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Github className="size-3.5 shrink-0 text-foreground" />
+              <span>GitHub</span>
+              <span className="text-[10px] text-muted-foreground/60">
+                Always on for this repo
+              </span>
+            </div>
+          </div>
+        )}
+
         <p className="mb-2 text-xs font-semibold text-foreground">
           Tools this chat can use
         </p>
