@@ -22,6 +22,8 @@ const fakeTools = { github_get_repo: {} };
 mock.module("server-only", () => ({}));
 
 mock.module("@/lib/db/composio", () => ({
+  getRepositoryComposioSettings: () => Promise.resolve(undefined),
+  getRepositoryComposioSettingsValues: () => null,
   getChatComposioSelection: (v: unknown) => {
     // passthrough — use real normalizer so types are correct
     return normalizeChatComposioSelection(v);
@@ -101,6 +103,8 @@ describe("resolveComposioToolsForChat — direct-list branch", () => {
     let capturedUpsertData: unknown = null;
 
     mock.module("@/lib/db/composio", () => ({
+      getRepositoryComposioSettings: () => Promise.resolve(undefined),
+      getRepositoryComposioSettingsValues: () => null,
       getChatComposioSelection: (v: unknown) => {
         return normalizeChatComposioSelection(v);
       },
