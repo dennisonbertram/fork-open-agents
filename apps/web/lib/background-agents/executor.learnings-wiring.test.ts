@@ -267,6 +267,7 @@ function buildLearningsAgent(
     outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

@@ -1034,6 +1034,7 @@ export async function executeBackgroundAgentRun(params: {
           checkCommand: agent.checkCommand,
         }),
         composioTools: resolvedComposioTools,
+        allowedBuiltinToolNames: agent.builtinToolNames ?? null,
       });
       await recordBackgroundAgentEvent({
         runId: run.id,

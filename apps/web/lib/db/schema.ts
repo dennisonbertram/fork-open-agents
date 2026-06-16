@@ -899,6 +899,15 @@ export const backgroundAgents = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    /**
+     * Allowlist of built-in tool NAMES this unattended agent may call.
+     * null (default) = the role's default policy (all built-in tools). When set,
+     * the agent only sees these built-in tools — e.g. omit `web_fetch` so the
+     * agent can never make an approval-gated network call that would stall an
+     * unattended run. Composio tools (composioToolkitSlugs) are governed
+     * separately and always pass.
+     */
+    builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
