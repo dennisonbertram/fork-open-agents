@@ -26,6 +26,36 @@ const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
 let composioPolicy = { allowed: true, reason: null as string | null };
 
+// Mock resolveRepoDefaults so existing tests are not affected by the new
+// repo-defaults lookup added in P4. The mock returns values that match the
+// user-preferences mock above (autoCommitPush/autoCreatePr: false,
+// managedRuntimeProfileId: "web-bun-agent-browser") so that tests written
+// against preferences-layer behavior continue to pass without change.
+mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
+  resolveRepoDefaults: async () => ({
+    autoCommitPush: false,
+    autoCreatePr: false,
+    managedRuntimeProfileId: "web-bun-agent-browser",
+    runtimeMode: "classic",
+    vcpus: 2,
+    fullClone: false,
+    prewarmEnabled: false,
+    defaultBranch: null,
+    isNewBranch: false,
+  }),
+  mergeRepoDefaults: () => ({
+    autoCommitPush: false,
+    autoCreatePr: false,
+    managedRuntimeProfileId: "web-bun-agent-browser",
+    runtimeMode: "classic",
+    vcpus: 2,
+    fullClone: false,
+    prewarmEnabled: false,
+    defaultBranch: null,
+    isNewBranch: false,
+  }),
+}));
+
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
