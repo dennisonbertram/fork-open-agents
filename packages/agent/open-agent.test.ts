@@ -322,3 +322,35 @@ describe("GitHub tools prompt steer (githubToolsEnabled)", () => {
     expect(prompt).not.toContain("Prefer these typed tools");
   });
 });
+
+// GTA-001 – GTA-003: GitHub tool-preference steer over web_fetch
+// (githubToolAvailable flag — covers native AND Composio GitHub tools)
+describe("GitHub tool-preference steer (githubToolAvailable)", () => {
+  // GTA-001: when githubToolAvailable=true the prompt steers away from web_fetch
+  test("buildSystemPrompt with githubToolAvailable:true steers away from web_fetch for GitHub", () => {
+    const prompt = buildSystemPrompt({ githubToolAvailable: true });
+
+    expect(prompt).toContain("web_fetch");
+    expect(prompt).toContain("api.github.com");
+  });
+
+  // GTA-002: when githubToolAvailable is false/omitted the steer is absent
+  test("buildSystemPrompt without githubToolAvailable omits the web_fetch GitHub steer", () => {
+    const withFalse = buildSystemPrompt({ githubToolAvailable: false });
+    const withOmitted = buildSystemPrompt({});
+
+    expect(withFalse).not.toContain("api.github.com");
+    expect(withFalse).toBe(withOmitted);
+  });
+
+  // GTA-003: the steer is independent of the typed-tools steer
+  test("githubToolAvailable steer appears even when githubToolsEnabled is false", () => {
+    const prompt = buildSystemPrompt({
+      githubToolAvailable: true,
+      githubToolsEnabled: false,
+    });
+
+    expect(prompt).toContain("api.github.com");
+    expect(prompt).not.toContain("github_list_issues");
+  });
+});
