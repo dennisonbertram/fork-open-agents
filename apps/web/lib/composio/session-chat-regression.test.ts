@@ -23,6 +23,8 @@ const fakeComposioSessionId = "regression-composio-sess";
 
 // ── Module mocks (registered before any dynamic import of session.ts) ────────
 mock.module("@/lib/db/composio", () => ({
+  getRepositoryComposioSettings: () => Promise.resolve(undefined),
+  getRepositoryComposioSettingsValues: () => null,
   getChatComposioSelection: (v: unknown) => normalizeChatComposioSelection(v),
   getComposioAgentSession: () => Promise.resolve(null),
   upsertComposioAgentSession: () => Promise.resolve({ id: "row-1" }),
@@ -93,6 +95,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
     let touchCalled = false;
 
     mock.module("@/lib/db/composio", () => ({
+      getRepositoryComposioSettings: () => Promise.resolve(undefined),
+      getRepositoryComposioSettingsValues: () => null,
       getChatComposioSelection: (v: unknown) =>
         normalizeChatComposioSelection(v),
       getComposioAgentSession: () =>
@@ -131,6 +135,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
   test("REGRESSION-003: non-main agentKey skips direct-list and returns off", async () => {
     // Chat has directToolkitSlugs but agentKey=executor → no profile → off
     mock.module("@/lib/db/composio", () => ({
+      getRepositoryComposioSettings: () => Promise.resolve(undefined),
+      getRepositoryComposioSettingsValues: () => null,
       getChatComposioSelection: (v: unknown) =>
         normalizeChatComposioSelection(v),
       getComposioAgentSession: () => Promise.resolve(null),
@@ -156,6 +162,8 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
 
   test("REGRESSION-004: managed_runtime with directSlugs throws ComposioSetupError", async () => {
     mock.module("@/lib/db/composio", () => ({
+      getRepositoryComposioSettings: () => Promise.resolve(undefined),
+      getRepositoryComposioSettingsValues: () => null,
       getChatComposioSelection: (v: unknown) =>
         normalizeChatComposioSelection(v),
       getComposioAgentSession: () => Promise.resolve(null),

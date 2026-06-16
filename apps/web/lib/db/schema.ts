@@ -1845,6 +1845,14 @@ export const repositoryComposioSettings = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    // Active Composio toolkits for this repo/workspace — a subset of the
+    // user's globally-connected toolkits. Applies to every chat on the repo
+    // (the per-chat picker was removed). NULL = never configured (resolution
+    // applies the github default-on fallback); an array (incl. []) = the
+    // user's explicit choice, which wins as-is.
+    selectedToolkitSlugs: jsonb("selected_toolkit_slugs").$type<
+      string[] | null
+    >(),
     agentDefaults: jsonb("agent_defaults")
       .$type<Partial<ComposioAgentDefaults>>()
       .notNull()
