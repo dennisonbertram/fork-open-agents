@@ -4,6 +4,7 @@ import {
   gateway,
   openAgent,
   type OpenAgentCallOptions,
+  sanitizeUnattendedToolCalls,
 } from "@open-agents/agent";
 import {
   connectSandbox,
@@ -278,8 +279,10 @@ async function runMutationAgent(params: {
   prompt: string;
   /** Optional Composio tools to inject into the agent loop. */
   composioTools?: import("ai").ToolSet;
+  /** Pre-approved built-in tool names. null/absent = default policy. */
+  allowedBuiltinToolNames?: string[] | null;
 }) {
-  const messages: ModelMessage[] = [
+  let messages: ModelMessage[] = [
     {
       role: "user",
       content: params.prompt,
@@ -293,6 +296,12 @@ async function runMutationAgent(params: {
       environmentDetails: params.sandbox.environmentDetails,
     },
     runtimeMode: "classic",
+    // Unattended: no human can approve tool calls. Approval gates resolve
+    // deterministically (web_fetch auto-approves; dangerous bash / sensitive
+    // reads are denied via the sanitizer below) so a never-approved call cannot
+    // wedge the run with a dangling tool_use.
+    unattended: true,
+    allowedBuiltinToolNames: params.allowedBuiltinToolNames ?? null,
     customInstructions:
       "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
@@ -315,6 +324,10 @@ async function runMutationAgent(params: {
 
   for (let step = 1; step <= DEFAULT_AGENT_MAX_STEPS; step += 1) {
     const startedAt = Date.now();
+    // Repair any approval-gated tool call the previous turn left without a
+    // result before re-sending history — otherwise the provider rejects the
+    // request ("Tool result is missing for tool call …") and fails the run.
+    messages = sanitizeUnattendedToolCalls(messages);
     const result = await openAgent.generate({
       messages,
       options,
@@ -1021,6 +1034,7 @@ export async function executeBackgroundAgentRun(params: {
           checkCommand: agent.checkCommand,
         }),
         composioTools: resolvedComposioTools,
+        allowedBuiltinToolNames: agent.builtinToolNames ?? null,
       });
       await recordBackgroundAgentEvent({
         runId: run.id,

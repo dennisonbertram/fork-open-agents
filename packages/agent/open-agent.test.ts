@@ -224,6 +224,98 @@ describe("chat-only tool policy (sandbox-free)", () => {
   });
 });
 
+// Built-in tool allowlist (unattended agents pre-approve tools by name).
+describe("built-in tool allowlist (allowedBuiltinToolNames)", () => {
+  test("null allowlist leaves the full classic toolset unchanged", () => {
+    const toolNames = Object.keys(
+      getRuntimeModeToolPolicy("classic", undefined, {
+        allowedBuiltinToolNames: null,
+      }),
+    );
+    expect(toolNames).toEqual([...OPEN_AGENT_TOOL_NAMES]);
+  });
+
+  test("restricts built-in tools to the allowlist", () => {
+    const toolNames = Object.keys(
+      getRuntimeModeToolPolicy("classic", undefined, {
+        allowedBuiltinToolNames: ["read", "bash", "grep"],
+      }),
+    );
+    expect(toolNames.sort()).toEqual(["bash", "grep", "read"]);
+    expect(toolNames).not.toContain("web_fetch");
+    expect(toolNames).not.toContain("write");
+  });
+
+  test("excludes web_fetch when it is not on the allowlist", () => {
+    const toolNames = Object.keys(
+      getRuntimeModeToolPolicy("classic", undefined, {
+        allowedBuiltinToolNames: ["read", "write", "edit", "bash"],
+      }),
+    );
+    expect(toolNames).not.toContain("web_fetch");
+  });
+
+  test("keeps caller-provided (Composio) tools regardless of the built-in allowlist", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_CREATE_ISSUE" };
+    const filtered = getRuntimeModeToolPolicy(
+      "classic",
+      {
+        COMPOSIO_GITHUB_CREATE_ISSUE: composioTool,
+      } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1],
+      { allowedBuiltinToolNames: ["read"] },
+    );
+    const toolNames = Object.keys(filtered);
+    expect(toolNames).toContain("COMPOSIO_GITHUB_CREATE_ISSUE");
+    expect(toolNames).toContain("read");
+    expect(toolNames).not.toContain("bash");
+  });
+
+  test("empty allowlist removes all built-in tools but keeps external tools", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_CREATE_ISSUE" };
+    const filtered = getRuntimeModeToolPolicy(
+      "classic",
+      {
+        COMPOSIO_GITHUB_CREATE_ISSUE: composioTool,
+      } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1],
+      { allowedBuiltinToolNames: [] },
+    );
+    expect(Object.keys(filtered)).toEqual(["COMPOSIO_GITHUB_CREATE_ISSUE"]);
+  });
+});
+
+// Unattended runs have no human approver: web_fetch (a tool-level approval
+// gate) is pre-approved by virtue of being exposed via the allowlist.
+describe("web_fetch approval in unattended mode", () => {
+  test("web_fetch requires approval when not unattended", async () => {
+    const { webFetchTool } = await import("./tools");
+    const needsApproval = (
+      webFetchTool as unknown as {
+        needsApproval: (
+          input: unknown,
+          opts: { experimental_context?: unknown },
+        ) => boolean | Promise<boolean>;
+      }
+    ).needsApproval;
+    expect(typeof needsApproval).toBe("function");
+    expect(await needsApproval({}, { experimental_context: {} })).toBe(true);
+  });
+
+  test("web_fetch is auto-approved in unattended mode", async () => {
+    const { webFetchTool } = await import("./tools");
+    const needsApproval = (
+      webFetchTool as unknown as {
+        needsApproval: (
+          input: unknown,
+          opts: { experimental_context?: unknown },
+        ) => boolean | Promise<boolean>;
+      }
+    ).needsApproval;
+    expect(
+      await needsApproval({}, { experimental_context: { unattended: true } }),
+    ).toBe(false);
+  });
+});
+
 // REGRESSION tests: catch future breakage of the chat-only policy from different angles
 describe("regression: chat-only tool policy stability", () => {
   // REGRESSION-001: classic mode (with sandbox) must still get the FULL tool set.

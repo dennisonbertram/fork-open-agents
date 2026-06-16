@@ -328,6 +328,7 @@ const regOpenAgentMock = mock(async () => {
 });
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   openAgent: { generate: regOpenAgentMock },
   gateway: mock((m: string) => m),
 }));

@@ -1,0 +1,1 @@
+ALTER TABLE "background_agents" ADD COLUMN "builtin_tool_names" jsonb;
