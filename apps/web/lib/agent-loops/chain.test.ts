@@ -706,6 +706,39 @@ describe("BT-C02: failure stop — failed step, no failure edge → run failed",
 
     expect(workflowStartCalls.length).toBe(0);
   });
+
+  test("BT-C02: default sink surfaces the underlying step error message (not a masking 'no failure edge' string)", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    const failedUpdate = recordedRunStatusUpdates.find(
+      (u) => u.status === "failed",
+    );
+    // The real diagnostic from the step must reach the run level, otherwise the
+    // run shows an unhelpful "no failure edge" message and hides the cause.
+    expect(failedUpdate?.errorMessage).toBe("Sandbox failed");
+  });
+
+  test("BT-C02: run.failed event marks the unhandled failure as routed to the default sink", async () => {
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: "step-work-1",
+      workflowRunId: "wf-run-1",
+    });
+
+    const failedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.run.failed",
+    );
+    expect(failedEvent).toBeDefined();
+    const payload = failedEvent?.payload as
+      | { routedToDefaultSink?: boolean; nodeId?: string }
+      | undefined;
+    expect(payload?.routedToDefaultSink).toBe(true);
+    expect(payload?.nodeId).toBe("work");
+  });
 });
 
 // ── BT-C03: Failure routed ────────────────────────────────────────────────────

@@ -138,6 +138,14 @@ export const agentStepNodeSchema = z.object({
    * accounts + repo policy. Empty/absent = no external tools.
    */
   composioToolkitSlugs: z.array(z.string()).optional(),
+  /**
+   * Allowlist of built-in tool NAMES this unattended step may call. `null`/
+   * absent = the default policy (all built-in tools). When set, the agent only
+   * sees these built-in tools — e.g. omit `web_fetch` so the step can never make
+   * an approval-gated network call that would stall an unattended run. Composio
+   * tools (composioToolkitSlugs) are governed separately and always pass.
+   */
+  builtinToolNames: z.array(z.string()).nullish(),
 });
 
 export const githubCheckNodeSchema = z.object({

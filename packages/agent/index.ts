@@ -24,6 +24,10 @@ export {
   OPEN_AGENT_TOOL_NAMES,
   openAgent,
 } from "./open-agent";
+export {
+  sanitizeUnattendedToolCalls,
+  UNATTENDED_DENIED_REASON,
+} from "./sanitize-tool-calls";
 // Skills exports
 export { discoverSkills, parseSkillFrontmatter } from "./skills/discovery";
 export { extractSkillBody, substituteArguments } from "./skills/loader";
