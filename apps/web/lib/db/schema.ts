@@ -1871,6 +1871,45 @@ export type RepositoryComposioSettings =
 export type NewRepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferInsert;
 
+// Per-repo session defaults — P2 of the loops-ux-audit epic
+// Null columns mean "inherit from the layer below" (system < user_preferences < this table).
+export const repositorySettings = pgTable(
+  "repository_settings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    // All defaultable fields are nullable: null = inherit from layer below
+    fullClone: boolean("full_clone"),
+    prewarmEnabled: boolean("prewarm_enabled"),
+    runtimeMode: text("runtime_mode", {
+      enum: ["classic", "managed_runtime"],
+    }).$type<"classic" | "managed_runtime">(),
+    managedRuntimeProfileId: text("managed_runtime_profile_id"),
+    vcpus: integer("vcpus"),
+    autoCommitPush: boolean("auto_commit_push"),
+    autoCreatePr: boolean("auto_create_pr"),
+    defaultBranch: text("default_branch"),
+    isNewBranch: boolean("is_new_branch"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("repository_settings_user_idx").on(table.userId),
+    uniqueIndex("repository_settings_repo_idx").on(
+      table.userId,
+      table.repoOwner,
+      table.repoName,
+    ),
+  ],
+);
+
+export type RepositorySettings = typeof repositorySettings.$inferSelect;
+export type NewRepositorySettings = typeof repositorySettings.$inferInsert;
+
 // MCP server registrations — slice 1 of epic #371
 export const mcpServers = pgTable(
   "mcp_servers",
