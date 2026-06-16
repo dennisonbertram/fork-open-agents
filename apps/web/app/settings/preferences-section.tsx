@@ -600,83 +600,68 @@ export function PreferencesSection() {
       <div className="border-t border-border/50" />
 
       {/* ── 3. Git automation ── */}
-      <div className="space-y-4">
-        <GroupHeader>Git automation</GroupHeader>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="auto-commit-push">Auto commit &amp; push</Label>
-              <p className="text-xs text-muted-foreground">
-                Commit and push when an agent turn finishes.
-              </p>
-            </div>
-            <Switch
-              id="auto-commit-push"
-              checked={preferences?.autoCommitPush ?? false}
-              onCheckedChange={handleAutoCommitPushChange}
-              disabled={isSaving}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="auto-create-pr">Auto create PR</Label>
-              <p className="text-xs text-muted-foreground">
-                Open a pull request after auto commit.
-              </p>
-              {!(preferences?.autoCommitPush ?? false) && (
-                <p className="text-xs text-muted-foreground italic">
-                  Available once Auto commit &amp; push is on.
-                </p>
-              )}
-            </div>
-            <Switch
-              id="auto-create-pr"
-              checked={preferences?.autoCreatePr ?? false}
-              onCheckedChange={handleAutoCreatePrChange}
-              disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
-            />
-          </div>
-        </div>
-      </div>
+      <SettingsGroup title="Git automation">
+        <SettingRow
+          label="Auto commit & push"
+          htmlFor="auto-commit-push"
+          description="Commit and push when an agent turn finishes."
+        >
+          <Switch
+            id="auto-commit-push"
+            checked={preferences?.autoCommitPush ?? false}
+            onCheckedChange={handleAutoCommitPushChange}
+            disabled={isSaving}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Auto create PR"
+          htmlFor="auto-create-pr"
+          description={
+            !(preferences?.autoCommitPush ?? false)
+              ? "Open a pull request after auto commit. Available once Auto commit & push is on."
+              : "Open a pull request after auto commit."
+          }
+        >
+          <Switch
+            id="auto-create-pr"
+            checked={preferences?.autoCreatePr ?? false}
+            onCheckedChange={handleAutoCreatePrChange}
+            disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
+          />
+        </SettingRow>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
       {/* ── 4. Notifications ── */}
-      <div className="space-y-4">
-        <GroupHeader>Notifications</GroupHeader>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="alerts-enabled">Alerts</Label>
-              <p className="text-xs text-muted-foreground">
-                Notify when a background agent finishes.
-              </p>
-            </div>
+      <SettingsGroup title="Notifications">
+        <SettingRow
+          label="Alerts"
+          htmlFor="alerts-enabled"
+          description="Notify when a background agent finishes."
+        >
+          <Switch
+            id="alerts-enabled"
+            checked={preferences?.alertsEnabled ?? true}
+            onCheckedChange={handleAlertsEnabledChange}
+            disabled={isSaving}
+          />
+        </SettingRow>
+        {(preferences?.alertsEnabled ?? true) && (
+          <SettingRow
+            label="Alert sound"
+            htmlFor="alert-sound-enabled"
+            description="Plays with each alert."
+          >
             <Switch
-              id="alerts-enabled"
-              checked={preferences?.alertsEnabled ?? true}
-              onCheckedChange={handleAlertsEnabledChange}
+              id="alert-sound-enabled"
+              checked={preferences?.alertSoundEnabled ?? true}
+              onCheckedChange={handleAlertSoundEnabledChange}
               disabled={isSaving}
             />
-          </div>
-          {(preferences?.alertsEnabled ?? true) && (
-            <div className="ml-1 flex items-center justify-between gap-4 border-l-2 border-border/60 pl-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="alert-sound-enabled">Alert sound</Label>
-                <p className="text-xs text-muted-foreground">
-                  Plays with each alert.
-                </p>
-              </div>
-              <Switch
-                id="alert-sound-enabled"
-                checked={preferences?.alertSoundEnabled ?? true}
-                onCheckedChange={handleAlertSoundEnabledChange}
-                disabled={isSaving}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+          </SettingRow>
+        )}
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
