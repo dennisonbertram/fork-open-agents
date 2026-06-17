@@ -1,85 +1,82 @@
 import { describe, expect, test } from "bun:test";
-import { selectPrAction } from "./session-header-pr-actions";
+import { getPrActionStates } from "./session-header-pr-actions";
 
-describe("selectPrAction", () => {
-  test("returns null for a chat-only (no repo) session", () => {
-    expect(
-      selectPrAction({
-        hasRepo: false,
-        hasExistingPr: false,
-        prStatus: null,
-        hasChanges: true,
-      }),
-    ).toBeNull();
+const base = {
+  hasExistingPr: false,
+  prStatus: null as "open" | "closed" | "merged" | null,
+  hasChanges: false,
+  busy: false,
+};
+
+describe("getPrActionStates", () => {
+  test("no PR + changes → only Create PR enabled", () => {
+    const s = getPrActionStates({ ...base, hasChanges: true });
+    expect(s.create.enabled).toBe(true);
+    expect(s.merge.enabled).toBe(false);
+    expect(s.resolve.enabled).toBe(false);
   });
 
-  test("Create PR when there are changes and no PR yet", () => {
-    expect(
-      selectPrAction({
-        hasRepo: true,
-        hasExistingPr: false,
-        prStatus: null,
-        hasChanges: true,
-      }),
-    ).toBe("create");
+  test("no PR + no changes → Create PR disabled with a reason", () => {
+    const s = getPrActionStates({ ...base, hasChanges: false });
+    expect(s.create.enabled).toBe(false);
+    expect(s.create.reason).toMatch(/no changes/i);
   });
 
-  test("nothing when no PR and no changes", () => {
-    expect(
-      selectPrAction({
-        hasRepo: true,
-        hasExistingPr: false,
-        prStatus: null,
-        hasChanges: false,
-      }),
-    ).toBeNull();
+  test("open PR, mergeable → only Merge enabled; Create disabled (PR exists)", () => {
+    const s = getPrActionStates({
+      ...base,
+      hasExistingPr: true,
+      prStatus: "open",
+      mergeReadinessReasons: ["Required checks are still running"],
+    });
+    expect(s.merge.enabled).toBe(true);
+    expect(s.resolve.enabled).toBe(false);
+    expect(s.create.enabled).toBe(false);
+    expect(s.create.reason).toMatch(/already exists/i);
   });
 
-  test("Merge PR when an open PR is mergeable (no conflict reasons)", () => {
-    expect(
-      selectPrAction({
-        hasRepo: true,
-        hasExistingPr: true,
-        prStatus: "open",
-        hasChanges: false,
-        mergeReadinessReasons: ["Required checks are still running"],
-      }),
-    ).toBe("merge");
+  test("open PR with conflicts → only Resolve enabled; Merge disabled", () => {
+    const s = getPrActionStates({
+      ...base,
+      hasExistingPr: true,
+      prStatus: "open",
+      mergeReadinessReasons: ["Pull request has merge conflicts"],
+    });
+    expect(s.resolve.enabled).toBe(true);
+    expect(s.merge.enabled).toBe(false);
+    expect(s.merge.reason).toMatch(/conflict/i);
   });
 
-  test("Resolve Conflicts when an open PR reports merge conflicts", () => {
-    expect(
-      selectPrAction({
-        hasRepo: true,
-        hasExistingPr: true,
-        prStatus: "open",
-        hasChanges: false,
-        mergeReadinessReasons: ["Pull request has merge conflicts"],
-      }),
-    ).toBe("resolve");
+  test("open PR, readiness not loaded → Merge enabled, Resolve disabled", () => {
+    const s = getPrActionStates({
+      ...base,
+      hasExistingPr: true,
+      prStatus: "open",
+    });
+    expect(s.merge.enabled).toBe(true);
+    expect(s.resolve.enabled).toBe(false);
   });
 
-  test("nothing once the PR is merged or closed", () => {
+  test("merged/closed PR → all three disabled", () => {
     for (const prStatus of ["merged", "closed"] as const) {
-      expect(
-        selectPrAction({
-          hasRepo: true,
-          hasExistingPr: true,
-          prStatus,
-          hasChanges: false,
-        }),
-      ).toBeNull();
+      const s = getPrActionStates({ ...base, hasExistingPr: true, prStatus });
+      expect(s.create.enabled).toBe(false);
+      expect(s.merge.enabled).toBe(false);
+      expect(s.resolve.enabled).toBe(false);
     }
   });
 
-  test("defaults an open PR to Merge when readiness hasn't loaded yet", () => {
-    expect(
-      selectPrAction({
-        hasRepo: true,
-        hasExistingPr: true,
-        prStatus: "open",
-        hasChanges: false,
-      }),
-    ).toBe("merge");
+  test("busy → everything disabled with a working reason", () => {
+    const s = getPrActionStates({
+      ...base,
+      hasChanges: true,
+      hasExistingPr: true,
+      prStatus: "open",
+      busy: true,
+    });
+    expect(s.create.enabled).toBe(false);
+    expect(s.merge.enabled).toBe(false);
+    expect(s.resolve.enabled).toBe(false);
+    expect(s.merge.reason).toMatch(/working/i);
   });
 });
