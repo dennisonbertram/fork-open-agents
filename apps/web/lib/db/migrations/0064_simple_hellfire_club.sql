@@ -1,0 +1,1 @@
+ALTER TABLE "inference_profiles" ADD COLUMN "models" jsonb DEFAULT '[]'::jsonb NOT NULL;
