@@ -587,12 +587,16 @@ export async function getOwnedBackgroundAgentRunWithAgent(params: {
 
 export async function listBackgroundAgentRuns(params: {
   userId: string;
+  agentId?: string;
   repoOwner?: string;
   repoName?: string;
   limit?: number;
 }): Promise<BackgroundAgentRun[]> {
   const where = [
     eq(backgroundAgentRuns.userId, params.userId),
+    params.agentId
+      ? eq(backgroundAgentRuns.agentId, params.agentId)
+      : undefined,
     params.repoOwner
       ? sql`lower(${backgroundAgentRuns.repoOwner}) = ${params.repoOwner.toLowerCase()}`
       : undefined,

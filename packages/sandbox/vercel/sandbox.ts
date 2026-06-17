@@ -12,6 +12,15 @@ import type { VercelSandboxConfig, VercelSandboxConnectConfig } from "./config";
 import type { VercelState } from "./state";
 
 const MAX_OUTPUT_LENGTH = 50_000;
+
+/**
+ * Single-quote a string for use inside a POSIX shell command.
+ * Replaces every ' with '\'' so the value is safe to embed in
+ * `bash -c 'git config user.name '\''O'\''Brien'\'''` style invocations.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
 const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
 const TIMEOUT_BUFFER_MS = 30_000; // 30 seconds buffer for beforeStop hook
 const MAX_SDK_TIMEOUT_MS = 18_000_000; // Vercel API limit: 5 hours
@@ -601,42 +610,41 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       }
     }
 
-    // Initialize git repo for empty sandboxes (no source provided)
-    // This ensures git commands work consistently (e.g., for diff viewing)
+    // Initialize git repo for empty sandboxes (no source provided).
+    // Batch all sequential git bootstrap commands into a single bash -c invocation
+    // to avoid paying a network round-trip per command against the remote MicroVM.
     if (!source && !restoreSnapshotId && !skipGitWorkspaceBootstrap) {
+      // Always run git init. Append user config + initial commit when gitUser is set
+      // (an initial commit is required so HEAD exists for `git diff HEAD`).
+      const parts = ["git init"];
+      if (gitUser) {
+        parts.push(
+          `git config user.name ${shellQuote(gitUser.name)}`,
+          `git config user.email ${shellQuote(gitUser.email)}`,
+          `git commit --allow-empty -m 'Initial commit'`,
+        );
+      }
       await sdk.runCommand({
-        cmd: "git",
-        args: ["init"],
+        cmd: "bash",
+        args: ["-c", parts.join(" && ")],
         cwd: workingDirectory,
       });
     }
 
-    // Configure git user for commits if provided (skip when no repo was created)
-    if (gitUser && (source || !skipGitWorkspaceBootstrap)) {
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["config", "user.name", gitUser.name],
-        cwd: workingDirectory,
-      });
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["config", "user.email", gitUser.email],
-        cwd: workingDirectory,
-      });
-    }
-
-    // Create initial empty commit for empty sandboxes so HEAD exists
-    // This is required for git diff HEAD to work (e.g., diff viewer)
-    // Must be done after gitUser config since git commit requires user info
+    // Configure git user when a repo already exists (clone path or restore-from-snapshot).
+    // Batch the two config calls into a single bash -c round-trip.
+    // This mirrors the original condition: gitUser && (source || !skipGitWorkspaceBootstrap),
+    // excluding the empty-sandbox branch (handled above).
     if (
-      !source &&
-      !restoreSnapshotId &&
       gitUser &&
-      !skipGitWorkspaceBootstrap
+      (source || (restoreSnapshotId && !skipGitWorkspaceBootstrap))
     ) {
       await sdk.runCommand({
-        cmd: "git",
-        args: ["commit", "--allow-empty", "-m", "Initial commit"],
+        cmd: "bash",
+        args: [
+          "-c",
+          `git config user.name ${shellQuote(gitUser.name)} && git config user.email ${shellQuote(gitUser.email)}`,
+        ],
         cwd: workingDirectory,
       });
     }

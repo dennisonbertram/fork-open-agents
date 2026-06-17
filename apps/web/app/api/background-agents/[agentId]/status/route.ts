@@ -21,21 +21,15 @@ export async function GET(_req: Request, context: RouteContext) {
   const { agentId } = await context.params;
 
   // Fetch the latest run for this agent scoped to the authenticated user.
-  // We only need the most recent record (limit: 1), filtered by agentId client-side
-  // to avoid a new DB query shape — listBackgroundAgentRuns is userId-scoped.
+  // Pass agentId directly to the DB query so the index on (agentId, createdAt)
+  // is used — avoids fetching up to 50 rows to filter in JS.
   const runs = await listBackgroundAgentRuns({
     userId: authResult.userId,
-    limit: 50,
+    agentId,
+    limit: 1,
   });
 
-  const agentRuns = runs
-    .filter((r) => r.agentId === agentId)
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-
-  const latest = agentRuns[0] ?? null;
+  const latest = runs[0] ?? null;
 
   return Response.json({
     latestRunId: latest?.id ?? null,

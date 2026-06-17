@@ -1,5 +1,6 @@
 import type { LanguageModel } from "ai";
 import { gateway, stepCountIs, ToolLoopAgent } from "ai";
+import { addCacheControl } from "../context-management";
 import { z } from "zod";
 import { bashTool } from "../tools/bash";
 import { globTool } from "../tools/glob";
@@ -84,6 +85,9 @@ export const explorerSubagent = new ToolLoopAgent({
   },
   stopWhen: stepCountIs(SUBAGENT_STEP_LIMIT),
   callOptionsSchema,
+  prepareStep: ({ messages, model }) => ({
+    messages: addCacheControl({ messages, model }),
+  }),
   prepareCall: ({ options, ...settings }) => {
     if (!options) {
       throw new Error("Explorer subagent requires task call options.");

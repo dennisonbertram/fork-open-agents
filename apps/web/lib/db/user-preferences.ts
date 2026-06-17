@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { cache } from "react";
 import {
   DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
   normalizeManagedRuntimeProfileId,
@@ -145,19 +146,21 @@ export function toUserPreferencesData(
 }
 
 /**
- * Get user preferences, creating default preferences if none exist
+ * Get user preferences, creating default preferences if none exist.
+ * Wrapped in React cache() to deduplicate repeated calls within a single
+ * request/render — safe to call from RSC, server actions, and non-RSC callers.
  */
-export async function getUserPreferences(
-  userId: string,
-): Promise<UserPreferencesData> {
-  const [existing] = await db
-    .select()
-    .from(userPreferences)
-    .where(eq(userPreferences.userId, userId))
-    .limit(1);
+export const getUserPreferences = cache(
+  async (userId: string): Promise<UserPreferencesData> => {
+    const [existing] = await db
+      .select()
+      .from(userPreferences)
+      .where(eq(userPreferences.userId, userId))
+      .limit(1);
 
-  return toUserPreferencesData(existing);
-}
+    return toUserPreferencesData(existing);
+  },
+);
 
 /**
  * Update user preferences, creating if they don't exist

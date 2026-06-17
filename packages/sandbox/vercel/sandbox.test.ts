@@ -480,9 +480,11 @@ describe("VercelSandbox.create", () => {
       type: "snapshot",
       snapshotId: "snap-base-1",
     });
+    // git init is now batched into a single bash -c invocation to reduce
+    // network round-trips to the remote MicroVM.
     expect(runCommandCalls[0]).toEqual({
-      cmd: "git",
-      args: ["init"],
+      cmd: "bash",
+      args: ["-c", "git init"],
       cwd: "/vercel/sandbox",
     });
   });
