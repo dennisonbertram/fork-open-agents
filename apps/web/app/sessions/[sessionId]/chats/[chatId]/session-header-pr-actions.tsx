@@ -1,19 +1,17 @@
 "use client";
 
 /**
- * PR action buttons shown in the session header (top-right), in the spirit of
- * conductor.build. All three actions are always visible (the UI doesn't shift);
- * each is enabled only when it applies, and disabled (greyed, with a tooltip
- * explaining why) otherwise. Clicking an enabled action sends a templated
- * prompt to the agent immediately:
+ * A single contextual PR action button in the session header (top-right), in
+ * the spirit of conductor.build. It shows one action based on the branch/PR
+ * state and, on click, sends a templated prompt to the agent immediately:
  *
- *   Create PR         — enabled when there are changes and no PR yet
- *   Merge PR          — enabled when a PR is open and mergeable
- *   Resolve Conflicts — enabled when a PR is open with merge conflicts
+ *   default (no open PR)     → Create PR
+ *   PR open + mergeable      → Merge PR
+ *   PR open + merge conflicts → Resolve Conflicts
  *
- * Merge readiness (conflict detection) is fetched only while a PR is open.
- * The whole group is hidden only for chat-only (no-repo) sessions, which have
- * no git at all.
+ * Create PR is the default whenever there is no open PR (including after a PR is
+ * merged/closed). Merge readiness (conflict detection) is fetched only while a
+ * PR is open. Hidden only for chat-only (no-repo) sessions, which have no git.
  */
 
 import { GitMerge, GitPullRequest, Wrench } from "lucide-react";
@@ -37,7 +35,6 @@ export type SessionHeaderPrActionsProps = {
   hasRepo: boolean;
   hasExistingPr: boolean;
   prStatus: "open" | "closed" | "merged" | null;
-  hasChanges: boolean;
   busy: boolean;
   onCreatePr: () => void;
   onMergePr: () => void;
@@ -46,79 +43,26 @@ export type SessionHeaderPrActionsProps = {
 
 const CONFLICT_REASON = /merge conflict/i;
 
-export type PrActionState = { enabled: boolean; reason: string };
-export type PrActionStates = {
-  create: PrActionState;
-  merge: PrActionState;
-  resolve: PrActionState;
-};
+export type PrAction = "create" | "merge" | "resolve";
 
 /**
- * Pure decision: enabled/disabled state (and the tooltip reason) for each of the
- * three PR actions. Disabled reasons double as the tooltip so a greyed button
- * always explains itself.
+ * Pure decision: which single PR action to show. Create PR is the default
+ * (no open PR); an open PR shows Merge, or Resolve Conflicts when blocked by
+ * conflicts.
  */
-export function getPrActionStates(params: {
+export function selectPrAction(params: {
   hasExistingPr: boolean;
   prStatus: "open" | "closed" | "merged" | null;
-  hasChanges: boolean;
-  busy: boolean;
-  /** Reasons from merge readiness; used only to detect conflicts. */
   mergeReadinessReasons?: string[];
-}): PrActionStates {
-  const { busy, hasChanges, hasExistingPr, prStatus } = params;
-  const prOpen = hasExistingPr && prStatus === "open";
+}): PrAction {
+  const prOpen = params.hasExistingPr && params.prStatus === "open";
+  if (!prOpen) {
+    return "create";
+  }
   const hasConflicts = (params.mergeReadinessReasons ?? []).some((reason) =>
     CONFLICT_REASON.test(reason),
   );
-  const busyState: PrActionState = {
-    enabled: false,
-    reason: "Agent is working…",
-  };
-
-  let create: PrActionState;
-  if (busy) {
-    create = busyState;
-  } else if (hasExistingPr) {
-    create = {
-      enabled: false,
-      reason: "A pull request already exists for this branch",
-    };
-  } else if (hasChanges) {
-    create = { enabled: true, reason: "Commit, push, and open a pull request" };
-  } else {
-    create = {
-      enabled: false,
-      reason: "No changes to open a pull request for yet",
-    };
-  }
-
-  let merge: PrActionState;
-  if (busy) {
-    merge = busyState;
-  } else if (!prOpen) {
-    merge = { enabled: false, reason: "No open pull request to merge" };
-  } else if (hasConflicts) {
-    merge = { enabled: false, reason: "Resolve the merge conflicts first" };
-  } else {
-    merge = { enabled: true, reason: "Merge the open pull request" };
-  }
-
-  let resolve: PrActionState;
-  if (busy) {
-    resolve = busyState;
-  } else if (!prOpen) {
-    resolve = { enabled: false, reason: "No open pull request" };
-  } else if (hasConflicts) {
-    resolve = {
-      enabled: true,
-      reason: "Resolve the merge conflicts on this branch",
-    };
-  } else {
-    resolve = { enabled: false, reason: "No merge conflicts to resolve" };
-  }
-
-  return { create, merge, resolve };
+  return hasConflicts ? "resolve" : "merge";
 }
 
 export function SessionHeaderPrActions({
@@ -126,7 +70,6 @@ export function SessionHeaderPrActions({
   hasRepo,
   hasExistingPr,
   prStatus,
-  hasChanges,
   busy,
   onCreatePr,
   onMergePr,
@@ -142,75 +85,85 @@ export function SessionHeaderPrActions({
     { revalidateOnFocus: true, refreshInterval: 0 },
   );
 
-  // Chat-only sessions have no git at all — the group simply doesn't apply.
+  // Chat-only sessions have no git at all — the action doesn't apply.
   if (!hasRepo) {
     return null;
   }
 
-  const states = getPrActionStates({
+  const action = selectPrAction({
     hasExistingPr,
     prStatus,
-    hasChanges,
-    busy,
     mergeReadinessReasons: readiness?.reasons,
   });
 
-  return (
-    <div className="flex items-center gap-1">
+  if (action === "resolve") {
+    return (
       <PrActionButton
-        icon={<GitPullRequest className="h-3.5 w-3.5" />}
-        label="Create PR"
-        onClick={onCreatePr}
-        state={states.create}
-      />
-      <PrActionButton
-        icon={<GitMerge className="h-3.5 w-3.5" />}
-        label="Merge PR"
-        onClick={onMergePr}
-        state={states.merge}
-      />
-      <PrActionButton
+        busy={busy}
         icon={<Wrench className="h-3.5 w-3.5" />}
         label="Resolve Conflicts"
         onClick={() =>
           onResolveConflicts(readiness?.pr?.baseBranch ?? "the base branch")
         }
-        state={states.resolve}
+        tooltip="Ask the agent to resolve the merge conflicts on this branch"
       />
-    </div>
+    );
+  }
+
+  if (action === "merge") {
+    return (
+      <PrActionButton
+        busy={busy}
+        icon={<GitMerge className="h-3.5 w-3.5" />}
+        label="Merge PR"
+        onClick={onMergePr}
+        tooltip="Ask the agent to merge the open pull request"
+      />
+    );
+  }
+
+  return (
+    <PrActionButton
+      busy={busy}
+      icon={<GitPullRequest className="h-3.5 w-3.5" />}
+      label="Create PR"
+      onClick={onCreatePr}
+      tooltip="Ask the agent to commit, push, and open a pull request"
+    />
   );
 }
 
 function PrActionButton({
-  state,
+  busy,
   icon,
   label,
+  tooltip,
   onClick,
 }: {
-  state: PrActionState;
+  busy: boolean;
   icon: React.ReactNode;
   label: string;
+  tooltip: string;
   onClick: () => void;
 }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        {/* Span wrapper so the tooltip still fires on a disabled button. */}
-        <span className="inline-flex">
-          <Button
-            className="h-7 gap-1.5 px-2 text-xs"
-            disabled={!state.enabled}
-            onClick={onClick}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {icon}
-            <span className="hidden sm:inline">{label}</span>
-          </Button>
-        </span>
+        <Button
+          className="h-7 gap-1.5 px-2 text-xs"
+          disabled={busy}
+          onClick={onClick}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          {icon}
+          <span className="hidden sm:inline">{label}</span>
+        </Button>
       </TooltipTrigger>
-      <TooltipContent side="bottom">{state.reason}</TooltipContent>
+      <TooltipContent side="bottom">
+        {busy ? "Agent is working…" : tooltip}
+      </TooltipContent>
     </Tooltip>
   );
 }

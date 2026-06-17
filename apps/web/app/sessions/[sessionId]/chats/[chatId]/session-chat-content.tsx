@@ -3338,7 +3338,6 @@ export function SessionChatContent({
             {/* Contextual PR action (Create PR / Merge PR / Resolve Conflicts) */}
             <SessionHeaderPrActions
               busy={hasPendingResponse || hasMessageActionInFlight}
-              hasChanges={hasUncommittedGitChanges || hasUnpushedCommits}
               hasExistingPr={hasExistingPr}
               hasRepo={Boolean(session.repoOwner && session.repoName)}
               onCreatePr={handleHeaderCreatePr}
