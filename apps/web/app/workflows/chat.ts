@@ -243,11 +243,18 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    if (!toAnthropicDirectModelId(mainModelSelection.id)) {
+    // Valid when the model is served by this profile's endpoint: a model
+    // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
+    // profiles without discovered models yet — an Anthropic catalog id.
+    const servedByProfile =
+      (profile.models ?? []).some(
+        (model) => model.id === mainModelSelection.id,
+      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+    if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");
       throw new InferenceProfileResolutionError(
-        "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
+        "Selected model isn't available on this inference profile. Pick one of the profile's models or switch back to Vercel AI Gateway.",
       );
     }
 
