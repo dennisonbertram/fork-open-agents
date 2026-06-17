@@ -1,6 +1,9 @@
 "use client";
 
+import { isToolUIPart } from "ai";
 import { ShieldAlert } from "lucide-react";
+import { extractRenderState, getToolName } from "@/app/lib/render-tool";
+import type { WebAgentUIMessage } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -84,17 +87,14 @@ export function MobileToolApprovalBar({
 /**
  * Scan the last assistant message's tool parts and return the first
  * approval-requested part, or null if none is waiting.
+ *
+ * Tool parts on the real runtime are AI SDK UI parts (`tool-bash`,
+ * `tool-read`, …, or `dynamic-tool`) — never a `tool-invocation` type. We
+ * detect them with `isToolUIPart` and reuse the shared `extractRenderState`
+ * so the "approval requested" / "denied" logic matches the desktop renderer.
  */
 export function findPendingApproval(
-  messages: Array<{
-    role: string;
-    parts: Array<{
-      type: string;
-      toolName?: string;
-      state?: string;
-      approval?: { id?: string };
-    }>;
-  }>,
+  messages: readonly WebAgentUIMessage[],
 ): PendingApproval | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
@@ -103,14 +103,15 @@ export function findPendingApproval(
     }
 
     for (const part of message.parts) {
-      if (part.type !== "tool-invocation") {
+      if (!isToolUIPart(part)) {
         continue;
       }
 
-      if (part.state === "approval-requested" && part.approval?.id) {
+      const state = extractRenderState(part, null, false);
+      if (state.approvalRequested && state.approvalId) {
         return {
-          id: part.approval.id,
-          toolName: part.toolName ?? "tool",
+          id: state.approvalId,
+          toolName: getToolName(part),
         };
       }
     }

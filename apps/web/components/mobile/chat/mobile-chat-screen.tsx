@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useSessionChatRuntimeContext } from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import {
@@ -120,15 +121,23 @@ export function MobileChatScreen({
   );
 
   const handleApprove = useCallback(
-    (id: string) => {
-      addToolApprovalResponse({ id, approved: true });
+    async (id: string) => {
+      try {
+        await addToolApprovalResponse({ id, approved: true });
+      } catch {
+        toast.error("Couldn't approve the action — please try again.");
+      }
     },
     [addToolApprovalResponse],
   );
 
   const handleDeny = useCallback(
-    (id: string) => {
-      addToolApprovalResponse({ id, approved: false });
+    async (id: string) => {
+      try {
+        await addToolApprovalResponse({ id, approved: false });
+      } catch {
+        toast.error("Couldn't deny the action — please try again.");
+      }
     },
     [addToolApprovalResponse],
   );
@@ -141,16 +150,46 @@ export function MobileChatScreen({
 
   // --- Send ---
   const handleSend = useCallback(
-    (text: string) => {
+    async (text: string) => {
       if (effectiveIsInFlight) {
         return;
       }
       setHasPendingResponse(true);
       setUserStopped(false);
-      sendMessage({ text });
+      try {
+        await sendMessage({ text });
+      } catch {
+        setHasPendingResponse(false);
+        toast.error("Couldn't send your message — please try again.");
+      }
     },
     [effectiveIsInFlight, sendMessage],
   );
+
+  // Send the New-session task as the first message exactly once when this chat
+  // opens. The /m/new flow stashes it under a per-chat sessionStorage key.
+  const prefillHandledRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (prefillHandledRef.current === chatId) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    prefillHandledRef.current = chatId;
+    const key = `mobile-chat-prefill:${chatId}`;
+    const prefill = window.sessionStorage.getItem(key);
+    if (!prefill) {
+      return;
+    }
+    window.sessionStorage.removeItem(key);
+    // Only auto-send into an empty conversation.
+    if (messages.length > 0) {
+      return;
+    }
+    setHasPendingResponse(true);
+    void sendMessage({ text: prefill });
+  }, [chatId, messages.length, sendMessage]);
 
   // Derived repo label
   const repoLabel = repoName

@@ -39,14 +39,14 @@ const OPTIMISTIC_CHAT_RETRY_ATTEMPTS = 50;
  */
 async function getChatByIdWithRetry(
   chatId: string,
-  sessionId: string,
+  sessionId?: string,
 ): Promise<Awaited<ReturnType<typeof getChatById>>> {
   const maxAttempts = isOptimisticChatId(chatId)
     ? OPTIMISTIC_CHAT_RETRY_ATTEMPTS
     : 1;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const chat = await getChatById(chatId);
-    if (chat && chat.sessionId === sessionId) {
+    if (chat && (sessionId === undefined || chat.sessionId === sessionId)) {
       return chat;
     }
     if (attempt < maxAttempts) {
@@ -81,10 +81,14 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
     redirect("/");
   }
 
-  // Step 1: resolve chatId -> sessionId (chat may be optimistic)
-  const chatInitial = await getChatById(chatId);
+  // Step 1: resolve chatId -> sessionId. Retry for optimistic chat IDs so a
+  // freshly-created chat (routed here right after POST /sessions) has time to
+  // land in the DB before we 404.
+  const chatInitial = await getChatByIdWithRetry(chatId);
   if (!chatInitial) {
-    // Unknown chat — no sessionId to retry with; 404 immediately
+    if (isOptimisticChatId(chatId)) {
+      redirect("/m");
+    }
     notFound();
   }
 

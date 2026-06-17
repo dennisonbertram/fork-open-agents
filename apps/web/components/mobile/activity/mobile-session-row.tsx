@@ -72,7 +72,7 @@ export function MobileSessionRow({
         className={cn(
           "mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border",
           hasPr
-            ? "border-warning/30 bg-warning/10 text-warning-foreground"
+            ? "border-warning/30 bg-warning/10 text-warning"
             : hasBranch
               ? "border-border bg-muted text-muted-foreground"
               : "border-border bg-muted text-muted-foreground",
@@ -132,7 +132,7 @@ export function MobileSessionRow({
           {hasDiff ? (
             <span className="shrink-0 text-xs text-muted-foreground font-mono">
               {linesAdded ? (
-                <span className="text-success-foreground">+{linesAdded}</span>
+                <span className="text-success">+{linesAdded}</span>
               ) : null}
               {linesAdded && linesRemoved ? (
                 <span className="text-muted-foreground/60">/</span>

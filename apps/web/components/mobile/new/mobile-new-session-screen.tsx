@@ -208,6 +208,10 @@ export function MobileNewSessionScreen() {
   // Submit
   const handleSubmit = useCallback(async () => {
     if (isSubmitting) return;
+    // Guard: in repo mode we must have a fully-resolved repo selection, else
+    // buildCreateSessionInput falls back to a plain-chat session and silently
+    // drops the user's repo intent.
+    if (repoMode && !repoSelection) return;
     const task = taskRef.current?.value.trim() ?? "";
 
     setIsSubmitting(true);
@@ -221,9 +225,11 @@ export function MobileNewSessionScreen() {
 
       const { chat } = await createSession(payload);
 
-      // Carry task prompt via sessionStorage so chat page can pre-send
+      // Carry the task prompt to the chat screen, keyed per chat so a stale
+      // prefill can never be sent into the wrong conversation. The chat screen
+      // reads and clears it on mount and sends it as the first message.
       if (task) {
-        sessionStorage.setItem("mobile-chat-prefill", task);
+        sessionStorage.setItem(`mobile-chat-prefill:${chat.id}`, task);
       }
 
       router.push(`/m/chat/${chat.id}`);
@@ -235,6 +241,7 @@ export function MobileNewSessionScreen() {
     }
   }, [
     isSubmitting,
+    repoMode,
     repoSelection,
     autoCommitPush,
     autoCreatePr,
@@ -460,9 +467,10 @@ export function MobileNewSessionScreen() {
           onClick={handleSubmit}
           disabled={
             isSubmitting ||
-            // In repo mode with a repo chosen, block only if no branch mode
-            // is selected yet (neither an explicit branch nor isNewBranch).
-            (repoMode && !!repoCandidate && !branch && !isNewBranch)
+            // In repo mode, require a fully-resolved repo selection (a repo AND
+            // a branch mode) — otherwise submit would silently fall back to a
+            // repo-less plain-chat session.
+            (repoMode && !repoSelection)
           }
           aria-label="Create session"
         >

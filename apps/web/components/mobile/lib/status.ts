@@ -141,11 +141,11 @@ export function matchesFilter(
 export function toneToClass(tone: MobileStatusTone): string {
   switch (tone) {
     case "working":
-      return "bg-warning/10 text-warning-foreground border-warning/25";
+      return "bg-warning/10 text-warning border-warning/25";
     case "waiting":
-      return "bg-warning/10 text-warning-foreground border-warning/25";
+      return "bg-warning/10 text-warning border-warning/25";
     case "done":
-      return "bg-success/10 text-success-foreground border-success/25";
+      return "bg-success/10 text-success border-success/25";
     case "error":
       return "bg-destructive/10 text-destructive border-destructive/25";
     default:

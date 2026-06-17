@@ -2,7 +2,7 @@
 
 import { isReasoningUIPart, isToolUIPart } from "ai";
 import { Loader2 } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type {
   WebAgentUIMessage,
   WebAgentUIToolPart,
@@ -51,12 +51,40 @@ export function MobileMessageThread({
   onDeny,
 }: MobileMessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const inFlight = isChatInFlight(status);
 
-  // Auto-scroll to bottom on new messages or status transitions
+  // Track whether the user is near the bottom so streaming auto-scroll never
+  // fights a deliberate scroll-up.
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) {
+      return;
+    }
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  }, []);
+
+  // A signature that also changes while the LAST message streams in (text
+  // growth, tool-state transitions). messages.length alone is constant during
+  // streaming, so depending on it stops the view following a long reply.
+  const tail = messages.at(-1);
+  const scrollSignature = tail
+    ? `${messages.length}:${tail.id}:${tail.parts
+        .map(
+          (p) =>
+            `${p.type}:${"text" in p ? p.text.length : ""}:${"state" in p ? p.state : ""}`,
+        )
+        .join("|")}`
+    : `${messages.length}`;
+
+  // Auto-scroll to bottom as content arrives, unless the user scrolled up.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length, status]);
+    if (stickToBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
+  }, [scrollSignature, status]);
 
   const lastMessage = messages.at(-1);
   const lastMessageRole = lastMessage?.role as
@@ -87,7 +115,11 @@ export function MobileMessageThread({
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-y-auto py-4">
+    <div
+      ref={scrollRef}
+      onScroll={handleScroll}
+      className="flex flex-1 flex-col overflow-y-auto py-4"
+    >
       {messages.map((message, messageIndex) => {
         if (message.role === "user") {
           return <MobileUserBubble key={message.id} message={message} />;
