@@ -22,7 +22,9 @@ let repoRuns: Array<{
   createdAt: Date;
 }> = [];
 
-// Agent Loops mutable state — controlled per test
+// Agent Loops mutable state — dashboard no longer calls listAgentLoops, but
+// the mock module must still be registered so the project test (in the same
+// isolate group) does not hit an unresolved import.
 let agentLoopsEnabled = false;
 let mockLoops: Array<{
   id: string;
@@ -33,7 +35,6 @@ let mockLoops: Array<{
   updatedAt: Date;
   description: null;
 }> = [];
-let loopsFetchShouldThrow = false;
 
 const redirect = mock((_path: string) => {
   throw new Error("redirect");
@@ -53,12 +54,8 @@ mock.module("@/lib/background-agents/store", () => ({
   listBackgroundAgentRuns,
 }));
 
-// Agent Loops — controlled via mutable state per test.
-// Default: flag off + no loops so existing tests are unaffected.
-const listAgentLoops = mock(async () => {
-  if (loopsFetchShouldThrow) throw new Error("DB failed");
-  return mockLoops;
-});
+// Agent Loops — kept for module resolution; dashboard does NOT call these.
+const listAgentLoops = mock(async () => mockLoops);
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => agentLoopsEnabled,
@@ -88,7 +85,6 @@ describe("RepoDashboardPage", () => {
     repoRuns = [];
     agentLoopsEnabled = false;
     mockLoops = [];
-    loopsFetchShouldThrow = false;
     redirect.mockClear();
     listRepoBackgroundAgents.mockClear();
     listBackgroundAgentRuns.mockClear();
@@ -125,8 +121,9 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("acme/widgets");
   });
 
-  // BT-003: all six window region labels are present
-  test("BT-003: dashboard shell renders all six window region labels", async () => {
+  // BT-003: all window region labels present on the dashboard
+  // (AgentsWindow and WorkflowsWindowView are now on the Project page, not here)
+  test("BT-003: dashboard shell renders all window region labels present on the dashboard", async () => {
     const { default: RepoDashboardPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
@@ -139,12 +136,14 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("Pull Requests");
     expect(html).toContain("Issues");
     expect(html).toContain("Actions");
+    // "Project agents" still appears as the Overview counter label
     expect(html).toContain("Project agents");
     expect(html).toContain("Activity");
   });
 
-  // BT-004: agents and activity windows show local store data
-  test("BT-004: Agents and Activity windows show local background-agent store data", async () => {
+  // BT-004: Activity window shows run data; Overview shows counts
+  // (Agent detail listing moved to project page; only counts remain here)
+  test("BT-004: Activity window shows run data and Overview shows agent/run counts", async () => {
     repoAgents = [
       {
         id: "agent-1",
@@ -188,42 +187,12 @@ describe("RepoDashboardPage", () => {
       limit: 50,
     });
 
-    // Agent data visible
-    expect(html).toContain("Deploy smoke");
-    // Short instruction is under the 140-char cap — rendered as-is (no ellipsis)
-    expect(html).toContain("Run smoke checks after deployments.");
-    // Run data visible — short title is under the 120-char cap
+    // Run data visible in Activity window
     expect(html).toContain("Production deployment succeeded");
     expect(html).toContain("/background-runs/run-1");
-  });
 
-  // REDACT-001: long agent instructions must be server-side truncated — full body must NOT reach the DOM
-  test("REDACT-001: agent instructions beyond 140 chars are truncated server-side and secret marker is not in DOM", async () => {
-    const secretSuffix = "SECRET_MARKER_DO_NOT_RENDER";
-    // Build a 200-char instruction with the secret marker placed after the 140-char cap
-    const longInstructions = "A".repeat(150) + secretSuffix + "B".repeat(24);
-    repoAgents = [
-      {
-        id: "agent-secret",
-        name: "Secret agent",
-        status: "enabled",
-        instructions: longInstructions,
-        triggers: [],
-      },
-    ];
-    repoRuns = [];
-    const { default: RepoDashboardPage } = await pageModulePromise;
-
-    const html = renderToStaticMarkup(
-      await RepoDashboardPage({
-        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
-      }),
-    );
-
-    // The secret marker lives past position 140 — it must not appear in rendered HTML
-    expect(html).not.toContain(secretSuffix);
-    // The truncated preview (first 140 chars + ellipsis) must be present
-    expect(html).toContain("A".repeat(140) + "…");
+    // Overview still shows counts (agent detail listing is on project page)
+    expect(html).toContain(">1<"); // 1 agent
   });
 
   // REDACT-002: long run payload summaries must be server-side truncated — full body must NOT reach the DOM
@@ -259,8 +228,10 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("B".repeat(120) + "…");
   });
 
-  // BT-005: empty states when no agents or runs
-  test("BT-005: shows useful empty states when no agents or runs exist", async () => {
+  // BT-005: empty states on dashboard
+  // "No agents configured" is on the Project page (AgentsWindow); dashboard shows
+  // only the Activity empty state when no runs exist.
+  test("BT-005: shows Activity empty state when no runs exist", async () => {
     const { default: RepoDashboardPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
@@ -269,8 +240,9 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    expect(html).toContain("No agents configured");
     expect(html).toContain("No runs recorded");
+    // AgentsWindow is gone from the dashboard — its empty state must not appear here
+    expect(html).not.toContain("No agents configured");
   });
 
   // BT-006: GitHub signal windows are rendered (PR/Issues/Actions)
@@ -307,8 +279,8 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("https://github.com/acme/widgets");
   });
 
-  // BT-008: link to settings/agents page present
-  test("BT-008: header contains a link to the settings/agents page", async () => {
+  // BT-008: header's second button now links to the Project page (not settings/agents)
+  test("BT-008: header contains a link to the Project page with label 'Project'", async () => {
     const { default: RepoDashboardPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
@@ -317,11 +289,17 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    expect(html).toContain("/settings/background-agents");
+    // Second header button now points to /repos/{owner}/{repo}/project
+    expect(html).toContain("/repos/acme/widgets/project");
+    expect(html).toContain("Project");
+    // The old settings link must NOT appear in the dashboard header
+    expect(html).not.toContain("/settings/background-agents");
   });
 
-  // REGRESSION-001: dashboard still renders when an agent has multiple triggers
-  test("REGRESSION-001: dashboard renders correctly with multiple agents and triggers", async () => {
+  // REGRESSION-001: dashboard renders correctly with multiple agents and runs
+  // (agent detail — names, triggers — is now on the project page; only run Activity
+  //  and Overview counts remain on the dashboard)
+  test("REGRESSION-001: dashboard renders correctly with multiple runs (Activity window)", async () => {
     repoAgents = [
       {
         id: "agent-a",
@@ -374,17 +352,7 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    // All agents rendered
-    expect(html).toContain("CI watcher");
-    expect(html).toContain("PR reviewer");
-    // Disabled status chip text
-    expect(html).toContain("disabled");
-    // All triggers rendered
-    expect(html).toContain("github.check_run");
-    expect(html).toContain("github.push");
-    expect(html).toContain("schedule.cron");
-    expect(html).toContain("github.pull_request");
-    // Both runs rendered
+    // Both runs rendered in the Activity window
     expect(html).toContain("/background-runs/run-x");
     expect(html).toContain("/background-runs/run-y");
     expect(html).toContain("CI check run");
@@ -392,6 +360,8 @@ describe("RepoDashboardPage", () => {
     // Status chips are text-based, not color-only
     expect(html).toContain("running");
     expect(html).toContain("failed");
+    // Overview counts reflect actual agent and run totals
+    expect(html).toContain(">2<"); // 2 agents
   });
 
   // REGRESSION-002: overview counts reflect actual agent and run totals
@@ -439,9 +409,12 @@ describe("RepoDashboardPage", () => {
   });
 
   // ── M2-05 Workflows window integration ─────────────────────────────────────
+  // The Workflows window is now on the Project page, not the dashboard.
+  // The dashboard must NOT render the Workflows window regardless of flag state,
+  // and must NOT call listAgentLoops.
 
-  // BT-PAGE-WF-001: flag off → Workflows window absent, other windows intact
-  test("BT-PAGE-WF-001: when AGENT_LOOPS_ENABLED=false, Workflows window is absent but other windows render", async () => {
+  // BT-PAGE-WF-001: dashboard never shows Workflows window; listAgentLoops not called
+  test("BT-PAGE-WF-001: dashboard never renders the Workflows window and never calls listAgentLoops", async () => {
     agentLoopsEnabled = false;
     const { default: RepoDashboardPage } = await pageModulePromise;
 
@@ -453,16 +426,17 @@ describe("RepoDashboardPage", () => {
 
     expect(html).toContain("Repo dashboard");
     expect(html).toContain("Overview");
+    // "Project agents" label is still in OverviewWindow counter
     expect(html).toContain("Project agents");
     expect(html).toContain("Activity");
-    // Workflows window MUST NOT appear when flag is off
+    // Workflows window must NOT appear on the dashboard regardless of flag
     expect(html).not.toContain('aria-label="Loops window"');
-    // listAgentLoops MUST NOT be called when flag is off
+    // listAgentLoops must NOT be called by the dashboard page
     expect(listAgentLoops).not.toHaveBeenCalled();
   });
 
-  // BT-PAGE-WF-002: flag on + loops → Workflows window present with loop data
-  test("BT-PAGE-WF-002: when flag on and loops exist, Workflows window appears with loop names", async () => {
+  // BT-PAGE-WF-001b: Workflows window stays absent even when flag is on
+  test("BT-PAGE-WF-001b: Workflows window absent from dashboard even when agent loops flag is on", async () => {
     agentLoopsEnabled = true;
     mockLoops = [
       {
@@ -475,7 +449,6 @@ describe("RepoDashboardPage", () => {
         description: null,
       },
     ];
-
     const { default: RepoDashboardPage } = await pageModulePromise;
 
     const html = renderToStaticMarkup(
@@ -484,51 +457,9 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    expect(html).toContain("Loops");
-    expect(html).toContain("CI pipeline loop");
-    expect(html).toContain("/loops/loop-abc");
-  });
-
-  // BT-PAGE-WF-003: loops fetch error → dashboard still renders
-  test("BT-PAGE-WF-003: loops fetch failure does not crash the dashboard (Promise.allSettled isolation)", async () => {
-    agentLoopsEnabled = true;
-    loopsFetchShouldThrow = true;
-
-    const { default: RepoDashboardPage } = await pageModulePromise;
-
-    let html: string;
-    try {
-      html = renderToStaticMarkup(
-        await RepoDashboardPage({
-          params: Promise.resolve({ owner: "acme", repo: "widgets" }),
-        }),
-      );
-    } catch {
-      throw new Error(
-        "Dashboard page crashed when loops fetch failed — Promise.allSettled isolation broken",
-      );
-    }
-
-    expect(html).toContain("Repo dashboard");
-    expect(html).toContain("Overview");
-    expect(html).toContain("Project agents");
-    expect(html).toContain("Activity");
-  });
-
-  // BT-PAGE-WF-004: listAgentLoops called with correct params
-  test("BT-PAGE-WF-004: when flag on, listAgentLoops is called with userId, repoOwner, repoName", async () => {
-    agentLoopsEnabled = true;
-    mockLoops = [];
-
-    const { default: RepoDashboardPage } = await pageModulePromise;
-
-    await RepoDashboardPage({
-      params: Promise.resolve({ owner: "myorg", repo: "myrepo" }),
-    });
-
-    expect(listAgentLoops).toHaveBeenCalledWith("user-1", {
-      repoOwner: "myorg",
-      repoName: "myrepo",
-    });
+    // Dashboard never shows the Workflows/Loops window
+    expect(html).not.toContain('aria-label="Loops window"');
+    // listAgentLoops must NOT be called by the dashboard
+    expect(listAgentLoops).not.toHaveBeenCalled();
   });
 });

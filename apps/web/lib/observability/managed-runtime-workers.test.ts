@@ -4,6 +4,8 @@ import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
   summarizeManagedRuntimeDirectToolUseFromMessages,
+  summarizeExternalToolUse,
+  summarizeExternalToolUseFromMessages,
 } from "./managed-runtime-workers";
 
 describe("extractManagedRuntimeWorkersFromMessages", () => {
@@ -176,6 +178,119 @@ describe("extractManagedRuntimeWorkersFromMessages", () => {
     });
   });
 
+  // Regression: issue #417 — nested worker bash output must not be attributed
+  // to the coordinator. In managed runtime sessions the coordinator only calls
+  // task + dynamic-tool. Any tool-task part (and its nested output) must be
+  // skipped by the scanner so it never contributes to the direct-tool-use count.
+  test("does not count tool-task parts as coordinator direct tool use (issue #417)", () => {
+    // Coordinator message with only task delegations and Composio calls — no
+    // direct repo tool use. The tool-task output embeds a worker bash record in
+    // its pending field; that must not be counted.
+    const directToolUse = summarizeManagedRuntimeDirectToolUse([
+      {
+        type: "tool-task",
+        toolCallId: "task-1",
+        state: "output-available",
+        preliminary: true,
+        input: { subagentType: "executor", task: "Run CI" },
+        output: {
+          pending: { name: "bash", input: { command: "bun --bun run ci" } },
+          toolCallCount: 4,
+          runtime: {
+            mode: "managed_runtime",
+            workerType: "executor",
+            sandboxName: "sbx_runtime_123",
+          },
+        },
+      },
+      {
+        // Composio dynamic-tool call by coordinator — safe, not a repo tool
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+    ]);
+
+    expect(directToolUse).toEqual({
+      observed: false,
+      count: 0,
+      toolTypes: [],
+      toolLabels: [],
+      warning: null,
+    });
+  });
+
+  // Regression: issue #417 — the guard must also hold across persisted messages.
+  test("does not count tool-task parts across messages (issue #417)", () => {
+    const directToolUse = summarizeManagedRuntimeDirectToolUseFromMessages([
+      {
+        id: "assistant-1",
+        parts: {
+          id: "assistant-1",
+          role: "assistant",
+          parts: [
+            {
+              type: "tool-task",
+              toolCallId: "task-1",
+              state: "output-available",
+              preliminary: true,
+              input: { subagentType: "executor", task: "Run CI" },
+              output: {
+                pending: {
+                  name: "bash",
+                  input: { command: "bun --bun run ci" },
+                },
+                toolCallCount: 4,
+                runtime: {
+                  mode: "managed_runtime",
+                  workerType: "executor",
+                  sandboxName: "sbx_runtime_123",
+                },
+              },
+            },
+          ],
+        },
+      },
+      {
+        id: "assistant-2",
+        parts: {
+          id: "assistant-2",
+          role: "assistant",
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "GITHUB_CREATE_PR",
+              state: "output-available",
+            },
+            {
+              type: "tool-task",
+              toolCallId: "task-2",
+              state: "output-available",
+              preliminary: false,
+              input: { subagentType: "executor", task: "Push branch" },
+              output: {
+                toolCallCount: 2,
+                runtime: {
+                  mode: "managed_runtime",
+                  workerType: "executor",
+                  sandboxName: "sbx_runtime_456",
+                },
+              },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(directToolUse).toEqual({
+      observed: false,
+      count: 0,
+      toolTypes: [],
+      toolLabels: [],
+      warning: null,
+    });
+  });
+
   test("summarizes direct coordinator repo tool use across persisted messages", () => {
     const directToolUse = summarizeManagedRuntimeDirectToolUseFromMessages([
       {
@@ -195,6 +310,122 @@ describe("extractManagedRuntimeWorkersFromMessages", () => {
       toolLabels: ["Bash", "Edit"],
       warning:
         "Coordinator direct repo tool use observed: Bash, Edit. These actions did not run through a managed worker.",
+    });
+  });
+
+  test("does not count tool-task parts as coordinator direct tool use", () => {
+    const directToolUse = summarizeManagedRuntimeDirectToolUse([
+      {
+        type: "tool-task",
+        toolCallId: "task-1",
+        state: "output-available",
+        input: { subagentType: "executor", task: "Run tests" },
+        output: {
+          final: [],
+          toolCallCount: 1,
+          runtime: {
+            mode: "managed_runtime",
+            workerType: "executor",
+            sandboxName: "sbx_123",
+          },
+        },
+      },
+    ]);
+
+    expect(directToolUse).toEqual({
+      observed: false,
+      count: 0,
+      toolTypes: [],
+      toolLabels: [],
+      warning: null,
+    });
+  });
+});
+
+describe("summarizeExternalToolUse", () => {
+  test("returns observed=false for parts with no dynamic-tool entries", () => {
+    const result = summarizeExternalToolUse([
+      { type: "tool-bash", state: "output-available" },
+    ]);
+    expect(result).toEqual({ observed: false, count: 0, toolNames: [] });
+  });
+
+  test("counts successful dynamic-tool parts", () => {
+    const result = summarizeExternalToolUse([
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_PULL_REQUEST",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 3,
+      toolNames: ["GITHUB_CREATE_ISSUE", "GITHUB_CREATE_PULL_REQUEST"],
+    });
+  });
+
+  test("skips failed dynamic-tool parts", () => {
+    const result = summarizeExternalToolUse([
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_CREATE_ISSUE",
+        state: "output-available",
+      },
+      {
+        type: "dynamic-tool",
+        toolName: "GITHUB_UPDATE_ISSUE",
+        state: "output-error",
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 1,
+      toolNames: ["GITHUB_CREATE_ISSUE"],
+    });
+  });
+});
+
+describe("summarizeExternalToolUseFromMessages", () => {
+  test("aggregates across persisted messages", () => {
+    const result = summarizeExternalToolUseFromMessages([
+      {
+        id: "assistant-1",
+        parts: [
+          {
+            type: "dynamic-tool",
+            toolName: "GITHUB_CREATE_ISSUE",
+            state: "output-available",
+          },
+        ],
+      },
+      {
+        id: "assistant-2",
+        parts: {
+          parts: [
+            {
+              type: "dynamic-tool",
+              toolName: "GITHUB_CREATE_PR",
+              state: "output-available",
+            },
+          ],
+        },
+      },
+    ]);
+    expect(result).toEqual({
+      observed: true,
+      count: 2,
+      toolNames: ["GITHUB_CREATE_ISSUE", "GITHUB_CREATE_PR"],
     });
   });
 });

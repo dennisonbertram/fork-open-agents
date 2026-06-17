@@ -23,7 +23,7 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
-import { mergeExtraTools } from "./merge-extra-tools";
+import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -52,6 +52,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
@@ -65,6 +66,7 @@ import type {
 import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
+  summarizeExternalToolUse,
   type ManagedRuntimeWorkerSnapshot,
 } from "@/lib/observability/managed-runtime-workers";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
@@ -136,7 +138,11 @@ const convertMessages = async (
 ): Promise<ModelMessage[]> => {
   "use step";
   const { webAgent } = await import("@/app/config");
-  const dedupedMessages = messages.map(dedupeMessageReasoning);
+  // Drop orphaned tool-calls (e.g. an approved web_fetch that never executed
+  // before a new user turn) so conversion never emits a tool-call without a
+  // paired tool-result, which the provider rejects and which wedges the chat.
+  const sanitizedMessages = sanitizeInterruptedToolCalls(messages);
+  const dedupedMessages = sanitizedMessages.map(dedupeMessageReasoning);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
     {
@@ -657,6 +663,14 @@ function getSetupErrorMessage(error: unknown): string {
     return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
   }
 
+  // A tool call was left without a result (e.g. an approved web_fetch that never
+  // executed) so the provider rejects the request. Message conversion now repairs
+  // this on the next turn, so guide the user to retry instead of surfacing the
+  // raw provider error or the misleading generic "Workspace setup failed".
+  if (message.includes("No tool output found for function call")) {
+    return "A tool call in this chat was interrupted before it finished. Send your message again to continue.";
+  }
+
   return "Workspace setup failed. Try again in a moment.";
 }
 
@@ -954,6 +968,7 @@ function buildRuntimeProofData(params: {
   const coordinatorDirectToolUse = summarizeManagedRuntimeDirectToolUse(
     params.assistantParts,
   );
+  const externalToolUse = summarizeExternalToolUse(params.assistantParts);
   const serviceEvidence = summarizeRuntimeServiceEvidence(
     params.artifacts.services,
   );
@@ -1027,6 +1042,7 @@ function buildRuntimeProofData(params: {
     workflowStatus: params.workflowStatus,
     workerEvidence,
     coordinatorDirectToolUseObserved: coordinatorDirectToolUse.observed,
+    externalToolsCompleted: externalToolUse.count,
   });
 
   return {
@@ -1043,6 +1059,7 @@ function buildRuntimeProofData(params: {
     },
     workerEvidence,
     coordinatorDirectToolUse,
+    externalToolUse,
     evidence,
     serviceEvidence,
     browserEvidence,
@@ -1066,6 +1083,7 @@ function getRuntimeProofStatus(params: {
   workflowStatus: WorkflowRunStatus;
   workerEvidence: WebAgentRuntimeProofData["workerEvidence"];
   coordinatorDirectToolUseObserved: boolean;
+  externalToolsCompleted?: number;
 }): WebAgentRuntimeProofData["status"] {
   if (params.workflowStatus === "failed") {
     return "failed";
@@ -1075,12 +1093,18 @@ function getRuntimeProofStatus(params: {
     return "blocked";
   }
 
+  // External tools (Composio/GitHub API calls via dynamic-tool parts) are a
+  // valid completion path when no managed workers executed. The coordinator
+  // completed repo work through external API tools without needing a sandbox.
+  const externalToolsValid = (params.externalToolsCompleted ?? 0) > 0;
+
   // No managed work happened at all this turn: the coordinator answered
-  // conversationally without spawning a worker or running a repo tool itself.
+  // conversationally — no worker, no direct repo tool, and no external tool.
   // There's nothing to prove, so don't flag it as a deficiency.
   if (
     params.workerEvidence.total === 0 &&
-    !params.coordinatorDirectToolUseObserved
+    !params.coordinatorDirectToolUseObserved &&
+    !externalToolsValid
   ) {
     return "no_activity";
   }
@@ -1092,6 +1116,18 @@ function getRuntimeProofStatus(params: {
     params.workerEvidence.failed > 0 ||
     params.coordinatorDirectToolUseObserved
   ) {
+    // External tools can satisfy proof when no worker was ever attempted
+    // (completed === 0 AND failed === 0) AND no direct tool use was observed
+    // at the coordinator level. Failed workers mean the managed runtime was
+    // attempted but errored; external tools cannot mask that failure.
+    if (
+      params.workerEvidence.completed === 0 &&
+      params.workerEvidence.failed === 0 &&
+      externalToolsValid &&
+      !params.coordinatorDirectToolUseObserved
+    ) {
+      return "completed";
+    }
     return "incomplete";
   }
 
@@ -2301,6 +2337,35 @@ const runAgentStep = async (
             composioSessionId: composioResult.composioSessionId,
           },
         });
+
+        // Warn when a selected toolkit has no connected account — its tools are
+        // offered but cannot authenticate (e.g. GitHub picked but never linked).
+        const disconnectedToolkits = composioResult.disconnectedToolkits ?? [];
+        if (disconnectedToolkits.length > 0) {
+          await emitSessionEvent({
+            sessionId,
+            chatId,
+            userId,
+            source: "workflow",
+            actorType: "coordinator",
+            eventName: "composio.toolkit.not_connected",
+            status: "failed",
+            summary: `Selected Composio ${
+              disconnectedToolkits.length === 1 ? "toolkit is" : "toolkits are"
+            } not connected: ${disconnectedToolkits.join(", ")}. Connect ${
+              disconnectedToolkits.length === 1 ? "it" : "them"
+            } in settings — those tools cannot authenticate until then.`,
+            requestId,
+            workflowRunId,
+            sandboxName: stepSandboxName,
+            managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+            payload: {
+              stepNumber,
+              disconnectedToolkits,
+              composioSessionId: composioResult.composioSessionId,
+            },
+          });
+        }
       }
     } catch (error) {
       await emitSessionEvent({
@@ -2329,7 +2394,6 @@ const runAgentStep = async (
       const githubResult = await resolveGitHubToolsForChat({
         userId,
         chatId,
-        runtimeMode: agentOptions.runtimeMode ?? "classic",
       });
       if (githubResult.status === "ready") {
         githubTools = githubResult.tools;
@@ -2379,7 +2443,7 @@ const runAgentStep = async (
           },
         });
       }
-      // Benign off cases (not_enabled, no_repo, non_classic_runtime) emit nothing
+      // Benign off cases (not_enabled, no_repo) emit nothing
     } catch (error) {
       // Non-fatal: emit observability event and continue without GitHub tools
       // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
@@ -2416,11 +2480,17 @@ const runAgentStep = async (
     // clobbering the other when only one spread was used previously.
     const mergedExtraTools = mergeExtraTools(composioTools, githubTools);
 
+    // True when any authenticated GitHub tool — native `github_*` or Composio
+    // `GITHUB_*` — is in the toolset. Drives the prompt steer and the web_fetch
+    // guardrail so the agent uses those tools instead of unauthenticated fetch.
+    const githubToolAvailable = hasGithubTool(mergedExtraTools);
+
     const result = await webAgent.stream({
       messages,
       options: {
         ...stepAgentOptions,
         githubToolsEnabled: githubTools !== undefined,
+        githubToolAvailable,
       },
       ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bot, ExternalLink } from "lucide-react";
+import { Boxes, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -7,21 +7,15 @@ import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
-import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
-import { listAgentLoops } from "@/lib/agent-loops/store";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  OverviewWindow,
-  AgentsWindow,
-  ActivityWindow,
-} from "./dashboard-windows";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OverviewWindow, ActivityWindow } from "./dashboard-windows";
 import {
   PullRequestsWindow,
   IssuesWindow,
   ActionsWindow,
 } from "./github-windows";
-import { WorkflowsWindowView } from "./workflows-window";
 
 export const metadata: Metadata = {
   title: "Repo dashboard",
@@ -43,9 +37,10 @@ export default async function RepoDashboardPage({
   const { owner, repo } = await params;
 
   // Fetch all data sources in parallel with independent failure isolation.
-  // A throw in agents/runs/dashboard/loops must never break the entire page render.
-  const loopsEnabled = isAgentLoopsEnabled();
-  const [agentsResult, runsResult, dashboardDataResult, loopsResult] =
+  // A throw in agents/runs/dashboard must never break the entire page render.
+  // (Agents and loops detail live on the Project page; the dashboard only keeps
+  // the agent/run counts for the Overview summary plus recent Activity.)
+  const [agentsResult, runsResult, dashboardDataResult] =
     await Promise.allSettled([
       listRepoBackgroundAgents({
         userId: session.user.id,
@@ -63,14 +58,10 @@ export default async function RepoDashboardPage({
         owner,
         repo,
       }),
-      loopsEnabled
-        ? listAgentLoops(session.user.id, { repoOwner: owner, repoName: repo })
-        : Promise.resolve([]),
     ]);
 
   const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
   const runs = runsResult.status === "fulfilled" ? runsResult.value : [];
-  const loops = loopsResult.status === "fulfilled" ? loopsResult.value : [];
 
   const dashboardData =
     dashboardDataResult.status === "fulfilled"
@@ -113,9 +104,9 @@ export default async function RepoDashboardPage({
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link href="/settings/background-agents">
-                <Bot className="h-4 w-4" />
-                Agents settings
+              <Link href={`/repos/${owner}/${repo}/project`}>
+                <Boxes className="h-4 w-4" />
+                Project
               </Link>
             </Button>
           </div>
@@ -130,20 +121,37 @@ export default async function RepoDashboardPage({
             repoName={repo}
           />
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <PullRequestsWindow summary={prSummary} owner={owner} repo={repo} />
-            <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
-            <ActionsWindow summary={actionsSummary} owner={owner} repo={repo} />
-          </div>
+          <Tabs defaultValue="pull-requests" className="w-full">
+            <TabsList className="w-full">
+              <TabsTrigger value="pull-requests" className="flex-1">
+                Pull Requests
+              </TabsTrigger>
+              <TabsTrigger value="issues" className="flex-1">
+                Issues
+              </TabsTrigger>
+              <TabsTrigger value="actions" className="flex-1">
+                Actions
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pull-requests">
+              <PullRequestsWindow
+                summary={prSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+            <TabsContent value="issues">
+              <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
+            </TabsContent>
+            <TabsContent value="actions">
+              <ActionsWindow
+                summary={actionsSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+          </Tabs>
 
-          <AgentsWindow agents={agents} />
-          {loopsEnabled ? (
-            <WorkflowsWindowView
-              loops={loops}
-              repoOwner={owner}
-              repoName={repo}
-            />
-          ) : null}
           <ActivityWindow runs={runs} />
         </div>
       </div>
