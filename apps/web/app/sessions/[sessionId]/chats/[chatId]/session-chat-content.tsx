@@ -172,6 +172,7 @@ import {
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
+import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -2198,6 +2199,20 @@ export function SessionChatContent({
     [sendMessageWithPendingState],
   );
 
+  // Header quick-action prompts (conductor-style PR buttons). Each sends a
+  // templated instruction to the agent immediately.
+  const handleHeaderCreatePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Create Pull Request\n\nCommit and push the current changes on this branch, then open a pull request with a clear title and a concise summary of what changed and why.",
+    });
+  }, [sendMessageWithPendingState]);
+
+  const handleHeaderMergePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Merge Pull Request\n\nMerge the open pull request for this branch. If checks are still running or it is not mergeable yet, tell me what is blocking the merge instead of forcing it.",
+    });
+  }, [sendMessageWithPendingState]);
+
   const handleDeleteUserMessage = useCallback(
     async (messageId: string) => {
       if (hasMessageActionInFlight) {
@@ -3320,6 +3335,18 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
+            {/* Contextual PR action (Create PR / Merge PR / Resolve Conflicts) */}
+            <SessionHeaderPrActions
+              busy={hasPendingResponse || hasMessageActionInFlight}
+              hasChanges={hasUncommittedGitChanges || hasUnpushedCommits}
+              hasExistingPr={hasExistingPr}
+              hasRepo={Boolean(session.repoOwner && session.repoName)}
+              onCreatePr={handleHeaderCreatePr}
+              onMergePr={handleHeaderMergePr}
+              onResolveConflicts={handleFixConflicts}
+              prStatus={session.prStatus ?? null}
+              sessionId={session.id}
+            />
             {/* Compact read-only goal summary chip */}
             <CompactGoalSummary
               goals={observabilityData?.workflowGoals ?? []}
