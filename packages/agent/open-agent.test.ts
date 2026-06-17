@@ -150,6 +150,33 @@ describe("openAgent runtime tool policy", () => {
 });
 
 // BT-001, BT-002, BT-003: chat-only tool policy for sandbox-free sessions
+describe("model identity in system prompt", () => {
+  test("states the actual serving model id and forbids vendor guessing", () => {
+    const prompt = buildSystemPrompt({ modelId: "glm-5.2" });
+
+    expect(prompt).toContain("Model Identity");
+    expect(prompt).toContain("`glm-5.2`");
+    expect(prompt).toContain("Do NOT claim to be a different model");
+    // Names the families a model commonly mis-self-reports as
+    expect(prompt).toContain("Claude");
+  });
+
+  test("names the user inference profile when the model routes through one", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "glm-5.2",
+      inferenceProfileName: "ZAI (GLM)",
+    });
+
+    expect(prompt).toContain('"ZAI (GLM)" inference profile');
+  });
+
+  test("omits the identity section when no model id is provided", () => {
+    const prompt = buildSystemPrompt({});
+
+    expect(prompt).not.toContain("Model Identity");
+  });
+});
+
 describe("chat-only tool policy (sandbox-free)", () => {
   // BT-001: getChatOnlyTools excludes every sandbox-dependent tool
   test("getChatOnlyTools excludes file/bash/exec/edit/task/grep/glob tools", () => {

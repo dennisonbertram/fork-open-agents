@@ -303,10 +303,22 @@ export function getRuntimeModeToolPolicy(
     return applyBuiltinAllowlist(mergedTools, allowlist);
   }
 
-  return applyBuiltinAllowlist(
-    pickTools(mergedTools, MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES),
-    allowlist,
+  // Coordinator mode: allow native coordinator tools plus any injected external
+  // tools (Composio, GitHub) that are not in the native tool registry — they
+  // run via their own APIs and don't require a sandbox. The builtin allowlist
+  // (for unattended runs) is then applied to the native tools.
+  const coordinatorTools = pickTools(
+    mergedTools,
+    MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
   );
+  if (requestedTools) {
+    for (const [name, tool] of Object.entries(requestedTools)) {
+      if (!(name in tools)) {
+        coordinatorTools[name] = tool;
+      }
+    }
+  }
+  return applyBuiltinAllowlist(coordinatorTools, allowlist);
 }
 
 export const openAgent = new ToolLoopAgent({
@@ -369,6 +381,7 @@ export const openAgent = new ToolLoopAgent({
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,
+      inferenceProfileName: mainSelection.attribution?.inferenceProfileName,
       runtimeMode,
       sandboxFree,
       githubToolsEnabled,
