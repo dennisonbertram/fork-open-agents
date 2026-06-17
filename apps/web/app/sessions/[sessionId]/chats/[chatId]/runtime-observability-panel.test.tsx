@@ -124,7 +124,7 @@ function workerSnapshot(
 }
 
 describe("RuntimeActorsSection", () => {
-  test("makes managed runtime no-worker state explicit", () => {
+  test("shows a neutral no-work state when no worker ran and no tools were used", () => {
     const html = renderToStaticMarkup(
       <RuntimeActorsSection
         events={[]}
@@ -137,6 +137,29 @@ describe("RuntimeActorsSection", () => {
 
     expect(html).toContain("Coordinator");
     expect(html).toContain("Managed runtime");
+    // Conversational turn — nothing to prove, so not flagged as incomplete.
+    expect(html).toContain("No runtime work this turn");
+    expect(html).not.toContain("Proof incomplete");
+  });
+
+  test("flags proof incomplete when the coordinator used repo tools directly without a worker", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeActorsSection
+        directToolUse={{
+          observed: true,
+          count: 1,
+          toolTypes: ["tool-bash"],
+          toolLabels: ["Bash"],
+          warning: "Coordinator direct repo tool use observed: Bash.",
+        }}
+        events={[]}
+        latestProfileRun={profileRun()}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+        workers={[]}
+      />,
+    );
+
     expect(html).toContain("No managed worker has executed yet");
     expect(html).toContain("Proof incomplete");
   });

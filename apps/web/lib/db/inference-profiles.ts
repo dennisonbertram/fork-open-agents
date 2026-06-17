@@ -12,6 +12,7 @@ import {
 import { normalizeAnthropicBaseUrl } from "@/lib/inference/model-routing";
 import type {
   CreateInferenceProfileInput,
+  InferenceProfileModel,
   InferenceProfileTestResult,
   SafeInferenceProfile,
   UpdateInferenceProfileInput,
@@ -37,6 +38,7 @@ function toSafeInferenceProfile(
     lastTestedAt: profile.lastTestedAt,
     lastTestMessage: profile.lastTestMessage,
     enabled: profile.enabled,
+    models: profile.models ?? [],
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
   };
@@ -198,6 +200,25 @@ export async function deleteInferenceProfile(
     .returning({ id: inferenceProfiles.id });
 
   return deleted.length > 0;
+}
+
+export async function setInferenceProfileModels(
+  userId: string,
+  profileId: string,
+  models: InferenceProfileModel[],
+): Promise<SafeInferenceProfile | null> {
+  const [updated] = await db
+    .update(inferenceProfiles)
+    .set({ models, updatedAt: new Date() })
+    .where(
+      and(
+        eq(inferenceProfiles.id, profileId),
+        eq(inferenceProfiles.userId, userId),
+      ),
+    )
+    .returning();
+
+  return updated ? toSafeInferenceProfile(updated) : null;
 }
 
 export async function recordInferenceProfileTestResult(

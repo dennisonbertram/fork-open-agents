@@ -249,11 +249,18 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    if (!toAnthropicDirectModelId(mainModelSelection.id)) {
+    // Valid when the model is served by this profile's endpoint: a model
+    // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
+    // profiles without discovered models yet — an Anthropic catalog id.
+    const servedByProfile =
+      (profile.models ?? []).some(
+        (model) => model.id === mainModelSelection.id,
+      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+    if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");
       throw new InferenceProfileResolutionError(
-        "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
+        "Selected model isn't available on this inference profile. Pick one of the profile's models or switch back to Vercel AI Gateway.",
       );
     }
 
@@ -1091,6 +1098,19 @@ function getRuntimeProofStatus(params: {
   // completed repo work through external API tools without needing a sandbox.
   const externalToolsValid = (params.externalToolsCompleted ?? 0) > 0;
 
+  // No managed work happened at all this turn: the coordinator answered
+  // conversationally — no worker, no direct repo tool, and no external tool.
+  // There's nothing to prove, so don't flag it as a deficiency.
+  if (
+    params.workerEvidence.total === 0 &&
+    !params.coordinatorDirectToolUseObserved &&
+    !externalToolsValid
+  ) {
+    return "no_activity";
+  }
+
+  // Work happened but not cleanly through a delegated worker: the coordinator
+  // used repo tools directly, a worker failed, or no worker completed.
   if (
     params.workerEvidence.completed === 0 ||
     params.workerEvidence.failed > 0 ||
