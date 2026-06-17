@@ -106,11 +106,14 @@ function toUserInferenceOption(
   },
 ): ModelOption {
   const provider = getProviderFromModelId(model.id);
+  // Never trust the label to be present (stored jsonb can drift); fall back to
+  // the routing id so the picker can't crash on a missing display name.
+  const label = model.label || model.id;
 
   return {
     id: createUserInferenceModelOptionId(profile.id, model.id),
-    label: model.label,
-    shortLabel: stripProviderPrefix(model.label, provider),
+    label,
+    shortLabel: stripProviderPrefix(label, provider),
     description: `Via ${profile.name} (your key)`,
     isVariant: false,
     ...(typeof model.contextWindow === "number"
@@ -321,7 +324,7 @@ export function buildModelOptions(
         return discoveredModels.map((model) =>
           toUserInferenceOption(profile, {
             id: model.id,
-            label: model.displayName,
+            label: model.displayName || model.id,
             ...(typeof model.contextWindow === "number"
               ? { contextWindow: model.contextWindow }
               : {}),

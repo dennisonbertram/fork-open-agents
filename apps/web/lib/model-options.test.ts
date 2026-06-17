@@ -193,6 +193,36 @@ describe("model options", () => {
     ).toBe(false);
   });
 
+  test("buildModelOptions tolerates a discovered model with no displayName", () => {
+    // Stored jsonb can drift; a missing displayName must not crash the picker.
+    const profile = {
+      id: "profile-bad",
+      name: "Custom",
+      provider: "anthropic" as const,
+      baseUrl: "https://api.example.com/v1",
+      keyLast4: "abcd",
+      keyFingerprint: "fingerprint",
+      status: "verified" as const,
+      lastTestedAt: null,
+      lastTestMessage: null,
+      enabled: true,
+      models: [
+        { id: "glm-4.6" } as unknown as { id: string; displayName: string },
+      ],
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+
+    const options = buildModelOptions([], [], [profile]);
+
+    expect(options[0]).toMatchObject({
+      id: "user-profile:profile-bad:glm-4.6",
+      label: "glm-4.6",
+      shortLabel: "glm-4.6",
+      source: "user",
+    });
+  });
+
   test("groupByProvider puts user, anthropic, and openai first, preserves insertion order", () => {
     const options = [
       {
