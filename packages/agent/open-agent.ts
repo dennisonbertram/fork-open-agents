@@ -111,6 +111,21 @@ const callOptionsSchema = z.object({
    * Only present when toolAuthoringEnabled=true.
    */
   proposeToolAction: z.custom<ProposeToolAction>().optional(),
+  /**
+   * True for unattended runs (background agents, agent-loop steps) where no
+   * human can approve tool calls. Threaded into experimental_context so tools
+   * resolve their approval gates deterministically instead of stalling on a
+   * never-answered approval request.
+   */
+  unattended: z.boolean().optional(),
+  /**
+   * Allowlist of built-in tool NAMES this run may use. `null`/absent = the
+   * role's default policy (no restriction). When provided, built-in tools are
+   * intersected with this list; caller-provided external tools (Composio,
+   * GitHub) are always kept. This is how an unattended agent pre-approves which
+   * built-in tools it may call.
+   */
+  allowedBuiltinToolNames: z.array(z.string()).nullish(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -186,6 +201,39 @@ function pickTools(
   return nextTools;
 }
 
+/**
+ * Built-in tool names (the native tool registry plus the optional authoring
+ * tool). Used to decide which tools the `allowedBuiltinToolNames` allowlist
+ * governs — caller-provided external tools (Composio, GitHub) are never in this
+ * set and so always pass through.
+ */
+const BUILTIN_TOOL_NAME_SET: ReadonlySet<string> = new Set<string>([
+  ...OPEN_AGENT_TOOL_NAMES,
+  PROPOSE_TOOL_NAME,
+]);
+
+/**
+ * Intersect built-in tools with an explicit allowlist. `null`/`undefined`
+ * allowlist = no restriction (today's behavior). External (non-built-in) tools
+ * are always preserved regardless of the allowlist.
+ */
+function applyBuiltinAllowlist(
+  toolSet: ToolSet,
+  allowedBuiltinToolNames?: ReadonlyArray<string> | null,
+): ToolSet {
+  if (allowedBuiltinToolNames == null) {
+    return toolSet;
+  }
+  const allowed = new Set(allowedBuiltinToolNames);
+  const result: ToolSet = {};
+  for (const [name, toolDef] of Object.entries(toolSet)) {
+    if (!BUILTIN_TOOL_NAME_SET.has(name) || allowed.has(name)) {
+      result[name] = toolDef;
+    }
+  }
+  return result;
+}
+
 export function getOpenAgentToolsForRuntimeMode(
   runtimeMode: OpenAgentRuntimeMode = "classic",
 ): ToolSet {
@@ -207,8 +255,13 @@ export function getChatOnlyTools(): ToolSet {
 export function getRuntimeModeToolPolicy(
   runtimeMode: OpenAgentRuntimeMode = "classic",
   requestedTools?: ToolSet,
-  policyOptions?: { sandboxFree?: boolean; toolAuthoringEnabled?: boolean },
+  policyOptions?: {
+    sandboxFree?: boolean;
+    toolAuthoringEnabled?: boolean;
+    allowedBuiltinToolNames?: ReadonlyArray<string> | null;
+  },
 ): ToolSet {
+  const allowlist = policyOptions?.allowedBuiltinToolNames;
   // Sandbox-free mode: keep only chat-safe tools plus any caller-provided
   // non-sandbox tools (e.g. Composio tools that run via their own API).
   // NOTE: the authoring tool is NOT included in sandbox-free mode even when
@@ -227,7 +280,7 @@ export function getRuntimeModeToolPolicy(
         }
       }
     }
-    return chatBase;
+    return applyBuiltinAllowlist(chatBase, allowlist);
   }
 
   // Always create a new object so we can safely add authoring tool without
@@ -247,12 +300,13 @@ export function getRuntimeModeToolPolicy(
   }
 
   if (runtimeMode !== "managed_runtime") {
-    return mergedTools;
+    return applyBuiltinAllowlist(mergedTools, allowlist);
   }
 
   // Coordinator mode: allow native coordinator tools plus any injected external
   // tools (Composio, GitHub) that are not in the native tool registry — they
-  // run via their own APIs and don't require a sandbox.
+  // run via their own APIs and don't require a sandbox. The builtin allowlist
+  // (for unattended runs) is then applied to the native tools.
   const coordinatorTools = pickTools(
     mergedTools,
     MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
@@ -264,7 +318,7 @@ export function getRuntimeModeToolPolicy(
       }
     }
   }
-  return coordinatorTools;
+  return applyBuiltinAllowlist(coordinatorTools, allowlist);
 }
 
 export const openAgent = new ToolLoopAgent({
@@ -317,6 +371,8 @@ export const openAgent = new ToolLoopAgent({
     const proposeToolAction = options.proposeToolAction;
     const githubToolsEnabled = options.githubToolsEnabled ?? false;
     const githubToolAvailable = options.githubToolAvailable ?? false;
+    const unattended = options.unattended ?? false;
+    const allowedBuiltinToolNames = options.allowedBuiltinToolNames ?? null;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -339,6 +395,7 @@ export const openAgent = new ToolLoopAgent({
         tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
           sandboxFree,
           toolAuthoringEnabled,
+          allowedBuiltinToolNames,
         }) as typeof tools,
         model: callModel,
       }),
@@ -351,6 +408,7 @@ export const openAgent = new ToolLoopAgent({
         runtimeMode,
         managedRuntime,
         githubToolAvailable,
+        unattended,
         ...(subagentRoster ? { subagentRoster } : {}),
         // Phase 6: only inject when enabled; undefined = no authoring in this session
         ...(toolAuthoringEnabled && proposeToolAction

@@ -184,6 +184,7 @@ mock.module("@/lib/github/users", () => ({
 }));
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
   openAgent: { generate: mock(async () => ({})) },
 }));
@@ -266,6 +267,7 @@ function buildLearningsAgent(
     outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

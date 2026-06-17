@@ -268,6 +268,7 @@ const generate = mock(async (input: GenerateCall) => {
 });
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
   openAgent: { generate },
 }));
@@ -360,6 +361,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     outputMode: "ready_pr",
     checkCommand: null,
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -462,6 +464,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
   test("BT-002: agent with toolkit slugs → resolver called and tools injected into generate", async () => {
     currentAgent = buildAgent({
       composioToolkitSlugs: ["github", "linear"],
+      builtinToolNames: null,
     });
     // Resolver returns ready composio tools
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
@@ -512,6 +515,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
   test("BT-003: disabled/no grant → resolver returns off → no composio tools injected", async () => {
     currentAgent = buildAgent({
       composioToolkitSlugs: ["github", "linear"],
+      builtinToolNames: null,
     });
     // Resolver returns off (no enabled grants)
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
@@ -561,6 +565,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
   test("BT-005: composio.resolved event emitted with toolkit names, no secrets", async () => {
     currentAgent = buildAgent({
       composioToolkitSlugs: ["github", "linear"],
+      builtinToolNames: null,
     });
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
       status: "ready" as const,
