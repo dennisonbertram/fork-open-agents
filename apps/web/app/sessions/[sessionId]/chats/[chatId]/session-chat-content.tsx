@@ -492,12 +492,12 @@ function RuntimeProofDataPartCard({
 }) {
   const limitationCount = part.data.limitations.length;
   const workerCount = part.data.workerEvidence?.total ?? 0;
-  const proofStatus =
-    part.data.status === "completed" && workerCount === 0
-      ? "incomplete"
-      : part.data.status;
+  const proofStatus = part.data.status;
   const proofPassed = proofStatus === "completed";
   const proofIncomplete = proofStatus === "incomplete";
+  // Conversational turn — the coordinator answered without delegating; neutral,
+  // not a problem.
+  const proofNoActivity = proofStatus === "no_activity";
   const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
   const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
   const directToolUseObserved =
@@ -506,7 +506,9 @@ function RuntimeProofDataPartCard({
     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
     : proofIncomplete
       ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
+      : proofNoActivity
+        ? "border-border bg-muted/40 text-muted-foreground"
+        : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
 
   return (
     <div className="flex items-center gap-3 py-1">
@@ -521,7 +523,9 @@ function RuntimeProofDataPartCard({
         <span className="truncate text-xs font-medium text-muted-foreground group-hover/runtime-proof:text-foreground">
           {proofIncomplete
             ? "Managed runtime proof incomplete"
-            : "Managed runtime proof"}
+            : proofNoActivity
+              ? "Managed runtime · no work this turn"
+              : "Managed runtime proof"}
         </span>
         <span
           className={cn(
@@ -529,7 +533,7 @@ function RuntimeProofDataPartCard({
             statusClassName,
           )}
         >
-          {proofStatus}
+          {proofNoActivity ? "no work" : proofStatus}
         </span>
         <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
           {workerCount} worker{workerCount === 1 ? "" : "s"}

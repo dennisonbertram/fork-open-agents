@@ -485,13 +485,29 @@ export function RuntimeActorsSection({
             <div className="flex items-start gap-2">
               <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 space-y-1 text-xs">
-                <p className="font-medium text-foreground">
-                  No managed worker has executed yet.
-                </p>
-                <p className="text-muted-foreground">
-                  Proof incomplete until the coordinator delegates repo work to
-                  a managed worker and worker evidence is captured.
-                </p>
+                {directToolUse?.observed ? (
+                  <>
+                    <p className="font-medium text-foreground">
+                      No managed worker has executed yet.
+                    </p>
+                    <p className="text-muted-foreground">
+                      Proof incomplete until the coordinator delegates repo work
+                      to a managed worker and worker evidence is captured.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-foreground">
+                      No runtime work this turn.
+                    </p>
+                    <p className="text-muted-foreground">
+                      The coordinator answered conversationally without running
+                      tools or delegating to a managed worker — nothing to
+                      prove. A worker is delegated when the turn requires repo
+                      work.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>

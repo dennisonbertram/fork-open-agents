@@ -1075,6 +1075,18 @@ function getRuntimeProofStatus(params: {
     return "blocked";
   }
 
+  // No managed work happened at all this turn: the coordinator answered
+  // conversationally without spawning a worker or running a repo tool itself.
+  // There's nothing to prove, so don't flag it as a deficiency.
+  if (
+    params.workerEvidence.total === 0 &&
+    !params.coordinatorDirectToolUseObserved
+  ) {
+    return "no_activity";
+  }
+
+  // Work happened but not cleanly through a delegated worker: the coordinator
+  // used repo tools directly, a worker failed, or no worker completed.
   if (
     params.workerEvidence.completed === 0 ||
     params.workerEvidence.failed > 0 ||

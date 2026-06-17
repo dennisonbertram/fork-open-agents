@@ -882,7 +882,7 @@ describe("runAgentWorkflow", () => {
     });
   });
 
-  test("marks managed runtime proof incomplete when no managed worker executed", async () => {
+  test("marks managed runtime proof no_activity when the coordinator answers without delegating or running tools", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {
         writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -912,7 +912,7 @@ describe("runAgentWorkflow", () => {
         type: "data-runtime-proof",
         id: "gen-id-1:runtime-proof",
         data: {
-          status: "incomplete",
+          status: "no_activity",
           runtimeMode: "managed_runtime",
           workflowRunId: "wrun_test-123",
           sandboxName: "session_session-1",
