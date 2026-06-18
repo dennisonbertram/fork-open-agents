@@ -63,7 +63,7 @@ describe("Regression: created disabled unless explicitly enabled", () => {
 });
 
 describe("Regression: repo owner/name cannot be reassigned in the dashboard flow", () => {
-  test("AgentSpecEditor renders repo display but not editable owner/name inputs", () => {
+  test("AgentSpecEditor does not render editable owner/name inputs (repo shown in breadcrumb, not editor)", () => {
     const html = renderToStaticMarkup(
       <AgentSpecEditor
         repoOwner="acme"
@@ -80,10 +80,7 @@ describe("Regression: repo owner/name cannot be reassigned in the dashboard flow
       />,
     );
 
-    // Repo is shown (read-only display)
-    expect(html).toContain("acme");
-    expect(html).toContain("widgets");
-    // But not as editable text inputs
+    // Repo is NOT shown as editable text inputs (repo is in the page breadcrumb, not the editor)
     expect(html).not.toContain('id="repo-owner"');
     expect(html).not.toContain('id="repo-name"');
   });

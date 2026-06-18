@@ -31,46 +31,44 @@ const defaultEditorProps = {
 };
 
 describe("AgentSpecEditor", () => {
-  test("(C1) action bar (Save + Run test) appears before the Purpose heading in the markup", async () => {
+  test("(C1) action bar (Save + Run a test) appears before the first section heading 'Name' in the markup", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
       <AgentSpecEditor {...defaultEditorProps} />,
     );
 
-    const runTestIdx = html.indexOf("Run test");
-    const purposeIdx = html.indexOf("Purpose");
+    const runTestIdx = html.indexOf("Run a test");
+    const nameIdx = html.indexOf("Name");
     expect(runTestIdx).toBeGreaterThanOrEqual(0);
-    expect(purposeIdx).toBeGreaterThanOrEqual(0);
-    expect(runTestIdx).toBeLessThan(purposeIdx);
+    expect(nameIdx).toBeGreaterThanOrEqual(0);
+    expect(runTestIdx).toBeLessThan(nameIdx);
   });
 
-  // Extract just the opening tag of the <button> that wraps the "Run test"
+  // Extract just the opening tag of the <button> that wraps the "Run a test"
   // label so we can assert its disabled binding without matching the Save button.
   function runTestButtonTag(html: string): string {
-    const labelIdx = html.indexOf("Run test");
+    const labelIdx = html.indexOf("Run a test");
     const openIdx = html.lastIndexOf("<button", labelIdx);
     return html.slice(openIdx, labelIdx);
   }
 
-  test("(C1) with createdAgentId=null the Run test button is disabled and helper text is present", async () => {
+  test("(C1) with createdAgentId=null the Run a test button is disabled and helper text is present", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
       <AgentSpecEditor {...defaultEditorProps} createdAgentId={null} />,
     );
 
-    // The helper text explaining why Run test is disabled
-    expect(html.toLowerCase()).toContain(
-      "save the agent before running a test",
-    );
+    // The helper text explaining why Run a test is disabled
+    expect(html.toLowerCase()).toContain("save first to run a test");
     // The button itself must carry the disabled attribute (mutation guard for
-    // decision C: Run test stays disabled until the agent is saved). Match the
+    // decision C: Run a test stays disabled until the agent is saved). Match the
     // rendered attribute `disabled=""`, not the Tailwind `disabled:` class names.
     expect(runTestButtonTag(html)).toContain('disabled=""');
   });
 
-  test("(C1) with createdAgentId set the Run test button is enabled", async () => {
+  test("(C1) with createdAgentId set the Run a test button is enabled", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -110,14 +108,15 @@ describe("AgentSpecEditor", () => {
     expect(html).not.toContain("run-test-console");
   });
 
-  test("(E4) Permissions section renders Select controls for contents and pull_requests", async () => {
+  test("(E4) Tools section renders Select controls for contents and pull_requests", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
       <AgentSpecEditor {...defaultEditorProps} />,
     );
 
-    // The permissions labels should be present
+    // The Tools section with permissions labels should be present
+    expect(html).toContain("Tools");
     expect(html).toContain("contents");
     expect(html).toContain("pull_requests");
     // Radix Select renders combobox role buttons for the interactive selects

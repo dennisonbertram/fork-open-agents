@@ -95,12 +95,12 @@ export const defaultForm: FormState = {
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
-  "github.pull_request": "Pull request",
-  "github.pull_request_review": "Pull request review",
-  "github.deployment_status": "Deployment status",
-  "github.issue": "Issue",
-  "schedule.cron": "Schedule",
-  "webhook.error": "Error webhook",
+  "github.pull_request": "A pull request changes",
+  "github.pull_request_review": "A pull request is reviewed",
+  "github.deployment_status": "A deployment finishes",
+  "github.issue": "An issue is opened",
+  "schedule.cron": "On a schedule",
+  "webhook.error": "An error is reported (webhook)",
 };
 
 export const flowSteps = [
