@@ -109,6 +109,10 @@ describe("Regression: settings page re-export behaves identically to shared modu
       instructions: "Do something useful.",
       outputMode: "ready_pr" as const,
       enabled: true,
+      // Permissions are now user-controlled; set them explicitly to write
+      // (the UI auto-coerces to write when outputMode becomes ready_pr)
+      permissionContents: "write" as const,
+      permissionPullRequests: "write" as const,
     };
 
     const sharedResult = buildAgentPayload(form);

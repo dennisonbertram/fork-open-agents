@@ -1,12 +1,12 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import {
   buildAgentPayload,
+  type GitHubAccessLevel,
   type OutputMode,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
@@ -65,13 +65,13 @@ type RepoAgentsDashboardProps = {
  * Entry: "New Agent" button → template picker → spec editor → save/test.
  */
 export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
-  const router = useRouter();
   const [step, setStep] = useState<Step>("list");
   const [selectedTemplate, setSelectedTemplate] = useState<
     AgentTemplate | BlankTemplate | null
   >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
+  const [testRunId, setTestRunId] = useState<string | null>(null);
 
   const { data: readinessData } = useSWR<BackgroundReadinessResponse>(
     "/api/background-agents/readiness",
@@ -89,6 +89,7 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
     setSelectedTemplate(null);
     setMessage(null);
     setCreatedAgentId(null);
+    setTestRunId(null);
   }
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
@@ -133,7 +134,8 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
       if (!runId) {
         throw new Error("No background run was created for this test");
       }
-      router.push(`/background-runs/${runId}`);
+      // Decision C: do NOT navigate away — show inline console instead
+      setTestRunId(runId);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Failed to run test");
     }
@@ -159,6 +161,10 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
   }
 
   if (step === "edit-spec") {
+    // Decision E6: derive initial permission access level from output mode
+    const initialAccessLevel: GitHubAccessLevel =
+      template.outputMode === "ready_pr" ? "write" : "read";
+
     return (
       <section className="rounded-md border border-border">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
@@ -197,6 +203,10 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
                 ? template.defaultSchedule
                 : undefined
             }
+            initialPermissionContents={initialAccessLevel}
+            initialPermissionPullRequests={initialAccessLevel}
+            createdAgentId={createdAgentId}
+            testRunId={testRunId}
             onSave={handleSave}
             onRunTest={handleRunTest}
           />

@@ -74,6 +74,8 @@ function makeDeploymentForm(overrides: Partial<FormState> = {}): FormState {
     outputMode: "none",
     checkCommand: "",
     enabled: true,
+    permissionContents: "read",
+    permissionPullRequests: "read",
     ...overrides,
   };
 }
@@ -223,6 +225,8 @@ describe("deployment-status trigger regression (TASK-168 bugfix)", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: true,
+      permissionContents: "read",
+      permissionPullRequests: "read",
     };
     const payload = buildAgentPayload(prForm);
     const trigger = payload.triggers[0]!;
