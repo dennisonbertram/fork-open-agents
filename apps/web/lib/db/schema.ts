@@ -2084,10 +2084,18 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
+    // Include sessionId, repoOwner, and repoName so that the constraint allows
+    // multiple repo-scoped agents for different repos and multiple session-scoped
+    // agents for different sessions.  PostgreSQL treats NULLs as distinct in unique
+    // indexes, so user_default scope rows (where all three are NULL) are unaffected:
+    // only one user_default row per (userId, role) can exist.
     uniqueIndex("agents_user_role_scope_idx").on(
       table.userId,
       table.role,
       table.scope,
+      table.sessionId,
+      table.repoOwner,
+      table.repoName,
     ),
     index("agents_session_idx").on(table.sessionId),
   ],
@@ -2128,7 +2136,7 @@ export const usageEvents = pgTable("usage_events", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  source: text("source", { enum: ["web"] })
+  source: text("source", { enum: ["web", "background-agent"] })
     .notNull()
     .default("web"),
   agentType: text("agent_type", { enum: ["main", "subagent"] })

@@ -383,7 +383,13 @@ async function resolveChatModelRuntime(params: {
         : {}),
       customInstructions: assistantFileLinkPrompt,
       ...(subagentRoster ? { subagentRoster } : {}),
-      ...(mainAgentToolAuthoringEnabled
+      // Only enable tool authoring when both the flag AND the closure are
+      // available.  If mainAgentId is null, proposeToolAction is undefined and
+      // spreading toolAuthoringEnabled:true would tell the agent runtime to
+      // include the propose_composio_tool in the toolset — but the closure
+      // that actually persists the proposal is missing, so every invocation
+      // would fail with "proposeToolAction was not injected."
+      ...(mainAgentToolAuthoringEnabled && mainAgentId !== null
         ? { toolAuthoringEnabled: true, proposeToolAction }
         : {}),
     },
