@@ -198,4 +198,25 @@ describe("AgentSpecEditor", () => {
     // The gating helper text is shown
     expect(html).toContain("Give the GitHub tool pull-request access");
   });
+
+  test("(E4d) mixed initial permissions normalize to Read-only (no silent write)", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    // Legacy/mismatched state: contents=write but pullRequests=read can't open
+    // a PR, so the card must present Read-only — not PR access — and must not
+    // silently keep the write on save.
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialPermissionContents="write"
+        initialPermissionPullRequests="read"
+        initialOutputMode="none"
+      />,
+    );
+
+    expect(html).toContain("This agent can look but not touch");
+    expect(html).not.toContain(
+      "This agent can propose changes as pull requests",
+    );
+  });
 });

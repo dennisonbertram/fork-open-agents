@@ -136,10 +136,21 @@ export function AgentSpecEditor({
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
+  // Normalize any mixed initial GitHub access (e.g. a legacy agent saved with
+  // contents:write + pullRequests:read) to what the tool card can represent, so
+  // the card never displays "Read-only" while the form silently holds a write
+  // that would persist unchanged on the next save.
+  const normalizedAccess: GitHubAccessLevel =
+    permissionsToAccess(
+      initialPermissionContents,
+      initialPermissionPullRequests,
+    ) === "pr"
+      ? "write"
+      : "read";
   const [permissionContents, setPermissionContents] =
-    useState<GitHubAccessLevel>(initialPermissionContents);
+    useState<GitHubAccessLevel>(normalizedAccess);
   const [permissionPullRequests, setPermissionPullRequests] =
-    useState<GitHubAccessLevel>(initialPermissionPullRequests);
+    useState<GitHubAccessLevel>(normalizedAccess);
   const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
     initialComposioToolkitSlugs,
   );

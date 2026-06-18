@@ -54,6 +54,7 @@ export function ComposioOtherToolsSection({
         source="connected"
         repoOwner={repoOwner}
         repoName={repoName}
+        connectHint="Settings → Background agents"
       />
     </div>
   );

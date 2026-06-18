@@ -35,6 +35,13 @@ export interface ComposioToolkitPickerProps {
   /** Reserved for future repo-level filtering. */
   repoOwner?: string | null;
   repoName?: string | null;
+  /**
+   * Where the user should go to connect accounts, used in the "not connected"
+   * hints. Defaults to "Connect tools above" (the Settings page layout where
+   * the connect section sits above this picker). Other hosts (e.g. the agent
+   * builder) can override with a location that makes sense in their context.
+   */
+  connectHint?: string;
 }
 
 async function jsonFetcher<T>(url: string): Promise<T> {
@@ -59,6 +66,7 @@ export function ComposioToolkitPicker({
   onChange,
   disabled = false,
   source = "connected",
+  connectHint = "Connect tools above",
 }: ComposioToolkitPickerProps) {
   const [query, setQuery] = useState("");
   const resultsRef = useRef<HTMLDivElement>(null);
@@ -201,7 +209,7 @@ export function ComposioToolkitPicker({
                   entry.unknown
                     ? "This tool isn't in the Composio catalog."
                     : unconnected
-                      ? "Not connected — connect it in Connect tools above, or it won't work."
+                      ? `Not connected — connect it in ${connectHint}, or it won't work.`
                       : undefined
                 }
                 className={cn(
@@ -282,9 +290,9 @@ export function ComposioToolkitPicker({
               <p className="py-4 px-3 text-center text-xs text-muted-foreground">
                 No connected tools yet — connect apps in{" "}
                 <strong className="font-medium text-foreground">
-                  Connect tools
-                </strong>{" "}
-                above first.
+                  {connectHint}
+                </strong>
+                .
               </p>
             ) : visibleRows.length === 0 && query.trim().length > 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">
