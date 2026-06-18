@@ -55,6 +55,8 @@ describe("buildAgentPayload", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
       ...overrides,
     };
   }
@@ -88,18 +90,56 @@ describe("buildAgentPayload", () => {
     expect(JSON.stringify(payload)).not.toContain("auto_merge");
   });
 
-  test("BT-008: ready_pr output sets github write permissions on contents and pullRequests", () => {
-    const payload = buildAgentPayload(makeForm({ outputMode: "ready_pr" }));
+  test("BT-008: ready_pr output with write permissions in form sets github write permissions on contents and pullRequests", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        permissionContents: "write",
+        permissionPullRequests: "write",
+      }),
+    );
 
     expect(payload.permissions.github.contents).toBe("write");
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("BT-009: none output mode keeps contents and pullRequests as read", () => {
-    const payload = buildAgentPayload(makeForm({ outputMode: "none" }));
+  test("BT-009: none output mode with read permissions in form keeps contents and pullRequests as read", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        permissionContents: "read",
+        permissionPullRequests: "read",
+      }),
+    );
 
     expect(payload.permissions.github.contents).toBe("read");
     expect(payload.permissions.github.pullRequests).toBe("read");
+  });
+
+  test("BT-E1: explicit user override — ready_pr outputMode but permissionContents read => payload contents is read", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        permissionContents: "read",
+        permissionPullRequests: "write",
+      }),
+    );
+
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("BT-E2: permissionPullRequests write with outputMode none => payload pullRequests is write", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        permissionContents: "read",
+        permissionPullRequests: "write",
+      }),
+    );
+
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
   test("BT-010: schedule trigger sets schedule field; non-schedule trigger omits it", () => {
@@ -136,6 +176,8 @@ describe("isStepValid", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
       ...overrides,
     };
   }
@@ -411,6 +453,8 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
       ...overrides,
     };
   }

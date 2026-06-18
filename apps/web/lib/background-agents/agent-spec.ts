@@ -54,6 +54,8 @@ export type BackgroundAgent = {
   triggers: BackgroundAgentTrigger[];
 };
 
+export type GitHubAccessLevel = "read" | "write";
+
 export type FormState = {
   name: string;
   repoOwner: string;
@@ -69,6 +71,8 @@ export type FormState = {
   outputMode: OutputMode;
   checkCommand: string;
   enabled: boolean;
+  permissionContents: GitHubAccessLevel;
+  permissionPullRequests: GitHubAccessLevel;
 };
 
 export const defaultForm: FormState = {
@@ -86,15 +90,17 @@ export const defaultForm: FormState = {
   outputMode: "none",
   checkCommand: "",
   enabled: false,
+  permissionContents: "read",
+  permissionPullRequests: "read",
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
-  "github.pull_request": "Pull request",
-  "github.pull_request_review": "Pull request review",
-  "github.deployment_status": "Deployment status",
-  "github.issue": "Issue",
-  "schedule.cron": "Schedule",
-  "webhook.error": "Error webhook",
+  "github.pull_request": "A pull request changes",
+  "github.pull_request_review": "A pull request is reviewed",
+  "github.deployment_status": "A deployment finishes",
+  "github.issue": "An issue is opened",
+  "schedule.cron": "On a schedule",
+  "webhook.error": "An error is reported (webhook)",
 };
 
 export const flowSteps = [
@@ -177,8 +183,8 @@ export function buildAgentPayload(form: FormState) {
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
-        contents: form.outputMode === "ready_pr" ? "write" : "read",
-        pullRequests: form.outputMode === "ready_pr" ? "write" : "read",
+        contents: form.permissionContents,
+        pullRequests: form.permissionPullRequests,
         issues: "read",
         deployments: "read",
         statuses: "read",
@@ -355,6 +361,18 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
+  // BackgroundAgent type has no permissions field today; derive from outputMode
+  // for backward-compat. When the type is extended with permissions, switch to
+  // reading them directly from agent.permissions.
+  //
+  // KNOWN GAP (edit mode): because we re-derive from outputMode instead of the
+  // saved values, a ready_pr agent whose contents/pull_requests were overridden
+  // down to "read" will show "write" again on re-edit and silently re-escalate on
+  // the next save. Fix requires threading agent.permissions through the fetch +
+  // BackgroundAgent type; tracked as a follow-up. Create-flow scope is unaffected.
+  const defaultAccessLevel: GitHubAccessLevel =
+    agent.outputMode === "ready_pr" ? "write" : "read";
+
   return {
     name: agent.name,
     repoOwner: agent.repoOwner,
@@ -370,5 +388,7 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
+    permissionContents: defaultAccessLevel,
+    permissionPullRequests: defaultAccessLevel,
   };
 }

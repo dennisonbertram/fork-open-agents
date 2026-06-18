@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
 import type { TriggerKind } from "@/lib/background-agents/agent-spec";
+import { ScheduleVisual } from "../schedule-visual";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -116,7 +117,7 @@ export default async function AgentDetailPage({
   const permEntries = Object.entries(agent.permissions?.github ?? {});
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
         {/* Breadcrumb / header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
@@ -187,7 +188,7 @@ export default async function AgentDetailPage({
         <section className="rounded-md border border-border">
           <SectionHeader>Instructions</SectionHeader>
           <div className="px-4 py-4">
-            <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
+            <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-relaxed text-foreground">
               {agent.instructions}
             </pre>
           </div>
@@ -264,9 +265,12 @@ export default async function AgentDetailPage({
                       </div>
                     )}
                     {trigger.schedule && (
-                      <p className="mt-1 font-mono text-xs text-muted-foreground">
-                        Schedule: {trigger.schedule}
-                      </p>
+                      <div className="mt-1">
+                        <p className="font-mono text-xs text-muted-foreground">
+                          Schedule: {trigger.schedule}
+                        </p>
+                        <ScheduleVisual schedule={trigger.schedule} />
+                      </div>
                     )}
                     {trigger.lastRunAt && (
                       <p className="mt-1 text-xs text-muted-foreground">
