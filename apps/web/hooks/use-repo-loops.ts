@@ -71,22 +71,15 @@ async function loopsFetcher(url: string): Promise<LoopsResponse> {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useRepoLoops(params: {
-  repoOwner: string;
-  repoName: string;
-  /** Only fetch when true — set to true on first expand of Loops sub-group */
-  enabled: boolean;
-}): {
+export function useRepoLoops(params: { repoOwner: string; repoName: string }): {
   loops: SidebarLoop[] | null;
   featureDisabled: boolean;
   loading: boolean;
   error: string | null;
 } {
-  const { repoOwner, repoName, enabled } = params;
+  const { repoOwner, repoName } = params;
 
-  const key = enabled
-    ? `/api/agent-loops?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`
-    : null;
+  const key = `/api/agent-loops?repoOwner=${encodeURIComponent(repoOwner)}&repoName=${encodeURIComponent(repoName)}`;
 
   const { data, error, isLoading } = useSWR<LoopsResponse>(key, loopsFetcher, {
     revalidateOnFocus: false,

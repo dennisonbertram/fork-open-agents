@@ -324,16 +324,12 @@ export function RepoSubGroups({ repoOwner, repoName }: RepoSubGroupsProps) {
     ? filterAgentsByRepo(allAgents, repoOwner, repoName)
     : [];
 
-  // Loops: lazy — only fetch after the Loops sub-group is first expanded.
+  // Loops: fetched eagerly so feature availability is known before first expand.
   const [loopsExpanded, setLoopsExpanded] = useState(false);
-  const { loops, featureDisabled } = useRepoLoops({
-    repoOwner,
-    repoName,
-    enabled: loopsExpanded,
-  });
+  const { loops, featureDisabled } = useRepoLoops({ repoOwner, repoName });
 
   return (
-    <div className="mt-1 space-y-0.5">
+    <div className="space-y-0.5">
       <RepoAgentsSubGroup
         repoOwner={repoOwner}
         repoName={repoName}
