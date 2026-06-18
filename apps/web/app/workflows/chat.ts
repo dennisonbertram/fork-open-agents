@@ -630,7 +630,7 @@ function getSetupErrorMessage(error: unknown): string {
     message.includes("could not be decrypted") ||
     message.includes("Unsupported state or unable to authenticate data")
   ) {
-    return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
+    return "This chat's model couldn't be loaded — switch to a different model to keep going, or re-add its API key in Settings → Models.";
   }
 
   if (

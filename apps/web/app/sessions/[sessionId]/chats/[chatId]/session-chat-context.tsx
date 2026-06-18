@@ -223,6 +223,8 @@ type SessionChatContextValue = {
   modelOptions: ModelOption[];
   /** Whether model options are still loading */
   modelOptionsLoading: boolean;
+  /** The currently selected model-option id (model id, or model+profile composite) */
+  selectedModelOptionId: string;
 };
 
 type SessionChatRuntimeContextValue = Pick<
@@ -292,6 +294,7 @@ type SessionChatMetadataContextValue = Pick<
   | "checkBranchAndPr"
   | "modelOptions"
   | "modelOptionsLoading"
+  | "selectedModelOptionId"
 >;
 
 const SessionChatRuntimeContext = createContext<
@@ -1254,6 +1257,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      selectedModelOptionId,
     }),
     [
       sessionRecord,
@@ -1283,6 +1287,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      selectedModelOptionId,
     ],
   );
 
