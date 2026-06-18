@@ -104,20 +104,12 @@ export function MobileNewSessionScreen() {
   const [branch, setBranch] = useState<string | null>(null);
   const [isNewBranch, setIsNewBranch] = useState(false);
 
-  // Advanced options (seeded from preferences)
-  const [autoCommitPush, setAutoCommitPush] = useState(
-    preferences?.autoCommitPush ?? true,
-  );
-  const [autoCreatePr, setAutoCreatePr] = useState(
-    preferences?.autoCreatePr ?? false,
-  );
-
-  useEffect(() => {
-    if (preferences) {
-      setAutoCommitPush(preferences.autoCommitPush);
-      setAutoCreatePr(preferences.autoCreatePr);
-    }
-  }, [preferences]);
+  // Advanced options — tri-state. null means "not explicitly set by the user",
+  // so the effective value falls back to the repository's resolved defaults and
+  // then the user's global preferences (mirrors the desktop session starter, so
+  // mobile never silently overrides a repository's auto-commit/PR settings).
+  const [autoCommitPush, setAutoCommitPush] = useState<boolean | null>(null);
+  const [autoCreatePr, setAutoCreatePr] = useState<boolean | null>(null);
 
   // Advanced section visibility
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -184,6 +176,15 @@ export function MobileNewSessionScreen() {
     [selectedInstallation],
   );
 
+  // Effective auto-commit / auto-PR: explicit user toggle wins, else the
+  // repository's resolved default, else the user's global preference.
+  const defaultAutoCommitPush = preferences?.autoCommitPush ?? true;
+  const defaultAutoCreatePr = preferences?.autoCreatePr ?? false;
+  const effectiveAutoCommitPush =
+    autoCommitPush ?? repoDefaults?.autoCommitPush ?? defaultAutoCommitPush;
+  const effectiveAutoCreatePr =
+    autoCreatePr ?? repoDefaults?.autoCreatePr ?? defaultAutoCreatePr;
+
   // Build repo selection for payload.
   // A valid selection requires: repo mode on, a repo candidate, AND either:
   //   - an explicit branch string, or
@@ -219,8 +220,8 @@ export function MobileNewSessionScreen() {
       const payload = buildCreateSessionInput({
         title: task || undefined,
         repo: repoSelection,
-        autoCommitPush,
-        autoCreatePr,
+        autoCommitPush: effectiveAutoCommitPush,
+        autoCreatePr: effectiveAutoCreatePr,
       });
 
       const { chat } = await createSession(payload);
@@ -243,8 +244,8 @@ export function MobileNewSessionScreen() {
     isSubmitting,
     repoMode,
     repoSelection,
-    autoCommitPush,
-    autoCreatePr,
+    effectiveAutoCommitPush,
+    effectiveAutoCreatePr,
     createSession,
     router,
   ]);
@@ -329,6 +330,42 @@ export function MobileNewSessionScreen() {
         {/* Repo / branch picker (only when repo mode) */}
         {repoMode && (
           <div className="flex flex-col gap-4">
+            {/* Account / installation selector — only when more than one */}
+            {hasGitHub && installations && installations.length > 1 ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-foreground">
+                  Account
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {installations.map((inst) => {
+                    const active =
+                      selectedInstallation?.installationId ===
+                      inst.installationId;
+                    return (
+                      <button
+                        key={inst.installationId}
+                        type="button"
+                        onClick={() => {
+                          setSelectedInstallation(inst);
+                          setRepoCandidate(null);
+                          setBranch(null);
+                          setIsNewBranch(false);
+                        }}
+                        className={cn(
+                          "min-h-[36px] rounded-full border px-3 py-1.5 text-sm transition-colors",
+                          active
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-muted/30 text-muted-foreground",
+                        )}
+                      >
+                        {inst.accountLogin}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {/* Repo list */}
             {!hasGitHub ? (
               <p className="text-sm text-muted-foreground">
@@ -433,7 +470,7 @@ export function MobileNewSessionScreen() {
                   </span>
                 </div>
                 <Switch
-                  checked={autoCommitPush}
+                  checked={effectiveAutoCommitPush}
                   onCheckedChange={setAutoCommitPush}
                   disabled={!repoMode}
                   aria-label="Auto commit and push"
@@ -450,9 +487,9 @@ export function MobileNewSessionScreen() {
                   </span>
                 </div>
                 <Switch
-                  checked={autoCreatePr}
+                  checked={effectiveAutoCreatePr}
                   onCheckedChange={setAutoCreatePr}
-                  disabled={!repoMode || !autoCommitPush}
+                  disabled={!repoMode || !effectiveAutoCommitPush}
                   aria-label="Auto create pull request"
                 />
               </div>

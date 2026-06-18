@@ -188,7 +188,10 @@ export function MobileChatScreen({
       return;
     }
     setHasPendingResponse(true);
-    void sendMessage({ text: prefill });
+    sendMessage({ text: prefill }).catch(() => {
+      setHasPendingResponse(false);
+      toast.error("Couldn't send your message — please try again.");
+    });
   }, [chatId, messages.length, sendMessage]);
 
   // Derived repo label
