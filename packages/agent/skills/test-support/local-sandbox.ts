@@ -6,6 +6,11 @@ import type { ExecResult, Sandbox, SandboxStats } from "@open-agents/sandbox";
 
 const execAsync = promisify(execCallback);
 
+// Cap captured output so a runaway script can't exhaust memory. On overflow
+// Node rejects with an ERR_CHILD_PROCESS_STDIO_MAXBUFFER error, which we report
+// as `truncated: true` in the catch path below.
+const MAX_OUTPUT_BYTES = 10 * 1024 * 1024;
+
 /**
  * Filesystem-backed {@link Sandbox} for the code-bearing-skill proof of concept.
  *
@@ -67,6 +72,7 @@ export class LocalSandbox implements Sandbox {
       const { stdout, stderr } = await execAsync(command, {
         cwd,
         timeout: timeoutMs,
+        maxBuffer: MAX_OUTPUT_BYTES,
         env: { ...process.env, ...this.env },
         signal: options?.signal,
       });
@@ -79,17 +85,18 @@ export class LocalSandbox implements Sandbox {
       };
     } catch (err) {
       const e = err as {
-        code?: number;
+        code?: number | string;
         stdout?: string;
         stderr?: string;
         message?: string;
       };
+      const truncated = e.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
       return {
         success: false,
         exitCode: typeof e.code === "number" ? e.code : null,
         stdout: e.stdout ?? "",
         stderr: e.stderr ?? e.message ?? "",
-        truncated: false,
+        truncated,
       };
     }
   }

@@ -21,11 +21,14 @@ output enters the conversation — the file contents and the script code do not.
    the skill argument and is substituted here: `$ARGUMENTS`
 
    ```bash
-   <skill-dir>/scripts/summarize.ts "$ARGUMENTS"
+   bun "<skill-dir>/scripts/summarize.ts" "$ARGUMENTS"
    ```
 
-   (Real skills can bundle Python or shell scripts the same way — the mechanism
-   is identical: the script lives in the skill directory and runs via bash.)
+   Invoking via the `bun` interpreter explicitly avoids depending on the
+   script's execute bit or shebang. (Real skills can bundle Python or shell
+   scripts the same way — `python "<skill-dir>/foo.py"`, `bash
+   "<skill-dir>/foo.sh"` — the mechanism is identical: the script lives in the
+   skill directory and runs via bash.)
 
 3. Report the JSON the script prints: the row count and, for each numeric
    column, the mean, min, and max.

@@ -11,9 +11,12 @@ import type { SkillMetadata } from "./types";
  * The skill bundle lives under __fixtures__/code-bearing/skills/csv-stats and
  * contains a SKILL.md, a runnable script (scripts/summarize.ts), and a level-3
  * reference (references/heuristics.md). We drive the real `discoverSkills` and
- * the real `skillTool`, then run the bundled script through the sandbox `exec`
- * the agent's bash tool would use. The only thing swapped for the cloud Vercel
- * sandbox is a filesystem-backed implementation of the identical interface.
+ * the real `skillTool`, then extract the exact bash command from the
+ * model-visible SKILL.md body (resolving the `<skill-dir>` placeholder the same
+ * way the model would, using the injected "Skill directory:" line) and run THAT
+ * command through the sandbox `exec` the agent's bash tool would use. The only
+ * thing swapped for the cloud Vercel sandbox is a filesystem-backed
+ * implementation of the identical interface.
  */
 
 const FIXTURES = path.join(import.meta.dir, "__fixtures__", "code-bearing");
@@ -93,10 +96,38 @@ describe("code-bearing skill (POC)", () => {
     ).resolves.toBeUndefined();
   });
 
-  test("execution: the bundled script runs and returns real computed output", async () => {
-    const scriptPath = path.join(SKILL_DIR, "scripts", "summarize.ts");
-    // Mirrors what the model would run via the bash tool after loading the skill.
-    const command = `${process.execPath} ${JSON.stringify(scriptPath)} ${JSON.stringify(CSV_PATH)}`;
+  test("execution: the model-visible command runs and returns real computed output", async () => {
+    // Load the skill exactly as the model does (real skillTool), so the command
+    // we run is the one the model actually sees — not a test-fabricated one.
+    const skills = await discoverSkills(sandbox, [SKILLS_DIR]);
+    const loaded = await skillExecute(
+      { skill: "csv-stats", args: CSV_PATH },
+      { experimental_context: buildContext(skills) },
+    );
+    if (loaded.success !== true) {
+      throw new Error(`skill load failed: ${loaded.error}`);
+    }
+
+    // Resolve the `<skill-dir>` placeholder the same way the model would: read
+    // the absolute path from the injected "Skill directory:" line and rewrite
+    // the token before running anything.
+    const firstLine = loaded.content.split("\n", 1)[0] ?? "";
+    const skillDir = firstLine.replace(/^Skill directory:\s*/, "");
+    expect(skillDir).toBe(SKILL_DIR);
+
+    // Extract the exact command from the SKILL.md ```bash fenced block (the
+    // fence may be indented because it sits inside a numbered list).
+    const fenceMatch = loaded.content.match(/```bash\r?\n([\s\S]*?)```/);
+    if (!fenceMatch?.[1]) {
+      throw new Error("no bash command block found in loaded skill body");
+    }
+    const command = fenceMatch[1].trim().replaceAll("<skill-dir>", skillDir);
+
+    // Sanity: this is the literal command a model would copy out and run, with
+    // the real argument already substituted by the skill tool.
+    expect(command).toContain(CSV_PATH);
+    expect(command).not.toContain("<skill-dir>");
+    expect(command).not.toContain("$ARGUMENTS");
 
     const result = await sandbox.exec(command, FIXTURES, 30_000);
 
