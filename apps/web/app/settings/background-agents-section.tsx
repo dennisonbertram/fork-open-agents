@@ -43,6 +43,7 @@ import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  coerceReadyPrPermissions,
   conditionFieldLabel,
   defaultForm,
   describeOutputModePermissions,
@@ -284,6 +285,12 @@ export function BackgroundAgentsSection() {
     setSaving(true);
     setMessage(null);
     try {
+      // The settings flow has no permission selector and seeds from defaultForm
+      // (contents/pullRequests = "read"). A ready_pr agent needs write access to
+      // push a branch and open a PR, so coerce those permissions to "write"
+      // before building the payload — restoring the prior implicit behavior the
+      // repo-dashboard editor provides via its permission controls.
+      const formToSave = coerceReadyPrPermissions(form);
       const response = await fetch(
         isEditing
           ? `/api/background-agents/${editingAgentId}`
@@ -291,7 +298,7 @@ export function BackgroundAgentsSection() {
         {
           method: isEditing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildAgentPayload(form)),
+          body: JSON.stringify(buildAgentPayload(formToSave)),
         },
       );
       if (!response.ok) {

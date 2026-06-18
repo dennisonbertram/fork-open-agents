@@ -51,10 +51,33 @@ export type BackgroundAgent = {
   instructions: string;
   outputMode: OutputMode;
   checkCommand: string | null;
+  /**
+   * Persisted GitHub permissions, when available. The edit flow hydrates the
+   * form from these so a ready_pr agent whose access was tightened to "read"
+   * does not silently re-escalate to "write" on the next save. Optional for
+   * backward-compat with callers/rows that don't carry the field.
+   */
+  permissions?: BackgroundAgentPermissions;
   triggers: BackgroundAgentTrigger[];
 };
 
 export type GitHubAccessLevel = "read" | "write";
+
+/**
+ * Persisted GitHub permissions on a background agent. Mirrors the
+ * `permissions` JSONB column (see lib/db/schema.ts BackgroundAgentPermissions).
+ * Optional/partial because older rows may predate a given field.
+ */
+export type BackgroundAgentPermissions = {
+  github?: {
+    contents?: GitHubAccessLevel;
+    pullRequests?: GitHubAccessLevel;
+    issues?: GitHubAccessLevel;
+    deployments?: "read";
+    statuses?: "read";
+    checks?: "read";
+  };
+};
 
 export type FormState = {
   name: string;
@@ -168,6 +191,33 @@ function buildConditions(form: FormState): TriggerConditions {
     ...(labels ? { labels } : {}),
     ...(environments ? { environments } : {}),
     ...(severities ? { severities } : {}),
+  };
+}
+
+/**
+ * Returns a copy of the form with GitHub contents/pull_requests coerced to
+ * "write" when the output mode is ready_pr.
+ *
+ * Some flows (e.g. /settings/background-agents) have no permission selector and
+ * seed perms from defaultForm (both "read"). A ready_pr agent needs write
+ * access to push a branch and open a PR, so callers without a permission UI run
+ * the form through this before building the payload. Non-ready_pr forms pass
+ * through unchanged, and an already-write ready_pr form is returned as-is.
+ */
+export function coerceReadyPrPermissions(form: FormState): FormState {
+  if (form.outputMode !== "ready_pr") {
+    return form;
+  }
+  if (
+    form.permissionContents === "write" &&
+    form.permissionPullRequests === "write"
+  ) {
+    return form;
+  }
+  return {
+    ...form,
+    permissionContents: "write",
+    permissionPullRequests: "write",
   };
 }
 
@@ -361,17 +411,20 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
-  // BackgroundAgent type has no permissions field today; derive from outputMode
-  // for backward-compat. When the type is extended with permissions, switch to
-  // reading them directly from agent.permissions.
-  //
-  // KNOWN GAP (edit mode): because we re-derive from outputMode instead of the
-  // saved values, a ready_pr agent whose contents/pull_requests were overridden
-  // down to "read" will show "write" again on re-edit and silently re-escalate on
-  // the next save. Fix requires threading agent.permissions through the fetch +
-  // BackgroundAgent type; tracked as a follow-up. Create-flow scope is unaffected.
-  const defaultAccessLevel: GitHubAccessLevel =
+  // Hydrate permissions from the persisted values when available so the edit
+  // form reflects exactly what was saved. A ready_pr agent whose contents /
+  // pull_requests were tightened to "read" must NOT re-escalate to "write" on
+  // re-edit. When a stored value is absent (older rows, or a freshly mapped
+  // object that omits permissions), fall back to outputMode-derived defaults so
+  // existing ready_pr agents keep working, and default safely to "read"
+  // otherwise.
+  const github = agent.permissions?.github;
+  const derivedAccessLevel: GitHubAccessLevel =
     agent.outputMode === "ready_pr" ? "write" : "read";
+  const permissionContents: GitHubAccessLevel =
+    github?.contents ?? derivedAccessLevel;
+  const permissionPullRequests: GitHubAccessLevel =
+    github?.pullRequests ?? derivedAccessLevel;
 
   return {
     name: agent.name,
@@ -388,7 +441,7 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
-    permissionContents: defaultAccessLevel,
-    permissionPullRequests: defaultAccessLevel,
+    permissionContents,
+    permissionPullRequests,
   };
 }

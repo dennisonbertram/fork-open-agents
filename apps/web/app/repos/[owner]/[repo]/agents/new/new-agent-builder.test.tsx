@@ -3,8 +3,10 @@
  *
  * SSR-only (renderToStaticMarkup) can't drive clicks, so the save flow's
  * "stay on page, return an id" behavior is unit-tested where it actually
- * lives — see ./create-agent-request.test.ts (submitNewAgent). Here we cover
- * what SSR can prove: the template-first entry and no redirect on mount.
+ * lives — see ./create-agent-request.test.ts (submitNewAgent / updateExistingAgent)
+ * and ./save-agent-spec.test.ts (the create-once-then-PATCH routing the builder
+ * uses). Here we cover what SSR can prove: the template-first entry and no
+ * redirect on mount.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";

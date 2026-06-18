@@ -15,7 +15,7 @@ import {
   type BlankTemplate,
 } from "../agent-templates";
 import { TemplatePicker } from "../template-picker";
-import { submitNewAgent } from "./create-agent-request";
+import { saveAgentSpec } from "./save-agent-spec";
 
 type ManualTestResponse = {
   enabled: boolean;
@@ -74,12 +74,15 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
-    const result = await submitNewAgent(payload);
+    // saveAgentSpec routes to create (POST) before an id exists and to update
+    // (PATCH) afterward, so a re-save never creates a duplicate agent.
+    const wasCreated = createdAgentId !== null;
+    const result = await saveAgentSpec(createdAgentId, payload);
     if (result.ok) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage("Agent created successfully.");
+      setMessage(wasCreated ? "Agent updated." : "Agent created successfully.");
     } else {
       setMessage(result.error);
     }

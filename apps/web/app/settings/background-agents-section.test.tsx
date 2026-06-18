@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  coerceReadyPrPermissions,
+  defaultForm,
   supportedOutputModes,
 } from "./background-agents-form";
 
@@ -568,6 +570,47 @@ describe("BackgroundAgentsSection", () => {
     expect(html).not.toContain("Deployment state");
     // The raw "Severities" mislabel must never appear
     expect(html).not.toContain("Severities");
+  });
+
+  test("REGRESSION: settings flow + ready_pr grants write/write (not read-only)", () => {
+    // The settings form has no permission selector and seeds from defaultForm
+    // (contents/pullRequests = "read"). Before the fix, a ready_pr agent created
+    // via /settings serialized contents:read, pullRequests:read — it could not
+    // push a branch or open a PR, despite the UI claiming "Read + open PRs".
+    // saveAgent now runs the form through coerceReadyPrPermissions first.
+    const form = {
+      ...defaultForm,
+      name: "PR opener",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Open a PR with the fix.",
+      outputMode: "ready_pr" as const,
+    };
+
+    // Sanity: the seeded settings form really is read/read before coercion.
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
+
+    const payload = buildAgentPayload(coerceReadyPrPermissions(form));
+
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("REG: settings flow + none output mode stays read-only", () => {
+    const form = {
+      ...defaultForm,
+      name: "Reporter",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Just report.",
+      outputMode: "none" as const,
+    };
+
+    const payload = buildAgentPayload(coerceReadyPrPermissions(form));
+
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
   test("builds edit form state and update payloads for existing agents", async () => {

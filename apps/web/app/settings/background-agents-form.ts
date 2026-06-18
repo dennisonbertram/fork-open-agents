@@ -10,6 +10,7 @@ export {
   buildAgentPayload,
   buildFormFromAgent,
   buildRepoScopedDefaultForm,
+  coerceReadyPrPermissions,
   conditionFieldLabel,
   defaultForm,
   describeOutputModePermissions,

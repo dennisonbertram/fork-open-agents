@@ -6,12 +6,14 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAgentPayload,
+  buildFormFromAgent,
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
   describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
   outputModeLabel,
+  type BackgroundAgent,
   type ConditionField,
   type FormState,
   type StepId,
@@ -481,5 +483,72 @@ describe("REG: describeOutputModePermissions — both modes produce distinct sum
     const prDesc = describeOutputModePermissions("ready_pr");
     // If someone accidentally returns the same string for both, this catches it
     expect(noneDesc).not.toBe(prDesc);
+  });
+});
+
+describe("buildFormFromAgent — permissions hydrate from persisted values", () => {
+  function baseAgent(overrides: Partial<BackgroundAgent>): BackgroundAgent {
+    return {
+      id: "agent-1",
+      name: "PR helper",
+      description: null,
+      status: "enabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Do the thing.",
+      outputMode: "ready_pr",
+      checkCommand: null,
+      triggers: [],
+      ...overrides,
+    };
+  }
+
+  test("REGRESSION: ready_pr agent with permissions tightened to read does NOT re-escalate to write", () => {
+    // Before the fix, buildFormFromAgent derived perms from outputMode
+    // (ready_pr => write), so a ready_pr agent whose contents/pull_requests were
+    // saved as "read" would prefill "write" and silently re-grant on next save.
+    const form = buildFormFromAgent(
+      baseAgent({
+        outputMode: "ready_pr",
+        permissions: {
+          github: { contents: "read", pullRequests: "read" },
+        },
+      }),
+    );
+
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
+  });
+
+  test("ready_pr agent with persisted write permissions hydrates write/write", () => {
+    const form = buildFormFromAgent(
+      baseAgent({
+        outputMode: "ready_pr",
+        permissions: {
+          github: { contents: "write", pullRequests: "write" },
+        },
+      }),
+    );
+
+    expect(form.permissionContents).toBe("write");
+    expect(form.permissionPullRequests).toBe("write");
+  });
+
+  test("no persisted permissions: falls back to outputMode-derived defaults (ready_pr => write)", () => {
+    const form = buildFormFromAgent(
+      baseAgent({ outputMode: "ready_pr", permissions: undefined }),
+    );
+
+    expect(form.permissionContents).toBe("write");
+    expect(form.permissionPullRequests).toBe("write");
+  });
+
+  test("no persisted permissions on a non-ready_pr agent defaults to read/read", () => {
+    const form = buildFormFromAgent(
+      baseAgent({ outputMode: "none", permissions: undefined }),
+    );
+
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
   });
 });
