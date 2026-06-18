@@ -347,6 +347,12 @@ export interface BuildSystemPromptOptions {
   environmentDetails?: string;
   skills?: SkillMetadata[];
   modelId?: string;
+  /**
+   * Human-facing name of the user inference profile serving this session, when
+   * the request routes through a user-supplied provider endpoint rather than
+   * the gateway. Used only to make the model-identity section more specific.
+   */
+  inferenceProfileName?: string;
   runtimeMode?: "classic" | "managed_runtime";
   /** When true, the session has no sandbox VM. Informs the agent it cannot execute code. */
   sandboxFree?: boolean;
@@ -401,6 +407,28 @@ Continue using shell git for repository mechanics (clone, branch, edit, diff, co
 export const GITHUB_TOOL_PREFERENCE_PROMPT = `# Use GitHub Tools, Not web_fetch, For GitHub
 
 Authenticated GitHub tools are connected for this session. For anything on github.com or api.github.com (issues, pull requests, repositories, file contents), use those tools — never the \`web_fetch\` tool. \`web_fetch\` is unauthenticated and returns 404 for private repositories, so it cannot see private issues or repos. Reserve \`web_fetch\` for non-GitHub URLs.`;
+
+/**
+ * Build the model-identity section.
+ *
+ * Models cannot introspect their own deployment, so when asked "what model are
+ * you?" they answer from training-data patterns — which is frequently wrong
+ * (e.g. GLM served via an Anthropic-compatible endpoint claiming to be Claude).
+ * Stating the actual serving model id up front stops that misidentification.
+ */
+function buildModelIdentityPrompt(
+  modelId: string,
+  inferenceProfileName?: string,
+): string {
+  const via = inferenceProfileName
+    ? ` It is served through the user's "${inferenceProfileName}" inference profile (a custom provider endpoint).`
+    : "";
+  return `# Model Identity
+
+The model serving this session is \`${modelId}\`.${via}
+
+When the user asks which model or AI you are, answer with \`${modelId}\`. Do NOT claim to be a different model or vendor (e.g. Claude, GPT, or Gemini) based on your training data: a model has no reliable knowledge of its own deployment, and your training-time guess does not reflect what is actually running here. If you are unsure about anything beyond \`${modelId}\`, say so plainly instead of guessing a vendor or version.`;
+}
 
 /**
  * Build the skills section for the system prompt.
@@ -466,6 +494,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const family = detectModelFamily(options.modelId);
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
+
+  if (options.modelId) {
+    parts.push(
+      `\n${buildModelIdentityPrompt(options.modelId, options.inferenceProfileName)}`,
+    );
+  }
 
   if (options.sandboxFree) {
     parts.push(SANDBOX_FREE_PROMPT);

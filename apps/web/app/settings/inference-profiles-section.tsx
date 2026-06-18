@@ -174,7 +174,9 @@ function ProfileDialog({
               disabled={isSaving}
             />
             <p className="text-xs text-muted-foreground">
-              Empty uses Anthropic. Bare hosts are normalized to a /v1 endpoint.
+              Empty uses Anthropic. URLs without a version segment are
+              normalized to end in /v1 (e.g. https://api.z.ai/api/anthropic →
+              …/anthropic/v1).
             </p>
           </div>
 

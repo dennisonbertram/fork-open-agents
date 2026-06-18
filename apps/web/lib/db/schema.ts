@@ -2,6 +2,7 @@ import type { SandboxState } from "@open-agents/sandbox";
 import type { ManagedRuntimeProfileCommand } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SetupManagedRuntimeProfileInput } from "@open-agents/agent";
 import type { ModelVariant } from "@/lib/model-variants";
+import type { InferenceProfileModel } from "@/lib/inference/types";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
   type ChatComposioSelection,
@@ -204,6 +205,10 @@ export const inferenceProfiles = pgTable(
     lastTestedAt: timestamp("last_tested_at"),
     lastTestMessage: text("last_test_message"),
     enabled: boolean("enabled").notNull().default(true),
+    models: jsonb("models")
+      .$type<InferenceProfileModel[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
