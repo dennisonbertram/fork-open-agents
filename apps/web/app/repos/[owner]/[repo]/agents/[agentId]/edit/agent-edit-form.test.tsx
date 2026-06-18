@@ -172,6 +172,8 @@ describe("AgentEditForm", () => {
       outputMode: "none" as const,
       checkCommand: "",
       enabled: true,
+      permissionContents: "read" as const,
+      permissionPullRequests: "read" as const,
     };
 
     const patch = buildEditPatch(form);
@@ -297,7 +299,7 @@ describe("AgentEditForm", () => {
     expect(errorHtml).toContain("too short; required");
   });
 
-  test("BT-WI6-006: handleRunTest on success POSTs test endpoint and navigates to run page", async () => {
+  test("BT-WI6-006: handleRunTest on success POSTs test endpoint and does NOT navigate (shows inline console)", async () => {
     const { AgentEditForm } = await editFormModulePromise;
     const agent = makeAgent();
 
@@ -329,9 +331,8 @@ describe("AgentEditForm", () => {
     expect(fetchUrl).toBe("/api/background-agents/agent-edit-1/test");
     expect(fetchOpts.method).toBe("POST");
 
-    // Navigation to the background run page.
-    expect(push).toHaveBeenCalledTimes(1);
-    expect(push).toHaveBeenCalledWith("/background-runs/run-abc-123");
+    // Decision C: do NOT navigate away; show inline console instead.
+    expect(push).not.toHaveBeenCalled();
   });
 
   test("BT-WI6-007: handleRunTest on API error surfaces error inline without navigating", async () => {

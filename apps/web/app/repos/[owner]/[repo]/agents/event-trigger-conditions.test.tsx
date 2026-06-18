@@ -155,6 +155,8 @@ describe("buildAgentPayload — event trigger conditions", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
     });
 
     const trigger = payload.triggers[0];
@@ -184,6 +186,8 @@ describe("buildAgentPayload — event trigger conditions", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
     });
 
     const trigger = payload.triggers[0];
@@ -217,6 +221,8 @@ describe("buildAgentPayload — event trigger conditions", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
     });
 
     const trigger = payload.triggers[0];
