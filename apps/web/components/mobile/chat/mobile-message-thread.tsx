@@ -118,7 +118,7 @@ export function MobileMessageThread({
     <div
       ref={scrollRef}
       onScroll={handleScroll}
-      className="flex flex-1 flex-col overflow-y-auto py-4"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4"
     >
       {messages.map((message, messageIndex) => {
         if (message.role === "user") {

@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { getServerSession } from "@/lib/session/get-server-session";
-import { MobileTabBar } from "@/components/mobile/shell/mobile-tab-bar";
 
 type MobileLayoutProps = {
   children: ReactNode;
@@ -11,9 +10,11 @@ type MobileLayoutProps = {
  * Mobile route-group layout.
  *
  * - Async server component: checks auth via getServerSession, redirects to /
- *   if unauthenticated.
- * - Wraps all /m/* routes in a full-height safe-area-padded container.
- * - Renders MobileTabBar fixed at the bottom.
+ *   if unauthenticated. Guards every /m/* route — the tabbed pages AND the
+ *   pushed chat route.
+ * - The bottom tab bar lives in the nested (tabs) layout, so the pushed Chat
+ *   route renders full-screen with its own pinned composer and no tab bar
+ *   overlapping it.
  * - Does NOT re-wrap with <Providers>; those are injected by the root layout.
  */
 export default async function MobileLayout({ children }: MobileLayoutProps) {
@@ -24,19 +25,6 @@ export default async function MobileLayout({ children }: MobileLayoutProps) {
   }
 
   return (
-    <div className="relative flex min-h-dvh flex-col bg-background text-foreground">
-      {/*
-        Scrollable content area.
-        pb-[env(safe-area-inset-bottom)] and the explicit pb-20 ensure that
-        content is never hidden behind the fixed tab bar or the home indicator
-        on iOS.
-      */}
-      <main className="flex-1 overflow-y-auto overflow-x-hidden pb-20">
-        {children}
-      </main>
-
-      {/* Fixed bottom tab bar */}
-      <MobileTabBar />
-    </div>
+    <div className="min-h-dvh bg-background text-foreground">{children}</div>
   );
 }

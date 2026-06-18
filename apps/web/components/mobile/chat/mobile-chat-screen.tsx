@@ -209,7 +209,7 @@ export function MobileChatScreen({
   const activeApprovalId = pendingApproval?.id ?? null;
 
   return (
-    <div className="flex min-h-dvh flex-col bg-background">
+    <div className="flex h-dvh flex-col bg-background">
       <MobileChatHeader
         title={sessionTitle}
         repoLabel={repoLabel}
