@@ -12,7 +12,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingsSection } from "@/components/ui/settings-section";
 import { cn } from "@/lib/utils";
@@ -203,22 +202,61 @@ export function AgentSpecEditor({
 
   return (
     <div className="space-y-6">
-      {/* Actions — at TOP per proposal */}
-      <div className="flex flex-wrap items-center gap-3 border-b border-border pb-4">
-        <Button disabled={!canSave || saving} onClick={handleSave}>
-          <Save className="h-4 w-4" />
-          Save
-        </Button>
-        <span title={!createdAgentId ? "Save first to run a test." : undefined}>
-          <Button
-            variant="outline"
-            disabled={runTestDisabled}
-            onClick={handleRunTest}
-          >
-            <Play className="h-4 w-4" />
-            Run a test
-          </Button>
-        </span>
+      {/* Actions + Enable — at TOP */}
+      <div className="space-y-2 border-b border-border pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <Button disabled={!canSave || saving} onClick={handleSave}>
+              <Save className="h-4 w-4" />
+              Save
+            </Button>
+            <span
+              title={!createdAgentId ? "Save first to run a test." : undefined}
+            >
+              <Button
+                variant="outline"
+                disabled={runTestDisabled}
+                onClick={handleRunTest}
+              >
+                <Play className="h-4 w-4" />
+                Run a test
+              </Button>
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-muted-foreground">
+              Enable
+            </span>
+            <div className="flex items-center rounded-md border border-border bg-muted/20 p-0.5">
+              <button
+                type="button"
+                onClick={() => setEnabled(true)}
+                aria-pressed={enabled}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-medium transition-colors",
+                  enabled
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                Enabled
+              </button>
+              <button
+                type="button"
+                onClick={() => setEnabled(false)}
+                aria-pressed={!enabled}
+                className={cn(
+                  "rounded px-3 py-1 text-xs font-medium transition-colors",
+                  enabled
+                    ? "text-muted-foreground hover:text-foreground"
+                    : "bg-background text-foreground shadow-sm",
+                )}
+              >
+                Disabled
+              </button>
+            </div>
+          </div>
+        </div>
         <p className="text-xs text-muted-foreground">
           {!createdAgentId
             ? "Save first to run a test."
@@ -227,8 +265,8 @@ export function AgentSpecEditor({
                 ? "This agent is on — it runs when its trigger fires."
                 : "This agent is off — it won't run until you turn it on."
               : enabled
-                ? "Agent will be created enabled."
-                : "Agent will be created disabled (default)."}
+                ? "This agent will be created on."
+                : "New agents start off — test it, then turn it on here."}
         </p>
       </div>
 
@@ -240,15 +278,13 @@ export function AgentSpecEditor({
         title="Name"
         description="A short name you'll recognize in the agents list."
       >
-        <div className="space-y-2">
-          <Label htmlFor="spec-name">Agent name</Label>
-          <Input
-            id="spec-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. PR Backlog Maintainer"
-          />
-        </div>
+        <Input
+          id="spec-name"
+          aria-label="Agent name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. PR Backlog Maintainer"
+        />
       </SettingsSection>
 
       {/* 2 — What should this agent do? (merged goal + instructions) */}
@@ -466,7 +502,7 @@ export function AgentSpecEditor({
                   <p className="text-xs text-muted-foreground">
                     {m === "ready_pr"
                       ? "Open a draft pull request with its changes for you to review and merge."
-                      : "Write a summary you can read. Don't change the repo."}
+                      : "Leave a written summary on the run — you'll find it in this agent's run history. Doesn't open a PR or change the repo."}
                   </p>
                   {isDisabled && (
                     <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
@@ -479,17 +515,6 @@ export function AgentSpecEditor({
           })}
         </div>
       </SettingsSection>
-
-      {/* 6 — Turn it on */}
-      <SettingsSection
-        title="Turn it on"
-        description={
-          mode === "edit"
-            ? "Controls whether this agent runs when its trigger fires."
-            : "New agents start off. Turn it on once you've tested it."
-        }
-        action={<Switch checked={enabled} onCheckedChange={setEnabled} />}
-      />
     </div>
   );
 }

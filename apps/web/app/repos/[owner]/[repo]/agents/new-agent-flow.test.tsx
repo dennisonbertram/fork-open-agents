@@ -96,7 +96,7 @@ describe("TemplatePicker", () => {
 });
 
 describe("AgentSpecEditor", () => {
-  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, Result, Turn it on", async () => {
+  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, Result, and a top-level Enable control", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -120,7 +120,10 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("When should it run?");
     expect(html).toContain("Tools");
     expect(html).toContain("Result");
-    expect(html).toContain("Turn it on");
+    // Enable moved to a top-level Enabled/Disabled control (no "Turn it on" section)
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Disabled");
+    expect(html).not.toContain("Turn it on");
     // Old section names should NOT be present as primary headings
     expect(html).not.toContain(">Purpose<");
     expect(html).not.toContain(">Instructions<");
