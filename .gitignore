@@ -46,3 +46,8 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .open-agents-dev-server-state.json
 .open-agents-dev-server-*.pid
 .env*
+
+# audit + ux-walker working artifacts (not source)
+.audit/
+audit/
+docs/ux-walker/
