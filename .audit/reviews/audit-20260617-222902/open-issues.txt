@@ -1,0 +1,171 @@
+#451: [EPIC] Background-agents builder redesign — roster/builder split + what-first re-language + unified Tools
+#449: feat: `manage_background_agent` agent-tool — create/edit background agents with an LLM (modular, schema-shared)
+#448: Real-time SSE streaming for background-agent run logs (replace polling console)
+#434: Feature: repo-level Composio tool selection (remove per-chat picker, GitHub default-on)
+#420: Spike: Repository settings redesign (card-group settings system)
+#419: chore: remove dead non_classic_runtime code from github/tools.ts after managed runtime enablement
+#418: feat: chat input — show GitHub as always-connected native tool and display stacked toolkit icons
+#417: fix: managed runtime direct-tool-use scanner falsely attributes nested worker bash calls to coordinator
+#416: feat: proof standard — recognize external tools (Composio/GitHub) as valid completion path in managed runtime
+#411: Loops navigation: keep the whole loop UI inside the layout container + fix the breadcrumb/back model
+#409: [Epic] Unify agents + loops into one concept: Agents (nodes) + Workflows (graphs)
+#408: Loop builder config: reuse background-agent config components (shadcn) instead of bespoke raw controls
+#407: Sidebar collapse: narrow icon rail instead of full offcanvas disappear
+#388: bug: propose_composio_tool always fails — proposeToolAction never injected in chat workflow (P1)
+#373: Epic: UX polish & API contract backlog — background agents, workflows, loops, Composio, sessions
+#372: Epic: Verified Build harness reliability — dead Start CTA, SSE reconnect storm, idempotency race, authz/timeout gaps
+#371: Epic: MCP server support — user-registered MCP servers feed tools into agent sessions
+#360: epic: scaffold a new repo from templates (zero-repo onboarding, start with Next.js)
+#318: feat: native GitHub agent tools — issue-mutation tools (blocked on App issues:write)
+#317: feat: native GitHub agent tools — foundation + read/branch/PR tools (opt-in gated)
+#315: epic: Native GitHub agent tools — owned Octokit tools for issues, branches, and PRs (gated)
+#304: feat: multiple named sandboxes per chat — stack UI, usage/stats, activity visibility
+#298: ci: run API contract tests automatically against preview deployments
+#286: feat: Autosuggest — propose ≤3 next-task suggestions per repo (inert, accept-to-run)
+#285: feat: slice-0 — run/session attribution on usage_events (keystone for per-run cost + budget halting)
+#284: feat: HTTP API routes for the git/GitHub workflow (close server-action testability gap)
+#276: feat: surface learnings to agent Phase-1 + optional propose-via-PR projection (gated)
+#275: feat: /settings/learnings Insights feed (table + detail Sheet + per-repo ReadinessVerdict toggle)
+#272: feat: environment and organization scope for Actions Secrets
+#271: feat: Actions Secrets inventory + repository-scope create/update/delete (sealed-box)
+#270: feat: re-run, cancel, and workflow_dispatch for GitHub Actions runs
+#269: feat: read-only GitHub Actions dashboard (workflows, runs, jobs, logs) on the repo surface
+#264: epic: Per-repo background PR-review agent that extracts learnings
+#263: epic: Visual manager for GitHub Actions & repo Secrets
+#257: feat: render workspace settings in-content instead of a modal
+#255: feat: collapsible repo-dashboard cards with summary stats
+#251: feat: user-authored agent skills (create, manage, enable, AI-assisted authoring)
+#246: feat: per-agent Composio tools for background agents (needs executor support)
+#244: epic: first-class 'Agents' settings — define & configure the agent roster (model + tools + instructions)
+#243: feat: gate sandbox tools off for sandbox-free chats (no file/bash/exec without a sandbox)
+#242: feat: let agents create reusable tools that persist to a tool profile
+#241: Epic: node-based Workflow Builder — compose loops from prompt/tool/agent/guardrail nodes (React Flow)
+#240: Project Dashboard: live view of running background-agent runs (status, cost, halt)
+#238: Smart defaults across extensible surfaces: recommended Custom Model Set, starter toolkits/skills, duplicate-from-built-in variants
+#237: Profile as identity-first: revive the identity card, fix the fabricated rank, add empty states, delete the dead usage shadow
+#236: Preferences UX: surface plain-language context for all controls and collapse/hide single-option pickers
+#235: Grouped settings nav: Account / Tools / Automation / Insights / Admin with role-based visibility
+#234: Build shared settings page header primitives and metadata map to fix skeleton/loaded description drift
+#233: Separate operator/deploy-time config from user settings using isAdmin flag
+#232: Settings system redesign: grouped IA, operator-vs-user separation, and a uniform context pattern across all 4 dimensions
+#231: Pre-auth UX: set requirements/costs before OAuth, standardize protected-route gating, decompress deploy-your-own page
+#230: Verified Build & managed-runtime profile: complete UX onboarding with plain language and test status prominence
+#229: Background-agent creation: convert to progressive stepper with relevance-gated fields and permissions visibility
+#228: Repo dashboard: unify project agent naming and make it the launchpad for agent management
+#227: Models page: progressive disclosure for Inference Profiles and Variants, preset-based variant creation
+#226: Settings: group flat navigation, split identity from analytics, and bind rank to live data
+#225: GitHub connections: auto-expand org list when coverage is incomplete and explain Vercel card
+#224: Improve Composio configuration UX: hide nav when unconfigured, add dashboard link, auto-assign first profile as default
+#223: Show exact branch names and guide commit-before-PR to relieve branch safety anxiety
+#222: Cost & runtime legibility: persistent cost chip + outcome-based runtime labels
+#221: Composer toolbar: collapse 7 competing controls into model + attach inline and a 'Session settings' overflow
+#220: Model picker: ship recommended defaults and surface cost/context/role hints
+#219: New Session funnel: unblock Vercel env-sync decision and unify copy
+#217: First-run: land users on a guided composer with starter prompts, not the empty "Select a Session" state
+#214: Add-sandbox: recover when VM creation fails after provisioning state is set (#195 follow-up)
+#195: Feature: complete #193 — opt-in 'Add sandbox' UI + on-demand provisioning
+#194: Feature: in-picker 'Manage models' modal (gear) — filter/sort/provider + curated shortlist
+#193: Feature: lightweight sandbox-free chat by default (no-repo), with opt-in 'Add sandbox'
+#191: UX: No 'Manage profile' control — cannot edit/re-test/delete a saved managed-runtime profile
+#190: UX: Verified Build panel stays empty / not triggerable from chat; confusable with Managed-runtime-proof card
+#189: UX: Open Editor fails with opaque 500 (code-server not in profile); button enabled, retry unwinnable
+#186: UX: Grouped medium findings (Vercel-projects retry, rename sync, sandbox status, trigger fields, usage charts)
+#185: UX: Public usage profile /u/{username} returns generic 404 (enabled state unverifiable; disabled vs unknown indistinguishable)
+#184: UX: No UI to delete a background agent (API-only)
+#183: UX: Background-agent error-webhook URL is generated but never shown in the UI
+#182: UX: No title field in the New Session dialog (cannot name a session at creation)
+#181: UX: Managed runtime profile draft never emitted; composer left permanently disabled after run
+#180: UX: File tree crashes the chat workspace on duplicate path (.well-known/)
+#168: feat: productize GitHub event triggers for project agents
+#167: feat: agent cards, agent detail, and run controls for project agents
+#165: feat: create GitHub project agents from the repo dashboard
+#164: feat: schedule UX and persisted schedule state for project agents
+#163: feat: durable run summaries for background agents
+#161: feat: repo dashboard shell for GitHub project agents
+#160: feat: GitHub repo dashboard and project agents epic
+#149: Set up shared dev environment promotion lane
+#133: [UX] Dashboard orientation gaps + nav bugs (no orientation, placeholder session names, dead-end "Change" link, tab-switch reset)
+#132: [UX] Recurring React hydration error: <button> cannot be a descendant of <button>
+#131: [UX] Empty/unlabeled settings surfaces: Leaderboard renders blank, Connections shows no service names
+#130: [UX] Branch selector "main default" creates fear of writing to main; no safety copy
+#129: [UX] No progress indicator while an agent runs; cost/context badges are unexplained
+#128: [UX] Model picker: unlabeled dropdowns and ~200 unorganized options (incl. test-data names)
+#127: [UX] "Auto create PR" is disabled with an invisible dependency and no safety context
+#126: [UX] Sharing is undiscoverable and the dialog/recipient view are unclear
+#125: [UX] "New Chat" vs "Start Session" tabs are indistinguishable
+#124: [UX] Runtime toggle button is a paragraph of jargon
+#123: [UX] Landing page doesn't tell a newcomer what the product is, what it costs, or that Vercel is required
+#122: [UX] Top-nav "Sign in with Vercel" button is a silent no-op
+#119: feat: epic — port 4 deferred upstream feature commits (#880/#881/#883/#884)
+#118: feat: port upstream #884 — parallelize chat workflow startup
+#117: feat: port upstream #883 — adopt Workflow v5 stream handling (WorkflowChatTransport)
+#116: feat: port upstream #881 — expose sandbox actions with lazy startup
+#115: feat: port upstream #880 — start sandbox provisioning on session create
+#113: feat: Hetzner self-hosted sandbox provider — selectable runtime infrastructure option
+#109: epic: Agent-platform expansion — 14 POC-validated capabilities (tracking)
+#108: feat: Cost & budget enforcement per user/session (token/$/time soft + hard limits)
+#107: feat: Multi-repo sessions (coordinated cross-repo changes, linked PRs)
+#106: feat: Cross-session project memory (per user+repo, retrieval-backed)
+#105: feat: persistent/snapshottable sessions — hibernate & resume where you left off
+#104: feat: managed-runtime profiles for Python, Go, Rust, and Docker-in-sandbox
+#103: feat: virtual desktop in the sandbox (Xvfb + noVNC) with watch / take-control
+#102: feat: Continue locally — byte-exact sandbox ↔ local state handoff via git bundle
+#101: feat: Local bridge — guarded diff-apply now, default-deny local-exec behind a security bar
+#100: feat: event-driven agents — source-agnostic verify→normalize→match→dispatch pipeline (wake an agent on event X)
+#99: feat: durable workflow runtime for agent runs (crash/teardown-survivable, resumable, retrying) — keystone for 2a/2c/1b
+#98: feat: cron-triggered standing agents — schedule a saved prompt to run against a repo on a recurring cadence
+#97: feat: first-class MCP client to mount external MCP servers per repo/session as agent tools
+#96: feat: reusable policy-driven per-tool approval gate (park → approve/deny) for outward-facing actions
+#95: feat: interactive headless-browser agent toolset with inline chat screenshots
+#78: Follow-up: deferred review findings from PR #70 (cloud agent runs API)
+#77: Follow-up: deferred review findings from PR #72 (runtime profiles close-out)
+#76: Follow-up: deferred review findings from PR #13 (create repo from scratch)
+#75: Follow-up: deferred review findings from PR #12 (sandbox recipe helper)
+#74: feat: durable managed_runtime_worker_runs records for worker attribution
+#73: feat: shared-page redaction audit for managed-worker tool output (beyond .env)
+#69: feat: public API for cloud sandbox agent runs
+#68: feat: Complete operator view accessibility, browser QA, and docs pass
+#67: feat: Add live status refresh for managed workflow operator view
+#66: feat: Build compact Runtime Inspector managed workflow layout
+#65: feat: Add managed workflow operator timeline query model
+#64: feat: [Sub-epic] Dense operator view
+#63: feat: Integrate gates with Verified Build go/no-go decisions
+#62: feat: Persist and render gate evidence in the Runtime Inspector
+#61: feat: Implement core managed workflow gates
+#60: feat: Add review gate contract and policy engine
+#59: feat: [Sub-epic] Review gates as product objects
+#58: feat: Render role and worker state in the Runtime Inspector
+#57: feat: Add role completion and handoff artifacts
+#56: feat: Launch runtime workers with role-scoped packets
+#55: feat: Add sub-agent role registry and contract schemas
+#54: feat: [Sub-epic] Sub-agent role library
+#53: feat: Build mid-run steering controls and audit trail UI
+#52: feat: Propagate constraint updates to active workers and runtimes
+#51: feat: Add plan-change approval and rejection flow
+#50: feat: Add workflow run control state machine
+#49: feat: [Sub-epic] Mid-run steering
+#48: feat: Add workflow input versioning and compatibility tests
+#47: feat: Render workflow input forms from schema metadata
+#46: feat: Validate and persist workflow input snapshots on run start
+#45: feat: Add typed workflow input schema contract
+#44: feat: [Sub-epic] Workflow input schemas
+#43: feat: Build artifact browser with redaction-aware states
+#42: feat: Link implementation receipts and final reports to artifacts
+#41: feat: Generate research packet and spec artifacts from managed workflows
+#40: feat: Define workflow artifact contract and storage refs
+#39: feat: [Sub-epic] Research and spec artifacts
+#38: feat: Enforce goal terminal-state validation
+#37: feat: Render goal ledger in chat and Runtime Inspector
+#36: feat: Record goal ledger events from workflow runs
+#34: feat: [Sub-epic] Goal ledger
+#33: feat: Document and seed initial managed workflow catalog entries
+#32: feat: Build compact workflow picker in chat
+#31: feat: Expose workflow catalog API and availability checks
+#30: feat: Add versioned workflow definition registry
+#29: feat: [Sub-epic] Named workflow catalog
+#28: feat: [Epic] Atomic-inspired managed workflow platform
+#22: feat: Composio tool grants for background agents
+#4: Epic: Managed runtime actor attribution and proof UX
+#3: Runtime profiles: setup, probes, snapshots, and missing-tool events
+#2: Managed runtime proof run: end-to-end production evidence bundle
+#1: Epic: Trusted dev/staging/prod pipeline and sandbox secret broker
