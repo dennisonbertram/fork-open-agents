@@ -91,6 +91,7 @@ export async function createBackgroundAgent(
         permissions: input.permissions,
         outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
+        composioToolkitSlugs: input.composioToolkitSlugs,
       })
       .returning();
 
@@ -158,6 +159,9 @@ export async function updateBackgroundAgent(
           : {}),
         ...(input.checkCommand !== undefined
           ? { checkCommand: normalizeOptionalText(input.checkCommand) }
+          : {}),
+        ...(input.composioToolkitSlugs !== undefined
+          ? { composioToolkitSlugs: input.composioToolkitSlugs }
           : {}),
         updatedAt: new Date(),
       })
