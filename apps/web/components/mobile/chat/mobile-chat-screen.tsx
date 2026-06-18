@@ -3,7 +3,10 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useSessionChatRuntimeContext } from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
+import {
+  useSessionChatMetadataContext,
+  useSessionChatRuntimeContext,
+} from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import {
   isChatInFlight,
@@ -11,6 +14,8 @@ import {
   hasRenderableAssistantPart,
 } from "@/lib/chat-streaming-state";
 import type { MobileStatusDescriptor } from "@/components/mobile/lib/types";
+import { ModelSelectorCompact } from "@/components/model-selector-compact";
+import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
 import { MobileChatHeader } from "./mobile-chat-header";
 import { MobileMessageThread } from "./mobile-message-thread";
 import {
@@ -49,6 +54,12 @@ export function MobileChatScreen({
   // Runtime context provides the live chat state
   const { chat, stopChatStream, workspaceStatus } =
     useSessionChatRuntimeContext();
+  const {
+    modelOptions,
+    modelOptionsLoading,
+    selectedModelOptionId,
+    updateChatModel,
+  } = useSessionChatMetadataContext();
 
   const { messages, status, addToolApprovalResponse, sendMessage } = chat;
 
@@ -194,6 +205,23 @@ export function MobileChatScreen({
     });
   }, [chatId, messages.length, sendMessage]);
 
+  // Change the chat's model inline (reuses the desktop selection parsing +
+  // runtime updateChatModel).
+  const handleModelChange = useCallback(
+    (optionId: string) => {
+      if (!optionId || optionId === selectedModelOptionId) {
+        return;
+      }
+      const selection = parseModelOptionSelection(optionId);
+      updateChatModel(selection.modelId, selection.inferenceProfileId).catch(
+        () => {
+          toast.error("Couldn't change the model — please try again.");
+        },
+      );
+    },
+    [selectedModelOptionId, updateChatModel],
+  );
+
   // Derived repo label
   const repoLabel = repoName
     ? branch
@@ -236,6 +264,16 @@ export function MobileChatScreen({
         onApprove={handleApprove}
         onDeny={handleDeny}
       />
+
+      {/* Inline model selector above the composer */}
+      <div className="flex items-center border-t border-border px-2 pt-1.5">
+        <ModelSelectorCompact
+          value={selectedModelOptionId}
+          modelOptions={modelOptions}
+          onChange={handleModelChange}
+          disabled={modelOptionsLoading || effectiveIsInFlight}
+        />
+      </div>
 
       <MobileComposer
         disabled={!!pendingApproval}
