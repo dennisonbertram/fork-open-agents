@@ -41,6 +41,8 @@ export type BackgroundAgentTrigger = {
   webhookPublicId: string | null;
 };
 
+export type GitHubAccessLevel = "read" | "write";
+
 export type BackgroundAgent = {
   id: string;
   name: string;
@@ -52,9 +54,20 @@ export type BackgroundAgent = {
   outputMode: OutputMode;
   checkCommand: string | null;
   triggers: BackgroundAgentTrigger[];
+  /** Saved GitHub permissions. Optional so create-flow callers stay valid. */
+  permissions?: {
+    github?: {
+      contents?: GitHubAccessLevel;
+      pullRequests?: GitHubAccessLevel;
+      issues?: GitHubAccessLevel;
+      deployments?: "read";
+      statuses?: "read";
+      checks?: "read";
+    };
+  };
+  /** Composio toolkit slugs this agent is authorized to use. */
+  composioToolkitSlugs?: string[];
 };
-
-export type GitHubAccessLevel = "read" | "write";
 
 export type FormState = {
   name: string;
@@ -73,6 +86,8 @@ export type FormState = {
   enabled: boolean;
   permissionContents: GitHubAccessLevel;
   permissionPullRequests: GitHubAccessLevel;
+  /** Composio toolkit slugs selected for this agent. */
+  composioToolkitSlugs: string[];
 };
 
 export const defaultForm: FormState = {
@@ -92,6 +107,7 @@ export const defaultForm: FormState = {
   enabled: false,
   permissionContents: "read",
   permissionPullRequests: "read",
+  composioToolkitSlugs: [],
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
@@ -191,6 +207,7 @@ export function buildAgentPayload(form: FormState) {
         checks: "read",
       },
     },
+    composioToolkitSlugs: form.composioToolkitSlugs,
     triggers: [
       {
         name: triggerLabels[form.triggerKind],
@@ -361,16 +378,11 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
-  // BackgroundAgent type has no permissions field today; derive from outputMode
-  // for backward-compat. When the type is extended with permissions, switch to
-  // reading them directly from agent.permissions.
-  //
-  // KNOWN GAP (edit mode): because we re-derive from outputMode instead of the
-  // saved values, a ready_pr agent whose contents/pull_requests were overridden
-  // down to "read" will show "write" again on re-edit and silently re-escalate on
-  // the next save. Fix requires threading agent.permissions through the fetch +
-  // BackgroundAgent type; tracked as a follow-up. Create-flow scope is unaffected.
-  const defaultAccessLevel: GitHubAccessLevel =
+  // Read saved GitHub permissions from the agent, falling back to outputMode-derived
+  // values only when no saved permissions exist (backward compat for agents created
+  // before permissions were persisted in the agent row).
+  const savedGh = agent.permissions?.github;
+  const fallback: GitHubAccessLevel =
     agent.outputMode === "ready_pr" ? "write" : "read";
 
   return {
@@ -388,7 +400,8 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
-    permissionContents: defaultAccessLevel,
-    permissionPullRequests: defaultAccessLevel,
+    permissionContents: savedGh?.contents ?? fallback,
+    permissionPullRequests: savedGh?.pullRequests ?? fallback,
+    composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
   };
 }

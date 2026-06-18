@@ -174,6 +174,7 @@ describe("AgentEditForm", () => {
       enabled: true,
       permissionContents: "read" as const,
       permissionPullRequests: "read" as const,
+      composioToolkitSlugs: [] as string[],
     };
 
     const patch = buildEditPatch(form);

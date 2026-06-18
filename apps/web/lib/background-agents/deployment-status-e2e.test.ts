@@ -76,6 +76,7 @@ function makeDeploymentForm(overrides: Partial<FormState> = {}): FormState {
     enabled: true,
     permissionContents: "read",
     permissionPullRequests: "read",
+    composioToolkitSlugs: [],
     ...overrides,
   };
 }
@@ -227,6 +228,7 @@ describe("deployment-status trigger regression (TASK-168 bugfix)", () => {
       enabled: true,
       permissionContents: "read",
       permissionPullRequests: "read",
+      composioToolkitSlugs: [],
     };
     const payload = buildAgentPayload(prForm);
     const trigger = payload.triggers[0]!;

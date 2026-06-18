@@ -57,6 +57,7 @@ describe("buildAgentPayload", () => {
       enabled: false,
       permissionContents: "read",
       permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }
@@ -178,6 +179,7 @@ describe("isStepValid", () => {
       enabled: false,
       permissionContents: "read",
       permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }
@@ -455,6 +457,7 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       enabled: false,
       permissionContents: "read",
       permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }

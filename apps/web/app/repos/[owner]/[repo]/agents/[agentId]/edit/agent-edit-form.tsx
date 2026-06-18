@@ -139,6 +139,7 @@ export function AgentEditForm({
         initialConditionSeverities={form.conditionSeverities}
         initialPermissionContents={form.permissionContents}
         initialPermissionPullRequests={form.permissionPullRequests}
+        initialComposioToolkitSlugs={form.composioToolkitSlugs}
         createdAgentId={agent.id}
         testRunId={testRunId}
         onSave={handleSave}

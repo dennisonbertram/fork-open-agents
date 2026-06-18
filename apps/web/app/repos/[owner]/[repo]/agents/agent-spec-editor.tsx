@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle, ChevronDown, Play, Save } from "lucide-react";
+import { ChevronDown, Play, Save } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,12 @@ import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePicker } from "./schedule-picker";
 import { EventTriggerConditions } from "./event-trigger-conditions";
 import { RunTestConsole } from "./run-test-console";
+import {
+  GitHubToolCard,
+  permissionsToAccess,
+  type GitHubToolAccess,
+} from "./github-tool-card";
+import { ComposioOtherToolsSection } from "./composio-other-tools-section";
 
 type AgentSpecEditorProps = {
   /** "create" (default) shows creation-oriented copy; "edit" shows update-oriented copy. */
@@ -49,6 +55,8 @@ type AgentSpecEditorProps = {
   initialConditionSeverities?: string;
   initialPermissionContents?: GitHubAccessLevel;
   initialPermissionPullRequests?: GitHubAccessLevel;
+  /** Composio toolkit slugs to pre-select. Defaults to none. */
+  initialComposioToolkitSlugs?: string[];
   /** The ID of the agent once saved — enables the Run a test button. Defaults to null (disabled). */
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
@@ -89,6 +97,7 @@ export function AgentSpecEditor({
   initialConditionSeverities = "",
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
+  initialComposioToolkitSlugs = [],
   createdAgentId = null,
   testRunId = null,
   onSave,
@@ -131,6 +140,9 @@ export function AgentSpecEditor({
     useState<GitHubAccessLevel>(initialPermissionContents);
   const [permissionPullRequests, setPermissionPullRequests] =
     useState<GitHubAccessLevel>(initialPermissionPullRequests);
+  const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
+    initialComposioToolkitSlugs,
+  );
 
   const isScheduleValid = useMemo(() => {
     if (triggerKind !== "schedule.cron") return true;
@@ -163,6 +175,7 @@ export function AgentSpecEditor({
       enabled,
       permissionContents,
       permissionPullRequests,
+      composioToolkitSlugs,
     };
     return buildAgentPayload(form);
   }
@@ -195,6 +208,16 @@ export function AgentSpecEditor({
     if (newMode === "ready_pr") {
       setPermissionContents("write");
       setPermissionPullRequests("write");
+    }
+  }
+
+  function handleGitHubAccessChange(level: GitHubToolAccess) {
+    if (level === "pr") {
+      setPermissionContents("write");
+      setPermissionPullRequests("write");
+    } else {
+      setPermissionContents("read");
+      setPermissionPullRequests("read");
     }
   }
 
@@ -366,80 +389,27 @@ export function AgentSpecEditor({
         </div>
       </SettingsSection>
 
-      {/* 4 — Tools (Phase 2 note: keep existing permission selects as-is, renamed heading) */}
+      {/* 4 — Tools */}
       <SettingsSection
         title="Tools"
         description="The apps and abilities this agent can use."
       >
-        <div className="rounded-md border border-border bg-muted/20 p-3 text-xs space-y-3">
-          <p className="font-medium">GitHub App permissions</p>
-
-          {/* Interactive: contents */}
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-mono text-muted-foreground">contents</span>
-            <Select
-              value={permissionContents}
-              onValueChange={(v) =>
-                setPermissionContents(v as GitHubAccessLevel)
-              }
-            >
-              <SelectTrigger className="h-7 w-24 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="read">read</SelectItem>
-                <SelectItem value="write">write</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Interactive: pull_requests */}
-          <div className="flex items-center justify-between gap-3">
-            <span className="font-mono text-muted-foreground">
-              pull_requests
-            </span>
-            <Select
-              value={permissionPullRequests}
-              onValueChange={(v) =>
-                setPermissionPullRequests(v as GitHubAccessLevel)
-              }
-            >
-              <SelectTrigger className="h-7 w-24 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="read">read</SelectItem>
-                <SelectItem value="write">write</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Static: issues / deployments / checks */}
-          <div className="space-y-0.5 text-muted-foreground border-t border-border pt-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-mono">issues</span>
-              <span className="text-xs">read</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-mono">deployments</span>
-              <span className="text-xs">read</span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-mono">checks</span>
-              <span className="text-xs">read</span>
-            </div>
-          </div>
-
-          {outputMode === "ready_pr" && (
-            <div className="mt-2 flex items-start gap-2 rounded border border-amber-500/25 bg-amber-50/30 p-2 dark:bg-amber-950/20">
-              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-700 dark:text-amber-400" />
-              <p className="text-amber-700 dark:text-amber-400">
-                Ready PR output works best with <strong>write</strong> access to
-                contents and pull requests so the agent can push a branch and
-                open a PR.
-              </p>
-            </div>
-          )}
+        <div className="space-y-4">
+          <GitHubToolCard
+            access={permissionsToAccess(
+              permissionContents,
+              permissionPullRequests,
+            )}
+            onChange={handleGitHubAccessChange}
+            disabled={saving}
+          />
+          <ComposioOtherToolsSection
+            selectedSlugs={composioToolkitSlugs}
+            onChange={setComposioToolkitSlugs}
+            disabled={saving}
+            repoOwner={repoOwner}
+            repoName={repoName}
+          />
         </div>
       </SettingsSection>
 

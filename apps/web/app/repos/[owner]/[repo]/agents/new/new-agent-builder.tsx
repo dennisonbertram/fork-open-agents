@@ -149,6 +149,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         }
         initialPermissionContents={initialAccessLevel}
         initialPermissionPullRequests={initialAccessLevel}
+        initialComposioToolkitSlugs={[]}
         createdAgentId={createdAgentId}
         testRunId={testRunId}
         onSave={handleSave}

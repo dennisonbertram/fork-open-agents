@@ -12,6 +12,27 @@ mock.module("./run-test-console", () => ({
   ),
 }));
 
+// Mock ComposioOtherToolsSection to avoid SWR dependencies in tests
+mock.module("./composio-other-tools-section", () => ({
+  ComposioOtherToolsSection: ({
+    selectedSlugs,
+    repoOwner,
+    repoName,
+  }: {
+    selectedSlugs: string[];
+    repoOwner: string;
+    repoName: string;
+  }) => (
+    <div
+      data-testid="composio-other-tools-section"
+      data-repo={`${repoOwner}/${repoName}`}
+      data-slugs={selectedSlugs.join(",")}
+    >
+      Other tools
+    </div>
+  ),
+}));
+
 const modulePromise = import("./agent-spec-editor");
 
 const defaultEditorProps = {
@@ -108,26 +129,73 @@ describe("AgentSpecEditor", () => {
     expect(html).not.toContain("run-test-console");
   });
 
-  test("(E4) Tools section renders Select controls for contents and pull_requests", async () => {
+  test("(E4) Tools section renders GitHub tool card with segmented control and Composio sub-section", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
       <AgentSpecEditor {...defaultEditorProps} />,
     );
 
-    // The Tools section with permissions labels should be present
+    // The Tools section heading is present
     expect(html).toContain("Tools");
-    expect(html).toContain("contents");
-    expect(html).toContain("pull_requests");
-    // Radix Select renders combobox role buttons for the interactive selects
-    // (SelectItem options render in a portal and are not in SSR static markup)
-    const comboboxCount = (html.match(/role="combobox"/g) ?? []).length;
-    // There should be at least 2 comboboxes for the permission selects
-    // (plus the trigger/output selects — at minimum contents + pull_requests)
-    expect(comboboxCount).toBeGreaterThanOrEqual(2);
-    // Static read labels for non-interactive permissions
+
+    // GitHub card identity (name + icon title attribute from lucide)
+    expect(html).toContain("GitHub");
+
+    // Segmented control options
+    expect(html).toContain("Read-only");
+    expect(html).toContain("Open pull requests");
+
+    // Access level description copy present for default read-only state
+    expect(html).toContain("change anything");
+    expect(html).toContain("This agent can look but not touch");
+
+    // Static read-only permissions still shown inside the card
     expect(html).toContain("issues");
     expect(html).toContain("deployments");
     expect(html).toContain("checks");
+
+    // Composio sub-section mock renders
+    expect(html).toContain("composio-other-tools-section");
+    expect(html).toContain("Other tools");
+  });
+
+  test("(E4b) GitHub card in PR-access state shows PR-specific copy", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialPermissionContents="write"
+        initialPermissionPullRequests="write"
+      />,
+    );
+
+    expect(html).toContain("Never merges");
+    expect(html).toContain("This agent can propose changes as pull requests");
+  });
+
+  test("(E4c) Result 'Open a pull request' is disabled when GitHub access is Read-only", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialPermissionContents="read"
+        initialPermissionPullRequests="read"
+        initialOutputMode="none"
+      />,
+    );
+
+    // The ready_pr radio must be disabled
+    const prLabelIdx = html.indexOf("Open a pull request");
+    expect(prLabelIdx).toBeGreaterThanOrEqual(0);
+    // Find the radio input before the label text
+    const radioIdx = html.lastIndexOf("<input", prLabelIdx);
+    const radioSnippet = html.slice(radioIdx, prLabelIdx);
+    expect(radioSnippet).toContain('disabled=""');
+
+    // The gating helper text is shown
+    expect(html).toContain("Give the GitHub tool pull-request access");
   });
 });
