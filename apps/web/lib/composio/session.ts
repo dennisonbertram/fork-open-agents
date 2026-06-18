@@ -260,12 +260,6 @@ export async function resolveComposioToolsForChat(params: {
     : null;
 
   if (directSlugs) {
-    if ((params.runtimeMode ?? "classic") !== "classic") {
-      throw new ComposioSetupError(
-        "Composio tools are currently available only in classic runtime mode.",
-      );
-    }
-
     const config = getComposioConfig();
     if (!config.configured) {
       throw new ComposioSetupError(
@@ -336,12 +330,6 @@ export async function resolveComposioToolsForChat(params: {
     throw new ComposioSetupError(
       policy.reason ??
         "Selected Composio profile is blocked by repository policy.",
-    );
-  }
-
-  if ((params.runtimeMode ?? "classic") !== "classic") {
-    throw new ComposioSetupError(
-      "Composio tools are currently available only in classic runtime mode.",
     );
   }
 

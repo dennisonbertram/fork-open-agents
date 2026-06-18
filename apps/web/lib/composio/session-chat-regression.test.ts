@@ -160,7 +160,7 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
     expect(result.status).toBe("off");
   });
 
-  test("REGRESSION-004: managed_runtime with directSlugs throws ComposioSetupError", async () => {
+  test("REGRESSION-004: managed_runtime with directSlugs resolves tools (no longer blocked)", async () => {
     mock.module("@/lib/db/composio", () => ({
       getRepositoryComposioSettings: () => Promise.resolve(undefined),
       getRepositoryComposioSettingsValues: () => null,
@@ -174,15 +174,16 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
         Promise.resolve({ allowed: true }),
     }));
 
-    const { resolveComposioToolsForChat: resolveMR, ComposioSetupError } =
+    const { resolveComposioToolsForChat: resolveMR } =
       await import("./session");
 
-    await expect(
-      resolveMR({
-        userId: "user-reg-4",
-        chatId: "chat-reg-1",
-        runtimeMode: "managed_runtime",
-      }),
-    ).rejects.toBeInstanceOf(ComposioSetupError);
+    // managed_runtime now allows Composio tools — the runtime-mode guard is removed
+    const result = await resolveMR({
+      userId: "user-reg-4",
+      chatId: "chat-reg-1",
+      runtimeMode: "managed_runtime",
+    });
+    // directSlugs resolves → ready (tools fetched from Composio)
+    expect(result.status).toBe("ready");
   });
 });
