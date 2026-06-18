@@ -41,7 +41,7 @@ export default async function AgentEditPage({ params }: AgentEditPageProps) {
   const detailHref = `/repos/${agent.repoOwner}/${agent.repoName}/agents/${agentId}`;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">

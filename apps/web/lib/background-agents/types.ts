@@ -104,6 +104,7 @@ export const createBackgroundAgentSchema = z
     permissions: permissionsSchema.default({}),
     outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
+    composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
     triggers: z
       .array(
         z
