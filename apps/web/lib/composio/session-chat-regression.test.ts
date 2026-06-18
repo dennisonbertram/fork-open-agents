@@ -9,7 +9,9 @@
  *   correct composioSessionId, tools object returned.
  * REGRESSION-002: cache hit → reusedSession=true, touch is called, upsert is NOT.
  * REGRESSION-003: non-main agentKey → direct-list is skipped → status off.
- * REGRESSION-004: managed_runtime mode with directSlugs → throws ComposioSetupError.
+ * REGRESSION-004: managed_runtime mode with directSlugs → resolves to ready
+ *   (the runtime-mode guard is removed; runtime-mode tool gating is now enforced
+ *   downstream in packages/agent/open-agent.ts).
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -185,5 +187,12 @@ describe("resolveComposioToolsForChat — regression (direct-list branch)", () =
     });
     // directSlugs resolves → ready (tools fetched from Composio)
     expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      // tools must actually be resolved — mirror REGRESSION-001's shape checks
+      expect(typeof result.tools).toBe("object");
+      expect(result.tools).not.toBeNull();
+      expect(Object.keys(result.tools).length).toBeGreaterThan(0);
+      expect(result.composioSessionId).toBe(fakeComposioSessionId);
+    }
   });
 });

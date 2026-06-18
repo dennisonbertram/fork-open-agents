@@ -181,6 +181,11 @@ export async function resolveComposioToolsForChat(params: {
   userId: string;
   chatId: string;
   agentKey?: ComposioAgentKey;
+  // Accepted but not consumed here: Composio tool resolution is runtime-mode
+  // agnostic. Runtime-mode tool gating (dropping native sandbox tools while
+  // keeping external Composio tools in managed_runtime) is enforced downstream
+  // in packages/agent/open-agent.ts via getRuntimeModeToolPolicy. Kept on the
+  // signature so callsites can pass it without churn.
   runtimeMode?: "classic" | "managed_runtime";
 }): Promise<ResolvedComposioTools> {
   const chat = await getChatById(params.chatId);

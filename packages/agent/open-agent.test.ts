@@ -109,6 +109,33 @@ describe("openAgent runtime tool policy", () => {
     ]);
   });
 
+  test("keeps non-native external Composio tools in managed runtime mode while dropping native sandbox tools", () => {
+    // This is the exact contract the Composio-in-managed_runtime change relies
+    // on: an external (non-native) Composio tool must survive the coordinator
+    // policy, while native sandbox tools (bash/read) are still dropped.
+    const composioTool = { name: "COMPOSIO_LINEAR_CREATE_ISSUE" };
+    const requestedTools = {
+      bash: { name: "bash" },
+      read: { name: "read" },
+      COMPOSIO_LINEAR_CREATE_ISSUE: composioTool,
+    } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1];
+
+    const filteredTools = getRuntimeModeToolPolicy(
+      "managed_runtime",
+      requestedTools,
+    );
+    const filteredNames = Object.keys(filteredTools);
+
+    // External Composio tool survives...
+    expect(filteredNames).toContain("COMPOSIO_LINEAR_CREATE_ISSUE");
+    expect(filteredTools.COMPOSIO_LINEAR_CREATE_ISSUE as unknown).toBe(
+      composioTool,
+    );
+    // ...while native sandbox tools are dropped.
+    expect(filteredNames).not.toContain("bash");
+    expect(filteredNames).not.toContain("read");
+  });
+
   test("injects managed runtime coordinator instructions into the system prompt", () => {
     const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
 
