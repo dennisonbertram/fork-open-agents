@@ -117,16 +117,16 @@ describe("buildAgentPayload", () => {
     expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
-  test("BT-E1: explicit user override — ready_pr outputMode but permissionContents read => payload contents is read", () => {
+  test("BT-E1: ready_pr floors GitHub access to write regardless of form fields (Ready PR is non-functional without write)", () => {
     const payload = buildAgentPayload(
       makeForm({
         outputMode: "ready_pr",
         permissionContents: "read",
-        permissionPullRequests: "write",
+        permissionPullRequests: "read",
       }),
     );
 
-    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.contents).toBe("write");
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 

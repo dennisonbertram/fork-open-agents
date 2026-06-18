@@ -189,6 +189,14 @@ function buildConditions(form: FormState): TriggerConditions {
 
 export function buildAgentPayload(form: FormState) {
   const conditions = buildConditions(form);
+  // Ready PR is non-functional without write access — the agent must push a
+  // branch and open a PR — so floor contents + pull_requests to "write" for
+  // ready_pr regardless of the calling surface (the settings form has no
+  // permission controls and would otherwise send read/read). Report-only agents
+  // keep the user's chosen access so least-privilege selections are preserved.
+  const requiresWrite = form.outputMode === "ready_pr";
+  const contents = requiresWrite ? "write" : form.permissionContents;
+  const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
   return {
     name: form.name,
     repoOwner: form.repoOwner,
@@ -199,8 +207,8 @@ export function buildAgentPayload(form: FormState) {
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
-        contents: form.permissionContents,
-        pullRequests: form.permissionPullRequests,
+        contents,
+        pullRequests,
         issues: "read",
         deployments: "read",
         statuses: "read",
@@ -378,12 +386,17 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
-  // Read saved GitHub permissions from the agent, falling back to outputMode-derived
-  // values only when no saved permissions exist (backward compat for agents created
-  // before permissions were persisted in the agent row).
+  // Ready PR requires write to function, so always present write for it. For
+  // report-only agents, preserve the saved access (least-privilege), falling
+  // back to read for agents created before permissions were persisted.
   const savedGh = agent.permissions?.github;
-  const fallback: GitHubAccessLevel =
-    agent.outputMode === "ready_pr" ? "write" : "read";
+  const isReadyPr = agent.outputMode === "ready_pr";
+  const permissionContents: GitHubAccessLevel = isReadyPr
+    ? "write"
+    : (savedGh?.contents ?? "read");
+  const permissionPullRequests: GitHubAccessLevel = isReadyPr
+    ? "write"
+    : (savedGh?.pullRequests ?? "read");
 
   return {
     name: agent.name,
@@ -400,8 +413,8 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
-    permissionContents: savedGh?.contents ?? fallback,
-    permissionPullRequests: savedGh?.pullRequests ?? fallback,
+    permissionContents,
+    permissionPullRequests,
     composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
   };
 }

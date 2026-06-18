@@ -1,14 +1,13 @@
 /**
- * Regression tests for Part C — edit-mode permission re-escalation fix.
+ * Regression tests for the edit-mode GitHub-permission invariant.
  *
- * These tests go RED today because:
- * 1. BackgroundAgent type has no `permissions` or `composioToolkitSlugs` fields
- * 2. buildFormFromAgent re-derives access from outputMode, ignoring saved permissions
- *
- * After the fix (C1–C4), all three cases go GREEN:
- * - Case 1: saved ready_pr with contents/pullRequests=read does NOT re-escalate to write
- * - Case 2: agent with no permissions + outputMode ready_pr falls back to write (backward compat)
- * - Case 3: composioToolkitSlugs round-trips through form+payload unchanged
+ * The coherent rule across buildFormFromAgent (form display) and
+ * buildAgentPayload (save payload):
+ *   - Ready PR  ⟹ write (it can't push a branch / open a PR without it), floored
+ *     for every calling surface — including the settings form, which has no
+ *     permission controls.
+ *   - Report-only ⟹ the user's saved access, preserved (least-privilege), so
+ *     editing an unrelated field never silently re-escalates a read-only agent.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -49,103 +48,92 @@ function makeSavedAgent(
   };
 }
 
-describe("REG: edit-mode permission re-escalation — saved downgrade must not re-escalate", () => {
-  test("Case 1: ready_pr agent whose github access was downgraded to read does NOT re-escalate to write after buildFormFromAgent", () => {
-    // This is the bug: a ready_pr agent saved with contents=read/pullRequests=read
-    // should load as read, not re-derive write from outputMode.
+describe("edit-mode GitHub permission invariant", () => {
+  test("report-only agent with saved read access is preserved (no re-escalation)", () => {
+    // The genuine least-privilege case: a report-only agent the user keeps at
+    // read must NOT be silently bumped to write when re-editing.
     const agent = makeSavedAgent({
-      outputMode: "ready_pr",
+      outputMode: "none",
       permissions: {
-        github: {
-          contents: "read",
-          pullRequests: "read",
-          issues: "read",
-          deployments: "read",
-          statuses: "read",
-          checks: "read",
-        },
+        github: { contents: "read", pullRequests: "read" },
       },
     });
 
     const form = buildFormFromAgent(agent);
-
     expect(form.permissionContents).toBe("read");
     expect(form.permissionPullRequests).toBe("read");
-  });
 
-  test("Case 1 round-trip: saved read does NOT become write in the rebuilt payload", () => {
-    const agent = makeSavedAgent({
-      outputMode: "ready_pr",
-      permissions: {
-        github: {
-          contents: "read",
-          pullRequests: "read",
-        },
-      },
-    });
-
-    const form = buildFormFromAgent(agent);
     const payload = buildAgentPayload(form);
-
-    // The payload permissions must respect the saved (read) values, not the
-    // outputMode-derived (write) ones.
     expect(payload.permissions.github.contents).toBe("read");
     expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
-  test("Case 2: agent with NO permissions field + outputMode ready_pr falls back to write (backward compat)", () => {
-    // Agents created before the permissions threading existed have no saved permissions.
-    // They should fall back to the outputMode-derived value as before.
-    const agent = makeSavedAgent({
-      outputMode: "ready_pr",
-      // no permissions field
-    });
-
-    const form = buildFormFromAgent(agent);
-
-    expect(form.permissionContents).toBe("write");
-    expect(form.permissionPullRequests).toBe("write");
-  });
-
-  test("Case 2b: agent with NO permissions + outputMode none falls back to read", () => {
+  test("report-only agent with saved write access is preserved", () => {
     const agent = makeSavedAgent({
       outputMode: "none",
-      // no permissions field
+      permissions: {
+        github: { contents: "write", pullRequests: "write" },
+      },
     });
 
     const form = buildFormFromAgent(agent);
+    expect(form.permissionContents).toBe("write");
 
+    const payload = buildAgentPayload(form);
+    expect(payload.permissions.github.contents).toBe("write");
+  });
+
+  test("ready_pr always resolves to write — even if a stale row saved read (settings-form regression)", () => {
+    // A ready_pr agent is non-functional without write. Whatever is stored
+    // (including a legacy read/read row from the controls-less settings form),
+    // both the form and the payload must present write.
+    const agent = makeSavedAgent({
+      outputMode: "ready_pr",
+      permissions: {
+        github: { contents: "read", pullRequests: "read" },
+      },
+    });
+
+    const form = buildFormFromAgent(agent);
+    expect(form.permissionContents).toBe("write");
+    expect(form.permissionPullRequests).toBe("write");
+
+    const payload = buildAgentPayload(form);
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("ready_pr payload is write even when the form somehow carries read", () => {
+    // Guards the buildAgentPayload floor independently of buildFormFromAgent:
+    // the settings form sends defaultForm read/read for a ready_pr agent.
+    const form = buildFormFromAgent(makeSavedAgent({ outputMode: "none" }));
+    const payload = buildAgentPayload({ ...form, outputMode: "ready_pr" });
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("agent with no saved permissions + report-only falls back to read", () => {
+    const agent = makeSavedAgent({ outputMode: "none" });
+    const form = buildFormFromAgent(agent);
     expect(form.permissionContents).toBe("read");
     expect(form.permissionPullRequests).toBe("read");
   });
 
-  test("Case 3: composioToolkitSlugs round-trips through buildFormFromAgent -> buildAgentPayload unchanged", () => {
-    const agent = makeSavedAgent({
-      composioToolkitSlugs: ["gmail", "slack"],
-    });
-
+  test("composioToolkitSlugs round-trips through form + payload unchanged", () => {
+    const agent = makeSavedAgent({ composioToolkitSlugs: ["gmail", "slack"] });
     const form = buildFormFromAgent(agent);
-
-    // Slugs must be preserved in form state
     expect(form.composioToolkitSlugs).toEqual(["gmail", "slack"]);
 
     const payload = buildAgentPayload(form);
-
-    // Slugs must survive the payload round-trip
     expect(payload.composioToolkitSlugs).toEqual(["gmail", "slack"]);
   });
 
-  test("Case 3b: missing composioToolkitSlugs defaults to empty array", () => {
-    const agent = makeSavedAgent({
-      // composioToolkitSlugs absent (old agent)
-    });
-
+  test("missing composioToolkitSlugs defaults to empty array", () => {
+    const agent = makeSavedAgent();
     const form = buildFormFromAgent(agent);
-
     expect(form.composioToolkitSlugs).toEqual([]);
 
     const payload = buildAgentPayload(form);
-
     expect(payload.composioToolkitSlugs).toEqual([]);
   });
 });
