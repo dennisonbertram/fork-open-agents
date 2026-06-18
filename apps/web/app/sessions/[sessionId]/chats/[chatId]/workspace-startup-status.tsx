@@ -27,8 +27,8 @@ export function WorkspaceStartupStatus({
         </div>
 
         {logLines.length > 0 ? (
-          <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-md border border-border/70 bg-zinc-950 text-zinc-200 shadow-sm dark:bg-zinc-950">
-            <div className="flex min-w-0 items-center gap-2 border-zinc-800 border-b px-3 py-2 text-zinc-400">
+          <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-md border border-border/70 bg-zinc-100 text-zinc-800 shadow-sm dark:bg-zinc-950 dark:text-zinc-200">
+            <div className="flex min-w-0 items-center gap-2 border-b border-zinc-200 px-3 py-2 text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
               <Terminal className="h-3.5 w-3.5 shrink-0" />
               <span className="truncate text-xs">
                 {status?.title ?? "Startup logs"}
