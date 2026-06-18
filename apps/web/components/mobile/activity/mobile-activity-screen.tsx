@@ -41,7 +41,8 @@ function computeCounts(sessions: SessionWithUnread[]) {
  */
 export function MobileActivityScreen() {
   const router = useRouter();
-  const { sessions, loading } = useSessions();
+  // Active sessions only (exclude archived) to match the desktop default view.
+  const { sessions, loading } = useSessions({ includeArchived: false });
   const [filter, setFilter] = useState<ActivityFilter>("all");
 
   const handleOpen = useCallback(

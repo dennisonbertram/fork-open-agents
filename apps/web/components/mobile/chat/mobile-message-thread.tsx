@@ -2,6 +2,7 @@
 
 import { isReasoningUIPart, isToolUIPart } from "ai";
 import { Loader2 } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef } from "react";
 import type {
   WebAgentUIMessage,
@@ -18,7 +19,15 @@ import { WorkspaceStartupStatus } from "@/app/sessions/[sessionId]/chats/[chatId
 import { AssistantMessageGroups } from "@/components/assistant-message-groups";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call/tool-call";
+import { streamdownPlugins } from "@/lib/streamdown-config";
 import { MobileUserBubble } from "./mobile-user-bubble";
+
+// Markdown renderer for assistant text — same package/plugins the desktop chat
+// uses, dynamically imported (ssr:false) to keep it out of the server bundle.
+const Streamdown = dynamic(
+  () => import("streamdown").then((m) => m.Streamdown),
+  { ssr: false },
+);
 
 export interface MobileMessageThreadProps {
   messages: WebAgentUIMessage[];
@@ -181,16 +190,21 @@ export function MobileMessageThread({
                       );
                     }
 
-                    // Text parts
+                    // Text parts — render markdown via Streamdown (matches the
+                    // desktop renderer) instead of raw text.
                     if (part.type === "text" && part.text.length > 0) {
                       return (
                         <div
                           key={`${message.id}-tx${partIndex}`}
-                          className="text-sm text-foreground"
+                          className="min-w-0 break-words text-sm leading-relaxed text-foreground"
                         >
-                          <p className="whitespace-pre-wrap break-words leading-relaxed">
+                          <Streamdown
+                            mode={isMessageStreaming ? "streaming" : "static"}
+                            isAnimating={isMessageStreaming}
+                            plugins={streamdownPlugins}
+                          >
                             {part.text}
-                          </p>
+                          </Streamdown>
                         </div>
                       );
                     }

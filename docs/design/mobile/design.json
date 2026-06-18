@@ -18,7 +18,10 @@
     "status.waiting (needs approval)": "--warning (amber)",
     "status.done": "--success (green)",
     "status.error": "--destructive (red)",
-    "fonts": { "heading/body": "Geist / Inter (--font-sans)", "mono/code": "Geist Mono (--font-mono)" }
+    "fonts": {
+      "heading/body": "Geist / Inter (--font-sans)",
+      "mono/code": "Geist Mono (--font-mono)"
+    }
   },
   "screens": [
     {
@@ -60,7 +63,9 @@
     {
       "name": "Tab bar (component)",
       "image": "tab-bar.png",
-      "sections": ["Activity · Repos · New (center, primary) · Loops · Me — frosted capsule; selected tab highlighted"]
+      "sections": [
+        "Activity · Repos · New (center, primary) · Loops · Me — frosted capsule; selected tab highlighted"
+      ]
     }
   ]
 }
