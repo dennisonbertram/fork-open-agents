@@ -1,0 +1,66 @@
+{
+  "$comment": "Layout + token snapshot of the Open Agents mobile concept (Pencil: open-agents-mobile.pen). The mock was corrected to use the app's monochrome design system (no off-brand accent). PNGs in this folder are the primary visual reference; the live editable .pen lives in the Pencil workspace, not the repo.",
+  "meta": {
+    "source": "open-agents-mobile.pen",
+    "theme": "dark (primary); the app also has a light theme via the same tokens",
+    "viewport": "390x844 (phone)",
+    "status": "concept / IA + layout reference; the shipped /m implementation uses the app's real tokens"
+  },
+  "tokenMapping": {
+    "$comment": "How the concept's colors map to the app's globals.css tokens. The concept is MONOCHROME — primary actions use --primary, not a colored accent. Status tones reuse warning/success/destructive.",
+    "background": "--background",
+    "surface (cards/rows)": "--card / --secondary / --muted",
+    "border": "--border",
+    "text.primary": "--foreground",
+    "text.secondary": "--muted-foreground",
+    "primaryAction (New / Approve / Send / Start, selected tab)": "--primary / --primary-foreground (monochrome)",
+    "status.working": "--warning (amber)",
+    "status.waiting (needs approval)": "--warning (amber)",
+    "status.done": "--success (green)",
+    "status.error": "--destructive (red)",
+    "fonts": { "heading/body": "Geist / Inter (--font-sans)", "mono/code": "Geist Mono (--font-mono)" }
+  },
+  "screens": [
+    {
+      "name": "Activity",
+      "route": "/m",
+      "image": "activity.png",
+      "sections": [
+        "status bar",
+        "header: title 'Activity' + 'N repos · M need you'",
+        "filter chips: All / Needs you / Working / Done (with counts)",
+        "attention-first session rows: glyph (PR/branch/chat) · title (+unread dot) · owner/repo · branch · diff stat (+green/-red) · status pill · relative time",
+        "floating bottom tab bar: Activity · New (center, primary) · Me"
+      ]
+    },
+    {
+      "name": "Chat",
+      "route": "/m/chat/[chatId]",
+      "image": "chat.png",
+      "sections": [
+        "header: back · title · repo·branch · status pill (Working=amber) · overflow",
+        "thread: right-aligned user bubbles; assistant text; collapsible reasoning; tool-call cards with diff / terminal output",
+        "tool-approval bar (pinned above composer when blocked): 'Approval needed' · command · Deny / Approve (primary)",
+        "composer: attach · 'Message…' field · Send (primary)"
+      ]
+    },
+    {
+      "name": "New session",
+      "route": "/m/new",
+      "image": "new-session.png",
+      "sections": [
+        "header: 'New session' + close",
+        "Task prompt (hero) + model affordance",
+        "suggestion chips",
+        "Chat only / With repo toggle",
+        "(repo mode) account selector · repo list · branch selector · Advanced (auto-commit / auto-PR)",
+        "primary 'Start session' CTA"
+      ]
+    },
+    {
+      "name": "Tab bar (component)",
+      "image": "tab-bar.png",
+      "sections": ["Activity · Repos · New (center, primary) · Loops · Me — frosted capsule; selected tab highlighted"]
+    }
+  ]
+}
