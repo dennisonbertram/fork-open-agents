@@ -380,7 +380,7 @@ function BuilderCanvasInner({
 
   return (
     <BuilderErrorContext.Provider value={errorsById}>
-      <div className="flex h-screen flex-col bg-background">
+      <div className="flex h-full flex-col bg-background">
         {/* Top bar */}
         <div
           className={`relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 ${

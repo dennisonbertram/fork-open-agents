@@ -22,6 +22,7 @@ import {
   SidebarContent,
   SidebarInset,
   SidebarProvider,
+  SidebarRail,
   useSidebar,
 } from "@/components/ui/sidebar";
 import {
@@ -412,6 +413,7 @@ export function SessionsRouteShell({
                 initialUser={currentUser}
               />
             </SidebarContent>
+            <SidebarRail />
           </Sidebar>
           <RouteContentShell>{children}</RouteContentShell>
         </SidebarProvider>
