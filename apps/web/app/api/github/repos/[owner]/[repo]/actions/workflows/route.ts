@@ -4,7 +4,7 @@ import { listWorkflows } from "@/lib/github/actions-manager/workflows";
 import {
   handleActionsRouteError,
   requireActionsReadAccess,
-  withActionsReadOctokit,
+  withActionsWorkflowReadOctokit,
   type ActionsRouteContext,
 } from "../_lib";
 
@@ -18,8 +18,8 @@ export async function GET(_request: Request, context: ActionsRouteContext) {
   const startMs = Date.now();
 
   try {
-    const result = await withActionsReadOctokit(access, (octokit) =>
-      listWorkflows(octokit, access.owner, access.repo),
+    const result = await withActionsWorkflowReadOctokit(access, (octokit) =>
+      listWorkflows(octokit, access.owner, access.repo, access.defaultBranch),
     );
     console.log(
       JSON.stringify({
