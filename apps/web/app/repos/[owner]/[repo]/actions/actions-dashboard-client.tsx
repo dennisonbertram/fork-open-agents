@@ -38,6 +38,9 @@ import type {
   WorkflowRunItem,
 } from "@/lib/github/actions-manager/runs";
 import type { WorkflowJobItem } from "@/lib/github/actions-manager/jobs";
+import { RunActionsMenu } from "./run-actions-menu";
+import type { WorkflowItem } from "@/lib/github/actions-manager/workflows";
+import { DispatchDialog, type DispatchableWorkflow } from "./dispatch-dialog";
 
 type ActionsDashboardClientProps = {
   owner: string;
@@ -54,6 +57,10 @@ type RunsResponse =
 
 type JobsResponse =
   | { ok: true; totalCount: number; jobs: WorkflowJobItem[] }
+  | { ok: false; errorKind: string };
+
+type WorkflowsResponse =
+  | { ok: true; totalCount: number; workflows: WorkflowItem[] }
   | { ok: false; errorKind: string };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -167,38 +174,55 @@ function RunSkeletons() {
 function RunRow({
   run,
   onSelect,
+  owner,
+  repo,
+  canWrite,
+  onAction,
 }: {
   run: WorkflowRunItem;
   onSelect: (run: WorkflowRunItem) => void;
+  owner: string;
+  repo: string;
+  canWrite: boolean;
+  onAction: () => void;
 }) {
   const duration = formatDuration(run.durationMs);
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(run)}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
+    <div className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-2 rounded-md border border-border p-3">
       <StatusDot display={run.display} />
-      <div className="min-w-0 space-y-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-sm font-medium">
-            {run.name} #{run.runNumber}
+      <button
+        type="button"
+        onClick={() => onSelect(run)}
+        className="min-w-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+      >
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-medium">
+              {run.name} #{run.runNumber}
+            </p>
+            <Badge variant="secondary" className="shrink-0 gap-1">
+              <GitBranch className="h-3 w-3" />
+              {run.branch}
+            </Badge>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {run.actor ?? "GitHub"} / {run.event} /{" "}
+            {formatRelativeTime(run.createdAt)}
+            {duration ? ` / ${duration}` : ""}
           </p>
-          <Badge variant="secondary" className="shrink-0 gap-1">
-            <GitBranch className="h-3 w-3" />
-            {run.branch}
-          </Badge>
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {run.actor ?? "GitHub"} / {run.event} /{" "}
-          {formatRelativeTime(run.createdAt)}
-          {duration ? ` / ${duration}` : ""}
-        </p>
-      </div>
+      </button>
       <span className="shrink-0 text-xs text-muted-foreground">
         {run.display.label}
       </span>
-    </button>
+      <RunActionsMenu
+        run={run}
+        owner={owner}
+        repo={repo}
+        canWrite={canWrite}
+        onAction={onAction}
+      />
+    </div>
   );
 }
 
@@ -372,6 +396,37 @@ export function ActionsDashboardClient({
     },
   );
 
+  const workflows = useSWR<WorkflowsResponse>(
+    isReady ? `${baseUrl}/workflows` : null,
+    fetchJson,
+    { revalidateOnFocus: false },
+  );
+
+  const canWrite = isReady;
+
+  const defaultBranch = React.useMemo(() => {
+    if (runs.data?.ok && runs.data.runs.length > 0) {
+      return runs.data.runs[0].branch || "main";
+    }
+    return "main";
+  }, [runs.data]);
+
+  const dispatchableWorkflows = React.useMemo((): DispatchableWorkflow[] => {
+    if (!workflows.data?.ok) return [];
+    return workflows.data.workflows
+      .filter((w) => w.id > 0)
+      .map((w) => ({
+        id: w.id,
+        name: w.name,
+        path: w.path,
+        defaultBranch,
+      }));
+  }, [workflows.data, defaultBranch]);
+
+  function handleActionsMutation() {
+    void runs.mutate();
+  }
+
   const readinessVerdict: ActionsManagerReadinessVerdict = readiness.data?.ok
     ? readiness.data.readiness
     : {
@@ -412,6 +467,17 @@ export function ActionsDashboardClient({
           subtext={readinessVerdict.subtext}
         />
 
+        {isReady && (
+          <DispatchDialog
+            canWrite={canWrite}
+            defaultBranch={defaultBranch}
+            onDispatched={handleActionsMutation}
+            owner={owner}
+            repo={repo}
+            workflows={dispatchableWorkflows}
+          />
+        )}
+
         {!isReady ? null : runs.isLoading ? (
           <RunSkeletons />
         ) : runs.error || (runs.data && !runs.data.ok) ? (
@@ -434,7 +500,15 @@ export function ActionsDashboardClient({
         ) : runs.data?.ok ? (
           <div className="space-y-2">
             {runs.data.runs.map((run) => (
-              <RunRow key={run.id} onSelect={setSelectedRun} run={run} />
+              <RunRow
+                key={run.id}
+                onSelect={setSelectedRun}
+                run={run}
+                owner={owner}
+                repo={repo}
+                canWrite={canWrite}
+                onAction={handleActionsMutation}
+              />
             ))}
           </div>
         ) : null}
