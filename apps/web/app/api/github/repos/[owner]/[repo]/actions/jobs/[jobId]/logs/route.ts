@@ -43,6 +43,8 @@ export async function GET(_request: Request, context: RouteContext) {
         requestId: access.requestId,
         jobId,
         bytes: logs.bytes,
+        originalBytes: logs.originalBytes,
+        truncated: logs.truncated,
         durationMs: Date.now() - startMs,
       }),
     );
@@ -51,6 +53,9 @@ export async function GET(_request: Request, context: RouteContext) {
       headers: {
         "content-type": "text/plain; charset=utf-8",
         "cache-control": "no-store",
+        "x-open-agents-log-bytes": String(logs.bytes),
+        "x-open-agents-log-original-bytes": String(logs.originalBytes),
+        "x-open-agents-log-truncated": logs.truncated ? "true" : "false",
       },
     });
   } catch (error) {

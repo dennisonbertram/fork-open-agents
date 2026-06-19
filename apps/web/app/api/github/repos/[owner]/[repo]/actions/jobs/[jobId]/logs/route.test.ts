@@ -24,6 +24,9 @@ let repoAccess:
 const proxyJobLogs = mock(async () => ({
   text: "1s Build started\n2s Build passed\n",
   bytes: 32,
+  originalBytes: 32,
+  truncated: false,
+  maxBytes: 512 * 1024,
 }));
 
 const withScopedInstallationOctokit = mock(
@@ -90,6 +93,7 @@ describe("GET /api/github/repos/[owner]/[repo]/actions/jobs/[jobId]/logs", () =>
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/plain");
     expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-open-agents-log-truncated")).toBe("false");
     expect(text).toBe("1s Build started\n2s Build passed\n");
     expect(text).not.toContain("pipelines.actions.githubusercontent.com");
     expect(proxyJobLogs).toHaveBeenCalledWith(
@@ -98,5 +102,30 @@ describe("GET /api/github/repos/[owner]/[repo]/actions/jobs/[jobId]/logs", () =>
       "widgets",
       987,
     );
+  });
+
+  test("marks proxied logs as truncated when the manager clips oversized output", async () => {
+    proxyJobLogs.mockImplementationOnce(async () => ({
+      text: "clipped",
+      bytes: 7,
+      originalBytes: 1024,
+      truncated: true,
+      maxBytes: 7,
+    }));
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/repos/acme/widgets/actions/jobs/987/logs",
+      ),
+      routeContext(),
+    );
+
+    expect(await response.text()).toBe("clipped");
+    expect(response.headers.get("x-open-agents-log-bytes")).toBe("7");
+    expect(response.headers.get("x-open-agents-log-original-bytes")).toBe(
+      "1024",
+    );
+    expect(response.headers.get("x-open-agents-log-truncated")).toBe("true");
   });
 });

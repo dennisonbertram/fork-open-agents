@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { getAppOctokit, isGitHubAppConfigured } from "@/lib/github/app";
+import {
+  getAppOctokit,
+  isGitHubAppConfigured,
+  withScopedInstallationOctokit,
+} from "@/lib/github/app";
+import { classifyActionsReadError } from "./errors";
 import type { DashboardErrorKind } from "../repo-dashboard";
 
 export type ActionsManagerReadinessVerdict = {
@@ -60,8 +65,8 @@ export async function getActionsManagerReadinessCheck(params: {
       };
     }
 
-    const permissions = parsed.data.permissions ?? {};
-    if (!permissionSatisfies(permissions.actions, "read")) {
+    const appPermissions = parsed.data.permissions ?? {};
+    if (!permissionSatisfies(appPermissions.actions, "read")) {
       return {
         status: "action-needed",
         headline: "Re-authorize the GitHub App to view Actions",
@@ -72,6 +77,41 @@ export async function getActionsManagerReadinessCheck(params: {
         ),
         actionLabel: "Open GitHub App settings",
         errorKind: "app_no_actions_permission",
+      };
+    }
+
+    try {
+      await withScopedInstallationOctokit({
+        installationId: params.installationId,
+        repositoryId: params.repositoryId,
+        permissions: { actions: "read", metadata: "read" },
+        operation: async () => undefined,
+      });
+    } catch (error) {
+      const errorKind = classifyActionsReadError(error);
+      if (
+        errorKind === "app_no_actions_permission" ||
+        errorKind === "repo_access_denied"
+      ) {
+        return {
+          status: "action-needed",
+          headline: "Re-authorize the GitHub App to view Actions",
+          subtext:
+            "This installation has not granted Actions read permission for this repo.",
+          actionHref: appInstallSettingsUrl(
+            params.installationId,
+            parsed.data.slug,
+          ),
+          actionLabel: "Open GitHub App settings",
+          errorKind: "app_no_actions_permission",
+        };
+      }
+
+      return {
+        status: "error",
+        headline: "Could not verify Actions access",
+        subtext: "GitHub App permissions could not be checked right now.",
+        errorKind,
       };
     }
 
