@@ -39,6 +39,13 @@ describe("discardChangesRequestSchema", () => {
       discardChangesRequestSchema.safeParse({ filePath: "a.ts" }).success,
     ).toBe(true);
   });
+
+  test("rejects oldPath without filePath", () => {
+    const result = discardChangesRequestSchema.safeParse({
+      oldPath: "previous.ts",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("commitChangesRequestSchema", () => {

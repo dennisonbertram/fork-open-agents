@@ -18,10 +18,15 @@ export const createBranchRequestSchema = z.object({
   branchName: nonEmpty,
 });
 
-export const discardChangesRequestSchema = z.object({
-  filePath: z.string().optional(),
-  oldPath: z.string().optional(),
-});
+export const discardChangesRequestSchema = z
+  .object({
+    filePath: z.string().optional(),
+    oldPath: z.string().optional(),
+  })
+  .refine((data) => data.oldPath === undefined || data.filePath !== undefined, {
+    message: "filePath is required when oldPath is provided",
+    path: ["filePath"],
+  });
 
 export const commitChangesRequestSchema = z.object({
   sessionTitle: z.string(),
