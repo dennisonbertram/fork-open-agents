@@ -36,6 +36,7 @@ type InstructionsFieldConfig = {
   disabled?: boolean;
   rows?: number;
   textareaClassName?: string;
+  expandedTextareaClassName?: string;
   expandedTitle: string;
   expandedDescription: ReactNode;
   expandedAriaLabel?: string;
@@ -158,8 +159,9 @@ function InstructionsField({ config }: { config: InstructionsFieldConfig }) {
             // biome-ignore lint/a11y/noAutofocus: focusing the editor is the point of expanding
             autoFocus
             className={cn(
-              "min-h-[50vh] flex-1 resize-none",
               config.textareaClassName,
+              config.expandedTextareaClassName,
+              "min-h-[50vh] flex-1 resize-none",
             )}
             value={config.value}
             onChange={(event) => config.onChange(event.target.value)}

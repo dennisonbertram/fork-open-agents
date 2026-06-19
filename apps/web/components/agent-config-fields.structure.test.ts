@@ -26,4 +26,16 @@ describe("AgentConfigFields shared extraction", () => {
       expect(source).not.toContain("ComposioToolkitPicker");
     }
   });
+
+  test("expanded instructions editor keeps modal sizing after caller classes", async () => {
+    const source = await Bun.file(
+      new URL("agent-config-fields.tsx", import.meta.url),
+    ).text();
+
+    const inlineClassIndex = source.indexOf("config.textareaClassName");
+    const modalClassIndex = source.indexOf('"min-h-[50vh] flex-1 resize-none"');
+
+    expect(inlineClassIndex).toBeGreaterThan(-1);
+    expect(modalClassIndex).toBeGreaterThan(inlineClassIndex);
+  });
 });
