@@ -1,13 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import {
-  ArrowLeft,
-  ChevronDown,
-  ChevronRight,
-  Clock3,
-  Copy,
-} from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3, Copy } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
@@ -285,18 +279,38 @@ export function RunDetail({
   }
 
   return (
-    <main className="h-full overflow-y-auto bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
-            <Link
-              href={`/loops/${loop.id}`}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            <nav
+              aria-label="Loop breadcrumb"
+              className="mb-3 flex min-w-0 items-center gap-1.5 text-sm"
             >
-              <ArrowLeft className="h-4 w-4" />
-              {loop.name}
-            </Link>
+              <Link
+                href="/loops"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                Loops
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Link
+                href={`/repos/${loop.repoOwner}/${loop.repoName}`}
+                className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+              >
+                {loop.repoOwner}/{loop.repoName}
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Link
+                href={`/loops/${loop.id}`}
+                className="min-w-0 truncate text-muted-foreground hover:text-foreground"
+              >
+                {loop.name}
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="shrink-0 font-medium">Run</span>
+            </nav>
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl font-semibold">Loop run</h1>
               <StatusPill status={run.status} />
