@@ -8,6 +8,8 @@ import {
   getRepoLearningsAgentStatus,
 } from "@/lib/learnings/builtin-agent";
 import { getGitHubAppWebhookReadinessCheck } from "@/lib/background-agents/github-app-webhooks";
+import { redactHarnessPayload } from "@/lib/harness/redaction";
+import { listRepoLearnings } from "@/lib/learnings/store";
 
 // ---- Request schema ----
 
@@ -33,6 +35,33 @@ type ReadinessVerdict = {
   detail?: string;
   errorKind?: string;
 };
+
+function serializeLearnings(
+  learnings: Awaited<ReturnType<typeof listRepoLearnings>>,
+) {
+  return learnings.map((learning) => ({
+    ...learning,
+    createdAt: learning.createdAt.toISOString(),
+    updatedAt: learning.updatedAt.toISOString(),
+    lastUsedAt: learning.lastUsedAt?.toISOString() ?? null,
+    evidence: learning.evidence.map((evidence) => ({
+      ...evidence,
+      createdAt: evidence.createdAt.toISOString(),
+    })),
+  }));
+}
+
+function emitLearningsUiEvent(params: {
+  action: string;
+  payload: Record<string, unknown>;
+}) {
+  const payload = redactHarnessPayload(params.payload);
+  console.info("[learnings_ui]", {
+    service: "learnings_ui",
+    action: params.action,
+    ...payload,
+  });
+}
 
 // ---- Helpers ----
 
@@ -114,6 +143,16 @@ export async function POST(req: Request): Promise<Response> {
   if (!enabled) {
     // Disable path
     await disableRepoLearningsAgent(userId, repoOwner, repoName);
+    emitLearningsUiEvent({
+      action: "agent_enable_toggled",
+      payload: {
+        userId,
+        repoOwner,
+        repoName,
+        enabled: false,
+        readinessStatus: "action-needed",
+      },
+    });
     return Response.json({
       enabled: false,
       verdict: buildDisabledVerdict(),
@@ -133,6 +172,18 @@ export async function POST(req: Request): Promise<Response> {
     const status = result.errorKind === "no_installation" ? 404 : 403;
     return Response.json({ verdict }, { status });
   }
+
+  emitLearningsUiEvent({
+    action: "agent_enable_toggled",
+    payload: {
+      userId,
+      repoOwner,
+      repoName,
+      installationId: null,
+      enabled: true,
+      readinessStatus: "ready",
+    },
+  });
 
   return Response.json({
     enabled: true,
@@ -179,9 +230,26 @@ export async function GET(req: Request): Promise<Response> {
     verdict = buildDisabledVerdict();
   }
 
+  const learnings =
+    repoOwner && repoName
+      ? await listRepoLearnings({ userId, repoOwner, repoName })
+      : [];
+
+  emitLearningsUiEvent({
+    action: "feed_viewed",
+    payload: {
+      userId,
+      repoOwner,
+      repoName,
+      learningCount: learnings.length,
+      readinessStatus: verdict.status,
+    },
+  });
+
   const response: Record<string, unknown> = {
     enabled: agentStatus.enabled,
     verdict,
+    learnings: serializeLearnings(learnings),
   };
 
   if (agentStatus.agentId) {
