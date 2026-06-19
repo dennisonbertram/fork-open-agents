@@ -7,6 +7,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -59,6 +60,7 @@ const RouteContentShell = memo(function RouteContentShell({
 }) {
   const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const { target, closeWorkspaceSettings } = useWorkspaceSettings();
+  const workspaceSettingsTitleId = useId();
   // The sidebar uses offcanvas collapse: it slides fully off-screen when
   // collapsed, leaving nothing visible to reopen it with.  Surface a
   // persistent "Open panel" button in the content area whenever it is hidden.
@@ -103,14 +105,18 @@ const RouteContentShell = memo(function RouteContentShell({
       {children}
       {target ? (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Workspace settings"
+          role="region"
+          aria-labelledby={workspaceSettingsTitleId}
           className="absolute inset-0 z-40 flex flex-col bg-background"
         >
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold">Workspace settings</h1>
+              <h1
+                id={workspaceSettingsTitleId}
+                className="text-sm font-semibold"
+              >
+                Workspace settings
+              </h1>
               <p className="truncate text-xs text-muted-foreground">
                 {target.label}
               </p>
