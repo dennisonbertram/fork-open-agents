@@ -58,8 +58,8 @@ let mockWorkflowRunsError: Error | null = null;
 let mockSearchTotalCount = 0;
 let mockSearchError: Error | null = null;
 
-mock.module("@/lib/github/client", () => ({
-  getUserOctokit: async () => ({
+function makeMockOctokit() {
+  return {
     rest: {
       pulls: {
         list: async (): Promise<OctokitResponse<MockPr[]>> => {
@@ -97,7 +97,33 @@ mock.module("@/lib/github/client", () => ({
         },
       },
     },
+  };
+}
+
+const withScopedInstallationOctokit = mock(
+  async (params: {
+    operation: (
+      octokit: ReturnType<typeof makeMockOctokit>,
+    ) => Promise<unknown>;
+  }) => params.operation(makeMockOctokit()),
+);
+
+mock.module("@/lib/github/client", () => ({
+  getUserOctokit: async () => makeMockOctokit(),
+}));
+
+mock.module("@/lib/github/access", () => ({
+  verifyRepoAccess: async () => ({
+    ok: true,
+    installationId: 123,
+    repositoryId: 456,
+    defaultBranch: "develop",
+    userPermission: "write",
   }),
+}));
+
+mock.module("@/lib/github/app", () => ({
+  withScopedInstallationOctokit,
 }));
 
 const helperModulePromise = import("./repo-dashboard");
@@ -113,6 +139,7 @@ describe("Regression: #162 review-fix — true issue count must never equal page
     mockWorkflowRunsError = null;
     mockSearchTotalCount = 0;
     mockSearchError = null;
+    withScopedInstallationOctokit.mockClear();
   });
 
   // REGRESSION-RF-001: If search API is present and returns 350, totalOpen must be 350
