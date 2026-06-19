@@ -2,6 +2,7 @@ import type { SandboxState } from "@open-agents/sandbox";
 import type { ManagedRuntimeProfileCommand } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SetupManagedRuntimeProfileInput } from "@open-agents/agent";
 import type { ModelVariant } from "@/lib/model-variants";
+import type { InferenceProfileModel } from "@/lib/inference/types";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import {
   type ChatComposioSelection,
@@ -10,8 +11,10 @@ import {
   defaultChatComposioSelection,
   defaultComposioAgentDefaults,
 } from "@/lib/composio/types";
+import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -43,6 +46,9 @@ export type BackgroundAgentTriggerConditions = {
   labels?: string[];
   environments?: string[];
   severities?: string[];
+  // mergedOnly: true restricts github.pull_request triggers to merged-closed events only.
+  // Stored as JSONB — no migration needed. Not yet exposed in the UI (CODE-03).
+  mergedOnly?: boolean;
 };
 
 export type BackgroundAgentPermissions = {
@@ -199,6 +205,10 @@ export const inferenceProfiles = pgTable(
     lastTestedAt: timestamp("last_tested_at"),
     lastTestMessage: text("last_test_message"),
     enabled: boolean("enabled").notNull().default(true),
+    models: jsonb("models")
+      .$type<InferenceProfileModel[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -208,6 +218,49 @@ export const inferenceProfiles = pgTable(
       table.userId,
       table.name,
     ),
+  ],
+);
+
+/**
+ * User-authored agent skills. Each row is a reusable `SKILL.md` the user owns;
+ * enabled rows are materialized into `~/.agents/skills/<name>/SKILL.md` in the
+ * sandbox at workspace setup so the agent can discover and invoke them.
+ */
+export const userSkills = pgTable(
+  "user_skills",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** Slug used for discovery + `/name` invocation. Unique per user. */
+    name: text("name").notNull(),
+    /** Single-line description surfaced to the agent and in the system prompt. */
+    description: text("description").notNull(),
+    /** Markdown instruction body written after the SKILL.md frontmatter. */
+    body: text("body").notNull(),
+    enabled: boolean("enabled").notNull().default(true),
+    /** When true, the model cannot auto-invoke the skill (user slash only). */
+    disableModelInvocation: boolean("disable_model_invocation")
+      .notNull()
+      .default(false),
+    /** When false, the skill is not offered as a user `/slash` command. */
+    userInvocable: boolean("user_invocable").notNull().default(true),
+    /** Optional tool allow-list serialized to the `allowed-tools` frontmatter. */
+    allowedTools: jsonb("allowed_tools")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    /** How the skill body originated: hand-authored or AI-generated draft. */
+    source: text("source", { enum: ["manual", "generated"] })
+      .notNull()
+      .default("manual"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("user_skills_user_idx").on(table.userId),
+    uniqueIndex("user_skills_user_name_idx").on(table.userId, table.name),
   ],
 );
 
@@ -841,6 +894,16 @@ export const backgroundAgents = pgTable(
       .notNull()
       .default("none"),
     checkCommand: text("check_command"),
+    /**
+     * Composio toolkit slugs this agent is allowed to use.
+     * Empty array (default) = no Composio tools = pre-Phase-5 behavior.
+     * Populated slugs are resolved at run time via resolveComposioToolsForBgRun,
+     * gated by enabled backgroundAgentToolGrants and repo policy.
+     */
+    composioToolkitSlugs: jsonb("composio_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -851,13 +914,72 @@ export const backgroundAgents = pgTable(
   ],
 );
 
+// ── Agent Loops (M1-01) ─────────────────────────────────────────────────────
+// Four tables for the Agent Loops feature: agentLoops, agentLoopRuns,
+// agentLoopStepRuns, agentLoopEvents.
+// backgroundAgentTriggers is also altered: agentId made nullable, loopId
+// added, and a check constraint enforces exactly one of (agentId, loopId).
+// See docs/plans/agent-loops-epic.md §3 for the full column-level spec.
+
+export const agentLoops = pgTable(
+  "agent_loops",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    /** { nodes: LoopNode[], edges: LoopEdge[] } — validated on write by M1-02 */
+    definition: jsonb("definition").$type<Record<string, unknown>>().notNull(),
+    status: text("status", {
+      enum: ["draft", "active", "paused", "archived"],
+    })
+      .notNull()
+      .default("draft"),
+    /**
+     * { maxStepsPerRun?, maxIterations?, maxRunDurationMs?, stepTimeoutMs? }
+     * Server-side ceilings applied regardless of user config.
+     */
+    guardrails: jsonb("guardrails").$type<Record<string, unknown>>(),
+    permissions: jsonb("permissions")
+      .$type<BackgroundAgentPermissions>()
+      .notNull()
+      .default({}),
+    /**
+     * M3-01 Watchdog fields.
+     * watchdogEnabled: gate — when false (default) watchdog is completely off.
+     * watchdogInstructions: standing guidance appended to every watchdog prompt.
+     * watchdogRetryBudget: max retry decisions per node across the run (shared by failure + stall).
+     */
+    watchdogEnabled: boolean("watchdog_enabled").notNull().default(false),
+    watchdogInstructions: text("watchdog_instructions"),
+    watchdogRetryBudget: integer("watchdog_retry_budget").notNull().default(2),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loops_user_idx").on(table.userId),
+    index("agent_loops_repo_idx").on(table.repoOwner, table.repoName),
+    index("agent_loops_status_idx").on(table.status),
+  ],
+);
+
 export const backgroundAgentTriggers = pgTable(
   "background_agent_triggers",
   {
     id: text("id").primaryKey(),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
+    // Nullable — exactly one of (agentId, loopId) must be non-null.
+    // The DB enforces this via the check constraint below.
+    agentId: text("agent_id").references(() => backgroundAgents.id, {
+      onDelete: "cascade",
+    }),
+    // Nullable FK to agentLoops; set when this trigger fires a loop run.
+    loopId: text("loop_id").references(() => agentLoops.id, {
+      onDelete: "cascade",
+    }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -865,6 +987,7 @@ export const backgroundAgentTriggers = pgTable(
     kind: text("kind", {
       enum: [
         "github.pull_request",
+        "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
         "schedule.cron",
@@ -891,12 +1014,19 @@ export const backgroundAgentTriggers = pgTable(
   },
   (table) => [
     index("background_agent_triggers_agent_idx").on(table.agentId),
+    index("background_agent_triggers_loop_idx").on(table.loopId),
     index("background_agent_triggers_user_kind_idx").on(
       table.userId,
       table.kind,
     ),
     uniqueIndex("background_agent_triggers_webhook_public_idx").on(
       table.webhookPublicId,
+    ),
+    // Exactly one of (agent_id, loop_id) must be set.
+    // Prevents orphaned triggers (neither) and ambiguous triggers (both).
+    check(
+      "background_agent_triggers_owner_check",
+      sql`num_nonnulls(agent_id, loop_id) = 1`,
     ),
   ],
 );
@@ -964,6 +1094,7 @@ export const backgroundAgentRuns = pgTable(
     triggerKind: text("trigger_kind", {
       enum: [
         "github.pull_request",
+        "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
         "schedule.cron",
@@ -1144,6 +1275,170 @@ export const backgroundAgentToolSessions = pgTable(
   ],
 );
 
+// ── Agent Loop Runs ──────────────────────────────────────────────────────────
+
+export const agentLoopRuns = pgTable(
+  "agent_loop_runs",
+  {
+    id: text("id").primaryKey(),
+    loopId: text("loop_id")
+      .notNull()
+      .references(() => agentLoops.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    status: text("status", {
+      enum: [
+        "queued",
+        "running",
+        "paused",
+        "completed",
+        "failed",
+        "cancelled",
+        "stalled",
+      ],
+    }).notNull(),
+    /** Frozen copy of loop.definition at run start */
+    definitionSnapshot: jsonb("definition_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull(),
+    currentNodeId: text("current_node_id"),
+    currentStepRunId: text("current_step_run_id"),
+    /** Incremented when an edge targets an already-visited node */
+    iterationCount: integer("iteration_count").notNull().default(0),
+    /** Total steps executed */
+    stepCount: integer("step_count").notNull().default(0),
+    /** Shared state, keyed by node id */
+    context: jsonb("context")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    source: text("source", {
+      enum: ["github", "schedule", "webhook", "manual"],
+    }).notNull(),
+    triggerId: text("trigger_id").references(() => backgroundAgentTriggers.id, {
+      onDelete: "set null",
+    }),
+    idempotencyKey: text("idempotency_key").notNull().unique(),
+    errorKind: text("error_kind"),
+    errorMessage: text("error_message"),
+    /** Most recent step's workflow run (correlation) */
+    workflowRunId: text("workflow_run_id"),
+    requestId: text("request_id"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_runs_loop_created_idx").on(table.loopId, table.createdAt),
+    index("agent_loop_runs_user_created_idx").on(table.userId, table.createdAt),
+    index("agent_loop_runs_status_idx").on(table.status),
+    uniqueIndex("agent_loop_runs_idempotency_idx").on(table.idempotencyKey),
+  ],
+);
+
+// ── Agent Loop Step Runs ──────────────────────────────────────────────────────
+
+export const agentLoopStepRuns = pgTable(
+  "agent_loop_step_runs",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    /** References a node in the run's definitionSnapshot */
+    nodeId: text("node_id").notNull(),
+    /** Denormalized from the node for query convenience */
+    nodeKind: text("node_kind").notNull(),
+    /** Bumped on retry (M3 watchdog) */
+    attempt: integer("attempt").notNull().default(1),
+    status: text("status", {
+      enum: ["queued", "running", "succeeded", "failed", "skipped"],
+    }).notNull(),
+    /** Context slice given to the step */
+    stepInput: jsonb("step_input").$type<Record<string, unknown>>(),
+    /** Validated output merged into run context */
+    stepOutput: jsonb("step_output").$type<Record<string, unknown>>(),
+    /** agent_loop_<stepRunId> — agent_step nodes only */
+    sandboxName: text("sandbox_name"),
+    /** Durable workflow correlation */
+    workflowRunId: text("workflow_run_id"),
+    errorKind: text("error_kind"),
+    errorMessage: text("error_message"),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    durationMs: integer("duration_ms"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_step_runs_loop_run_created_idx").on(
+      table.loopRunId,
+      table.createdAt,
+    ),
+    uniqueIndex("agent_loop_step_runs_run_node_attempt_idx").on(
+      table.loopRunId,
+      table.nodeId,
+      table.attempt,
+    ),
+  ],
+);
+
+// ── Agent Loop Events ─────────────────────────────────────────────────────────
+// Mirror of backgroundAgentEvents: same redaction pipeline, same redactionStatus.
+
+export const agentLoopEvents = pgTable(
+  "agent_loop_events",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    stepRunId: text("step_run_id").references(() => agentLoopStepRuns.id, {
+      onDelete: "set null",
+    }),
+    nodeId: text("node_id"),
+    eventName: text("event_name").notNull(),
+    status: text("status", {
+      enum: [
+        "started",
+        "running",
+        "succeeded",
+        "failed",
+        "blocked",
+        "skipped",
+        "info",
+      ],
+    }).notNull(),
+    level: text("level", {
+      enum: ["info", "warn", "error"],
+    })
+      .notNull()
+      .default("info"),
+    summary: text("summary"),
+    /** Payload through the same redaction pipeline as backgroundAgentEvents */
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    redactionStatus: text("redaction_status", {
+      enum: ["not_required", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("passed"),
+    requestId: text("request_id"),
+    workflowRunId: text("workflow_run_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_events_loop_run_created_idx").on(
+      table.loopRunId,
+      table.createdAt,
+    ),
+    index("agent_loop_events_request_idx").on(table.requestId),
+  ],
+);
+
 export const workflowRuns = pgTable(
   "workflow_runs",
   {
@@ -1218,12 +1513,157 @@ export const workflowRunSteps = pgTable(
   ],
 );
 
+// ── Per-repo learnings store (CODE-01) ───────────────────────────────────────
+// Three tables: repoLearnings, repoLearningEvidence, repoLearningExtractionRuns.
+// Partitioned per (userId, repoOwner, repoName) — v1 limitation documented in
+// docs/plans/pr-review-learnings-agent-epic.md.
+// dedupSignature is NOT NULL (must-fix #5) — computed deterministically pre-insert.
+// JSONB columns use .default([]) to avoid NULL (must-fix pattern).
+
+export const repoLearnings = pgTable(
+  "repo_learnings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    installationId: integer("installation_id"),
+    type: text("type", {
+      enum: [
+        "bug",
+        "convention",
+        "architecture",
+        "design",
+        "workflow",
+        "anti_pattern",
+      ],
+    }).notNull(),
+    scope: text("scope", {
+      enum: ["file", "module", "repo"],
+    })
+      .notNull()
+      .default("repo"),
+    title: text("title").notNull(),
+    description: text("description").notNull(),
+    rootCause: text("root_cause"),
+    solution: text("solution"),
+    prevention: text("prevention"),
+    affectedPaths: jsonb("affected_paths")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    tags: jsonb("tags").$type<string[]>().notNull().default([]),
+    severity: text("severity", {
+      enum: ["critical", "high", "medium", "low", "info"],
+    })
+      .notNull()
+      .default("info"),
+    confidence: text("confidence", {
+      enum: ["proven", "high", "medium", "low", "speculative"],
+    })
+      .notNull()
+      .default("medium"),
+    status: text("status", {
+      enum: ["active", "consolidation_review", "archived", "superseded"],
+    })
+      .notNull()
+      .default("active"),
+    // NOT NULL — deterministic hash computed pre-insert (must-fix #5)
+    dedupSignature: text("dedup_signature").notNull(),
+    supersedesLearningId: text("supersedes_learning_id"),
+    usageCount: integer("usage_count").notNull().default(0),
+    lastUsedAt: timestamp("last_used_at"),
+    sourcePrNumber: integer("source_pr_number"),
+    sourcePrUrl: text("source_pr_url"),
+    // Set only by CODE-04 projection; null in this slice
+    committedFilePath: text("committed_file_path"),
+    createdBy: text("created_by")
+      .notNull()
+      .default("pr_review_learnings_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_repo_learnings_repo").on(t.userId, t.repoOwner, t.repoName),
+    index("idx_repo_learnings_status").on(t.userId, t.status, t.lastUsedAt),
+    uniqueIndex("idx_repo_learnings_dedup").on(
+      t.userId,
+      t.repoOwner,
+      t.repoName,
+      t.dedupSignature,
+    ),
+  ],
+);
+
+export const repoLearningEvidence = pgTable(
+  "repo_learning_evidence",
+  {
+    id: text("id").primaryKey(),
+    learningId: text("learning_id")
+      .notNull()
+      .references(() => repoLearnings.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: [
+        "pr_url",
+        "review_comment",
+        "file_excerpt",
+        "command_output",
+        "test_failure",
+      ],
+    }).notNull(),
+    ref: text("ref").notNull(),
+    // Redacted + redaction-verified before persist; dropped if failed/blocked
+    excerpt: text("excerpt"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [index("idx_learning_evidence_learning").on(t.learningId)],
+);
+
+export const repoLearningExtractionRuns = pgTable(
+  "repo_learning_extraction_runs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Links to backgroundAgentRuns.id for audit/ROI (forward hook for CODE-02+)
+    backgroundAgentRunId: text("background_agent_run_id"),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    prNumber: integer("pr_number"),
+    triggerKind: text("trigger_kind").notNull(),
+    candidatesExtracted: integer("candidates_extracted").notNull().default(0),
+    accepted: integer("accepted").notNull().default(0),
+    merged: integer("merged").notNull().default(0),
+    rejected: integer("rejected").notNull().default(0),
+    // Typed errorKind; see observability error taxonomy
+    errorKind: text("error_kind"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_learning_extraction_repo").on(t.userId, t.repoOwner, t.repoName),
+  ],
+);
+
+export type RepoLearning = typeof repoLearnings.$inferSelect;
+export type NewRepoLearning = typeof repoLearnings.$inferInsert;
+export type RepoLearningEvidence = typeof repoLearningEvidence.$inferSelect;
+export type NewRepoLearningEvidence = typeof repoLearningEvidence.$inferInsert;
+export type RepoLearningExtractionRun =
+  typeof repoLearningExtractionRuns.$inferSelect;
+export type NewRepoLearningExtractionRun =
+  typeof repoLearningExtractionRuns.$inferInsert;
+
 export type Session = typeof sessions.$inferSelect;
 export type NewSession = typeof sessions.$inferInsert;
 export type VercelProjectLink = typeof vercelProjectLinks.$inferSelect;
 export type NewVercelProjectLink = typeof vercelProjectLinks.$inferInsert;
 export type InferenceProfile = typeof inferenceProfiles.$inferSelect;
 export type NewInferenceProfile = typeof inferenceProfiles.$inferInsert;
+export type UserSkill = typeof userSkills.$inferSelect;
+export type NewUserSkill = typeof userSkills.$inferInsert;
 export type Chat = typeof chats.$inferSelect;
 export type NewChat = typeof chats.$inferInsert;
 export type SandboxService = typeof sandboxServices.$inferSelect;
@@ -1371,9 +1811,7 @@ export const composioAgentSessions = pgTable(
     })
       .$type<ComposioAgentKey>()
       .notNull(),
-    profileId: text("profile_id")
-      .notNull()
-      .references(() => composioToolProfiles.id, { onDelete: "cascade" }),
+    profileId: text("profile_id").notNull(),
     configHash: text("config_hash").notNull(),
     composioSessionId: text("composio_session_id").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -1412,6 +1850,14 @@ export const repositoryComposioSettings = pgTable(
       .$type<string[]>()
       .notNull()
       .default([]),
+    // Active Composio toolkits for this repo/workspace — a subset of the
+    // user's globally-connected toolkits. Applies to every chat on the repo
+    // (the per-chat picker was removed). NULL = never configured (resolution
+    // applies the github default-on fallback); an array (incl. []) = the
+    // user's explicit choice, which wins as-is.
+    selectedToolkitSlugs: jsonb("selected_toolkit_slugs").$type<
+      string[] | null
+    >(),
     agentDefaults: jsonb("agent_defaults")
       .$type<Partial<ComposioAgentDefaults>>()
       .notNull()
@@ -1437,6 +1883,74 @@ export type RepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferSelect;
 export type NewRepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferInsert;
+
+// Per-repo session defaults — P2 of the loops-ux-audit epic
+// Null columns mean "inherit from the layer below" (system < user_preferences < this table).
+export const repositorySettings = pgTable(
+  "repository_settings",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    // All defaultable fields are nullable: null = inherit from layer below
+    fullClone: boolean("full_clone"),
+    prewarmEnabled: boolean("prewarm_enabled"),
+    runtimeMode: text("runtime_mode", {
+      enum: ["classic", "managed_runtime"],
+    }).$type<"classic" | "managed_runtime">(),
+    managedRuntimeProfileId: text("managed_runtime_profile_id"),
+    vcpus: integer("vcpus"),
+    autoCommitPush: boolean("auto_commit_push"),
+    autoCreatePr: boolean("auto_create_pr"),
+    defaultBranch: text("default_branch"),
+    isNewBranch: boolean("is_new_branch"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("repository_settings_user_idx").on(table.userId),
+    uniqueIndex("repository_settings_repo_idx").on(
+      table.userId,
+      table.repoOwner,
+      table.repoName,
+    ),
+  ],
+);
+
+export type RepositorySettings = typeof repositorySettings.$inferSelect;
+export type NewRepositorySettings = typeof repositorySettings.$inferInsert;
+
+// MCP server registrations — slice 1 of epic #371
+export const mcpServers = pgTable(
+  "mcp_servers",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    url: text("url").notNull(),
+    transport: text("transport", { enum: ["http", "sse"] })
+      .notNull()
+      .default("http")
+      .$type<"http" | "sse">(),
+    /** AES-256-GCM encrypted JSON string of Record<string,string> headers. */
+    headersEncrypted: text("headers_encrypted"),
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("mcp_servers_user_idx").on(table.userId),
+    uniqueIndex("mcp_servers_user_name_idx").on(table.userId, table.name),
+  ],
+);
+
+export type McpServer = typeof mcpServers.$inferSelect;
+export type NewMcpServer = typeof mcpServers.$inferInsert;
 
 // User preferences for settings
 export const userPreferences = pgTable("user_preferences", {
@@ -1489,6 +2003,124 @@ export const userPreferences = pgTable("user_preferences", {
 
 export type UserPreferences = typeof userPreferences.$inferSelect;
 export type NewUserPreferences = typeof userPreferences.$inferInsert;
+
+// ── Agents — per-role/scope agent configuration ──────────────────────────────
+// One row = one named agent configuration, scoped and ownable.
+// References existing runtime/inference profiles rather than absorbing them.
+// With no rows, resolution returns the synthetic fallback = today's behavior.
+export const agents = pgTable(
+  "agents",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    // Identity
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    // Maps a row to one of the four runtime roles.
+    // "main" = the chat coordinator; explorer/executor/design = subagents.
+    role: text("role", { enum: ["main", "explorer", "executor", "design"] })
+      .notNull()
+      .default("main"),
+
+    // Scope — mirrors managed_runtime_saved_profiles.
+    // user_default = the user's fleet default for this role; session/repo = overrides.
+    scope: text("scope", { enum: ["user_default", "repo", "session"] })
+      .notNull()
+      .default("user_default"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "cascade",
+    }),
+    repoOwner: text("repo_owner"),
+    repoName: text("repo_name"),
+
+    // --- COGNITION ---
+    // null = inherit (main → userPreferences.defaultModelId; sub → defaultSubagentModelId)
+    modelId: text("model_id"),
+    inferenceProfileId: text("inference_profile_id").references(
+      () => inferenceProfiles.id,
+      { onDelete: "set null" },
+    ),
+    // null = built-in system prompt for the role
+    instructions: text("instructions"),
+    skillRefs: jsonb("skill_refs")
+      .$type<GlobalSkillRef[]>()
+      .notNull()
+      .default([]),
+
+    // --- TOOLS (data-defined) ---
+    // Built-in agent-loop tool allowlist by NAME.
+    // null = use the role's default policy from packages/agent (no behavior change).
+    builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
+    // Composio: same direct-list shape chats already use.
+    composioToolkitSlugs: jsonb("composio_toolkit_slugs")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+    // Optional reference to a saved Composio profile instead of a raw slug list.
+    composioProfileId: text("composio_profile_id"),
+
+    // --- RUNTIME (referenced, not absorbed) ---
+    managedRuntimeProfileId: text("managed_runtime_profile_id"), // null = inherit
+
+    // --- #242 provenance / gating ---
+    // Lets an agent author its own tools, off by default.
+    toolAuthoringEnabled: boolean("tool_authoring_enabled")
+      .notNull()
+      .default(false),
+
+    // --- #317 native GitHub agent tools ---
+    // Enables GitHub tools for this agent, off by default.
+    // Gating happens at the web factory (resolveGitHubToolsForChat); not wired
+    // through the agent package tool policy.
+    githubToolsEnabled: boolean("github_tools_enabled")
+      .notNull()
+      .default(false),
+
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agents_user_idx").on(table.userId),
+    uniqueIndex("agents_user_role_scope_idx").on(
+      table.userId,
+      table.role,
+      table.scope,
+    ),
+    index("agents_session_idx").on(table.sessionId),
+  ],
+);
+
+export type Agent = typeof agents.$inferSelect;
+export type NewAgent = typeof agents.$inferInsert;
+
+// ── agent_tool_entries — audit trail of agent-authored Composio toolkit additions ──
+// One row per toolkit addition proposed by an agent while toolAuthoringEnabled=true.
+// status starts as "proposed"; owner must approve before the slug becomes live.
+export const agentToolEntries = pgTable("agent_tool_entries", {
+  id: text("id").primaryKey(),
+  agentId: text("agent_id")
+    .notNull()
+    .references(() => agents.id, { onDelete: "cascade" }),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider", { enum: ["composio"] }).notNull(),
+  toolkitSlug: text("toolkit_slug").notNull(),
+  status: text("status", { enum: ["proposed", "approved", "rejected"] })
+    .notNull()
+    .default("proposed"),
+  // Provenance — which chat/run triggered this proposal
+  createdByChatId: text("created_by_chat_id"),
+  createdByRunId: text("created_by_run_id"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  approvedAt: timestamp("approved_at"),
+});
+
+export type AgentToolEntry = typeof agentToolEntries.$inferSelect;
+export type NewAgentToolEntry = typeof agentToolEntries.$inferInsert;
 
 // Usage tracking — one row per assistant turn (append-only)
 export const usageEvents = pgTable("usage_events", {
@@ -1619,3 +2251,62 @@ export type WorkflowGoal = typeof workflowGoals.$inferSelect;
 export type NewWorkflowGoal = typeof workflowGoals.$inferInsert;
 export type WorkflowGoalEvent = typeof workflowGoalEvents.$inferSelect;
 export type NewWorkflowGoalEvent = typeof workflowGoalEvents.$inferInsert;
+
+// ── Agent Loop Watchdog Runs (M3-01) ──────────────────────────────────────────
+
+/**
+ * Records each watchdog invocation for a failed step.
+ * Decision: retry | skip | pause.
+ * Budget queries: count rows WHERE decision='retry' AND loopRunId=? AND nodeId=?
+ * (budget is shared by failure- AND stall-initiated retries — M3-02 depends on this).
+ */
+export const agentLoopWatchdogRuns = pgTable(
+  "agent_loop_watchdog_runs",
+  {
+    id: text("id").primaryKey(),
+    loopRunId: text("loop_run_id")
+      .notNull()
+      .references(() => agentLoopRuns.id, { onDelete: "cascade" }),
+    stepRunId: text("step_run_id").references(() => agentLoopStepRuns.id, {
+      onDelete: "set null",
+    }),
+    /** Budget queries are per-node (shared budget across all watchdog invocations for that node) */
+    nodeId: text("node_id").notNull(),
+    status: text("status", {
+      enum: ["pending", "running", "decided", "failed"],
+    }).notNull(),
+    decision: text("decision", {
+      enum: ["retry", "skip", "pause"],
+    }),
+    /** Redacted before persist — comes from model output (untrusted) */
+    diagnosis: text("diagnosis"),
+    /** { hint?: string } — persisted for retry decisions */
+    decisionPayload: jsonb("decision_payload").$type<{ hint?: string }>(),
+    /** The failed step's attempt number at the time of watchdog invocation */
+    attempt: integer("attempt").notNull(),
+    /** Budget remaining BEFORE this invocation (watchdogRetryBudget - prior retries) */
+    budgetRemaining: integer("budget_remaining").notNull(),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("agent_loop_watchdog_runs_loop_run_idx").on(table.loopRunId),
+    index("agent_loop_watchdog_runs_loop_node_idx").on(
+      table.loopRunId,
+      table.nodeId,
+    ),
+  ],
+);
+
+// ── Agent Loops types ─────────────────────────────────────────────────────────
+export type AgentLoop = typeof agentLoops.$inferSelect;
+export type NewAgentLoop = typeof agentLoops.$inferInsert;
+export type AgentLoopRun = typeof agentLoopRuns.$inferSelect;
+export type NewAgentLoopRun = typeof agentLoopRuns.$inferInsert;
+export type AgentLoopStepRun = typeof agentLoopStepRuns.$inferSelect;
+export type NewAgentLoopStepRun = typeof agentLoopStepRuns.$inferInsert;
+export type AgentLoopEvent = typeof agentLoopEvents.$inferSelect;
+export type NewAgentLoopEvent = typeof agentLoopEvents.$inferInsert;
+export type AgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferSelect;
+export type NewAgentLoopWatchdogRun = typeof agentLoopWatchdogRuns.$inferInsert;

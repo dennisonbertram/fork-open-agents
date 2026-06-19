@@ -50,6 +50,8 @@ mock.module("@/lib/session/get-server-session", () => ({
 mock.module("@/lib/background-agents/store", () => ({
   listRepoBackgroundAgents: async () => repoAgents,
   listBackgroundAgentRuns: async () => repoRuns,
+  getOwnedBackgroundAgentWithTriggers: mock(async () => null),
+  listBackgroundAgentOutputs: mock(async () => []),
 }));
 
 const pageModulePromise = import("./page");

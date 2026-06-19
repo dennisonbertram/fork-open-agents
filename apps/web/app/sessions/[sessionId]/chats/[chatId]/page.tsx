@@ -18,6 +18,8 @@ import { getAllVariants } from "@/lib/model-variants";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getCodeEditorDisabledReason } from "@/lib/managed-runtime/code-editor-gate";
+import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
@@ -106,7 +108,7 @@ export default async function SessionChatPage({
     redirect("/");
   }
 
-  // Fetch chat, messages, models, and preferences in parallel
+  // Fetch chat, messages, models, preferences, and runtime profile in parallel
   const [
     chat,
     dbMessages,
@@ -114,6 +116,7 @@ export default async function SessionChatPage({
     rawPreferences,
     sessionChats,
     inferenceProfiles,
+    runtimeProfile,
   ] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
@@ -121,6 +124,11 @@ export default async function SessionChatPage({
     getUserPreferences(session.user.id),
     getChatSummariesBySessionId(sessionId, session.user.id),
     listInferenceProfiles(session.user.id),
+    resolveManagedRuntimeProfile({
+      userId: session.user.id,
+      sessionId,
+      profileId: sessionRecord.managedRuntimeProfileId,
+    }),
   ]);
 
   if (!chat) {
@@ -160,7 +168,7 @@ export default async function SessionChatPage({
   const lastUserMessageSentAt = lastUserMessage
     ? lastUserMessage.createdAt.toISOString()
     : null;
-  const codeEditorDisabledReason = null;
+  const codeEditorDisabledReason = getCodeEditorDisabledReason(runtimeProfile);
   const preferences = rawPreferences;
   const modelVariants = getAllVariants(preferences.modelVariants);
   const chatModelId = chat.modelId;

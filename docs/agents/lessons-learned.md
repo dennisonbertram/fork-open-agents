@@ -18,6 +18,8 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - In Codex desktop/non-interactive shells, `bun run <script>` can still execute native CLIs through the app's bundled Node runtime; if `oxfmt`/Ultracite fails to load native bindings, rerun the same package script as `bun --bun run <script>` (for example `bun --bun run ci`) instead of invoking tool binaries directly.
 - Successful Vercel CLI auth (`vercel whoami`, team/project REST APIs, `.vercel` linking) does **not** guarantee Workflow observability access. `workflow inspect ... --backend vercel` can still fail with `401 {"error":{"code":"unauthorized","message":"You are not allowed to access this endpoint."}}` when the user/token lacks the Vercel product permission documented as `Vercel Workflow` (and possibly related Observability access), even if `WORKFLOW_VERCEL_AUTH_TOKEN` is passed explicitly from the Vercel CLI auth file.
 - Strong agent process needs executable issue/PR structure, not only prose docs: standard issue templates should require protected path, behavior contract, tests to add first, observability evidence, red/green TDD audit trail, deploy impact, and definition of done.
+- Skill install/discovery is duplicated across the sandbox setup paths (`app/workflows/chat-sandbox-runtime.ts` and `app/api/sandbox/route.ts` both have an `installSessionGlobalSkills`; `app/api/chat/_lib/runtime.ts` only discovers). New work that materializes files into the sandbox at setup must hook **both** setup paths; discovery elsewhere then picks the files up. Tests for those files `mock.module` the skills helpers, so adding a new consumer (e.g. `@/lib/skills/session-user-skills`) requires mocking it in `chat-sandbox-runtime.test.ts` and `app/api/sandbox/route.test.ts`, or the suite fails at load with `Export named '…' not found` / hits the real DB client.
+- During authenticated local smokes, `agent-browser fill`/`type` sets the DOM value but does not always update a React controlled component's state, so form **submits** can fire with empty state. Prove server/DB write paths (create/update/delete, duplicate/reserved-name guards) with an authenticated `curl` using the `open_agents_test_user_id` cookie, and use `agent-browser` for rendering + `click`-based interactions (toggles, dialogs) which do work.
 
 ## Auth / OAuth
 
@@ -139,3 +141,25 @@ Hard-won knowledge from building this codebase. When you make a mistake or disco
 - GitHub fork creation can take longer than a few seconds to become pushable; PR fallback should retry fork push on transient `repository not found` errors instead of failing immediately.
 - Git push failures from Vercel sandboxes can return empty output even when auth/write is denied; PR fallback logic should not rely only on matching "permission" text before attempting fork fallback.
 - When the GitHub App lacks push access (e.g. repo removed from installation scope), fail fast with a 403 directing users to /settings/connections rather than silently forking.
+
+## Vercel Workflow DevKit
+
+- Functions called from a `"use workflow"` body that use Node modules must declare `"use step"` as their first statement. Without it, the DevKit cannot compile those functions and silently fails at runtime with the error `"Node.js modules are not available in workflow functions"`. The error points at call-sites (use-sites of the missing directive), not at the definition. Add `"use step"` to any exported function used inside a workflow body that performs DB access, API calls, or any other Node-only work.
+- Static imports of workflow files are required for the DevKit to compile and register them. Dynamic-only reachability (`await import(...)` inside a function body) silently skips compilation — the workflow file appears loaded but `start()` targets are not registered, causing silent runtime failures. Use top-level `import` for workflow files; dynamic imports for workflow file targets produce no build-time error. The proven house pattern (from `background-agents/executor.ts` and `dispatcher.ts`) is a top-level `import { myWorkflow } from "@/app/workflows/my-file"` and passing `myWorkflow` to `start()`.
+- The `"Node.js modules are not available in workflow functions"` build error is emitted per call-site, not per missing `"use step"` declaration. When bisecting, grep for all functions invoked from workflow bodies and verify each has `"use step"` before any Node-requiring code.
+- FK constraints on event/run tables are invisible to mock-based tests unless the mocks enforce FK shape (throw on invalid FK values). An event insert that references a non-existent parent run id (e.g. a hardcoded `"no-run"` string) throws PG 23503 at runtime but passes tests that accept any string as a valid run id. Make store mocks enforce FK shape — throw if the loopRunId is not in a set of known run ids, and throw if a non-null triggerId is not in a known trigger set. This catches an entire class of runtime-only FK violation bugs at test time.
+
+## Bun Test Isolation — mock.module First-Win Behavior
+
+Bun 1.3.14 caches the **first** `mock.module()` registration for a module within a test process. When multiple test files run in the same process (e.g., `bun test apps/web/lib/agent-loops/`), the first file's factory wins for all subsequent files. This produces two failure classes:
+
+- **Class A (hard crash):** A later file imports a named export that the first file's factory omitted. Bun raises `SyntaxError: Export named 'X' not found in module '...'` for every test in that later file.
+- **Class B (behavioral leak):** A later file tests a module "for real" that an earlier file mocked, so it sees the mock instead of the real implementation.
+
+**The fix for both classes is `bun test --isolate`** (one Bun process per file). The root `"test"` script uses this flag: `bun run test` is always safe. For multi-file local runs use `bun test --isolate <dir>` instead of bare `bun test <dir>`.
+
+Note: `bunfig.toml [test] isolate=true` is NOT honored by Bun 1.3.14 — use the CLI flag.
+
+**Class A is also fixable** by backfilling every partial `mock.module()` factory with stubs for the missing named exports (e.g., `updateAgentLoopRunContext: mock(async () => undefined)`). Do this for any store mock that omits exports another test file in the same directory imports. Class B leaks (e.g., `chat.test.ts` mocking `./chat-post-finish`, then `chat-post-finish.test.ts` testing it "for real") cannot be fixed by stub backfill and require `--isolate`.
+
+When adding a new export to a shared store/module, grep for all `mock.module` factories that reference that module and add a stub for the new export in each, or multi-file non-isolated runs will hard-crash on the new export.

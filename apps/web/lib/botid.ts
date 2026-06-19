@@ -15,6 +15,11 @@ export const botIdConfig = {
       "*.vercel.com",
       "*.vercel.dev",
       "*.vercel.run",
+      // This fork's production + preview deployments are served on *.vercel.app
+      // (e.g. open-agents-*-dennisons-projects.vercel.app). Without this, BotID
+      // rejects the frontend origin and every protected call (e.g. creating a
+      // session) returns 403 "Access denied" for real users.
+      "*.vercel.app",
       "*.open-agents.dev",
     ],
   },

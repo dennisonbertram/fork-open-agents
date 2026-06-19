@@ -46,7 +46,12 @@ export async function resolveInferenceProfileModelSelection(params: {
     );
   }
 
-  const directModelId = toAnthropicDirectModelId(selection.id);
+  // Discovered provider models (e.g. ZAI's "glm-4.6") are sent to the
+  // Anthropic-compatible endpoint verbatim. Only app-catalog ids carrying an
+  // "anthropic/" prefix are mapped to Anthropic's direct model ids.
+  const directModelId = selection.id.startsWith("anthropic/")
+    ? toAnthropicDirectModelId(selection.id)
+    : selection.id;
   if (!directModelId) {
     throw new InferenceProfileResolutionError(
       "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",

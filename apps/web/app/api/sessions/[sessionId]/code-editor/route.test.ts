@@ -281,4 +281,29 @@ describe("/api/sessions/[sessionId]/code-editor", () => {
       `${RUNNING_CODE_SERVER_PID}\n`,
     );
   });
+
+  // REGRESSION: POST 500 error body must include the real error detail, not just a generic message.
+  // This catches a revert of the error-surfacing hardening in the catch block.
+  test("regression: POST 500 response body includes the real error detail, not just a generic message", async () => {
+    const { POST } = await routeModulePromise;
+
+    // Make execDetached throw with a specific error message (simulating code-server: not found)
+    execDetachedMock.mockImplementationOnce(async () => {
+      throw new Error("code-server: not found (exit 127)");
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/sessions/session-1/code-editor", {
+        method: "POST",
+      }),
+      createRouteContext(),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(500);
+    // The error body must contain the actual error message, not just the generic prefix.
+    expect(body.error).toContain("code-server: not found (exit 127)");
+    // It should still start with the expected prefix.
+    expect(body.error).toContain("Failed to launch code editor");
+  });
 });
