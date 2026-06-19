@@ -11,6 +11,8 @@
  *   BT-SG-007: RepoLoopsSubGroup renders loop items with correct hrefs
  *   BT-SG-008: RepoLoopsSubGroup "+" links to /loops/new?repoOwner=…&repoName=…
  *   BT-SG-009: RepoLoopsSubGroup shows empty state when no loops
+ *   BT-SG-010: getRepoSubGroupRailActions returns accessible rail links
+ *   BT-SG-011: getRepoSubGroupRailActions hides loops when disabled
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -256,5 +258,40 @@ describe("RepoLoopsSubGroup", () => {
     );
 
     expect(html).toContain("No loops yet");
+  });
+});
+
+describe("getRepoSubGroupRailActions", () => {
+  test("BT-SG-010: returns accessible rail links for Agents and Loops", async () => {
+    const { getRepoSubGroupRailActions } = await modulePromise;
+
+    const actions = getRepoSubGroupRailActions({
+      repoOwner: "myorg",
+      repoName: "myrepo",
+      agents: [makeAgent({ id: "agent-1" })],
+      loops: [makeLoop({ id: "loop-1" }), makeLoop({ id: "loop-2" })],
+      loopsFeatureDisabled: false,
+    });
+
+    expect(actions.map((action) => action.id)).toEqual(["agents", "loops"]);
+    expect(actions[0]?.href).toBe("/repos/myorg/myrepo/agents");
+    expect(actions[0]?.ariaLabel).toContain("myorg/myrepo");
+    expect(actions[0]?.count).toBe(1);
+    expect(actions[1]?.href).toBe("/loops?repoOwner=myorg&repoName=myrepo");
+    expect(actions[1]?.tooltip).toContain("2");
+  });
+
+  test("BT-SG-011: hides Loops rail link when loops are disabled", async () => {
+    const { getRepoSubGroupRailActions } = await modulePromise;
+
+    const actions = getRepoSubGroupRailActions({
+      repoOwner: "myorg",
+      repoName: "myrepo",
+      agents: [],
+      loops: null,
+      loopsFeatureDisabled: true,
+    });
+
+    expect(actions.map((action) => action.id)).toEqual(["agents"]);
   });
 });
