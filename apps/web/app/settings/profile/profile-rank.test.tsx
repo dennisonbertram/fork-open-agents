@@ -24,7 +24,8 @@ describe("ProfileRank", () => {
         loading={false}
       />,
     );
-    expect(html).toContain("#3 in vercel.com");
+    expect(html).toContain("#3 of 10");
+    expect(html).toContain("vercel.com");
     expect(html).toContain('href="/settings/leaderboard"');
   });
 
@@ -36,6 +37,7 @@ describe("ProfileRank", () => {
       />,
     );
     expect(html).not.toContain("#1 in Vercel");
-    expect(html).toContain("#7 in withtally.com");
+    expect(html).toContain("#7 of 12");
+    expect(html).toContain("withtally.com");
   });
 });

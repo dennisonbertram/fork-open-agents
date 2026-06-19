@@ -10,46 +10,25 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLeaderboardRank } from "@/hooks/use-leaderboard-rank";
 import { useSession } from "@/hooks/use-session";
-import { estimateModelUsageCost, type AvailableModel } from "@/lib/models";
+import type { AvailableModel } from "@/lib/models";
 import { ProfileRank } from "./profile-rank";
 import { fetcher } from "@/lib/swr";
 import { formatDateOnly } from "@/lib/usage/date-range";
+import {
+  aggregateUsageByModel,
+  displayModelId,
+  estimateUsageCost,
+  formatUsd,
+  getCostEstimateDetail,
+  mergeUsageDays,
+  sumUsageRows,
+  type DailyUsageRow,
+  type UsageTotals,
+} from "@/lib/usage/summary";
 import type { UsageInsights, UsageRepositoryInsight } from "@/lib/usage/types";
-import { SettingsSectionHeader } from "../_components/section-header";
 import { UsageInsightsSection } from "../usage/usage-insights-section";
 
 // ── Types ──────────────────────────────────────────────────────────────────
-
-interface DailyUsageRow {
-  date: string;
-  source: "web";
-  agentType: "main" | "subagent";
-  provider: string | null;
-  modelId: string | null;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  messageCount: number;
-  toolCallCount: number;
-}
-
-interface MergedDay {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-  messageCount: number;
-  toolCallCount: number;
-}
-
-interface ModelUsage {
-  modelId: string;
-  provider: string;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  messageCount: number;
-  toolCallCount: number;
-}
 
 interface UsageResponse {
   usage: DailyUsageRow[];
@@ -59,155 +38,6 @@ interface UsageResponse {
 
 interface ModelsResponse {
   models: AvailableModel[];
-}
-
-interface CostEstimateSummary {
-  amount: number;
-  pricedTokens: number;
-  totalTokens: number;
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-function sumRows(rows: DailyUsageRow[]) {
-  return rows.reduce(
-    (acc, d) => ({
-      inputTokens: acc.inputTokens + d.inputTokens,
-      cachedInputTokens: acc.cachedInputTokens + d.cachedInputTokens,
-      outputTokens: acc.outputTokens + d.outputTokens,
-      messageCount: acc.messageCount + d.messageCount,
-      toolCallCount: acc.toolCallCount + d.toolCallCount,
-    }),
-    {
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
-      messageCount: 0,
-      toolCallCount: 0,
-    },
-  );
-}
-
-function mergeDays(rows: DailyUsageRow[]): MergedDay[] {
-  const map = new Map<string, MergedDay>();
-  for (const r of rows) {
-    const existing = map.get(r.date);
-    if (existing) {
-      existing.inputTokens += r.inputTokens;
-      existing.outputTokens += r.outputTokens;
-      existing.messageCount += r.messageCount;
-      existing.toolCallCount += r.toolCallCount;
-    } else {
-      map.set(r.date, {
-        date: r.date,
-        inputTokens: r.inputTokens,
-        outputTokens: r.outputTokens,
-        messageCount: r.messageCount,
-        toolCallCount: r.toolCallCount,
-      });
-    }
-  }
-  return [...map.values()];
-}
-
-function aggregateByModel(rows: DailyUsageRow[]): ModelUsage[] {
-  const map = new Map<string, ModelUsage>();
-  for (const r of rows) {
-    if (!r.modelId) continue;
-    const existing = map.get(r.modelId);
-    if (existing) {
-      existing.inputTokens += r.inputTokens;
-      existing.cachedInputTokens += r.cachedInputTokens;
-      existing.outputTokens += r.outputTokens;
-      existing.messageCount += r.messageCount;
-      existing.toolCallCount += r.toolCallCount;
-    } else {
-      map.set(r.modelId, {
-        modelId: r.modelId,
-        provider: r.provider ?? "unknown",
-        inputTokens: r.inputTokens,
-        cachedInputTokens: r.cachedInputTokens,
-        outputTokens: r.outputTokens,
-        messageCount: r.messageCount,
-        toolCallCount: r.toolCallCount,
-      });
-    }
-  }
-  return [...map.values()].toSorted(
-    (a, b) => b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens),
-  );
-}
-
-function displayModelId(modelId: string): string {
-  const slashIndex = modelId.indexOf("/");
-  return slashIndex >= 0 ? modelId.slice(slashIndex + 1) : modelId;
-}
-
-function formatUsd(amount: number): string {
-  if (amount >= 100) {
-    return "$" + amount.toLocaleString("en-US", { maximumFractionDigits: 0 });
-  }
-  if (amount >= 1) {
-    return (
-      "$" +
-      amount.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    );
-  }
-  if (amount >= 0.01) {
-    return (
-      "$" +
-      amount.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    );
-  }
-  return (
-    "$" +
-    amount.toLocaleString("en-US", {
-      minimumFractionDigits: 4,
-      maximumFractionDigits: 4,
-    })
-  );
-}
-
-function estimateUsageCost(
-  modelUsage: ModelUsage[],
-  models: AvailableModel[],
-): CostEstimateSummary | undefined {
-  let amount = 0;
-  let pricedTokens = 0;
-  let totalTokens = 0;
-  const modelsById = new Map(models.map((model) => [model.id, model]));
-
-  for (const usage of modelUsage) {
-    const modelTotalTokens = usage.inputTokens + usage.outputTokens;
-    totalTokens += modelTotalTokens;
-
-    const cost = estimateModelUsageCost(
-      usage,
-      modelsById.get(usage.modelId)?.cost,
-    );
-    if (cost === undefined) {
-      continue;
-    }
-
-    amount += cost;
-    pricedTokens += modelTotalTokens;
-  }
-
-  if (totalTokens <= 0) {
-    return undefined;
-  }
-
-  return {
-    amount,
-    pricedTokens,
-    totalTokens,
-  };
 }
 
 // Gray-scale dot classes: brightest first (top rank), darkest last
@@ -285,7 +115,9 @@ function TopRepos({ repos }: { repos: UsageRepositoryInsight[] }) {
 
   return (
     <div className="space-y-3">
-      <SettingsSectionHeader title="Top repositories" />
+      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+        Top repositories
+      </h3>
       <div className="space-y-2">
         {top3.map((repo) => (
           <div
@@ -325,29 +157,16 @@ function ProfileSidebar({
   totals,
   topRepos,
   estimatedCostValue,
+  estimatedCostDetail,
 }: {
-  totals: {
-    inputTokens: number;
-    outputTokens: number;
-    messageCount: number;
-    toolCallCount: number;
-  } | null;
+  totals: UsageTotals | null;
   topRepos: UsageRepositoryInsight[] | null;
   estimatedCostValue: string;
+  estimatedCostDetail: string;
 }) {
-  const { session, loading } = useSession();
-  const { rank, loading: rankLoading } = useLeaderboardRank();
-
-  if (loading) {
+  if (!totals && !topRepos) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-3">
-          <Skeleton className="h-14 w-14 shrink-0 rounded-full" />
-          <div className="space-y-1.5">
-            <Skeleton className="h-5 w-28" />
-            <Skeleton className="h-4 w-20" />
-          </div>
-        </div>
         <div className="space-y-2">
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-full" />
@@ -357,50 +176,22 @@ function ProfileSidebar({
     );
   }
 
-  if (!session?.user) return null;
-
   const totalTokens = totals ? totals.inputTokens + totals.outputTokens : 0;
 
   return (
     <div className="space-y-5">
-      {/* Avatar + name — left-aligned */}
-      <div className="flex items-center gap-3">
-        {session.user.avatar && (
-          <Image
-            src={session.user.avatar}
-            alt={session.user.username}
-            width={56}
-            height={56}
-            className="shrink-0 rounded-full"
-          />
-        )}
-        <div className="min-w-0">
-          <p className="truncate text-base font-semibold leading-tight">
-            {session.user.name ?? session.user.username}
-          </p>
-          <p className="truncate text-sm text-muted-foreground">
-            @{session.user.username}
-          </p>
-        </div>
-      </div>
-
-      {/* Rank + Email */}
-      <div className="space-y-1">
-        <ProfileRank rank={rank} loading={rankLoading} />
-        {session.user.email && (
-          <p className="truncate text-sm text-muted-foreground">
-            {session.user.email}
-          </p>
-        )}
-      </div>
-
-      {/* Stats */}
       {totals && (
         <div className="space-y-3">
-          <SettingsSectionHeader title="Usage" />
+          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            Usage
+          </h3>
           <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-1 divide-y divide-border/50">
             <StatItem label="Total tokens" value={formatTokens(totalTokens)} />
-            <StatItem label="Estimated cost" value={estimatedCostValue} />
+            <StatItem
+              label="Estimated cost"
+              value={estimatedCostValue}
+              detail={estimatedCostDetail}
+            />
             <StatItem
               label="Messages"
               value={totals.messageCount.toLocaleString()}
@@ -416,6 +207,89 @@ function ProfileSidebar({
       {/* Top repos */}
       {topRepos && <TopRepos repos={topRepos} />}
     </div>
+  );
+}
+
+function IdentityField({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | null | undefined;
+}) {
+  if (!value) {
+    return null;
+  }
+
+  return (
+    <div className="min-w-0 space-y-1">
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      <div className="truncate text-sm text-foreground">{value}</div>
+    </div>
+  );
+}
+
+function ProfileIdentityCard() {
+  const { session, loading } = useSession();
+  const { rank, loading: rankLoading } = useLeaderboardRank();
+
+  if (loading) {
+    return (
+      <section className="rounded-lg border border-border/50 bg-muted/10 p-4">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-16 w-16 shrink-0 rounded-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-36" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+        </div>
+        <div className="mt-5 grid gap-4 sm:grid-cols-3">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-10 w-full" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!session?.user) {
+    return null;
+  }
+
+  return (
+    <section className="rounded-lg border border-border/50 bg-muted/10 p-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-center gap-4">
+          {session.user.avatar ? (
+            <Image
+              src={session.user.avatar}
+              alt={session.user.username}
+              width={64}
+              height={64}
+              className="shrink-0 rounded-full"
+            />
+          ) : null}
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold leading-tight">
+              {session.user.name ?? session.user.username}
+            </p>
+            <p className="truncate text-sm text-muted-foreground">
+              @{session.user.username}
+            </p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Your profile information is synced from Vercel.
+            </p>
+          </div>
+        </div>
+        <ProfileRank rank={rank} loading={rankLoading} />
+      </div>
+
+      <div className="mt-5 grid gap-4 border-border/50 border-t pt-4 sm:grid-cols-3">
+        <IdentityField label="Username" value={session.user.username} />
+        <IdentityField label="Email" value={session.user.email} />
+        <IdentityField label="Name" value={session.user.name} />
+      </div>
+    </section>
   );
 }
 
@@ -442,7 +316,8 @@ export function ProfileContent() {
     isLoading: isFilteredDataLoading,
     error: filteredDataError,
   } = useSWR<UsageResponse>(filteredUsagePath, fetcher);
-  const { data: modelsData } = useSWR<ModelsResponse>("/api/models", fetcher);
+  const { data: modelsData, isLoading: isModelsLoading } =
+    useSWR<ModelsResponse>("/api/models", fetcher);
 
   const data = filteredUsagePath ? filteredData : fullData;
   const isLoading =
@@ -459,15 +334,15 @@ export function ProfileContent() {
   } = useMemo(() => {
     const selectedUsage = data?.usage ?? [];
     const chartUsage = fullData?.usage ?? selectedUsage;
-    const aggregatedModelUsage = aggregateByModel(selectedUsage);
+    const aggregatedModelUsage = aggregateUsageByModel(selectedUsage);
     const main = selectedUsage.filter((r) => r.agentType === "main");
     const subagent = selectedUsage.filter((r) => r.agentType === "subagent");
     return {
-      totals: sumRows(selectedUsage),
-      chartData: mergeDays(chartUsage),
+      totals: sumUsageRows(selectedUsage),
+      chartData: mergeUsageDays(chartUsage),
       modelUsage: aggregatedModelUsage,
-      mainTotals: sumRows(main),
-      subagentTotals: sumRows(subagent),
+      mainTotals: sumUsageRows(main),
+      subagentTotals: sumUsageRows(subagent),
       costEstimate: estimateUsageCost(
         aggregatedModelUsage,
         modelsData?.models ?? [],
@@ -478,11 +353,15 @@ export function ProfileContent() {
   const mainTokens = mainTotals.inputTokens + mainTotals.outputTokens;
   const subagentTokens =
     subagentTotals.inputTokens + subagentTotals.outputTokens;
-  const hasUsage = totals.messageCount > 0;
+  const totalTokens = totals.inputTokens + totals.outputTokens;
+  const hasUsage = totalTokens > 0 || totals.messageCount > 0;
   const estimatedCostValue =
     costEstimate && costEstimate.pricedTokens > 0
       ? formatUsd(costEstimate.amount)
       : "—";
+  const estimatedCostDetail = hasUsage
+    ? getCostEstimateDetail(costEstimate, isModelsLoading)
+    : "No usage yet";
 
   // Build ranked-list items for agent split
   const agentItems = [
@@ -536,7 +415,8 @@ export function ProfileContent() {
   const topRepos = data?.insights?.topRepositories ?? null;
 
   return (
-    <>
+    <div className="space-y-8">
+      <ProfileIdentityCard />
       <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
         {/* Left sidebar */}
         <div className="w-full shrink-0 lg:w-56">
@@ -544,6 +424,7 @@ export function ProfileContent() {
             totals={isLoading ? null : totals}
             topRepos={isLoading ? null : topRepos}
             estimatedCostValue={estimatedCostValue}
+            estimatedCostDetail={estimatedCostDetail}
           />
         </div>
 
@@ -555,6 +436,11 @@ export function ProfileContent() {
               <h2 className="text-sm font-medium text-muted-foreground">
                 Activity
               </h2>
+              {!dateRangeLabel && (
+                <p className="text-xs text-muted-foreground">
+                  last ~9 months of daily activity
+                </p>
+              )}
               {dateRangeLabel && (
                 <Button
                   type="button"
@@ -591,6 +477,11 @@ export function ProfileContent() {
             </p>
           ) : (
             <>
+              {!hasUsage && modelItems.length === 0 ? (
+                <div className="rounded-lg border border-border/50 bg-muted/10 px-4 py-3 text-sm text-muted-foreground">
+                  No agent activity yet — start a chat to see usage.
+                </div>
+              ) : null}
               {(hasUsage ||
                 modelItems.length > 0 ||
                 codeChurnItems.length > 0) && (
@@ -615,6 +506,6 @@ export function ProfileContent() {
           )}
         </div>
       </div>
-    </>
+    </div>
   );
 }
