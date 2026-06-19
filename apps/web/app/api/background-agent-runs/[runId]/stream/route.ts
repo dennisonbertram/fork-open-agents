@@ -63,7 +63,10 @@ export async function GET(req: Request, context: RouteContext) {
     runId,
   });
   if (!run) {
-    return Response.json({ error: "Background run not found" }, { status: 404 });
+    return Response.json(
+      { error: "Background run not found" },
+      { status: 404 },
+    );
   }
 
   const afterSequence = parseLastEventId(req);

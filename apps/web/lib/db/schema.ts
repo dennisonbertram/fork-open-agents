@@ -1235,7 +1235,10 @@ export const backgroundAgentEvents = pgTable(
       table.createdAt,
     ),
     index("background_agent_events_request_idx").on(table.requestId),
-    index("background_agent_events_run_seq_idx").on(table.runId, table.sequence),
+    index("background_agent_events_run_seq_idx").on(
+      table.runId,
+      table.sequence,
+    ),
   ],
 );
 

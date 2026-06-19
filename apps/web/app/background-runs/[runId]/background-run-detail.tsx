@@ -382,7 +382,10 @@ export function BackgroundRunDetail({
             )}
             {/* ARIA live region for stream connection status */}
             {streamStatusLabel && (
-              <div aria-live="polite" className="mt-2 text-xs text-muted-foreground">
+              <div
+                aria-live="polite"
+                className="mt-2 text-xs text-muted-foreground"
+              >
                 {streamStatusLabel}
               </div>
             )}
