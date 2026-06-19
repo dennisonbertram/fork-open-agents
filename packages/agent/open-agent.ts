@@ -144,6 +144,7 @@ const tools = {
   web_fetch: webFetchTool,
 } satisfies ToolSet;
 
+// oxlint-disable-next-line no-unused-exports
 export const OPEN_AGENT_TOOL_NAMES = Object.keys(tools) as Array<
   keyof typeof tools
 >;
@@ -163,6 +164,7 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
  * or delegates to a sandbox subagent (bash, read, write, edit, grep,
  * glob, task, setup_managed_runtime_profile).
  */
+// oxlint-disable-next-line no-unused-exports
 export const CHAT_ONLY_TOOL_NAMES = [
   "todo_write",
   "ask_user_question",
