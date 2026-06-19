@@ -1,10 +1,16 @@
 import { ExternalLink } from "lucide-react";
 import Link from "next/link";
 import type {
-  PrSummary,
-  IssueSummary,
   ActionsSummary,
+  IssueSummary,
+  PrSummary,
 } from "@/lib/github/repo-dashboard";
+import { CollapsibleDashboardCard } from "./collapsible-dashboard-card";
+import {
+  actionsSummaryStat,
+  issuesSummaryStat,
+  prSummaryStat,
+} from "./dashboard-card-stats";
 
 // Re-export types so tests can import them directly from this module
 export type {
@@ -47,6 +53,27 @@ function errorMessage(errorKind: string): string {
   }
 }
 
+function ViewOnGitHubLink({
+  href,
+  ariaLabel,
+}: {
+  href: string;
+  ariaLabel: string;
+}) {
+  return (
+    <Link
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
+      aria-label={ariaLabel}
+    >
+      View on GitHub
+      <ExternalLink className="h-3 w-3" />
+    </Link>
+  );
+}
+
 // ---- Pull Requests window -------------------------------------------------
 
 type PullRequestsWindowProps = {
@@ -61,24 +88,18 @@ export function PullRequestsWindow({
   repo,
 }: PullRequestsWindowProps) {
   return (
-    <section
-      aria-label="Pull Requests window"
-      className="rounded-md border border-border"
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Pull Requests</h2>
-        <Link
+    <CollapsibleDashboardCard
+      cardKey="pull-requests"
+      title="Pull Requests"
+      ariaLabel="Pull Requests window"
+      summary={prSummaryStat(summary)}
+      action={
+        <ViewOnGitHubLink
           href={`https://github.com/${owner}/${repo}/pulls`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-          aria-label="Open pull requests on GitHub"
-        >
-          View on GitHub
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
-
+          ariaLabel="Open pull requests on GitHub"
+        />
+      }
+    >
       {!summary.ok ? (
         <div className="p-4 text-sm text-muted-foreground">
           {errorMessage(summary.errorKind)}
@@ -129,7 +150,7 @@ export function PullRequestsWindow({
           ))}
         </div>
       )}
-    </section>
+    </CollapsibleDashboardCard>
   );
 }
 
@@ -143,24 +164,18 @@ type IssuesWindowProps = {
 
 export function IssuesWindow({ summary, owner, repo }: IssuesWindowProps) {
   return (
-    <section
-      aria-label="Issues window"
-      className="rounded-md border border-border"
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Issues</h2>
-        <Link
+    <CollapsibleDashboardCard
+      cardKey="issues"
+      title="Issues"
+      ariaLabel="Issues window"
+      summary={issuesSummaryStat(summary)}
+      action={
+        <ViewOnGitHubLink
           href={`https://github.com/${owner}/${repo}/issues`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-          aria-label="Open issues on GitHub"
-        >
-          View on GitHub
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
-
+          ariaLabel="Open issues on GitHub"
+        />
+      }
+    >
       {!summary.ok ? (
         <div className="p-4 text-sm text-muted-foreground">
           {errorMessage(summary.errorKind)}
@@ -218,7 +233,7 @@ export function IssuesWindow({ summary, owner, repo }: IssuesWindowProps) {
           </div>
         </>
       )}
-    </section>
+    </CollapsibleDashboardCard>
   );
 }
 
@@ -243,24 +258,18 @@ function latestStatusLabel(status: "passing" | "failing" | "pending"): string {
 
 export function ActionsWindow({ summary, owner, repo }: ActionsWindowProps) {
   return (
-    <section
-      aria-label="Actions window"
-      className="rounded-md border border-border"
-    >
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-medium">Actions</h2>
-        <Link
+    <CollapsibleDashboardCard
+      cardKey="actions"
+      title="Actions"
+      ariaLabel="Actions window"
+      summary={actionsSummaryStat(summary)}
+      action={
+        <ViewOnGitHubLink
           href={`https://github.com/${owner}/${repo}/actions`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-          aria-label="Open actions on GitHub"
-        >
-          View on GitHub
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
-
+          ariaLabel="Open actions on GitHub"
+        />
+      }
+    >
       {!summary.ok ? (
         <div className="p-4 text-sm text-muted-foreground">
           {errorMessage(summary.errorKind)}
@@ -317,6 +326,6 @@ export function ActionsWindow({ summary, owner, repo }: ActionsWindowProps) {
           </div>
         </>
       )}
-    </section>
+    </CollapsibleDashboardCard>
   );
 }

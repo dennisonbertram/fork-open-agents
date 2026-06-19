@@ -10,6 +10,7 @@ import {
 } from "./models";
 
 import type { SkillMetadata } from "./skills/types";
+import type { SubagentRoster } from "./subagents/roster";
 import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
@@ -25,6 +26,11 @@ import {
   webFetchTool,
   writeFileTool,
 } from "./tools";
+import {
+  getProposeTool,
+  PROPOSE_TOOL_NAME,
+  type ProposeToolAction,
+} from "./tools/propose-tool";
 
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
@@ -64,6 +70,8 @@ const callOptionsSchema = z.object({
   customInstructions: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
   runtimeMode: z.enum(OPEN_AGENT_RUNTIME_MODES).optional(),
+  /** When true, the session has no sandbox VM. Tool policy will exclude all sandbox-dependent tools. */
+  sandboxFree: z.boolean().optional(),
   managedRuntime: z
     .object({
       profileId: z.string().optional(),
@@ -73,6 +81,36 @@ const callOptionsSchema = z.object({
       sandboxName: z.string().optional(),
     })
     .optional(),
+  /**
+   * Per-role subagent configuration resolved from agents rows.
+   * Absent = synthetic fallback (today's subagent behavior unchanged).
+   */
+  subagentRoster: z.custom<SubagentRoster>().optional(),
+  /**
+   * Phase 6 (#242): when true, the propose_composio_tool is included in the toolset.
+   * Absent or false = tool is excluded (off by default, per design doc).
+   * The web layer resolves this from the agent's toolAuthoringEnabled flag.
+   */
+  toolAuthoringEnabled: z.boolean().optional(),
+  /**
+   * Set by the web layer when typed GitHub tools were injected for this step;
+   * steers the prompt to prefer them over shell gh/curl for issue/PR metadata ops.
+   * Absent or false = no steer added (zero behavior change when tools are off).
+   */
+  githubToolsEnabled: z.boolean().optional(),
+  /**
+   * Set by the web layer when authenticated GitHub tools (native `github_*` or
+   * Composio `GITHUB_*`) are in this step's toolset. Steers the prompt and the
+   * web_fetch guardrail away from unauthenticated GitHub fetches. Absent or
+   * false = no steer and no guardrail (zero behavior change when off).
+   */
+  githubToolAvailable: z.boolean().optional(),
+  /**
+   * Phase 6 (#242): web-provided action to record a proposed tool entry.
+   * Injected into experimental_context so the tool has no direct DB dependency.
+   * Only present when toolAuthoringEnabled=true.
+   */
+  proposeToolAction: z.custom<ProposeToolAction>().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -119,6 +157,19 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   "web_fetch",
 ] as const satisfies ReadonlyArray<keyof typeof tools>;
 
+/**
+ * Tool names that are safe to expose when there is no sandbox VM.
+ * Excludes every tool that touches the filesystem, spawns a shell,
+ * or delegates to a sandbox subagent (bash, read, write, edit, grep,
+ * glob, task, setup_managed_runtime_profile).
+ */
+export const CHAT_ONLY_TOOL_NAMES = [
+  "todo_write",
+  "ask_user_question",
+  "skill",
+  "web_fetch",
+] as const satisfies ReadonlyArray<keyof typeof tools>;
+
 function pickTools(
   sourceTools: ToolSet,
   allowedToolNames: ReadonlyArray<string>,
@@ -145,17 +196,75 @@ export function getOpenAgentToolsForRuntimeMode(
   return tools;
 }
 
+/**
+ * Returns the subset of tools that are safe without a sandbox VM.
+ * Excludes file/shell/task tools that require an active sandbox.
+ */
+export function getChatOnlyTools(): ToolSet {
+  return pickTools(tools, CHAT_ONLY_TOOL_NAMES);
+}
+
 export function getRuntimeModeToolPolicy(
   runtimeMode: OpenAgentRuntimeMode = "classic",
   requestedTools?: ToolSet,
+  policyOptions?: { sandboxFree?: boolean; toolAuthoringEnabled?: boolean },
 ): ToolSet {
-  const mergedTools = requestedTools ? { ...tools, ...requestedTools } : tools;
+  // Sandbox-free mode: keep only chat-safe tools plus any caller-provided
+  // non-sandbox tools (e.g. Composio tools that run via their own API).
+  // NOTE: the authoring tool is NOT included in sandbox-free mode even when
+  // toolAuthoringEnabled=true — it is a config-write action, not a chat tool.
+  if (policyOptions?.sandboxFree) {
+    const mergedTools = requestedTools
+      ? { ...tools, ...requestedTools }
+      : tools;
+    // Start from the chat-only base, then append caller-provided tools that
+    // are not in the base tool set (those are external tools like Composio).
+    const chatBase = pickTools(mergedTools, CHAT_ONLY_TOOL_NAMES);
+    if (requestedTools) {
+      for (const [name, tool] of Object.entries(requestedTools)) {
+        if (!(name in tools)) {
+          chatBase[name] = tool;
+        }
+      }
+    }
+    return chatBase;
+  }
+
+  // Always create a new object so we can safely add authoring tool without
+  // mutating the module-level `tools` constant (important for test isolation).
+  const mergedTools: ToolSet = requestedTools
+    ? { ...tools, ...requestedTools }
+    : { ...tools };
+
+  // Phase 6 (#242): conditionally add the authoring tool ONLY when enabled.
+  // This is gated here rather than in the base tool list so that the default
+  // toolset is unaffected and existing agents see no behavior change.
+  const proposeTool = getProposeTool({
+    toolAuthoringEnabled: policyOptions?.toolAuthoringEnabled,
+  });
+  if (proposeTool) {
+    mergedTools[PROPOSE_TOOL_NAME] = proposeTool;
+  }
 
   if (runtimeMode !== "managed_runtime") {
     return mergedTools;
   }
 
-  return pickTools(mergedTools, MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES);
+  // Coordinator mode: allow native coordinator tools plus any injected external
+  // tools (Composio, GitHub) that are not in the native tool registry — they
+  // run via their own APIs and don't require a sandbox.
+  const coordinatorTools = pickTools(
+    mergedTools,
+    MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  );
+  if (requestedTools) {
+    for (const [name, tool] of Object.entries(requestedTools)) {
+      if (!(name in tools)) {
+        coordinatorTools[name] = tool;
+      }
+    }
+  }
+  return coordinatorTools;
 }
 
 export const openAgent = new ToolLoopAgent({
@@ -199,8 +308,15 @@ export const openAgent = new ToolLoopAgent({
     const sandbox = options.sandbox;
     const skills = options.skills ?? [];
     const runtimeMode = options.runtimeMode ?? "classic";
+    const sandboxFree = options.sandboxFree ?? false;
     const managedRuntime =
       runtimeMode === "managed_runtime" ? options.managedRuntime : undefined;
+    const subagentRoster = options.subagentRoster;
+    // Phase 6 (#242): optional tool authoring gate + web-injected action
+    const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
+    const proposeToolAction = options.proposeToolAction;
+    const githubToolsEnabled = options.githubToolsEnabled ?? false;
+    const githubToolAvailable = options.githubToolAvailable ?? false;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -209,17 +325,21 @@ export const openAgent = new ToolLoopAgent({
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,
+      inferenceProfileName: mainSelection.attribution?.inferenceProfileName,
       runtimeMode,
+      sandboxFree,
+      githubToolsEnabled,
+      githubToolAvailable,
     });
 
     return {
       ...settings,
       model: callModel,
       tools: addCacheControl({
-        tools: getRuntimeModeToolPolicy(
-          runtimeMode,
-          settings.tools,
-        ) as typeof tools,
+        tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
+          sandboxFree,
+          toolAuthoringEnabled,
+        }) as typeof tools,
         model: callModel,
       }),
       instructions,
@@ -230,6 +350,12 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         runtimeMode,
         managedRuntime,
+        githubToolAvailable,
+        ...(subagentRoster ? { subagentRoster } : {}),
+        // Phase 6: only inject when enabled; undefined = no authoring in this session
+        ...(toolAuthoringEnabled && proposeToolAction
+          ? { proposeToolAction }
+          : {}),
       },
     };
   },

@@ -74,12 +74,14 @@ function makeAgent(
     permissions: {},
     outputMode: "none",
     checkCommand: null,
+    composioToolkitSlugs: [],
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [
       {
         id: "trigger-1",
         agentId: "agent-1",
+        loopId: null,
         userId: "user-1",
         name: "On deployment",
         kind: "github.deployment_status",
@@ -272,6 +274,7 @@ describe("AgentCard — status matrix", () => {
         {
           id: "trigger-sched",
           agentId: "agent-1",
+          loopId: null,
           userId: "user-1",
           name: "Nightly",
           kind: "schedule.cron",
@@ -309,6 +312,18 @@ describe("AgentCard — status matrix", () => {
 
     // Should link to the agent detail page
     expect(html).toContain("/repos/acme/widgets/agents/agent-42");
+  });
+
+  test("BT-WI6: Edit button href ends with /edit", async () => {
+    const { AgentCard } = await cardModulePromise;
+    const agent = makeAgent({ id: "agent-42" });
+
+    const html = renderToStaticMarkup(
+      <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
+    );
+
+    // Edit button must link to the edit page, not the detail page
+    expect(html).toContain("/repos/acme/widgets/agents/agent-42/edit");
   });
 
   test("BT-167-003: run with resultSummary shows headline", async () => {

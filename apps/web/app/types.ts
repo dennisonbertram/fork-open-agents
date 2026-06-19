@@ -82,7 +82,9 @@ export type WebAgentVerifiedBuildData = {
 };
 
 export type WebAgentRuntimeProofData = {
-  status: "completed" | "failed" | "blocked" | "incomplete";
+  // "no_activity" = a conversational turn where the coordinator answered without
+  // running tools or delegating to a worker — nothing to prove (not a failure).
+  status: "completed" | "failed" | "blocked" | "incomplete" | "no_activity";
   runtimeMode: "managed_runtime";
   workflowRunId: string;
   sandboxName: string | null;
@@ -118,6 +120,11 @@ export type WebAgentRuntimeProofData = {
     toolTypes: string[];
     toolLabels: string[];
     warning: string | null;
+  };
+  externalToolUse: {
+    observed: boolean;
+    count: number;
+    toolNames: string[];
   };
   evidence: string[];
   serviceEvidence: {

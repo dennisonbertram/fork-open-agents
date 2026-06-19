@@ -8,8 +8,10 @@ import type { DateRange } from "react-day-picker";
 import { ContributionChart } from "@/components/contribution-chart";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useLeaderboardRank } from "@/hooks/use-leaderboard-rank";
 import { useSession } from "@/hooks/use-session";
 import { estimateModelUsageCost, type AvailableModel } from "@/lib/models";
+import { ProfileRank } from "./profile-rank";
 import { fetcher } from "@/lib/swr";
 import { formatDateOnly } from "@/lib/usage/date-range";
 import type { UsageInsights, UsageRepositoryInsight } from "@/lib/usage/types";
@@ -335,6 +337,7 @@ function ProfileSidebar({
   estimatedCostValue: string;
 }) {
   const { session, loading } = useSession();
+  const { rank, loading: rankLoading } = useLeaderboardRank();
 
   if (loading) {
     return (
@@ -384,7 +387,7 @@ function ProfileSidebar({
 
       {/* Rank + Email */}
       <div className="space-y-1">
-        <p className="text-sm font-medium text-foreground">#1 in Vercel</p>
+        <ProfileRank rank={rank} loading={rankLoading} />
         {session.user.email && (
           <p className="truncate text-sm text-muted-foreground">
             {session.user.email}
