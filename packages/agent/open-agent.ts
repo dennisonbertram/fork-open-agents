@@ -31,6 +31,11 @@ import {
   PROPOSE_TOOL_NAME,
   type ProposeToolAction,
 } from "./tools/propose-tool";
+import {
+  getManageBackgroundAgentTool,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
+  type ManageBackgroundAgentAction,
+} from "./tools/manage-background-agent";
 
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
@@ -111,6 +116,17 @@ const callOptionsSchema = z.object({
    * Only present when toolAuthoringEnabled=true.
    */
   proposeToolAction: z.custom<ProposeToolAction>().optional(),
+  /**
+   * Enables the policy-gated manage_background_agent tool.
+   */
+  manageAgentEnabled: z.boolean().optional(),
+  /**
+   * Web-provided action that persists an approved background-agent draft.
+   * Only present when manageAgentEnabled=true.
+   */
+  manageBackgroundAgentAction: z
+    .custom<ManageBackgroundAgentAction>()
+    .optional(),
   /**
    * True for unattended runs (background agents, agent-loop steps) where no
    * human can approve tool calls. Threaded into experimental_context so tools
@@ -210,6 +226,7 @@ function pickTools(
 const BUILTIN_TOOL_NAME_SET: ReadonlySet<string> = new Set<string>([
   ...OPEN_AGENT_TOOL_NAMES,
   PROPOSE_TOOL_NAME,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
 ]);
 
 /**
@@ -258,6 +275,7 @@ export function getRuntimeModeToolPolicy(
   policyOptions?: {
     sandboxFree?: boolean;
     toolAuthoringEnabled?: boolean;
+    manageAgentEnabled?: boolean;
     allowedBuiltinToolNames?: ReadonlyArray<string> | null;
   },
 ): ToolSet {

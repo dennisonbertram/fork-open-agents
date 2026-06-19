@@ -259,8 +259,8 @@ function useHasMounted() {
  */
 function useStreamdownPlugins() {
   const [plugins, setPlugins] = useState<
-    import("@/lib/streamdown-config").streamdownPlugins | null
-  >(null);
+    typeof import("@/lib/streamdown-config").streamdownPlugins | undefined
+  >(undefined);
   useEffect(() => {
     let cancelled = false;
     import("@/lib/streamdown-config").then((mod) => {

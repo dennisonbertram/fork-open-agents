@@ -55,32 +55,28 @@ export function AssistantFileLink({
     );
   }
 
-  // Use a <div role="button"> instead of <button> to avoid nesting violations.
+  // Use an anchor instead of <button> to avoid nesting violations.
   // When agent output includes a linked image (![alt](data-url)[file-link]),
   // Streamdown renders an image download <button> inside the image wrapper.  If
   // the outer element is also a <button> (from this workspace-file-link), the
   // browser logs "In HTML, <button> cannot be a descendant of <button>" — a
   // React hydration error that degrades performance and breaks accessibility.
   return (
-    <div
-      role="button"
-      tabIndex={0}
+    <a
+      href={href}
       className={cn(
         fileChipClassName,
         "cursor-pointer transition-colors hover:border-foreground/20 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
         className,
       )}
-      onClick={() => onOpenFile(workspaceFilePath)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onOpenFile(workspaceFilePath);
-        }
+      onClick={(event) => {
+        event.preventDefault();
+        onOpenFile(workspaceFilePath);
       }}
       title={`Open ${workspaceFilePath}`}
     >
       <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       {chipContent}
-    </div>
+    </a>
   );
 }

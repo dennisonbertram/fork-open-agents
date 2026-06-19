@@ -117,14 +117,12 @@ export async function GET(req: Request): Promise<Response> {
     // exec call per reconnect.
     const isNamedReconnect = Boolean(state.sandboxName);
     if (!isNamedReconnect) {
-      const probe = await sandbox.exec(
-        "pwd",
-        sandbox.workingDirectory,
-        15_000,
-      );
+      const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
       if (!probe.success) {
         const probeError =
-          probe.stderr?.trim() || probe.stdout?.trim() || "sandbox probe failed";
+          probe.stderr?.trim() ||
+          probe.stdout?.trim() ||
+          "sandbox probe failed";
         if (isSandboxUnavailableError(probeError)) {
           throw new Error(probeError);
         }

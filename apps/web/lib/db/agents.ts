@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "./client";
 import { type Agent, agents } from "./schema";
@@ -116,7 +116,8 @@ export async function upsertUserDefaultAgent(
     .insert(agents)
     .values(row)
     .onConflictDoUpdate({
-      target: [agents.userId, agents.role, agents.scope, agents.sessionId, agents.repoOwner, agents.repoName],
+      target: [agents.userId, agents.role, agents.scope],
+      targetWhere: sql`${agents.scope} = 'user_default'`,
       set: {
         modelId: row.modelId,
         composioToolkitSlugs: row.composioToolkitSlugs,

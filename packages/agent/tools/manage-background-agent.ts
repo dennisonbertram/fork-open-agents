@@ -56,20 +56,34 @@ const backgroundAgentDraftSchema = z.object({
           pull_requests: z.enum(["read", "write"]).default("write"),
           issues: z.enum(["read", "write"]).default("read"),
         })
-        .default({}),
+        .default({
+          contents: "write",
+          pull_requests: "write",
+          issues: "read",
+        }),
     })
-    .default({}),
+    .default({
+      github: {
+        contents: "write",
+        pull_requests: "write",
+        issues: "read",
+      },
+    }),
   triggers: z.array(triggerSchema).min(1).max(10),
 });
 
 export const manageBackgroundAgentInputSchema = z.object({
   action: z
     .enum(["create", "update"])
-    .describe("Whether to create a new background agent or update an existing one."),
+    .describe(
+      "Whether to create a new background agent or update an existing one.",
+    ),
   agentId: z
     .string()
     .optional()
-    .describe("The ID of an existing background agent to update (required when action is 'update')."),
+    .describe(
+      "The ID of an existing background agent to update (required when action is 'update').",
+    ),
   draft: backgroundAgentDraftSchema.describe(
     "The background agent configuration to create or apply as an update.",
   ),
@@ -139,7 +153,7 @@ export const manageBackgroundAgentTool = tool({
     if (!output) {
       return {
         type: "text" as const,
-        text: "The background agent review was cancelled or timed out.",
+        value: "The background agent review was cancelled or timed out.",
       };
     }
 
@@ -147,19 +161,19 @@ export const manageBackgroundAgentTool = tool({
       case "approved":
         return {
           type: "text" as const,
-          text:
+          value:
             `Background agent ${output.createdAgentId ? `(ID: ${output.createdAgentId}) ` : ""}was approved and saved. ` +
             (output.notes ? `Notes: ${output.notes}` : ""),
         };
       case "revise":
         return {
           type: "text" as const,
-          text: `The user requested revisions to the background agent draft. Instructions: ${output.instructions}`,
+          value: `The user requested revisions to the background agent draft. Instructions: ${output.instructions}`,
         };
       case "discarded":
         return {
           type: "text" as const,
-          text: `The background agent draft was discarded. ${output.reason ? `Reason: ${output.reason}` : ""}`,
+          value: `The background agent draft was discarded. ${output.reason ? `Reason: ${output.reason}` : ""}`,
         };
     }
   },

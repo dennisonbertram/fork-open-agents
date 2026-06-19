@@ -115,7 +115,7 @@ export const ToolCall = memo(function ToolCall({
         />
       );
   }
-}
+});
 
 function DefaultRenderer({
   part,
@@ -146,7 +146,7 @@ function DefaultRenderer({
       onDeny={onDeny}
     />
   );
-});
+}
 
 export { ToolLayout } from "./tool-layout";
 export type { ToolRenderState } from "@/app/lib/render-tool";
