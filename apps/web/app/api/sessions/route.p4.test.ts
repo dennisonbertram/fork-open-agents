@@ -45,6 +45,10 @@ mock.module("@/lib/botid", () => ({
   checkBotProtection: async () => ({ isBot: false }),
 }));
 
+mock.module("@/lib/sandbox/prewarm-kick", () => ({
+  kickSandboxPrewarmWorkflow: () => undefined,
+}));
+
 mock.module("@/lib/rate-limit", () => ({
   checkRateLimit: async () => null,
   rateLimitKey: (parts: Array<number | string | null | undefined>) =>

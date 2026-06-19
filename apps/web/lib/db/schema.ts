@@ -288,6 +288,9 @@ export const sessions = pgTable(
     vercelTeamSlug: text("vercel_team_slug"),
     // Whether this session uses a new auto-generated branch
     isNewBranch: boolean("is_new_branch").default(false).notNull(),
+    // When true, clone the full git history into the sandbox instead of a
+    // shallow (depth 1) clone. Default shallow for fast cold starts.
+    fullClone: boolean("full_clone").default(false).notNull(),
     // Optional per-session override for auto commit + push behavior.
     // null means "use the user's default preference".
     autoCommitPushOverride: boolean("auto_commit_push_override"),
@@ -329,6 +332,7 @@ export const sessions = pgTable(
     sandboxExpiresAt: timestamp("sandbox_expires_at"),
     hibernateAfter: timestamp("hibernate_after"),
     lifecycleRunId: text("lifecycle_run_id"),
+    sandboxPrewarmRunId: text("sandbox_prewarm_run_id"),
     lifecycleError: text("lifecycle_error"),
     // Git stats (for display in session list)
     linesAdded: integer("lines_added").default(0),

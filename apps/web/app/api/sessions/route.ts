@@ -7,6 +7,7 @@ import {
   getSessionsWithUnreadByUserId,
   getUsedSessionTitles,
 } from "@/lib/db/sessions";
+import { kickSandboxPrewarmWorkflow } from "@/lib/sandbox/prewarm-kick";
 import {
   getVercelProjectLinkByRepo,
   upsertVercelProjectLink,
@@ -39,6 +40,7 @@ interface CreateSessionRequest {
   branch?: string;
   cloneUrl?: string;
   isNewBranch?: boolean;
+  fullClone?: boolean;
   sandboxType?: "vercel";
   managedRuntimeProfileId?: string;
   autoCommitPush?: boolean;
@@ -288,6 +290,7 @@ export async function POST(req: Request) {
     branch,
     cloneUrl,
     isNewBranch: bodyIsNewBranch,
+    fullClone,
     sandboxType = "vercel",
     managedRuntimeProfileId,
     autoCommitPush,
@@ -421,6 +424,8 @@ export async function POST(req: Request) {
         vercelTeamId: resolvedVercelProject?.teamId ?? null,
         vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
         isNewBranch: effectiveIsNewBranch,
+        // Full clone only applies to repo-backed sessions.
+        fullClone: hasRepo ? (fullClone ?? false) : false,
         autoCommitPushOverride: effectiveAutoCommitPush,
         autoCreatePrOverride: effectiveAutoCommitPush
           ? effectiveAutoCreatePr
@@ -448,6 +453,13 @@ export async function POST(req: Request) {
         },
       },
     });
+
+    if (hasRepo) {
+      kickSandboxPrewarmWorkflow({
+        sessionId: result.session.id,
+        userId: session.user.id,
+      });
+    }
 
     return Response.json(result);
   } catch (error) {

@@ -1,8 +1,16 @@
 import { getWorkflowMetadata } from "workflow";
-import { runAgentLoopStep } from "@/lib/agent-loops/chain";
+
+async function runAgentLoopStepStep(input: {
+  stepRunId: string;
+  workflowRunId: string;
+}) {
+  "use step";
+  const { runAgentLoopStep } = await import("@/lib/agent-loops/chain");
+  await runAgentLoopStep(input);
+}
 
 export async function runAgentLoopStepWorkflow(input: { stepRunId: string }) {
   "use workflow";
   const { workflowRunId } = getWorkflowMetadata();
-  await runAgentLoopStep({ stepRunId: input.stepRunId, workflowRunId });
+  await runAgentLoopStepStep({ stepRunId: input.stepRunId, workflowRunId });
 }

@@ -528,7 +528,11 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       snapshotExpiration,
       hooks,
       skipGitWorkspaceBootstrap = false,
+      cloneDepth,
     } = config;
+
+    // Default to a shallow clone; `cloneDepth: 0` opts into full history.
+    const effectiveCloneDepth = cloneDepth ?? SHALLOW_CLONE_DEPTH;
 
     // Clamp proactive timeout to stay under the SDK's hard max when buffer is applied.
     const effectiveTimeout = Math.min(timeout, MAX_PROACTIVE_TIMEOUT_MS);
@@ -569,7 +573,8 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         source: {
           type: "git",
           url: source.url,
-          depth: SHALLOW_CLONE_DEPTH,
+          // SDK requires depth >= 1; omit entirely for a full clone.
+          ...(effectiveCloneDepth > 0 ? { depth: effectiveCloneDepth } : {}),
           ...(source.branch && { revision: source.branch }),
         },
       });
@@ -595,6 +600,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         ? {
             clone: {
               url: source.url,
+              depth: effectiveCloneDepth,
               ...(source.branch ? { branch: source.branch } : {}),
             },
           }
