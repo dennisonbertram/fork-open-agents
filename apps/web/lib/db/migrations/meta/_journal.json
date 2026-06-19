@@ -498,6 +498,13 @@
       "when": 1781876545854,
       "tag": "0070_futuristic_inhumans",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1781880160813,
+      "tag": "0071_mute_zombie",
+      "breakpoints": true
     }
   ]
 }
