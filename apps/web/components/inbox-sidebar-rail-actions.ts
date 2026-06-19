@@ -1,17 +1,13 @@
 export type SidebarToggleAction = {
-  id: "collapse" | "open";
+  id: "collapse";
   ariaLabel: string;
   tooltip: string;
 };
 
 /**
- * Returns the metadata for the two sidebar toggle affordances used by the
- * sessions sidebar (collapsible="offcanvas").
+ * Returns the metadata for the expanded sidebar toggle affordance.
  *
  * - "collapse": button shown in the sidebar header when the panel is expanded.
- * - "open": button shown in the content area when the panel is collapsed
- *   (offcanvas hides the sidebar entirely, so the only way to reopen it is
- *   this content-area control or the ⌘/Ctrl-B keyboard shortcut).
  *
  * The caller is responsible for wiring click handlers; this helper owns
  * identity, labels, and order.
@@ -23,27 +19,15 @@ export function getSidebarToggleActions(): SidebarToggleAction[] {
       ariaLabel: "Collapse panel",
       tooltip: "Collapse panel",
     },
-    {
-      id: "open",
-      ariaLabel: "Open panel",
-      tooltip: "Open panel",
-    },
   ];
 }
 
-// ---------------------------------------------------------------------------
-// Legacy export — kept for backward-compat while callers migrate.
-// The icon-rail (collapsible="icon") was replaced by offcanvas collapse.
-// ---------------------------------------------------------------------------
-
-/** @deprecated Use getSidebarToggleActions instead. */
 export type CollapsedRailAction = {
-  id: "expand" | "new-session" | "quick-chat";
+  id: "expand" | "new-session" | "quick-chat" | "settings";
   ariaLabel: string;
   tooltip: string;
 };
 
-/** @deprecated The icon rail no longer exists; use getSidebarToggleActions. */
 export function getCollapsedRailActions(): CollapsedRailAction[] {
   return [
     {
@@ -60,6 +44,69 @@ export function getCollapsedRailActions(): CollapsedRailAction[] {
       id: "quick-chat",
       ariaLabel: "Quick chat (no repo)",
       tooltip: "Quick chat (no repo)",
+    },
+    {
+      id: "settings",
+      ariaLabel: "Open settings",
+      tooltip: "Settings",
+    },
+  ];
+}
+
+export type CollapsedRepoRailAction = {
+  id:
+    | "repo-dashboard"
+    | "repo-branch"
+    | "repo-settings"
+    | "repo-new-session"
+    | "repo-agents"
+    | "repo-loops";
+  ariaLabel: string;
+  tooltip: string;
+  href?: string;
+};
+
+export function getCollapsedRepoRailActions(
+  repoOwner: string,
+  repoName: string,
+): CollapsedRepoRailAction[] {
+  const repoLabel = `${repoOwner}/${repoName}`;
+  const encodedOwner = encodeURIComponent(repoOwner);
+  const encodedName = encodeURIComponent(repoName);
+
+  return [
+    {
+      id: "repo-dashboard",
+      ariaLabel: `Open repo dashboard for ${repoLabel}`,
+      tooltip: "Repo dashboard",
+      href: `/repos/${encodedOwner}/${encodedName}`,
+    },
+    {
+      id: "repo-branch",
+      ariaLabel: `Create session from branch for ${repoLabel}`,
+      tooltip: "Create from branch",
+    },
+    {
+      id: "repo-settings",
+      ariaLabel: `Open workspace settings for ${repoLabel}`,
+      tooltip: "Workspace settings",
+    },
+    {
+      id: "repo-new-session",
+      ariaLabel: `Create session for ${repoLabel}`,
+      tooltip: "Create session",
+    },
+    {
+      id: "repo-agents",
+      ariaLabel: `Open agents for ${repoLabel}`,
+      tooltip: "Agents",
+      href: `/repos/${encodedOwner}/${encodedName}/agents`,
+    },
+    {
+      id: "repo-loops",
+      ariaLabel: `Open loops for ${repoLabel}`,
+      tooltip: "Loops",
+      href: `/loops?repoOwner=${encodedOwner}&repoName=${encodedName}`,
     },
   ];
 }
