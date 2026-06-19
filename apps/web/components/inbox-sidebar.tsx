@@ -2,6 +2,7 @@
 
 import {
   Archive,
+  Bot,
   ChevronDown,
   CircleDashed,
   FolderGit2,
@@ -13,8 +14,10 @@ import {
   Loader2,
   Monitor,
   PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
+  RefreshCw,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,8 +26,16 @@ import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
+import {
+  getCollapsedRailActions,
+  getCollapsedRepoRailActions,
+} from "@/components/inbox-sidebar-rail-actions";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
-import { RepoSubGroups } from "@/components/inbox-sidebar-repo-subgroups";
+import {
+  filterAgentsByRepo,
+  getRepoSubGroupRailActions,
+  RepoSubGroups,
+} from "@/components/inbox-sidebar-repo-subgroups";
 import {
   type SidebarRepoRef,
   buildRepoGroups,
@@ -649,7 +660,7 @@ export function InboxSidebar({
   const { session } = useSession();
   const { rank: leaderboardRank, loading: leaderboardLoading } =
     useLeaderboardRank();
-  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { isMobile, setOpenMobile, state, toggleSidebar } = useSidebar();
   const { openWorkspaceSettings } = useWorkspaceSettings();
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionWithUnread[]>(
@@ -753,7 +764,8 @@ export function InboxSidebar({
   // Repos with agents or loops keep their sidebar group even after every
   // session/branch is gone, so the repo's tooling doesn't silently disappear.
   const { agents: allAgents } = useAllAgents();
-  const { loops: allLoops } = useAllLoops();
+  const { loops: allLoops, featureDisabled: loopsFeatureDisabled } =
+    useAllLoops();
   const anchorRepos = useMemo<SidebarRepoRef[]>(
     () => [
       ...(allAgents ?? []).map((a) => ({
@@ -784,6 +796,12 @@ export function InboxSidebar({
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<
     Record<string, boolean>
   >({});
+  const showCollapsedRail = !isMobile && state === "collapsed";
+  const railActions = useMemo(() => getCollapsedRailActions(), []);
+  const railActionById = useMemo(
+    () => new Map(railActions.map((action) => [action.id, action])),
+    [railActions],
+  );
 
   useEffect(() => {
     setCollapsedGroupIds((current) => {
@@ -965,415 +983,695 @@ export function InboxSidebar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Header — always visible when the sidebar is open (offcanvas hides the
-          entire sidebar when collapsed, so no icon-rail guard is needed) */}
-      <div className="border-b border-border p-3">
-        <div className="mb-3 flex items-center gap-1.5">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={toggleSidebar}
-                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                aria-label="Collapse panel"
-              >
-                <PanelLeftClose className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              Collapse panel
-            </TooltipContent>
-          </Tooltip>
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            onClick={() => {
-              if (isMobile) {
-                setOpenMobile(false);
-              }
-              onOpenNewSession();
-            }}
-            className="h-8 flex-1 justify-center gap-2"
-          >
-            <Plus className="h-4 w-4" />
-            New session
-          </Button>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                disabled={isCreatingSandboxFreeChat}
-                onClick={() => {
-                  if (isMobile) {
-                    setOpenMobile(false);
-                  }
-                  void handleCreateSandboxFreeChat();
-                }}
-                className="h-8 w-8 shrink-0"
-                aria-label="Quick chat (no repo)"
-              >
-                {isCreatingSandboxFreeChat ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <MessageSquare className="h-4 w-4" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={4}>
-              Quick chat (no repo)
-            </TooltipContent>
-          </Tooltip>
-        </div>
-
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => setShowArchived(false)}
-            className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-              !showArchived
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            Active
-            {activeSessions.length > 0 && (
-              <span className="ml-1.5 text-muted-foreground">
-                {activeSessions.length}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowArchived(true)}
-            className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-              showArchived
-                ? "bg-muted text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Archive className="h-3 w-3" />
-            Archive
-            {archivedCount > 0 && (
-              <span className="ml-1 text-muted-foreground">
-                {archivedCount}
-              </span>
-            )}
-          </button>
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        {showLoadingSkeleton ? (
-          <div className="space-y-1 p-2">
-            {Array.from({ length: 5 }).map((_, index) => (
-              <div key={index} className="space-y-1.5 rounded-md px-3 py-2.5">
-                <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
-                <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-              </div>
-            ))}
-          </div>
-        ) : groupedSessions.length === 0 ? (
-          <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-            {showArchived
-              ? (archivedSessionsError ?? "No archived sessions")
-              : "No sessions yet"}
-            {showArchived && archivedSessionsError ? (
-              <div className="mt-3">
+      {showCollapsedRail ? (
+        <div
+          className="flex min-h-0 flex-1 flex-col items-center bg-muted/20 py-2"
+          aria-label="Collapsed sidebar navigation"
+        >
+          <div className="flex w-full flex-col items-center gap-1 border-b border-border/70 px-1 pb-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleRetryArchivedSessions}
+                  variant="ghost"
+                  size="icon"
+                  onClick={toggleSidebar}
+                  className="h-9 w-9 text-muted-foreground hover:bg-background hover:text-foreground"
+                  aria-label={railActionById.get("expand")?.ariaLabel}
                 >
-                  Retry
+                  <PanelLeftOpen className="h-4 w-4" />
                 </Button>
-              </div>
-            ) : null}
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={6}>
+                {railActionById.get("expand")?.tooltip}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={onOpenNewSession}
+                  className="h-9 w-9 text-muted-foreground hover:bg-background hover:text-foreground"
+                  aria-label={railActionById.get("new-session")?.ariaLabel}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={6}>
+                {railActionById.get("new-session")?.tooltip}
+              </TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={isCreatingSandboxFreeChat}
+                  onClick={() => {
+                    void handleCreateSandboxFreeChat();
+                  }}
+                  className="h-9 w-9 text-muted-foreground hover:bg-background hover:text-foreground"
+                  aria-label={railActionById.get("quick-chat")?.ariaLabel}
+                >
+                  {isCreatingSandboxFreeChat ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <MessageSquare className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={6}>
+                {railActionById.get("quick-chat")?.tooltip}
+              </TooltipContent>
+            </Tooltip>
           </div>
-        ) : (
-          <>
-            <div className="space-y-3 p-1.5">
-              {groupedSessions.map((group) => {
-                const isCollapsed = collapsedGroupIds[group.id] ?? false;
-                const groupHasActiveSession = group.id === activeGroupId;
-                const groupContentId = getRepoGroupContentId(group.id);
 
-                const groupRepoOwner = group.repoOwner ?? "";
-                const groupRepoName = group.repoName ?? "";
-                const hasRepo = Boolean(groupRepoOwner && groupRepoName);
+          <nav
+            aria-label="Sidebar rail repositories"
+            className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto px-1 py-2"
+          >
+            {groupedSessions.map((group) => {
+              const groupRepoOwner = group.repoOwner ?? "";
+              const groupRepoName = group.repoName ?? "";
+              const hasRepo = Boolean(groupRepoOwner && groupRepoName);
+              const groupHasActiveSession = group.id === activeGroupId;
 
+              if (!hasRepo) {
                 return (
-                  <section key={group.id} className="space-y-1.5">
-                    <div
-                      className={`group/repo flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
-                        groupHasActiveSession
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground/85"
-                      }`}
-                    >
+                  <Tooltip key={group.id}>
+                    <TooltipTrigger asChild>
                       <button
                         type="button"
-                        onClick={() => handleToggleRepoGroup(group.id)}
-                        aria-controls={groupContentId}
-                        aria-expanded={!isCollapsed}
-                        className="flex min-w-0 flex-1 items-center gap-1.5"
+                        disabled={isCreatingSandboxFreeChat}
+                        onClick={() => {
+                          void handleCreateSandboxFreeChat();
+                        }}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          groupHasActiveSession
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-background hover:text-foreground"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                        aria-label="New chat"
                       >
-                        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground/80">
-                          {group.id === "repo:unscoped" ? (
-                            <MessageSquare className="h-3.5 w-3.5 group-hover/repo:hidden" />
-                          ) : (
-                            <FolderGit2 className="h-3.5 w-3.5 group-hover/repo:hidden" />
-                          )}
-                          <ChevronDown
-                            className={`hidden h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-200 group-hover/repo:block ${
-                              isCollapsed ? "-rotate-90" : "rotate-0"
-                            }`}
-                          />
-                        </span>
-                        <span className="min-w-0 truncate text-[12px] font-medium">
-                          {group.label}
-                        </span>
+                        {isCreatingSandboxFreeChat ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <MessageSquare className="h-4 w-4" />
+                        )}
                       </button>
-                      {hasRepo ? (
-                        <span
-                          className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
-                        >
-                          <Tooltip>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={6}>
+                      {group.label}
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
+
+              const repoActions = getCollapsedRepoRailActions(
+                groupRepoOwner,
+                groupRepoName,
+              ).filter(
+                (action) =>
+                  action.id !== "repo-dashboard" &&
+                  action.id !== "repo-agents" &&
+                  action.id !== "repo-loops",
+              );
+              const repoAgents = filterAgentsByRepo(
+                allAgents ?? [],
+                groupRepoOwner,
+                groupRepoName,
+              );
+              const repoLoops =
+                allLoops?.filter(
+                  (loop) =>
+                    loop.repoOwner.toLowerCase() ===
+                      groupRepoOwner.toLowerCase() &&
+                    loop.repoName.toLowerCase() === groupRepoName.toLowerCase(),
+                ) ?? null;
+              const resourceActions = getRepoSubGroupRailActions({
+                repoOwner: groupRepoOwner,
+                repoName: groupRepoName,
+                agents: repoAgents,
+                loops: repoLoops,
+                loopsFeatureDisabled,
+              });
+              const allRepoActions = [...repoActions, ...resourceActions];
+
+              return (
+                <div
+                  key={group.id}
+                  className="flex flex-col items-center gap-1"
+                >
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Link
+                        href={`/repos/${encodeURIComponent(groupRepoOwner)}/${encodeURIComponent(groupRepoName)}`}
+                        className={`flex h-9 w-9 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                          groupHasActiveSession
+                            ? "bg-background text-foreground shadow-sm"
+                            : "text-muted-foreground hover:bg-background hover:text-foreground"
+                        }`}
+                        aria-label={`Open repo dashboard for ${group.label}`}
+                      >
+                        <FolderGit2 className="h-4 w-4" />
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent side="right" sideOffset={6}>
+                      {group.label}
+                    </TooltipContent>
+                  </Tooltip>
+
+                  <div className="flex flex-col items-center gap-1 border-l border-border/70 pl-1">
+                    {allRepoActions.map((action) => {
+                      const icon =
+                        action.id === "repo-dashboard" ? (
+                          <LayoutDashboard className="h-3.5 w-3.5" />
+                        ) : action.id === "repo-branch" ? (
+                          <GitBranch className="h-3.5 w-3.5" />
+                        ) : action.id === "repo-settings" ? (
+                          <Settings className="h-3.5 w-3.5" />
+                        ) : action.id === "repo-new-session" ? (
+                          <Plus className="h-3.5 w-3.5" />
+                        ) : action.id === "agents" ? (
+                          <Bot className="h-3.5 w-3.5" />
+                        ) : (
+                          <RefreshCw className="h-3.5 w-3.5" />
+                        );
+                      const badge =
+                        "count" in action && action.count > 0
+                          ? action.count
+                          : null;
+
+                      if (action.href) {
+                        return (
+                          <Tooltip key={action.id}>
                             <TooltipTrigger asChild>
                               <Link
-                                href={`/repos/${groupRepoOwner}/${groupRepoName}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-                                aria-label={`Open repo dashboard for ${group.label}`}
+                                href={action.href}
+                                className="relative flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                                aria-label={action.ariaLabel}
                               >
-                                <LayoutDashboard className="h-3 w-3" />
+                                {icon}
+                                {badge ? (
+                                  <span className="-right-0.5 -top-0.5 absolute flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-medium leading-none text-primary-foreground">
+                                    {badge}
+                                  </span>
+                                ) : null}
                               </Link>
                             </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={4}>
-                              Repo dashboard
+                            <TooltipContent side="right" sideOffset={6}>
+                              {action.tooltip}
                             </TooltipContent>
                           </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                        );
+                      }
+
+                      return (
+                        <Tooltip key={action.id}>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (action.id === "repo-branch") {
                                   handleOpenBranchPicker(
                                     groupRepoOwner,
                                     groupRepoName,
                                   );
-                                }}
-                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-                                aria-label={`Create session from branch for ${group.label}`}
-                              >
-                                <GitBranch className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={4}>
-                              Create from branch
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
+                                  return;
+                                }
+
+                                if (action.id === "repo-settings") {
                                   handleOpenWorkspaceSettings(
                                     groupRepoOwner,
                                     groupRepoName,
                                     group.label,
                                   );
-                                }}
-                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-                                aria-label={`Open workspace settings for ${group.label}`}
-                              >
-                                <Settings className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={4}>
-                              Workspace settings
-                            </TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleCreateForRepo(
-                                    groupRepoOwner,
-                                    groupRepoName,
-                                  );
-                                }}
-                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
-                                aria-label={`Create session for ${group.label}`}
-                              >
-                                <Plus className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={4}>
-                              Create session
-                            </TooltipContent>
-                          </Tooltip>
-                        </span>
-                      ) : (
-                        <span
-                          className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
-                        >
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                type="button"
-                                disabled={isCreatingSandboxFreeChat}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleCreateSandboxFreeChat();
-                                }}
-                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                                aria-label="New chat"
-                              >
-                                {isCreatingSandboxFreeChat ? (
-                                  <Loader2 className="h-3 w-3 animate-spin" />
-                                ) : (
-                                  <Plus className="h-3 w-3" />
-                                )}
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" sideOffset={4}>
-                              New chat
-                            </TooltipContent>
-                          </Tooltip>
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      id={groupContentId}
-                      aria-hidden={isCollapsed}
-                      inert={isCollapsed}
-                      className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
-                        isCollapsed
-                          ? "grid-rows-[0fr] opacity-0 pointer-events-none"
-                          : "grid-rows-[1fr] opacity-100"
-                      }`}
-                    >
-                      <div className="overflow-hidden">
-                        {/* Repo resources (Agents, Loops) sit ABOVE the session
-                            list so the repo's tooling is the first thing under
-                            the repo, not buried below its branches. */}
-                        {hasRepo ? (
-                          <div className="ml-4 border-l border-border/40 pl-1.5">
-                            <RepoSubGroups
-                              repoOwner={groupRepoOwner}
-                              repoName={groupRepoName}
-                            />
-                          </div>
-                        ) : null}
-                        <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
-                          {group.sessions.map((session) => (
-                            <SessionRow
-                              key={session.id}
-                              session={session}
-                              isActive={session.id === activeSessionId}
-                              isPending={session.id === pendingSessionId}
-                              onSessionClick={handleSessionClick}
-                              onSessionPrefetch={handleSessionPrefetch}
-                              onRenameSession={onRenameSession}
-                              onArchiveSession={handleArchiveSession}
-                              onUnarchiveSession={handleUnarchiveSession}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </section>
-                );
-              })}
-            </div>
-            {showArchived &&
-            (hasMoreArchivedSessions || archivedSessionsError) ? (
-              <div className="px-3 pb-3">
+                                  return;
+                                }
+
+                                handleCreateForRepo(
+                                  groupRepoOwner,
+                                  groupRepoName,
+                                );
+                              }}
+                              className="relative flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                              aria-label={action.ariaLabel}
+                            >
+                              {icon}
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="right" sideOffset={6}>
+                            {action.tooltip}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </nav>
+
+          <div className="flex w-full flex-col items-center border-t border-border/70 px-1 pt-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full"
-                  onClick={
-                    archivedSessionsError
-                      ? handleRetryArchivedSessions
-                      : handleLoadMoreArchivedSessions
-                  }
-                  disabled={archivedSessionsLoading}
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 text-muted-foreground hover:bg-background hover:text-foreground"
+                  onClick={() => router.push("/settings")}
+                  aria-label={railActionById.get("settings")?.ariaLabel}
                 >
-                  {archivedSessionsLoading
-                    ? "Loading..."
-                    : archivedSessionsError
-                      ? "Retry loading archived sessions"
-                      : "Load more archived sessions"}
+                  <Settings className="h-4 w-4" />
                 </Button>
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
-
-      {sidebarUser ? (
-        <div className="border-t border-border p-3">
-          <div className="flex items-center gap-2 rounded-lg p-2">
-            <Avatar className="h-9 w-9 shrink-0">
-              {sidebarUser.avatar ? (
-                <AvatarImage
-                  src={sidebarUser.avatar}
-                  alt={sidebarUser.username}
-                />
-              ) : null}
-              <AvatarFallback>
-                {getAvatarFallback(sidebarUser.username)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-semibold leading-none text-foreground">
-                {sidebarUser.username}
-              </p>
-              {sidebarUser.email ? (
-                <p className="mt-1 truncate text-xs text-muted-foreground">
-                  {sidebarUser.email}
-                </p>
-              ) : null}
-              {leaderboardRank ? (
-                <Link
-                  href="/settings/leaderboard"
-                  className="mt-1 block truncate text-xs text-muted-foreground hover:text-foreground"
-                >
-                  <span className="font-semibold tabular-nums text-foreground/70">
-                    #{leaderboardRank.rank}
-                  </span>{" "}
-                  in {formatDomainOrg(leaderboardRank.domain)}
-                </Link>
-              ) : leaderboardLoading &&
-                getUsageLeaderboardDomain(sidebarUser.email) ? (
-                <span className="mt-1 block h-4 w-24 animate-pulse rounded bg-muted" />
-              ) : null}
-            </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => router.push("/settings")}
-              aria-label="Open settings"
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={6}>
+                {railActionById.get("settings")?.tooltip}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
-      ) : null}
+      ) : (
+        <>
+          {/* Header — shown in expanded desktop mode and in the mobile drawer. */}
+          <div className="border-b border-border p-3">
+            <div className="mb-3 flex items-center gap-1.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={toggleSidebar}
+                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                    aria-label="Collapse panel"
+                  >
+                    <PanelLeftClose className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}>
+                  Collapse panel
+                </TooltipContent>
+              </Tooltip>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                onClick={() => {
+                  if (isMobile) {
+                    setOpenMobile(false);
+                  }
+                  onOpenNewSession();
+                }}
+                className="h-8 flex-1 justify-center gap-2"
+              >
+                <Plus className="h-4 w-4" />
+                New session
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    disabled={isCreatingSandboxFreeChat}
+                    onClick={() => {
+                      if (isMobile) {
+                        setOpenMobile(false);
+                      }
+                      void handleCreateSandboxFreeChat();
+                    }}
+                    className="h-8 w-8 shrink-0"
+                    aria-label="Quick chat (no repo)"
+                  >
+                    {isCreatingSandboxFreeChat ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <MessageSquare className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" sideOffset={4}>
+                  Quick chat (no repo)
+                </TooltipContent>
+              </Tooltip>
+            </div>
+
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setShowArchived(false)}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  !showArchived
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                Active
+                {activeSessions.length > 0 && (
+                  <span className="ml-1.5 text-muted-foreground">
+                    {activeSessions.length}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowArchived(true)}
+                className={`flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
+                  showArchived
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Archive className="h-3 w-3" />
+                Archive
+                {archivedCount > 0 && (
+                  <span className="ml-1 text-muted-foreground">
+                    {archivedCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {showLoadingSkeleton ? (
+              <div className="space-y-1 p-2">
+                {Array.from({ length: 5 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="space-y-1.5 rounded-md px-3 py-2.5"
+                  >
+                    <div className="h-3.5 w-3/4 animate-pulse rounded bg-muted" />
+                    <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                ))}
+              </div>
+            ) : groupedSessions.length === 0 ? (
+              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                {showArchived
+                  ? (archivedSessionsError ?? "No archived sessions")
+                  : "No sessions yet"}
+                {showArchived && archivedSessionsError ? (
+                  <div className="mt-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRetryArchivedSessions}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : null}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3 p-1.5">
+                  {groupedSessions.map((group) => {
+                    const isCollapsed = collapsedGroupIds[group.id] ?? false;
+                    const groupHasActiveSession = group.id === activeGroupId;
+                    const groupContentId = getRepoGroupContentId(group.id);
+
+                    const groupRepoOwner = group.repoOwner ?? "";
+                    const groupRepoName = group.repoName ?? "";
+                    const hasRepo = Boolean(groupRepoOwner && groupRepoName);
+
+                    return (
+                      <section key={group.id} className="space-y-1.5">
+                        <div
+                          className={`group/repo flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-left transition-colors ${
+                            groupHasActiveSession
+                              ? "text-foreground"
+                              : "text-muted-foreground hover:text-foreground/85"
+                          }`}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleToggleRepoGroup(group.id)}
+                            aria-controls={groupContentId}
+                            aria-expanded={!isCollapsed}
+                            className="flex min-w-0 flex-1 items-center gap-1.5"
+                          >
+                            <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground/80">
+                              {group.id === "repo:unscoped" ? (
+                                <MessageSquare className="h-3.5 w-3.5 group-hover/repo:hidden" />
+                              ) : (
+                                <FolderGit2 className="h-3.5 w-3.5 group-hover/repo:hidden" />
+                              )}
+                              <ChevronDown
+                                className={`hidden h-3.5 w-3.5 text-muted-foreground/70 transition-transform duration-200 group-hover/repo:block ${
+                                  isCollapsed ? "-rotate-90" : "rotate-0"
+                                }`}
+                              />
+                            </span>
+                            <span className="min-w-0 truncate text-[12px] font-medium">
+                              {group.label}
+                            </span>
+                          </button>
+                          {hasRepo ? (
+                            <span
+                              className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
+                            >
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Link
+                                    href={`/repos/${groupRepoOwner}/${groupRepoName}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                    aria-label={`Open repo dashboard for ${group.label}`}
+                                  >
+                                    <LayoutDashboard className="h-3 w-3" />
+                                  </Link>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={4}>
+                                  Repo dashboard
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenBranchPicker(
+                                        groupRepoOwner,
+                                        groupRepoName,
+                                      );
+                                    }}
+                                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                    aria-label={`Create session from branch for ${group.label}`}
+                                  >
+                                    <GitBranch className="h-3 w-3" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={4}>
+                                  Create from branch
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenWorkspaceSettings(
+                                        groupRepoOwner,
+                                        groupRepoName,
+                                        group.label,
+                                      );
+                                    }}
+                                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                    aria-label={`Open workspace settings for ${group.label}`}
+                                  >
+                                    <Settings className="h-3 w-3" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={4}>
+                                  Workspace settings
+                                </TooltipContent>
+                              </Tooltip>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleCreateForRepo(
+                                        groupRepoOwner,
+                                        groupRepoName,
+                                      );
+                                    }}
+                                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                    aria-label={`Create session for ${group.label}`}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={4}>
+                                  Create session
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                          ) : (
+                            <span
+                              className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
+                            >
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    disabled={isCreatingSandboxFreeChat}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handleCreateSandboxFreeChat();
+                                    }}
+                                    className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                    aria-label="New chat"
+                                  >
+                                    {isCreatingSandboxFreeChat ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Plus className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" sideOffset={4}>
+                                  New chat
+                                </TooltipContent>
+                              </Tooltip>
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          id={groupContentId}
+                          aria-hidden={isCollapsed}
+                          inert={isCollapsed}
+                          className={`grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none ${
+                            isCollapsed
+                              ? "grid-rows-[0fr] opacity-0 pointer-events-none"
+                              : "grid-rows-[1fr] opacity-100"
+                          }`}
+                        >
+                          <div className="overflow-hidden">
+                            {/* Repo resources (Agents, Loops) sit ABOVE the session
+                            list so the repo's tooling is the first thing under
+                            the repo, not buried below its branches. */}
+                            {hasRepo ? (
+                              <div className="ml-4 border-l border-border/40 pl-1.5">
+                                <RepoSubGroups
+                                  repoOwner={groupRepoOwner}
+                                  repoName={groupRepoName}
+                                />
+                              </div>
+                            ) : null}
+                            <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
+                              {group.sessions.map((session) => (
+                                <SessionRow
+                                  key={session.id}
+                                  session={session}
+                                  isActive={session.id === activeSessionId}
+                                  isPending={session.id === pendingSessionId}
+                                  onSessionClick={handleSessionClick}
+                                  onSessionPrefetch={handleSessionPrefetch}
+                                  onRenameSession={onRenameSession}
+                                  onArchiveSession={handleArchiveSession}
+                                  onUnarchiveSession={handleUnarchiveSession}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+                {showArchived &&
+                (hasMoreArchivedSessions || archivedSessionsError) ? (
+                  <div className="px-3 pb-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      onClick={
+                        archivedSessionsError
+                          ? handleRetryArchivedSessions
+                          : handleLoadMoreArchivedSessions
+                      }
+                      disabled={archivedSessionsLoading}
+                    >
+                      {archivedSessionsLoading
+                        ? "Loading..."
+                        : archivedSessionsError
+                          ? "Retry loading archived sessions"
+                          : "Load more archived sessions"}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+
+          {sidebarUser ? (
+            <div className="border-t border-border p-3">
+              <div className="flex items-center gap-2 rounded-lg p-2">
+                <Avatar className="h-9 w-9 shrink-0">
+                  {sidebarUser.avatar ? (
+                    <AvatarImage
+                      src={sidebarUser.avatar}
+                      alt={sidebarUser.username}
+                    />
+                  ) : null}
+                  <AvatarFallback>
+                    {getAvatarFallback(sidebarUser.username)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold leading-none text-foreground">
+                    {sidebarUser.username}
+                  </p>
+                  {sidebarUser.email ? (
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {sidebarUser.email}
+                    </p>
+                  ) : null}
+                  {leaderboardRank ? (
+                    <Link
+                      href="/settings/leaderboard"
+                      className="mt-1 block truncate text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <span className="font-semibold tabular-nums text-foreground/70">
+                        #{leaderboardRank.rank}
+                      </span>{" "}
+                      in {formatDomainOrg(leaderboardRank.domain)}
+                    </Link>
+                  ) : leaderboardLoading &&
+                    getUsageLeaderboardDomain(sidebarUser.email) ? (
+                    <span className="mt-1 block h-4 w-24 animate-pulse rounded bg-muted" />
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => router.push("/settings")}
+                  aria-label="Open settings"
+                >
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </>
+      )}
 
       {branchPickerRepo ? (
         <BranchPickerDialog
