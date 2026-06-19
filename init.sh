@@ -165,6 +165,19 @@ install_dependencies() {
   ok "dependencies installed"
 }
 
+install_git_hooks() {
+  if [[ ! -d "$ROOT_DIR/.git" ]]; then
+    return 0
+  fi
+  if [[ ! -d "$ROOT_DIR/.githooks" ]]; then
+    return 0
+  fi
+
+  info "Installing git hooks"
+  (cd "$ROOT_DIR" && git config core.hooksPath .githooks)
+  ok "git hooks installed (pre-push runs check + typecheck; bypass with SKIP_HOOKS=1)"
+}
+
 link_vercel_if_requested() {
   if [[ "$OFFLINE" -ne 0 ]]; then
     return 0
@@ -463,6 +476,7 @@ main() {
 
   info "Initializing Open Agents local development"
   install_dependencies
+  install_git_hooks
   pull_vercel_env
   validate_env
 

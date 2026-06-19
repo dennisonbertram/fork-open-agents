@@ -109,12 +109,14 @@ function makeAgent(
     permissions: { github: { contents: "read" } },
     outputMode: "comment",
     checkCommand: null,
+    composioToolkitSlugs: [],
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [
       {
         id: "trigger-reg-1",
         agentId: "agent-reg-1",
+        loopId: null,
         userId: "user-1",
         name: "On PR",
         kind: "github.pull_request",

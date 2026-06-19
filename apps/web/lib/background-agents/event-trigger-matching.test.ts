@@ -168,6 +168,12 @@ mock.module("workflow/api", () => ({ start }));
 mock.module("@/app/workflows/background-agent", () => ({
   runBackgroundAgentWorkflow: {},
 }));
+// No agent-loops mocks needed here. dispatcher.ts only imports
+// @/lib/agent-loops/* via dynamic import inside loopId-bound trigger branches.
+// All triggers in this test file have loopId: null, so those branches never
+// execute and the agent-loops modules are never loaded.
+// Do NOT register mock.module calls for agent-loops paths in this file —
+// doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
 mock.module("./store", () => ({
   advanceTriggerScheduleState,
   createRunForTrigger,
@@ -194,12 +200,14 @@ const baseAgent: BackgroundAgentWithTriggers = {
   permissions: {},
   outputMode: "none",
   checkCommand: null,
+  composioToolkitSlugs: [],
   createdAt: new Date(),
   updatedAt: new Date(),
   triggers: [
     {
       id: "trigger-pr",
       agentId: "agent-168",
+      loopId: null,
       userId: "user-1",
       name: "Pull request",
       kind: "github.pull_request",

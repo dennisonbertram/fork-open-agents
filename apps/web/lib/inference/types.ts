@@ -66,6 +66,23 @@ export const deleteInferenceProfileInputSchema = z.object({
   profileId: z.string().trim().min(1),
 });
 
+/**
+ * A model served by an inference profile's endpoint, as discovered from the
+ * provider's own `/v1/models` listing. Stored per-profile so the picker shows
+ * the endpoint's real models (e.g. ZAI's `glm-4.6`) instead of borrowing the
+ * app's Anthropic catalog.
+ */
+export const inferenceProfileModelSchema = z.object({
+  /** Raw model id sent to the endpoint, e.g. "glm-4.6". */
+  id: z.string().trim().min(1).max(200),
+  /** Human label for the picker, e.g. "GLM-4.6". */
+  displayName: z.string().trim().min(1).max(200),
+  /** Context window in tokens, when the provider reports it. */
+  contextWindow: z.number().int().positive().optional(),
+});
+
+export type InferenceProfileModel = z.infer<typeof inferenceProfileModelSchema>;
+
 export type CreateInferenceProfileInput = z.infer<
   typeof createInferenceProfileInputSchema
 >;
@@ -84,6 +101,8 @@ export interface SafeInferenceProfile {
   lastTestedAt: Date | null;
   lastTestMessage: string | null;
   enabled: boolean;
+  /** Models discovered from the endpoint's /v1/models listing (empty = not yet discovered). */
+  models: InferenceProfileModel[];
   createdAt: Date;
   updatedAt: Date;
 }

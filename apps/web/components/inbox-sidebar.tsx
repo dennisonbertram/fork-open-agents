@@ -12,6 +12,7 @@ import {
   GitPullRequest,
   Loader2,
   Monitor,
+  PanelLeftClose,
   Pencil,
   Plus,
   Settings,
@@ -20,9 +21,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
-import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
+import { RepoSubGroups } from "@/components/inbox-sidebar-repo-subgroups";
+import {
+  type SidebarRepoRef,
+  buildRepoGroups,
+  getRepoGroupContentId,
+} from "@/components/inbox-sidebar-repo-groups";
+import { useAllAgents } from "@/hooks/use-repo-agents";
+import { useAllLoops } from "@/hooks/use-all-loops";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,6 +74,7 @@ type InboxSidebarProps = {
   onArchiveSession: (sessionId: string) => Promise<void>;
   onUnarchiveSession: (sessionId: string) => Promise<void>;
   onOpenNewSession: () => void;
+  onCreateSandboxFreeChat: () => Promise<void>;
   onCreateSessionForRepo: (repoOwner: string, repoName: string) => void;
   onCreateSessionFromBranch: (
     repoOwner: string,
@@ -292,68 +302,6 @@ function SessionPopoverContent({ session }: { session: SessionWithUnread }) {
       </div>
     </div>
   );
-}
-
-type SessionRepoGroup = {
-  id: string;
-  label: string;
-  sessions: SessionWithUnread[];
-};
-
-function getRepoGroupId(session: SessionWithUnread): string {
-  const repoName = session.repoName?.trim();
-  const repoOwner = session.repoOwner?.trim();
-
-  if (!repoName) {
-    return "repo:unscoped";
-  }
-
-  return `repo:${repoOwner ?? ""}/${repoName}`.toLowerCase();
-}
-
-function getRepoGroupLabel(session: SessionWithUnread): string {
-  const repoName = session.repoName?.trim();
-  const repoOwner = session.repoOwner?.trim();
-
-  if (!repoName) {
-    return "Chats";
-  }
-
-  return repoOwner ? `${repoOwner}/${repoName}` : repoName;
-}
-
-function groupSessionsByRepo(
-  sessions: SessionWithUnread[],
-): SessionRepoGroup[] {
-  const groups = new Map<string, SessionRepoGroup>();
-
-  for (const session of sessions) {
-    const groupId = getRepoGroupId(session);
-    const existingGroup = groups.get(groupId);
-
-    if (existingGroup) {
-      existingGroup.sessions.push(session);
-      continue;
-    }
-
-    groups.set(groupId, {
-      id: groupId,
-      label: getRepoGroupLabel(session),
-      sessions: [session],
-    });
-  }
-
-  const result = Array.from(groups.values());
-  const unscopedIndex = result.findIndex((g) => g.id === "repo:unscoped");
-  if (unscopedIndex > 0) {
-    const [unscoped] = result.splice(unscopedIndex, 1);
-    result.unshift(unscoped);
-  }
-  return result;
-}
-
-function getRepoGroupContentId(groupId: string): string {
-  return `repo-group-panel-${groupId.replace(/[^a-z0-9-]+/gi, "-")}`;
 }
 
 type SessionRowProps = {
@@ -692,6 +640,7 @@ export function InboxSidebar({
   onArchiveSession,
   onUnarchiveSession,
   onOpenNewSession,
+  onCreateSandboxFreeChat,
   onCreateSessionForRepo,
   onCreateSessionFromBranch,
   initialUser,
@@ -700,7 +649,8 @@ export function InboxSidebar({
   const { session } = useSession();
   const { rank: leaderboardRank, loading: leaderboardLoading } =
     useLeaderboardRank();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
+  const { openWorkspaceSettings } = useWorkspaceSettings();
   const [showArchived, setShowArchived] = useState(false);
   const [archivedSessions, setArchivedSessions] = useState<SessionWithUnread[]>(
     [],
@@ -716,12 +666,9 @@ export function InboxSidebar({
     owner: string;
     repo: string;
   } | null>(null);
-  const [workspaceSettingsRepo, setWorkspaceSettingsRepo] = useState<{
-    owner: string;
-    repo: string;
-    label: string;
-  } | null>(null);
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
+  const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
+    useState(false);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
 
@@ -802,9 +749,30 @@ export function InboxSidebar({
     (!showArchived && sessionsLoading && sessions.length === 0) ||
     (showArchived && archivedSessionsLoading && archivedSessions.length === 0);
   const sidebarUser = session?.user ?? initialUser;
+
+  // Repos with agents or loops keep their sidebar group even after every
+  // session/branch is gone, so the repo's tooling doesn't silently disappear.
+  const { agents: allAgents } = useAllAgents();
+  const { loops: allLoops } = useAllLoops();
+  const anchorRepos = useMemo<SidebarRepoRef[]>(
+    () => [
+      ...(allAgents ?? []).map((a) => ({
+        repoOwner: a.repoOwner,
+        repoName: a.repoName,
+      })),
+      ...(allLoops ?? []).map((l) => ({
+        repoOwner: l.repoOwner,
+        repoName: l.repoName,
+      })),
+    ],
+    [allAgents, allLoops],
+  );
+
   const groupedSessions = useMemo(
-    () => groupSessionsByRepo(displayedSessions),
-    [displayedSessions],
+    // Only union anchor repos into the active view — the archived view should
+    // list archived sessions only, not empty tooling-anchored groups.
+    () => buildRepoGroups(displayedSessions, showArchived ? [] : anchorRepos),
+    [displayedSessions, anchorRepos, showArchived],
   );
   const activeGroupId = useMemo(
     () =>
@@ -936,6 +904,22 @@ export function InboxSidebar({
     void fetchArchivedSessionsPage({ offset: 0, replace: true });
   }, [fetchArchivedSessionsPage]);
 
+  const handleCreateSandboxFreeChat = useCallback(async () => {
+    if (isCreatingSandboxFreeChat) return;
+    setIsCreatingSandboxFreeChat(true);
+    try {
+      await onCreateSandboxFreeChat();
+      if (isMobile) setOpenMobile(false);
+    } finally {
+      setIsCreatingSandboxFreeChat(false);
+    }
+  }, [
+    isCreatingSandboxFreeChat,
+    isMobile,
+    onCreateSandboxFreeChat,
+    setOpenMobile,
+  ]);
+
   const handleCreateForRepo = useCallback(
     (owner: string, repo: string) => {
       if (isMobile) setOpenMobile(false);
@@ -950,9 +934,12 @@ export function InboxSidebar({
 
   const handleOpenWorkspaceSettings = useCallback(
     (owner: string, repo: string, label: string) => {
-      setWorkspaceSettingsRepo({ owner, repo, label });
+      if (isMobile) {
+        setOpenMobile(false);
+      }
+      openWorkspaceSettings({ owner, repo, label });
     },
-    [],
+    [isMobile, setOpenMobile, openWorkspaceSettings],
   );
 
   const handleBranchSelected = useCallback(
@@ -977,26 +964,70 @@ export function InboxSidebar({
   );
 
   return (
-    <>
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* Header — always visible when the sidebar is open (offcanvas hides the
+          entire sidebar when collapsed, so no icon-rail guard is needed) */}
       <div className="border-b border-border p-3">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center px-2 py-1.5 text-sm text-primary">
-            <span>Sessions</span>
-          </div>
+        <div className="mb-3 flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebar}
+                className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Collapse panel"
+              >
+                <PanelLeftClose className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              Collapse panel
+            </TooltipContent>
+          </Tooltip>
           <Button
             type="button"
-            variant="ghost"
-            size="icon"
+            variant="default"
+            size="sm"
             onClick={() => {
               if (isMobile) {
                 setOpenMobile(false);
               }
               onOpenNewSession();
             }}
-            className="h-7 w-7"
+            className="h-8 flex-1 justify-center gap-2"
           >
             <Plus className="h-4 w-4" />
+            New session
           </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                disabled={isCreatingSandboxFreeChat}
+                onClick={() => {
+                  if (isMobile) {
+                    setOpenMobile(false);
+                  }
+                  void handleCreateSandboxFreeChat();
+                }}
+                className="h-8 w-8 shrink-0"
+                aria-label="Quick chat (no repo)"
+              >
+                {isCreatingSandboxFreeChat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <MessageSquare className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" sideOffset={4}>
+              Quick chat (no repo)
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         <div className="flex gap-1">
@@ -1046,7 +1077,7 @@ export function InboxSidebar({
               </div>
             ))}
           </div>
-        ) : displayedSessions.length === 0 ? (
+        ) : groupedSessions.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground">
             {showArchived
               ? (archivedSessionsError ?? "No archived sessions")
@@ -1072,9 +1103,8 @@ export function InboxSidebar({
                 const groupHasActiveSession = group.id === activeGroupId;
                 const groupContentId = getRepoGroupContentId(group.id);
 
-                const groupRepoOwner =
-                  group.sessions[0]?.repoOwner?.trim() ?? "";
-                const groupRepoName = group.sessions[0]?.repoName?.trim() ?? "";
+                const groupRepoOwner = group.repoOwner ?? "";
+                const groupRepoName = group.repoName ?? "";
                 const hasRepo = Boolean(groupRepoOwner && groupRepoName);
 
                 return (
@@ -1193,7 +1223,35 @@ export function InboxSidebar({
                             </TooltipContent>
                           </Tooltip>
                         </span>
-                      ) : null}
+                      ) : (
+                        <span
+                          className={`shrink-0 items-center gap-0.5 ${isMobile ? "flex" : "hidden group-hover/repo:flex"}`}
+                        >
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                disabled={isCreatingSandboxFreeChat}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleCreateSandboxFreeChat();
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+                                aria-label="New chat"
+                              >
+                                {isCreatingSandboxFreeChat ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  <Plus className="h-3 w-3" />
+                                )}
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              New chat
+                            </TooltipContent>
+                          </Tooltip>
+                        </span>
+                      )}
                     </div>
                     <div
                       id={groupContentId}
@@ -1206,6 +1264,17 @@ export function InboxSidebar({
                       }`}
                     >
                       <div className="overflow-hidden">
+                        {/* Repo resources (Agents, Loops) sit ABOVE the session
+                            list so the repo's tooling is the first thing under
+                            the repo, not buried below its branches. */}
+                        {hasRepo ? (
+                          <div className="ml-4 border-l border-border/40 pl-1.5">
+                            <RepoSubGroups
+                              repoOwner={groupRepoOwner}
+                              repoName={groupRepoName}
+                            />
+                          </div>
+                        ) : null}
                         <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
                           {group.sessions.map((session) => (
                             <SessionRow
@@ -1319,29 +1388,6 @@ export function InboxSidebar({
         />
       ) : null}
 
-      <Dialog
-        open={workspaceSettingsRepo !== null}
-        onOpenChange={(open) => {
-          if (!open) setWorkspaceSettingsRepo(null);
-        }}
-      >
-        <DialogContent className="flex h-[85vh] max-w-2xl flex-col overflow-hidden p-0 sm:h-[42rem]">
-          <DialogHeader className="border-b border-border px-4 py-3">
-            <DialogTitle>Workspace Settings</DialogTitle>
-            <DialogDescription>
-              {workspaceSettingsRepo?.label ??
-                "Configure repository workspace access."}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="min-h-0 flex-1">
-            <ComposioWorkspaceSettingsPanel
-              repoOwner={workspaceSettingsRepo?.owner ?? null}
-              repoName={workspaceSettingsRepo?.repo ?? null}
-            />
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Archive confirmation dialog */}
       <Dialog
         open={archiveConfirmSession !== null}
@@ -1371,6 +1417,6 @@ export function InboxSidebar({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </div>
   );
 }

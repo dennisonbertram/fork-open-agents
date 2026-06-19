@@ -6,6 +6,8 @@
     ".agents/skills/**",
     "apps/web/components/ui/**",
     "**/*.md",
+    "apps/web/openapi.json",
+    "apps/web/lib/api/openapi-types.ts",
   ],
   "arrowParens": "always",
   "bracketSameLine": false,
