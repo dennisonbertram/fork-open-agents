@@ -61,6 +61,12 @@ mock.module("@/lib/background-agents/github-app-webhooks", () => ({
   getGitHubAppWebhookReadinessCheck: async () => webhookCheck,
 }));
 
+const listRepoLearnings = mock(async () => []);
+
+mock.module("@/lib/learnings/store", () => ({
+  listRepoLearnings,
+}));
+
 const routeModulePromise = import("./route");
 
 describe("POST /api/learnings", () => {
@@ -79,6 +85,7 @@ describe("POST /api/learnings", () => {
     ensureRepoLearningsAgent.mockClear();
     disableRepoLearningsAgent.mockClear();
     getRepoLearningsAgentStatus.mockClear();
+    listRepoLearnings.mockClear();
     ensureRepoLearningsAgent.mockImplementation(async () => ensureResult);
     disableRepoLearningsAgent.mockImplementation(async () => disableResult);
     getRepoLearningsAgentStatus.mockImplementation(async () => ({
@@ -241,6 +248,7 @@ describe("GET /api/learnings", () => {
     ensureRepoLearningsAgent.mockClear();
     disableRepoLearningsAgent.mockClear();
     getRepoLearningsAgentStatus.mockClear();
+    listRepoLearnings.mockClear();
     getRepoLearningsAgentStatus.mockImplementation(async () => ({
       enabled: isAgentEnabled,
       agentId: isAgentEnabled ? "agent-42" : undefined,
