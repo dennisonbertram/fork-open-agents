@@ -9,6 +9,16 @@ import {
 } from "node:crypto";
 
 const ENCRYPTION_VERSION = "v1";
+
+/**
+ * Thrown when all candidate decryption keys fail to authenticate the stored
+ * ciphertext — most commonly because the stored key was encrypted with a
+ * different secret than the one(s) currently configured (key mismatch between
+ * environments, or a secret rotation). The message is intentionally secret-free.
+ */
+export class InferenceSecretDecryptionError extends Error {
+  override name = "InferenceSecretDecryptionError";
+}
 const IV_BYTES = 12;
 
 function deriveEncryptionKey(secret: string): Buffer {
@@ -98,7 +108,6 @@ export function decryptInferenceSecret(payload: string): string {
   const iv = fromBase64Url(encodedIv);
   const authTag = fromBase64Url(encodedAuthTag);
   const ciphertext = fromBase64Url(encodedCiphertext);
-  let lastError: unknown;
 
   for (const key of getDecryptionKeys()) {
     try {
@@ -109,14 +118,14 @@ export function decryptInferenceSecret(payload: string): string {
         decipher.update(ciphertext),
         decipher.final(),
       ]).toString("utf8");
-    } catch (error) {
-      lastError = error;
+    } catch {
+      // Try the next key; if all keys fail, throw below.
     }
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Failed to decrypt inference secret");
+  throw new InferenceSecretDecryptionError(
+    "Stored API key could not be decrypted (encryption key mismatch for this environment).",
+  );
 }
 
 export function fingerprintInferenceSecret(secret: string): string {

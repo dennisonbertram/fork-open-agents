@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SettingsPageHeader } from "@/components/ui/settings-section";
 import { ComposioSection } from "../composio-section";
 
 export const metadata: Metadata = {
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function ComposioPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Composio</h1>
+      <SettingsPageHeader
+        title="Composio"
+        description="Connect external tools — like GitHub, Linear, or Gmail — so your agents can use them in a chat."
+      />
       <ComposioSection />
     </>
   );

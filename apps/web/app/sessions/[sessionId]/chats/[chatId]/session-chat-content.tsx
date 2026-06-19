@@ -13,6 +13,7 @@ import {
   Archive,
   ArrowDown,
   ArrowUp,
+  Box,
   Check,
   Code2,
   Copy,
@@ -171,6 +172,7 @@ import {
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
+import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -491,12 +493,12 @@ function RuntimeProofDataPartCard({
 }) {
   const limitationCount = part.data.limitations.length;
   const workerCount = part.data.workerEvidence?.total ?? 0;
-  const proofStatus =
-    part.data.status === "completed" && workerCount === 0
-      ? "incomplete"
-      : part.data.status;
+  const proofStatus = part.data.status;
   const proofPassed = proofStatus === "completed";
   const proofIncomplete = proofStatus === "incomplete";
+  // Conversational turn — the coordinator answered without delegating; neutral,
+  // not a problem.
+  const proofNoActivity = proofStatus === "no_activity";
   const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
   const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
   const directToolUseObserved =
@@ -505,7 +507,9 @@ function RuntimeProofDataPartCard({
     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
     : proofIncomplete
       ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
+      : proofNoActivity
+        ? "border-border bg-muted/40 text-muted-foreground"
+        : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
 
   return (
     <div className="flex items-center gap-3 py-1">
@@ -520,7 +524,9 @@ function RuntimeProofDataPartCard({
         <span className="truncate text-xs font-medium text-muted-foreground group-hover/runtime-proof:text-foreground">
           {proofIncomplete
             ? "Managed runtime proof incomplete"
-            : "Managed runtime proof"}
+            : proofNoActivity
+              ? "Managed runtime · no work this turn"
+              : "Managed runtime proof"}
         </span>
         <span
           className={cn(
@@ -528,7 +534,7 @@ function RuntimeProofDataPartCard({
             statusClassName,
           )}
         >
-          {proofStatus}
+          {proofNoActivity ? "no work" : proofStatus}
         </span>
         <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
           {workerCount} worker{workerCount === 1 ? "" : "s"}
@@ -1205,9 +1211,6 @@ export function SessionChatContent({
   >(null);
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null,
-  );
   const hasMounted = useHasMounted();
   const {
     activeView,
@@ -1223,7 +1226,7 @@ export function SessionChatContent({
     panelPortalRef,
     headerActionsRef,
   } = useGitPanel();
-  const { preferences } = useUserPreferences();
+  const { preferences, updatePreferences } = useUserPreferences();
   const openVerifiedBuildPanel = useCallback(() => {
     setRightPanelView("verified-build");
     setGitPanelOpen(true);
@@ -1418,6 +1421,8 @@ export function SessionChatContent({
     workspaceStatus,
     hadInitialMessages,
     initialMessages,
+    selectedWorkflowId,
+    setSelectedWorkflowId,
   } = useSessionChatRuntimeContext();
   const {
     sandboxInfo,
@@ -2194,6 +2199,20 @@ export function SessionChatContent({
     [sendMessageWithPendingState],
   );
 
+  // Header quick-action prompts (conductor-style PR buttons). Each sends a
+  // templated instruction to the agent immediately.
+  const handleHeaderCreatePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Create Pull Request\n\nCommit and push the current changes on this branch, then open a pull request with a clear title and a concise summary of what changed and why.",
+    });
+  }, [sendMessageWithPendingState]);
+
+  const handleHeaderMergePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Merge Pull Request\n\nMerge the open pull request for this branch. If checks are still running or it is not mergeable yet, tell me what is blocking the merge instead of forcing it.",
+    });
+  }, [sendMessageWithPendingState]);
+
   const handleDeleteUserMessage = useCallback(
     async (messageId: string) => {
       if (hasMessageActionInFlight) {
@@ -2511,6 +2530,57 @@ export function SessionChatContent({
     session.isNewBranch,
     session.cloneUrl,
     session.branch,
+    session.id,
+    preferredSandboxType,
+    setSandboxInfo,
+    setSandboxTypeFromUnknown,
+    requestStatusSync,
+  ]);
+
+  /**
+   * On-demand sandbox attach for sandbox-free (no-repo) sessions.
+   * Calls the attach endpoint to set DB state then creates the sandbox VM.
+   * Only relevant when session.sandboxState is null.
+   */
+  const handleAddSandbox = useCallback(async () => {
+    if (isCreatingSandbox) return;
+
+    setIsCreatingSandbox(true);
+    setSandboxCreateError(null);
+
+    try {
+      // Step 1: Transition DB state to provisioning so the server records the intent.
+      const attachRes = await fetch(`/api/sessions/${session.id}/sandbox`, {
+        method: "POST",
+      });
+      if (!attachRes.ok) {
+        const errData = (await attachRes.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        throw new Error(errData.error ?? "Failed to attach sandbox");
+      }
+
+      // Step 2: Create the actual sandbox VM via the existing sandbox API.
+      const newSandbox = await createSandbox(
+        undefined,
+        undefined,
+        false,
+        session.id,
+        preferredSandboxType,
+      );
+      setSandboxInfo(newSandbox);
+      setSandboxTypeFromUnknown(newSandbox.type);
+      setSandboxCreateError(null);
+      void requestStatusSync("force");
+    } catch (err) {
+      const details = getSandboxCreateErrorDetails(err);
+      setSandboxCreateError(details);
+      console.error("[AddSandbox] Failed to attach sandbox:", err);
+    } finally {
+      setIsCreatingSandbox(false);
+    }
+  }, [
+    isCreatingSandbox,
     session.id,
     preferredSandboxType,
     setSandboxInfo,
@@ -3265,6 +3335,17 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
+            {/* Contextual PR action (Create PR / Merge PR / Resolve Conflicts) */}
+            <SessionHeaderPrActions
+              busy={hasPendingResponse || hasMessageActionInFlight}
+              hasExistingPr={hasExistingPr}
+              hasRepo={Boolean(session.repoOwner && session.repoName)}
+              onCreatePr={handleHeaderCreatePr}
+              onMergePr={handleHeaderMergePr}
+              onResolveConflicts={handleFixConflicts}
+              prStatus={session.prStatus ?? null}
+              sessionId={session.id}
+            />
             {/* Compact read-only goal summary chip */}
             <CompactGoalSummary
               goals={observabilityData?.workflowGoals ?? []}
@@ -3339,8 +3420,8 @@ export function SessionChatContent({
                     )}
                   />
                   {session.runtimeMode === "managed_runtime"
-                    ? "Managed"
-                    : "Classic"}
+                    ? "Coordinated"
+                    : "Direct"}
                 </span>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-72 text-pretty">
@@ -4681,6 +4762,12 @@ export function SessionChatContent({
                                 <ModelSelectorCompact
                                   value={selectedModelOptionId}
                                   modelOptions={modelOptions}
+                                  enabledModelIds={preferences?.enabledModelIds}
+                                  onSaveEnabledModelIds={async (ids) => {
+                                    await updatePreferences({
+                                      enabledModelIds: ids,
+                                    });
+                                  }}
                                   disabled={
                                     isChatInFlight ||
                                     isUpdatingModel ||
@@ -4714,6 +4801,7 @@ export function SessionChatContent({
                               selection={chatInfo.composioSelection}
                               repoOwner={session.repoOwner}
                               repoName={session.repoName}
+                              githubConnected={!!session.cloneUrl}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }
@@ -4763,6 +4851,38 @@ export function SessionChatContent({
                               onSelectWorkflow={setSelectedWorkflowId}
                               selectedWorkflowId={selectedWorkflowId}
                             />
+                            {/* Add sandbox: only shown for sandbox-free (no-repo) sessions */}
+                            {!session.sandboxState && !isArchived && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    aria-label="Add sandbox"
+                                    title="Add sandbox"
+                                    disabled={
+                                      isCreatingSandbox || isChatInFlight
+                                    }
+                                    onClick={() => void handleAddSandbox()}
+                                    className="h-8 gap-1 rounded-full px-2 text-xs text-muted-foreground hover:text-foreground"
+                                  >
+                                    {isCreatingSandbox ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : (
+                                      <Box className="h-3.5 w-3.5" />
+                                    )}
+                                    <span className="hidden sm:inline">
+                                      Add sandbox
+                                    </span>
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top">
+                                  Add a sandbox to enable runtime tools for this
+                                  session
+                                </TooltipContent>
+                              </Tooltip>
+                            )}
                             <ContextUsageIndicator
                               inputTokens={tokenUsage.inputTokens}
                               conversationInputTokens={

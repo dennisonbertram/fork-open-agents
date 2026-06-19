@@ -4,10 +4,13 @@ import { z } from "zod";
 import { getAppOctokit } from "@/lib/github/app";
 import type { BackgroundAgentReadinessCheck } from "./readiness";
 
+// pull_request_review requires only pull_requests:read — no write scope needed
+// for the learnings extraction arc (CODE-02).
 const requiredGitHubAppEvents = [
   "pull_request",
   "issues",
   "deployment_status",
+  "pull_request_review",
 ] as const;
 
 const requiredGitHubAppPermissions = {

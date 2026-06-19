@@ -3,8 +3,10 @@ import {
   createInferenceProfile,
   deleteInferenceProfile,
   listInferenceProfiles,
+  setInferenceProfileModels,
   updateInferenceProfile,
 } from "@/lib/db/inference-profiles";
+import { fetchInferenceProfileModels } from "@/lib/inference/fetch-profile-models";
 import {
   createInferenceProfileInputSchema,
   deleteInferenceProfileInputSchema,
@@ -59,6 +61,20 @@ export async function POST(req: Request) {
       authResult.userId,
       parsed.data,
     );
+    // Populate the endpoint's real model list up front (best-effort) so the
+    // picker shows the provider's own models rather than the Anthropic catalog.
+    const fetchedModels = await fetchInferenceProfileModels({
+      baseUrl: profile.baseUrl,
+      apiKey: parsed.data.apiKey,
+    });
+    if (fetchedModels.length > 0) {
+      const withModels = await setInferenceProfileModels(
+        authResult.userId,
+        profile.id,
+        fetchedModels,
+      );
+      return Response.json({ profile: withModels ?? profile }, { status: 201 });
+    }
     return Response.json({ profile }, { status: 201 });
   } catch (error) {
     return jsonError(getProfileErrorMessage(error), 400);

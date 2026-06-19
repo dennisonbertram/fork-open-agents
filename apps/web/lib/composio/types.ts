@@ -20,6 +20,8 @@ export type ComposioAgentDefaults = Record<
 export type ChatComposioSelection = {
   mainProfileId: string | null;
   agentProfileOverrides?: Partial<Record<ComposioAgentKey, string | null>>;
+  /** When non-empty, bypasses profile resolution entirely (one-wins). */
+  directToolkitSlugs?: string[];
 };
 
 export type RepositoryComposioSettingsValues = {
@@ -27,6 +29,12 @@ export type RepositoryComposioSettingsValues = {
   allowedProfileIds: string[];
   blockedToolkitSlugs: string[];
   agentDefaults: Partial<ComposioAgentDefaults>;
+  /**
+   * Active Composio toolkits for this repo (subset of globally-connected
+   * toolkits), applied to every chat on the repo. NULL = never configured
+   * (GitHub default-on applies at resolution); an array = explicit choice.
+   */
+  selectedToolkitSlugs: string[] | null;
 };
 
 export type ComposioToolProfileValues = {
@@ -117,6 +125,7 @@ export const chatComposioSelectionInputSchema = z
   .object({
     mainProfileId: z.string().min(1).nullable().default(null),
     agentProfileOverrides: composioAgentProfileOverridesInputSchema.optional(),
+    directToolkitSlugs: z.array(z.string()).optional(),
   })
   .strict();
 
@@ -126,6 +135,8 @@ export const repositoryComposioSettingsInputSchema = z
     allowedProfileIds: z.array(z.string().trim().min(1)).default([]),
     blockedToolkitSlugs: z.array(z.string()).default([]),
     agentDefaults: composioAgentDefaultsInputSchema.partial().default({}),
+    // null = never configured (GitHub default-on); array = explicit choice.
+    selectedToolkitSlugs: z.array(z.string()).nullable().default(null),
   })
   .strict();
 
@@ -296,6 +307,19 @@ export function normalizeChatComposioSelection(
     ? parsed.data.agentProfileOverrides
     : undefined;
 
+  // One-wins rule: normalize the direct list; if non-empty it wins over the profile.
+  const directSlugs = normalizeComposioToolkitSlugs(
+    parsed.data.directToolkitSlugs ?? [],
+  );
+
+  if (directSlugs.length > 0) {
+    return {
+      mainProfileId: null,
+      ...(overrides ? { agentProfileOverrides: overrides } : {}),
+      directToolkitSlugs: directSlugs,
+    };
+  }
+
   return {
     mainProfileId: parsed.data.mainProfileId ?? null,
     ...(overrides ? { agentProfileOverrides: overrides } : {}),
@@ -314,6 +338,11 @@ export function normalizeRepositoryComposioSettings(
       parsed.blockedToolkitSlugs,
     ),
     agentDefaults: parsed.agentDefaults,
+    // Preserve null (never configured) vs an explicit, normalized array.
+    selectedToolkitSlugs:
+      parsed.selectedToolkitSlugs === null
+        ? null
+        : normalizeComposioToolkitSlugs(parsed.selectedToolkitSlugs),
   };
 }
 

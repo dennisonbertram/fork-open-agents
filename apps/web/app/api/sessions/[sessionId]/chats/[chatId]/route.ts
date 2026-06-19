@@ -174,11 +174,17 @@ export async function PATCH(req: Request, context: RouteContext) {
 
       const effectiveModelId =
         nextModelId ?? chatContext.chat.modelId ?? undefined;
-      if (!effectiveModelId?.startsWith("anthropic/")) {
+      // Valid when the model is served by this profile's endpoint — either a
+      // model discovered from its /v1/models listing (e.g. ZAI's "glm-4.6") or,
+      // for profiles that haven't discovered models yet, an Anthropic catalog id.
+      const isServedByProfile =
+        (profile.models ?? []).some((model) => model.id === effectiveModelId) ||
+        Boolean(effectiveModelId?.startsWith("anthropic/"));
+      if (!isServedByProfile) {
         return Response.json(
           {
             error:
-              "User inference profiles currently support Anthropic models only",
+              "Selected model isn't available on this inference profile. Pick one of the profile's models.",
           },
           { status: 400 },
         );

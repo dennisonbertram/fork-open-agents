@@ -39,18 +39,33 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  conditionFieldLabel,
   defaultForm,
+  describeOutputModePermissions,
+  fieldsForTrigger,
   flowSteps,
+  isStepValid,
+  outputModeLabel,
   supportedOutputModes,
   triggerLabels,
   type BackgroundAgent,
+  type ConditionField,
   type FormState,
   type OutputMode,
   type TriggerKind,
 } from "./background-agents-form";
+import {
+  mapReadinessToVerdict,
+  type BackgroundReadinessResponse,
+} from "./background-readiness-verdict";
+import {
+  firstFieldError,
+  type FlattenedZodDetails,
+} from "@/lib/background-agents/validation-details";
 
 type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
@@ -81,21 +96,6 @@ type BackgroundRunsResponse = {
   runs: BackgroundRun[];
 };
 
-type BackgroundReadinessCheck = {
-  id: string;
-  label: string;
-  status: "ready" | "missing" | "disabled";
-  detail: string;
-  missing: string[];
-};
-
-type BackgroundReadinessResponse = {
-  enabled: boolean;
-  ready: boolean;
-  missing: string[];
-  checks: BackgroundReadinessCheck[];
-};
-
 type ManualTestResponse = {
   enabled: boolean;
   matched: number;
@@ -105,7 +105,72 @@ type ManualTestResponse = {
   error?: string;
 };
 
-const supportedOutputModeSet = new Set<OutputMode>(supportedOutputModes);
+// Condition field placeholder text by field
+const conditionPlaceholders: Record<ConditionField, string> = {
+  actions: "opened, reopened",
+  branches: "main, release/*",
+  labels: "bug, regression",
+  environments: "production, preview",
+  statuses: "critical, error",
+};
+
+// Condition field → FormState key
+const conditionFormKey: Record<ConditionField, keyof FormState> = {
+  actions: "conditionActions",
+  branches: "conditionBranches",
+  labels: "conditionLabels",
+  environments: "conditionEnvironments",
+  statuses: "conditionSeverities",
+};
+
+type ConditionFieldsProps = {
+  form: FormState;
+  triggerKind: TriggerKind;
+  onChange: (patch: Partial<FormState>) => void;
+};
+
+function ConditionFields({
+  form,
+  triggerKind,
+  onChange,
+}: ConditionFieldsProps) {
+  const liveFields = fieldsForTrigger(triggerKind);
+  if (liveFields.size === 0) {
+    return null;
+  }
+
+  const fieldOrder: ConditionField[] = [
+    "actions",
+    "branches",
+    "labels",
+    "environments",
+    "statuses",
+  ];
+
+  return (
+    <>
+      {fieldOrder.flatMap((field) => {
+        if (!liveFields.has(field)) return [];
+        const formKey = conditionFormKey[field];
+        const label = conditionFieldLabel(field, triggerKind);
+        const placeholder = conditionPlaceholders[field];
+        const value = form[formKey] as string;
+        const id = `agent-condition-${field}`;
+        return [
+          <div key={field} className="space-y-2">
+            <Label htmlFor={id}>{label}</Label>
+            <Input
+              id={id}
+              value={value}
+              placeholder={placeholder}
+              onChange={(event) => onChange({ [formKey]: event.target.value })}
+            />
+          </div>,
+        ];
+      })}
+    </>
+  );
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -196,15 +261,7 @@ export function BackgroundAgentsSection() {
 
   const agents = data?.agents ?? [];
   const runs = runsData?.runs ?? [];
-  const canSubmit = useMemo(
-    () =>
-      form.name.trim() &&
-      form.repoOwner.trim() &&
-      form.repoName.trim() &&
-      form.instructions.trim() &&
-      supportedOutputModeSet.has(form.outputMode),
-    [form],
-  );
+  const canSubmit = useMemo(() => isStepValid(form, "test"), [form]);
 
   const isEditing = editingAgentId !== null;
 
@@ -238,10 +295,15 @@ export function BackgroundAgentsSection() {
         },
       );
       if (!response.ok) {
+        const errorBody = (await response.json().catch(() => ({}))) as {
+          details?: FlattenedZodDetails;
+        };
+        const fieldError = firstFieldError(errorBody.details);
         throw new Error(
-          isEditing
-            ? "Failed to update background agent"
-            : "Failed to create background agent",
+          fieldError ??
+            (isEditing
+              ? "Failed to update background agent"
+              : "Failed to create background agent"),
         );
       }
       setForm(defaultForm);
@@ -332,39 +394,7 @@ export function BackgroundAgentsSection() {
     <div className="space-y-6">
       <section className="rounded-md border border-border">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-medium">Readiness</h2>
-            {readinessData && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {readinessData.ready
-                  ? "Hosted prerequisites are configured."
-                  : `${readinessData.missing.length} prerequisite${readinessData.missing.length === 1 ? "" : "s"} need attention.`}
-              </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {readinessData && (
-              <StatusPill
-                status={
-                  readinessData.ready
-                    ? "ready"
-                    : readinessData.enabled
-                      ? "missing"
-                      : "disabled"
-                }
-              />
-            )}
-            <Button
-              aria-label="Refresh background agent readiness"
-              variant="ghost"
-              size="icon"
-              onClick={() => void mutateReadiness()}
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", readinessLoading && "animate-spin")}
-              />
-            </Button>
-          </div>
+          <h2 className="text-sm font-medium">Readiness</h2>
         </div>
         {readinessError ? (
           <div className="p-4 text-sm text-destructive">
@@ -375,47 +405,12 @@ export function BackgroundAgentsSection() {
             Loading background agent readiness.
           </div>
         ) : readinessData ? (
-          <div className="grid gap-3 p-4 md:grid-cols-2">
-            {readinessData.checks.map((check) => (
-              <div
-                key={check.id}
-                className="rounded-md border border-border bg-muted/20 p-3"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-2">
-                      <CheckCircle2
-                        className={cn(
-                          "h-4 w-4 shrink-0",
-                          check.status === "ready"
-                            ? "text-emerald-600 dark:text-emerald-300"
-                            : "text-muted-foreground",
-                        )}
-                      />
-                      <p className="truncate text-sm font-medium">
-                        {check.label}
-                      </p>
-                    </div>
-                    <p className="mt-1 text-pretty text-xs text-muted-foreground">
-                      {check.detail}
-                    </p>
-                  </div>
-                  <StatusPill status={check.status} />
-                </div>
-                {check.missing.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {check.missing.map((name) => (
-                      <span
-                        key={name}
-                        className="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                      >
-                        {name}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
+          <div className="p-4">
+            <ReadinessVerdict
+              {...mapReadinessToVerdict(readinessData)}
+              onRefresh={() => void mutateReadiness()}
+              refreshing={readinessLoading}
+            />
           </div>
         ) : null}
       </section>
@@ -460,12 +455,33 @@ export function BackgroundAgentsSection() {
               <Label htmlFor="agent-trigger">Trigger</Label>
               <Select
                 value={form.triggerKind}
-                onValueChange={(value) =>
+                onValueChange={(value) => {
+                  const newKind = value as TriggerKind;
+                  const liveFields = fieldsForTrigger(newKind);
                   setForm((current) => ({
                     ...current,
-                    triggerKind: value as TriggerKind,
-                  }))
-                }
+                    triggerKind: newKind,
+                    // Reset dead condition fields so stale values don't accumulate
+                    conditionActions: liveFields.has("actions")
+                      ? current.conditionActions
+                      : "",
+                    conditionBranches: liveFields.has("branches")
+                      ? current.conditionBranches
+                      : "",
+                    conditionLabels: liveFields.has("labels")
+                      ? current.conditionLabels
+                      : "",
+                    conditionEnvironments: liveFields.has("environments")
+                      ? current.conditionEnvironments
+                      : "",
+                    conditionSeverities: liveFields.has("statuses")
+                      ? current.conditionSeverities
+                      : "",
+                    // Reset schedule when switching away from cron
+                    schedule:
+                      newKind === "schedule.cron" ? current.schedule : "",
+                  }));
+                }}
               >
                 <SelectTrigger id="agent-trigger">
                   <SelectValue />
@@ -531,76 +547,13 @@ export function BackgroundAgentsSection() {
               />
             </div>
           )}
-          <div className="space-y-2">
-            <Label htmlFor="agent-condition-actions">Actions</Label>
-            <Input
-              id="agent-condition-actions"
-              value={form.conditionActions}
-              placeholder="opened, reopened"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  conditionActions: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-condition-branches">Branches</Label>
-            <Input
-              id="agent-condition-branches"
-              value={form.conditionBranches}
-              placeholder="main, release/*"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  conditionBranches: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-condition-labels">Labels</Label>
-            <Input
-              id="agent-condition-labels"
-              value={form.conditionLabels}
-              placeholder="bug, regression"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  conditionLabels: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-condition-environments">Environments</Label>
-            <Input
-              id="agent-condition-environments"
-              value={form.conditionEnvironments}
-              placeholder="production, preview"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  conditionEnvironments: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="agent-condition-severities">Severities</Label>
-            <Input
-              id="agent-condition-severities"
-              value={form.conditionSeverities}
-              placeholder="critical, error"
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  conditionSeverities: event.target.value,
-                }))
-              }
-            />
-          </div>
+          <ConditionFields
+            form={form}
+            triggerKind={form.triggerKind}
+            onChange={(patch) =>
+              setForm((current) => ({ ...current, ...patch }))
+            }
+          />
           <div className="space-y-2 md:col-span-2">
             <Label htmlFor="agent-instructions">Instructions</Label>
             <Textarea
@@ -615,8 +568,8 @@ export function BackgroundAgentsSection() {
               }
             />
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-output">Output</Label>
+          <div className="space-y-2 md:col-span-2">
+            <Label htmlFor="agent-output">Output mode</Label>
             <Select
               value={form.outputMode}
               onValueChange={(value) =>
@@ -632,11 +585,14 @@ export function BackgroundAgentsSection() {
               <SelectContent>
                 {supportedOutputModes.map((mode) => (
                   <SelectItem key={mode} value={mode}>
-                    {mode === "ready_pr" ? "Ready PR" : "None"}
+                    {outputModeLabel(mode)}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-xs text-muted-foreground">
+              {describeOutputModePermissions(form.outputMode)}
+            </p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="agent-check">Check command</Label>
@@ -864,7 +820,8 @@ export function BackgroundAgentsSection() {
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <p className="truncate text-sm font-medium">
-                      {run.triggerKind}
+                      {triggerLabels[run.triggerKind as TriggerKind] ??
+                        run.triggerKind}
                     </p>
                     <StatusPill status={run.status} />
                     {run.errorKind && (
