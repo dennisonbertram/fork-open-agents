@@ -94,10 +94,14 @@ const spies = {
   persistSandboxState: mock((_sessionId?: unknown, _sandboxState?: unknown) =>
     Promise.resolve(),
   ),
-  resolveChatSandboxRuntime: mock((params: { assistantId: string }) => {
-    writtenChunks.push({ type: "start", messageId: params.assistantId });
-    return Promise.resolve(createResolvedChatSandboxRuntime());
-  }),
+  resolveChatSandboxRuntime: mock(
+    (
+      params: { assistantId: string },
+    ): Promise<TestResolvedChatSandboxRuntime | TestResolvedSandboxFreeRuntime> => {
+      writtenChunks.push({ type: "start", messageId: params.assistantId });
+      return Promise.resolve(createResolvedChatSandboxRuntime());
+    },
+  ),
   claimActiveStream: mock(() => Promise.resolve("claimed")),
   closeStream: mock((writable: WritableStream<UIMessageChunk>) =>
     writable.close(),
