@@ -162,7 +162,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-1",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow is cancelled", async () => {
@@ -171,7 +175,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-1",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow is failed", async () => {
@@ -180,7 +188,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-1",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow run not found", async () => {
@@ -189,6 +201,10 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith("chat-1", "run-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "run-1",
+      null,
+    );
   });
 });
