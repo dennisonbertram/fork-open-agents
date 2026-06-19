@@ -719,7 +719,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       name: sandboxName,
       resume: options.resume ?? false,
     });
-    await syncGitHubCredentialBrokering(sdk, undefined);
+    if (options.githubToken) {
+      await clearGitHubCredentialBrokering(sdk);
+    }
     const session = sdk.currentSession();
 
     // Use provided remainingTimeout when available; otherwise derive it from the
