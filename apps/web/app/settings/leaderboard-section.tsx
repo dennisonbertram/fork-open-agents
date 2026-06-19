@@ -18,6 +18,7 @@ import { LEADERBOARD_RANK_SWR_KEY } from "@/hooks/use-leaderboard-rank";
 import { fetcher } from "@/lib/swr";
 import { formatDateOnly } from "@/lib/usage/date-range";
 import type { UsageDomainLeaderboard } from "@/lib/usage/types";
+import { SettingsSectionHeader } from "./_components/section-header";
 import { LeaderboardEmptyState } from "./leaderboard-empty-state";
 
 type LeaderboardRange = "today" | "week" | "all";
@@ -65,9 +66,7 @@ export function LeaderboardSectionSkeleton() {
   return (
     <div className="space-y-4">
       <div className="space-y-1.5">
-        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Internal leaderboard
-        </h3>
+        <SettingsSectionHeader title="Internal leaderboard" />
         <Skeleton className="h-4 w-64" />
       </div>
       <div className="space-y-3">
@@ -137,11 +136,7 @@ export function LeaderboardSection() {
   if (error) {
     return (
       <div className="space-y-4">
-        <div className="space-y-1.5">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Internal leaderboard
-          </h3>
-        </div>
+        <SettingsSectionHeader title="Internal leaderboard" />
         <div>
           <p className="text-sm text-muted-foreground">
             Failed to load leaderboard data.
@@ -158,15 +153,11 @@ export function LeaderboardSection() {
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="space-y-1.5">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Internal leaderboard
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Ranked by total tokens for users with @{leaderboard.domain}.
-          </p>
-        </div>
-        <RangeFilter value={range} onChange={setRange} />
+        <SettingsSectionHeader
+          title="Internal leaderboard"
+          description={`Ranked by total tokens for users with @${leaderboard.domain}.`}
+          action={<RangeFilter value={range} onChange={setRange} />}
+        />
       </div>
       {currentUserRank ? (
         <div className="text-sm text-muted-foreground">
