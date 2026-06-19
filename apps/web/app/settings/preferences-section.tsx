@@ -32,7 +32,7 @@ import {
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
 import { SettingsSectionHeader } from "./_components/section-header";
-import { shouldCollapseSingleOption } from "./preferences-helpers";
+import { getSingleOptionPickerState, shouldCollapseSingleOption } from "./preferences-helpers";
 
 // Re-export model section components so loading.tsx and layout.tsx keep working
 // without changing their import paths. The canonical definitions now live in
@@ -95,12 +95,12 @@ function PreferenceGroupTitle({ children }: { children: React.ReactNode }) {
  * height/border of a Select trigger so single-option fields read as a settled
  * value in line with the editable fields beside them — not floating text.
  */
-function ReadOnlyValue({ children }: { children: React.ReactNode }) {
+function ReadOnlyValue({ label, status }: { label: string; status: string }) {
   return (
     <div className="flex h-9 items-center justify-between rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
-      <span className="truncate">{children}</span>
+      <span className="truncate">{label}</span>
       <span className="ml-2 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Only option
+        {status}
       </span>
     </div>
   );
@@ -449,6 +449,16 @@ export function PreferencesSection() {
       (preferences?.defaultManagedRuntimeProfileId ??
         MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.id),
   );
+  const managedRuntimePickerOptions = MANAGED_RUNTIME_PROFILE_OPTIONS.map(
+    (profile) => ({
+      id: profile.id,
+      name: profile.displayName,
+    }),
+  );
+  const sandboxPickerState = getSingleOptionPickerState(SANDBOX_OPTIONS);
+  const managedRuntimePickerState = getSingleOptionPickerState(
+    managedRuntimePickerOptions,
+  );
 
   return (
     <div className="space-y-8">
@@ -487,10 +497,11 @@ export function PreferencesSection() {
           {/* Default sandbox */}
           <div className="grid gap-2">
             <Label htmlFor="sandbox">Default sandbox</Label>
-            {shouldCollapseSingleOption(SANDBOX_OPTIONS) ? (
-              <ReadOnlyValue>
-                {SANDBOX_OPTIONS[0]?.name ?? "None"}
-              </ReadOnlyValue>
+            {sandboxPickerState ? (
+              <ReadOnlyValue
+                label={sandboxPickerState.label}
+                status={sandboxPickerState.status}
+              />
             ) : (
               <Select
                 value={preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE}
@@ -522,15 +533,11 @@ export function PreferencesSection() {
             <Label htmlFor="managed-runtime-profile">
               Default runtime profile
             </Label>
-            {shouldCollapseSingleOption(
-              MANAGED_RUNTIME_PROFILE_OPTIONS.map((p) => ({
-                id: p.id,
-                name: p.displayName,
-              })),
-            ) ? (
-              <ReadOnlyValue>
-                {MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.displayName ?? "None"}
-              </ReadOnlyValue>
+            {managedRuntimePickerState ? (
+              <ReadOnlyValue
+                label={managedRuntimePickerState.label}
+                status={managedRuntimePickerState.status}
+              />
             ) : (
               <Select
                 value={preferences?.defaultManagedRuntimeProfileId}
