@@ -75,6 +75,14 @@ export async function resolveComposioToolsForToolkitList(
 
   const configHash = hashDirectConfig(params.slugs);
 
+  // Selected toolkits with no ACTIVE connected account: their tools are offered
+  // but cannot authenticate. Surfaced so the chat can warn instead of silently
+  // handing the model dead, unauthenticated tools.
+  const disconnectedToolkits = params.slugs.filter((slug) => {
+    const ids = params.connectedAccountIdsByToolkit[slug];
+    return !(Array.isArray(ids) && ids.length > 0);
+  });
+
   const existingRow = await params.getCachedSession(configHash);
 
   if (existingRow) {
@@ -88,6 +96,7 @@ export async function resolveComposioToolsForToolkitList(
       composioSessionId: existingRow.composioSessionId,
       configHash,
       reusedSession: true,
+      disconnectedToolkits,
     };
   }
 
@@ -114,5 +123,6 @@ export async function resolveComposioToolsForToolkitList(
     composioSessionId: session.sessionId,
     configHash,
     reusedSession: false,
+    disconnectedToolkits,
   };
 }

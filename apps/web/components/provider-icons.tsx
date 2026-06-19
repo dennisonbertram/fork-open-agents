@@ -300,6 +300,7 @@ export function getProviderFromModelId(modelId: string): string {
  * e.g. "Claude Opus 4.6" → "Opus 4.6", "GPT-5.4" → "GPT-5.4"
  */
 export function stripProviderPrefix(label: string, provider: string): string {
+  if (!label) return label;
   const prefixes = providerLabelPrefixes[provider];
   if (!prefixes) return label;
   for (const prefix of prefixes) {

@@ -9,6 +9,7 @@ import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
 import {
   extractManagedRuntimeWorkersFromMessages,
   summarizeManagedRuntimeDirectToolUseFromMessages,
+  summarizeExternalToolUseFromMessages,
 } from "@/lib/observability/managed-runtime-workers";
 import {
   listManagedRuntimeProfileRuns,
@@ -162,6 +163,7 @@ export async function GET(req: Request, context: RouteContext) {
     workers: extractManagedRuntimeWorkersFromMessages(workerMessages),
     directToolUse:
       summarizeManagedRuntimeDirectToolUseFromMessages(workerMessages),
+    externalToolUse: summarizeExternalToolUseFromMessages(workerMessages),
     services,
     browserRuns,
     workflowGoals,

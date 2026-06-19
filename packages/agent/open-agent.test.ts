@@ -150,6 +150,33 @@ describe("openAgent runtime tool policy", () => {
 });
 
 // BT-001, BT-002, BT-003: chat-only tool policy for sandbox-free sessions
+describe("model identity in system prompt", () => {
+  test("states the actual serving model id and forbids vendor guessing", () => {
+    const prompt = buildSystemPrompt({ modelId: "glm-5.2" });
+
+    expect(prompt).toContain("Model Identity");
+    expect(prompt).toContain("`glm-5.2`");
+    expect(prompt).toContain("Do NOT claim to be a different model");
+    // Names the families a model commonly mis-self-reports as
+    expect(prompt).toContain("Claude");
+  });
+
+  test("names the user inference profile when the model routes through one", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "glm-5.2",
+      inferenceProfileName: "ZAI (GLM)",
+    });
+
+    expect(prompt).toContain('"ZAI (GLM)" inference profile');
+  });
+
+  test("omits the identity section when no model id is provided", () => {
+    const prompt = buildSystemPrompt({});
+
+    expect(prompt).not.toContain("Model Identity");
+  });
+});
+
 describe("chat-only tool policy (sandbox-free)", () => {
   // BT-001: getChatOnlyTools excludes every sandbox-dependent tool
   test("getChatOnlyTools excludes file/bash/exec/edit/task/grep/glob tools", () => {
@@ -277,5 +304,80 @@ describe("regression: chat-only tool policy stability", () => {
     const withOmitted = Object.keys(getRuntimeModeToolPolicy("classic"));
 
     expect(withFalse).toEqual(withOmitted);
+  });
+});
+
+// GT-001 – GT-005: GitHub tools system-prompt steer (githubToolsEnabled flag)
+describe("GitHub tools prompt steer (githubToolsEnabled)", () => {
+  // GT-001: when githubToolsEnabled=true the prompt includes the GitHub tools guidance
+  test("buildSystemPrompt with githubToolsEnabled:true includes github_list_issues steer", () => {
+    const prompt = buildSystemPrompt({ githubToolsEnabled: true });
+
+    expect(prompt).toContain("github_list_issues");
+    expect(prompt).toContain("Prefer these typed tools");
+  });
+
+  // GT-002: when githubToolsEnabled=false the steer is absent
+  test("buildSystemPrompt with githubToolsEnabled:false omits the GitHub tools steer", () => {
+    const prompt = buildSystemPrompt({ githubToolsEnabled: false });
+
+    expect(prompt).not.toContain("github_list_issues");
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+
+  // GT-003: when githubToolsEnabled is omitted (default) the steer is absent
+  test("buildSystemPrompt without githubToolsEnabled omits the GitHub tools steer", () => {
+    const prompt = buildSystemPrompt({});
+
+    expect(prompt).not.toContain("github_list_issues");
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+
+  // GT-004: prompt is byte-identical whether githubToolsEnabled is false or omitted
+  test("githubToolsEnabled:false produces the same prompt as omitting the flag", () => {
+    const withFalse = buildSystemPrompt({ githubToolsEnabled: false });
+    const withOmitted = buildSystemPrompt({});
+
+    expect(withFalse).toBe(withOmitted);
+  });
+
+  // GT-005: the GitHub steer section does NOT bleed into managed_runtime or sandboxFree prompts
+  // when githubToolsEnabled is absent — confirming zero behavior change when flag is off
+  test("managed_runtime prompt without githubToolsEnabled does not contain GitHub steer", () => {
+    const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
+
+    expect(prompt).not.toContain("Prefer these typed tools");
+  });
+});
+
+// GTA-001 – GTA-003: GitHub tool-preference steer over web_fetch
+// (githubToolAvailable flag — covers native AND Composio GitHub tools)
+describe("GitHub tool-preference steer (githubToolAvailable)", () => {
+  // GTA-001: when githubToolAvailable=true the prompt steers away from web_fetch
+  test("buildSystemPrompt with githubToolAvailable:true steers away from web_fetch for GitHub", () => {
+    const prompt = buildSystemPrompt({ githubToolAvailable: true });
+
+    expect(prompt).toContain("web_fetch");
+    expect(prompt).toContain("api.github.com");
+  });
+
+  // GTA-002: when githubToolAvailable is false/omitted the steer is absent
+  test("buildSystemPrompt without githubToolAvailable omits the web_fetch GitHub steer", () => {
+    const withFalse = buildSystemPrompt({ githubToolAvailable: false });
+    const withOmitted = buildSystemPrompt({});
+
+    expect(withFalse).not.toContain("api.github.com");
+    expect(withFalse).toBe(withOmitted);
+  });
+
+  // GTA-003: the steer is independent of the typed-tools steer
+  test("githubToolAvailable steer appears even when githubToolsEnabled is false", () => {
+    const prompt = buildSystemPrompt({
+      githubToolAvailable: true,
+      githubToolsEnabled: false,
+    });
+
+    expect(prompt).toContain("api.github.com");
+    expect(prompt).not.toContain("github_list_issues");
   });
 });

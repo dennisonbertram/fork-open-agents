@@ -10,6 +10,7 @@ import { validateSchedule } from "./schedule-presets";
 
 export type TriggerKind =
   | "github.pull_request"
+  | "github.pull_request_review"
   | "github.deployment_status"
   | "github.issue"
   | "schedule.cron"
@@ -40,6 +41,8 @@ export type BackgroundAgentTrigger = {
   webhookPublicId: string | null;
 };
 
+export type GitHubAccessLevel = "read" | "write";
+
 export type BackgroundAgent = {
   id: string;
   name: string;
@@ -51,6 +54,19 @@ export type BackgroundAgent = {
   outputMode: OutputMode;
   checkCommand: string | null;
   triggers: BackgroundAgentTrigger[];
+  /** Saved GitHub permissions. Optional so create-flow callers stay valid. */
+  permissions?: {
+    github?: {
+      contents?: GitHubAccessLevel;
+      pullRequests?: GitHubAccessLevel;
+      issues?: GitHubAccessLevel;
+      deployments?: "read";
+      statuses?: "read";
+      checks?: "read";
+    };
+  };
+  /** Composio toolkit slugs this agent is authorized to use. */
+  composioToolkitSlugs?: string[];
 };
 
 export type FormState = {
@@ -68,6 +84,10 @@ export type FormState = {
   outputMode: OutputMode;
   checkCommand: string;
   enabled: boolean;
+  permissionContents: GitHubAccessLevel;
+  permissionPullRequests: GitHubAccessLevel;
+  /** Composio toolkit slugs selected for this agent. */
+  composioToolkitSlugs: string[];
 };
 
 export const defaultForm: FormState = {
@@ -85,14 +105,18 @@ export const defaultForm: FormState = {
   outputMode: "none",
   checkCommand: "",
   enabled: false,
+  permissionContents: "read",
+  permissionPullRequests: "read",
+  composioToolkitSlugs: [],
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
-  "github.pull_request": "Pull request",
-  "github.deployment_status": "Deployment status",
-  "github.issue": "Issue",
-  "schedule.cron": "Schedule",
-  "webhook.error": "Error webhook",
+  "github.pull_request": "A pull request changes",
+  "github.pull_request_review": "A pull request is reviewed",
+  "github.deployment_status": "A deployment finishes",
+  "github.issue": "An issue is opened",
+  "schedule.cron": "On a schedule",
+  "webhook.error": "An error is reported (webhook)",
 };
 
 export const flowSteps = [
@@ -165,6 +189,14 @@ function buildConditions(form: FormState): TriggerConditions {
 
 export function buildAgentPayload(form: FormState) {
   const conditions = buildConditions(form);
+  // Ready PR is non-functional without write access — the agent must push a
+  // branch and open a PR — so floor contents + pull_requests to "write" for
+  // ready_pr regardless of the calling surface (the settings form has no
+  // permission controls and would otherwise send read/read). Report-only agents
+  // keep the user's chosen access so least-privilege selections are preserved.
+  const requiresWrite = form.outputMode === "ready_pr";
+  const contents = requiresWrite ? "write" : form.permissionContents;
+  const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
   return {
     name: form.name,
     repoOwner: form.repoOwner,
@@ -175,14 +207,15 @@ export function buildAgentPayload(form: FormState) {
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
-        contents: form.outputMode === "ready_pr" ? "write" : "read",
-        pullRequests: form.outputMode === "ready_pr" ? "write" : "read",
+        contents,
+        pullRequests,
         issues: "read",
         deployments: "read",
         statuses: "read",
         checks: "read",
       },
     },
+    composioToolkitSlugs: form.composioToolkitSlugs,
     triggers: [
       {
         name: triggerLabels[form.triggerKind],
@@ -226,6 +259,9 @@ export function fieldsForTrigger(kind: TriggerKind): Set<ConditionField> {
   switch (kind) {
     case "github.pull_request":
       return new Set<ConditionField>(["actions", "branches", "labels"]);
+    case "github.pull_request_review":
+      // actions: submitted; statuses: approved|changes_requested|commented
+      return new Set<ConditionField>(["actions", "statuses"]);
     case "github.issue":
       return new Set<ConditionField>(["actions", "labels"]);
     case "github.deployment_status":
@@ -251,6 +287,7 @@ export function conditionFieldLabel(
   if (field === "statuses") {
     if (triggerKind === "github.deployment_status") return "Deployment state";
     if (triggerKind === "webhook.error") return "Severity";
+    if (triggerKind === "github.pull_request_review") return "Review state";
     return "Statuses";
   }
   switch (field) {
@@ -349,6 +386,18 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
+  // Ready PR requires write to function, so always present write for it. For
+  // report-only agents, preserve the saved access (least-privilege), falling
+  // back to read for agents created before permissions were persisted.
+  const savedGh = agent.permissions?.github;
+  const isReadyPr = agent.outputMode === "ready_pr";
+  const permissionContents: GitHubAccessLevel = isReadyPr
+    ? "write"
+    : (savedGh?.contents ?? "read");
+  const permissionPullRequests: GitHubAccessLevel = isReadyPr
+    ? "write"
+    : (savedGh?.pullRequests ?? "read");
+
   return {
     name: agent.name,
     repoOwner: agent.repoOwner,
@@ -364,5 +413,8 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
+    permissionContents,
+    permissionPullRequests,
+    composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
   };
 }

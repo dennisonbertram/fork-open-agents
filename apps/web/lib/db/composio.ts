@@ -218,6 +218,7 @@ export function getRepositoryComposioSettingsValues(
     allowedProfileIds: settings.allowedProfileIds,
     blockedToolkitSlugs: settings.blockedToolkitSlugs,
     agentDefaults: settings.agentDefaults,
+    selectedToolkitSlugs: settings.selectedToolkitSlugs,
   });
 }
 

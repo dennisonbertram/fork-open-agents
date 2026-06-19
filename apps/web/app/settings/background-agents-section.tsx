@@ -62,6 +62,10 @@ import {
   mapReadinessToVerdict,
   type BackgroundReadinessResponse,
 } from "./background-readiness-verdict";
+import {
+  firstFieldError,
+  type FlattenedZodDetails,
+} from "@/lib/background-agents/validation-details";
 
 type BackgroundAgentsResponse = {
   agents: BackgroundAgent[];
@@ -291,10 +295,15 @@ export function BackgroundAgentsSection() {
         },
       );
       if (!response.ok) {
+        const errorBody = (await response.json().catch(() => ({}))) as {
+          details?: FlattenedZodDetails;
+        };
+        const fieldError = firstFieldError(errorBody.details);
         throw new Error(
-          isEditing
-            ? "Failed to update background agent"
-            : "Failed to create background agent",
+          fieldError ??
+            (isEditing
+              ? "Failed to update background agent"
+              : "Failed to create background agent"),
         );
       }
       setForm(defaultForm);

@@ -37,6 +37,13 @@ mock.module("@/app/workflows/background-agent", () => ({
   runBackgroundAgentWorkflow: {},
 }));
 
+// No agent-loops mocks needed here. dispatcher.ts only imports
+// @/lib/agent-loops/* via dynamic import inside loopId-bound trigger branches.
+// All triggers in this test file have loopId: null, so those branches never
+// execute and the agent-loops modules are never loaded.
+// Do NOT register mock.module calls for agent-loops paths in this file —
+// doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
+
 mock.module("./store", () => ({
   advanceTriggerScheduleState,
   createRunForTrigger,
@@ -61,6 +68,7 @@ const agent: BackgroundAgentWithTriggers = {
     {
       id: "trigger-disabled",
       agentId: "agent-1",
+      loopId: null,
       userId: "user-1",
       name: "Disabled",
       kind: "github.issue",
@@ -78,6 +86,7 @@ const agent: BackgroundAgentWithTriggers = {
     {
       id: "trigger-enabled",
       agentId: "agent-1",
+      loopId: null,
       userId: "user-1",
       name: "Pull request",
       kind: "github.pull_request",
@@ -99,6 +108,7 @@ const agent: BackgroundAgentWithTriggers = {
   permissions: {},
   outputMode: "none",
   checkCommand: null,
+  composioToolkitSlugs: [],
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -191,6 +201,7 @@ describe("dispatchBackgroundTriggerEvent", () => {
       created: 0,
       duplicates: 1,
       runIds: ["run-existing"],
+      loopRunIds: [],
     });
     expect(start).not.toHaveBeenCalled();
     expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
@@ -253,6 +264,7 @@ describe("dispatchBackgroundTriggerEvent", () => {
       created: 0,
       duplicates: 0,
       runIds: [],
+      loopRunIds: [],
     });
     expect(listMatchingTriggersForEvent).not.toHaveBeenCalled();
     expect(createRunForTrigger).not.toHaveBeenCalled();
@@ -290,6 +302,7 @@ describe("dispatchWebhookErrorEvent", () => {
       created: 1,
       duplicates: 0,
       runIds: ["run-1"],
+      loopRunIds: [],
     });
     expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -337,6 +350,7 @@ describe("dispatchWebhookErrorEvent", () => {
       created: 0,
       duplicates: 0,
       runIds: [],
+      loopRunIds: [],
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
@@ -369,6 +383,7 @@ describe("dispatchScheduledBackgroundAgents", () => {
       created: 1,
       duplicates: 0,
       runIds: ["run-1"],
+      loopRunIds: [],
     });
     expect(recordBackgroundAgentEvent).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -426,6 +441,7 @@ describe("dispatchScheduledBackgroundAgents", () => {
       created: 0,
       duplicates: 0,
       runIds: [],
+      loopRunIds: [],
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
@@ -451,6 +467,7 @@ describe("dispatchManualBackgroundAgentTest", () => {
       created: 1,
       duplicates: 0,
       runIds: ["run-1"],
+      loopRunIds: [],
     });
     expect(createRunForTrigger).toHaveBeenCalledTimes(1);
     const createCall = createRunForTrigger.mock.calls[0]?.[0] as {
@@ -489,6 +506,7 @@ describe("dispatchManualBackgroundAgentTest", () => {
       created: 0,
       duplicates: 0,
       runIds: [],
+      loopRunIds: [],
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
@@ -509,6 +527,7 @@ describe("dispatchManualBackgroundAgentTest", () => {
       created: 0,
       duplicates: 0,
       runIds: [],
+      loopRunIds: [],
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();

@@ -4,7 +4,11 @@ import { ChevronDown, RefreshCw } from "lucide-react";
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-export type ReadinessStatus = "ready" | "action-needed" | "unavailable" | "error";
+export type ReadinessStatus =
+  | "ready"
+  | "action-needed"
+  | "unavailable"
+  | "error";
 
 export interface ReadinessCheck {
   id: string;
@@ -73,7 +77,9 @@ export function ReadinessVerdict({
           <div className="min-w-0 space-y-0.5">
             <p className="text-pretty text-sm font-medium">{headline}</p>
             {subtext ? (
-              <p className="text-pretty text-xs text-muted-foreground">{subtext}</p>
+              <p className="text-pretty text-xs text-muted-foreground">
+                {subtext}
+              </p>
             ) : null}
             {action ? <div className="pt-1.5">{action}</div> : null}
           </div>
@@ -85,7 +91,9 @@ export function ReadinessVerdict({
             aria-label="Refresh status"
             className="text-muted-foreground hover:text-foreground"
           >
-            <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
+            <RefreshCw
+              className={cn("h-4 w-4", refreshing && "animate-spin")}
+            />
           </button>
         ) : null}
       </div>
@@ -98,7 +106,12 @@ export function ReadinessVerdict({
             aria-expanded={open}
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                open && "rotate-180",
+              )}
+            />
             Operator details
           </button>
           {open ? (
@@ -107,13 +120,18 @@ export function ReadinessVerdict({
                 <li className="text-xs" key={check.id}>
                   <div className="flex items-center gap-1.5">
                     <span
-                      className={cn("h-1.5 w-1.5 rounded-full", CHECK_DOT[check.status])}
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        CHECK_DOT[check.status],
+                      )}
                       aria-hidden="true"
                     />
                     <span className="font-medium">{check.label}</span>
                   </div>
                   {check.detail ? (
-                    <p className="ml-3 text-pretty text-muted-foreground">{check.detail}</p>
+                    <p className="ml-3 text-pretty text-muted-foreground">
+                      {check.detail}
+                    </p>
                   ) : null}
                   {check.present?.length || check.missing?.length ? (
                     <div className="ml-3 mt-1 flex flex-wrap gap-1">

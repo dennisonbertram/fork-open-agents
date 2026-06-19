@@ -35,6 +35,7 @@ mock.module("@/lib/db/client", () => ({
 
 mock.module("@/lib/db/schema", () => ({
   accounts: {},
+  sessions: {},
 }));
 
 const tokenModulePromise = import("./token");

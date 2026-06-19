@@ -1,6 +1,10 @@
 import "server-only";
 
-import { openAgent, type OpenAgentCallOptions } from "@open-agents/agent";
+import {
+  gateway,
+  openAgent,
+  type OpenAgentCallOptions,
+} from "@open-agents/agent";
 import {
   connectSandbox,
   getCurrentBranch,
@@ -40,6 +44,7 @@ import {
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
 } from "./store";
+import { resolveComposioToolsForBgRun } from "./composio-tools";
 import { buildRunSummary } from "./run-summary";
 import {
   persistRunSummary,
@@ -52,7 +57,15 @@ import {
   buildBackgroundPullRequestBody,
   buildBackgroundPullRequestTitle,
 } from "./ready-pr";
-import type { BackgroundAgentTriggerKind } from "./types";
+import type {
+  BackgroundAgentTriggerKind,
+  NormalizedBackgroundTriggerEvent,
+} from "./types";
+import { isLearningsAgent } from "@/lib/learnings/builtin-agent";
+import { runLearningsExtraction } from "@/lib/learnings/runner";
+import { createDbLearningsStore } from "@/lib/learnings/store";
+import { generateText, Output } from "ai";
+import { extractedLearningCandidateSchema } from "@/lib/learnings/types";
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
@@ -263,6 +276,8 @@ async function runMutationAgent(params: {
   sandboxName: string;
   sandbox: Sandbox;
   prompt: string;
+  /** Optional Composio tools to inject into the agent loop. */
+  composioTools?: import("ai").ToolSet;
 }) {
   const messages: ModelMessage[] = [
     {
@@ -279,7 +294,7 @@ async function runMutationAgent(params: {
     },
     runtimeMode: "classic",
     customInstructions:
-      "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary. External third-party tool providers such as Composio are not available in v1.",
+      "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
 
   await recordBackgroundAgentEvent({
@@ -303,6 +318,7 @@ async function runMutationAgent(params: {
     const result = await openAgent.generate({
       messages,
       options,
+      ...(params.composioTools ? { tools: params.composioTools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
     });
     const durationMs = Date.now() - startedAt;
@@ -565,6 +581,167 @@ async function createReadyPullRequestOutput(params: {
   return prResult;
 }
 
+/**
+ * Reconstruct a NormalizedBackgroundTriggerEvent from the stored run columns.
+ *
+ * The run row persists source, triggerKind, externalId, repoOwner, repoName,
+ * prNumber, ref, sha, branch, and payloadSummary (title, url, actor, action).
+ * There is no 'merged' column, but for github.pull_request runs that reached
+ * this branch the trigger had mergedOnly:true, so the PR was merged when the
+ * run was created. We reconstruct merged:true for that kind.
+ */
+function reconstructEventFromRun(
+  run: import("@/lib/db/schema").BackgroundAgentRun,
+): NormalizedBackgroundTriggerEvent {
+  return {
+    source: run.source,
+    kind: run.triggerKind,
+    externalId: run.externalId,
+    repoOwner: run.repoOwner,
+    repoName: run.repoName,
+    action: run.payloadSummary?.action ?? undefined,
+    ref: run.ref ?? undefined,
+    sha: run.sha ?? undefined,
+    branch: run.branch ?? undefined,
+    prNumber: run.prNumber ?? undefined,
+    issueNumber: run.issueNumber ?? undefined,
+    deploymentUrl: run.deploymentUrl ?? undefined,
+    title: run.payloadSummary?.title ?? undefined,
+    url: run.payloadSummary?.url ?? undefined,
+    actor: run.payloadSummary?.actor ?? undefined,
+    // Runs for github.pull_request with mergedOnly:true were always merged
+    merged: run.triggerKind === "github.pull_request" ? true : undefined,
+  };
+}
+
+/**
+ * Generates structured learnings candidates from a PR diff using the default
+ * LLM. Mirrors the generate pattern in lib/github/pr-content.ts.
+ */
+async function generateLearnings(prompt: string): Promise<unknown> {
+  const result = await generateText({
+    model: gateway("anthropic/claude-haiku-4.5"),
+    prompt,
+    experimental_output: Output.object({
+      schema: extractedLearningCandidateSchema
+        .array()
+        .transform((candidates) => ({
+          candidates,
+        })),
+    }),
+  });
+  return result.experimental_output;
+}
+
+/**
+ * Runs the learnings extraction path without a sandbox.
+ * Called from executeBackgroundAgentRun when the agent has the learnings marker.
+ */
+async function executeLearningsAgentRun(params: {
+  run: import("@/lib/db/schema").BackgroundAgentRun;
+  agentId: string;
+  installationId: number;
+  repositoryId: number;
+  workflowRunId: string;
+}) {
+  const { run, agentId, installationId, repositoryId, workflowRunId } = params;
+
+  const event = reconstructEventFromRun(run);
+  const store = createDbLearningsStore();
+
+  let result: import("@/lib/learnings/runner").RunLearningsExtractionResult;
+  try {
+    result = await withScopedInstallationOctokit({
+      installationId,
+      repositoryId,
+      permissions: { contents: "read", pull_requests: "read" },
+      operation: async (octokit) =>
+        runLearningsExtraction({
+          event,
+          userId: run.userId,
+          installationId,
+          backgroundAgentRunId: run.id,
+          octokit,
+          generate: generateLearnings,
+          store,
+          recordEvent: (eventParams) =>
+            recordBackgroundAgentEvent({
+              ...(eventParams as Parameters<
+                typeof recordBackgroundAgentEvent
+              >[0]),
+              workflowRunId,
+            }).then(() => undefined),
+        }),
+    });
+  } catch (error) {
+    await updateBackgroundAgentRunStatus({
+      runId: run.id,
+      status: "failed",
+      workflowRunId,
+      errorKind: "workflow_failed",
+      errorMessage:
+        error instanceof Error ? error.message : "Learnings extraction failed.",
+    });
+    await recordBackgroundAgentEvent({
+      runId: run.id,
+      agentId,
+      userId: run.userId,
+      eventName: "learnings-agent.run.failed",
+      status: "failed",
+      level: "warn",
+      summary: "Learnings extraction threw an unexpected error.",
+      workflowRunId,
+      requestId: run.requestId,
+      errorKind: "workflow_failed",
+    });
+    return;
+  }
+
+  if (result.errorKind) {
+    await updateBackgroundAgentRunStatus({
+      runId: run.id,
+      status: "failed",
+      workflowRunId,
+      errorKind: result.errorKind,
+    });
+    await recordBackgroundAgentEvent({
+      runId: run.id,
+      agentId,
+      userId: run.userId,
+      eventName: "learnings-agent.run.failed",
+      status: "failed",
+      level: "warn",
+      summary: `Learnings extraction failed: ${result.errorKind}`,
+      workflowRunId,
+      requestId: run.requestId,
+      errorKind: result.errorKind,
+    });
+    return;
+  }
+
+  await updateBackgroundAgentRunStatus({
+    runId: run.id,
+    status: "succeeded",
+    workflowRunId,
+  });
+  await recordBackgroundAgentEvent({
+    runId: run.id,
+    agentId,
+    userId: run.userId,
+    eventName: "learnings-agent.run.succeeded",
+    status: "succeeded",
+    summary: `Learnings extraction completed: ${result.accepted} accepted, ${result.rejected} rejected.`,
+    workflowRunId,
+    requestId: run.requestId,
+    payload: {
+      candidatesExtracted: result.candidatesExtracted,
+      accepted: result.accepted,
+      merged: result.merged,
+      rejected: result.rejected,
+    },
+  });
+}
+
 export async function executeBackgroundAgentRun(params: {
   runId: string;
   workflowRunId: string;
@@ -649,6 +826,20 @@ export async function executeBackgroundAgentRun(params: {
     },
   });
 
+  // ── Built-in learnings agent branch ──────────────────────────────────────
+  // Detected by marker in instructions. Runs extraction without sandbox —
+  // do not pay sandbox costs for this read-only arc.
+  if (isLearningsAgent(agent)) {
+    await executeLearningsAgentRun({
+      run,
+      agentId: agent.id,
+      installationId: access.installationId,
+      repositoryId: access.repositoryId,
+      workflowRunId: params.workflowRunId,
+    });
+    return;
+  }
+
   let setupToken: ScopedInstallationToken | undefined;
   let sandbox: Sandbox | undefined;
   try {
@@ -730,6 +921,64 @@ export async function executeBackgroundAgentRun(params: {
     timeoutMs: 15_000,
   });
 
+  // ── Phase 5: resolve Composio tools for this run ─────────────────────────
+  // Attempted when the agent has non-empty composioToolkitSlugs.
+  // Empty slugs = no-op (pre-Phase-5 behavior).
+  // The resolver handles repo policy gating. Grant-level gating is checked
+  // here: if no enabled grants exist, slugs are cleared before resolving
+  // so the resolver fast-paths to { status: "off" } without external calls.
+  let resolvedComposioTools: import("ai").ToolSet | undefined;
+  const agentToolkitSlugs = agent.composioToolkitSlugs ?? [];
+
+  if (agentToolkitSlugs.length > 0) {
+    const composioResult = await resolveComposioToolsForBgRun({
+      agentId: run.agentId,
+      runId: run.id,
+      userId: run.userId,
+      slugs: agentToolkitSlugs,
+      repoOwner: run.repoOwner,
+      repoName: run.repoName,
+    });
+
+    if (composioResult.status === "ready") {
+      resolvedComposioTools = composioResult.tools;
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.resolved",
+        status: "succeeded",
+        summary: `Resolved Composio tools: ${composioResult.toolkitSlugs.join(", ")}.`,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        // Payload: toolkit names only — no secrets, no API keys.
+        payload: {
+          toolkitSlugs: composioResult.toolkitSlugs,
+          toolCount: Object.keys(composioResult.tools).length,
+        },
+      });
+    } else if (composioResult.status === "error") {
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.error",
+        status: "failed",
+        level: "warn",
+        summary: `Composio tool resolution failed: ${composioResult.error}`,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        payload: {
+          // Do NOT include error details that might contain secrets
+          toolkitSlugsRequested: agentToolkitSlugs,
+        },
+      });
+      // Non-fatal: run continues without Composio tools.
+    }
+  }
+
   let readyPrBranchName: string | null = null;
   if (agent.outputMode === "ready_pr") {
     readyPrBranchName = buildBackgroundBranchName({
@@ -771,6 +1020,7 @@ export async function executeBackgroundAgentRun(params: {
           payloadSummary: run.payloadSummary,
           checkCommand: agent.checkCommand,
         }),
+        composioTools: resolvedComposioTools,
       });
       await recordBackgroundAgentEvent({
         runId: run.id,

@@ -5,6 +5,8 @@ import {
   getComposioAgentSession,
   getComposioToolProfile,
   getChatComposioSelection,
+  getRepositoryComposioSettings,
+  getRepositoryComposioSettingsValues,
   touchComposioAgentSession,
   upsertComposioAgentSession,
   isComposioProfileAllowedForRepository,
@@ -21,6 +23,9 @@ import {
 import { toComposioUserId } from "./user-id";
 import { getComposioUserFacingError } from "./errors";
 import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
+import { resolveComposioSlugsForChatMain } from "./resolve-chat-with-agent-row";
+import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
+import { getEffectiveRepoToolkitSlugs } from "./repo-toolkit-selection";
 
 export {
   buildComposioSessionConfig,
@@ -46,6 +51,12 @@ export type ResolvedComposioTools =
       composioSessionId: string;
       configHash: string;
       reusedSession: boolean;
+      /**
+       * Selected direct-list toolkits that have no ACTIVE connected account.
+       * Their tools are still offered but cannot authenticate, so the chat
+       * surfaces a "not connected" warning. Undefined on the profile path.
+       */
+      disconnectedToolkits?: string[];
     };
 
 /**
@@ -119,6 +130,53 @@ function toSetupError(error: unknown): ComposioSetupError {
   return new ComposioSetupError(getComposioUserFacingError(error));
 }
 
+/**
+ * Resolve the repo/workspace-level toolkit slugs for a session's repo, applying
+ * GitHub default-on when the repo has never been configured. Returns null when
+ * there is no repo, Composio is unconfigured, or the effective list is empty.
+ */
+async function resolveRepoSelectedSlugs(params: {
+  userId: string;
+  sessionId: string;
+}): Promise<string[] | null> {
+  const sessionRecord = await getSessionById(params.sessionId);
+  const repoOwner = sessionRecord?.repoOwner;
+  const repoName = sessionRecord?.repoName;
+  if (!repoOwner || !repoName) {
+    return null;
+  }
+  if (!getComposioConfig().configured) {
+    return null;
+  }
+
+  const repoSettings = await getRepositoryComposioSettings({
+    userId: params.userId,
+    repoOwner,
+    repoName,
+  });
+  const stored =
+    getRepositoryComposioSettingsValues(repoSettings)?.selectedToolkitSlugs;
+  // `undefined` (no row) and `null` both mean "never configured".
+  const selectedToolkitSlugs = stored ?? null;
+
+  // Only resolve connected accounts when needed for the GitHub default-on
+  // decision (an unconfigured repo). An explicit selection wins without it.
+  let githubConnected = false;
+  if (selectedToolkitSlugs === null) {
+    const connected = await fetchConnectedAccountsByToolkit(
+      getComposioClient(),
+      params.userId,
+    );
+    githubConnected = (connected.github?.length ?? 0) > 0;
+  }
+
+  const effective = getEffectiveRepoToolkitSlugs({
+    selectedToolkitSlugs,
+    githubConnected,
+  });
+  return effective.length > 0 ? effective : null;
+}
+
 export async function resolveComposioToolsForChat(params: {
   userId: string;
   chatId: string;
@@ -138,10 +196,68 @@ export async function resolveComposioToolsForChat(params: {
   // saved profile.
   const isMainAgentKey =
     params.agentKey === undefined || params.agentKey === "main";
-  const directSlugs =
-    isMainAgentKey && selection.directToolkitSlugs?.length
-      ? selection.directToolkitSlugs
-      : null;
+
+  // ── Phase 3: resolve agent row defaults for the main agent ────────────────
+  // For the main agent, consult resolveAgentForRole to get the user_default
+  // composio config. The explicit per-chat selection ALWAYS wins; the agent
+  // row only fills in when the chat has no explicit value.
+  // PRECEDENCE:
+  //   explicit per-chat directToolkitSlugs > explicit per-chat mainProfileId
+  //   > agent row composioToolkitSlugs > agent row composioProfileId
+  //   > null (no tools, today's behavior)
+  let agentRowComposioSlugs: string[] | null = null;
+  let agentRowComposioProfileId: string | null = null;
+
+  if (isMainAgentKey) {
+    try {
+      const agentRow = await resolveAgentForRole({
+        userId: params.userId,
+        role: "main",
+        sessionId: chat.sessionId,
+      });
+      // Only use agent row values when they differ from empty defaults
+      // (composioToolkitSlugs defaults to [] in synthetic fallback, which means
+      // "no row" — treat both [] and null as "no agent-row selection")
+      agentRowComposioSlugs =
+        agentRow.composioToolkitSlugs.length > 0
+          ? agentRow.composioToolkitSlugs
+          : null;
+      agentRowComposioProfileId = agentRow.composioProfileId;
+    } catch {
+      // Graceful degradation: if agent row resolution fails, fall back to
+      // today's behavior (no agent row contribution)
+    }
+  }
+
+  // ── Repo/workspace-level toolkit selection (lowest precedence) ────────────
+  // Governs when the chat has no explicit selection — the case that otherwise
+  // yields no Composio tools and forces the model onto unauthenticated
+  // web_fetch for GitHub. GitHub is default-on for an unconfigured repo.
+  let repoSelectedSlugs: string[] | null = null;
+  if (isMainAgentKey) {
+    try {
+      repoSelectedSlugs = await resolveRepoSelectedSlugs({
+        userId: params.userId,
+        sessionId: chat.sessionId,
+      });
+    } catch {
+      // Non-fatal: fall back to today's behavior (no repo contribution).
+    }
+  }
+
+  const resolvedForMain = isMainAgentKey
+    ? resolveComposioSlugsForChatMain({
+        chatDirectSlugs: selection.directToolkitSlugs ?? null,
+        chatMainProfileId: selection.mainProfileId,
+        agentRowComposioSlugs,
+        agentRowComposioProfileId,
+        repoSelectedSlugs,
+      })
+    : null;
+
+  const directSlugs = isMainAgentKey
+    ? (resolvedForMain?.directSlugs ?? null)
+    : null;
 
   if (directSlugs) {
     if ((params.runtimeMode ?? "classic") !== "classic") {
@@ -197,9 +313,12 @@ export async function resolveComposioToolsForChat(params: {
     }
   }
 
-  // ── Profile path (existing behavior, unchanged) ───────────────────────────
+  // ── Profile path ─────────────────────────────────────────────────────────
+  // For the main agent, use the resolved profileId (which already applies the
+  // precedence: explicit chat profile > agent row profile > null).
+  // For subagents, use the existing agentProfileOverrides logic unchanged.
   const profileId = isMainAgentKey
-    ? selection.mainProfileId
+    ? (resolvedForMain?.profileId ?? null)
     : (selection.agentProfileOverrides?.[params.agentKey!] ?? null);
 
   if (!profileId) {

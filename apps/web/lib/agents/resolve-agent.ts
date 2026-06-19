@@ -26,6 +26,7 @@ export interface AgentRow {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 }
 
 /**
@@ -34,6 +35,21 @@ export interface AgentRow {
  */
 export interface ResolvedAgent {
   role: AgentRole;
+  /**
+   * True when this resolution came from a real DB agents row.
+   * False when it is the synthetic prefs-derived fallback (no rows exist).
+   *
+   * Consumers (e.g. chat.ts toRosterEntry) must check this before including
+   * modelId in a roster entry: a synthetic modelId must NOT be threaded into
+   * the roster because it lacks providerOptionsOverrides, which would silently
+   * drop model-variant overrides already wired through subagentModel.
+   */
+  fromDbRow: boolean;
+  /**
+   * The DB agents row id, or null when this is a synthetic fallback (no DB row).
+   * Required to attribute tool-entry proposals (agent_tool_entries.agent_id FK).
+   */
+  agentId: string | null;
   modelId: string | null;
   inferenceProfileId: string | null;
   instructions: string | null;
@@ -43,6 +59,7 @@ export interface ResolvedAgent {
   composioProfileId: string | null;
   managedRuntimeProfileId: string | null;
   toolAuthoringEnabled: boolean;
+  githubToolsEnabled: boolean;
 }
 
 export interface PickScopeKeys {
@@ -145,6 +162,8 @@ export async function resolveAgentForRole(
 
   return {
     role,
+    fromDbRow: false,
+    agentId: null,
     modelId,
     inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
     instructions: null, // null = use built-in system prompt for the role
@@ -154,6 +173,7 @@ export async function resolveAgentForRole(
     composioProfileId: null,
     managedRuntimeProfileId: prefs.defaultManagedRuntimeProfileId,
     toolAuthoringEnabled: false,
+    githubToolsEnabled: false,
   };
 }
 
@@ -173,6 +193,8 @@ function normalizeSkillRefs(value: unknown): GlobalSkillRef[] {
 function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
   return {
     role: row.role,
+    fromDbRow: true,
+    agentId: row.id,
     modelId: row.modelId,
     inferenceProfileId: row.inferenceProfileId,
     instructions: row.instructions,
@@ -182,5 +204,6 @@ function rowToResolvedAgent(row: AgentRow): ResolvedAgent {
     composioProfileId: row.composioProfileId,
     managedRuntimeProfileId: row.managedRuntimeProfileId,
     toolAuthoringEnabled: row.toolAuthoringEnabled,
+    githubToolsEnabled: row.githubToolsEnabled,
   };
 }

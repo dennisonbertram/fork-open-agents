@@ -104,6 +104,12 @@ const spies = {
   resolveComposioToolsForChat: mock(
     async (): Promise<unknown> => ({ status: "off" as const }),
   ),
+  resolveGitHubToolsForChat: mock(
+    async (): Promise<unknown> => ({
+      status: "off" as const,
+      reason: "not_enabled" as const,
+    }),
+  ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
   recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
@@ -399,6 +405,10 @@ mock.module("@/lib/composio/session", () => ({
   resolveComposioToolsForChat: spies.resolveComposioToolsForChat,
 }));
 
+mock.module("@/lib/github/tools", () => ({
+  resolveGitHubToolsForChat: spies.resolveGitHubToolsForChat,
+}));
+
 mock.module("./chat-sandbox-runtime", () => ({
   resolveChatSandboxRuntime: spies.resolveChatSandboxRuntime,
 }));
@@ -454,6 +464,52 @@ const validateGoalCompletionSpy = mock(
 
 mock.module("@/lib/workflows/goal-validation", () => ({
   validateGoalCompletion: validateGoalCompletionSpy,
+}));
+
+// ── Subagent roster mock ────────────────────────────────────────────
+// Controls what resolveAgentForRole returns for each role.
+// Default: synthetic fallback shape (fromDbRow: false, modelId from prefs,
+// no instructions, no slugs) — mirrors production when zero agent rows exist.
+type MockResolvedAgent = {
+  role: string;
+  modelId: string | null;
+  fromDbRow: boolean;
+  instructions: string | null;
+  composioToolkitSlugs: string[];
+  inferenceProfileId: string | null;
+  skillRefs: never[];
+  builtinToolNames: null;
+  composioProfileId: null;
+  managedRuntimeProfileId: string | null;
+  toolAuthoringEnabled: boolean;
+};
+
+function makeSyntheticResolvedAgent(
+  role: string,
+  modelId = "anthropic/claude-haiku-4.5",
+): MockResolvedAgent {
+  return {
+    role,
+    modelId,
+    fromDbRow: false,
+    instructions: null,
+    composioToolkitSlugs: [],
+    inferenceProfileId: null,
+    skillRefs: [],
+    builtinToolNames: null,
+    composioProfileId: null,
+    managedRuntimeProfileId: null,
+    toolAuthoringEnabled: false,
+  };
+}
+
+// The spy is the single mock implementation; individual tests can override it.
+const resolveAgentForRoleSpy = mock(async (params: { role: string }) =>
+  makeSyntheticResolvedAgent(params.role),
+);
+
+mock.module("@/lib/agents/resolve-agent", () => ({
+  resolveAgentForRole: resolveAgentForRoleSpy,
 }));
 
 const { runAgentWorkflow } = await import("./chat");
@@ -578,6 +634,10 @@ beforeEach(() => {
   // Reset goal-validation spy and result (null = use real logic in spy).
   goalValidationResult = null;
   validateGoalCompletionSpy.mockClear();
+  // Reset resolveAgentForRole to synthetic fallback (no DB rows) for each test.
+  resolveAgentForRoleSpy.mockImplementation(async (params: { role: string }) =>
+    makeSyntheticResolvedAgent(params.role),
+  );
 });
 
 describe("runAgentWorkflow", () => {
@@ -709,7 +769,10 @@ describe("runAgentWorkflow", () => {
 
     await runAgentWorkflow(makeOptions());
 
-    expect(agentStreamTools).toBe(composioTools);
+    // mergeExtraTools returns a fresh object ({ ...composioTools }) so Composio
+    // and GitHub tools can coexist without clobbering; assert structural
+    // equality rather than reference identity.
+    expect(agentStreamTools).toEqual(composioTools);
     expect(spies.emitSessionEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         eventName: "composio.profile.selected",
@@ -819,7 +882,7 @@ describe("runAgentWorkflow", () => {
     });
   });
 
-  test("marks managed runtime proof incomplete when no managed worker executed", async () => {
+  test("marks managed runtime proof no_activity when the coordinator answers without delegating or running tools", async () => {
     spies.resolveChatSandboxRuntime.mockImplementationOnce(
       (params: { assistantId: string }) => {
         writtenChunks.push({ type: "start", messageId: params.assistantId });
@@ -849,7 +912,7 @@ describe("runAgentWorkflow", () => {
         type: "data-runtime-proof",
         id: "gen-id-1:runtime-proof",
         data: {
-          status: "incomplete",
+          status: "no_activity",
           runtimeMode: "managed_runtime",
           workflowRunId: "wrun_test-123",
           sandboxName: "session_session-1",
@@ -872,6 +935,11 @@ describe("runAgentWorkflow", () => {
             toolTypes: [],
             toolLabels: [],
             warning: null,
+          },
+          externalToolUse: {
+            observed: false,
+            count: 0,
+            toolNames: [],
           },
           evidence: [
             "Managed runtime was selected for this workflow.",
@@ -1094,6 +1162,68 @@ describe("runAgentWorkflow", () => {
         limitations: expect.arrayContaining([
           "Coordinator direct repo tool use observed: Bash. These actions did not run through a managed worker.",
         ]),
+      },
+    });
+  });
+
+  test("regression(issue-416): does not mark proof completed when worker failed but external tools completed", async () => {
+    // Regression for the bug where failed > 0 AND completed === 0 AND
+    // externalToolsCompleted > 0 would incorrectly return 'completed'.
+    // The outer if fires because failed > 0; the inner guard must also check
+    // failed === 0 so external tools cannot mask a failed managed worker.
+    agentAssistantParts = [
+      { type: "text", text: "Done." },
+      // A managed worker that failed
+      {
+        ...managedWorkerTaskPart(),
+        state: "output-error",
+      },
+      // Two successful external (Composio/dynamic) tool calls
+      {
+        type: "dynamic-tool",
+        state: "output-available",
+        toolName: "github_create_file",
+      },
+      {
+        type: "dynamic-tool",
+        state: "output-available",
+        toolName: "github_push_files",
+      },
+    ];
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const proofPart = writtenChunks.find(
+      (chunk) => chunk.type === "data-runtime-proof",
+    );
+
+    // External tools must NOT elevate proof to 'completed' when a managed
+    // worker was attempted and failed (failed=1, completed=0).
+    expect(proofPart).toMatchObject({
+      type: "data-runtime-proof",
+      data: {
+        status: "incomplete",
+        workerEvidence: {
+          failed: 1,
+          completed: 0,
+        },
       },
     });
   });
@@ -2493,6 +2623,103 @@ describe("runAgentWorkflow", () => {
     );
     expect(source).toContain('"@/lib/workflows/goal-validation"');
     expect(source).toContain("validateGoalCompletion");
+  });
+
+  // ── PARAMOUNT INVARIANT: subagent roster must be null when no DB rows ──────
+  // BT-ROSTER-001 through BT-ROSTER-003 guard against the invariant violation
+  // described in the blocking finding: when resolveAgentForRole returns a synthetic
+  // fallback (fromDbRow=false), chat.ts must NOT emit a modelId-only roster entry.
+  // If it does, applyRosterOverrides calls gateway(modelId) without
+  // providerOptionsOverrides, silently dropping model-variant overrides.
+  //
+  // NOTE: These tests MUST appear before ANY test that re-mocks @/app/config
+  // (the abort test and "still clears stream" test), because those re-mocks
+  // persist for subsequent dynamic imports and break stream option capture.
+
+  test("BT-ROSTER-001: when all roles return synthetic fallback (fromDbRow=false), agentOptions has no subagentRoster", async () => {
+    // Synthetic fallback has non-null modelId (from prefs), null instructions,
+    // empty slugs. Before the fix, toRosterEntry() would include modelId
+    // and hasAnyEntry would be true → roster threaded into agentOptions.
+    // After the fix, fromDbRow=false means modelId is ignored in toRosterEntry,
+    // no entry is emitted, and subagentRoster stays null.
+    await runAgentWorkflow(makeOptions());
+
+    // agentStreamOptions is what was passed to webAgent.stream().
+    // It must NOT have a subagentRoster when all roles are synthetic.
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    expect(opts?.subagentRoster).toBeUndefined();
+  });
+
+  test("BT-ROSTER-002: when one role has a real DB row (fromDbRow=true, modelId set), roster IS threaded for that role only", async () => {
+    // executor has a real DB row with a custom model — should appear in roster.
+    // explorer and design are synthetic — should NOT appear in roster.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "executor") {
+          return {
+            ...makeSyntheticResolvedAgent("executor", "openai/gpt-5.4"),
+            fromDbRow: true,
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    // roster must exist because executor has a real DB row
+    expect(roster).toBeDefined();
+    // only executor appears
+    expect(roster?.executor).toMatchObject({ modelId: "openai/gpt-5.4" });
+    // explorer and design must be absent (synthetic, no entry emitted)
+    expect(roster?.explorer).toBeUndefined();
+    expect(roster?.design).toBeUndefined();
+  });
+
+  test("BT-ROSTER-003: when all roles are synthetic (fromDbRow=false) even with non-null modelId, subagentRoster in agentOptions is undefined", async () => {
+    // Simulate the exact production scenario: user has defaultSubagentModelId set,
+    // zero agents rows. All roles return synthetic with a non-null modelId.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) =>
+        makeSyntheticResolvedAgent(params.role, "anthropic/claude-sonnet-4.5"),
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    // subagentRoster must be absent — model is already wired via subagentModel
+    // in the agentOptions, and we must NOT override it without providerOptionsOverrides
+    expect(opts?.subagentRoster).toBeUndefined();
+  });
+
+  test("regression: BT-ROSTER-REG-001 real DB row with instructions still threads full roster entry", async () => {
+    // If fromDbRow=true AND instructions is set, the entry must include both
+    // modelId and instructions. This catches future regressions where only one
+    // field is emitted.
+    resolveAgentForRoleSpy.mockImplementation(
+      async (params: { role: string }) => {
+        if (params.role === "explorer") {
+          return {
+            ...makeSyntheticResolvedAgent("explorer", "openai/gpt-5.4"),
+            fromDbRow: true,
+            instructions: "Focus on reading, not writing.",
+          };
+        }
+        return makeSyntheticResolvedAgent(params.role);
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    const roster = opts?.subagentRoster as Record<string, unknown> | undefined;
+    expect(roster).toBeDefined();
+    expect(roster?.explorer).toMatchObject({
+      modelId: "openai/gpt-5.4",
+      instructions: "Focus on reading, not writing.",
+    });
   });
 
   test("recordGoalLedgerClose uses 'canceled' status when workflow is aborted", async () => {
