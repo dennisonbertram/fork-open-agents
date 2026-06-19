@@ -119,3 +119,63 @@ export function VerifiedBuildPanel({
 }
 
 export default VerifiedBuildPanel;
+
+/**
+ * Pure presentational empty-state component for the Verified Build panel.
+ *
+ * When harnessEnabled=false it shows a "Verified Build is disabled" message.
+ * When harnessEnabled=true it shows a "Start Verified Build" button (disabled
+ * when latestUserMessageId is null — there is no chat message to anchor the run).
+ *
+ * Exported for isolated testing of the UX contract.
+ */
+export function VerifiedBuildPanelEmpty({
+  harnessEnabled,
+  sessionId,
+  chatId,
+  latestUserMessageId,
+  onRunStarted,
+}: {
+  harnessEnabled: boolean;
+  sessionId: string;
+  chatId: string;
+  latestUserMessageId: string | null;
+  onRunStarted: () => void;
+}) {
+  if (!harnessEnabled) {
+    return (
+      <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+        Verified Build is disabled
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-3 px-3 py-6 text-center">
+      <p className="text-xs text-muted-foreground">
+        No Verified Build run for this chat.
+      </p>
+      <Button
+        size="sm"
+        disabled={!latestUserMessageId}
+        onClick={() => {
+          if (!latestUserMessageId) return;
+          void fetch("/api/harness/runs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              sessionId,
+              chatId,
+              latestUserMessageId,
+              mode: "verified_build",
+            }),
+          }).then((res) => {
+            if (res.ok) onRunStarted();
+          });
+        }}
+      >
+        Start Verified Build
+      </Button>
+    </div>
+  );
+}

@@ -244,3 +244,8 @@ No non-trivial PR should merge unless:
 Approvals are not required yet so the repo can keep moving quickly while a
 single maintainer is driving the work. Add a one-approval requirement once there
 is a second regular reviewer.
+
+CI also runs a `build` job (`next build`) and a PR-only `guards` job
+(migration-safety + test-touch). These are not blocking until added to the
+required-status-check list; promote them once they have a green history. See
+[Pipeline Gates](pipeline-gates.md) for the full machine-enforced layer.

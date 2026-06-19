@@ -46,6 +46,7 @@ interface SessionStarterVercelSyncSectionProps {
   requiresVercelChoice: boolean;
   vercelProjectChoice: string | null | undefined;
   onVercelProjectChoiceChange: (value: string | null) => void;
+  onRetry?: () => void;
 }
 
 export function SessionStarterVercelSyncSection({
@@ -56,6 +57,7 @@ export function SessionStarterVercelSyncSection({
   requiresVercelChoice,
   vercelProjectChoice,
   onVercelProjectChoiceChange,
+  onRetry,
 }: SessionStarterVercelSyncSectionProps) {
   // Auto-expand when user needs to make a choice
   const [manualExpanded, setManualExpanded] = useState(false);
@@ -136,16 +138,29 @@ export function SessionStarterVercelSyncSection({
   const compact = getCompactContent();
 
   if (!expanded && compact) {
+    // The expand control is its own <button>; the optional Retry renders as a
+    // sibling button (never nested inside the expand button — invalid HTML).
     return (
-      <button
-        type="button"
-        onClick={() => setManualExpanded(true)}
-        className="flex w-full items-center gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/40 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
-      >
-        {compact.icon}
-        <span className="min-w-0 flex-1 truncate">{compact.label}</span>
-        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-      </button>
+      <div className="flex w-full items-center gap-1 rounded-lg border border-border/70 bg-muted/20 pr-2 transition-colors hover:bg-muted/40 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+        <button
+          type="button"
+          onClick={() => setManualExpanded(true)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3.5 py-2.5 text-left"
+        >
+          {compact.icon}
+          <span className="min-w-0 flex-1 truncate">{compact.label}</span>
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        </button>
+        {repoProjectsError && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Retry
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -184,9 +199,20 @@ export function SessionStarterVercelSyncSection({
         ) : repoProjectsError ? (
           <div className="flex items-start gap-2.5">
             <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {repoProjectsError}. Will fall back to any saved repo default.
-            </p>
+            <div className="flex flex-col gap-1">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {repoProjectsError}. Will fall back to any saved repo default.
+              </p>
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="self-start rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                >
+                  Retry
+                </button>
+              )}
+            </div>
           </div>
         ) : repoProjects?.projects.length === 0 ? (
           <div className="flex items-start gap-2.5">

@@ -26,6 +26,36 @@ const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
 let composioPolicy = { allowed: true, reason: null as string | null };
 
+// Mock resolveRepoDefaults so existing tests are not affected by the new
+// repo-defaults lookup added in P4. The mock returns values that match the
+// user-preferences mock above (autoCommitPush/autoCreatePr: false,
+// managedRuntimeProfileId: "web-bun-agent-browser") so that tests written
+// against preferences-layer behavior continue to pass without change.
+mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
+  resolveRepoDefaults: async () => ({
+    autoCommitPush: false,
+    autoCreatePr: false,
+    managedRuntimeProfileId: "web-bun-agent-browser",
+    runtimeMode: "classic",
+    vcpus: 2,
+    fullClone: false,
+    prewarmEnabled: false,
+    defaultBranch: null,
+    isNewBranch: false,
+  }),
+  mergeRepoDefaults: () => ({
+    autoCommitPush: false,
+    autoCreatePr: false,
+    managedRuntimeProfileId: "web-bun-agent-browser",
+    runtimeMode: "classic",
+    vcpus: 2,
+    fullClone: false,
+    prewarmEnabled: false,
+    defaultBranch: null,
+    isNewBranch: false,
+  }),
+}));
+
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => currentSession,
 }));
@@ -511,5 +541,124 @@ describe("/api/sessions POST vercel project linking", () => {
     // Whitespace-only title must fall back to the random-city name.
     expect(body.session.title).toBe("Oslo");
     expect(createCalls[0]).toMatchObject({ title: "Oslo" });
+  });
+});
+
+// BT-001, BT-002, BT-003
+describe("/api/sessions POST no-repo sandbox-free creation", () => {
+  beforeEach(() => {
+    currentSession = {
+      user: {
+        id: "user-1",
+        username: "nico",
+        name: "Nico",
+      },
+    };
+    savedLink = null;
+    currentVercelToken = "vercel-token";
+    matchingProjects = [];
+    matchingProjectsError = null;
+    createCalls.length = 0;
+    initialChatCalls.length = 0;
+    upsertCalls.length = 0;
+    composioPolicy = { allowed: true, reason: null };
+  });
+
+  // BT-001: No-repo create must NOT enter provisioning lifecycle
+  test("no-repo (New Chat) create does NOT set lifecycleState to provisioning", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}));
+
+    expect(response.status).toBe(200);
+    // lifecycleState must NOT be "provisioning" for a sandbox-free session
+    expect(createCalls[0]).not.toMatchObject({
+      lifecycleState: "provisioning",
+    });
+    // It should be null (no lifecycle) to avoid perpetual provisioning
+    expect(createCalls[0]?.lifecycleState).toBeNull();
+  });
+
+  // BT-002: No-repo create must NOT provision a sandbox (sandboxState must be null)
+  test("no-repo (New Chat) create does NOT set sandboxState", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}));
+
+    expect(response.status).toBe(200);
+    // sandboxState must be null for a no-repo session — no sandbox provisioned
+    expect(createCalls[0]?.sandboxState).toBeNull();
+  });
+
+  // BT-003: Repo-backed sessions still enter provisioning (unchanged behavior)
+  test("repo-backed create still enters provisioning lifecycle (no regression)", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // Repo-backed sessions must still enter provisioning so the sandbox lifecycle kicks in
+    expect(createCalls[0]).toMatchObject({
+      lifecycleState: "provisioning",
+      sandboxState: { type: "vercel" },
+    });
+  });
+
+  // REGRESSION-001: The API response body itself must reflect the null lifecycle for no-repo sessions
+  test("no-repo session response body has null lifecycleState and null sandboxState", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}));
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    // If the implementation regresses (back to hardcoded "provisioning"),
+    // these assertions will fail and catch the breakage.
+    expect(body.session.lifecycleState).toBeNull();
+    expect(body.session.sandboxState).toBeNull();
+  });
+
+  // REGRESSION-002: Partial repo input (only repoOwner, no repoName) also stays sandbox-free
+  test("session with repoOwner but no repoName does not enter provisioning", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({ repoOwner: "vercel" }));
+
+    expect(response.status).toBe(200);
+    // hasRepo requires BOTH repoOwner AND repoName; partial input must not trigger provisioning
+    expect(createCalls[0]?.lifecycleState).toBeNull();
+    expect(createCalls[0]?.sandboxState).toBeNull();
+  });
+
+  // REGRESSION-003: Repo-backed session response body confirms provisioning (catches accidental no-op)
+  test("repo-backed session response body has provisioning lifecycleState and vercel sandboxState", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    // If the implementation accidentally disabled provisioning for repo sessions,
+    // this catches it.
+    expect(body.session.lifecycleState).toBe("provisioning");
+    expect(body.session.sandboxState).toEqual({ type: "vercel" });
   });
 });
