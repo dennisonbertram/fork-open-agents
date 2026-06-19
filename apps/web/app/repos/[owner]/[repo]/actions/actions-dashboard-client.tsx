@@ -402,7 +402,7 @@ export function ActionsDashboardClient({
     { revalidateOnFocus: false },
   );
 
-  const canWrite = isReady;
+  const canWrite = isReady === true;
 
   const defaultBranch = React.useMemo(() => {
     if (runs.data?.ok && runs.data.runs.length > 0) {
