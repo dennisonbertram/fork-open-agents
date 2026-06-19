@@ -188,6 +188,7 @@ import {
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
 import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
+  createOnDemandSandboxForSession,
   createSandbox,
   getSandboxCreateErrorDetails,
   type SandboxCreateErrorDetails,
@@ -3077,25 +3078,10 @@ export function SessionChatContent({
     setSandboxCreateError(null);
 
     try {
-      // Step 1: Transition DB state to provisioning so the server records the intent.
-      const attachRes = await fetch(`/api/sessions/${session.id}/sandbox`, {
-        method: "POST",
+      const newSandbox = await createOnDemandSandboxForSession({
+        sessionId: session.id,
+        sandboxType: preferredSandboxType,
       });
-      if (!attachRes.ok) {
-        const errData = (await attachRes.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(errData.error ?? "Failed to attach sandbox");
-      }
-
-      // Step 2: Create the actual sandbox VM via the existing sandbox API.
-      const newSandbox = await createSandbox(
-        undefined,
-        undefined,
-        false,
-        session.id,
-        preferredSandboxType,
-      );
       setSandboxInfo(newSandbox);
       setSandboxTypeFromUnknown(newSandbox.type);
       setSandboxCreateError(null);
@@ -3103,6 +3089,7 @@ export function SessionChatContent({
     } catch (err) {
       const details = getSandboxCreateErrorDetails(err);
       setSandboxCreateError(details);
+      void requestStatusSync("force");
       console.error("[AddSandbox] Failed to attach sandbox:", err);
     } finally {
       setIsCreatingSandbox(false);

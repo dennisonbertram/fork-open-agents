@@ -1,5 +1,8 @@
 import "server-only";
 
+import { verifyRepoAccess } from "./access";
+import { listWorkflowRuns } from "./actions-manager/runs";
+import { withScopedInstallationOctokit } from "./app";
 import { getUserOctokit } from "./client";
 
 // ---- Error taxonomy -------------------------------------------------------
@@ -9,6 +12,9 @@ export type DashboardErrorKind =
   | "repo_access_denied"
   | "installation_missing"
   | "app_no_access"
+  | "app_no_actions_permission"
+  | "github_rate_limited"
+  | "unauthenticated"
   | "provider_rate_limited"
   | "provider_unavailable"
   | "invalid_repo"
@@ -370,26 +376,48 @@ function resolveLatestStatus(
 }
 
 async function fetchActionsSummary(
-  octokit: NonNullable<Awaited<ReturnType<typeof getUserOctokit>>>,
+  userId: string,
   owner: string,
   repo: string,
 ): Promise<ActionsSummary> {
   try {
-    const response = await octokit.rest.actions.listWorkflowRunsForRepo({
+    const access = await verifyRepoAccess({
+      userId,
       owner,
       repo,
-      per_page: WORKFLOW_RUN_LIMIT,
+      requiredUserPermission: "read",
+    });
+    if (!access.ok) {
+      return {
+        ok: false,
+        errorKind:
+          access.reason === "no_installation"
+            ? "installation_missing"
+            : access.reason === "app_no_access"
+              ? "app_no_access"
+              : "repo_access_denied",
+      };
+    }
+
+    const response = await withScopedInstallationOctokit({
+      installationId: access.installationId,
+      repositoryId: access.repositoryId,
+      permissions: { actions: "read", metadata: "read" },
+      operation: (installationOctokit) =>
+        listWorkflowRuns(installationOctokit, owner, repo, {
+          perPage: WORKFLOW_RUN_LIMIT,
+        }),
     });
 
-    const recentRuns: ActionRunItem[] = response.data.workflow_runs
+    const recentRuns: ActionRunItem[] = response.runs
       .slice(0, WORKFLOW_RUN_LIMIT)
       .map((run) => ({
         runId: run.id,
-        name: run.name ?? "Workflow",
+        name: run.name,
         conclusion: run.conclusion ?? null,
-        status: run.status ?? "unknown",
-        createdAt: run.created_at,
-        url: run.html_url,
+        status: run.status,
+        createdAt: run.createdAt,
+        url: run.htmlUrl,
       }));
 
     return {
@@ -437,7 +465,7 @@ export async function getRepoDashboardData(params: {
   const [prSummary, issueSummary, actionsSummary] = await Promise.all([
     fetchPrSummary(octokit, owner, repo),
     fetchIssueSummary(octokit, owner, repo),
-    fetchActionsSummary(octokit, owner, repo),
+    fetchActionsSummary(userId, owner, repo),
   ]);
 
   return { prSummary, issueSummary, actionsSummary };

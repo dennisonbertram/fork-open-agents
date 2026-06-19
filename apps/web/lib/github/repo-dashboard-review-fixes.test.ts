@@ -88,8 +88,6 @@ mock.module("@/lib/github/client", () => ({
   getUserOctokit: async () => mockUserOctokit,
 }));
 
-const helperModulePromise = import("./repo-dashboard");
-
 function makeMockOctokit() {
   return {
     rest: {
@@ -147,6 +145,30 @@ function makeMockOctokit() {
   };
 }
 
+const withScopedInstallationOctokit = mock(
+  async (params: {
+    operation: (
+      octokit: ReturnType<typeof makeMockOctokit>,
+    ) => Promise<unknown>;
+  }) => params.operation(makeMockOctokit()),
+);
+
+mock.module("@/lib/github/access", () => ({
+  verifyRepoAccess: async () => ({
+    ok: true,
+    installationId: 123,
+    repositoryId: 456,
+    defaultBranch: "develop",
+    userPermission: "write",
+  }),
+}));
+
+mock.module("@/lib/github/app", () => ({
+  withScopedInstallationOctokit,
+}));
+
+const helperModulePromise = import("./repo-dashboard");
+
 describe("Helper review-fix: BLOCKER 3 — true open issue count", () => {
   beforeEach(() => {
     mockPrList = [];
@@ -158,6 +180,7 @@ describe("Helper review-fix: BLOCKER 3 — true open issue count", () => {
     mockWorkflowRunsError = null;
     mockIssueSearchTotalCount = null;
     mockIssueSearchError = null;
+    withScopedInstallationOctokit.mockClear();
     mockUserOctokit = makeMockOctokit();
   });
 
