@@ -76,7 +76,6 @@ import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown"
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
-import { ComposioToolSelectorCompact } from "@/components/composio-tool-selector-compact";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -1360,7 +1359,6 @@ export function SessionChatContent({
     archiveSession,
     unarchiveSession: _unarchiveSession,
     updateChatModel,
-    updateChatComposioSelection,
     updateSessionTitle,
     updateRuntimeMode,
     updateManagedRuntimeProfile,
@@ -1767,7 +1765,6 @@ export function SessionChatContent({
     [],
   );
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
-  const [isUpdatingTools, setIsUpdatingTools] = useState(false);
   const lastStatusSyncAtRef = useRef(0);
   const statusSyncInFlightRef = useRef(false);
   const pendingOptimisticTitleChatIdRef = useRef<string | null>(null);
@@ -2008,20 +2005,6 @@ export function SessionChatContent({
       }
     },
     [selectedModelOptionId, updateChatModel],
-  );
-
-  const handleComposioSelectionChange = useCallback(
-    async (selection: typeof chatInfo.composioSelection) => {
-      try {
-        setIsUpdatingTools(true);
-        await updateChatComposioSelection(selection);
-      } catch (err) {
-        console.error("Failed to update chat tools:", err);
-      } finally {
-        setIsUpdatingTools(false);
-      }
-    },
-    [updateChatComposioSelection],
   );
 
   const selectedModelOption = useMemo(
@@ -4797,16 +4780,6 @@ export function SessionChatContent({
                                 />
                               </div>
                             )}
-                            <ComposioToolSelectorCompact
-                              selection={chatInfo.composioSelection}
-                              repoOwner={session.repoOwner}
-                              repoName={session.repoName}
-                              githubConnected={!!session.cloneUrl}
-                              disabled={
-                                isArchived || isChatInFlight || isUpdatingTools
-                              }
-                              onChange={handleComposioSelectionChange}
-                            />
                             <RuntimeModeSelectorCompact
                               disabled={isArchived || isChatInFlight}
                               managedRuntimeProfileId={
