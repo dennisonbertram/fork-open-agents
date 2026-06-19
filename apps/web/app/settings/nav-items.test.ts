@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { Bot, Cpu, Sparkles, Users } from "lucide-react";
+import { Bot, Cpu, Lightbulb, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
@@ -36,7 +36,11 @@ describe("settings nav data", () => {
       "/loops",
       "/settings/runtime-profiles",
     ]);
-    expect(byId.insights).toEqual(["/settings/usage", "/settings/leaderboard"]);
+    expect(byId.insights).toEqual([
+      "/settings/usage",
+      "/settings/leaderboard",
+      "/settings/learnings",
+    ]);
     expect(byId.admin).toEqual(["/settings/admin"]);
   });
 
@@ -55,8 +59,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(14);
-    expect(new Set(items.map((i) => i.id)).size).toBe(14);
+    expect(items).toHaveLength(15);
+    expect(new Set(items.map((i) => i.id)).size).toBe(15);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -135,5 +139,15 @@ describe("settings nav data", () => {
   test("NAV-009: loops nav item is active for nested routes /loops/[loopId]", () => {
     const item = findActiveNavItem("/loops/loop_abc123");
     expect(item?.id).toBe("loops");
+  });
+
+  test("learnings item lives in Insights and uses its route slug for active matching", () => {
+    const item = findActiveNavItem("/settings/learnings");
+    expect(item?.id).toBe("learnings");
+    expect(item?.href).toBe("/settings/learnings");
+    expect(item?.icon).toBe(Lightbulb);
+
+    const insightsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "insights");
+    expect(insightsGroup?.items.map((i) => i.id)).toContain("learnings");
   });
 });
