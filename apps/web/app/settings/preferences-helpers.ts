@@ -7,3 +7,18 @@ export function shouldCollapseSingleOption(
 ): boolean {
   return options.length <= 1;
 }
+
+export function getSingleOptionPickerState(
+  options: Array<{ id: string; name: string }>,
+): { label: string; status: string } | null {
+  if (!shouldCollapseSingleOption(options)) {
+    return null;
+  }
+
+  const option = options[0];
+
+  return {
+    label: option?.name ?? "None",
+    status: option ? "Only available option" : "No options available",
+  };
+}
