@@ -355,6 +355,43 @@ describe("dispatchWebhookErrorEvent", () => {
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
+
+  test("does not let signed webhook payload repo values bypass the agent allowlist", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "allowed/repo";
+    webhookRow = {
+      agent: {
+        ...agent,
+        repoOwner: "blocked",
+        repoName: "repo",
+      },
+      trigger: webhookTrigger,
+    };
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_123",
+      event: {
+        externalId: "error-1",
+        repoOwner: "allowed",
+        repoName: "repo",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-05-27T12:00:00.000Z",
+      },
+      requestId: "req-webhook-bypass",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchScheduledBackgroundAgents", () => {

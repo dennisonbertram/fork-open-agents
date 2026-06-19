@@ -202,14 +202,14 @@ describe("upsertUserDefaultAgent — githubToolsEnabled field (BT-A-004)", () =>
     expect(opts?.set?.githubToolsEnabled).toBe(true);
   });
 
-  it("BT-A-004f: conflict target matches the user_default partial unique index", async () => {
-    await upsertUserDefaultAgent("u1", "main", { modelId: "m" });
+  it("BT-A-004f: targets the user_default partial unique index", async () => {
+    await upsertUserDefaultAgent("u1", "main", {});
     const opts = lastOnConflictOpts as {
       target?: unknown[];
       targetWhere?: unknown;
     } | null;
     expect(opts).not.toBeNull();
-    expect(opts?.target).toEqual(["userId_col", "role_col", "scope_col"]);
+    expect(opts?.target).toEqual(["userId_col", "role_col"]);
     expect(opts?.targetWhere).toBeDefined();
   });
 

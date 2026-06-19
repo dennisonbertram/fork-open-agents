@@ -1,7 +1,7 @@
 /**
  * Regression tests for the two blocking fixes:
  *
- * 1. agents_user_role_scope_idx must remain uniqueIndex (not plain index).
+ * 1. agents_user_default_role_scope_idx must remain uniqueIndex.
  *    If reverted to index(), ON CONFLICT in upsertUserDefaultAgent throws in
  *    production and every PATCH /api/settings/agents returns 500.
  *
@@ -37,43 +37,47 @@ const noRuntimeProfiles: ManagedRuntimeProfile[] = [];
 
 // ── Regression: uniqueIndex declaration ──────────────────────────────────────
 
-describe("Regression: agents_user_role_scope_idx uniqueIndex", () => {
+describe("Regression: agents_user_default_role_scope_idx uniqueIndex", () => {
   /**
    * REG-FIX1-001: The index must stay unique.
    * If someone changes uniqueIndex back to index in schema.ts this test catches it
    * before a migration is generated and deployed.
    */
-  test("REG-FIX1-001: agents_user_role_scope_idx unique flag must be true", async () => {
+  test("REG-FIX1-001: user-default role index unique flag must be true", async () => {
     const { agents } = await import("@/lib/db/schema");
     const { getTableConfig } = await import("drizzle-orm/pg-core");
     const config = getTableConfig(agents);
 
     const idx = config.indexes.find(
+      (i) => i.config.name === "agents_user_default_role_scope_idx",
+    );
+    const lookupIdx = config.indexes.find(
       (i) => i.config.name === "agents_user_role_scope_idx",
     );
     expect(idx).toBeDefined();
     expect(idx?.config.unique).toBe(true);
+    expect(idx?.config.where).toBeDefined();
+    expect(lookupIdx).toBeDefined();
+    expect(lookupIdx?.config.unique).toBe(false);
   });
 
   /**
-   * REG-FIX1-002: The unique index must span exactly userId, role, and scope —
-   * the three columns that upsertUserDefaultAgent uses as the ON CONFLICT target.
+   * REG-FIX1-002: The unique index must span exactly userId and role —
+   * the columns that upsertUserDefaultAgent uses as the ON CONFLICT target.
    * If any column is removed the conflict resolution silently fails.
    */
-  test("REG-FIX1-002: unique index covers userId, role, and scope columns exactly", async () => {
+  test("REG-FIX1-002: user-default unique index covers userId and role exactly", async () => {
     const { agents } = await import("@/lib/db/schema");
     const { getTableConfig } = await import("drizzle-orm/pg-core");
     const config = getTableConfig(agents);
 
     const idx = config.indexes.find(
-      (i) => i.config.name === "agents_user_role_scope_idx",
+      (i) => i.config.name === "agents_user_default_role_scope_idx",
     );
     const colNames = (idx?.config.columns ?? []).map(
       (c: unknown) => (c as { name?: string }).name,
     );
-    expect(colNames).toContain("user_id");
-    expect(colNames).toContain("role");
-    expect(colNames).toContain("scope");
+    expect(colNames).toEqual(["user_id", "role"]);
   });
 });
 

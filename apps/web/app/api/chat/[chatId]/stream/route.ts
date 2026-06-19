@@ -48,9 +48,8 @@ export async function GET(_request: Request, context: RouteContext) {
       status === "cancelled" ||
       status === "failed"
     ) {
-      // Workflow is done — clear the stale activeStreamId using CAS to avoid
-      // overwriting a concurrently-claimed activeStreamId from a new workflow.
-      await compareAndSetChatActiveStreamId(chatId, runId, null);
+      // Workflow is done — clear the stale activeStreamId.
+      await clearStaleActiveStreamId(chatId, runId);
       return new Response(null, { status: 204 });
     }
 
@@ -60,9 +59,18 @@ export async function GET(_request: Request, context: RouteContext) {
 
     return createUIMessageStreamResponse({ stream });
   } catch {
-    // Workflow run not found or inaccessible — clear stale ID, but only if
-    // no new workflow has claimed the slot (CAS prevents overwriting it).
-    await compareAndSetChatActiveStreamId(chatId, runId, null);
+    // Workflow run not found or inaccessible — clear stale ID.
+    await clearStaleActiveStreamId(chatId, runId);
     return new Response(null, { status: 204 });
+  }
+}
+
+async function clearStaleActiveStreamId(chatId: string, runId: string) {
+  const cleared = await compareAndSetChatActiveStreamId(chatId, runId, null);
+  if (!cleared) {
+    console.info("[workflow] chat_stream_stale_clear_skipped", {
+      chatId,
+      expectedRunId: runId,
+    });
   }
 }

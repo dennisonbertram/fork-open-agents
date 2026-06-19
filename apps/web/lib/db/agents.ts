@@ -116,7 +116,7 @@ export async function upsertUserDefaultAgent(
     .insert(agents)
     .values(row)
     .onConflictDoUpdate({
-      target: [agents.userId, agents.role, agents.scope],
+      target: [agents.userId, agents.role],
       targetWhere: sql`${agents.scope} = 'user_default'`,
       set: {
         modelId: row.modelId,

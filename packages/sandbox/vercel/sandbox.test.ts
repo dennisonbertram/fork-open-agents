@@ -441,6 +441,14 @@ describe("GitHub setup credential brokering", () => {
 
     expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
   });
+
+  test("does not clear GitHub auth when reconnecting without a brokered token", async () => {
+    await sandboxModule.VercelSandbox.connect("session_123", {
+      remainingTimeout: 0,
+    });
+
+    expect(updateNetworkPolicyCalls).toEqual([]);
+  });
 });
 
 describe("VercelSandbox.create", () => {

@@ -25,9 +25,13 @@ const tabs: Array<{ id: VerifiedBuildPanelTab; label: string }> = [
 export function VerifiedBuildPanel({
   sessionId,
   chatId,
+  harnessEnabled,
+  latestUserMessageId,
 }: {
   sessionId: string;
   chatId: string;
+  harnessEnabled: boolean;
+  latestUserMessageId: string | null;
 }) {
   const [activeTab, setActiveTab] = useState<VerifiedBuildPanelTab>("timeline");
   const { data, error, isLoading, mutate } = useVerifiedBuildRun({
@@ -88,11 +92,19 @@ export function VerifiedBuildPanel({
       </div>
 
       {!run ? (
-        <div className="px-3 py-6 text-center text-xs text-muted-foreground">
-          {error
-            ? "Verified Build status unavailable."
-            : "No Verified Build run for this chat."}
-        </div>
+        error ? (
+          <div className="px-3 py-6 text-center text-xs text-muted-foreground">
+            Verified Build status unavailable.
+          </div>
+        ) : (
+          <VerifiedBuildPanelEmpty
+            chatId={chatId}
+            harnessEnabled={harnessEnabled}
+            latestUserMessageId={latestUserMessageId}
+            onRunStarted={mutate}
+            sessionId={sessionId}
+          />
+        )
       ) : (
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <div className="min-h-0 flex-1 overflow-y-auto">
