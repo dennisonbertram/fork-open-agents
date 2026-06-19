@@ -25,9 +25,8 @@ export async function recordUsage(
     toolCallCount?: number;
   },
 ) {
-  const inferredToolCallCount = data.messages
-    ?.flatMap((m) => m.parts)
-    .filter(isToolUIPart).length ?? 0;
+  const inferredToolCallCount =
+    data.messages?.flatMap((m) => m.parts).filter(isToolUIPart).length ?? 0;
   const toolCallCount = data.toolCallCount ?? inferredToolCallCount;
 
   const provider =

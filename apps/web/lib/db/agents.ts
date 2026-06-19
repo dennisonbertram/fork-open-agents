@@ -116,7 +116,14 @@ export async function upsertUserDefaultAgent(
     .insert(agents)
     .values(row)
     .onConflictDoUpdate({
-      target: [agents.userId, agents.role, agents.scope, agents.sessionId, agents.repoOwner, agents.repoName],
+      target: [
+        agents.userId,
+        agents.role,
+        agents.scope,
+        agents.sessionId,
+        agents.repoOwner,
+        agents.repoName,
+      ],
       set: {
         modelId: row.modelId,
         composioToolkitSlugs: row.composioToolkitSlugs,
