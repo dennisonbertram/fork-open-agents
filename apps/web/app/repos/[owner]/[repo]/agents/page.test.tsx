@@ -77,7 +77,7 @@ describe("RepoAgentsPage", () => {
     listBackgroundAgentRuns.mockClear();
   });
 
-  test("renders configured agents and run history for a repository", async () => {
+  test("renders configured agents and recent run history for a repository", async () => {
     repoAgents = [
       {
         id: "agent-1",
@@ -134,7 +134,10 @@ describe("RepoAgentsPage", () => {
     expect(html).toContain("Production deployment succeeded");
     expect(html).toContain("abc123");
     expect(html).toContain("/background-runs/run-1");
+    // Prerequisites link — now a quiet text link instead of the Settings button
     expect(html).toContain("/settings/background-agents");
+    // New agent link goes to /agents/new
+    expect(html).toContain("/repos/acme/widgets/agents/new");
   });
 
   test("renders repo-scoped empty states", async () => {
@@ -148,5 +151,36 @@ describe("RepoAgentsPage", () => {
 
     expect(html).toContain("No agents configured for this repository.");
     expect(html).toContain("No runs recorded for this repository.");
+  });
+
+  test("recent runs section shows at most 5 runs", async () => {
+    // Create 7 runs
+    repoRuns = Array.from({ length: 7 }, (_, i) => ({
+      id: `run-${i + 1}`,
+      triggerKind: "schedule.cron",
+      status: "succeeded",
+      payloadSummary: { title: `Run ${i + 1}` },
+      externalId: `ext-${i + 1}`,
+      sha: null,
+      ref: null,
+      branch: null,
+      createdAt: new Date("2026-05-27T12:00:00.000Z"),
+    }));
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    // First 5 runs should be present
+    expect(html).toContain("/background-runs/run-1");
+    expect(html).toContain("/background-runs/run-5");
+    // Run 6 and 7 should NOT be in the recent runs section
+    expect(html).not.toContain("/background-runs/run-6");
+    expect(html).not.toContain("/background-runs/run-7");
+    // A "more exist" affordance should appear when there are more than 5
+    expect(html).toContain("Showing latest 5");
   });
 });

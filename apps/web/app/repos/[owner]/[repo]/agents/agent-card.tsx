@@ -151,6 +151,7 @@ function TriggerLabel({
 }) {
   const isKnownKind = [
     "github.pull_request",
+    "github.pull_request_review",
     "github.issue",
     "github.deployment_status",
     "schedule.cron",
@@ -374,9 +375,9 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
           </Button>
         )}
 
-        {/* Edit — links to agent detail/spec page (reuses spec editor on that page) */}
+        {/* Edit — links to the edit page for this agent */}
         <Button variant="ghost" size="sm" asChild>
-          <Link href={detailHref}>
+          <Link href={`${detailHref}/edit`}>
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Link>

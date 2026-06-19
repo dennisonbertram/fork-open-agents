@@ -50,4 +50,77 @@ describe("triggerMatchesEvent", () => {
       triggerMatchesEvent({ conditions: { labels: ["security"] } }, baseEvent),
     ).toBe(false);
   });
+
+  // TASK-274: mergedOnly condition
+  test("mergedOnly:true does not match closed PR with merged:false", () => {
+    const closedNotMerged: NormalizedBackgroundTriggerEvent = {
+      source: "github",
+      kind: "github.pull_request",
+      externalId: "pr:2:closed:abc",
+      repoOwner: "acme",
+      repoName: "widgets",
+      action: "closed",
+      merged: false,
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { actions: ["closed"], mergedOnly: true } },
+        closedNotMerged,
+      ),
+    ).toBe(false);
+  });
+
+  test("mergedOnly:true matches closed PR with merged:true", () => {
+    const closedMerged: NormalizedBackgroundTriggerEvent = {
+      source: "github",
+      kind: "github.pull_request",
+      externalId: "pr:3:closed:def",
+      repoOwner: "acme",
+      repoName: "widgets",
+      action: "closed",
+      merged: true,
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { actions: ["closed"], mergedOnly: true } },
+        closedMerged,
+      ),
+    ).toBe(true);
+  });
+
+  test("absent mergedOnly behaves as before (does not filter on merged)", () => {
+    const closedNotMerged: NormalizedBackgroundTriggerEvent = {
+      source: "github",
+      kind: "github.pull_request",
+      externalId: "pr:4:closed:ghi",
+      repoOwner: "acme",
+      repoName: "widgets",
+      action: "closed",
+      merged: false,
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { actions: ["closed"] } },
+        closedNotMerged,
+      ),
+    ).toBe(true);
+  });
+
+  test("mergedOnly:false does not filter — matches regardless of merged", () => {
+    const closedNotMerged: NormalizedBackgroundTriggerEvent = {
+      source: "github",
+      kind: "github.pull_request",
+      externalId: "pr:5:closed:jkl",
+      repoOwner: "acme",
+      repoName: "widgets",
+      action: "closed",
+      merged: false,
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { actions: ["closed"], mergedOnly: false } },
+        closedNotMerged,
+      ),
+    ).toBe(true);
+  });
 });

@@ -269,6 +269,7 @@ export function SessionHeader() {
                     rightPanelView === "verified-build" &&
                     "bg-accent text-accent-foreground",
                 )}
+                aria-label="Verified Build"
                 onClick={handleVerifiedBuildPanelToggle}
               >
                 <ShieldCheck className="h-4 w-4 text-blue-500" />
@@ -301,5 +302,32 @@ export function SessionHeader() {
         </div>
       </div>
     </header>
+  );
+}
+
+/**
+ * Pure presentational component for the Verified Build header button.
+ * Exported for isolated testing of the aria-label contract.
+ */
+export function VerifiedBuildHeaderButton({
+  isActive,
+  onClick,
+}: {
+  isActive: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      className={cn(
+        "h-7 w-7 shrink-0",
+        isActive && "bg-accent text-accent-foreground",
+      )}
+      aria-label="Verified Build"
+      onClick={onClick}
+    >
+      <ShieldCheck className="h-4 w-4 text-blue-500" />
+    </Button>
   );
 }

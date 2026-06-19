@@ -15,7 +15,46 @@ import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
 
 function supportsAdaptiveAnthropicThinking(modelId: string): boolean {
-  return modelId.includes("4.6") || modelId.includes("4.7");
+  // Adaptive thinking is supported for Claude 4.6 and later (4.x dotted format).
+  //
+  // Two distinct Anthropic model id formats exist:
+  //   - Claude 3.x: claude-{major}-{minor}-{family}  e.g. claude-3-7-sonnet, claude-3-5-haiku
+  //     These always use the LEGACY thinking path — never adaptive.
+  //   - Claude 4.x+: claude-{family}-{major}[.{minor}]  e.g. claude-opus-4.8, claude-sonnet-4.6
+  //     These use adaptive thinking at 4.6+.
+  //
+  // The regex `/claude-[a-z]+-(\d+)(?:\.(\d+))?(?:-|$)/i` anchors on a NON-DIGIT family word
+  // between "claude-" and the version number, so 3.x ids (where a digit follows "claude-")
+  // do not match and safely return false.
+  //
+  // Examples:
+  //   - "claude-opus-4.8"   → family="opus", major=4, minor=8  → true  (8 >= 6)
+  //   - "claude-sonnet-4.6" → family="sonnet", major=4, minor=6 → true  (6 >= 6)
+  //   - "claude-opus-4.5"   → family="opus", major=4, minor=5  → false (5 < 6)
+  //   - "claude-opus-4"     → family="opus", major=4, minor=0  → false (0 < 6)
+  //   - "claude-3-7-sonnet" → no [a-z]+ between "claude-" and digit → no match → false
+  //   - "claude-3-5-haiku"  → same → no match → false
+
+  const versionMatch = modelId.match(/claude-[a-z]+-(\d+)(?:\.(\d+))?(?:-|$)/i);
+  if (!versionMatch || !versionMatch[1]) {
+    return false;
+  }
+
+  const major = parseInt(versionMatch[1], 10);
+  const minorStr = versionMatch[2] ?? "";
+  const minor = minorStr ? parseInt(minorStr, 10) : 0;
+
+  // Adaptive thinking requires Claude 4.6 or later
+  if (major < 4) {
+    return false;
+  }
+
+  if (major > 4) {
+    return true; // Future Claude 5.0+ models support adaptive thinking
+  }
+
+  // For Claude 4.x, check if minor >= 6
+  return minor >= 6;
 }
 
 // Models with adaptive thinking support use effort control.
@@ -129,6 +168,7 @@ const ANTHROPIC_DIRECT_MODEL_IDS: Record<string, string> = {
   "anthropic/claude-opus-4.5": "claude-opus-4-5",
   "anthropic/claude-opus-4.6": "claude-opus-4-6",
   "anthropic/claude-opus-4.7": "claude-opus-4-7",
+  "anthropic/claude-opus-4.8": "claude-opus-4-8",
   "anthropic/claude-sonnet-4": "claude-sonnet-4-0",
   "anthropic/claude-sonnet-4.5": "claude-sonnet-4-5",
   "anthropic/claude-sonnet-4.6": "claude-sonnet-4-6",

@@ -1,9 +1,10 @@
 import "server-only";
 
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
+  agentLoops,
   backgroundAgentEvents,
   backgroundAgentOutputs,
   backgroundAgentRuns,
@@ -90,6 +91,7 @@ export async function createBackgroundAgent(
         permissions: input.permissions,
         outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
+        composioToolkitSlugs: input.composioToolkitSlugs,
       })
       .returning();
 
@@ -157,6 +159,9 @@ export async function updateBackgroundAgent(
           : {}),
         ...(input.checkCommand !== undefined
           ? { checkCommand: normalizeOptionalText(input.checkCommand) }
+          : {}),
+        ...(input.composioToolkitSlugs !== undefined
+          ? { composioToolkitSlugs: input.composioToolkitSlugs }
           : {}),
         updatedAt: new Date(),
       })
@@ -242,6 +247,9 @@ export async function listBackgroundAgents(
 
   const triggersByAgent = new Map<string, BackgroundAgentTrigger[]>();
   for (const trigger of triggers) {
+    // Loop-bound triggers (loopId set, agentId null) are skipped here —
+    // they are not associated with a specific background agent.
+    if (!trigger.agentId) continue;
     const current = triggersByAgent.get(trigger.agentId) ?? [];
     current.push(trigger);
     triggersByAgent.set(trigger.agentId, current);
@@ -290,24 +298,38 @@ export async function getOwnedBackgroundAgentWithTriggers(params: {
 
 export async function listMatchingTriggersForEvent(
   event: NormalizedBackgroundTriggerEvent,
-): Promise<Array<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger }>> {
+): Promise<
+  Array<{ agent: BackgroundAgent | null; trigger: BackgroundAgentTrigger }>
+> {
   const triggers = await db
     .select({
       trigger: backgroundAgentTriggers,
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(
       and(
         eq(backgroundAgentTriggers.kind, event.kind),
         eq(backgroundAgentTriggers.status, "enabled"),
-        eq(backgroundAgents.status, "enabled"),
-        sql`lower(${backgroundAgents.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
-        sql`lower(${backgroundAgents.repoName}) = ${event.repoName.toLowerCase()}`,
+        or(
+          and(
+            isNotNull(backgroundAgentTriggers.agentId),
+            eq(backgroundAgents.status, "enabled"),
+            sql`lower(${backgroundAgents.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
+            sql`lower(${backgroundAgents.repoName}) = ${event.repoName.toLowerCase()}`,
+          ),
+          and(
+            isNotNull(backgroundAgentTriggers.loopId),
+            eq(agentLoops.status, "active"),
+            sql`lower(${agentLoops.repoOwner}) = ${event.repoOwner.toLowerCase()}`,
+            sql`lower(${agentLoops.repoName}) = ${event.repoName.toLowerCase()}`,
+          ),
+        ),
       ),
     );
 
@@ -611,7 +633,7 @@ export async function listBackgroundAgentOutputs(
 }
 
 export async function listEnabledScheduleTriggers(): Promise<
-  Array<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger }>
+  Array<{ agent: BackgroundAgent | null; trigger: BackgroundAgentTrigger }>
 > {
   return db
     .select({
@@ -619,32 +641,46 @@ export async function listEnabledScheduleTriggers(): Promise<
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(
       and(
         eq(backgroundAgentTriggers.kind, "schedule.cron"),
         eq(backgroundAgentTriggers.status, "enabled"),
-        eq(backgroundAgents.status, "enabled"),
+        or(
+          and(
+            isNotNull(backgroundAgentTriggers.agentId),
+            eq(backgroundAgents.status, "enabled"),
+          ),
+          and(
+            isNotNull(backgroundAgentTriggers.loopId),
+            eq(agentLoops.status, "active"),
+          ),
+        ),
       ),
     );
 }
 
 export async function getWebhookTriggerByPublicId(
   webhookPublicId: string,
-): Promise<{ agent: BackgroundAgent; trigger: BackgroundAgentTrigger } | null> {
+): Promise<{
+  agent: BackgroundAgent | null;
+  trigger: BackgroundAgentTrigger;
+} | null> {
   const [row] = await db
     .select({
       trigger: backgroundAgentTriggers,
       agent: backgroundAgents,
     })
     .from(backgroundAgentTriggers)
-    .innerJoin(
+    .leftJoin(
       backgroundAgents,
       eq(backgroundAgents.id, backgroundAgentTriggers.agentId),
     )
+    .leftJoin(agentLoops, eq(agentLoops.id, backgroundAgentTriggers.loopId))
     .where(eq(backgroundAgentTriggers.webhookPublicId, webhookPublicId))
     .limit(1);
 
@@ -692,3 +728,73 @@ export async function recordTriggerSkipReason(params: {
 }
 
 export { backgroundAgentToolGrants };
+
+/**
+ * Returns all enabled Composio tool grants for a given background agent.
+ * An enabled grant means the agent is authorized to use the linked Composio
+ * profile for that role/phase combination.
+ *
+ * Used by the executor to gate Composio tool resolution: if no enabled grants
+ * exist, the agent gets no Composio tools (pre-Phase-5 behavior).
+ */
+export async function listEnabledToolGrantsForAgent(
+  agentId: string,
+): Promise<
+  Array<
+    Pick<
+      typeof backgroundAgentToolGrants.$inferSelect,
+      | "id"
+      | "agentId"
+      | "userId"
+      | "provider"
+      | "profileId"
+      | "agentRole"
+      | "phase"
+      | "status"
+    >
+  >
+> {
+  return db.query.backgroundAgentToolGrants.findMany({
+    where: and(
+      eq(backgroundAgentToolGrants.agentId, agentId),
+      eq(backgroundAgentToolGrants.status, "enabled"),
+    ),
+    columns: {
+      id: true,
+      agentId: true,
+      userId: true,
+      provider: true,
+      profileId: true,
+      agentRole: true,
+      phase: true,
+      status: true,
+    },
+  });
+}
+
+/**
+ * Lists triggers bound to a loop (loopId set, agentId null).
+ * Used by the M1-08 loop-detail route to include a trigger summary.
+ * Returns a minimal projection — no schedule/conditions secrets exposed.
+ */
+export async function listTriggersForLoop(
+  loopId: string,
+): Promise<
+  Pick<
+    BackgroundAgentTrigger,
+    "id" | "kind" | "status" | "conditions" | "schedule" | "createdAt"
+  >[]
+> {
+  return db.query.backgroundAgentTriggers.findMany({
+    where: eq(backgroundAgentTriggers.loopId, loopId),
+    orderBy: [desc(backgroundAgentTriggers.createdAt)],
+    columns: {
+      id: true,
+      kind: true,
+      status: true,
+      conditions: true,
+      schedule: true,
+      createdAt: true,
+    },
+  });
+}
