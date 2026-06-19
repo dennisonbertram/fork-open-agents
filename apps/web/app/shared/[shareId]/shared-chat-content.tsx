@@ -8,9 +8,9 @@ import {
   GitBranch,
   GitPullRequest,
 } from "lucide-react";
-import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo, type ReactNode } from "react";
+import { Streamdown } from "streamdown";
 import type {
   WebAgentUIMessage,
   WebAgentUIMessagePart,
@@ -34,11 +34,6 @@ import {
 import { cn } from "@/lib/utils";
 import { SharedChatStatus } from "./shared-chat-status";
 import "streamdown/styles.css";
-
-const Streamdown = dynamic(
-  () => import("streamdown").then((m) => m.Streamdown),
-  { ssr: false },
-);
 
 export type MessageWithTiming = {
   message: WebAgentUIMessage;

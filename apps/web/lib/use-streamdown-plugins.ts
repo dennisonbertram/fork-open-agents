@@ -6,7 +6,11 @@ export type StreamdownPlugins =
   typeof import("./streamdown-config").streamdownPlugins;
 
 export function hasLikelyCodeBlock(markdown: string): boolean {
-  return markdown.includes("```") || markdown.includes("<pre");
+  return (
+    markdown.includes("```") ||
+    markdown.includes("~~~") ||
+    markdown.includes("<pre")
+  );
 }
 
 export function useStreamdownPlugins(enabled: boolean) {
