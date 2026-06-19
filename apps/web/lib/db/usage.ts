@@ -5,7 +5,7 @@ import type { UsageDateRange } from "@/lib/usage/date-range";
 import { db } from "./client";
 import { usageEvents } from "./schema";
 
-export type UsageSource = "web";
+export type UsageSource = "web" | "background-agent";
 export type UsageAgentType = "main" | "subagent";
 
 export async function recordUsage(
@@ -16,7 +16,7 @@ export async function recordUsage(
     model: LanguageModel | string;
     inferenceRoute?: "gateway" | "user" | null;
     inferenceProfileId?: string | null;
-    messages: UIMessage[];
+    messages?: UIMessage[];
     usage: {
       inputTokens: number;
       cachedInputTokens: number;
@@ -26,8 +26,8 @@ export async function recordUsage(
   },
 ) {
   const inferredToolCallCount = data.messages
-    .flatMap((m) => m.parts)
-    .filter(isToolUIPart).length;
+    ?.flatMap((m) => m.parts)
+    .filter(isToolUIPart).length ?? 0;
   const toolCallCount = data.toolCallCount ?? inferredToolCallCount;
 
   const provider =
