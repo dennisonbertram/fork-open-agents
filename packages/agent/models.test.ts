@@ -69,8 +69,84 @@ describe("getProviderOptionsForModel", () => {
     });
   });
 
+  test("applies adaptive thinking defaults to Anthropic 4.8 models", () => {
+    const result = getProviderOptionsForModel("anthropic/claude-opus-4.8");
+
+    expect(result).toEqual({
+      anthropic: {
+        effort: "medium",
+        thinking: { type: "adaptive" },
+      },
+    });
+  });
+
   test("preserves legacy thinking defaults for older Anthropic models", () => {
     const result = getProviderOptionsForModel("anthropic/claude-opus-4.5");
+
+    expect(result).toEqual({
+      anthropic: {
+        thinking: {
+          type: "enabled",
+          budgetTokens: 8000,
+        },
+      },
+    });
+  });
+
+  test("preserves legacy thinking defaults for unversioned Anthropic 4 models", () => {
+    const result = getProviderOptionsForModel("anthropic/claude-opus-4");
+
+    expect(result).toEqual({
+      anthropic: {
+        thinking: {
+          type: "enabled",
+          budgetTokens: 8000,
+        },
+      },
+    });
+  });
+
+  test("applies adaptive thinking to future Anthropic 4.x versions (>= 4.6)", () => {
+    const result = getProviderOptionsForModel("anthropic/claude-opus-4.9");
+
+    expect(result).toEqual({
+      anthropic: {
+        effort: "medium",
+        thinking: { type: "adaptive" },
+      },
+    });
+  });
+
+  test("uses legacy thinking for Claude 3.7 Sonnet (misparses as major=7 in old regex)", () => {
+    const result = getProviderOptionsForModel("anthropic/claude-3-7-sonnet");
+
+    expect(result).toEqual({
+      anthropic: {
+        thinking: {
+          type: "enabled",
+          budgetTokens: 8000,
+        },
+      },
+    });
+  });
+
+  test("uses legacy thinking for Claude 3.5 Sonnet", () => {
+    const result = getProviderOptionsForModel("anthropic/claude-3-5-sonnet");
+
+    expect(result).toEqual({
+      anthropic: {
+        thinking: {
+          type: "enabled",
+          budgetTokens: 8000,
+        },
+      },
+    });
+  });
+
+  test("uses legacy thinking for dated Claude 3.7 Sonnet id", () => {
+    const result = getProviderOptionsForModel(
+      "anthropic/claude-3-7-sonnet-20250219",
+    );
 
     expect(result).toEqual({
       anthropic: {
@@ -248,6 +324,12 @@ describe("direct Anthropic model ids", () => {
     );
     expect(toAnthropicDirectModelId("anthropic/claude-haiku-4.5")).toBe(
       "claude-haiku-4-5",
+    );
+  });
+
+  test("maps Anthropic 4.8 models with explicit entry", () => {
+    expect(toAnthropicDirectModelId("anthropic/claude-opus-4.8")).toBe(
+      "claude-opus-4-8",
     );
   });
 

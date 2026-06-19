@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { SettingsPageHeader } from "@/components/ui/settings-section";
 import { AccountsSection, AccountsSectionSkeleton } from "../accounts-section";
 import { VercelSection, VercelSectionSkeleton } from "../vercel-section";
 
@@ -11,7 +12,10 @@ export const metadata: Metadata = {
 export default function ConnectionsPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Connections</h1>
+      <SettingsPageHeader
+        title="Connections"
+        description="Link the accounts Open Agents uses to act on your behalf."
+      />
       <Suspense fallback={<VercelSectionSkeleton />}>
         <VercelSection />
       </Suspense>

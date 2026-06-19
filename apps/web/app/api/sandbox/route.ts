@@ -29,6 +29,7 @@ import {
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
+import { installSessionUserSkills } from "@/lib/skills/session-user-skills";
 import {
   canOperateOnSandbox,
   clearSandboxState,
@@ -269,6 +270,14 @@ export async function POST(req: Request) {
           error,
         );
       }
+
+      await installSessionUserSkills({
+        userId: session.user.id,
+        sessionId: sessionRecord.id,
+        sandboxName: nextState.sandboxName ?? null,
+        sandbox,
+        didSetupWorkspace: true,
+      });
     }
 
     kickSandboxLifecycleWorkflow({

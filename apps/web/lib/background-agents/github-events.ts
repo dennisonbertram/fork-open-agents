@@ -24,6 +24,7 @@ const pullRequestSchema = z.object({
     number: z.number(),
     title: z.string().optional(),
     html_url: z.string().optional(),
+    merged: z.boolean().optional(),
     head: z.object({
       ref: z.string().optional(),
       sha: z.string().optional(),
@@ -38,6 +39,35 @@ const pullRequestSchema = z.object({
         }),
       )
       .optional(),
+  }),
+});
+
+const pullRequestReviewSchema = z.object({
+  action: z.string(),
+  repository: repositorySchema,
+  sender: senderSchema,
+  review: z.object({
+    id: z.number(),
+    state: z.string(),
+    html_url: z.string().optional(),
+    user: z
+      .object({
+        login: z.string().optional(),
+      })
+      .optional(),
+  }),
+  pull_request: z.object({
+    id: z.number().optional(),
+    number: z.number(),
+    title: z.string().optional(),
+    html_url: z.string().optional(),
+    head: z.object({
+      ref: z.string().optional(),
+      sha: z.string().optional(),
+    }),
+    base: z.object({
+      ref: z.string().optional(),
+    }),
   }),
 });
 
@@ -104,6 +134,36 @@ export function normalizeGitHubBackgroundEvent(
       title: pr.title,
       url: pr.html_url,
       actor: parsed.data.sender?.login,
+      // Surface the merged boolean (only meaningful for action="closed")
+      merged: pr.merged,
+    };
+  }
+
+  if (eventName === "pull_request_review") {
+    const parsed = pullRequestReviewSchema.safeParse(payload);
+    if (!parsed.success) {
+      return null;
+    }
+
+    const review = parsed.data.review;
+    const pr = parsed.data.pull_request;
+    return {
+      source: "github",
+      kind: "github.pull_request_review",
+      externalId: `pull_request_review:${review.id}:${parsed.data.action}`,
+      repoOwner: parsed.data.repository.owner.login,
+      repoName: parsed.data.repository.name,
+      action: parsed.data.action,
+      prNumber: pr.number,
+      prUrl: pr.html_url,
+      url: review.html_url,
+      reviewId: review.id,
+      reviewState: review.state,
+      reviewerLogin: review.user?.login ?? parsed.data.sender?.login,
+      actor: parsed.data.sender?.login,
+      sha: pr.head.sha,
+      ref: pr.head.ref,
+      branch: pr.base.ref,
     };
   }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "background_agents" ADD COLUMN "composio_toolkit_slugs" jsonb DEFAULT '[]'::jsonb NOT NULL;

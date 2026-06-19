@@ -38,6 +38,7 @@ export type {
   SubagentMessageMetadata,
   SubagentUIMessage,
 } from "./subagents/types";
+export type { SubagentRoster, SubagentRosterEntry } from "./subagents/roster";
 export type { BuildSystemPromptOptions } from "./system-prompt";
 export { buildSystemPrompt } from "./system-prompt";
 export {

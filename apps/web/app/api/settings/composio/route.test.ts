@@ -20,6 +20,8 @@ let updatedProfileInput: { profileId: string; profile: unknown } | null = null;
 let deletedProfileId: string | null = null;
 const connectedAccountsList = mock(async (_params: unknown) => ({}));
 let clientError: Error | null = null;
+let createComposioToolProfileError: Error | null = null;
+let updateComposioToolProfileError: Error | null = null;
 
 const profile = {
   id: "profile-1",
@@ -62,6 +64,9 @@ mock.module("@/lib/db/composio", () => ({
   getComposioAgentDefaults: async (_userId: string) =>
     defaultComposioAgentDefaults,
   createComposioToolProfile: async (_userId: string, input: unknown) => {
+    if (createComposioToolProfileError) {
+      throw createComposioToolProfileError;
+    }
     createdProfileInput = input;
     return profile;
   },
@@ -80,6 +85,9 @@ mock.module("@/lib/db/composio", () => ({
     profileId: string,
     profilePatch: unknown,
   ) => {
+    if (updateComposioToolProfileError) {
+      throw updateComposioToolProfileError;
+    }
     updatedProfileInput = { profileId, profile: profilePatch };
     return { ...profile, name: "GitHub Tools" };
   },
@@ -128,6 +136,8 @@ describe("/api/settings/composio", () => {
     updatedProfileInput = null;
     deletedProfileId = null;
     clientError = null;
+    createComposioToolProfileError = null;
+    updateComposioToolProfileError = null;
     connectedAccountsList.mockClear();
     delete process.env.COMPOSIO_API_KEY;
   });
@@ -246,5 +256,131 @@ describe("/api/settings/composio", () => {
 
     expect(response.status).toBe(200);
     expect(deletedProfileId).toBe("profile-1");
+  });
+
+  // BUG 1: POST with duplicate name must return 409 even when drizzle wraps the
+  // real PG error in `cause` (DrizzleQueryError shape: message = "Failed query:
+  // <sql>\nparams: <params>", cause = PostgresError with code "23505").
+  test("POST with duplicate profile name (DrizzleQueryError via cause.code 23505) returns 409", async () => {
+    const { POST } = await routeModulePromise;
+
+    // Realistic shape: DrizzleQueryError wraps the postgres driver error in cause.
+    const pgError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+      ),
+      { code: "23505" },
+    );
+    const drizzleError = Object.assign(
+      new Error(
+        'Failed query: insert into "composio_tool_profiles" (id, user_id, name, toolkit_slugs) values ($1, $2, $3, $4)\nparams: some-uuid,user-1,GitHub,[github]',
+      ),
+      { cause: pgError },
+    );
+    createComposioToolProfileError = drizzleError;
+
+    const response = await POST(
+      request("POST", {
+        name: "GitHub",
+        toolkitSlugs: ["github"],
+        authConfigIdsByToolkit: {},
+        connectedAccountIdsByToolkit: {},
+        workbenchEnabled: false,
+        allowInChatConnectionManagement: false,
+      }),
+    );
+
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("A profile with that name already exists.");
+    expect(JSON.stringify(body)).not.toContain("insert into");
+    expect(JSON.stringify(body)).not.toContain("Failed query");
+  });
+
+  // Also verify that a profile whose name contains "unique" does NOT trigger 409
+  // when the error is actually unrelated (e.g. a generic DB failure) — the old
+  // regex would scan the SQL text and mismatch on the profile name itself.
+  test("POST generic server error with profile named 'unique tools' returns 400, not 409", async () => {
+    const { POST } = await routeModulePromise;
+
+    // Non-duplicate error — the DrizzleQueryError message includes the profile
+    // name "unique tools" in the SQL params text.
+    createComposioToolProfileError = new Error(
+      'Failed query: insert into "composio_tool_profiles" values ($1)\nparams: unique tools',
+    );
+
+    const response = await POST(
+      request("POST", {
+        name: "unique tools",
+        toolkitSlugs: ["github"],
+        authConfigIdsByToolkit: {},
+        connectedAccountIdsByToolkit: {},
+        workbenchEnabled: false,
+        allowInChatConnectionManagement: false,
+      }),
+    );
+
+    const body = (await response.json()) as { error: string };
+
+    // Must NOT be 409 — the error is not a real unique constraint violation.
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Failed to save Composio profile.");
+  });
+
+  // BUG 2: PATCH with duplicate name must return 409 with realistic DrizzleQueryError shape.
+  test("PATCH with duplicate profile name (DrizzleQueryError via cause.code 23505) returns 409", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const pgError = Object.assign(
+      new Error(
+        'duplicate key value violates unique constraint "composio_tool_profiles_user_id_name_unique"',
+      ),
+      { code: "23505" },
+    );
+    const drizzleError = Object.assign(
+      new Error(
+        'Failed query: update "composio_tool_profiles" set name = $1 where user_id = $2 and id = $3\nparams: GitHub,user-1,profile-2',
+      ),
+      { cause: pgError },
+    );
+    updateComposioToolProfileError = drizzleError;
+
+    const response = await PATCH(
+      request("PATCH", {
+        profileId: "profile-2",
+        profile: {
+          name: "GitHub",
+        },
+      }),
+    );
+
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(409);
+    expect(body.error).toBe("A profile with that name already exists.");
+  });
+
+  // BUG 1 (generic error): POST with a non-duplicate server error returns 400 with generic message
+  test("POST with generic server error returns 400 with generic message, not raw error", async () => {
+    const { POST } = await routeModulePromise;
+
+    createComposioToolProfileError = new Error("boom");
+
+    const response = await POST(
+      request("POST", {
+        name: "MyProfile",
+        toolkitSlugs: ["github"],
+        authConfigIdsByToolkit: {},
+        connectedAccountIdsByToolkit: {},
+        workbenchEnabled: false,
+        allowInChatConnectionManagement: false,
+      }),
+    );
+
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(JSON.stringify(body)).not.toContain("boom");
   });
 });

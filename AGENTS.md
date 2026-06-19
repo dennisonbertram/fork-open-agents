@@ -136,8 +136,9 @@ bun run fix                                # Lint fix and format all files
 turbo typecheck --filter=web # Type check web app only
 
 # Testing
-bun test                                              # Run all tests
-bun test path/to/file.test.ts                         # Run single test file
+bun run test                                          # Run all tests safely (uses --isolate; prevents mock.module contamination)
+bun test path/to/file.test.ts                         # Run single test file (safe; isolation not needed for one file)
+bun test --isolate <dir>                              # Run multiple files with per-file isolation (use instead of bare bun test <dir>)
 bun test --watch                                      # Watch mode
 bun run test:verbose                                  # Run tests with JUnit reporter streamed to stdout (useful in non-interactive shells)
 bun run test:verbose path/to/file.test.ts             # Same verbose output for a single test file

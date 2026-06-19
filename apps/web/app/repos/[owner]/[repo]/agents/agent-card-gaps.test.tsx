@@ -117,12 +117,14 @@ function makeAgent(
     permissions: {},
     outputMode: "none",
     checkCommand: null,
+    composioToolkitSlugs: [],
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [
       {
         id: "trigger-1",
         agentId: "agent-1",
+        loopId: null,
         userId: "user-1",
         name: "On deployment",
         kind: "github.deployment_status",

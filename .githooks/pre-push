@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+#
+# Fast local gate that runs before every `git push`.
+#
+# It catches the cheap, deterministic failures (whitespace conflict markers,
+# lint/format drift, type errors) before they burn a CI cycle or land in a
+# reviewer's lap. This is intentionally a *fast* subset of `bun run ci`; the
+# full test suite still runs in CI.
+#
+# Install:   bun run hooks:install   (or ./init.sh)
+# Bypass:    SKIP_HOOKS=1 git push   (or git push --no-verify)
+set -Eeuo pipefail
+
+if [[ "${SKIP_HOOKS:-0}" == "1" ]]; then
+  printf '\033[1;33mpre-push:\033[0m SKIP_HOOKS=1 set, skipping checks\n' >&2
+  exit 0
+fi
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+step() {
+  printf '\033[1;34mpre-push:\033[0m %s\n' "$*" >&2
+}
+
+fail() {
+  printf '\033[1;31mpre-push failed:\033[0m %s\n' "$*" >&2
+  printf 'Fix the issue, or bypass with: SKIP_HOOKS=1 git push\n' >&2
+  exit 1
+}
+
+step "git diff --check (whitespace / merge markers)"
+git diff --check || fail "git diff --check found whitespace or conflict-marker errors"
+
+step "bun run check (lint + format)"
+bun run check || fail "lint/format check failed (try: bun run fix)"
+
+step "bun run typecheck"
+bun run typecheck || fail "typecheck failed"
+
+printf '\033[1;32mpre-push:\033[0m checks passed\n' >&2
