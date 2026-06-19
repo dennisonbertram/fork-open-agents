@@ -106,6 +106,28 @@ describe("Repository Composio settings normalization", () => {
           allowChatOverride: true,
         },
       },
+      selectedToolkitSlugs: null,
     });
+  });
+
+  test("preserves null selectedToolkitSlugs when unset (never configured)", () => {
+    const result = normalizeRepositoryComposioSettings({
+      inheritGlobalDefaults: true,
+      allowedProfileIds: [],
+      blockedToolkitSlugs: [],
+      agentDefaults: {},
+    });
+    expect(result.selectedToolkitSlugs).toBeNull();
+  });
+
+  test("normalizes an explicit selectedToolkitSlugs array", () => {
+    const result = normalizeRepositoryComposioSettings({
+      inheritGlobalDefaults: true,
+      allowedProfileIds: [],
+      blockedToolkitSlugs: [],
+      agentDefaults: {},
+      selectedToolkitSlugs: [" GitHub ", "github", "bad slug!", "linear"],
+    });
+    expect(result.selectedToolkitSlugs).toEqual(["github", "linear"]);
   });
 });

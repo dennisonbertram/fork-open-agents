@@ -18,6 +18,24 @@ describe("inference model routing", () => {
     ).toBe("https://platformproxy.gamutagents.com/v1");
   });
 
+  test("appends /v1 to path-bearing base URLs missing a version segment", () => {
+    expect(normalizeAnthropicBaseUrl("https://api.z.ai/api/anthropic")).toBe(
+      "https://api.z.ai/api/anthropic/v1",
+    );
+  });
+
+  test("leaves an existing version segment untouched", () => {
+    expect(normalizeAnthropicBaseUrl("https://api.z.ai/api/anthropic/v1")).toBe(
+      "https://api.z.ai/api/anthropic/v1",
+    );
+    expect(
+      normalizeAnthropicBaseUrl("https://api.z.ai/api/anthropic/v1/"),
+    ).toBe("https://api.z.ai/api/anthropic/v1");
+    expect(normalizeAnthropicBaseUrl("https://api.anthropic.com/v1")).toBe(
+      "https://api.anthropic.com/v1",
+    );
+  });
+
   test("redacts provider keys from error text", () => {
     const secret = "provider-secret-1234567890abcdef";
 
@@ -38,5 +56,41 @@ describe("inference model routing", () => {
     expect(toInferenceProfileTestMessage(new Error("404 not found"))).toBe(
       "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.",
     );
+  });
+
+  test("detects a base URL missing /v1 from a non-JSON 404 response body", () => {
+    const error = Object.assign(new Error("Invalid JSON response"), {
+      responseBody: '{"code":500,"msg":"404 NOT_FOUND","success":false}',
+    });
+
+    expect(toInferenceProfileTestMessage(error)).toBe(
+      "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.",
+    );
+  });
+
+  test("maps provider balance/subscription failures to an actionable message", () => {
+    const insufficientBalance = Object.assign(
+      new Error(
+        "[1113][Insufficient balance or no resource package. Please recharge.]",
+      ),
+      {
+        responseBody:
+          '{"type":"error","error":{"type":"rate_limit_error","code":"1113","message":"Insufficient balance or no resource package. Please recharge."}}',
+      },
+    );
+    const expiredPlan = Object.assign(
+      new Error(
+        "[1309][Your GLM Coding Plan package has expired and is temporarily unavailable. You can resume using it after renewing the subscription on the official website.]",
+      ),
+      {
+        responseBody:
+          '{"type":"error","error":{"type":"rate_limit_error","code":"1309"}}',
+      },
+    );
+
+    const expected =
+      "The provider account has no balance or an inactive plan. Add balance or renew the provider subscription, then try again.";
+    expect(toInferenceProfileTestMessage(insufficientBalance)).toBe(expected);
+    expect(toInferenceProfileTestMessage(expiredPlan)).toBe(expected);
   });
 });

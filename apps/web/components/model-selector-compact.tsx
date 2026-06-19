@@ -197,27 +197,51 @@ export function ModelSelectorCompact({
                         }
                         className="flex items-center"
                       >
-                        <ProviderIcon
-                          provider={option.provider}
-                          className="mr-1.5 size-3.5 shrink-0 opacity-70"
-                        />
-                        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-                          <span className="min-w-0 truncate">
-                            {option.shortLabel}
-                          </span>
-                          {/* Personal-provider (user-key) models: a small green dot
-                            instead of a competing "Personal …" label, so the full
-                            model name stays readable. */}
-                          {isUserModel && (
+                        {/* User-key models: a green dot in place of the provider
+                          (key) icon to mark that the model runs on your own key. */}
+                        {isUserModel ? (
+                          <span
+                            className="mr-1.5 flex size-3.5 shrink-0 items-center justify-center"
+                            title="Uses your personal provider key"
+                          >
                             <span
-                              className="size-1.5 shrink-0 rounded-full bg-emerald-500"
                               aria-label="Your personal provider key"
-                              title="Uses your personal provider key"
+                              className="size-2 rounded-full bg-emerald-500"
                             />
-                          )}
-                          {option.secondaryLabel && !isUserModel && (
-                            <span className="min-w-0 truncate text-xs text-muted-foreground">
-                              {option.secondaryLabel}
+                          </span>
+                        ) : (
+                          <ProviderIcon
+                            provider={option.provider}
+                            className="mr-1.5 size-3.5 shrink-0 opacity-70"
+                          />
+                        )}
+                        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                          <span className="flex min-w-0 items-center gap-1.5">
+                            <span className="min-w-0 truncate">
+                              {option.shortLabel}
+                            </span>
+                            {option.secondaryLabel && !isUserModel && (
+                              <span className="min-w-0 truncate text-xs text-muted-foreground">
+                                {option.secondaryLabel}
+                              </span>
+                            )}
+                          </span>
+                          {/* Compact metadata: cost tier · context window · role hint */}
+                          {(option.costTier ||
+                            option.contextWindow ||
+                            option.roleHint) && (
+                            <span className="flex items-center gap-1 text-[10px] text-muted-foreground/70">
+                              {option.costTier && (
+                                <span>{option.costTier}</span>
+                              )}
+                              {option.contextWindow && (
+                                <span>
+                                  {Math.round(option.contextWindow / 1000)}K
+                                </span>
+                              )}
+                              {option.roleHint && (
+                                <span>{option.roleHint}</span>
+                              )}
                             </span>
                           )}
                         </span>

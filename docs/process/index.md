@@ -17,11 +17,19 @@ Start here:
   inspect Vercel Preview deployments before production.
 - [Background Agents Live Proof](background-agents-live-proof.md) - hosted
   proof steps for triggered sandbox automation before rollout.
+- [Agent Loops Smoke Checklist](agent-loops-smoke-checklist.md) - durable
+  authenticated smoke checklist for the loops surface (create → configure →
+  activate → run → watch live → retry); proof template for closing #331, #332,
+  and #333.
 - [Production Release Runbook](production-release-runbook.md) - merge,
   production smoke, and rollback procedure.
 - [Behavior TDD](behavior-tdd.md) - behavior-first TDD for user and operator
   paths.
 - [Regression Discipline](regression-discipline.md) - bug-to-regression rules.
+- [API Contract Tests](api-contract-tests.md) - real-HTTP contract suite
+  (`bun run test:contract`) for verifying the backend independently of the UI.
+- [OpenAPI Contract & Typed Client](api-openapi-contract.md) - the generated
+  `openapi.json` + typed client (`lib/api/client.ts`) the frontend consumes.
 - [Observability Discipline](observability-discipline.md) - how work proves what
   happened to users and operators.
 - [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
@@ -33,6 +41,9 @@ Start here:
 - [Workflow Catalog Conventions](workflow-catalog-conventions.md) - id naming,
   versioning, proof-level mapping, disabled-entry rules, and how to add catalog
   entries.
+- [Pipeline Gates](pipeline-gates.md) - the machine-enforced layer (pre-push
+  hook, CI build/guards jobs, migration-safety, test-touch, production smoke)
+  under the prose process docs.
 
 Supporting docs:
 

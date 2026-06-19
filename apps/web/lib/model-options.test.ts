@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { ModelVariant } from "@/lib/model-variants";
 import {
+  RECOMMENDED_MODEL_IDS,
   buildModelOptions,
+  buildRecommendedModelOptions,
   filterAndSortModelOptions,
   getDefaultModelOptionId,
   groupByProvider,
@@ -46,29 +48,28 @@ describe("model options", () => {
 
     const options = buildModelOptions(models, variants);
 
-    expect(options).toEqual([
-      {
-        id: "openai/gpt-5",
-        label: "GPT-5",
-        shortLabel: "GPT-5",
-        description: "Base model",
-        isVariant: false,
-        contextWindow: 400_000,
-        provider: "openai",
-        source: "catalog",
-      },
-      {
-        id: "variant:gpt-5-medium",
-        label: "GPT-5 Medium Reasoning",
-        shortLabel: "GPT-5 Medium Reasoning",
-        description: "Variant of GPT-5",
-        isVariant: true,
-        contextWindow: 400_000,
-        provider: "openai",
-        source: "catalog",
-        baseModelId: "openai/gpt-5",
-      },
-    ]);
+    expect(options).toHaveLength(2);
+    expect(options[0]).toMatchObject({
+      id: "openai/gpt-5",
+      label: "GPT-5",
+      shortLabel: "GPT-5",
+      description: "Base model",
+      isVariant: false,
+      contextWindow: 400_000,
+      provider: "openai",
+      source: "catalog",
+    });
+    expect(options[1]).toMatchObject({
+      id: "variant:gpt-5-medium",
+      label: "GPT-5 Medium Reasoning",
+      shortLabel: "GPT-5 Medium Reasoning",
+      description: "Variant of GPT-5",
+      isVariant: true,
+      contextWindow: 400_000,
+      provider: "openai",
+      source: "catalog",
+      baseModelId: "openai/gpt-5",
+    });
   });
 
   test("buildModelOptions strips provider prefix for shortLabel", () => {
@@ -110,6 +111,7 @@ describe("model options", () => {
           lastTestedAt: null,
           lastTestMessage: null,
           enabled: true,
+          models: [],
           createdAt: new Date("2026-01-01T00:00:00.000Z"),
           updatedAt: new Date("2026-01-01T00:00:00.000Z"),
         },
@@ -120,7 +122,7 @@ describe("model options", () => {
       id: "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
       label: "Claude Opus 4.6",
       shortLabel: "Opus 4.6",
-      description: "Direct Anthropic via Personal Anthropic",
+      description: "Via Personal Anthropic (your key)",
       isVariant: false,
       contextWindow: 200_000,
       provider: "user",
@@ -134,6 +136,91 @@ describe("model options", () => {
       "anthropic/claude-opus-4.6",
       "openai/gpt-5",
     ]);
+  });
+
+  test("buildModelOptions uses the profile's discovered models when present", () => {
+    const models: AvailableModel[] = [
+      createModel({ id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" }),
+    ];
+
+    const options = buildModelOptions(
+      models,
+      [],
+      [
+        {
+          id: "profile-zai",
+          name: "ZAI (GLM)",
+          provider: "anthropic",
+          baseUrl: "https://api.z.ai/api/anthropic/v1",
+          keyLast4: "10ac",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          models: [
+            { id: "glm-4.6", displayName: "GLM-4.6", contextWindow: 200_000 },
+            { id: "glm-4.5-air", displayName: "GLM-4.5-Air" },
+          ],
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    // Real GLM models surface, NOT cloned Anthropic catalog names.
+    expect(options[0]).toMatchObject({
+      id: "user-profile:profile-zai:glm-4.6",
+      label: "GLM-4.6",
+      shortLabel: "GLM-4.6",
+      provider: "user",
+      source: "user",
+      baseModelId: "glm-4.6",
+      inferenceProfileId: "profile-zai",
+      secondaryLabel: "ZAI (GLM)",
+      contextWindow: 200_000,
+    });
+    expect(options.map((option) => option.id)).toEqual([
+      "user-profile:profile-zai:glm-4.6",
+      "user-profile:profile-zai:glm-4.5-air",
+      "anthropic/claude-opus-4.6",
+    ]);
+    // The profile no longer borrows "Opus 4.6" from the app catalog.
+    expect(
+      options.some(
+        (o) => o.source === "user" && o.baseModelId?.startsWith("anthropic/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("buildModelOptions tolerates a discovered model with no displayName", () => {
+    // Stored jsonb can drift; a missing displayName must not crash the picker.
+    const profile = {
+      id: "profile-bad",
+      name: "Custom",
+      provider: "anthropic" as const,
+      baseUrl: "https://api.example.com/v1",
+      keyLast4: "abcd",
+      keyFingerprint: "fingerprint",
+      status: "verified" as const,
+      lastTestedAt: null,
+      lastTestMessage: null,
+      enabled: true,
+      models: [
+        { id: "glm-4.6" } as unknown as { id: string; displayName: string },
+      ],
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+
+    const options = buildModelOptions([], [], [profile]);
+
+    expect(options[0]).toMatchObject({
+      id: "user-profile:profile-bad:glm-4.6",
+      label: "glm-4.6",
+      shortLabel: "glm-4.6",
+      source: "user",
+    });
   });
 
   test("groupByProvider puts user, anthropic, and openai first, preserves insertion order", () => {
@@ -334,9 +421,47 @@ describe("filterAndSortModelOptions", () => {
       shortLabel: "Opus 4",
       isVariant: false,
       provider: "user",
+      source: "user" as const,
       secondaryLabel: "My Key",
     },
   ];
+
+  test("source filter keeps only user-key models", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+      source: "user",
+    });
+    expect(result.map((o) => o.id)).toEqual([
+      "user-profile:profile-1:anthropic%2Fclaude-opus-4",
+    ]);
+  });
+
+  test("source filter keeps only catalog models", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "provider",
+      search: "",
+      source: "catalog",
+    });
+    expect(result.every((o) => o.source !== "user")).toBe(true);
+    expect(result).toHaveLength(5);
+  });
+
+  test("selectedOnly keeps only options in selectedIds", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+      selectedOnly: true,
+      selectedIds: new Set(["openai/gpt-5", "google/gemini-2.5-pro"]),
+    });
+    expect(result.map((o) => o.id).sort()).toEqual([
+      "google/gemini-2.5-pro",
+      "openai/gpt-5",
+    ]);
+  });
 
   // BT-001: provider filter restricts to that provider's models
   test("BT-001: filters by provider when providerFilter is set", () => {
@@ -517,5 +642,339 @@ describe("filterAndSortModelOptions — regression", () => {
       search: "",
     });
     expect(result).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// RECOMMENDED_MODEL_IDS constant
+// ---------------------------------------------------------------------------
+describe("RECOMMENDED_MODEL_IDS", () => {
+  // BT-REC-001: constant is an array with at least 6 and at most 10 entries
+  test("BT-REC-001: is a non-empty array of 6–10 model IDs", () => {
+    expect(Array.isArray(RECOMMENDED_MODEL_IDS)).toBe(true);
+    expect(RECOMMENDED_MODEL_IDS.length).toBeGreaterThanOrEqual(6);
+    expect(RECOMMENDED_MODEL_IDS.length).toBeLessThanOrEqual(10);
+  });
+
+  // BT-REC-002: includes the APP_DEFAULT_MODEL_ID
+  test("BT-REC-002: includes openai/gpt-5.4 (APP_DEFAULT_MODEL_ID)", () => {
+    expect(RECOMMENDED_MODEL_IDS).toContain("openai/gpt-5.4");
+  });
+
+  // BT-REC-003: spans at least anthropic, openai, and google providers
+  test("BT-REC-003: spans anthropic, openai, and google providers", () => {
+    const ids = RECOMMENDED_MODEL_IDS as readonly string[];
+    expect(ids.some((id) => id.startsWith("anthropic/"))).toBe(true);
+    expect(ids.some((id) => id.startsWith("openai/"))).toBe(true);
+    expect(ids.some((id) => id.startsWith("google/"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildRecommendedModelOptions
+// ---------------------------------------------------------------------------
+describe("buildRecommendedModelOptions", () => {
+  const allOptions = [
+    {
+      id: "openai/gpt-5.4",
+      label: "GPT-5.4",
+      shortLabel: "GPT-5.4",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "openai/gpt-5.4-nano",
+      label: "GPT-5.4 Nano",
+      shortLabel: "GPT-5.4 Nano",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "anthropic/claude-haiku-4.5",
+      label: "Claude Haiku 4.5",
+      shortLabel: "Haiku 4.5",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "google/gemini-2.5-flash",
+      label: "Gemini 2.5 Flash",
+      shortLabel: "2.5 Flash",
+      isVariant: false,
+      provider: "google",
+    },
+    // NOT in RECOMMENDED_MODEL_IDS — should be excluded
+    {
+      id: "openai/gpt-4o",
+      label: "GPT-4o",
+      shortLabel: "GPT-4o",
+      isVariant: false,
+      provider: "openai",
+    },
+    {
+      id: "anthropic/claude-opus-4.6",
+      label: "Claude Opus 4.6",
+      shortLabel: "Opus 4.6",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "anthropic/claude-sonnet-4-6",
+      label: "Claude Sonnet 4.6",
+      shortLabel: "Sonnet 4.6",
+      isVariant: false,
+      provider: "anthropic",
+    },
+    {
+      id: "google/gemini-2.0-flash",
+      label: "Gemini 2.0 Flash",
+      shortLabel: "2.0 Flash",
+      isVariant: false,
+      provider: "google",
+    },
+    {
+      id: "openai/gpt-5.5",
+      label: "GPT-5.5",
+      shortLabel: "GPT-5.5",
+      isVariant: false,
+      provider: "openai",
+    },
+  ];
+
+  // BT-REC-010: returns only models whose ID is in RECOMMENDED_MODEL_IDS
+  test("BT-REC-010: filters full catalog to only recommended model IDs", () => {
+    const result = buildRecommendedModelOptions(allOptions);
+    const resultIds = result.map((o) => o.id);
+    // All returned ids must be in RECOMMENDED_MODEL_IDS
+    for (const id of resultIds) {
+      expect(RECOMMENDED_MODEL_IDS as readonly string[]).toContain(id);
+    }
+    // openai/gpt-4o is NOT in recommended — must not appear
+    expect(resultIds).not.toContain("openai/gpt-4o");
+  });
+
+  // BT-REC-011: graceful empty — empty catalog returns empty result
+  test("BT-REC-011: returns empty array when given an empty catalog", () => {
+    const result = buildRecommendedModelOptions([]);
+    expect(result).toEqual([]);
+  });
+
+  // BT-REC-012: does not include user-source options (those are always shown)
+  test("BT-REC-012: does not filter out user-source options from the result", () => {
+    const withUserOption = [
+      ...allOptions,
+      {
+        id: "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
+        label: "Claude Opus 4.6",
+        shortLabel: "Opus 4.6",
+        isVariant: false,
+        provider: "user",
+        source: "user" as const,
+      },
+    ];
+    const result = buildRecommendedModelOptions(withUserOption);
+    const resultIds = result.map((o) => o.id);
+    // User-source options should always pass through
+    expect(resultIds).toContain(
+      "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
+    );
+  });
+
+  // BT-REC-013: models not in live catalog are silently omitted (no dead IDs)
+  test("BT-REC-013: RECOMMENDED IDs absent from the catalog are silently omitted", () => {
+    // catalog has only one recommended model
+    const smallCatalog = [
+      {
+        id: "openai/gpt-5.4",
+        label: "GPT-5.4",
+        shortLabel: "GPT-5.4",
+        isVariant: false,
+        provider: "openai",
+      },
+    ];
+    const result = buildRecommendedModelOptions(smallCatalog);
+    // Only the one real model should be returned, no phantom entries
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("openai/gpt-5.4");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterAndSortModelOptions — cost sort extension (Slice 3)
+// ---------------------------------------------------------------------------
+describe("filterAndSortModelOptions — cost sort", () => {
+  const cheapModel = {
+    id: "google/gemini-2.0-flash",
+    label: "Gemini 2.0 Flash",
+    shortLabel: "2.0 Flash",
+    isVariant: false,
+    provider: "google",
+    cost: { input: 0.1, output: 0.4 },
+  };
+  const midModel = {
+    id: "anthropic/claude-haiku-4.5",
+    label: "Claude Haiku 4.5",
+    shortLabel: "Haiku 4.5",
+    isVariant: false,
+    provider: "anthropic",
+    cost: { input: 1, output: 5 },
+  };
+  const expensiveModel = {
+    id: "openai/gpt-5.5",
+    label: "GPT-5.5",
+    shortLabel: "GPT-5.5",
+    isVariant: false,
+    provider: "openai",
+    cost: { input: 5, output: 30 },
+  };
+  const noCostModel = {
+    id: "unknown/mystery",
+    label: "Mystery Model",
+    shortLabel: "Mystery",
+    isVariant: false,
+    provider: "unknown",
+    // no cost field
+  };
+
+  const seeded = [expensiveModel, noCostModel, cheapModel, midModel];
+
+  // BT-SORT-001: cost-asc puts cheapest input price first
+  test("BT-SORT-001: cost-asc returns cheapest model first", () => {
+    const result = filterAndSortModelOptions(seeded, {
+      providerFilter: "all",
+      sort: "cost-asc",
+      search: "",
+    });
+    expect(result[0].id).toBe("google/gemini-2.0-flash");
+    expect(result[1].id).toBe("anthropic/claude-haiku-4.5");
+    expect(result[2].id).toBe("openai/gpt-5.5");
+  });
+
+  // BT-SORT-002: cost-desc puts most expensive first
+  test("BT-SORT-002: cost-desc returns most expensive model first", () => {
+    const result = filterAndSortModelOptions(seeded, {
+      providerFilter: "all",
+      sort: "cost-desc",
+      search: "",
+    });
+    expect(result[0].id).toBe("openai/gpt-5.5");
+    expect(result[1].id).toBe("anthropic/claude-haiku-4.5");
+    expect(result[2].id).toBe("google/gemini-2.0-flash");
+  });
+
+  // BT-SORT-003: models without cost data sink to the bottom on both cost sorts
+  test("BT-SORT-003: models without cost data sort last on cost-asc", () => {
+    const result = filterAndSortModelOptions(seeded, {
+      providerFilter: "all",
+      sort: "cost-asc",
+      search: "",
+    });
+    expect(result[result.length - 1].id).toBe("unknown/mystery");
+  });
+
+  test("BT-SORT-003b: models without cost data sort last on cost-desc", () => {
+    const result = filterAndSortModelOptions(seeded, {
+      providerFilter: "all",
+      sort: "cost-desc",
+      search: "",
+    });
+    expect(result[result.length - 1].id).toBe("unknown/mystery");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression tests for buildRecommendedModelOptions and RECOMMENDED_MODEL_IDS
+// ---------------------------------------------------------------------------
+describe("buildRecommendedModelOptions — regression", () => {
+  // REG-REC-001: non-recommended catalog models are excluded
+  // Catches: if the function is reverted to return allOptions, this fails
+  test("REG-REC-001: non-recommended models do not appear in recommended output", () => {
+    const nonRecommended = {
+      id: "openai/gpt-4o",
+      label: "GPT-4o",
+      shortLabel: "GPT-4o",
+      isVariant: false,
+      provider: "openai",
+      source: "catalog" as const,
+    };
+    const recommended = {
+      id: "openai/gpt-5.4",
+      label: "GPT-5.4",
+      shortLabel: "GPT-5.4",
+      isVariant: false,
+      provider: "openai",
+      source: "catalog" as const,
+    };
+    const result = buildRecommendedModelOptions([nonRecommended, recommended]);
+    const ids = result.map((o) => o.id);
+    expect(ids).not.toContain("openai/gpt-4o");
+    expect(ids).toContain("openai/gpt-5.4");
+  });
+
+  // REG-REC-002: user-source options always pass through (regression against filtering them out)
+  test("REG-REC-002: user-source options always appear in recommended output", () => {
+    const userOption = {
+      id: "user-profile:p1:anthropic%2Fclaude-opus-4.6",
+      label: "Claude Opus",
+      shortLabel: "Opus",
+      isVariant: false,
+      provider: "user",
+      source: "user" as const,
+    };
+    const result = buildRecommendedModelOptions([userOption]);
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("user-profile:p1:anthropic%2Fclaude-opus-4.6");
+  });
+
+  // REG-REC-003: RECOMMENDED_MODEL_IDS itself is stable — verify the exact IDs haven't drifted
+  test("REG-REC-003: RECOMMENDED_MODEL_IDS contains the expected canonical set", () => {
+    const ids = RECOMMENDED_MODEL_IDS as readonly string[];
+    expect(ids).toContain("openai/gpt-5.4");
+    expect(ids).toContain("openai/gpt-5.4-nano");
+    expect(ids).toContain("openai/gpt-5.5");
+    expect(ids).toContain("anthropic/claude-haiku-4.5");
+    expect(ids).toContain("anthropic/claude-opus-4.6");
+    expect(ids).toContain("anthropic/claude-sonnet-4-6");
+    expect(ids).toContain("google/gemini-2.5-flash");
+    expect(ids).toContain("google/gemini-2.0-flash");
+  });
+
+  // REG-REC-004: cost sort is non-destructive — all models present after sort
+  test("REG-REC-004: cost-asc sort returns all models (no models lost)", () => {
+    const options = [
+      {
+        id: "a",
+        label: "A",
+        shortLabel: "A",
+        isVariant: false,
+        provider: "openai",
+        cost: { input: 1, output: 5 },
+      },
+      {
+        id: "b",
+        label: "B",
+        shortLabel: "B",
+        isVariant: false,
+        provider: "anthropic",
+      },
+      {
+        id: "c",
+        label: "C",
+        shortLabel: "C",
+        isVariant: false,
+        provider: "google",
+        cost: { input: 0.1, output: 0.4 },
+      },
+    ];
+    const result = filterAndSortModelOptions(options, {
+      providerFilter: "all",
+      sort: "cost-asc",
+      search: "",
+    });
+    expect(result).toHaveLength(3);
+    const ids = new Set(result.map((o) => o.id));
+    expect(ids.has("a")).toBe(true);
+    expect(ids.has("b")).toBe(true);
+    expect(ids.has("c")).toBe(true);
   });
 });

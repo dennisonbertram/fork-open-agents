@@ -45,6 +45,7 @@ import { unlinkGitHub } from "@/lib/github/actions/connection";
 import { authClient } from "@/lib/auth/client";
 import type { GitHubConnectionReason } from "@/lib/github/status";
 import { fetcher } from "@/lib/swr";
+import { shouldAutoExpandOrgs } from "./accounts-helpers";
 
 const GITHUB_OAUTH_CALLBACK =
   "/api/github/post-link?next=/settings/connections";
@@ -642,8 +643,6 @@ function ConnectedState({
   onDisconnect: () => void;
   unlinking: boolean;
 }) {
-  const [orgsExpanded, setOrgsExpanded] = useState(false);
-
   // combine personal account + orgs into a single list
   const allAccounts: OrgInstallStatus[] = [
     {
@@ -660,6 +659,12 @@ function ConnectedState({
   const installedCount = allAccounts.filter(
     (a) => a.installStatus === "installed",
   ).length;
+
+  // Auto-expand when coverage is incomplete so the recovery path is immediately
+  // visible. Stays collapsed when every account has the app installed.
+  const [orgsExpanded, setOrgsExpanded] = useState(() =>
+    shouldAutoExpandOrgs(installedCount, allAccounts.length),
+  );
 
   return (
     <>

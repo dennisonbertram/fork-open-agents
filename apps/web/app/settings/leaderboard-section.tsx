@@ -18,6 +18,7 @@ import { LEADERBOARD_RANK_SWR_KEY } from "@/hooks/use-leaderboard-rank";
 import { fetcher } from "@/lib/swr";
 import { formatDateOnly } from "@/lib/usage/date-range";
 import type { UsageDomainLeaderboard } from "@/lib/usage/types";
+import { LeaderboardEmptyState } from "./leaderboard-empty-state";
 
 type LeaderboardRange = "today" | "week" | "all";
 
@@ -151,21 +152,7 @@ export function LeaderboardSection() {
   }
 
   if (!leaderboard) {
-    return (
-      <div className="space-y-4">
-        <div className="space-y-1.5">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Internal leaderboard
-          </h3>
-        </div>
-        <div>
-          <p className="text-sm text-muted-foreground">
-            The internal leaderboard is available for users with a verified
-            organization email domain.
-          </p>
-        </div>
-      </div>
-    );
+    return <LeaderboardEmptyState reason="no-domain" />;
   }
 
   return (
@@ -192,9 +179,7 @@ export function LeaderboardSection() {
       ) : null}
       <div>
         {leaderboard.rows.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            No matching usage in this period.
-          </p>
+          <LeaderboardEmptyState reason="no-data" />
         ) : (
           <div className="overflow-x-auto rounded-lg border border-border/50 bg-muted/10">
             <Table>
