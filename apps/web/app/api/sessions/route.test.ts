@@ -24,6 +24,7 @@ let matchingProjectsError: Error | null = null;
 const createCalls: Array<Record<string, unknown>> = [];
 const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
+const prewarmKickCalls: Array<Record<string, unknown>> = [];
 let composioPolicy = { allowed: true, reason: null as string | null };
 
 // Mock resolveRepoDefaults so existing tests are not affected by the new
@@ -62,6 +63,12 @@ mock.module("@/lib/session/get-server-session", () => ({
 
 mock.module("@/lib/botid", () => ({
   checkBotProtection: async () => ({ isBot: false }),
+}));
+
+mock.module("@/lib/sandbox/prewarm-kick", () => ({
+  kickSandboxPrewarmWorkflow: (input: Record<string, unknown>) => {
+    prewarmKickCalls.push(input);
+  },
 }));
 
 mock.module("@/lib/rate-limit", () => ({
@@ -208,6 +215,7 @@ describe("/api/sessions POST vercel project linking", () => {
     createCalls.length = 0;
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
+    prewarmKickCalls.length = 0;
     composioPolicy = { allowed: true, reason: null };
   });
 
@@ -561,6 +569,7 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     createCalls.length = 0;
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
+    prewarmKickCalls.length = 0;
     composioPolicy = { allowed: true, reason: null };
   });
 
