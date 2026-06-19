@@ -13,6 +13,7 @@ import {
   toAnthropicDirectModelId,
   type AgentModelSelection,
   type OpenAgentCallOptions,
+  type SubagentRoster,
 } from "@open-agents/agent";
 import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
@@ -22,6 +23,7 @@ import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
 import { extractGatewayCost } from "./gateway-metadata";
+import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
   WebAgentCommitDataPart,
@@ -50,6 +52,7 @@ import {
   sendFinish,
 } from "./chat-post-finish";
 import { dedupeMessageReasoning } from "@/lib/chat/dedupe-message-reasoning";
+import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-tool-calls";
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
@@ -63,10 +66,14 @@ import type {
 import {
   extractManagedRuntimeWorkersFromParts,
   summarizeManagedRuntimeDirectToolUse,
+  summarizeExternalToolUse,
   type ManagedRuntimeWorkerSnapshot,
 } from "@/lib/observability/managed-runtime-workers";
 import { resolveChatModelSelection } from "../api/chat/_lib/model-selection";
-import { resolveChatSandboxRuntime } from "./chat-sandbox-runtime";
+import {
+  resolveChatSandboxRuntime,
+  type SandboxBackedRuntime,
+} from "./chat-sandbox-runtime";
 
 type AuthSessionContext = Pick<AuthSession, "authProvider" | "user"> | null;
 
@@ -96,6 +103,8 @@ type ChatModelRuntime = {
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
+  /** Per-role subagent roster resolved from agents rows. null = no rows (today's defaults). */
+  subagentRoster: SubagentRoster | null;
 };
 
 type Writable = WritableStream<UIMessageChunk>;
@@ -129,7 +138,11 @@ const convertMessages = async (
 ): Promise<ModelMessage[]> => {
   "use step";
   const { webAgent } = await import("@/app/config");
-  const dedupedMessages = messages.map(dedupeMessageReasoning);
+  // Drop orphaned tool-calls (e.g. an approved web_fetch that never executed
+  // before a new user turn) so conversion never emits a tool-call without a
+  // paired tool-result, which the provider rejects and which wedges the chat.
+  const sanitizedMessages = sanitizeInterruptedToolCalls(messages);
+  const dedupedMessages = sanitizedMessages.map(dedupeMessageReasoning);
   const modelMessages = await convertToModelMessages<WebAgentUIMessage>(
     dedupedMessages,
     {
@@ -236,11 +249,18 @@ async function resolveChatModelRuntime(params: {
       );
     }
 
-    if (!toAnthropicDirectModelId(mainModelSelection.id)) {
+    // Valid when the model is served by this profile's endpoint: a model
+    // discovered from its /v1/models listing (e.g. ZAI's "glm-5.2"), or — for
+    // profiles without discovered models yet — an Anthropic catalog id.
+    const servedByProfile =
+      (profile.models ?? []).some(
+        (model) => model.id === mainModelSelection.id,
+      ) || Boolean(toAnthropicDirectModelId(mainModelSelection.id));
+    if (!servedByProfile) {
       const { InferenceProfileResolutionError } =
         await import("@/lib/inference/profile-resolution");
       throw new InferenceProfileResolutionError(
-        "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
+        "Selected model isn't available on this inference profile. Pick one of the profile's models or switch back to Vercel AI Gateway.",
       );
     }
 
@@ -248,6 +268,103 @@ async function resolveChatModelRuntime(params: {
     inferenceProfileName = profile.name;
     inferenceProvider = profile.provider;
   }
+
+  // ── Phase 4: resolve per-role subagent roster ────────────────────────────────
+  // Mirror the skills plumbing pattern: resolve in the web layer, thread through
+  // agentOptions → experimental_context → task tool.
+  // Best-effort: failures log and fall back to null (today's behavior).
+  // Phase 6 (#242 / #388): also resolve the "main" agent to read toolAuthoringEnabled.
+  let subagentRoster: SubagentRoster | null = null;
+  let mainAgentToolAuthoringEnabled = false;
+  let mainAgentId: string | null = null;
+  try {
+    const { resolveAgentForRole } = await import("@/lib/agents/resolve-agent");
+    const scopeKeys = {
+      userId: params.userId,
+      sessionId: params.sessionId,
+    };
+    const [mainAgent, explorerAgent, executorAgent, designAgent] =
+      await Promise.all([
+        resolveAgentForRole({ ...scopeKeys, role: "main" }),
+        resolveAgentForRole({ ...scopeKeys, role: "explorer" }),
+        resolveAgentForRole({ ...scopeKeys, role: "executor" }),
+        resolveAgentForRole({ ...scopeKeys, role: "design" }),
+      ]);
+    mainAgentToolAuthoringEnabled = mainAgent.toolAuthoringEnabled;
+    mainAgentId = mainAgent.agentId;
+
+    const toRosterEntry = (
+      resolved: Awaited<ReturnType<typeof resolveAgentForRole>>,
+    ) => {
+      // Only include an entry when at least one field was explicitly set by a
+      // real DB row. The synthetic prefs fallback (fromDbRow=false) must NOT
+      // produce a roster entry even when modelId is non-null, because the
+      // synthetic modelId lacks providerOptionsOverrides and directAnthropic
+      // that were resolved for the main subagentModel. Threading a modelId-only
+      // roster entry would cause applyRosterOverrides to call gateway(modelId)
+      // with no second argument, silently dropping those overrides.
+      const hasInstructions = resolved.instructions !== null;
+      const hasSlugs = resolved.composioToolkitSlugs.length > 0;
+      // Only include modelId when this resolution came from a real DB row.
+      // Synthetic fallback modelId is already wired via subagentModel and must
+      // not be duplicated in the roster without its full model selection context.
+      const hasModel = resolved.fromDbRow && resolved.modelId !== null;
+
+      if (!hasModel && !hasInstructions && !hasSlugs) {
+        return null;
+      }
+
+      return {
+        ...(hasModel ? { modelId: resolved.modelId } : {}),
+        ...(hasInstructions ? { instructions: resolved.instructions } : {}),
+        ...(hasSlugs
+          ? { composioToolkitSlugs: resolved.composioToolkitSlugs }
+          : {}),
+      };
+    };
+
+    const explorerEntry = toRosterEntry(explorerAgent);
+    const executorEntry = toRosterEntry(executorAgent);
+    const designEntry = toRosterEntry(designAgent);
+
+    const hasAnyEntry =
+      explorerEntry !== null || executorEntry !== null || designEntry !== null;
+    if (hasAnyEntry) {
+      subagentRoster = {
+        ...(explorerEntry ? { explorer: explorerEntry } : {}),
+        ...(executorEntry ? { executor: executorEntry } : {}),
+        ...(designEntry ? { design: designEntry } : {}),
+      };
+    }
+  } catch (err: unknown) {
+    console.error("[chat] subagent roster resolution failed (non-fatal):", err);
+    subagentRoster = null;
+  }
+
+  // ── Phase 6 (#242 / #388): build proposeToolAction closure ───────────────────
+  // Only constructed when toolAuthoringEnabled=true and a real agentId exists.
+  // The closure captures userId, chatId, and agentId per-request (safe — no
+  // cross-request sharing). The DB import is deferred so there is no module-level
+  // dependency on the DB from the agent package.
+  const proposeToolAction =
+    mainAgentToolAuthoringEnabled && mainAgentId !== null
+      ? async (input: {
+          toolkitSlug: string;
+          chatId?: string;
+          runId?: string;
+        }) => {
+          const { createProposedToolEntry } =
+            await import("@/lib/db/agent-tool-entries");
+          const entry = await createProposedToolEntry({
+            agentId: mainAgentId as string,
+            userId: params.userId,
+            toolkitSlug: input.toolkitSlug,
+            createdByChatId: params.chatId,
+            createdByRunId: input.runId ?? null,
+          });
+          return { entryId: entry.id };
+        }
+      : undefined;
 
   return {
     selectedModelId: getModelOptionSelectionId(
@@ -265,9 +382,14 @@ async function resolveChatModelRuntime(params: {
         ? { subagentModel: subagentModelSelection }
         : {}),
       customInstructions: assistantFileLinkPrompt,
+      ...(subagentRoster ? { subagentRoster } : {}),
+      ...(mainAgentToolAuthoringEnabled
+        ? { toolAuthoringEnabled: true, proposeToolAction }
+        : {}),
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
+    subagentRoster,
   };
 }
 
@@ -426,6 +548,61 @@ function withModelMetadata(
   };
 }
 
+// Phrase-list approach for provider auth signals. Case-insensitive substring
+// matching is performed by matchesAnyPhrase. Covers API-key rejection, revoked
+// tokens, and HTTP 401 forms. Does NOT match rate-limit (429), timing strings
+// like "401ms", or unrelated "unauthorized" prose.
+const PROVIDER_AUTH_PHRASES: readonly string[] = [
+  "invalid api key",
+  "invalid or revoked",
+  "authentication_error",
+  "invalid_api_key",
+  "incorrect api key provided",
+  "invalid x-api-key",
+  "http 401",
+  "401 unauthorized",
+  "status 401",
+  "unauthorized",
+];
+
+// Phrase-list for provider credit / quota / billing signals. Deliberately
+// excludes OAuth/ACL errors ("insufficient permissions", "insufficient scope").
+// Filesystem quota errors ("disk quota exceeded writing /tmp") are excluded by
+// the FILESYSTEM_QUOTA_RE negative guard applied at the call site rather than
+// by narrowing the phrase list — this lets us match all bare "quota exceeded"
+// and "quota_exceeded" forms that real providers emit.
+const PROVIDER_CREDIT_PHRASES: readonly string[] = [
+  "out of credits",
+  "insufficient credits",
+  "insufficient_credits",
+  "insufficient_quota",
+  "insufficient funds",
+  "credit balance is too low",
+  "exceeded your current quota",
+  "quota exceeded",
+  "quota_exceeded",
+  "http 402",
+  "status 402",
+  "payment required",
+  "402 payment",
+];
+
+// Negative guard for the credit branch: filesystem quota errors share the
+// phrase "quota exceeded" but are not provider billing errors. "disk quota" is
+// the dominant filesystem signal in sandbox contexts (ext4, NFS, Docker tmpfs).
+// We keep this guard minimal — no evidence of "inode quota" or "user quota"
+// appearing in sandbox error logs — so we don't over-block.
+const FILESYSTEM_QUOTA_RE = /disk quota/i;
+
+/** Returns true if `message` contains any of `phrases` (case-insensitive). */
+function matchesAnyPhrase(
+  message: string,
+  phrases: readonly string[],
+): boolean {
+  const lower = message.toLowerCase();
+  return phrases.some((phrase) => lower.includes(phrase));
+}
+
 function getSetupErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   const name = error instanceof Error ? error.name : "";
@@ -446,6 +623,16 @@ function getSetupErrorMessage(error: unknown): string {
     return message;
   }
 
+  // Defense-in-depth: catch raw crypto auth-tag failure that escaped wrapping,
+  // or InferenceSecretDecryptionError that propagated without being wrapped.
+  if (
+    name === "InferenceSecretDecryptionError" ||
+    message.includes("could not be decrypted") ||
+    message.includes("Unsupported state or unable to authenticate data")
+  ) {
+    return "This chat's model couldn't be loaded — switch to a different model to keep going, or re-add its API key in Settings → Models.";
+  }
+
   if (
     name === "ComposioSetupError" ||
     message.includes("Composio") ||
@@ -455,6 +642,33 @@ function getSetupErrorMessage(error: unknown): string {
     message.includes("HTTP_Unauthorized")
   ) {
     return getComposioUserFacingError(message);
+  }
+
+  // Provider auth failures (API key rejected / access token invalid).
+  // Uses the shared PROVIDER_AUTH_PHRASES list so that rate-limit (429),
+  // service-unavailable (503), timing strings ("401ms"), and unrelated prose
+  // do not produce auth guidance.
+  if (matchesAnyPhrase(message, PROVIDER_AUTH_PHRASES)) {
+    return "The model provider rejected the API key for this agent. Check your API key in Settings → Models, then try again.";
+  }
+
+  // Provider credit / quota / billing failures.
+  // Uses PROVIDER_CREDIT_PHRASES with a filesystem-quota negative guard: if the
+  // message contains "disk quota" (case-insensitive) it is a sandbox disk-space
+  // error, not a provider billing error, and falls through to the generic message.
+  if (
+    matchesAnyPhrase(message, PROVIDER_CREDIT_PHRASES) &&
+    !FILESYSTEM_QUOTA_RE.test(message)
+  ) {
+    return "The model provider returned a billing or quota error. Check your account credits or plan, then try again.";
+  }
+
+  // A tool call was left without a result (e.g. an approved web_fetch that never
+  // executed) so the provider rejects the request. Message conversion now repairs
+  // this on the next turn, so guide the user to retry instead of surfacing the
+  // raw provider error or the misleading generic "Workspace setup failed".
+  if (message.includes("No tool output found for function call")) {
+    return "A tool call in this chat was interrupted before it finished. Send your message again to continue.";
   }
 
   return "Workspace setup failed. Try again in a moment.";
@@ -745,9 +959,7 @@ function buildRuntimeProofData(params: {
   workflowRunId: string;
   workflowStatus: WorkflowRunStatus;
   sandboxName: string | null;
-  managedRuntime: NonNullable<
-    Awaited<ReturnType<typeof resolveChatSandboxRuntime>>["managedRuntime"]
-  >;
+  managedRuntime: NonNullable<SandboxBackedRuntime["managedRuntime"]>;
   assistantParts: WebAgentUIMessage["parts"];
   artifacts: RuntimeProofArtifacts;
 }): WebAgentRuntimeProofData {
@@ -756,6 +968,7 @@ function buildRuntimeProofData(params: {
   const coordinatorDirectToolUse = summarizeManagedRuntimeDirectToolUse(
     params.assistantParts,
   );
+  const externalToolUse = summarizeExternalToolUse(params.assistantParts);
   const serviceEvidence = summarizeRuntimeServiceEvidence(
     params.artifacts.services,
   );
@@ -829,6 +1042,7 @@ function buildRuntimeProofData(params: {
     workflowStatus: params.workflowStatus,
     workerEvidence,
     coordinatorDirectToolUseObserved: coordinatorDirectToolUse.observed,
+    externalToolsCompleted: externalToolUse.count,
   });
 
   return {
@@ -845,6 +1059,7 @@ function buildRuntimeProofData(params: {
     },
     workerEvidence,
     coordinatorDirectToolUse,
+    externalToolUse,
     evidence,
     serviceEvidence,
     browserEvidence,
@@ -868,6 +1083,7 @@ function getRuntimeProofStatus(params: {
   workflowStatus: WorkflowRunStatus;
   workerEvidence: WebAgentRuntimeProofData["workerEvidence"];
   coordinatorDirectToolUseObserved: boolean;
+  externalToolsCompleted?: number;
 }): WebAgentRuntimeProofData["status"] {
   if (params.workflowStatus === "failed") {
     return "failed";
@@ -877,11 +1093,41 @@ function getRuntimeProofStatus(params: {
     return "blocked";
   }
 
+  // External tools (Composio/GitHub API calls via dynamic-tool parts) are a
+  // valid completion path when no managed workers executed. The coordinator
+  // completed repo work through external API tools without needing a sandbox.
+  const externalToolsValid = (params.externalToolsCompleted ?? 0) > 0;
+
+  // No managed work happened at all this turn: the coordinator answered
+  // conversationally — no worker, no direct repo tool, and no external tool.
+  // There's nothing to prove, so don't flag it as a deficiency.
+  if (
+    params.workerEvidence.total === 0 &&
+    !params.coordinatorDirectToolUseObserved &&
+    !externalToolsValid
+  ) {
+    return "no_activity";
+  }
+
+  // Work happened but not cleanly through a delegated worker: the coordinator
+  // used repo tools directly, a worker failed, or no worker completed.
   if (
     params.workerEvidence.completed === 0 ||
     params.workerEvidence.failed > 0 ||
     params.coordinatorDirectToolUseObserved
   ) {
+    // External tools can satisfy proof when no worker was ever attempted
+    // (completed === 0 AND failed === 0) AND no direct tool use was observed
+    // at the coordinator level. Failed workers mean the managed runtime was
+    // attempted but errored; external tools cannot mask that failure.
+    if (
+      params.workerEvidence.completed === 0 &&
+      params.workerEvidence.failed === 0 &&
+      externalToolsValid &&
+      !params.coordinatorDirectToolUseObserved
+    ) {
+      return "completed";
+    }
     return "incomplete";
   }
 
@@ -1262,11 +1508,25 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
     runtimeMode = runtime.runtimeMode;
-    runtimeSandboxName = runtime.sandboxState.sandboxName ?? null;
-    managedRuntimeProfileId = runtime.managedRuntime?.profileId ?? null;
+    // sandboxState is null for sandbox-free sessions; keep as undefined so
+    // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
+    // sandbox-specific work correctly.
+    runtimeSandboxName =
+      runtime.mode === "sandbox"
+        ? (runtime.sandboxState.sandboxName ?? null)
+        : null;
+    managedRuntimeProfileId =
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileId ?? null)
+        : null;
     managedRuntimeProfileVersion =
-      runtime.managedRuntime?.profileVersion ?? null;
-    managedRuntimeProfileRunId = runtime.managedRuntime?.profileRunId ?? null;
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileVersion ?? null)
+        : null;
+    managedRuntimeProfileRunId =
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime?.profileRunId ?? null)
+        : null;
     await emitSessionEvent({
       sessionId: options.sessionId,
       chatId: options.chatId,
@@ -1286,9 +1546,12 @@ export async function runAgentWorkflow(options: Options) {
       payload: {
         runtimeMode: runtime.runtimeMode,
         sandboxName: runtimeSandboxName,
-        workingDirectory: runtime.workingDirectory,
-        currentBranch: runtime.currentBranch,
-        managedRuntime: runtime.managedRuntime ?? null,
+        workingDirectory:
+          runtime.mode === "sandbox" ? runtime.workingDirectory : null,
+        currentBranch:
+          runtime.mode === "sandbox" ? runtime.currentBranch : null,
+        managedRuntime:
+          runtime.mode === "sandbox" ? (runtime.managedRuntime ?? null) : null,
         selectedModelId,
         modelId,
         inferenceRoute,
@@ -1314,26 +1577,40 @@ export async function runAgentWorkflow(options: Options) {
     };
 
     const managedRuntimeAgentContext =
-      runtime.managedRuntime ??
-      (runtime.runtimeMode === "managed_runtime"
-        ? { sandboxName: runtime.sandboxState.sandboxName }
-        : undefined);
+      runtime.mode === "sandbox"
+        ? (runtime.managedRuntime ??
+          (runtime.runtimeMode === "managed_runtime"
+            ? { sandboxName: runtime.sandboxState.sandboxName }
+            : undefined))
+        : undefined;
     const agentOptions: OpenAgentCallOptions = {
       ...modelRuntime.agentOptions,
       ...options.agentOptions,
       runtimeMode: runtime.runtimeMode,
+      // Signal to the agent that there is no sandbox VM; the tool policy will
+      // exclude all sandbox-dependent tools (file/bash/exec/edit/task).
+      sandboxFree: runtime.mode === "sandbox-free",
       ...(managedRuntimeAgentContext
         ? { managedRuntime: managedRuntimeAgentContext }
         : {}),
-      sandbox: {
-        state: runtime.sandboxState,
-        workingDirectory: runtime.workingDirectory,
-        currentBranch: runtime.currentBranch,
-        environmentDetails: runtime.environmentDetails,
-      },
+      // For sandbox-free sessions there is no VM. Provide a minimal stub so
+      // the agent can build a system prompt and respond as a plain chat.
+      sandbox:
+        runtime.mode === "sandbox"
+          ? {
+              state: runtime.sandboxState,
+              workingDirectory: runtime.workingDirectory,
+              currentBranch: runtime.currentBranch,
+              environmentDetails: runtime.environmentDetails,
+            }
+          : {
+              state: {} as import("@open-agents/sandbox").SandboxState,
+              workingDirectory: "/",
+            },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
     };
-    sandboxState = runtime.sandboxState;
+    sandboxState =
+      runtime.mode === "sandbox" ? runtime.sandboxState : undefined;
 
     for (
       let step = 0;
@@ -1468,8 +1745,11 @@ export async function runAgentWorkflow(options: Options) {
       repoName != null;
 
     if (canAutoCommit) {
+      // sandboxState is guaranteed non-null by the canAutoCommit guard above.
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+      const resolvedSandboxState = sandboxState!;
       const hasAutoCommitChanges = await hasAutoCommitChangesStep({
-        sandboxState,
+        sandboxState: resolvedSandboxState,
       });
 
       if (hasAutoCommitChanges) {
@@ -1504,7 +1784,7 @@ export async function runAgentWorkflow(options: Options) {
           sessionTitle: runtime.sessionTitle,
           repoOwner,
           repoName,
-          sandboxState,
+          sandboxState: resolvedSandboxState,
         });
 
         const resolvedCommitPart: WebAgentCommitDataPart = {
@@ -1599,7 +1879,9 @@ export async function runAgentWorkflow(options: Options) {
           sessionTitle: runtime.sessionTitle,
           repoOwner,
           repoName,
-          sandboxState,
+          // sandboxState is guaranteed non-null by the canAutoCommit guard.
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+          sandboxState: sandboxState!,
         });
 
         const resolvedPrPart: WebAgentPrDataPart = {
@@ -1692,7 +1974,11 @@ export async function runAgentWorkflow(options: Options) {
         ? "failed"
         : "completed";
 
-    if (runtime.runtimeMode === "managed_runtime" && runtime.managedRuntime) {
+    if (
+      runtime.mode === "sandbox" &&
+      runtime.runtimeMode === "managed_runtime" &&
+      runtime.managedRuntime
+    ) {
       const runtimeProofArtifacts = await collectRuntimeProofArtifacts({
         sessionId: options.sessionId,
         chatId: options.chatId,
@@ -1922,6 +2208,7 @@ const runAgentStep = async (
   const { webAgent } = await import("@/app/config");
   const { resolveComposioToolsForChat } =
     await import("@/lib/composio/session");
+  const { resolveGitHubToolsForChat } = await import("@/lib/github/tools");
   const { emitSessionEvent } = await import("@/lib/observability/events");
 
   const abortController = new AbortController();
@@ -2009,16 +2296,18 @@ const runAgentStep = async (
           actorType: "coordinator",
           eventName: "composio.profile.selected",
           status: "succeeded",
-          summary: `Using Composio profile: ${composioResult.profile.name}.`,
+          summary: composioResult.profile
+            ? `Using Composio profile: ${composioResult.profile.name}.`
+            : `Using Composio direct toolkit list.`,
           requestId,
           workflowRunId,
           sandboxName: stepSandboxName,
           managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
           payload: {
             stepNumber,
-            profileId: composioResult.profile.id,
-            profileName: composioResult.profile.name,
-            toolkitSlugs: composioResult.profile.toolkitSlugs,
+            profileId: composioResult.profile?.id ?? null,
+            profileName: composioResult.profile?.name ?? null,
+            toolkitSlugs: composioResult.profile?.toolkitSlugs ?? null,
             configHash: composioResult.configHash,
             composioSessionId: composioResult.composioSessionId,
             toolCount: Object.keys(composioResult.tools).length,
@@ -2043,11 +2332,40 @@ const runAgentStep = async (
           managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
           payload: {
             stepNumber,
-            profileId: composioResult.profile.id,
+            profileId: composioResult.profile?.id ?? null,
             configHash: composioResult.configHash,
             composioSessionId: composioResult.composioSessionId,
           },
         });
+
+        // Warn when a selected toolkit has no connected account — its tools are
+        // offered but cannot authenticate (e.g. GitHub picked but never linked).
+        const disconnectedToolkits = composioResult.disconnectedToolkits ?? [];
+        if (disconnectedToolkits.length > 0) {
+          await emitSessionEvent({
+            sessionId,
+            chatId,
+            userId,
+            source: "workflow",
+            actorType: "coordinator",
+            eventName: "composio.toolkit.not_connected",
+            status: "failed",
+            summary: `Selected Composio ${
+              disconnectedToolkits.length === 1 ? "toolkit is" : "toolkits are"
+            } not connected: ${disconnectedToolkits.join(", ")}. Connect ${
+              disconnectedToolkits.length === 1 ? "it" : "them"
+            } in settings — those tools cannot authenticate until then.`,
+            requestId,
+            workflowRunId,
+            sandboxName: stepSandboxName,
+            managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+            payload: {
+              stepNumber,
+              disconnectedToolkits,
+              composioSessionId: composioResult.composioSessionId,
+            },
+          });
+        }
       }
     } catch (error) {
       await emitSessionEvent({
@@ -2071,10 +2389,110 @@ const runAgentStep = async (
       throw error;
     }
 
+    let githubTools: ToolSet | undefined;
+    try {
+      const githubResult = await resolveGitHubToolsForChat({
+        userId,
+        chatId,
+      });
+      if (githubResult.status === "ready") {
+        githubTools = githubResult.tools;
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.selected",
+          status: "succeeded",
+          summary: `GitHub tools selected for ${githubResult.repoOwner}/${githubResult.repoName}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            repoOwner: githubResult.repoOwner,
+            repoName: githubResult.repoName,
+            toolCount: Object.keys(githubResult.tools).length,
+          },
+        });
+      } else if (
+        githubResult.status === "off" &&
+        githubResult.reason === "access_denied"
+      ) {
+        // Opted-in user whose repo access check failed — surface for observability
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "github.tools.access_denied",
+          status: "failed",
+          summary:
+            "GitHub tools access denied — check app installation and repo permissions.",
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            reason: githubResult.reason,
+            accessDeniedReason: githubResult.accessDeniedReason ?? null,
+          },
+        });
+      }
+      // Benign off cases (not_enabled, no_repo) emit nothing
+    } catch (error) {
+      // Non-fatal: emit observability event and continue without GitHub tools
+      // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
+      const errorKind =
+        error instanceof Error && error.name === "GitHubToolsSetupError"
+          ? "setup_error"
+          : "unknown";
+      await emitSessionEvent({
+        sessionId,
+        chatId,
+        userId,
+        source: "workflow",
+        actorType: "coordinator",
+        eventName: "github.tools.failed",
+        status: "failed",
+        summary:
+          error instanceof Error
+            ? error.message
+            : "Unknown error resolving GitHub tools.",
+        requestId,
+        workflowRunId,
+        sandboxName: stepSandboxName,
+        managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+        payload: {
+          stepNumber,
+          errorKind,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      // Swallow — chat continues without GitHub tools
+    }
+
+    // Merge composio and github tools into one set — prevents either from
+    // clobbering the other when only one spread was used previously.
+    const mergedExtraTools = mergeExtraTools(composioTools, githubTools);
+
+    // True when any authenticated GitHub tool — native `github_*` or Composio
+    // `GITHUB_*` — is in the toolset. Drives the prompt steer and the web_fetch
+    // guardrail so the agent uses those tools instead of unauthenticated fetch.
+    const githubToolAvailable = hasGithubTool(mergedExtraTools);
+
     const result = await webAgent.stream({
       messages,
-      options: stepAgentOptions,
-      ...(composioTools ? { tools: composioTools } : {}),
+      options: {
+        ...stepAgentOptions,
+        githubToolsEnabled: githubTools !== undefined,
+        githubToolAvailable,
+      },
+      ...(mergedExtraTools ? { tools: mergedExtraTools } : {}),
       abortSignal: abortController.signal,
     });
 

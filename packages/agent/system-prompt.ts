@@ -347,8 +347,36 @@ export interface BuildSystemPromptOptions {
   environmentDetails?: string;
   skills?: SkillMetadata[];
   modelId?: string;
+  /**
+   * Human-facing name of the user inference profile serving this session, when
+   * the request routes through a user-supplied provider endpoint rather than
+   * the gateway. Used only to make the model-identity section more specific.
+   */
+  inferenceProfileName?: string;
   runtimeMode?: "classic" | "managed_runtime";
+  /** When true, the session has no sandbox VM. Informs the agent it cannot execute code. */
+  sandboxFree?: boolean;
+  /**
+   * When true, typed GitHub tools were injected for this step. Adds a prompt
+   * section steering the agent to prefer them over shell gh/curl for issue and
+   * PR metadata operations. Absent or false = no section added (zero behavior
+   * change when the tools are off).
+   */
+  githubToolsEnabled?: boolean;
+  /**
+   * When true, authenticated GitHub tools (native `github_*` or Composio
+   * `GITHUB_*`) are available this step. Adds a section steering the agent to
+   * use them instead of the unauthenticated `web_fetch` tool for GitHub hosts.
+   * Absent or false = no section added.
+   */
+  githubToolAvailable?: boolean;
 }
+
+const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
+
+You are running in a plain chat session. You have no code-execution environment — there is no sandbox VM, no filesystem, and no shell available. You can answer questions, analyze information, fetch web resources, and use Composio tools, but you cannot read or write files, run commands, or execute code.
+
+If the user needs to run code, edit files, or work in a repository, suggest that they add a sandbox to the session first.`;
 
 const MANAGED_RUNTIME_COORDINATOR_PROMPT = `# Managed Runtime Coordinator Mode
 
@@ -435,6 +463,16 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
 
+  if (options.modelId) {
+    parts.push(
+      `\n${buildModelIdentityPrompt(options.modelId, options.inferenceProfileName)}`,
+    );
+  }
+
+  if (options.sandboxFree) {
+    parts.push(SANDBOX_FREE_PROMPT);
+  }
+
   if (options.runtimeMode === "managed_runtime") {
     parts.push(MANAGED_RUNTIME_COORDINATOR_PROMPT);
   }
@@ -455,6 +493,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     );
     parts.push(`\nCurrent branch: ${options.currentBranch}`);
     parts.push(`\n${cloudSandboxInstructions}`);
+  }
+
+  if (options.githubToolsEnabled) {
+    parts.push(`\n${GITHUB_TOOLS_PROMPT}`);
+  }
+
+  if (options.githubToolAvailable) {
+    parts.push(`\n${GITHUB_TOOL_PREFERENCE_PROMPT}`);
   }
 
   if (options.customInstructions) {

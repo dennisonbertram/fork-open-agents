@@ -89,11 +89,13 @@ let inferenceProfile: {
   userId: string;
   enabled: boolean;
   provider: "anthropic";
+  models: Array<{ id: string; displayName: string }>;
 } | null = {
   id: "inference-profile-1",
   userId: "user-1",
   enabled: true,
   provider: "anthropic",
+  models: [{ id: "glm-4.6", displayName: "GLM-4.6" }],
 };
 let chatsInSession: Array<{ id: string }> = [
   { id: "chat-1" },
@@ -248,6 +250,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       userId: "user-1",
       enabled: true,
       provider: "anthropic",
+      models: [{ id: "glm-4.6", displayName: "GLM-4.6" }],
     };
     chatsInSession = [{ id: "chat-1" }, { id: "chat-2" }];
     composioPolicy = { allowed: true, reason: null };
@@ -422,7 +425,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     ]);
   });
 
-  test("PATCH rejects user inference profile for non-Anthropic models", async () => {
+  test("PATCH rejects a model the inference profile does not serve", async () => {
     const { PATCH } = await routeModulePromise;
 
     const response = await PATCH(
@@ -435,6 +438,29 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
 
     expect(response.status).toBe(400);
     expect(updateChatCalls).toHaveLength(0);
+  });
+
+  test("PATCH accepts a discovered model served by the inference profile", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        modelId: "glm-4.6",
+        inferenceProfileId: "inference-profile-1",
+      }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateChatCalls).toEqual([
+      {
+        chatId: "chat-1",
+        patch: {
+          modelId: "glm-4.6",
+          inferenceProfileId: "inference-profile-1",
+        },
+      },
+    ]);
   });
 
   test("PATCH persists Composio chat selection", async () => {

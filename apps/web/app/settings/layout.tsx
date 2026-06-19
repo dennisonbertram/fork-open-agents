@@ -1,18 +1,6 @@
 "use client";
 
-import {
-  ArrowLeft,
-  Cable,
-  Blocks,
-  Bot,
-  LogOut,
-  Menu,
-  Settings as SettingsIcon,
-  ShieldAlert,
-  SlidersHorizontal,
-  Trophy,
-  User,
-} from "lucide-react";
+import { ArrowLeft, LogOut, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -26,13 +14,35 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
-import { cn } from "@/lib/utils";
 import { AccountsSectionSkeleton } from "./accounts-section";
+import { AgentsSectionSkeleton } from "./agents/agents-section";
 import { ComposioSectionSkeleton } from "./composio-section";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
+import { findActiveNavItem } from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
+import { SettingsNav } from "./settings-nav";
+import { SkillsSectionSkeleton } from "./skills/skills-section";
+
+function RuntimeProfilesSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <Skeleton className="mb-4 h-4 w-32" />
+        <div className="space-y-3">
+          {[1, 2].map((i) => (
+            <Skeleton key={i} className="h-12 w-full rounded-md" />
+          ))}
+        </div>
+      </div>
+      <div className="rounded-xl border bg-card p-5 shadow-sm">
+        <Skeleton className="mb-4 h-4 w-32" />
+        <Skeleton className="h-12 w-full rounded-md" />
+      </div>
+    </div>
+  );
+}
 
 /** Skeleton shown while auth is loading for the combined profile page */
 function ProfilePageSkeleton() {
@@ -68,58 +78,6 @@ function ConnectionsPageSkeleton() {
   return <AccountsSectionSkeleton />;
 }
 
-const baseSidebarItems = [
-  {
-    id: "profile",
-    label: "Profile",
-    href: "/settings/profile",
-    icon: User,
-  },
-  {
-    id: "preferences",
-    label: "Preferences",
-    href: "/settings/preferences",
-    icon: SettingsIcon,
-  },
-  {
-    id: "connections",
-    label: "Connections",
-    href: "/settings/connections",
-    icon: Cable,
-  },
-  {
-    id: "composio",
-    label: "Composio",
-    href: "/settings/composio",
-    icon: Blocks,
-  },
-  {
-    id: "background-agents",
-    label: "Background agents",
-    href: "/settings/background-agents",
-    icon: Bot,
-  },
-  {
-    id: "models",
-    label: "Models",
-    href: "/settings/models",
-    icon: SlidersHorizontal,
-  },
-  {
-    id: "leaderboard",
-    label: "Leaderboard",
-    href: "/settings/leaderboard",
-    icon: Trophy,
-  },
-];
-
-const adminSidebarItem = {
-  id: "admin",
-  label: "Admin",
-  href: "/settings/admin",
-  icon: ShieldAlert,
-};
-
 function SettingsLayout({
   children,
   pathname,
@@ -130,34 +88,14 @@ function SettingsLayout({
   isAdmin: boolean;
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const sidebarItems = isAdmin
-    ? [...baseSidebarItems, adminSidebarItem]
-    : baseSidebarItems;
-  const activeItem = sidebarItems.find((item) => item.href === pathname);
+  const activeItem = findActiveNavItem(pathname);
 
   const navItems = (
-    <ul className="space-y-1">
-      {sidebarItems.map((item) => {
-        const isActive = pathname === item.href;
-        return (
-          <li key={item.id}>
-            <Link
-              href={item.href}
-              onClick={() => setMobileSidebarOpen(false)}
-              className={cn(
-                "flex w-full items-center gap-3 rounded-md px-4 py-2 text-left text-sm transition-colors",
-                isActive
-                  ? "bg-muted text-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-            >
-              <item.icon className="h-4 w-4" />
-              {item.label}
-            </Link>
-          </li>
-        );
-      })}
-    </ul>
+    <SettingsNav
+      pathname={pathname}
+      isAdmin={isAdmin}
+      onNavigate={() => setMobileSidebarOpen(false)}
+    />
   );
 
   return (
@@ -173,12 +111,7 @@ function SettingsLayout({
               Back
             </Link>
           </div>
-          <nav className="flex-1 px-2 py-2">
-            <div className="mb-2 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Settings
-            </div>
-            {navItems}
-          </nav>
+          <nav className="flex-1 px-2 py-2">{navItems}</nav>
           <div className="border-t border-border px-2 py-3">
             <button
               type="button"
@@ -207,12 +140,7 @@ function SettingsLayout({
               Back
             </Link>
           </div>
-          <nav className="flex-1 px-2 py-2">
-            <div className="mb-2 px-4 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Settings
-            </div>
-            {navItems}
-          </nav>
+          <nav className="flex-1 px-2 py-2">{navItems}</nav>
           <div className="border-t border-border px-2 py-3">
             <button
               type="button"
@@ -250,13 +178,17 @@ function SettingsLayout({
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isAdmin } = useSession();
-  const activeItem = baseSidebarItems.find((item) => item.href === pathname);
+  const activeItem = findActiveNavItem(pathname);
   const fallbackTitle = activeItem?.label ?? "Profile";
   const fallbackContent =
     activeItem?.id === "connections" ? (
       <ConnectionsPageSkeleton />
+    ) : activeItem?.id === "agents" ? (
+      <AgentsSectionSkeleton />
     ) : activeItem?.id === "composio" ? (
       <ComposioSectionSkeleton />
+    ) : activeItem?.id === "skills" ? (
+      <SkillsSectionSkeleton />
     ) : activeItem?.id === "preferences" ? (
       <PreferencesSectionSkeleton />
     ) : activeItem?.id === "models" ? (
@@ -266,6 +198,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       </div>
     ) : activeItem?.id === "leaderboard" ? (
       <LeaderboardSectionSkeleton />
+    ) : activeItem?.id === "runtime-profiles" ? (
+      <RuntimeProfilesSkeleton />
     ) : (
       <ProfilePageSkeleton />
     );

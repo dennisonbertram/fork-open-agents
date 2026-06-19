@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Server,
   ShieldCheck,
+  Wrench,
   XCircle,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/composio/errors";
 import { cn } from "@/lib/utils";
 import {
+  type ExternalToolUseJson,
   type ManagedRuntimeDirectToolUseJson,
   type ManagedRuntimeCommandObservationJson,
   type ManagedRuntimeProfileRunJson,
@@ -400,6 +402,7 @@ export function RuntimeActorsSection({
   workers,
   directToolUse,
   events,
+  externalToolUse,
 }: {
   runtimeMode: RuntimeMode | null | undefined;
   latestWorkflow: WorkflowRunJson | null;
@@ -407,6 +410,7 @@ export function RuntimeActorsSection({
   workers: ManagedRuntimeWorkerJson[];
   directToolUse?: ManagedRuntimeDirectToolUseJson | null;
   events: SessionEventJson[];
+  externalToolUse?: ExternalToolUseJson | null;
 }) {
   const isManagedRuntime = runtimeMode === "managed_runtime";
   const workerActors = isManagedRuntime
@@ -480,18 +484,47 @@ export function RuntimeActorsSection({
               )}
             </ActorRow>
           ))
+        ) : externalToolUse?.observed ? (
+          <ActorRow
+            icon={<Wrench className="h-3.5 w-3.5" />}
+            status="completed"
+            title="External tools"
+          >
+            <p>Coordinator completed work via external API tools.</p>
+            <p className="truncate">
+              {externalToolUse.count} call
+              {externalToolUse.count === 1 ? "" : "s"} ·{" "}
+              {externalToolUse.toolNames.join(", ")}
+            </p>
+          </ActorRow>
         ) : (
           <div className="border-b border-border/60 px-3 py-3 last:border-b-0">
             <div className="flex items-start gap-2">
               <Bot className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 space-y-1 text-xs">
-                <p className="font-medium text-foreground">
-                  No managed worker has executed yet.
-                </p>
-                <p className="text-muted-foreground">
-                  Proof incomplete until the coordinator delegates repo work to
-                  a managed worker and worker evidence is captured.
-                </p>
+                {directToolUse?.observed ? (
+                  <>
+                    <p className="font-medium text-foreground">
+                      No managed worker has executed yet.
+                    </p>
+                    <p className="text-muted-foreground">
+                      Proof incomplete until the coordinator delegates repo work
+                      to a managed worker and worker evidence is captured.
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="font-medium text-foreground">
+                      No runtime work this turn.
+                    </p>
+                    <p className="text-muted-foreground">
+                      The coordinator answered conversationally without running
+                      tools or delegating to a managed worker — nothing to
+                      prove. A worker is delegated when the turn requires repo
+                      work.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -504,7 +537,7 @@ export function RuntimeActorsSection({
 function LikelyIssue({ events }: { events: SessionEventJson[] }) {
   const composioEvent = events.find(
     (event) =>
-      event.eventName.startsWith("composio.") ||
+      (event.eventName.startsWith("composio.") && event.status === "failed") ||
       getComposioErrorKind(event.summary) !== "unknown",
   );
   const failedEvent = events.find((event) => event.status === "failed");
@@ -641,6 +674,7 @@ export function RuntimeObservabilityPanel({
             latestProfileRun={latestProfileRun}
             latestWorkflow={latestWorkflow}
             directToolUse={data?.directToolUse}
+            externalToolUse={data?.externalToolUse}
             runtimeMode={data?.runtimeMode}
             workers={data?.workers ?? []}
           />

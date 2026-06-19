@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bot, ExternalLink } from "lucide-react";
+import { Boxes, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,11 +9,8 @@ import {
 } from "@/lib/background-agents/store";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  OverviewWindow,
-  AgentsWindow,
-  ActivityWindow,
-} from "./dashboard-windows";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { OverviewWindow, ActivityWindow } from "./dashboard-windows";
 import {
   PullRequestsWindow,
   IssuesWindow,
@@ -41,6 +38,8 @@ export default async function RepoDashboardPage({
 
   // Fetch all data sources in parallel with independent failure isolation.
   // A throw in agents/runs/dashboard must never break the entire page render.
+  // (Agents and loops detail live on the Project page; the dashboard only keeps
+  // the agent/run counts for the Overview summary plus recent Activity.)
   const [agentsResult, runsResult, dashboardDataResult] =
     await Promise.allSettled([
       listRepoBackgroundAgents({
@@ -82,7 +81,7 @@ export default async function RepoDashboardPage({
   const { prSummary, issueSummary, actionsSummary } = dashboardData;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="h-full overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         {/* Repo header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
@@ -105,9 +104,9 @@ export default async function RepoDashboardPage({
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">
-              <Link href="/settings/background-agents">
-                <Bot className="h-4 w-4" />
-                Agents settings
+              <Link href={`/repos/${owner}/${repo}/project`}>
+                <Boxes className="h-4 w-4" />
+                Project
               </Link>
             </Button>
           </div>
@@ -122,13 +121,37 @@ export default async function RepoDashboardPage({
             repoName={repo}
           />
 
-          <div className="grid gap-4 md:grid-cols-3">
-            <PullRequestsWindow summary={prSummary} owner={owner} repo={repo} />
-            <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
-            <ActionsWindow summary={actionsSummary} owner={owner} repo={repo} />
-          </div>
+          <Tabs defaultValue="pull-requests" className="w-full">
+            <TabsList className="w-full">
+              <TabsTrigger value="pull-requests" className="flex-1">
+                Pull Requests
+              </TabsTrigger>
+              <TabsTrigger value="issues" className="flex-1">
+                Issues
+              </TabsTrigger>
+              <TabsTrigger value="actions" className="flex-1">
+                Actions
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="pull-requests">
+              <PullRequestsWindow
+                summary={prSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+            <TabsContent value="issues">
+              <IssuesWindow summary={issueSummary} owner={owner} repo={repo} />
+            </TabsContent>
+            <TabsContent value="actions">
+              <ActionsWindow
+                summary={actionsSummary}
+                owner={owner}
+                repo={repo}
+              />
+            </TabsContent>
+          </Tabs>
 
-          <AgentsWindow agents={agents} />
           <ActivityWindow runs={runs} />
         </div>
       </div>

@@ -46,7 +46,9 @@ mock.module("ai", () => {
 const {
   getOpenAgentToolsForRuntimeMode,
   getRuntimeModeToolPolicy,
+  getChatOnlyTools,
   MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  CHAT_ONLY_TOOL_NAMES,
   OPEN_AGENT_TOOL_NAMES,
 } = await import("./open-agent");
 const { buildSystemPrompt } = await import("./system-prompt");
