@@ -368,8 +368,10 @@ async function resolveChatModelRuntime(params: {
 
   // ── #449: build manageBackgroundAgentAction closure ──────────────────────────
   // Validates the agent-provided draft against the background agent Zod schema,
-  // then calls createBackgroundAgent or updateBackgroundAgent. DB imports are
-  // deferred so packages/agent has no direct DB dependency.
+  // then calls createBackgroundAgent or updateBackgroundAgent.  Uses the
+  // spec-tool-contract normalization helpers to bridge the agent tool's simplified
+  // trigger kinds and permissions format to the web-side canonical schema.
+  // DB imports are deferred so packages/agent has no direct DB dependency.
   const manageAgentEnabled = true;
   const manageBackgroundAgentAction = manageAgentEnabled
     ? async (input: {
@@ -381,10 +383,26 @@ async function resolveChatModelRuntime(params: {
       }) => {
         const { createBackgroundAgentSchema } =
           await import("@/lib/background-agents/types");
+        const { normalizeAgentDraft } =
+          await import("@/lib/background-agents/spec-tool-contract");
         const { createBackgroundAgent, updateBackgroundAgent } =
           await import("@/lib/background-agents/store");
 
-        const parsed = createBackgroundAgentSchema.safeParse(input.draft);
+        // Try direct parse first (handles drafts already in web-side format).
+        // If that fails, normalize from agent-tool format (maps trigger kinds,
+        // converts flat conditions, renames snake_case permissions keys) and
+        // re-parse.
+        let parsed = createBackgroundAgentSchema.safeParse(input.draft);
+        if (
+          !parsed.success &&
+          input.draft != null &&
+          typeof input.draft === "object"
+        ) {
+          const normalized = normalizeAgentDraft(
+            input.draft as Record<string, unknown>,
+          );
+          parsed = createBackgroundAgentSchema.safeParse(normalized);
+        }
         if (!parsed.success) {
           throw new Error(
             `Invalid background agent draft: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
