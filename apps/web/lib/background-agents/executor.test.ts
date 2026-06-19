@@ -243,6 +243,10 @@ mock.module("./run-summary-persist", () => ({
   recordSummaryFailedEvent: mock(async () => undefined),
 }));
 
+mock.module("@/lib/db/usage", () => ({
+  recordUsage: mock(async () => undefined),
+}));
+
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox,
   getCurrentBranch,

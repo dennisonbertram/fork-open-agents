@@ -76,7 +76,6 @@ import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown"
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
-import { ComposioToolSelectorCompact } from "@/components/composio-tool-selector-compact";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -146,7 +145,12 @@ import {
 import { getPrDeploymentRefreshInterval } from "@/lib/pr-deployment-polling";
 import { fetcher } from "@/lib/swr";
 
-import { streamdownPlugins } from "@/lib/streamdown-config";
+// Streamdown plugins are loaded lazily to keep Shiki (~2 MB WASM) out of the
+// main bundle.  The plugins are fetched on first code-block render via
+// useEffect + dynamic import() in useStreamdownPlugins (see the <Streamdown>
+// usage site).  Removing the static import saves ~2 MB from the critical path.
+// import { streamdownPlugins } from "@/lib/streamdown-config";
+
 import { cn } from "@/lib/utils";
 import {
   type SandboxInfo,
@@ -244,6 +248,29 @@ function useHasMounted() {
     () => true,
     () => false,
   );
+}
+
+/**
+ * Lazy-loads Streamdown code plugins (Shiki WASM, ~2 MB) on first render of a
+ * code block.  The static import of streamdownPlugins was removed so Shiki is
+ * not in the critical-path bundle.  Returns the plugins once loaded, or null
+ * while the dynamic import is in flight — Streamdown gracefully falls back to
+ * unhighlighted code blocks in the meantime.
+ */
+function useStreamdownPlugins() {
+  const [plugins, setPlugins] = useState<
+    typeof import("@/lib/streamdown-config").streamdownPlugins | undefined
+  >(undefined);
+  useEffect(() => {
+    let cancelled = false;
+    import("@/lib/streamdown-config").then((mod) => {
+      if (!cancelled) setPlugins(mod.streamdownPlugins);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return plugins;
 }
 
 type ReasoningMessagePart = Extract<
@@ -1212,6 +1239,7 @@ export function SessionChatContent({
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
   const hasMounted = useHasMounted();
+  const streamdownPlugins = useStreamdownPlugins();
   const {
     activeView,
     gitPanelOpen,
@@ -1360,7 +1388,6 @@ export function SessionChatContent({
     archiveSession,
     unarchiveSession: _unarchiveSession,
     updateChatModel,
-    updateChatComposioSelection,
     updateSessionTitle,
     updateRuntimeMode,
     updateManagedRuntimeProfile,
@@ -1767,7 +1794,6 @@ export function SessionChatContent({
     [],
   );
   const [isUpdatingModel, setIsUpdatingModel] = useState(false);
-  const [isUpdatingTools, setIsUpdatingTools] = useState(false);
   const lastStatusSyncAtRef = useRef(0);
   const statusSyncInFlightRef = useRef(false);
   const pendingOptimisticTitleChatIdRef = useRef<string | null>(null);
@@ -2008,20 +2034,6 @@ export function SessionChatContent({
       }
     },
     [selectedModelOptionId, updateChatModel],
-  );
-
-  const handleComposioSelectionChange = useCallback(
-    async (selection: typeof chatInfo.composioSelection) => {
-      try {
-        setIsUpdatingTools(true);
-        await updateChatComposioSelection(selection);
-      } catch (err) {
-        console.error("Failed to update chat tools:", err);
-      } finally {
-        setIsUpdatingTools(false);
-      }
-    },
-    [updateChatComposioSelection],
   );
 
   const selectedModelOption = useMemo(
@@ -4797,16 +4809,6 @@ export function SessionChatContent({
                                 />
                               </div>
                             )}
-                            <ComposioToolSelectorCompact
-                              selection={chatInfo.composioSelection}
-                              repoOwner={session.repoOwner}
-                              repoName={session.repoName}
-                              githubConnected={!!session.cloneUrl}
-                              disabled={
-                                isArchived || isChatInFlight || isUpdatingTools
-                              }
-                              onChange={handleComposioSelectionChange}
-                            />
                             <RuntimeModeSelectorCompact
                               disabled={isArchived || isChatInFlight}
                               managedRuntimeProfileId={

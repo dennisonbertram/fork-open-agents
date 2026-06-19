@@ -26,7 +26,7 @@ let workflowRunStatus: string = "running";
 let getRunShouldThrow = false;
 
 const spies = {
-  updateChatActiveStreamId: mock(() => Promise.resolve()),
+  compareAndSetChatActiveStreamId: mock(() => Promise.resolve()),
 };
 
 // ── Module mocks ───────────────────────────────────────────────────
@@ -69,7 +69,7 @@ mock.module("@/lib/session/get-server-session", () => ({
 mock.module("@/lib/db/sessions", () => ({
   getChatById: async () => chatRecord,
   getSessionById: async () => sessionRecord,
-  updateChatActiveStreamId: spies.updateChatActiveStreamId,
+  compareAndSetChatActiveStreamId: spies.compareAndSetChatActiveStreamId,
 }));
 
 const routeModulePromise = import("./route");
@@ -136,7 +136,7 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.updateChatActiveStreamId).not.toHaveBeenCalled();
+    expect(spies.compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
   });
 
   test("returns stream response when workflow is running", async () => {
@@ -145,7 +145,7 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(200);
-    expect(spies.updateChatActiveStreamId).not.toHaveBeenCalled();
+    expect(spies.compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
   });
 
   test("returns stream response when workflow is pending", async () => {
@@ -162,7 +162,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.updateChatActiveStreamId).toHaveBeenCalledWith("chat-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "wrun_active-123",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow is cancelled", async () => {
@@ -171,7 +175,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.updateChatActiveStreamId).toHaveBeenCalledWith("chat-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "wrun_active-123",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow is failed", async () => {
@@ -180,7 +188,11 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.updateChatActiveStreamId).toHaveBeenCalledWith("chat-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "wrun_active-123",
+      null,
+    );
   });
 
   test("clears stale ID and returns 204 when workflow run not found", async () => {
@@ -189,6 +201,10 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     const response = await GET(createStreamRequest(), routeContext);
     expect(response.status).toBe(204);
-    expect(spies.updateChatActiveStreamId).toHaveBeenCalledWith("chat-1", null);
+    expect(spies.compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "wrun_active-123",
+      null,
+    );
   });
 });

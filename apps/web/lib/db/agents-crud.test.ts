@@ -202,6 +202,17 @@ describe("upsertUserDefaultAgent — githubToolsEnabled field (BT-A-004)", () =>
     expect(opts?.set?.githubToolsEnabled).toBe(true);
   });
 
+  it("BT-A-004f: conflict target matches the user_default partial unique index", async () => {
+    await upsertUserDefaultAgent("u1", "main", { modelId: "m" });
+    const opts = lastOnConflictOpts as {
+      target?: unknown[];
+      targetWhere?: unknown;
+    } | null;
+    expect(opts).not.toBeNull();
+    expect(opts?.target).toEqual(["userId_col", "role_col", "scope_col"]);
+    expect(opts?.targetWhere).toBeDefined();
+  });
+
   // BT-A-004e: documents the full-row-replace contract. upsertUserDefaultAgent
   // is NOT a partial patch — a save that omits githubToolsEnabled resets the
   // column to false (both the insert row and the onConflict set use

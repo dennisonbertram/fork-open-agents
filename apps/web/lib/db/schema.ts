@@ -2084,11 +2084,11 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
-    uniqueIndex("agents_user_role_scope_idx").on(
-      table.userId,
-      table.role,
-      table.scope,
-    ),
+    // User defaults are upserted by (userId, role, scope). Keep this partial so
+    // repo/session rows can coexist without relying on nullable unique columns.
+    uniqueIndex("agents_user_role_scope_idx")
+      .on(table.userId, table.role, table.scope)
+      .where(sql`${table.scope} = 'user_default'`),
     index("agents_session_idx").on(table.sessionId),
   ],
 );
@@ -2128,7 +2128,7 @@ export const usageEvents = pgTable("usage_events", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  source: text("source", { enum: ["web"] })
+  source: text("source", { enum: ["web", "background-agent"] })
     .notNull()
     .default("web"),
   agentType: text("agent_type", { enum: ["main", "subagent"] })

@@ -228,7 +228,12 @@ export async function POST(req: Request) {
     });
   } finally {
     if (setupToken) {
-      await revokeInstallationToken(setupToken.token);
+      // Fire-and-forget: token revoke is a best-effort cleanup.  The token was
+      // only used for initial clone/setup and the sandbox network policy is
+      // already cleared.  Don't block the response on GitHub's API (~100–300 ms).
+      revokeInstallationToken(setupToken.token).catch((error) => {
+        console.error("Failed to revoke installation token:", error);
+      });
     }
   }
 
@@ -259,24 +264,32 @@ export async function POST(req: Request) {
       //   );
       // }
 
-      try {
-        await installSessionGlobalSkills({
-          sessionRecord,
-          sandbox,
-        });
-      } catch (error) {
+      // Fire-and-forget: skill install can take 6–30 s across multiple skills
+      // (up to 120 s/skill for global npx installs).  The sandbox is already
+      // running and persistent — no response field depends on skill state.
+      // The user won't interact with the sandbox within those seconds, so
+      // installing in the background removes perceived startup latency.
+      installSessionGlobalSkills({
+        sessionRecord,
+        sandbox,
+      }).catch((error) => {
         console.error(
           `Failed to install global skills for session ${sessionRecord.id}:`,
           error,
         );
-      }
+      });
 
-      await installSessionUserSkills({
+      installSessionUserSkills({
         userId: session.user.id,
         sessionId: sessionRecord.id,
         sandboxName: nextState.sandboxName ?? null,
         sandbox,
         didSetupWorkspace: true,
+      }).catch((error) => {
+        console.error(
+          `Failed to install user skills for session ${sessionRecord.id}:`,
+          error,
+        );
       });
     }
 

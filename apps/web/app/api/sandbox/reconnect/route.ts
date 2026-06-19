@@ -109,16 +109,27 @@ export async function GET(req: Request): Promise<Response> {
   // Connect and probe the persisted runtime sandbox state.
   try {
     const sandbox = await connectSandbox(state as SandboxState);
-    const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
-    if (!probe.success) {
-      const probeError =
-        probe.stderr?.trim() || probe.stdout?.trim() || "sandbox probe failed";
-      if (isSandboxUnavailableError(probeError)) {
-        throw new Error(probeError);
+
+    // Fast-path: when reconnecting to a named sandbox (state.sandboxName is set),
+    // connectSandbox already verified the sandbox is alive through its internal
+    // reconnection flow.  Skipping the exec("pwd") probe saves ~200–600 ms on the
+    // most frequent action (opening a session) and avoids a Vercel control-plane
+    // exec call per reconnect.
+    const isNamedReconnect = Boolean(state.sandboxName);
+    if (!isNamedReconnect) {
+      const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
+      if (!probe.success) {
+        const probeError =
+          probe.stderr?.trim() ||
+          probe.stdout?.trim() ||
+          "sandbox probe failed";
+        if (isSandboxUnavailableError(probeError)) {
+          throw new Error(probeError);
+        }
+        console.warn(
+          `[Reconnect] session=${sessionId} non-fatal probe failure while reconnecting: ${probeError}`,
+        );
       }
-      console.warn(
-        `[Reconnect] session=${sessionId} non-fatal probe failure while reconnecting: ${probeError}`,
-      );
     }
 
     const refreshedState =

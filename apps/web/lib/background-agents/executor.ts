@@ -65,6 +65,7 @@ import { isLearningsAgent } from "@/lib/learnings/builtin-agent";
 import { runLearningsExtraction } from "@/lib/learnings/runner";
 import { createDbLearningsStore } from "@/lib/learnings/store";
 import { generateText, Output } from "ai";
+import { recordUsage } from "@/lib/db/usage";
 import { extractedLearningCandidateSchema } from "@/lib/learnings/types";
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
@@ -347,6 +348,23 @@ async function runMutationAgent(params: {
         totalUsage: result.totalUsage,
       },
     });
+
+    // Record token usage to the usage_events table so background-agent
+    // consumption is visible in usage dashboards, leaderboards, and public
+    // profiles — not just in the background_agent_events JSONB payload.
+    if (result.usage) {
+      await recordUsage(params.userId, {
+        source: "background-agent",
+        agentType: "main",
+        model: "ai/background-agent",
+        usage: {
+          inputTokens: result.usage.inputTokens ?? 0,
+          cachedInputTokens: result.usage.cachedInputTokens ?? 0,
+          outputTokens: result.usage.outputTokens ?? 0,
+        },
+        toolCallCount,
+      });
+    }
 
     messages.push(...result.response.messages);
 

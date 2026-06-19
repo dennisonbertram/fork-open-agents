@@ -65,6 +65,11 @@ mock.module("@open-agents/sandbox", () => ({
     sandboxName?: string;
     expiresAt?: number;
   }) => {
+    if (!probeResult.success) {
+      throw new Error(
+        probeResult.stderr || probeResult.stdout || "sandbox reconnect failed",
+      );
+    }
     const expiresAt = Date.now() + 2 * 60_000;
     return {
       workingDirectory: "/vercel/sandbox",
@@ -133,7 +138,7 @@ describe("/api/sandbox/reconnect", () => {
     expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
   });
 
-  test("marks sandbox expired when the reconnect probe hits a 410", async () => {
+  test("marks sandbox expired when the reconnect flow hits a 410", async () => {
     const { GET } = await routeModulePromise;
 
     probeResult = {
@@ -164,7 +169,7 @@ describe("/api/sandbox/reconnect", () => {
     });
   });
 
-  test("drops a missing sandbox resume handle when the reconnect probe hits a 404", async () => {
+  test("drops a missing sandbox resume handle when the reconnect flow hits a 404", async () => {
     const { GET } = await routeModulePromise;
 
     sessionRecord.snapshotUrl = null;
