@@ -50,8 +50,8 @@ let mockPrList: MockPr[] = [];
 let mockIssueList: MockIssue[] = [];
 let mockWorkflowRuns: MockWorkflowRun[] = [];
 
-mock.module("@/lib/github/client", () => ({
-  getUserOctokit: async () => ({
+function makeMockOctokit() {
+  return {
     rest: {
       pulls: {
         list: async (): Promise<OctokitResponse<MockPr[]>> => {
@@ -79,7 +79,33 @@ mock.module("@/lib/github/client", () => ({
         },
       },
     },
+  };
+}
+
+const withScopedInstallationOctokit = mock(
+  async (params: {
+    operation: (
+      octokit: ReturnType<typeof makeMockOctokit>,
+    ) => Promise<unknown>;
+  }) => params.operation(makeMockOctokit()),
+);
+
+mock.module("@/lib/github/client", () => ({
+  getUserOctokit: async () => makeMockOctokit(),
+}));
+
+mock.module("@/lib/github/access", () => ({
+  verifyRepoAccess: async () => ({
+    ok: true,
+    installationId: 123,
+    repositoryId: 456,
+    defaultBranch: "develop",
+    userPermission: "write",
   }),
+}));
+
+mock.module("@/lib/github/app", () => ({
+  withScopedInstallationOctokit,
 }));
 
 const helperModulePromise = import("./repo-dashboard");
@@ -92,6 +118,7 @@ describe("Regression: repo-dashboard partial-failure isolation", () => {
     mockPrList = [];
     mockIssueList = [];
     mockWorkflowRuns = [];
+    withScopedInstallationOctokit.mockClear();
   });
 
   // REGRESSION-D-001: All three windows fail independently
