@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "./client";
 import { type Agent, agents } from "./schema";
@@ -81,7 +81,8 @@ export async function getUserDefaultAgent(
  * Upsert (create or update) a user_default agent row for a given userId + role.
  * One row per (userId, role, scope=user_default, sessionId=null).
  *
- * On conflict (same userId+role+scope), updates the patch fields and updatedAt.
+ * On conflict (same userId+role for the user_default partial unique index),
+ * updates the patch fields and updatedAt.
  */
 export async function upsertUserDefaultAgent(
   userId: string,
@@ -116,7 +117,8 @@ export async function upsertUserDefaultAgent(
     .insert(agents)
     .values(row)
     .onConflictDoUpdate({
-      target: [agents.userId, agents.role, agents.scope],
+      target: [agents.userId, agents.role],
+      targetWhere: sql`${agents.scope} = 'user_default'`,
       set: {
         modelId: row.modelId,
         composioToolkitSlugs: row.composioToolkitSlugs,

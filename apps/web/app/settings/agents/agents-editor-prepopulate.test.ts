@@ -1,9 +1,9 @@
 /**
  * Tests for Fix 1 (schema uniqueIndex) and Fix 2 (editor pre-population).
  *
- * Fix 1 (BT-FIX1-001): agents_user_role_scope_idx must be uniqueIndex in schema
- *   so that ON CONFLICT in upsertUserDefaultAgent resolves to the correct row
- *   rather than throwing "no unique or exclusion constraint".
+ * Fix 1 (BT-FIX1-001): agents_user_default_role_scope_idx must be uniqueIndex
+ *   in schema so that ON CONFLICT in upsertUserDefaultAgent resolves to the
+ *   correct row rather than throwing "no unique or exclusion constraint".
  *
  * Fix 2 (BT-FIX2-001, BT-FIX2-002): AgentRosterRow must carry raw
  *   composioToolkitSlugs so the editor can pre-populate without data loss
@@ -33,13 +33,14 @@ const noComposioDefaults: ComposioAgentDefaults = {
 
 const runtimeProfiles: ManagedRuntimeProfile[] = [];
 
-// ── Fix 1: schema uniqueIndex ─────────────────────────────────────────────────
+// ── Fix 1: schema user_default uniqueIndex ────────────────────────────────────
 
-describe("Fix 1: agents_user_role_scope_idx must be uniqueIndex", () => {
+describe("Fix 1: agents_user_default_role_scope_idx must be uniqueIndex", () => {
   /**
-   * BT-FIX1-001: The Drizzle schema must declare agents_user_role_scope_idx
+   * BT-FIX1-001: The Drizzle schema must declare the user_default partial index
    * using uniqueIndex() — not index() — so that ON CONFLICT in
-   * upsertUserDefaultAgent has a matching unique constraint.
+   * upsertUserDefaultAgent has a matching unique constraint while repo/session
+   * scoped rows can use their own keys.
    *
    * This test imports the agents table definition and inspects whether
    * the generated SQL DDL name contains "UNIQUE" (Drizzle tags unique indexes
@@ -47,7 +48,7 @@ describe("Fix 1: agents_user_role_scope_idx must be uniqueIndex", () => {
    * builder object type is UniqueConstraintBuilder vs IndexBuilder by
    * checking the config property set by Drizzle).
    */
-  test("BT-FIX1-001: agents table agents_user_role_scope_idx is a uniqueIndex", async () => {
+  test("BT-FIX1-001: agents table agents_user_default_role_scope_idx is a uniqueIndex", async () => {
     const { agents } = await import("@/lib/db/schema");
 
     // Use getTableConfig from drizzle-orm/pg-core (the correct path for this version)
@@ -55,7 +56,7 @@ describe("Fix 1: agents_user_role_scope_idx must be uniqueIndex", () => {
     const config = getTableConfig(agents);
 
     const roleScopeIdx = config.indexes.find(
-      (idx) => idx.config.name === "agents_user_role_scope_idx",
+      (idx) => idx.config.name === "agents_user_default_role_scope_idx",
     );
 
     expect(roleScopeIdx).toBeDefined();

@@ -470,6 +470,13 @@
       "when": 1781727107884,
       "tag": "0066_careful_forge",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1781843289499,
+      "tag": "0067_groovy_ultimo",
+      "breakpoints": true
     }
   ]
 }

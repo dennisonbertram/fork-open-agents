@@ -2084,7 +2084,16 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
-    uniqueIndex("agents_user_role_scope_idx").on(
+    uniqueIndex("agents_user_default_role_scope_idx")
+      .on(table.userId, table.role)
+      .where(sql`${table.scope} = 'user_default'`),
+    uniqueIndex("agents_repo_role_scope_idx")
+      .on(table.userId, table.role, table.repoOwner, table.repoName)
+      .where(sql`${table.scope} = 'repo'`),
+    uniqueIndex("agents_session_role_scope_idx")
+      .on(table.userId, table.role, table.sessionId)
+      .where(sql`${table.scope} = 'session'`),
+    index("agents_user_role_scope_idx").on(
       table.userId,
       table.role,
       table.scope,
