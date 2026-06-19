@@ -95,9 +95,11 @@ const spies = {
     Promise.resolve(),
   ),
   resolveChatSandboxRuntime: mock(
-    (
-      params: { assistantId: string },
-    ): Promise<TestResolvedChatSandboxRuntime | TestResolvedSandboxFreeRuntime> => {
+    (params: {
+      assistantId: string;
+    }): Promise<
+      TestResolvedChatSandboxRuntime | TestResolvedSandboxFreeRuntime
+    > => {
       writtenChunks.push({ type: "start", messageId: params.assistantId });
       return Promise.resolve(createResolvedChatSandboxRuntime());
     },
