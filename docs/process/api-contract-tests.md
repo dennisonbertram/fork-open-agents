@@ -25,9 +25,10 @@ Location: `apps/web/tests/contract/`. Runner: `bun run test:contract`.
 
 ## How to run
 
-The suites only run when `CONTRACT_BASE_URL` is set; otherwise they **skip**
-(so `bun run ci` stays green — the isolated runner discovers them but they
-no-op without a target).
+The target-bound suites only run when `CONTRACT_BASE_URL` is set; otherwise
+they **skip** (so `bun run ci` stays green — the isolated runner discovers them
+but they no-op without a target). Pure client policy tests still run without a
+target.
 
 Against a local dev server:
 
@@ -50,9 +51,9 @@ CONTRACT_BASE_URL=https://<preview-host> \
 Auth uses the `open_agents_test_user_id` cookie for `dev-managed-runtime-user`
 (see `apps/web/lib/session/test-auth.ts`); the client lives in
 `apps/web/tests/contract/_client.ts`. The client sends the Vercel automation
-bypass header when `VERCEL_AUTOMATION_BYPASS_SECRET` is set, and retries
-idempotent reads on a transient 5xx (a freshly-forked preview Neon branch can
-blip on its first connection).
+bypass header when `VERCEL_AUTOMATION_BYPASS_SECRET` is set, and retries only
+`GET` requests on a transient 5xx (a freshly-forked preview Neon branch can blip
+on its first connection).
 
 ## CI
 
