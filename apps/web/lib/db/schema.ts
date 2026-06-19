@@ -1226,6 +1226,7 @@ export const backgroundAgentEvents = pgTable(
     })
       .notNull()
       .default("passed"),
+    sequence: integer("sequence"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -1234,6 +1235,10 @@ export const backgroundAgentEvents = pgTable(
       table.createdAt,
     ),
     index("background_agent_events_request_idx").on(table.requestId),
+    index("background_agent_events_run_seq_idx").on(
+      table.runId,
+      table.sequence,
+    ),
   ],
 );
 

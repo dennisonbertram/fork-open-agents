@@ -1,0 +1,2 @@
+ALTER TABLE "background_agent_events" ADD COLUMN "sequence" integer;--> statement-breakpoint
+CREATE INDEX "background_agent_events_run_seq_idx" ON "background_agent_events" USING btree ("run_id","sequence");
