@@ -4,9 +4,6 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { SettingsSection } from "@/components/ui/settings-section";
 import {
   Select,
@@ -16,7 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
-import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
+import { AgentConfigFields } from "@/components/agent-config-fields";
 import { useModelOptions } from "@/hooks/use-model-options";
 import {
   INHERIT_SENTINEL,
@@ -203,39 +200,40 @@ function AgentEditor({
         </p>
       </div>
 
-      {/* External tools */}
-      <div className="space-y-1.5">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          External tools
-        </span>
-        <p className="text-xs text-muted-foreground">
-          Built-in file editing &amp; commands are always on.
-        </p>
-        <ComposioToolkitPicker
-          selectedSlugs={slugs}
-          onChange={setSlugs}
-          disabled={isBusy}
-          source="connected"
-        />
-      </div>
-
-      {/* Instructions */}
-      <div className="space-y-1.5">
-        <label
-          htmlFor={`agent-instructions-${row.key}`}
-          className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
-          Instructions
-        </label>
-        <Textarea
-          id={`agent-instructions-${row.key}`}
-          value={instructions}
-          onChange={(e) => setInstructions(e.target.value)}
-          placeholder="Leave blank to use the built-in prompt for this role."
-          rows={4}
-          disabled={isBusy}
-        />
-      </div>
+      <AgentConfigFields
+        className="space-y-4"
+        instructions={{
+          id: `agent-instructions-${row.key}`,
+          value: instructions,
+          onChange: setInstructions,
+          placeholder: "Leave blank to use the built-in prompt for this role.",
+          rows: 4,
+          disabled: isBusy,
+          expandedTitle: `${row.name} instructions`,
+          expandedDescription:
+            "Custom instructions override the built-in prompt for this role. Leave blank to inherit the default behavior.",
+          expandedAriaLabel: `${row.name} instructions expanded editor`,
+        }}
+        tools={{
+          label: "External tools",
+          selectedSlugs: slugs,
+          onChange: setSlugs,
+          disabled: isBusy,
+          source: "connected",
+          help: "Built-in file editing & commands are always on.",
+        }}
+        githubPermissions={
+          row.key === "main"
+            ? {
+                githubToolsEnabled,
+                onGithubToolsEnabledChange: setGithubToolsEnabled,
+                toolAuthoringEnabled,
+                onToolAuthoringEnabledChange: setToolAuthoringEnabled,
+                disabled: isBusy,
+              }
+            : undefined
+        }
+      />
 
       {/* Runtime profile */}
       <div className="space-y-1.5">
@@ -260,44 +258,6 @@ function AgentEditor({
           </SelectContent>
         </Select>
       </div>
-
-      {/* GitHub tools — Main role only */}
-      {row.key === "main" ? (
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label htmlFor="agent-github-tools-enabled">GitHub tools</Label>
-            <p className="text-xs text-muted-foreground">
-              Let this agent read and act on GitHub issues, branches, and PRs
-              for repos you have access to.
-            </p>
-          </div>
-          <Switch
-            id="agent-github-tools-enabled"
-            checked={githubToolsEnabled}
-            onCheckedChange={setGithubToolsEnabled}
-            disabled={isBusy}
-          />
-        </div>
-      ) : null}
-
-      {/* Tool authoring — Main role only */}
-      {row.key === "main" ? (
-        <div className="flex items-center justify-between gap-4">
-          <div className="space-y-0.5">
-            <Label htmlFor="agent-tool-authoring-enabled">Tool authoring</Label>
-            <p className="text-xs text-muted-foreground">
-              Let this agent propose new Composio tools. Proposals are recorded
-              for review and do not auto-enable tools.
-            </p>
-          </div>
-          <Switch
-            id="agent-tool-authoring-enabled"
-            checked={toolAuthoringEnabled}
-            onCheckedChange={setToolAuthoringEnabled}
-            disabled={isBusy}
-          />
-        </div>
-      ) : null}
 
       {/* Footer actions */}
       <div className="flex items-center justify-between gap-3">
