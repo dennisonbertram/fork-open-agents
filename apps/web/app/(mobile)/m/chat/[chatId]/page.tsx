@@ -149,10 +149,10 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
         chatId={chatId}
         sessionId={sessionId}
         sessionTitle={sessionRecord.title}
-        repoOwner={sessionRecord.repoOwner ?? null}
+        _repoOwner={sessionRecord.repoOwner ?? null}
         repoName={sessionRecord.repoName ?? null}
         branch={sessionRecord.branch ?? null}
-        cloneUrl={sessionRecord.cloneUrl ?? null}
+        _cloneUrl={sessionRecord.cloneUrl ?? null}
       />
     </SessionChatProvider>
   );

@@ -28,10 +28,10 @@ export interface MobileChatScreenProps {
   chatId: string;
   sessionId: string;
   sessionTitle: string;
-  repoOwner: string | null;
+  _repoOwner: string | null;
   repoName: string | null;
   branch: string | null;
-  cloneUrl: string | null;
+  _cloneUrl: string | null;
 }
 
 /**
@@ -47,10 +47,10 @@ export function MobileChatScreen({
   chatId,
   sessionId,
   sessionTitle,
-  repoOwner,
+  _repoOwner,
   repoName,
   branch,
-  cloneUrl,
+  _cloneUrl,
 }: MobileChatScreenProps) {
   const router = useRouter();
 
