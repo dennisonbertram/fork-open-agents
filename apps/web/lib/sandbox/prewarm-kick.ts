@@ -1,7 +1,5 @@
 import "server-only";
 
-import { start } from "workflow/api";
-import { sandboxPrewarmWorkflow } from "@/app/workflows/sandbox-prewarm";
 import {
   claimSessionPrewarmRunId,
   clearSessionPrewarmRunId,
@@ -24,20 +22,11 @@ async function startPrewarmRun(
   runId: string,
 ): Promise<void> {
   try {
-    const run = await start(sandboxPrewarmWorkflow, [sessionId, userId, runId]);
-    console.log(
-      `[Prewarm] Started workflow run ${run.runId} for session ${sessionId} (lease=${runId}).`,
-    );
-  } catch (error) {
-    console.error(
-      `[Prewarm] Failed to start workflow run for session ${sessionId}; using inline fallback:`,
-      error,
-    );
-
-    // Release the lease if we still own it (clearSessionPrewarmRunId uses a conditional WHERE).
-    await clearSessionPrewarmRunId(sessionId, runId);
-
     await prewarmSessionSandbox({ sessionId, userId });
+  } catch (error) {
+    console.error(`[Prewarm] Failed for session ${sessionId}:`, error);
+  } finally {
+    await clearSessionPrewarmRunId(sessionId, runId);
   }
 }
 

@@ -24,4 +24,8 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withWorkflow(withBotId(nextConfig));
+export default withWorkflow(withBotId(nextConfig), {
+  workflows: {
+    lazyDiscovery: true,
+  },
+});
