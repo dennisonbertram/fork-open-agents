@@ -31,6 +31,20 @@ type TestResolvedChatSandboxRuntime = {
   };
 };
 
+type TestResolvedSandboxFreeRuntime = {
+  mode: "sandbox-free";
+  sandboxState: null;
+  runtimeMode: "classic";
+  workingDirectory: null;
+  currentBranch: null;
+  environmentDetails: undefined;
+  skills: never[];
+  didSetupWorkspace: false;
+  sessionTitle: string;
+  repoOwner?: undefined;
+  repoName?: undefined;
+};
+
 function createResolvedChatSandboxRuntime(
   overrides: Partial<TestResolvedChatSandboxRuntime> = {},
 ): TestResolvedChatSandboxRuntime {
@@ -50,6 +64,23 @@ function createResolvedChatSandboxRuntime(
     sessionTitle: "Session title",
     repoOwner: "acme",
     repoName: "repo",
+    ...overrides,
+  };
+}
+
+function createResolvedSandboxFreeRuntime(
+  overrides: Partial<TestResolvedSandboxFreeRuntime> = {},
+): TestResolvedSandboxFreeRuntime {
+  return {
+    mode: "sandbox-free",
+    sandboxState: null,
+    runtimeMode: "classic",
+    workingDirectory: null,
+    currentBranch: null,
+    environmentDetails: undefined,
+    skills: [],
+    didSetupWorkspace: false,
+    sessionTitle: "Session title",
     ...overrides,
   };
 }
@@ -880,6 +911,27 @@ describe("runAgentWorkflow", () => {
         sandboxName: "session_session-1",
       },
     });
+  });
+
+  test("passes sandbox-free mode into agent options without sandbox-specific side effects", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(createResolvedSandboxFreeRuntime());
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(agentStreamOptions).toMatchObject({
+      runtimeMode: "classic",
+      sandboxFree: true,
+      sandbox: {
+        workingDirectory: "/",
+      },
+    });
+    expect(spies.persistSandboxState).not.toHaveBeenCalled();
+    expect(spies.refreshDiffCache).not.toHaveBeenCalled();
   });
 
   test("marks managed runtime proof no_activity when the coordinator answers without delegating or running tools", async () => {
