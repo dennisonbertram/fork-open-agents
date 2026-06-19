@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { Bot, Clock3, ExternalLink } from "lucide-react";
+import { Clock3, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
 import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
@@ -81,8 +80,11 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
     }),
   ]);
 
+  // Slice runs to 5 for the "Recent runs" peek
+  const recentRuns = runs.slice(0, 5);
+
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div>
@@ -91,14 +93,14 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
               {owner}/{repo}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <RepoAgentsDashboard owner={owner} repo={repo} />
-            <Button asChild variant="outline">
-              <Link href="/settings/background-agents">
-                <Bot className="h-4 w-4" />
-                Settings
-              </Link>
-            </Button>
+            <Link
+              href="/settings/background-agents"
+              className="text-xs text-muted-foreground hover:text-foreground"
+            >
+              Agent prerequisites →
+            </Link>
           </div>
         </div>
 
@@ -129,18 +131,23 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
           )}
         </section>
 
-        {/* Run history */}
+        {/* Recent runs — compact peek (up to 5) */}
         <section className="rounded-md border border-border">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Runs</h2>
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <h2 className="text-sm font-medium">Recent runs</h2>
+            {runs.length > 5 && (
+              <span className="text-xs text-muted-foreground">
+                Showing latest 5 · open an agent for its full history
+              </span>
+            )}
           </div>
-          {runs.length === 0 ? (
+          {recentRuns.length === 0 ? (
             <div className="p-8 text-center text-sm text-muted-foreground">
               No runs recorded for this repository.
             </div>
           ) : (
             <div className="divide-y divide-border">
-              {runs.map((run) => (
+              {recentRuns.map((run) => (
                 <Link
                   key={run.id}
                   href={`/background-runs/${run.id}`}

@@ -13,6 +13,7 @@ import {
 } from "@/lib/db/vercel-project-links";
 import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import { getUserPreferences } from "@/lib/db/user-preferences";
+import { resolveRepoDefaults } from "@/lib/repo-settings/resolve-repo-defaults";
 import {
   isValidGitHubRepoName,
   isValidGitHubRepoOwner,
@@ -286,24 +287,26 @@ export async function POST(req: Request) {
     repoName,
     branch,
     cloneUrl,
-    isNewBranch,
+    isNewBranch: bodyIsNewBranch,
     sandboxType = "vercel",
     managedRuntimeProfileId,
     autoCommitPush,
     autoCreatePr,
   } = body;
 
-  let finalBranch = branch;
-  if (isNewBranch) {
-    finalBranch = generateBranchName(session.user.username, session.user.name);
-  }
+  const hasRepo = Boolean(repoOwner && repoName);
 
   try {
     const titlePromise = resolveSessionTitle(body, session.user.id);
     const preferencesPromise = getUserPreferences(session.user.id);
 
+    // For repo-backed sessions, resolve per-repo defaults in parallel with prefs.
+    const repoDefaultsPromise =
+      hasRepo && repoOwner && repoName
+        ? resolveRepoDefaults({ userId: session.user.id, repoOwner, repoName })
+        : null;
+
     let resolvedVercelProject: VercelProjectSelection | null = null;
-    const hasRepo = Boolean(repoOwner && repoName);
     if (hasRepo && repoOwner && repoName) {
       if (explicitVercelProject) {
         const vercelToken = await getUserVercelToken(session.user.id);
@@ -349,13 +352,50 @@ export async function POST(req: Request) {
       }
     }
 
-    const [title, preferences] = await Promise.all([
+    const [title, preferences, repoDefaults] = await Promise.all([
       titlePromise,
       preferencesPromise,
+      repoDefaultsPromise,
     ]);
+
+    // Precedence: request body > repo defaults > user preferences > system default.
+    // For repo-backed sessions, repoDefaults is non-null and provides the
+    // second layer. For no-repo sessions, repoDefaults is null and we fall
+    // straight through to user preferences.
     const effectiveAutoCommitPush =
-      autoCommitPush ?? preferences.autoCommitPush;
-    const effectiveAutoCreatePr = autoCreatePr ?? preferences.autoCreatePr;
+      autoCommitPush ??
+      repoDefaults?.autoCommitPush ??
+      preferences.autoCommitPush;
+
+    const effectiveAutoCreatePr =
+      autoCreatePr ?? repoDefaults?.autoCreatePr ?? preferences.autoCreatePr;
+
+    // Effective isNewBranch: body > repo defaults > false
+    const effectiveIsNewBranch =
+      bodyIsNewBranch ?? repoDefaults?.isNewBranch ?? false;
+
+    // Branch: if effectiveIsNewBranch, generate a new branch name;
+    // otherwise use the explicit body branch or resolved default branch.
+    let finalBranch: string | undefined;
+    if (effectiveIsNewBranch) {
+      finalBranch = generateBranchName(
+        session.user.username,
+        session.user.name,
+      );
+    } else {
+      finalBranch = branch ?? repoDefaults?.defaultBranch ?? undefined;
+    }
+
+    // runtimeMode: body has no field today; use repo default (falls through to
+    // system "classic" when repo has no override).
+    const effectiveRuntimeMode = repoDefaults?.runtimeMode ?? "classic";
+
+    // managedRuntimeProfileId: body > repo defaults > user prefs
+    const effectiveManagedRuntimeProfileId =
+      managedRuntimeProfileId ??
+      repoDefaults?.managedRuntimeProfileId ??
+      preferences.defaultManagedRuntimeProfileId;
+
     const defaultComposioProfileId =
       preferences.composioAgentDefaults.main.defaultProfileId;
     const composioPolicy = defaultComposioProfileId
@@ -380,17 +420,19 @@ export async function POST(req: Request) {
         vercelProjectName: resolvedVercelProject?.projectName ?? null,
         vercelTeamId: resolvedVercelProject?.teamId ?? null,
         vercelTeamSlug: resolvedVercelProject?.teamSlug ?? null,
-        isNewBranch: isNewBranch ?? false,
+        isNewBranch: effectiveIsNewBranch,
         autoCommitPushOverride: effectiveAutoCommitPush,
         autoCreatePrOverride: effectiveAutoCommitPush
           ? effectiveAutoCreatePr
           : false,
-        managedRuntimeProfileId:
-          managedRuntimeProfileId ?? preferences.defaultManagedRuntimeProfileId,
+        managedRuntimeProfileId: effectiveManagedRuntimeProfileId,
+        runtimeMode: effectiveRuntimeMode,
         inferenceProfileId: preferences.defaultInferenceProfileId,
         globalSkillRefs: preferences.globalSkillRefs,
-        sandboxState: { type: sandboxType },
-        lifecycleState: "provisioning",
+        // No-repo (New Chat) sessions skip sandbox provisioning entirely.
+        // Repo-backed sessions still enter the provisioning lifecycle.
+        sandboxState: hasRepo ? { type: sandboxType } : null,
+        lifecycleState: hasRepo ? "provisioning" : null,
         lifecycleVersion: 0,
       },
       initialChat: {

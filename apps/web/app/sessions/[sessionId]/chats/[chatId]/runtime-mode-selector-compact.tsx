@@ -39,10 +39,10 @@ export function getRuntimeModeSummary({
     const profileName = profile?.displayName ?? "the selected profile";
     const evidenceSummary = getManagedRuntimeProfileEvidenceSummary(profile);
 
-    return `Managed runtime is selected with ${profileName}. The top-level agent is the Coordinator: it plans, delegates repo work to managed workers, and summarizes evidence. ${evidenceSummary} Runtime Inspector shows sandbox, profile setup, services, browser checks, and incomplete proof if work bypasses the worker path.`;
+    return `Coordinated (${profileName}): a coordinator plans the work and delegates repo changes to managed workers, recording a proof bundle of every step. Open Runtime Inspector after a run to verify what ran — sandbox, services, browser checks, and any incomplete proof. Best for shared repos or when you want an audit trail. ${evidenceSummary}`;
   }
 
-  return "Classic runtime is selected. The top-level agent can work directly in the sandbox. Switch to managed runtime before sending when you want a coordinator/managed-worker execution path and proof bundle.";
+  return "Direct: the agent edits your repo itself in the sandbox. Fastest — best for quick changes and exploration. Switch to Coordinated when you want a coordinator, managed workers, and a verifiable proof bundle.";
 }
 
 export function RuntimeModeSelectorCompact({
@@ -80,7 +80,7 @@ export function RuntimeModeSelectorCompact({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={summary}
+              aria-label={`Runtime: ${isManagedRuntime ? "Coordinated" : "Direct"}`}
               className={cn(
                 "h-8 shrink-0 gap-1.5 rounded-full px-2 text-xs",
                 isManagedRuntime
@@ -93,7 +93,7 @@ export function RuntimeModeSelectorCompact({
               variant={isManagedRuntime ? "outline" : "ghost"}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{isManagedRuntime ? "Managed" : "Classic"}</span>
+              <span>{isManagedRuntime ? "Coordinated" : "Direct"}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -102,7 +102,7 @@ export function RuntimeModeSelectorCompact({
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="w-80">
-        <DropdownMenuLabel>Runtime mode</DropdownMenuLabel>
+        <DropdownMenuLabel>How the agent runs</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={runtimeMode}
           onValueChange={(value) => {
@@ -113,9 +113,10 @@ export function RuntimeModeSelectorCompact({
         >
           <DropdownMenuRadioItem className="items-start" value="classic">
             <span className="flex flex-col gap-0.5">
-              <span>Classic</span>
+              <span>Direct</span>
               <span className="text-muted-foreground text-xs">
-                Top-level agent can work directly in the sandbox.
+                The agent edits your repo itself — fastest, best for quick
+                changes and exploration.
               </span>
             </span>
           </DropdownMenuRadioItem>
@@ -124,14 +125,22 @@ export function RuntimeModeSelectorCompact({
             value="managed_runtime"
           >
             <span className="flex flex-col gap-0.5">
-              <span>Managed runtime</span>
+              <span>Coordinated</span>
               <span className="text-muted-foreground text-xs">
-                Coordinator delegates repo work to managed workers and records
-                proof.
+                A coordinator delegates the work to managed workers and records
+                a verifiable proof bundle — best for shared repos or an audit
+                trail.
               </span>
             </span>
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
+        {isManagedRuntime ? (
+          <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
+            After a run, open{" "}
+            <span className="font-medium">Runtime Inspector</span> to verify
+            what ran — workers, services, and the proof bundle.
+          </p>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuLabel>Managed profile</DropdownMenuLabel>
         <DropdownMenuRadioGroup

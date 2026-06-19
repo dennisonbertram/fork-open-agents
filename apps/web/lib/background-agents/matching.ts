@@ -45,5 +45,11 @@ export function triggerMatchesEvent(
     return false;
   }
 
+  // mergedOnly restricts github.pull_request triggers to merged-closed PRs.
+  // GitHub never sends action:"merged"; merged is a boolean on action:"closed".
+  if (conditions.mergedOnly === true && event.merged !== true) {
+    return false;
+  }
+
   return true;
 }
