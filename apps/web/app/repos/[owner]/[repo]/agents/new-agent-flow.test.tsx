@@ -2,7 +2,7 @@
  * Tests for the dashboard New Agent creation flow.
  * Covers: BT-022 through BT-031
  *
- * Flow: repo dashboard → New Agent → template picker → spec editor → save
+ * Flow: repo dashboard → New agent link → /agents/new (template-first) → spec editor → save
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -96,7 +96,7 @@ describe("TemplatePicker", () => {
 });
 
 describe("AgentSpecEditor", () => {
-  test("BT-024: renders spec sections: Purpose, Trigger, Instructions, Output, Checks, Permissions, Safety/autonomy", async () => {
+  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, Result, and a top-level Enable control", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -115,12 +115,21 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    expect(html).toContain("Purpose");
-    expect(html).toContain("Trigger");
-    expect(html).toContain("Instructions");
-    expect(html).toContain("Output");
-    expect(html).toContain("Permissions");
-    expect(html).toContain("Safety");
+    expect(html).toContain("Name");
+    expect(html).toContain("What should this agent do?");
+    expect(html).toContain("When should it run?");
+    expect(html).toContain("Tools");
+    expect(html).toContain("Result");
+    // Enable moved to a top-level Enabled/Disabled control (no "Turn it on" section)
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Disabled");
+    expect(html).not.toContain("Turn it on");
+    // Old section names should NOT be present as primary headings
+    expect(html).not.toContain(">Purpose<");
+    expect(html).not.toContain(">Instructions<");
+    expect(html).not.toContain(">Output<");
+    expect(html).not.toContain(">Permissions<");
+    expect(html).not.toContain(">Safety<");
   });
 
   test("BT-025: Save button is disabled by default (new agent starts disabled)", async () => {
@@ -202,7 +211,7 @@ describe("AgentSpecEditor", () => {
     expect(lowerHtml).not.toContain("auto merge");
   });
 
-  test("BT-028: repo owner and name are displayed but not editable (read-only)", async () => {
+  test("BT-028: repo owner and name are NOT rendered as editable fields (no id=repo-owner/id=repo-name)", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -221,9 +230,6 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // Repo is displayed
-    expect(html).toContain("acme");
-    expect(html).toContain("widgets");
     // Not editable — no owner/repo text inputs
     expect(html).not.toContain('id="repo-owner"');
     expect(html).not.toContain('id="repo-name"');
@@ -262,7 +268,7 @@ describe("RepoAgentsDashboard", () => {
     mutate.mockClear();
   });
 
-  test("BT-030: renders a 'New Agent' entry point on the dashboard", async () => {
+  test("BT-030: renders a 'New agent' link that navigates to /agents/new (not a step machine)", async () => {
     agentsSwrData = { agents: [] };
     const { RepoAgentsDashboard } = await repoAgentsDashboardPromise;
 
@@ -270,10 +276,13 @@ describe("RepoAgentsDashboard", () => {
       <RepoAgentsDashboard owner="acme" repo="widgets" />,
     );
 
-    expect(html).toContain("New Agent");
+    // Label is now lowercase "New agent"
+    expect(html).toContain("New agent");
+    // Navigates to /agents/new (not inline step machine)
+    expect(html).toContain("/repos/acme/widgets/agents/new");
   });
 
-  test("BT-031: Run test button present in spec editor; editor wires onRunTest prop", async () => {
+  test("BT-031: Run a test button present in spec editor; editor wires onRunTest prop", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -292,6 +301,6 @@ describe("RepoAgentsDashboard", () => {
       />,
     );
 
-    expect(html).toContain("Run test");
+    expect(html).toContain("Run a test");
   });
 });

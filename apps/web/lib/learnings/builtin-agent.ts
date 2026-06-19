@@ -113,6 +113,7 @@ export async function ensureRepoLearningsAgent(
       },
     },
     outputMode: "none",
+    composioToolkitSlugs: [],
     triggers: [
       {
         name: "Merged PR",
