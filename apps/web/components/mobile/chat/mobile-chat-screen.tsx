@@ -47,10 +47,10 @@ export function MobileChatScreen({
   chatId,
   sessionId,
   sessionTitle,
-  _repoOwner,
+  repoOwner,
   repoName,
   branch,
-  _cloneUrl,
+  cloneUrl,
 }: MobileChatScreenProps) {
   const router = useRouter();
 
