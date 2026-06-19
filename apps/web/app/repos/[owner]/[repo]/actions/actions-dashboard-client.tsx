@@ -38,6 +38,9 @@ import type {
   WorkflowRunItem,
 } from "@/lib/github/actions-manager/runs";
 import type { WorkflowJobItem } from "@/lib/github/actions-manager/jobs";
+import type { WorkflowItem } from "@/lib/github/actions-manager/workflows";
+import { DispatchDialog } from "./dispatch-dialog";
+import { RunActionsMenu } from "./run-actions-menu";
 
 type ActionsDashboardClientProps = {
   owner: string;
@@ -45,7 +48,11 @@ type ActionsDashboardClientProps = {
 };
 
 type ReadinessResponse =
-  | { ok: true; readiness: ActionsManagerReadinessVerdict }
+  | {
+      ok: true;
+      readiness: ActionsManagerReadinessVerdict;
+      defaultBranch: string;
+    }
   | { ok: false; errorKind: string };
 
 type RunsResponse =
@@ -54,6 +61,10 @@ type RunsResponse =
 
 type JobsResponse =
   | { ok: true; totalCount: number; jobs: WorkflowJobItem[] }
+  | { ok: false; errorKind: string };
+
+type WorkflowsResponse =
+  | { ok: true; totalCount: number; workflows: WorkflowItem[] }
   | { ok: false; errorKind: string };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -165,40 +176,54 @@ function RunSkeletons() {
 }
 
 function RunRow({
+  baseUrl,
+  writeReadiness,
   run,
   onSelect,
+  onMutated,
 }: {
+  baseUrl: string;
+  writeReadiness: ActionsManagerReadinessVerdict;
   run: WorkflowRunItem;
   onSelect: (run: WorkflowRunItem) => void;
+  onMutated: () => Promise<void> | void;
 }) {
   const duration = formatDuration(run.durationMs);
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(run)}
-      className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md border border-border p-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      <StatusDot display={run.display} />
-      <div className="min-w-0 space-y-1">
-        <div className="flex min-w-0 items-center gap-2">
-          <p className="truncate text-sm font-medium">
-            {run.name} #{run.runNumber}
+    <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 rounded-md border border-border p-1 transition-colors hover:bg-muted/40">
+      <button
+        type="button"
+        onClick={() => onSelect(run)}
+        className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-sm p-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <StatusDot display={run.display} />
+        <div className="min-w-0 space-y-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-sm font-medium">
+              {run.name} #{run.runNumber}
+            </p>
+            <Badge variant="secondary" className="shrink-0 gap-1">
+              <GitBranch className="h-3 w-3" />
+              {run.branch}
+            </Badge>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {run.actor ?? "GitHub"} / {run.event} /{" "}
+            {formatRelativeTime(run.createdAt)}
+            {duration ? ` / ${duration}` : ""}
           </p>
-          <Badge variant="secondary" className="shrink-0 gap-1">
-            <GitBranch className="h-3 w-3" />
-            {run.branch}
-          </Badge>
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {run.actor ?? "GitHub"} / {run.event} /{" "}
-          {formatRelativeTime(run.createdAt)}
-          {duration ? ` / ${duration}` : ""}
-        </p>
-      </div>
-      <span className="shrink-0 text-xs text-muted-foreground">
-        {run.display.label}
-      </span>
-    </button>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {run.display.label}
+        </span>
+      </button>
+      <RunActionsMenu
+        baseUrl={baseUrl}
+        onMutated={onMutated}
+        run={run}
+        writeReadiness={writeReadiness}
+      />
+    </div>
   );
 }
 
@@ -353,6 +378,11 @@ export function ActionsDashboardClient({
     fetchJson,
     { revalidateOnFocus: false },
   );
+  const writeReadiness = useSWR<ReadinessResponse>(
+    `${baseUrl}/readiness?permission=write`,
+    fetchJson,
+    { revalidateOnFocus: false },
+  );
   const isReady =
     readiness.data?.ok && readiness.data.readiness.status === "ready";
   const runs = useSWR<RunsResponse>(
@@ -371,6 +401,20 @@ export function ActionsDashboardClient({
       },
     },
   );
+  const workflows = useSWR<WorkflowsResponse>(
+    isReady ? `${baseUrl}/workflows` : null,
+    fetchJson,
+    { revalidateOnFocus: false },
+  );
+
+  const pollRunsBriefly = React.useCallback(async () => {
+    await runs.mutate();
+    for (const delayMs of [2000, 4000, 6000, 8000, 10_000, 14_000, 18_000]) {
+      window.setTimeout(() => {
+        void runs.mutate();
+      }, delayMs);
+    }
+  }, [runs]);
 
   const readinessVerdict: ActionsManagerReadinessVerdict = readiness.data?.ok
     ? readiness.data.readiness
@@ -383,6 +427,20 @@ export function ActionsDashboardClient({
           ? "GitHub App permissions could not be checked right now."
           : "GitHub App permissions are being verified.",
       };
+  const writeReadinessVerdict: ActionsManagerReadinessVerdict = writeReadiness
+    .data?.ok
+    ? writeReadiness.data.readiness
+    : {
+        status: writeReadiness.error ? "error" : "unavailable",
+        headline: writeReadiness.error
+          ? "Could not verify Actions management access"
+          : "Checking Actions management access",
+        subtext: writeReadiness.error
+          ? "GitHub App write permissions could not be checked right now."
+          : "GitHub App Actions write permission is being verified.",
+      };
+  const defaultBranch = readiness.data?.ok ? readiness.data.defaultBranch : "";
+  const workflowItems = workflows.data?.ok ? workflows.data.workflows : [];
 
   return (
     <TooltipProvider>
@@ -405,12 +463,31 @@ export function ActionsDashboardClient({
           headline={readinessVerdict.headline}
           onRefresh={() => {
             void readiness.mutate();
+            void writeReadiness.mutate();
             void runs.mutate();
+            void workflows.mutate();
           }}
-          refreshing={readiness.isValidating || runs.isValidating}
+          refreshing={
+            readiness.isValidating ||
+            writeReadiness.isValidating ||
+            runs.isValidating ||
+            workflows.isValidating
+          }
           status={readinessVerdict.status}
           subtext={readinessVerdict.subtext}
         />
+
+        {isReady ? (
+          <div className="flex items-center justify-end">
+            <DispatchDialog
+              baseUrl={baseUrl}
+              defaultBranch={defaultBranch}
+              onDispatched={pollRunsBriefly}
+              workflows={workflowItems}
+              writeReadiness={writeReadinessVerdict}
+            />
+          </div>
+        ) : null}
 
         {!isReady ? null : runs.isLoading ? (
           <RunSkeletons />
@@ -434,7 +511,14 @@ export function ActionsDashboardClient({
         ) : runs.data?.ok ? (
           <div className="space-y-2">
             {runs.data.runs.map((run) => (
-              <RunRow key={run.id} onSelect={setSelectedRun} run={run} />
+              <RunRow
+                baseUrl={baseUrl}
+                key={run.id}
+                onMutated={pollRunsBriefly}
+                onSelect={setSelectedRun}
+                run={run}
+                writeReadiness={writeReadinessVerdict}
+              />
             ))}
           </div>
         ) : null}

@@ -669,6 +669,7 @@ export const sessionEvents = pgTable(
         "service",
         "browser",
         "github",
+        "github-actions-manager",
         "system",
       ],
     }).notNull(),

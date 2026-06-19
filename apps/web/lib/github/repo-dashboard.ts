@@ -8,12 +8,17 @@ import { getUserOctokit } from "./client";
 // ---- Error taxonomy -------------------------------------------------------
 
 export type DashboardErrorKind =
+  | "no_installation"
   | "github_not_connected"
   | "repo_access_denied"
   | "installation_missing"
   | "app_no_access"
   | "app_no_actions_permission"
+  | "workflow_not_on_default_branch"
+  | "dispatch_input_invalid"
+  | "run_not_cancellable"
   | "github_rate_limited"
+  | "github_error"
   | "unauthenticated"
   | "provider_rate_limited"
   | "provider_unavailable"
