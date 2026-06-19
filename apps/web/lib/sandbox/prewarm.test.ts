@@ -57,15 +57,22 @@ const fakeSandbox: FakeSandbox = {
 // ── Spies ─────────────────────────────────────────────────────────────────────
 
 const spies = {
-  getSessionById: mock(async () => null as ReturnType<typeof makeTestSession> | null),
+  getSessionById: mock(
+    async () => null as ReturnType<typeof makeTestSession> | null,
+  ),
   updateSession: mock(async () => undefined),
   connectSandbox: mock(async () => fakeSandbox as unknown as Sandbox),
   isSandboxActive: mock((_state: unknown) => false),
-  verifyRepoAccess: mock(async () => ({
-    ok: true as const,
-    installationId: 42,
-    repositoryId: 99,
-  }) as { ok: true; installationId: number; repositoryId: number } | { ok: false; reason: string }),
+  verifyRepoAccess: mock(
+    async () =>
+      ({
+        ok: true as const,
+        installationId: 42,
+        repositoryId: 99,
+      }) as
+        | { ok: true; installationId: number; repositoryId: number }
+        | { ok: false; reason: string },
+  ),
   getRepoAccessErrorMessage: mock((_reason: unknown) => "repo access error"),
   mintInstallationToken: mock(async () => ({
     token: "fake-token",
@@ -77,7 +84,9 @@ const spies = {
   installGlobalSkills: mock(async (_params: unknown) => undefined),
   installSessionUserSkills: mock(async () => undefined),
   kickSandboxLifecycleWorkflow: mock(() => undefined),
-  buildActiveLifecycleUpdate: mock((_state: unknown) => ({ lifecycleState: "active" })),
+  buildActiveLifecycleUpdate: mock((_state: unknown) => ({
+    lifecycleState: "active",
+  })),
   getNextLifecycleVersion: mock((_v: unknown) => 1),
   getResumableSandboxName: mock((_state: unknown) => "session_test-session"),
   getSessionSandboxName: mock((id: string) => `session_${id}`),
@@ -229,8 +238,12 @@ beforeEach(() => {
     tokenId: "tok_1",
     expiresAt: new Date(),
   }));
-  spies.connectSandbox.mockImplementation(async () => fakeSandbox as unknown as Sandbox);
-  spies.buildActiveLifecycleUpdate.mockImplementation(() => ({ lifecycleState: "active" }));
+  spies.connectSandbox.mockImplementation(
+    async () => fakeSandbox as unknown as Sandbox,
+  );
+  spies.buildActiveLifecycleUpdate.mockImplementation(() => ({
+    lifecycleState: "active",
+  }));
   spies.getNextLifecycleVersion.mockImplementation(() => 1);
   console.error = consoleErrorSpy as typeof console.error;
 });
@@ -246,7 +259,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("session-not-found");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "session-not-found",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -262,7 +277,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("unauthorized");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "unauthorized",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -278,7 +295,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("archived");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "archived",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -294,12 +313,13 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("sandbox-free");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "sandbox-free",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
 
     test("returns skipped with reason sandbox-free when sandboxState has no type:vercel", async () => {
-      const session = makeTestSession({ sandboxState: { type: "vercel" } });
       // But what if the type is wrong? We test with an object missing type:
       // Actually for sandbox-free we just check isSandboxState — null sandboxState
       // We already test null above. The key check is: type !== "vercel" → sandbox-free.
@@ -308,8 +328,12 @@ describe("prewarmSessionSandbox", () => {
         sandboxState: { type: "vercel" }, // valid vercel state
       });
       // Override with non-vercel type by casting
-      (session2 as { sandboxState: { type: string } }).sandboxState = { type: "unknown" };
-      spies.getSessionById.mockImplementationOnce(async () => session2 as unknown as TestSession);
+      (session2 as { sandboxState: { type: string } }).sandboxState = {
+        type: "unknown",
+      };
+      spies.getSessionById.mockImplementationOnce(
+        async () => session2 as unknown as TestSession,
+      );
 
       const result = await prewarmSessionSandbox({
         sessionId: session2.id,
@@ -317,7 +341,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("sandbox-free");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "sandbox-free",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -334,7 +360,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("already-active");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "already-active",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -362,7 +390,10 @@ describe("prewarmSessionSandbox", () => {
 
       // updateSession was called with sandboxState and lifecycle fields
       expect(spies.updateSession).toHaveBeenCalledTimes(1);
-      const updateCall = spies.updateSession.mock.calls[0] as unknown as [string, Record<string, unknown>];
+      const updateCall = spies.updateSession.mock.calls[0] as unknown as [
+        string,
+        Record<string, unknown>,
+      ];
       expect(updateCall[0]).toBe(session.id);
       expect(updateCall[1]).toHaveProperty("sandboxState");
       expect(updateCall[1]).toHaveProperty("snapshotUrl", null);
@@ -374,12 +405,14 @@ describe("prewarmSessionSandbox", () => {
 
       // User skills installed with didSetupWorkspace: true
       expect(spies.installSessionUserSkills).toHaveBeenCalledTimes(1);
-      const userSkillsCall = spies.installSessionUserSkills.mock.calls[0] as unknown as [Record<string, unknown>];
+      const userSkillsCall = spies.installSessionUserSkills.mock
+        .calls[0] as unknown as [Record<string, unknown>];
       expect(userSkillsCall[0]).toMatchObject({ didSetupWorkspace: true });
 
       // Lifecycle kicked
       expect(spies.kickSandboxLifecycleWorkflow).toHaveBeenCalledTimes(1);
-      const lifecycleCall = spies.kickSandboxLifecycleWorkflow.mock.calls[0] as unknown as [Record<string, unknown>];
+      const lifecycleCall = spies.kickSandboxLifecycleWorkflow.mock
+        .calls[0] as unknown as [Record<string, unknown>];
       expect(lifecycleCall[0]).toMatchObject({
         sessionId: session.id,
         reason: "sandbox-created",
@@ -395,7 +428,9 @@ describe("prewarmSessionSandbox", () => {
       await prewarmSessionSandbox({ sessionId: session.id, userId: "user-1" });
 
       expect(spies.connectSandbox).toHaveBeenCalledTimes(1);
-      const connectCall = spies.connectSandbox.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+      const connectCall = spies.connectSandbox.mock.calls[0] as unknown as [
+        { options: Record<string, unknown> },
+      ];
       expect(connectCall[0].options).toHaveProperty("cloneDepth", 0);
     });
   });
@@ -408,7 +443,9 @@ describe("prewarmSessionSandbox", () => {
       await prewarmSessionSandbox({ sessionId: session.id, userId: "user-1" });
 
       expect(spies.connectSandbox).toHaveBeenCalledTimes(1);
-      const connectCall = spies.connectSandbox.mock.calls[0] as unknown as [{ options: Record<string, unknown> }];
+      const connectCall = spies.connectSandbox.mock.calls[0] as unknown as [
+        { options: Record<string, unknown> },
+      ];
       expect(connectCall[0].options).not.toHaveProperty("cloneDepth");
     });
   });
@@ -421,7 +458,9 @@ describe("prewarmSessionSandbox", () => {
         ok: false as const,
         reason: "installation-not-found" as const,
       }));
-      spies.getRepoAccessErrorMessage.mockImplementationOnce(() => "repo not accessible");
+      spies.getRepoAccessErrorMessage.mockImplementationOnce(
+        () => "repo not accessible",
+      );
 
       const result = await prewarmSessionSandbox({
         sessionId: session.id,
@@ -429,7 +468,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("failed");
-      expect((result as { status: string; reason?: string }).reason).toBe("repo not accessible");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "repo not accessible",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -442,7 +483,9 @@ describe("prewarmSessionSandbox", () => {
       await prewarmSessionSandbox({ sessionId: session.id, userId: "user-1" });
 
       expect(spies.mintInstallationToken).toHaveBeenCalledTimes(1);
-      const mintCall = spies.mintInstallationToken.mock.calls[0] as unknown as [{ permissions: Record<string, string> }];
+      const mintCall = spies.mintInstallationToken.mock.calls[0] as unknown as [
+        { permissions: Record<string, string> },
+      ];
       expect(mintCall[0].permissions).toMatchObject({ contents: "read" });
 
       expect(spies.revokeInstallationToken).toHaveBeenCalledTimes(1);
@@ -474,7 +517,8 @@ describe("prewarmSessionSandbox", () => {
       // If sandbox-free guard breaks (e.g., removed isSandboxState check),
       // a non-vercel sandboxState would pass the guard and prewarm would be attempted.
       const session = makeTestSession();
-      (session as unknown as { sandboxState: { type: string } }).sandboxState = { type: "not-vercel" };
+      (session as unknown as { sandboxState: { type: string } }).sandboxState =
+        { type: "not-vercel" };
       spies.getSessionById.mockImplementationOnce(async () => session);
 
       const result = await prewarmSessionSandbox({
@@ -483,7 +527,9 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("sandbox-free");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "sandbox-free",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
@@ -496,7 +542,10 @@ describe("prewarmSessionSandbox", () => {
       // The fake sandbox returns ACTIVE_SANDBOX_STATE from getState()
       await prewarmSessionSandbox({ sessionId: session.id, userId: "user-1" });
 
-      const updateCall = spies.updateSession.mock.calls[0] as unknown as [string, Record<string, unknown>];
+      const updateCall = spies.updateSession.mock.calls[0] as unknown as [
+        string,
+        Record<string, unknown>,
+      ];
       // The sandboxState written must be the active state (from sandbox.getState())
       const savedState = updateCall[1].sandboxState as SandboxState;
       expect(savedState).toEqual(ACTIVE_SANDBOX_STATE);
@@ -515,14 +564,19 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(result.status).toBe("skipped");
-      expect((result as { status: string; reason?: string }).reason).toBe("already-active");
+      expect((result as { status: string; reason?: string }).reason).toBe(
+        "already-active",
+      );
       expect(spies.connectSandbox).not.toHaveBeenCalled();
     });
   });
 
   describe("REG-004: installSessionUserSkills must always receive userId, sessionId, and didSetupWorkspace:true", () => {
     test("user skills call includes all required identity fields", async () => {
-      const session = makeTestSession({ id: "reg-session", userId: "reg-user" });
+      const session = makeTestSession({
+        id: "reg-session",
+        userId: "reg-user",
+      });
       spies.getSessionById.mockImplementationOnce(async () => session);
 
       await prewarmSessionSandbox({
@@ -531,7 +585,8 @@ describe("prewarmSessionSandbox", () => {
       });
 
       expect(spies.installSessionUserSkills).toHaveBeenCalledTimes(1);
-      const skillsCall = spies.installSessionUserSkills.mock.calls[0] as unknown as [Record<string, unknown>];
+      const skillsCall = spies.installSessionUserSkills.mock
+        .calls[0] as unknown as [Record<string, unknown>];
       expect(skillsCall[0]).toMatchObject({
         userId: "reg-user",
         sessionId: "reg-session",
