@@ -75,6 +75,11 @@ mock.module("@/lib/observability/managed-runtime-workers", () => ({
     toolLabels: [],
     warning: null,
   })),
+  summarizeExternalToolUseFromMessages: mock(() => ({
+    observed: false,
+    count: 0,
+    toolNames: [],
+  })),
 }));
 
 mock.module("@/lib/sandbox/runtime/browser-runs", () => ({

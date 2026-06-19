@@ -1,0 +1,49 @@
+name: Production Smoke
+
+# Closes the gap where preview-smoke.yml explicitly skips production: this runs
+# the same smoke checks against a production deployment as soon as Vercel
+# reports it succeeded. A failure here turns the commit's checks red and pages
+# whoever is watching, instead of relying on a human to remember to smoke prod.
+#
+# This does NOT auto-roll-back. See docs/process/production-release-runbook.md
+# for the manual `vercel rollback` path when this check fails.
+
+on:
+  deployment_status:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.deployment_status.target_url }}
+  cancel-in-progress: true
+
+jobs:
+  production-smoke:
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      github.event.deployment_status.target_url != '' &&
+      (github.event.deployment.environment == 'Production' ||
+       github.event.deployment.environment == 'production')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.14"
+
+      - name: Run production smoke
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}
+          VERCEL_AUTOMATION_BYPASS_SECRET: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+        run: bun run --cwd apps/web preview:smoke
+
+      - name: Rollback reminder on failure
+        if: failure()
+        run: |
+          echo "::error::Production smoke failed for ${DEPLOYMENT_URL}." >&2
+          echo "::error::Roll back first, debug second: \`vercel rollback\` (see production-release-runbook.md)." >&2
+        env:
+          DEPLOYMENT_URL: ${{ github.event.deployment_status.target_url }}

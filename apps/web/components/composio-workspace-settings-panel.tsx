@@ -1,6 +1,6 @@
 "use client";
 
-import { RefreshCw, Save, Settings2, Wrench } from "lucide-react";
+import { RefreshCw, Save, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import useSWR from "swr";
@@ -128,27 +128,29 @@ export function ComposioWorkspaceSettingsPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="border-b border-border px-3 py-3">
-        <div className="flex items-center gap-2">
-          <Wrench className="size-4 text-muted-foreground" />
-          <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold">
-              Workspace Integrations
-            </h2>
-            <p className="truncate text-xs text-muted-foreground">
-              {repoOwner && repoName
-                ? `${repoOwner}/${repoName}`
-                : "No repository selected"}
-            </p>
-          </div>
-        </div>
-      </div>
-
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-3">
+        <div className="rounded-lg bg-muted/40 px-3 py-2.5">
+          <p className="text-sm font-medium leading-snug">
+            Per-repository tool access
+          </p>
+          <p className="mt-1 text-pretty text-xs text-muted-foreground">
+            Control which connected tools (Composio integrations) agents may use
+            when working in <strong>this repository</strong>. Your account-level
+            integrations remain unchanged — these settings only restrict or
+            override them here.
+          </p>
+        </div>
+
         {!repoOwner || !repoName ? (
-          <div className="rounded-lg border border-dashed border-border/70 p-3 text-sm text-muted-foreground">
-            Workspace integration rules are available after a chat is attached
-            to a GitHub repository.
+          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border/70 px-4 py-8 text-center">
+            <p className="text-sm font-medium text-foreground/70">
+              No repository attached
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Workspace integration rules are only available for sessions linked
+              to a GitHub repository. Open a session that has a repository to
+              configure tool access here.
+            </p>
           </div>
         ) : null}
 
@@ -169,17 +171,17 @@ export function ComposioWorkspaceSettingsPanel({
         {data ? (
           <>
             <div className="rounded-lg border border-border/70 p-3">
-              <p className="text-sm font-medium">How This Scope Works</p>
+              <p className="text-sm font-medium">Global integrations</p>
               <p className="mt-1 text-pretty text-xs text-muted-foreground">
-                Connected apps and profiles are global to your account. This
-                workspace decides which of those profiles are allowed in chats
-                for this repository.
+                Connected apps and profiles are managed globally in your account
+                settings. Use the options below to restrict which ones agents
+                can use for this repository specifically.
               </p>
               <div className="mt-3">
                 <Button variant="outline" size="sm" asChild>
                   <Link href="/settings/composio">
                     <Settings2 />
-                    Manage Global Integrations
+                    Manage global integrations
                   </Link>
                 </Button>
               </div>

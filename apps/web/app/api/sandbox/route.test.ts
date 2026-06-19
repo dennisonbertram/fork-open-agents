@@ -199,6 +199,10 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
   },
 }));
 
+mock.module("@/lib/skills/session-user-skills", () => ({
+  installSessionUserSkills: async () => undefined,
+}));
+
 mock.module("@open-agents/sandbox", () => ({
   connectSandbox: async (config: ConnectConfig) => {
     connectConfigs.push(config);
