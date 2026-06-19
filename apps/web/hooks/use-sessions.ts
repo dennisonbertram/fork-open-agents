@@ -34,6 +34,7 @@ interface CreateSessionInput {
   branch?: string;
   cloneUrl?: string;
   isNewBranch: boolean;
+  fullClone?: boolean;
   sandboxType: "vercel";
   autoCommitPush: boolean;
   autoCreatePr: boolean;

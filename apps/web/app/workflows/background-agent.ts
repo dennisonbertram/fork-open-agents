@@ -1,11 +1,20 @@
 import { getWorkflowMetadata } from "workflow";
-import { executeBackgroundAgentRun } from "@/lib/background-agents/executor";
+
+async function executeBackgroundAgentRunStep(input: {
+  runId: string;
+  workflowRunId: string;
+}) {
+  "use step";
+  const { executeBackgroundAgentRun } =
+    await import("@/lib/background-agents/executor");
+  await executeBackgroundAgentRun(input);
+}
 
 export async function runBackgroundAgentWorkflow(input: { runId: string }) {
   "use workflow";
 
   const { workflowRunId } = getWorkflowMetadata();
-  await executeBackgroundAgentRun({
+  await executeBackgroundAgentRunStep({
     runId: input.runId,
     workflowRunId,
   });

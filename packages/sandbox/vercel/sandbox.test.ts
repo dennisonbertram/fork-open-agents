@@ -536,6 +536,45 @@ describe("VercelSandbox.create", () => {
     ]);
   });
 
+  test("performs a FULL clone from base snapshot when cloneDepth is 0", async () => {
+    await sandboxModule.VercelSandbox.create({
+      baseSnapshotId: "snap-base-1",
+      cloneDepth: 0,
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+      },
+    });
+
+    const setupCalls = runCommandCalls.filter((c) => c.cmd === "bash");
+    expect(setupCalls).toEqual([
+      {
+        cmd: "bash",
+        args: [
+          "-c",
+          "git clone --branch 'main' 'https://github.com/open-agents/example' .",
+        ],
+        cwd: "/vercel/sandbox",
+      },
+    ]);
+  });
+
+  test("performs a FULL clone on the native git source when cloneDepth is 0", async () => {
+    await sandboxModule.VercelSandbox.create({
+      cloneDepth: 0,
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+      },
+    });
+
+    expect(createCalls[0]?.source).toEqual({
+      type: "git",
+      url: "https://github.com/open-agents/example",
+      revision: "main",
+    });
+  });
+
   test("throws with stderr when workspace setup fails", async () => {
     runCommandMock = async () => ({
       exitCode: 128,

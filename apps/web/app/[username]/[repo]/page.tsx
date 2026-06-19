@@ -9,6 +9,7 @@ import { getUserPreferences } from "@/lib/db/user-preferences";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getRandomCityName } from "@/lib/random-city";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { kickSandboxPrewarmWorkflow } from "@/lib/sandbox/prewarm-kick";
 
 interface RepoPageProps {
   params: Promise<{ username: string; repo: string }>;
@@ -121,6 +122,11 @@ export default async function RepoPage({ params }: RepoPageProps) {
       title: "New chat",
       modelId: preferences.defaultModelId,
     },
+  });
+
+  kickSandboxPrewarmWorkflow({
+    sessionId: result.session.id,
+    userId: session.user.id,
   });
 
   redirect(`/sessions/${result.session.id}/chats/${result.chat.id}`);
