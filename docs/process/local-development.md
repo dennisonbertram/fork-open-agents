@@ -312,3 +312,16 @@ default gateway path outside Vercel, check `AI_GATEWAY_API_KEY`.
 
 If session or sandbox creation fails with rate-limit errors, check `REDIS_URL`
 or `KV_URL`.
+
+If local CI hangs or fails because `REDIS_URL` or `KV_URL` points at an
+unreachable production-like service, blank those values for the local command
+instead of editing shared config:
+
+```bash
+REDIS_URL= KV_URL= bun --bun run ci
+```
+
+> **Caveat:** Only use this when the failure is caused by an unreachable local
+> external service. Do not use it for changes that intentionally touch Redis/KV
+> behavior — blanking these variables will mask integration coverage for those
+> changes.
