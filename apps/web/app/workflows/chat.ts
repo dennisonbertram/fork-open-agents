@@ -366,6 +366,58 @@ async function resolveChatModelRuntime(params: {
         }
       : undefined;
 
+  // ── #449: build manageBackgroundAgentAction closure ──────────────────────────
+  // Validates the agent-provided draft against the background agent Zod schema,
+  // then calls createBackgroundAgent or updateBackgroundAgent. DB imports are
+  // deferred so packages/agent has no direct DB dependency.
+  const manageAgentEnabled = true;
+  const manageBackgroundAgentAction = manageAgentEnabled
+    ? async (input: {
+        action: "create" | "update";
+        agentId?: string;
+        draft: unknown;
+        summary: string;
+        questionsForUser?: string[];
+      }) => {
+        const { createBackgroundAgentSchema } =
+          await import("@/lib/background-agents/types");
+        const { createBackgroundAgent, updateBackgroundAgent } =
+          await import("@/lib/background-agents/store");
+
+        const parsed = createBackgroundAgentSchema.safeParse(input.draft);
+        if (!parsed.success) {
+          throw new Error(
+            `Invalid background agent draft: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+          );
+        }
+
+        if (input.action === "update" && input.agentId) {
+          const result = await updateBackgroundAgent(
+            params.userId,
+            input.agentId,
+            parsed.data,
+          );
+          if (!result) {
+            throw new Error(
+              `Background agent not found or access denied: ${input.agentId}`,
+            );
+          }
+          return {
+            agentId: result.id,
+            action: "updated" as const,
+            name: result.name,
+          };
+        }
+
+        const result = await createBackgroundAgent(params.userId, parsed.data);
+        return {
+          agentId: result.id,
+          action: "created" as const,
+          name: result.name,
+        };
+      }
+    : undefined;
+
   return {
     selectedModelId: getModelOptionSelectionId(
       selectedModelId ?? mainModelSelection.id,
@@ -391,6 +443,9 @@ async function resolveChatModelRuntime(params: {
       // would fail with "proposeToolAction was not injected."
       ...(mainAgentToolAuthoringEnabled && mainAgentId !== null
         ? { toolAuthoringEnabled: true, proposeToolAction }
+        : {}),
+      ...(manageAgentEnabled && manageBackgroundAgentAction
+        ? { manageAgentEnabled: true, manageBackgroundAgentAction }
         : {}),
     },
     autoCommitEnabled,
