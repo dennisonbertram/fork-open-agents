@@ -78,19 +78,19 @@ export async function proxyRunAction(params: {
       }
     }
 
-    if (params.action === "cancel") {
-      await updateVerifiedBuildRunFromHarnessStatus({
-        runId: access.run.id,
-        status: "cancellation_requested",
-      });
-    }
-
     const result = await access.client.runAction({
       context: access.context,
       harnessRunId: access.run.harnessRunId,
       action: params.action,
       body: params.body,
     });
+
+    if (params.action === "cancel") {
+      await updateVerifiedBuildRunFromHarnessStatus({
+        runId: access.run.id,
+        status: "cancellation_requested",
+      });
+    }
 
     logHarnessEvent("info", {
       event: `verified_build.${params.action}.requested`,
