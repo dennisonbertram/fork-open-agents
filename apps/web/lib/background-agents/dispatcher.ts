@@ -223,8 +223,11 @@ export async function dispatchWebhookErrorEvent(params: {
 
   // ── Loop-bound webhook.error trigger branch ───────────────────────────────
   // Check loopId BEFORE dereferencing row.agent (which is null for loop triggers).
-  // Loop rows skip the background-agents allowlist — loops use isAgentLoopRepoAllowed
-  // inside dispatchLoopRunForTrigger (different env var; double-gating is wrong).
+  // The loop path also passes through the background-agents allowlist for
+  // consistency with the agent-bound path.  The loop's own allowlist
+  // (isAgentLoopRepoAllowed inside dispatchLoopRunForTrigger) gates different
+  // env vars; double-gating is intentional for shared-trigger surfaces like
+  // webhooks so neither path provides a bypass.
   if (row.trigger.loopId) {
     const loop = await getAgentLoopById(row.trigger.loopId);
     if (!loop) {
@@ -238,6 +241,23 @@ export async function dispatchWebhookErrorEvent(params: {
         loopRunIds: [],
       };
     }
+
+    // Gate the loop-bound path against the background-agents allowlist too.
+    // Without this check, an external caller could post a webhook to a
+    // loop-bound trigger whose repo is allowed by AGENT_LOOPS_ALLOWED_REPOS
+    // but not by BACKGROUND_AGENTS_ALLOWED_REPOS — the agent-bound path would
+    // be blocked (line 295) but the loop path would slip through.
+    if (!isBackgroundAgentRepoAllowed(loop.repoOwner, loop.repoName)) {
+      return {
+        enabled: true,
+        matched: 0,
+        created: 0,
+        duplicates: 0,
+        runIds: [],
+        loopRunIds: [],
+      };
+    }
+
     const loopEvent: NormalizedBackgroundTriggerEvent = {
       ...params.event,
       source: "webhook",
