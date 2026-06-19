@@ -153,6 +153,23 @@ describe("RepoAgentsPage", () => {
     expect(html).toContain("No runs recorded for this repository.");
   });
 
+  test("renders roster only without builder form copy", async () => {
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Configured agents");
+    expect(html).toContain("Recent runs");
+    expect(html).toContain("/repos/acme/widgets/agents/new");
+    expect(html).not.toContain("What should this agent do?");
+    expect(html).not.toContain("Run a test");
+    expect(html).not.toContain("Verification command");
+  });
+
   test("recent runs section shows at most 5 runs", async () => {
     // Create 7 runs
     repoRuns = Array.from({ length: 7 }, (_, i) => ({
