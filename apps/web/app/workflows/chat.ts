@@ -403,17 +403,17 @@ async function resolveChatModelRuntime(params: {
             );
           }
           return {
-            agentId: result.agent.id,
+            agentId: result.id,
             action: "updated" as const,
-            name: result.agent.name,
+            name: result.name,
           };
         }
 
         const result = await createBackgroundAgent(params.userId, parsed.data);
         return {
-          agentId: result.agent.id,
+          agentId: result.id,
           action: "created" as const,
-          name: result.agent.name,
+          name: result.name,
         };
       }
     : undefined;
