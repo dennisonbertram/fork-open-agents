@@ -57,11 +57,9 @@ export function SessionStarter({
   lastRepo,
 }: SessionStarterProps) {
   const [sessionTitle, setSessionTitle] = useState("");
-  // Default to a lightweight sandbox-free "New Chat" — even for returning users
-  // who have a lastRepo — so chats start instantly without provisioning a
-  // sandbox. lastRepo still pre-fills the repo fields below for one-click opt-in
-  // to repo mode.
-  const [mode, setMode] = useState<SessionMode>("empty");
+  const [mode, setMode] = useState<SessionMode>(() =>
+    lastRepo ? "repo" : "empty",
+  );
   const [selectedOwner, setSelectedOwner] = useState(
     () => lastRepo?.owner ?? "",
   );
