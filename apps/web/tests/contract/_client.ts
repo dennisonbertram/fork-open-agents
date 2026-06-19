@@ -39,6 +39,13 @@ export type ApiFetchOptions = {
   retries?: number;
 };
 
+export function isRetryableContractRequest(
+  method: string | undefined,
+  status: number,
+): boolean {
+  return (method ?? "GET").toUpperCase() === "GET" && status >= 500;
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -69,7 +76,8 @@ export async function apiJson<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<{ status: number; data: T }> {
-  const retries = options.retries ?? 0;
+  const method = options.method ?? "GET";
+  const retries = method.toUpperCase() === "GET" ? (options.retries ?? 0) : 0;
   let lastStatus = 0;
   let lastData: unknown = null;
 
@@ -82,7 +90,10 @@ export async function apiJson<T>(
       } catch {
         data = null;
       }
-      if (res.status < 500 || attempt === retries) {
+      if (
+        !isRetryableContractRequest(method, res.status) ||
+        attempt === retries
+      ) {
         return { status: res.status, data: data as T };
       }
       lastStatus = res.status;

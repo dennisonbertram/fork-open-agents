@@ -1,6 +1,7 @@
 "use client";
 
 import { Search } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
@@ -41,7 +42,7 @@ function getUniqueFiles(matches: GrepMatch[]): string[] {
   return Array.from(seen);
 }
 
-export function GrepRenderer({
+export const GrepRenderer = memo(function GrepRenderer({
   part,
   state,
   onApprove,
@@ -93,4 +94,4 @@ export function GrepRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

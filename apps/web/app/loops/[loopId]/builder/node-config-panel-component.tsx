@@ -20,14 +20,7 @@
  */
 
 import { useCallback, useState } from "react";
-import {
-  X,
-  Copy,
-  Check,
-  ChevronDown,
-  ChevronRight,
-  Maximize2,
-} from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import { useStore } from "zustand";
 import type { LoopFlowNode } from "./definition-mapping";
 import type {
@@ -42,17 +35,8 @@ import {
 } from "./node-config-panel";
 import type { CreateLoopBuilderStoreReturn } from "./use-loop-builder";
 import { cn } from "@/lib/utils";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { AgentConfigFields } from "@/components/agent-config-fields";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -61,7 +45,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 
 // ── Small reusable field components ──────────────────────────────────────────
 
@@ -83,14 +66,6 @@ function FieldHelp({ children }: { children: React.ReactNode }) {
   return (
     <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">
       {children}
-    </p>
-  );
-}
-
-function FieldError({ message }: { message: string }) {
-  return (
-    <p className="mt-0.5 text-[11px] text-red-600 dark:text-red-400 leading-snug">
-      {message}
     </p>
   );
 }
@@ -184,301 +159,74 @@ function AgentStepConfig({
   onUpdate: (patch: Record<string, unknown>) => void;
   errors: LoopValidationError[];
 }) {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [instructionsExpanded, setInstructionsExpanded] = useState(false);
-  const [newOutputName, setNewOutputName] = useState("");
-  const [newOutputType, setNewOutputType] = useState("string");
-
   if (node.data.kind !== "agent_step") return null;
 
   const data = node.data;
 
-  function handleOutputSchemaChange(raw: string) {
-    if (raw.trim() === "") {
-      setJsonError(null);
-      onUpdate({ outputSchema: undefined });
-      return;
-    }
-    try {
-      const parsed: unknown = JSON.parse(raw);
-      if (
-        typeof parsed !== "object" ||
-        parsed === null ||
-        Array.isArray(parsed)
-      ) {
-        setJsonError("Must be a JSON object (not an array or primitive).");
-        return;
-      }
-      setJsonError(null);
-      onUpdate({ outputSchema: parsed });
-    } catch {
-      setJsonError("Invalid JSON.");
-    }
-  }
-
-  // ── Declared outputs (B-P3): named fields this step writes to context ───────
-  const outputFields = Object.entries(
-    (data.outputSchema ?? {}) as Record<string, unknown>,
-  );
-  function addOutputField() {
-    const name = newOutputName.trim();
-    if (!name) return;
-    onUpdate({
-      outputSchema: { ...data.outputSchema, [name]: newOutputType },
-    });
-    setNewOutputName("");
-    setNewOutputType("string");
-  }
-  function removeOutputField(name: string) {
-    const next = { ...data.outputSchema } as Record<string, unknown>;
-    delete next[name];
-    onUpdate({
-      outputSchema: Object.keys(next).length > 0 ? next : undefined,
-    });
-  }
-
   return (
-    <div className="space-y-3">
-      {/* Instructions */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between">
-          <FieldLabel htmlFor="instructions">Instructions</FieldLabel>
-          <button
-            type="button"
-            onClick={() => setInstructionsExpanded(true)}
-            className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            <Maximize2 className="h-3 w-3" />
-            Expand
-          </button>
-        </div>
-        <Textarea
-          id="instructions"
-          className="min-h-[120px] resize-y font-mono"
-          value={data.instructions ?? ""}
-          onChange={(e) =>
-            onUpdate({ instructions: e.target.value || undefined })
-          }
-          placeholder="Describe what the agent should do…"
-        />
-        <FieldHelp>
-          The agent will follow these instructions in the sandbox. Your agent
-          must write JSON to{" "}
-          <code className="font-mono text-[10px]">
-            /tmp/loop-step-output.json
-          </code>{" "}
-          to pass output to downstream nodes.
-        </FieldHelp>
-
-        <Dialog
-          open={instructionsExpanded}
-          onOpenChange={setInstructionsExpanded}
-        >
-          <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-3xl">
-            <DialogHeader>
-              <DialogTitle>Instructions — {data.label}</DialogTitle>
-              <DialogDescription>
-                What the agent should do in the sandbox for this step. Write
-                JSON to{" "}
-                <code className="font-mono text-xs">
-                  /tmp/loop-step-output.json
-                </code>{" "}
-                to pass output to downstream nodes.
-              </DialogDescription>
-            </DialogHeader>
-            <Textarea
-              // biome-ignore lint/a11y/noAutofocus: focusing the editor is the point of expanding
-              autoFocus
-              className="min-h-[50vh] flex-1 resize-none font-mono"
-              value={data.instructions ?? ""}
-              onChange={(e) =>
-                onUpdate({ instructions: e.target.value || undefined })
-              }
-              placeholder="Describe what the agent should do…"
-              aria-label="Instructions (expanded editor)"
-            />
-            <DialogFooter>
-              <Button
-                type="button"
-                onClick={() => setInstructionsExpanded(false)}
-              >
-                Done
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Check command */}
-      <div className="space-y-1">
-        <FieldLabel htmlFor="check-command">Check command</FieldLabel>
-        <Input
-          id="check-command"
-          type="text"
-          className="font-mono"
-          value={data.checkCommand ?? ""}
-          onChange={(e) =>
-            onUpdate({ checkCommand: e.target.value || undefined })
-          }
-          placeholder="e.g. bun test"
-        />
-        <FieldHelp>
-          Runs in the sandbox after the agent completes. Non-zero exit fails the
-          step and routes to the failure edge.
-        </FieldHelp>
-      </div>
-
-      {/* Tools — Composio toolkits this step's agent may use (GitHub included) */}
-      <div className="space-y-1">
-        <FieldLabel>Tools</FieldLabel>
-        <ComposioToolkitPicker
-          selectedSlugs={data.composioToolkitSlugs ?? []}
-          onChange={(slugs) =>
-            onUpdate({
-              composioToolkitSlugs: slugs.length > 0 ? slugs : undefined,
-            })
-          }
-        />
-        <FieldHelp>
-          Tools this step&apos;s agent can use (GitHub, Gmail, Slack, …) from
-          your connected accounts. Add the GitHub toolkit to let it open issues
-          / PRs.
-        </FieldHelp>
-      </div>
-
-      {/* Outputs — fields this step writes to context for downstream nodes */}
-      <div className="space-y-1">
-        <FieldLabel>Outputs</FieldLabel>
-        {outputFields.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {outputFields.map(([name]) => (
-              <span
-                key={name}
-                className="inline-flex items-center gap-1 rounded bg-violet-500/10 px-1.5 py-0.5 font-mono text-[10px] text-violet-700 dark:text-violet-300"
-              >
-                {name}
-                <button
-                  type="button"
-                  onClick={() => removeOutputField(name)}
-                  className="hover:text-foreground"
-                  aria-label={`Remove output ${name}`}
-                >
-                  <X className="h-2.5 w-2.5" />
-                </button>
-              </span>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex gap-1.5">
-          <Input
-            type="text"
-            value={newOutputName}
-            onChange={(e) => setNewOutputName(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                addOutputField();
-              }
-            }}
-            placeholder="field name (e.g. passed)"
-            className="min-w-0 flex-1 font-mono"
-            aria-label="Output field name"
-          />
-          <Select value={newOutputType} onValueChange={setNewOutputType}>
-            <SelectTrigger
-              className="w-[7.5rem]"
-              aria-label="Output field type"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="string">string</SelectItem>
-              <SelectItem value="boolean">boolean</SelectItem>
-              <SelectItem value="number">number</SelectItem>
-              <SelectItem value="array">array</SelectItem>
-              <SelectItem value="object">object</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={addOutputField}
-          >
-            Add
-          </Button>
-        </div>
-        <FieldHelp>
-          Fields this step writes to{" "}
-          <code className="font-mono text-[10px]">
-            /tmp/loop-step-output.json
-          </code>
-          . Downstream nodes read them as{" "}
-          <code className="font-mono text-[10px]">
-            context.{node.id}.&lt;field&gt;
-          </code>
-          .
-        </FieldHelp>
-      </div>
-
-      {/* Advanced: outputSchema */}
-      <div className="space-y-1">
-        <button
-          type="button"
-          className="flex w-full items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
-          onClick={() => setAdvancedOpen((v) => !v)}
-        >
-          {advancedOpen ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
-          )}
-          Advanced
-        </button>
-
-        {advancedOpen && (
-          <div className="space-y-1 pl-5">
-            <FieldLabel htmlFor="output-schema">
-              Output schema (JSON)
-            </FieldLabel>
-            <Textarea
-              id="output-schema"
-              className={cn(
-                "min-h-[80px] resize-y font-mono text-xs",
-                jsonError ? "border-destructive" : undefined,
-              )}
-              aria-invalid={jsonError ? true : undefined}
-              defaultValue={
-                data.outputSchema
-                  ? JSON.stringify(data.outputSchema, null, 2)
-                  : ""
-              }
-              onBlur={(e) => handleOutputSchemaChange(e.target.value)}
-              placeholder='{ "type": "object", "properties": { ... } }'
-            />
-            {jsonError && <FieldError message={jsonError} />}
-            {!jsonError && (
-              <FieldHelp>
-                JSON Schema lite object. Validates the JSON your agent writes to
-                /tmp/loop-step-output.json.
-              </FieldHelp>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Field-level errors from graph validation */}
-      {errors.length > 0 && (
-        <div className="space-y-1 rounded-md border border-red-200 bg-red-50 p-2 dark:border-red-800 dark:bg-red-950/20">
-          {errors.map((e, i) => (
-            <p key={i} className="text-[11px] text-red-600 dark:text-red-400">
-              {e.message}
-            </p>
-          ))}
-        </div>
-      )}
-    </div>
+    <AgentConfigFields
+      instructions={{
+        id: "instructions",
+        value: data.instructions ?? "",
+        onChange: (value) => onUpdate({ instructions: value || undefined }),
+        placeholder: "Describe what the agent should do...",
+        textareaClassName: "min-h-[120px] resize-y font-mono",
+        expandedTitle: `Instructions - ${data.label}`,
+        expandedDescription: (
+          <>
+            What the agent should do in the sandbox for this step. Write JSON to{" "}
+            <code className="font-mono text-xs">
+              /tmp/loop-step-output.json
+            </code>{" "}
+            to pass output to downstream nodes.
+          </>
+        ),
+        expandedAriaLabel: "Instructions (expanded editor)",
+        help: (
+          <>
+            The agent will follow these instructions in the sandbox. Your agent
+            must write JSON to{" "}
+            <code className="font-mono text-[10px]">
+              /tmp/loop-step-output.json
+            </code>{" "}
+            to pass output to downstream nodes.
+          </>
+        ),
+      }}
+      checkCommand={{
+        id: "check-command",
+        value: data.checkCommand ?? "",
+        onChange: (value) => onUpdate({ checkCommand: value || undefined }),
+        placeholder: "e.g. bun test",
+        help: (
+          <>
+            Runs in the sandbox after the agent completes. Non-zero exit fails
+            the step and routes to the failure edge.
+          </>
+        ),
+      }}
+      tools={{
+        label: "Tools",
+        selectedSlugs: data.composioToolkitSlugs ?? [],
+        onChange: (slugs) =>
+          onUpdate({
+            composioToolkitSlugs: slugs.length > 0 ? slugs : undefined,
+          }),
+        help: (
+          <>
+            Tools this step&apos;s agent can use (GitHub, Gmail, Slack, …) from
+            your connected accounts. Add the GitHub toolkit to let it open
+            issues / PRs.
+          </>
+        ),
+      }}
+      declaredOutputs={{
+        outputSchema: data.outputSchema as Record<string, unknown> | undefined,
+        onOutputSchemaChange: (outputSchema) => onUpdate({ outputSchema }),
+        contextPathPrefix: `context.${node.id}`,
+      }}
+      errors={errors.map((error) => error.message)}
+    />
   );
 }
 

@@ -2,8 +2,8 @@
 
 import { File as DiffsFile } from "@pierre/diffs/react";
 import { Check, CodeXml, Copy, Loader2, RefreshCw } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Streamdown } from "streamdown";
 import useSWR from "swr";
 import type { WorkspaceFileContentResponse } from "@/app/api/sessions/[sessionId]/files/content/route";
 import { Button } from "@/components/ui/button";
@@ -22,8 +22,11 @@ import {
 import { SelectionPopover } from "@/components/selection-popover";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { defaultFileOptions } from "@/lib/diffs-config";
-import { streamdownPlugins } from "@/lib/streamdown-config";
 import { fetcherNoStore } from "@/lib/swr";
+import {
+  hasLikelyCodeBlock,
+  useStreamdownPlugins,
+} from "@/lib/use-streamdown-plugins";
 import { cn } from "@/lib/utils";
 
 type WorkspaceFileViewerProps = {
@@ -43,6 +46,11 @@ type WorkspaceFileViewerProps = {
 
 type ViewerMode = "raw" | "pretty";
 type PrettyViewKind = "markdown" | "text";
+
+const Streamdown = dynamic(
+  () => import("streamdown").then((m) => m.Streamdown),
+  { ssr: false },
+);
 
 const wrappedFileExtensions = new Set([".md", ".mdx", ".markdown", ".txt"]);
 const markdownExtensions = new Set([".md", ".mdx", ".markdown"]);
@@ -141,10 +149,13 @@ function stripMarkdownFrontmatter(content: string) {
 }
 
 function PrettyMarkdown({ content }: { content: string }) {
+  const markdown = stripMarkdownFrontmatter(content);
+  const streamdownPlugins = useStreamdownPlugins(hasLikelyCodeBlock(markdown));
+
   return (
     <div className="p-6">
       <Streamdown mode="static" isAnimating={false} plugins={streamdownPlugins}>
-        {stripMarkdownFrontmatter(content)}
+        {markdown}
       </Streamdown>
     </div>
   );

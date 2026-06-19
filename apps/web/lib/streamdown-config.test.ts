@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { normalizeStreamdownHighlightResult } from "./streamdown-config";
+import { hasLikelyCodeBlock } from "./use-streamdown-plugins";
 
 describe("normalizeStreamdownHighlightResult", () => {
   test("normalizes dual-theme fg/bg and token styles", () => {
@@ -38,5 +39,16 @@ describe("normalizeStreamdownHighlightResult", () => {
     expect(token.htmlStyle?.["background-color"]).toBeUndefined();
     expect(token.htmlStyle?.["--shiki-dark"]).toBe("#f75f8f");
     expect(token.htmlStyle?.["--shiki-dark-bg"]).toBe("#0a0a0a");
+  });
+});
+
+describe("hasLikelyCodeBlock", () => {
+  test("detects backtick, tilde, and html code blocks", () => {
+    expect(hasLikelyCodeBlock("```ts\nconst value = 1;\n```")).toBe(true);
+    expect(hasLikelyCodeBlock("~~~ts\nconst value = 1;\n~~~")).toBe(true);
+    expect(hasLikelyCodeBlock("<pre><code>const value = 1;</code></pre>")).toBe(
+      true,
+    );
+    expect(hasLikelyCodeBlock("plain markdown prose")).toBe(false);
   });
 });
