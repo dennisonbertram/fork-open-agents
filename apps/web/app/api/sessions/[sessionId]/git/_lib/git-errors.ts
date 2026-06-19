@@ -14,10 +14,18 @@ export function gitErrorStatus(message: string): number {
   if (message === "Session not found") {
     return 404;
   }
-  if (message === "Sandbox not initialized") {
+  if (
+    message === "Sandbox not initialized" ||
+    message === "Sandbox not active"
+  ) {
     return 409;
   }
-  if (message.startsWith("Invalid ")) {
+  if (
+    message.startsWith("Invalid ") ||
+    message === "Missing required fields" ||
+    message === "Branch name is required" ||
+    message === "Auto-merge is not available for draft pull requests"
+  ) {
     return 400;
   }
   return 500;

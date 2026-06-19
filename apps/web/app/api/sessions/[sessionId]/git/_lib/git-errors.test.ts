@@ -7,8 +7,14 @@ describe("gitErrorStatus", () => {
     expect(gitErrorStatus("Forbidden")).toBe(403);
     expect(gitErrorStatus("Session not found")).toBe(404);
     expect(gitErrorStatus("Sandbox not initialized")).toBe(409);
+    expect(gitErrorStatus("Sandbox not active")).toBe(409);
     expect(gitErrorStatus("Invalid base branch name")).toBe(400);
     expect(gitErrorStatus("Invalid branch name")).toBe(400);
+    expect(gitErrorStatus("Missing required fields")).toBe(400);
+    expect(gitErrorStatus("Branch name is required")).toBe(400);
+    expect(
+      gitErrorStatus("Auto-merge is not available for draft pull requests"),
+    ).toBe(400);
     expect(gitErrorStatus("Failed to create branch: fatal: ...")).toBe(500);
   });
 });
