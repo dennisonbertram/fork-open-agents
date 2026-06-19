@@ -194,6 +194,7 @@ import {
   type SandboxCreateErrorDetails,
 } from "./sandbox-create";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
+import { SandboxActivityDialog } from "./sandbox-activity-dialog";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";
 import { WorkspaceStartupStatus } from "./workspace-startup-status";
 import { areMessageRowPropsEqual } from "./message-row-memo";
@@ -4906,6 +4907,14 @@ export function SessionChatContent({
                               disabled={isArchived || isChatInFlight}
                               onSelectWorkflow={setSelectedWorkflowId}
                               selectedWorkflowId={selectedWorkflowId}
+                            />
+                            <SandboxActivityDialog
+                              hasSandboxState={Boolean(session.sandboxState)}
+                              hasSnapshot={hasSnapshot}
+                              isSandboxActive={isSandboxActive}
+                              lifecycleTiming={lifecycleTiming}
+                              observabilityData={observabilityData}
+                              uiStatusLabel={_sandboxUiStatus.label}
                             />
                             {/* Add sandbox: only shown for sandbox-free (no-repo) sessions */}
                             {!session.sandboxState && !isArchived && (
