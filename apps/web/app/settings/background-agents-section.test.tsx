@@ -289,8 +289,9 @@ describe("BackgroundAgentsSection", () => {
       },
     };
     const configuredHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
-    // Trigger kind is now humanized in run history: "Pull request" not raw "github.pull_request"
-    expect(configuredHtml).toContain("Pull request");
+    // Trigger kind is humanized in run history via the (now plain-language)
+    // triggerLabels map, not the raw "github.pull_request" enum value.
+    expect(configuredHtml).toContain("A pull request changes");
     expect(configuredHtml).not.toContain("github.pull_request");
     expect(configuredHtml).toContain("acme/widgets");
     expect(configuredHtml).toContain("PR #42");
@@ -344,8 +345,8 @@ describe("BackgroundAgentsSection", () => {
 
     expect(html).toContain("Deploy smoke");
     expect(html).toContain("acme/widgets");
-    expect(html).toContain("Pull request");
-    expect(html).toContain("Error webhook");
+    expect(html).toContain("A pull request changes");
+    expect(html).toContain("An error is reported (webhook)");
     expect(html).toContain("Tool providers coming later");
     expect(html).toContain("Composio is planned for v1.5");
     expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
@@ -533,8 +534,8 @@ describe("BackgroundAgentsSection", () => {
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
     // Humanized labels appear
-    expect(html).toContain("Pull request");
-    expect(html).toContain("Deployment status");
+    expect(html).toContain("A pull request changes");
+    expect(html).toContain("A deployment finishes");
     // Raw enum values must NOT appear in the run history
     expect(html).not.toContain("github.pull_request");
     expect(html).not.toContain("github.deployment_status");
