@@ -3,11 +3,10 @@
  *
  * The coherent rule across buildFormFromAgent (form display) and
  * buildAgentPayload (save payload):
- *   - Ready PR  ⟹ write (it can't push a branch / open a PR without it), floored
- *     for every calling surface — including the settings form, which has no
- *     permission controls.
- *   - Report-only ⟹ the user's saved access, preserved (least-privilege), so
+ *   - Edit display ⟹ the user's saved access, preserved (least-privilege), so
  *     editing an unrelated field never silently re-escalates a read-only agent.
+ *   - Save payload for Ready PR ⟹ write (it can't push a branch / open a PR
+ *     without it), floored for every calling surface.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -83,10 +82,9 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(payload.permissions.github.contents).toBe("write");
   });
 
-  test("ready_pr always resolves to write — even if a stale row saved read (settings-form regression)", () => {
-    // A ready_pr agent is non-functional without write. Whatever is stored
-    // (including a legacy read/read row from the controls-less settings form),
-    // both the form and the payload must present write.
+  test("ready_pr edit display preserves saved read access instead of re-escalating", () => {
+    // Edit mode reflects persisted GitHub access rather than re-deriving from
+    // outputMode. This keeps a downgraded or legacy row honest when reopened.
     const agent = makeSavedAgent({
       outputMode: "ready_pr",
       permissions: {
@@ -95,8 +93,8 @@ describe("edit-mode GitHub permission invariant", () => {
     });
 
     const form = buildFormFromAgent(agent);
-    expect(form.permissionContents).toBe("write");
-    expect(form.permissionPullRequests).toBe("write");
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
 
     const payload = buildAgentPayload(form);
     expect(payload.permissions.github.contents).toBe("write");
