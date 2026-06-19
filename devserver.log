@@ -1,0 +1,30 @@
+$ cd apps/web/ && bun run dev
+$ next dev
+▲ Next.js 16.2.1 (Turbopack)
+- Local:         http://localhost:3210
+- Network:       http://192.168.200.5:3210
+- Environments: .env.local, .env
+✓ Ready in 245ms
+Discovering workflow directives 759ms
+Created steps bundle 38ms
+Created intermediate workflow bundle 148ms
+Creating webhook route
+Creating manifest...
+Created manifest with 42 steps, 4 workflows, and 0 classes 123ms
+- Experiments (use with caution):
+  · optimizePackageImports
+
+ GET /api/auth/info 200 in 152ms (next.js: 140ms, application-code: 12ms)
+ GET /dev-preview/repo-settings 200 in 188ms (next.js: 35ms, application-code: 153ms)
+ GET /dev-preview/repo-settings 200 in 59ms (next.js: 2ms, application-code: 57ms)
+ GET /api/auth/info 200 in 7ms (next.js: 3ms, application-code: 5ms)
+ GET /dev-preview/repo-settings 200 in 42ms (next.js: 2ms, application-code: 40ms)
+ GET /api/auth/info 200 in 4ms (next.js: 1779µs, application-code: 2ms)
+ GET /dev-preview/repo-settings 200 in 74ms (next.js: 9ms, application-code: 65ms)
+ GET /api/auth/info 200 in 3ms (next.js: 984µs, application-code: 1831µs)
+ GET /dev-preview/repo-settings 200 in 22ms (next.js: 1291µs, application-code: 21ms)
+ GET /api/auth/info 200 in 4ms (next.js: 1803µs, application-code: 3ms)
+ GET /dev-preview/repo-settings 200 in 24ms (next.js: 1318µs, application-code: 23ms)
+ GET /api/auth/info 200 in 3ms (next.js: 1116µs, application-code: 1999µs)
+ GET /dev-preview/repo-settings 200 in 22ms (next.js: 1026µs, application-code: 21ms)
+ GET /api/auth/info 200 in 2ms (next.js: 1033µs, application-code: 1409µs)

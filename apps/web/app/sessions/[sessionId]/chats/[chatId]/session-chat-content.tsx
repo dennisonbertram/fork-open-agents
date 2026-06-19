@@ -172,6 +172,7 @@ import {
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
+import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
   createSandbox,
   getSandboxCreateErrorDetails,
@@ -492,12 +493,12 @@ function RuntimeProofDataPartCard({
 }) {
   const limitationCount = part.data.limitations.length;
   const workerCount = part.data.workerEvidence?.total ?? 0;
-  const proofStatus =
-    part.data.status === "completed" && workerCount === 0
-      ? "incomplete"
-      : part.data.status;
+  const proofStatus = part.data.status;
   const proofPassed = proofStatus === "completed";
   const proofIncomplete = proofStatus === "incomplete";
+  // Conversational turn — the coordinator answered without delegating; neutral,
+  // not a problem.
+  const proofNoActivity = proofStatus === "no_activity";
   const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
   const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
   const directToolUseObserved =
@@ -506,7 +507,9 @@ function RuntimeProofDataPartCard({
     ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
     : proofIncomplete
       ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-      : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
+      : proofNoActivity
+        ? "border-border bg-muted/40 text-muted-foreground"
+        : "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
 
   return (
     <div className="flex items-center gap-3 py-1">
@@ -521,7 +524,9 @@ function RuntimeProofDataPartCard({
         <span className="truncate text-xs font-medium text-muted-foreground group-hover/runtime-proof:text-foreground">
           {proofIncomplete
             ? "Managed runtime proof incomplete"
-            : "Managed runtime proof"}
+            : proofNoActivity
+              ? "Managed runtime · no work this turn"
+              : "Managed runtime proof"}
         </span>
         <span
           className={cn(
@@ -529,7 +534,7 @@ function RuntimeProofDataPartCard({
             statusClassName,
           )}
         >
-          {proofStatus}
+          {proofNoActivity ? "no work" : proofStatus}
         </span>
         <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
           {workerCount} worker{workerCount === 1 ? "" : "s"}
@@ -1206,9 +1211,6 @@ export function SessionChatContent({
   >(null);
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null,
-  );
   const hasMounted = useHasMounted();
   const {
     activeView,
@@ -1419,6 +1421,8 @@ export function SessionChatContent({
     workspaceStatus,
     hadInitialMessages,
     initialMessages,
+    selectedWorkflowId,
+    setSelectedWorkflowId,
   } = useSessionChatRuntimeContext();
   const {
     sandboxInfo,
@@ -2194,6 +2198,20 @@ export function SessionChatContent({
     },
     [sendMessageWithPendingState],
   );
+
+  // Header quick-action prompts (conductor-style PR buttons). Each sends a
+  // templated instruction to the agent immediately.
+  const handleHeaderCreatePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Create Pull Request\n\nCommit and push the current changes on this branch, then open a pull request with a clear title and a concise summary of what changed and why.",
+    });
+  }, [sendMessageWithPendingState]);
+
+  const handleHeaderMergePr = useCallback(async () => {
+    await sendMessageWithPendingState({
+      text: "# Merge Pull Request\n\nMerge the open pull request for this branch. If checks are still running or it is not mergeable yet, tell me what is blocking the merge instead of forcing it.",
+    });
+  }, [sendMessageWithPendingState]);
 
   const handleDeleteUserMessage = useCallback(
     async (messageId: string) => {
@@ -3317,6 +3335,17 @@ export function SessionChatContent({
         showHeaderActions &&
         createPortal(
           <div className="flex items-center gap-1">
+            {/* Contextual PR action (Create PR / Merge PR / Resolve Conflicts) */}
+            <SessionHeaderPrActions
+              busy={hasPendingResponse || hasMessageActionInFlight}
+              hasExistingPr={hasExistingPr}
+              hasRepo={Boolean(session.repoOwner && session.repoName)}
+              onCreatePr={handleHeaderCreatePr}
+              onMergePr={handleHeaderMergePr}
+              onResolveConflicts={handleFixConflicts}
+              prStatus={session.prStatus ?? null}
+              sessionId={session.id}
+            />
             {/* Compact read-only goal summary chip */}
             <CompactGoalSummary
               goals={observabilityData?.workflowGoals ?? []}
@@ -4772,6 +4801,7 @@ export function SessionChatContent({
                               selection={chatInfo.composioSelection}
                               repoOwner={session.repoOwner}
                               repoName={session.repoName}
+                              githubConnected={!!session.cloneUrl}
                               disabled={
                                 isArchived || isChatInFlight || isUpdatingTools
                               }

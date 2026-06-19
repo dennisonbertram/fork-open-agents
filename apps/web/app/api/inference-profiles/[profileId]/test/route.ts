@@ -8,7 +8,9 @@ import {
   decryptInferenceProfileApiKey,
   getInferenceProfileByIdForUser,
   recordInferenceProfileTestResult,
+  setInferenceProfileModels,
 } from "@/lib/db/inference-profiles";
+import { fetchInferenceProfileModels } from "@/lib/inference/fetch-profile-models";
 import { toInferenceProfileTestMessage } from "@/lib/inference/model-routing";
 
 type RouteContext = {
@@ -70,12 +72,32 @@ export async function POST(req: Request, context: RouteContext) {
       maxOutputTokens: 16,
     });
 
+    // A passing test means the endpoint + key work, so refresh the model list
+    // the endpoint actually serves (best-effort; keeps prior models on failure).
+    const fetchedModels = await fetchInferenceProfileModels({
+      baseUrl: profile.baseUrl,
+      apiKey,
+    });
+    if (fetchedModels.length > 0) {
+      await setInferenceProfileModels(
+        authResult.userId,
+        profile.id,
+        fetchedModels,
+      );
+    }
+
+    const passedMessage =
+      fetchedModels.length > 0
+        ? `Profile test passed. Discovered ${fetchedModels.length} model${
+            fetchedModels.length === 1 ? "" : "s"
+          }.`
+        : "Profile test passed.";
     const updatedProfile = await recordInferenceProfileTestResult(
       authResult.userId,
       profile.id,
       {
         status: "passed",
-        message: "Anthropic profile test passed.",
+        message: passedMessage,
       },
     );
 
@@ -83,7 +105,7 @@ export async function POST(req: Request, context: RouteContext) {
       profile: updatedProfile,
       result: {
         status: "passed",
-        message: "Anthropic profile test passed.",
+        message: passedMessage,
       },
     });
   } catch (error) {

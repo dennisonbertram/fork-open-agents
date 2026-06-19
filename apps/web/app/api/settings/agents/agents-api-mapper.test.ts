@@ -100,4 +100,66 @@ describe("agentPatchSchema", () => {
     });
     expect(result.success).toBe(true);
   });
+
+  // BT-M-012: githubToolsEnabled boolean field
+  it("BT-M-012a: accepts githubToolsEnabled: true", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      githubToolsEnabled: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.githubToolsEnabled).toBe(true);
+    }
+  });
+
+  it("BT-M-012b: accepts githubToolsEnabled: false", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      githubToolsEnabled: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.githubToolsEnabled).toBe(false);
+    }
+  });
+
+  it("BT-M-012c: rejects non-boolean githubToolsEnabled (string)", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      githubToolsEnabled: "yes",
+    });
+    expect(result.success).toBe(false);
+  });
+
+  // BT-M-013: toolAuthoringEnabled boolean field (#388)
+  it("BT-M-013a: accepts toolAuthoringEnabled: true", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      toolAuthoringEnabled: true,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.toolAuthoringEnabled).toBe(true);
+    }
+  });
+
+  it("BT-M-013b: accepts toolAuthoringEnabled: false", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      toolAuthoringEnabled: false,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.toolAuthoringEnabled).toBe(false);
+    }
+  });
+
+  it("BT-M-013c: rejects non-boolean toolAuthoringEnabled (string)", () => {
+    const result = agentPatchSchema.safeParse({
+      role: "main",
+      toolAuthoringEnabled: "yes",
+    });
+    expect(result.success).toBe(false);
+  });
 });

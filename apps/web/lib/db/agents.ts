@@ -49,6 +49,9 @@ export interface UserDefaultAgentPatch {
   composioProfileId?: string | null;
   instructions?: string | null;
   managedRuntimeProfileId?: string | null;
+  githubToolsEnabled?: boolean;
+  /** Phase 6 (#242 / #388): enable the propose_composio_tool for this agent. Off by default. */
+  toolAuthoringEnabled?: boolean;
 }
 
 /**
@@ -103,6 +106,8 @@ export async function upsertUserDefaultAgent(
     composioProfileId: patch.composioProfileId ?? null,
     instructions: patch.instructions ?? null,
     managedRuntimeProfileId: patch.managedRuntimeProfileId ?? null,
+    githubToolsEnabled: patch.githubToolsEnabled ?? false,
+    toolAuthoringEnabled: patch.toolAuthoringEnabled ?? false,
     createdAt: now,
     updatedAt: now,
   };
@@ -118,6 +123,8 @@ export async function upsertUserDefaultAgent(
         composioProfileId: row.composioProfileId,
         instructions: row.instructions,
         managedRuntimeProfileId: row.managedRuntimeProfileId,
+        githubToolsEnabled: row.githubToolsEnabled,
+        toolAuthoringEnabled: row.toolAuthoringEnabled,
         updatedAt: now,
       },
     });

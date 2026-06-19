@@ -12,7 +12,6 @@ import {
   GitPullRequest,
   Loader2,
   Monitor,
-  PanelLeft,
   PanelLeftClose,
   Pencil,
   Plus,
@@ -25,6 +24,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
+import { RepoSubGroups } from "@/components/inbox-sidebar-repo-subgroups";
+import {
+  type SidebarRepoRef,
+  buildRepoGroups,
+  getRepoGroupContentId,
+} from "@/components/inbox-sidebar-repo-groups";
+import { useAllAgents } from "@/hooks/use-repo-agents";
+import { useAllLoops } from "@/hooks/use-all-loops";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -295,68 +302,6 @@ function SessionPopoverContent({ session }: { session: SessionWithUnread }) {
       </div>
     </div>
   );
-}
-
-type SessionRepoGroup = {
-  id: string;
-  label: string;
-  sessions: SessionWithUnread[];
-};
-
-function getRepoGroupId(session: SessionWithUnread): string {
-  const repoName = session.repoName?.trim();
-  const repoOwner = session.repoOwner?.trim();
-
-  if (!repoName) {
-    return "repo:unscoped";
-  }
-
-  return `repo:${repoOwner ?? ""}/${repoName}`.toLowerCase();
-}
-
-function getRepoGroupLabel(session: SessionWithUnread): string {
-  const repoName = session.repoName?.trim();
-  const repoOwner = session.repoOwner?.trim();
-
-  if (!repoName) {
-    return "Chats";
-  }
-
-  return repoOwner ? `${repoOwner}/${repoName}` : repoName;
-}
-
-function groupSessionsByRepo(
-  sessions: SessionWithUnread[],
-): SessionRepoGroup[] {
-  const groups = new Map<string, SessionRepoGroup>();
-
-  for (const session of sessions) {
-    const groupId = getRepoGroupId(session);
-    const existingGroup = groups.get(groupId);
-
-    if (existingGroup) {
-      existingGroup.sessions.push(session);
-      continue;
-    }
-
-    groups.set(groupId, {
-      id: groupId,
-      label: getRepoGroupLabel(session),
-      sessions: [session],
-    });
-  }
-
-  const result = Array.from(groups.values());
-  const unscopedIndex = result.findIndex((g) => g.id === "repo:unscoped");
-  if (unscopedIndex > 0) {
-    const [unscoped] = result.splice(unscopedIndex, 1);
-    result.unshift(unscoped);
-  }
-  return result;
-}
-
-function getRepoGroupContentId(groupId: string): string {
-  return `repo-group-panel-${groupId.replace(/[^a-z0-9-]+/gi, "-")}`;
 }
 
 type SessionRowProps = {
@@ -804,9 +749,30 @@ export function InboxSidebar({
     (!showArchived && sessionsLoading && sessions.length === 0) ||
     (showArchived && archivedSessionsLoading && archivedSessions.length === 0);
   const sidebarUser = session?.user ?? initialUser;
+
+  // Repos with agents or loops keep their sidebar group even after every
+  // session/branch is gone, so the repo's tooling doesn't silently disappear.
+  const { agents: allAgents } = useAllAgents();
+  const { loops: allLoops } = useAllLoops();
+  const anchorRepos = useMemo<SidebarRepoRef[]>(
+    () => [
+      ...(allAgents ?? []).map((a) => ({
+        repoOwner: a.repoOwner,
+        repoName: a.repoName,
+      })),
+      ...(allLoops ?? []).map((l) => ({
+        repoOwner: l.repoOwner,
+        repoName: l.repoName,
+      })),
+    ],
+    [allAgents, allLoops],
+  );
+
   const groupedSessions = useMemo(
-    () => groupSessionsByRepo(displayedSessions),
-    [displayedSessions],
+    // Only union anchor repos into the active view — the archived view should
+    // list archived sessions only, not empty tooling-anchored groups.
+    () => buildRepoGroups(displayedSessions, showArchived ? [] : anchorRepos),
+    [displayedSessions, anchorRepos, showArchived],
   );
   const activeGroupId = useMemo(
     () =>
@@ -999,75 +965,9 @@ export function InboxSidebar({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Collapsed icon rail — only visible when sidebar is in icon mode */}
-      <div className="hidden group-data-[collapsible=icon]:flex flex-col items-center gap-1 py-2">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={toggleSidebar}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="Expand panel"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Expand panel
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                if (isMobile) {
-                  setOpenMobile(false);
-                }
-                onOpenNewSession();
-              }}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="New session"
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            New session
-          </TooltipContent>
-        </Tooltip>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              disabled={isCreatingSandboxFreeChat}
-              onClick={() => {
-                void handleCreateSandboxFreeChat();
-              }}
-              className="h-8 w-8 text-muted-foreground hover:text-foreground"
-              aria-label="Quick chat (no repo)"
-            >
-              {isCreatingSandboxFreeChat ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <MessageSquare className="h-4 w-4" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Quick chat (no repo)
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      {/* Expanded header — hidden when sidebar is collapsed to icon rail */}
-      <div className="border-b border-border p-3 group-data-[collapsible=icon]:hidden">
+      {/* Header — always visible when the sidebar is open (offcanvas hides the
+          entire sidebar when collapsed, so no icon-rail guard is needed) */}
+      <div className="border-b border-border p-3">
         <div className="mb-3 flex items-center gap-1.5">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -1167,7 +1067,7 @@ export function InboxSidebar({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto group-data-[collapsible=icon]:hidden">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {showLoadingSkeleton ? (
           <div className="space-y-1 p-2">
             {Array.from({ length: 5 }).map((_, index) => (
@@ -1177,7 +1077,7 @@ export function InboxSidebar({
               </div>
             ))}
           </div>
-        ) : displayedSessions.length === 0 ? (
+        ) : groupedSessions.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-muted-foreground">
             {showArchived
               ? (archivedSessionsError ?? "No archived sessions")
@@ -1203,9 +1103,8 @@ export function InboxSidebar({
                 const groupHasActiveSession = group.id === activeGroupId;
                 const groupContentId = getRepoGroupContentId(group.id);
 
-                const groupRepoOwner =
-                  group.sessions[0]?.repoOwner?.trim() ?? "";
-                const groupRepoName = group.sessions[0]?.repoName?.trim() ?? "";
+                const groupRepoOwner = group.repoOwner ?? "";
+                const groupRepoName = group.repoName ?? "";
                 const hasRepo = Boolean(groupRepoOwner && groupRepoName);
 
                 return (
@@ -1365,6 +1264,17 @@ export function InboxSidebar({
                       }`}
                     >
                       <div className="overflow-hidden">
+                        {/* Repo resources (Agents, Loops) sit ABOVE the session
+                            list so the repo's tooling is the first thing under
+                            the repo, not buried below its branches. */}
+                        {hasRepo ? (
+                          <div className="ml-4 border-l border-border/40 pl-1.5">
+                            <RepoSubGroups
+                              repoOwner={groupRepoOwner}
+                              repoName={groupRepoName}
+                            />
+                          </div>
+                        ) : null}
                         <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
                           {group.sessions.map((session) => (
                             <SessionRow
@@ -1414,7 +1324,7 @@ export function InboxSidebar({
       </div>
 
       {sidebarUser ? (
-        <div className="border-t border-border p-3 group-data-[collapsible=icon]:hidden">
+        <div className="border-t border-border p-3">
           <div className="flex items-center gap-2 rounded-lg p-2">
             <Avatar className="h-9 w-9 shrink-0">
               {sidebarUser.avatar ? (

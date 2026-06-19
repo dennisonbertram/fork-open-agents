@@ -4,6 +4,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { SettingsSection } from "@/components/ui/settings-section";
 import {
@@ -16,6 +18,11 @@ import {
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
 import { useModelOptions } from "@/hooks/use-model-options";
+import {
+  INHERIT_SENTINEL,
+  fromSelectValue,
+  toSelectValue,
+} from "./inherit-select-value";
 import type { AgentRosterRow } from "./agents-roster";
 
 /** Map each role to a subtitle shown beneath the role name in the card. */
@@ -35,6 +42,8 @@ type AgentPatch = {
   composioToolkitSlugs?: string[];
   instructions?: string | null;
   managedRuntimeProfileId?: string | null;
+  githubToolsEnabled?: boolean;
+  toolAuthoringEnabled?: boolean;
 };
 
 // ── Collapsed summary cell ────────────────────────────────────────────────────
@@ -95,6 +104,12 @@ function AgentEditor({
           "")
       : "",
   );
+  const [githubToolsEnabled, setGithubToolsEnabled] = useState<boolean>(
+    row.githubToolsEnabled,
+  );
+  const [toolAuthoringEnabled, setToolAuthoringEnabled] = useState<boolean>(
+    row.toolAuthoringEnabled,
+  );
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
 
@@ -107,6 +122,9 @@ function AgentEditor({
         composioToolkitSlugs: slugs,
         instructions: instructions.trim() || null,
         managedRuntimeProfileId: runtimeProfileId.trim() || null,
+        ...(row.key === "main"
+          ? { githubToolsEnabled, toolAuthoringEnabled }
+          : {}),
       };
 
       const res = await fetch("/api/settings/agents", {
@@ -163,12 +181,16 @@ function AgentEditor({
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Model
         </span>
-        <Select value={modelId} onValueChange={setModelId} disabled={isBusy}>
+        <Select
+          value={toSelectValue(modelId)}
+          onValueChange={(v) => setModelId(fromSelectValue(v))}
+          disabled={isBusy}
+        >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Inherit default" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Inherit default</SelectItem>
+            <SelectItem value={INHERIT_SENTINEL}>Inherit default</SelectItem>
             {modelOptions.map((opt) => (
               <SelectItem key={opt.id} value={opt.id}>
                 {opt.label}
@@ -221,15 +243,15 @@ function AgentEditor({
           Runtime profile
         </span>
         <Select
-          value={runtimeProfileId}
-          onValueChange={setRuntimeProfileId}
+          value={toSelectValue(runtimeProfileId)}
+          onValueChange={(v) => setRuntimeProfileId(fromSelectValue(v))}
           disabled={isBusy}
         >
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Inherit default" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Inherit default</SelectItem>
+            <SelectItem value={INHERIT_SENTINEL}>Inherit default</SelectItem>
             {RUNTIME_PROFILES.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.displayName}
@@ -238,6 +260,44 @@ function AgentEditor({
           </SelectContent>
         </Select>
       </div>
+
+      {/* GitHub tools — Main role only */}
+      {row.key === "main" ? (
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="agent-github-tools-enabled">GitHub tools</Label>
+            <p className="text-xs text-muted-foreground">
+              Let this agent read and act on GitHub issues, branches, and PRs
+              for repos you have access to.
+            </p>
+          </div>
+          <Switch
+            id="agent-github-tools-enabled"
+            checked={githubToolsEnabled}
+            onCheckedChange={setGithubToolsEnabled}
+            disabled={isBusy}
+          />
+        </div>
+      ) : null}
+
+      {/* Tool authoring — Main role only */}
+      {row.key === "main" ? (
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-0.5">
+            <Label htmlFor="agent-tool-authoring-enabled">Tool authoring</Label>
+            <p className="text-xs text-muted-foreground">
+              Let this agent propose new Composio tools. Proposals are recorded
+              for review and do not auto-enable tools.
+            </p>
+          </div>
+          <Switch
+            id="agent-tool-authoring-enabled"
+            checked={toolAuthoringEnabled}
+            onCheckedChange={setToolAuthoringEnabled}
+            disabled={isBusy}
+          />
+        </div>
+      ) : null}
 
       {/* Footer actions */}
       <div className="flex items-center justify-between gap-3">

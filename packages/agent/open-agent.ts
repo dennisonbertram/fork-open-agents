@@ -93,6 +93,19 @@ const callOptionsSchema = z.object({
    */
   toolAuthoringEnabled: z.boolean().optional(),
   /**
+   * Set by the web layer when typed GitHub tools were injected for this step;
+   * steers the prompt to prefer them over shell gh/curl for issue/PR metadata ops.
+   * Absent or false = no steer added (zero behavior change when tools are off).
+   */
+  githubToolsEnabled: z.boolean().optional(),
+  /**
+   * Set by the web layer when authenticated GitHub tools (native `github_*` or
+   * Composio `GITHUB_*`) are in this step's toolset. Steers the prompt and the
+   * web_fetch guardrail away from unauthenticated GitHub fetches. Absent or
+   * false = no steer and no guardrail (zero behavior change when off).
+   */
+  githubToolAvailable: z.boolean().optional(),
+  /**
    * Phase 6 (#242): web-provided action to record a proposed tool entry.
    * Injected into experimental_context so the tool has no direct DB dependency.
    * Only present when toolAuthoringEnabled=true.
@@ -237,7 +250,21 @@ export function getRuntimeModeToolPolicy(
     return mergedTools;
   }
 
-  return pickTools(mergedTools, MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES);
+  // Coordinator mode: allow native coordinator tools plus any injected external
+  // tools (Composio, GitHub) that are not in the native tool registry — they
+  // run via their own APIs and don't require a sandbox.
+  const coordinatorTools = pickTools(
+    mergedTools,
+    MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
+  );
+  if (requestedTools) {
+    for (const [name, tool] of Object.entries(requestedTools)) {
+      if (!(name in tools)) {
+        coordinatorTools[name] = tool;
+      }
+    }
+  }
+  return coordinatorTools;
 }
 
 export const openAgent = new ToolLoopAgent({
@@ -288,6 +315,8 @@ export const openAgent = new ToolLoopAgent({
     // Phase 6 (#242): optional tool authoring gate + web-injected action
     const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
     const proposeToolAction = options.proposeToolAction;
+    const githubToolsEnabled = options.githubToolsEnabled ?? false;
+    const githubToolAvailable = options.githubToolAvailable ?? false;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -296,8 +325,11 @@ export const openAgent = new ToolLoopAgent({
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,
+      inferenceProfileName: mainSelection.attribution?.inferenceProfileName,
       runtimeMode,
       sandboxFree,
+      githubToolsEnabled,
+      githubToolAvailable,
     });
 
     return {
@@ -318,6 +350,7 @@ export const openAgent = new ToolLoopAgent({
         subagentModel,
         runtimeMode,
         managedRuntime,
+        githubToolAvailable,
         ...(subagentRoster ? { subagentRoster } : {}),
         // Phase 6: only inject when enabled; undefined = no authoring in this session
         ...(toolAuthoringEnabled && proposeToolAction

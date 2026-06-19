@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateSchedule } from "./schedule-presets";
 
 export const backgroundAgentTriggerKinds = [
   "github.pull_request",
@@ -70,6 +71,9 @@ export const triggerConditionsSchema = z
     labels: z.array(z.string().min(1)).optional(),
     environments: z.array(z.string().min(1)).optional(),
     severities: z.array(z.string().min(1)).optional(),
+    // mergedOnly restricts github.pull_request to merged-closed events.
+    // Stored as JSONB, no migration needed. Not user-exposed yet (CODE-03).
+    mergedOnly: z.boolean().optional(),
   })
   .strict();
 
@@ -100,6 +104,7 @@ export const createBackgroundAgentSchema = z
     permissions: permissionsSchema.default({}),
     outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
+    composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
     triggers: z
       .array(
         z
@@ -110,7 +115,21 @@ export const createBackgroundAgentSchema = z
             conditions: triggerConditionsSchema.default({}),
             schedule: z.string().trim().max(100).optional().nullable(),
           })
-          .strict(),
+          .strict()
+          .superRefine((trigger, ctx) => {
+            if (trigger.kind === "schedule.cron") {
+              const result = validateSchedule(trigger.schedule);
+              if (!result.valid) {
+                ctx.addIssue({
+                  code: z.ZodIssueCode.custom,
+                  path: ["schedule"],
+                  message:
+                    result.error ??
+                    "Invalid schedule expression. Supported formats: @hourly, @daily, @weekly, or a 5-field cron expression.",
+                });
+              }
+            }
+          }),
       )
       .min(1)
       .max(10),

@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "bun run db:migrate:apply && next build",
+    "build:ci": "next build",
     "db:migrate:apply": "bun run lib/db/migrate.ts",
     "start": "next start",
     "typecheck": "tsc --noEmit",
@@ -51,6 +52,7 @@
     "@streamdown/code": "^1.1.1",
     "@vercel/analytics": "^1.4.1",
     "@vercel/oidc": "^2.0.0",
+    "@xyflow/react": "^12.11.0",
     "ai": "catalog:",
     "arctic": "^3.7.0",
     "better-auth": "^1.6.5",
@@ -77,7 +79,8 @@
     "tailwind-merge": "^3.4.0",
     "vaul": "^1.1.2",
     "workflow": "^4.2.0-beta.72",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

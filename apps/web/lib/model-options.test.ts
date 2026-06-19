@@ -111,6 +111,7 @@ describe("model options", () => {
           lastTestedAt: null,
           lastTestMessage: null,
           enabled: true,
+          models: [],
           createdAt: new Date("2026-01-01T00:00:00.000Z"),
           updatedAt: new Date("2026-01-01T00:00:00.000Z"),
         },
@@ -121,7 +122,7 @@ describe("model options", () => {
       id: "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
       label: "Claude Opus 4.6",
       shortLabel: "Opus 4.6",
-      description: "Direct Anthropic via Personal Anthropic",
+      description: "Via Personal Anthropic (your key)",
       isVariant: false,
       contextWindow: 200_000,
       provider: "user",
@@ -135,6 +136,91 @@ describe("model options", () => {
       "anthropic/claude-opus-4.6",
       "openai/gpt-5",
     ]);
+  });
+
+  test("buildModelOptions uses the profile's discovered models when present", () => {
+    const models: AvailableModel[] = [
+      createModel({ id: "anthropic/claude-opus-4.6", name: "Claude Opus 4.6" }),
+    ];
+
+    const options = buildModelOptions(
+      models,
+      [],
+      [
+        {
+          id: "profile-zai",
+          name: "ZAI (GLM)",
+          provider: "anthropic",
+          baseUrl: "https://api.z.ai/api/anthropic/v1",
+          keyLast4: "10ac",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          models: [
+            { id: "glm-4.6", displayName: "GLM-4.6", contextWindow: 200_000 },
+            { id: "glm-4.5-air", displayName: "GLM-4.5-Air" },
+          ],
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    // Real GLM models surface, NOT cloned Anthropic catalog names.
+    expect(options[0]).toMatchObject({
+      id: "user-profile:profile-zai:glm-4.6",
+      label: "GLM-4.6",
+      shortLabel: "GLM-4.6",
+      provider: "user",
+      source: "user",
+      baseModelId: "glm-4.6",
+      inferenceProfileId: "profile-zai",
+      secondaryLabel: "ZAI (GLM)",
+      contextWindow: 200_000,
+    });
+    expect(options.map((option) => option.id)).toEqual([
+      "user-profile:profile-zai:glm-4.6",
+      "user-profile:profile-zai:glm-4.5-air",
+      "anthropic/claude-opus-4.6",
+    ]);
+    // The profile no longer borrows "Opus 4.6" from the app catalog.
+    expect(
+      options.some(
+        (o) => o.source === "user" && o.baseModelId?.startsWith("anthropic/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("buildModelOptions tolerates a discovered model with no displayName", () => {
+    // Stored jsonb can drift; a missing displayName must not crash the picker.
+    const profile = {
+      id: "profile-bad",
+      name: "Custom",
+      provider: "anthropic" as const,
+      baseUrl: "https://api.example.com/v1",
+      keyLast4: "abcd",
+      keyFingerprint: "fingerprint",
+      status: "verified" as const,
+      lastTestedAt: null,
+      lastTestMessage: null,
+      enabled: true,
+      models: [
+        { id: "glm-4.6" } as unknown as { id: string; displayName: string },
+      ],
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    };
+
+    const options = buildModelOptions([], [], [profile]);
+
+    expect(options[0]).toMatchObject({
+      id: "user-profile:profile-bad:glm-4.6",
+      label: "glm-4.6",
+      shortLabel: "glm-4.6",
+      source: "user",
+    });
   });
 
   test("groupByProvider puts user, anthropic, and openai first, preserves insertion order", () => {
@@ -335,9 +421,47 @@ describe("filterAndSortModelOptions", () => {
       shortLabel: "Opus 4",
       isVariant: false,
       provider: "user",
+      source: "user" as const,
       secondaryLabel: "My Key",
     },
   ];
+
+  test("source filter keeps only user-key models", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+      source: "user",
+    });
+    expect(result.map((o) => o.id)).toEqual([
+      "user-profile:profile-1:anthropic%2Fclaude-opus-4",
+    ]);
+  });
+
+  test("source filter keeps only catalog models", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "provider",
+      search: "",
+      source: "catalog",
+    });
+    expect(result.every((o) => o.source !== "user")).toBe(true);
+    expect(result).toHaveLength(5);
+  });
+
+  test("selectedOnly keeps only options in selectedIds", () => {
+    const result = filterAndSortModelOptions(allOptions, {
+      providerFilter: "all",
+      sort: "name",
+      search: "",
+      selectedOnly: true,
+      selectedIds: new Set(["openai/gpt-5", "google/gemini-2.5-pro"]),
+    });
+    expect(result.map((o) => o.id).sort()).toEqual([
+      "google/gemini-2.5-pro",
+      "openai/gpt-5",
+    ]);
+  });
 
   // BT-001: provider filter restricts to that provider's models
   test("BT-001: filters by provider when providerFilter is set", () => {

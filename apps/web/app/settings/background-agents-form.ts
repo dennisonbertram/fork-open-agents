@@ -26,6 +26,7 @@ export type {
   BackgroundAgentTrigger,
   ConditionField,
   FormState,
+  GitHubAccessLevel,
   OutputMode,
   StepId,
   TriggerConditions,

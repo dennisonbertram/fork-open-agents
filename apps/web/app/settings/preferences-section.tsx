@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { SettingsGroup, SettingRow } from "@/components/ui/settings-group";
 import {
   Select,
   SelectContent,
@@ -111,13 +112,16 @@ function ReadOnlyValue({ children }: { children: React.ReactNode }) {
 export function PreferencesSectionSkeleton() {
   return (
     <div className="space-y-8">
-      <div className="space-y-4">
-        <GroupHeader>Appearance</GroupHeader>
-        <div className="grid gap-6 sm:grid-cols-2">
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+      {/* Appearance — mirrors the single SettingsGroup card used in the loaded UI */}
+      <SettingsGroup title="Appearance">
+        <div className="flex flex-col items-start gap-2 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+          <div className="min-w-0 space-y-1.5">
+            <Skeleton className="h-4 w-24" />
+            <Skeleton className="h-3.5 w-56 max-w-full" />
+          </div>
+          <Skeleton className="h-9 w-full sm:max-w-xs" />
         </div>
-      </div>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
@@ -452,10 +456,16 @@ export function PreferencesSection() {
   return (
     <div className="space-y-8">
       {/* ── 1. Appearance ── */}
-      <div className="space-y-4">
-        <GroupHeader>Appearance</GroupHeader>
-        <div className="grid gap-2 sm:max-w-xs">
-          <Label htmlFor="appearance">Theme</Label>
+      <SettingsGroup
+        title="Appearance"
+        description="How Open Agents looks in this browser."
+      >
+        <SettingRow
+          label="Theme"
+          htmlFor="appearance"
+          description="Saved in this browser only — it doesn't follow you to other devices."
+          controlClassName="w-full sm:max-w-xs"
+        >
           <Select value={theme} onValueChange={handleThemeChange}>
             <SelectTrigger id="appearance" className="w-full">
               <SelectValue placeholder="Select a theme" />
@@ -468,12 +478,8 @@ export function PreferencesSection() {
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground">
-            Saved in this browser only — it doesn&apos;t follow you to other
-            devices.
-          </p>
-        </div>
-      </div>
+        </SettingRow>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
@@ -594,83 +600,68 @@ export function PreferencesSection() {
       <div className="border-t border-border/50" />
 
       {/* ── 3. Git automation ── */}
-      <div className="space-y-4">
-        <GroupHeader>Git automation</GroupHeader>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="auto-commit-push">Auto commit &amp; push</Label>
-              <p className="text-xs text-muted-foreground">
-                Commit and push when an agent turn finishes.
-              </p>
-            </div>
-            <Switch
-              id="auto-commit-push"
-              checked={preferences?.autoCommitPush ?? false}
-              onCheckedChange={handleAutoCommitPushChange}
-              disabled={isSaving}
-            />
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="auto-create-pr">Auto create PR</Label>
-              <p className="text-xs text-muted-foreground">
-                Open a pull request after auto commit.
-              </p>
-              {!(preferences?.autoCommitPush ?? false) && (
-                <p className="text-xs text-muted-foreground italic">
-                  Available once Auto commit &amp; push is on.
-                </p>
-              )}
-            </div>
-            <Switch
-              id="auto-create-pr"
-              checked={preferences?.autoCreatePr ?? false}
-              onCheckedChange={handleAutoCreatePrChange}
-              disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
-            />
-          </div>
-        </div>
-      </div>
+      <SettingsGroup title="Git automation">
+        <SettingRow
+          label="Auto commit & push"
+          htmlFor="auto-commit-push"
+          description="Commit and push when an agent turn finishes."
+        >
+          <Switch
+            id="auto-commit-push"
+            checked={preferences?.autoCommitPush ?? false}
+            onCheckedChange={handleAutoCommitPushChange}
+            disabled={isSaving}
+          />
+        </SettingRow>
+        <SettingRow
+          label="Auto create PR"
+          htmlFor="auto-create-pr"
+          description={
+            !(preferences?.autoCommitPush ?? false)
+              ? "Open a pull request after auto commit. Available once Auto commit & push is on."
+              : "Open a pull request after auto commit."
+          }
+        >
+          <Switch
+            id="auto-create-pr"
+            checked={preferences?.autoCreatePr ?? false}
+            onCheckedChange={handleAutoCreatePrChange}
+            disabled={isSaving || !(preferences?.autoCommitPush ?? false)}
+          />
+        </SettingRow>
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
       {/* ── 4. Notifications ── */}
-      <div className="space-y-4">
-        <GroupHeader>Notifications</GroupHeader>
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="space-y-0.5">
-              <Label htmlFor="alerts-enabled">Alerts</Label>
-              <p className="text-xs text-muted-foreground">
-                Notify when a background agent finishes.
-              </p>
-            </div>
+      <SettingsGroup title="Notifications">
+        <SettingRow
+          label="Alerts"
+          htmlFor="alerts-enabled"
+          description="Notify when a background agent finishes."
+        >
+          <Switch
+            id="alerts-enabled"
+            checked={preferences?.alertsEnabled ?? true}
+            onCheckedChange={handleAlertsEnabledChange}
+            disabled={isSaving}
+          />
+        </SettingRow>
+        {(preferences?.alertsEnabled ?? true) && (
+          <SettingRow
+            label="Alert sound"
+            htmlFor="alert-sound-enabled"
+            description="Plays with each alert."
+          >
             <Switch
-              id="alerts-enabled"
-              checked={preferences?.alertsEnabled ?? true}
-              onCheckedChange={handleAlertsEnabledChange}
+              id="alert-sound-enabled"
+              checked={preferences?.alertSoundEnabled ?? true}
+              onCheckedChange={handleAlertSoundEnabledChange}
               disabled={isSaving}
             />
-          </div>
-          {(preferences?.alertsEnabled ?? true) && (
-            <div className="ml-1 flex items-center justify-between gap-4 border-l-2 border-border/60 pl-4">
-              <div className="space-y-0.5">
-                <Label htmlFor="alert-sound-enabled">Alert sound</Label>
-                <p className="text-xs text-muted-foreground">
-                  Plays with each alert.
-                </p>
-              </div>
-              <Switch
-                id="alert-sound-enabled"
-                checked={preferences?.alertSoundEnabled ?? true}
-                onCheckedChange={handleAlertSoundEnabledChange}
-                disabled={isSaving}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+          </SettingRow>
+        )}
+      </SettingsGroup>
 
       <div className="border-t border-border/50" />
 
