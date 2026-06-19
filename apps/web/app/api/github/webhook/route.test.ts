@@ -98,6 +98,36 @@ function pullRequestPayload(action = "opened") {
   };
 }
 
+function pullRequestReviewPayload(action = "submitted", prNumber = 7) {
+  return {
+    action,
+    repository: {
+      name: "widgets",
+      owner: { login: "acme" },
+    },
+    sender: { login: "reviewer-alice" },
+    review: {
+      id: 9001,
+      state: "approved",
+      html_url: "https://github.com/acme/widgets/pull/7#pullrequestreview-9001",
+      user: { login: "reviewer-alice" },
+    },
+    pull_request: {
+      id: 101,
+      number: prNumber,
+      title: "Fix widgets",
+      html_url: "https://github.com/acme/widgets/pull/7",
+      head: {
+        ref: "feature/widgets",
+        sha: "abc123",
+      },
+      base: {
+        ref: "main",
+      },
+    },
+  };
+}
+
 describe("POST /api/github/webhook background agent dispatch", () => {
   beforeEach(() => {
     process.env.GITHUB_WEBHOOK_SECRET = "github-secret";
@@ -171,6 +201,8 @@ describe("POST /api/github/webhook background agent dispatch", () => {
         title: "Fix widgets",
         url: "https://github.com/acme/widgets/pull/7",
         actor: "mona",
+        // merged is surfaced from pull_request.merged (false for non-merged PRs)
+        merged: false,
       },
     });
     expect(findSessions).not.toHaveBeenCalled();
@@ -221,6 +253,83 @@ describe("POST /api/github/webhook background agent dispatch", () => {
         actor: "mona",
       },
     });
+  });
+
+  // TASK-274: pull_request_review dispatch
+  test("dispatches pull_request_review.submitted into dispatchBackgroundTriggerEvent", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      githubRequest({
+        event: "pull_request_review",
+        payload: pullRequestReviewPayload("submitted"),
+        requestId: "req-review-1",
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.event).toBe("pull_request_review");
+    expect(body.backgroundAgents).toBeDefined();
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledWith({
+      requestId: "req-review-1",
+      event: expect.objectContaining({
+        kind: "github.pull_request_review",
+        action: "submitted",
+        repoOwner: "acme",
+        repoName: "widgets",
+      }),
+    });
+  });
+
+  test("dispatches pull_request closed+merged=true with merged condition", async () => {
+    const { POST } = await routeModulePromise;
+    const mergedPayload = {
+      ...pullRequestPayload("closed"),
+      pull_request: {
+        ...pullRequestPayload("closed").pull_request,
+        merged: true,
+      },
+    };
+
+    const response = await POST(
+      githubRequest({
+        event: "pull_request",
+        payload: mergedPayload,
+        requestId: "req-merged-pr",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledTimes(1);
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          merged: true,
+          action: "closed",
+        }),
+      }),
+    );
+  });
+
+  test("rejects pull_request_review delivery with invalid signature", async () => {
+    const { POST } = await routeModulePromise;
+
+    const body = JSON.stringify(pullRequestReviewPayload("submitted"));
+    const response = await POST(
+      new Request("http://localhost/api/github/webhook", {
+        method: "POST",
+        body,
+        headers: {
+          "x-github-event": "pull_request_review",
+          "x-hub-signature-256": "sha256=invalidsignature",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(401);
+    expect(dispatchBackgroundTriggerEvent).not.toHaveBeenCalled();
   });
 
   test("dispatches deployment status events and surfaces disabled agents", async () => {

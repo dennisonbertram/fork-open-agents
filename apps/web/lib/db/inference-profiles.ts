@@ -6,11 +6,13 @@ import {
   decryptInferenceSecret,
   encryptInferenceSecret,
   fingerprintInferenceSecret,
+  InferenceSecretDecryptionError,
   lastFourSecretChars,
 } from "@/lib/inference/encryption";
 import { normalizeAnthropicBaseUrl } from "@/lib/inference/model-routing";
 import type {
   CreateInferenceProfileInput,
+  InferenceProfileModel,
   InferenceProfileTestResult,
   SafeInferenceProfile,
   UpdateInferenceProfileInput,
@@ -36,6 +38,7 @@ function toSafeInferenceProfile(
     lastTestedAt: profile.lastTestedAt,
     lastTestMessage: profile.lastTestMessage,
     enabled: profile.enabled,
+    models: profile.models ?? [],
     createdAt: profile.createdAt,
     updatedAt: profile.updatedAt,
   };
@@ -50,9 +53,32 @@ function keyFieldsForSecret(apiKey: string) {
 }
 
 export function decryptInferenceProfileApiKey(
-  profile: Pick<InferenceProfile, "encryptedApiKey">,
+  profile: Pick<
+    InferenceProfile,
+    "encryptedApiKey" | "id" | "name" | "provider"
+  >,
 ): string {
-  return decryptInferenceSecret(profile.encryptedApiKey);
+  try {
+    return decryptInferenceSecret(profile.encryptedApiKey);
+  } catch (error) {
+    if (error instanceof InferenceSecretDecryptionError) {
+      console.error("[inference] inference_profile_decrypt_failed", {
+        event: "inference_profile_decrypt_failed",
+        profileId: profile.id,
+        provider: profile.provider,
+        errorKind: "decrypt_auth_tag_mismatch",
+      });
+
+      throw Object.assign(
+        new Error(
+          `This chat's model ("${profile.name}") couldn't be loaded — switch to a different model to keep going, or re-add its API key in Settings → Models.`,
+        ),
+        { name: "InferenceProfileResolutionError" },
+      );
+    }
+
+    throw error;
+  }
 }
 
 export async function listInferenceProfiles(
@@ -174,6 +200,25 @@ export async function deleteInferenceProfile(
     .returning({ id: inferenceProfiles.id });
 
   return deleted.length > 0;
+}
+
+export async function setInferenceProfileModels(
+  userId: string,
+  profileId: string,
+  models: InferenceProfileModel[],
+): Promise<SafeInferenceProfile | null> {
+  const [updated] = await db
+    .update(inferenceProfiles)
+    .set({ models, updatedAt: new Date() })
+    .where(
+      and(
+        eq(inferenceProfiles.id, profileId),
+        eq(inferenceProfiles.userId, userId),
+      ),
+    )
+    .returning();
+
+  return updated ? toSafeInferenceProfile(updated) : null;
 }
 
 export async function recordInferenceProfileTestResult(

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SettingsPageHeader } from "@/components/ui/settings-section";
 import { PreferencesSection } from "../preferences-section";
 
 export const metadata: Metadata = {
@@ -9,7 +10,10 @@ export const metadata: Metadata = {
 export default function PreferencesPage() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Preferences</h1>
+      <SettingsPageHeader
+        title="Preferences"
+        description="Tune how Open Agents behaves for you. Changes apply to new chats right away."
+      />
       <PreferencesSection />
     </>
   );

@@ -18,6 +18,8 @@ export function formatTriggerLabel(
   switch (kind) {
     case "github.pull_request":
       return formatPrLabel(conditions);
+    case "github.pull_request_review":
+      return formatPrReviewLabel(conditions);
     case "github.issue":
       return formatIssueLabel(conditions);
     case "github.deployment_status":
@@ -27,6 +29,26 @@ export function formatTriggerLabel(
     case "webhook.error":
       return "On error webhook";
   }
+}
+
+function formatPrReviewLabel(conditions: TriggerConditions): string {
+  const hasActions = conditions.actions && conditions.actions.length > 0;
+  const hasSeverities =
+    conditions.severities && conditions.severities.length > 0;
+
+  if (!hasActions && !hasSeverities) {
+    return "On PR review";
+  }
+
+  const parts: string[] = ["On PR review"];
+
+  if (hasSeverities) {
+    parts.push(conditions.severities![0]!);
+  } else if (hasActions) {
+    parts.push(conditions.actions![0]!);
+  }
+
+  return parts.join(" ");
 }
 
 function formatPrLabel(conditions: TriggerConditions): string {

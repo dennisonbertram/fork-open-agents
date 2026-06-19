@@ -215,7 +215,11 @@ export async function POST(req: Request): Promise<Response> {
     });
   }
 
-  if (event === "issues" || event === "deployment_status") {
+  if (
+    event === "issues" ||
+    event === "deployment_status" ||
+    event === "pull_request_review"
+  ) {
     const backgroundEvent = normalizeGitHubBackgroundEvent(
       event,
       parsedPayload,
