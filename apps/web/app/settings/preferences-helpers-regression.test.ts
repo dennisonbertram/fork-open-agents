@@ -6,7 +6,10 @@
  * boundary case.
  */
 import { describe, expect, test } from "bun:test";
-import { shouldCollapseSingleOption } from "./preferences-helpers";
+import {
+  getSingleOptionPickerState,
+  shouldCollapseSingleOption,
+} from "./preferences-helpers";
 
 describe("shouldCollapseSingleOption — regression coverage", () => {
   test("the exact SANDBOX_OPTIONS shape (one 'vercel' entry) collapses", () => {
@@ -28,5 +31,25 @@ describe("shouldCollapseSingleOption — regression coverage", () => {
     const originalLength = options.length;
     shouldCollapseSingleOption(options);
     expect(options.length).toBe(originalLength);
+  });
+
+  test("single-option picker state exposes plain-language read-only copy", () => {
+    const state = getSingleOptionPickerState([
+      { id: "vercel", name: "Vercel" },
+    ]);
+
+    expect(state).toEqual({
+      label: "Vercel",
+      status: "Only available option",
+    });
+  });
+
+  test("multi-option picker state stays interactive", () => {
+    const state = getSingleOptionPickerState([
+      { id: "vercel", name: "Vercel" },
+      { id: "docker", name: "Docker" },
+    ]);
+
+    expect(state).toBeNull();
   });
 });
