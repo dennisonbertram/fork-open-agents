@@ -289,8 +289,8 @@ export async function dispatchWebhookErrorEvent(params: {
     ...params.event,
     source: "webhook",
     kind: "webhook.error",
-    repoOwner: params.event.repoOwner ?? agent.repoOwner,
-    repoName: params.event.repoName ?? agent.repoName,
+    repoOwner: agent.repoOwner,
+    repoName: agent.repoName,
   };
   if (!isBackgroundAgentRepoAllowed(event.repoOwner, event.repoName)) {
     return {
