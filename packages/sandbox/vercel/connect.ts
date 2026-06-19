@@ -17,6 +17,7 @@ interface ConnectOptions {
   persistent?: boolean;
   snapshotExpiration?: number;
   skipGitWorkspaceBootstrap?: boolean;
+  cloneDepth?: number;
 }
 
 function getRemainingTimeout(
@@ -91,6 +92,9 @@ function buildCreateConfig(
     }),
     ...(options?.skipGitWorkspaceBootstrap && {
       skipGitWorkspaceBootstrap: true,
+    }),
+    ...(options?.cloneDepth !== undefined && {
+      cloneDepth: options.cloneDepth,
     }),
   };
 }

@@ -484,6 +484,13 @@
       "when": 1781869796375,
       "tag": "0068_minor_human_fly",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1781870579226,
+      "tag": "0069_loose_champions",
+      "breakpoints": true
     }
   ]
 }

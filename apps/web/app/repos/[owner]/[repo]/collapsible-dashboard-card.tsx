@@ -11,6 +11,28 @@ function storageKeyFor(key: string): string {
   return `repo-dashboard-card:${key}`;
 }
 
+export function resolveInitialDashboardCardOpenState({
+  storedState,
+  viewportWidth,
+}: {
+  storedState: string | null;
+  viewportWidth: number | null;
+}): boolean {
+  if (storedState === "collapsed") {
+    return false;
+  }
+
+  if (storedState === "expanded") {
+    return true;
+  }
+
+  if (viewportWidth === null) {
+    return true;
+  }
+
+  return viewportWidth >= MD_BREAKPOINT;
+}
+
 type CollapsibleDashboardCardProps = {
   /** Stable key for persisting this card's collapsed state. */
   cardKey: string;
@@ -44,21 +66,22 @@ export function CollapsibleDashboardCard({
   const [open, setOpen] = useState(true);
 
   useEffect(() => {
-    let nextOpen = true;
     try {
-      const stored = window.localStorage.getItem(storageKeyFor(cardKey));
-      if (stored === "collapsed") {
-        nextOpen = false;
-      } else if (stored === "expanded") {
-        nextOpen = true;
-      } else {
-        nextOpen = window.innerWidth >= MD_BREAKPOINT;
-      }
+      setOpen(
+        resolveInitialDashboardCardOpenState({
+          storedState: window.localStorage.getItem(storageKeyFor(cardKey)),
+          viewportWidth: window.innerWidth,
+        }),
+      );
     } catch {
       // localStorage unavailable (private mode / SSR) — keep default open.
-      nextOpen = true;
+      setOpen(
+        resolveInitialDashboardCardOpenState({
+          storedState: null,
+          viewportWidth: null,
+        }),
+      );
     }
-    setOpen(nextOpen);
   }, [cardKey]);
 
   const toggle = () => {

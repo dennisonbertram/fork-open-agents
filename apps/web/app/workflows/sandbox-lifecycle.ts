@@ -1,13 +1,9 @@
 import { sleep } from "workflow";
-import { getSessionById, updateSession } from "@/lib/db/sessions";
 import { SANDBOX_LIFECYCLE_MIN_SLEEP_MS } from "@/lib/sandbox/config";
-import {
-  evaluateSandboxLifecycle,
-  getLifecycleDueAtMs,
-  type SandboxLifecycleEvaluationResult,
-  type SandboxLifecycleReason,
+import type {
+  SandboxLifecycleEvaluationResult,
+  SandboxLifecycleReason,
 } from "@/lib/sandbox/lifecycle";
-import { canOperateOnSandbox } from "@/lib/sandbox/utils";
 
 interface LifecycleWakeDecision {
   shouldContinue: boolean;
@@ -19,6 +15,7 @@ async function claimLifecycleLease(
   sessionId: string,
   runId: string,
 ): Promise<boolean> {
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
   const current = await getSessionById(sessionId);
   if (!current) {
     return false;
@@ -42,6 +39,9 @@ async function computeLifecycleWakeDecision(
 ): Promise<LifecycleWakeDecision> {
   "use step";
 
+  const { getSessionById } = await import("@/lib/db/sessions");
+  const { getLifecycleDueAtMs } = await import("@/lib/sandbox/lifecycle");
+  const { canOperateOnSandbox } = await import("@/lib/sandbox/utils");
   const session = await getSessionById(sessionId);
   if (!session) {
     return { shouldContinue: false, reason: "session-not-found" };
@@ -69,6 +69,7 @@ async function runLifecycleEvaluation(
   reason: SandboxLifecycleReason,
 ): Promise<SandboxLifecycleEvaluationResult> {
   "use step";
+  const { evaluateSandboxLifecycle } = await import("@/lib/sandbox/lifecycle");
   return evaluateSandboxLifecycle(sessionId, reason);
 }
 
@@ -78,6 +79,7 @@ async function clearLifecycleRunIdIfOwned(
 ): Promise<void> {
   "use step";
 
+  const { getSessionById, updateSession } = await import("@/lib/db/sessions");
   const session = await getSessionById(sessionId);
   if (!session || session.lifecycleRunId !== runId) {
     return;
