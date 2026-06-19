@@ -386,17 +386,13 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
-  // Ready PR requires write to function, so always present write for it. For
-  // report-only agents, preserve the saved access (least-privilege), falling
-  // back to read for agents created before permissions were persisted.
+  // Edit mode must reflect what was actually saved, not re-derive GitHub access
+  // from outputMode. That keeps downgraded agents from silently re-escalating
+  // when reopened.
   const savedGh = agent.permissions?.github;
-  const isReadyPr = agent.outputMode === "ready_pr";
-  const permissionContents: GitHubAccessLevel = isReadyPr
-    ? "write"
-    : (savedGh?.contents ?? "read");
-  const permissionPullRequests: GitHubAccessLevel = isReadyPr
-    ? "write"
-    : (savedGh?.pullRequests ?? "read");
+  const permissionContents: GitHubAccessLevel = savedGh?.contents ?? "read";
+  const permissionPullRequests: GitHubAccessLevel =
+    savedGh?.pullRequests ?? "read";
 
   return {
     name: agent.name,
