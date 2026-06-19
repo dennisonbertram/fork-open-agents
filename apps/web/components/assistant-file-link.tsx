@@ -61,6 +61,9 @@ export function AssistantFileLink({
   // the outer element is also a <button> (from this workspace-file-link), the
   // browser logs "In HTML, <button> cannot be a descendant of <button>" — a
   // React hydration error that degrades performance and breaks accessibility.
+  // oxlint-disable-next-line no-role-button — this must be a <div> to
+  // avoid nesting a Streamdown <button> (image download) inside a <button>
+  // (#132).  The keyboard handler preserves a11y semantics.
   return (
     <div
       role="button"
