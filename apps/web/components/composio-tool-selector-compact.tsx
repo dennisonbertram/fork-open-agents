@@ -110,7 +110,7 @@ export function ComposioToolSelectorCompact({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-[360px] max-h-[480px] overflow-y-auto p-3"
+        className="max-h-[480px] w-[360px] max-w-[calc(100vw_-_1.5rem)] overflow-y-auto p-3"
       >
         {githubConnected && (
           <div className="mb-3 rounded-md border border-border/60 bg-muted/20 p-2">
