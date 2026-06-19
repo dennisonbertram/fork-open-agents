@@ -48,22 +48,22 @@ export function UsageInsightsSection({ insights }: UsageInsightsSectionProps) {
         <MetricCard
           label="Largest turn"
           value={`${formatTokens(insights.efficiency.largestMainTurnTokens)}`}
-          detail="Tokens · main agent"
+          detail="Largest main-agent assistant turn by token count"
         />
         <MetricCard
           label="Avg tokens / turn"
           value={formatTokens(insights.efficiency.averageTokensPerMainTurn)}
-          detail={`${insights.efficiency.mainAssistantTurnCount.toLocaleString()} assistant turns`}
+          detail={`Mean main-agent turn size across ${insights.efficiency.mainAssistantTurnCount.toLocaleString()} turns`}
         />
         <MetricCard
           label="Tool calls / turn"
           value={formatDecimal(insights.efficiency.toolCallsPerMainTurn)}
-          detail="Across all tool calls"
+          detail="Average tool calls made by each main-agent turn"
         />
         <MetricCard
           label="Cache hit ratio"
           value={formatPercent(insights.efficiency.cacheReadRatio)}
-          detail="Cached / total input tokens"
+          detail="Share of input tokens served from cache; higher is cheaper"
         />
       </div>
     </div>
