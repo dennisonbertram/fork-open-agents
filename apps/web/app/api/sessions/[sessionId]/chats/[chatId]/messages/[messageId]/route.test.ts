@@ -49,6 +49,22 @@ let deleteResult: DeleteMessageResult = {
 };
 
 const deleteCalls: Array<{ chatId: string; messageId: string }> = [];
+const compareAndSetChatActiveStreamId = mock(
+  (
+    _chatId: string,
+    expectedStreamId: string | null,
+    nextStreamId: string | null,
+  ) => {
+    if (
+      ownedSessionChatResult.ok &&
+      ownedSessionChatResult.chat.activeStreamId === expectedStreamId
+    ) {
+      ownedSessionChatResult.chat.activeStreamId = nextStreamId;
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(false);
+  },
+);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -58,6 +74,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 let mockWorkflowStatus = "running";
 
 mock.module("@/lib/db/sessions", () => ({
+  compareAndSetChatActiveStreamId,
   deleteChatMessageAndFollowing: async (chatId: string, messageId: string) => {
     deleteCalls.push({ chatId, messageId });
     return deleteResult;
@@ -102,6 +119,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/messages/[messageId]", () => 
       deletedMessageIds: ["message-2", "message-3"],
     };
     deleteCalls.length = 0;
+    compareAndSetChatActiveStreamId.mockClear();
     mockWorkflowStatus = "running";
   });
 
@@ -175,6 +193,86 @@ describe("/api/sessions/[sessionId]/chats/[chatId]/messages/[messageId]", () => 
       "Cannot delete messages while a response is streaming",
     );
     expect(deleteCalls).toHaveLength(0);
+    expect(compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
+  });
+
+  test("clears stale active stream with the captured run id before deleting", async () => {
+    ownedSessionChatResult = {
+      ok: true,
+      sessionRecord: { id: "session-1" },
+      chat: {
+        id: "chat-1",
+        sessionId: "session-1",
+        activeStreamId: "stream-1",
+      },
+    };
+    mockWorkflowStatus = "completed";
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(
+      new Request(
+        "http://localhost/api/sessions/session-1/chats/chat-1/messages/message-2",
+        {
+          method: "DELETE",
+        },
+      ),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "stream-1",
+      null,
+    );
+    expect(ownedSessionChatResult.chat.activeStreamId).toBeNull();
+    expect(deleteCalls).toEqual([{ chatId: "chat-1", messageId: "message-2" }]);
+  });
+
+  test("preserves a newer active stream when stale clear loses the race", async () => {
+    ownedSessionChatResult = {
+      ok: true,
+      sessionRecord: { id: "session-1" },
+      chat: {
+        id: "chat-1",
+        sessionId: "session-1",
+        activeStreamId: "stream-1",
+      },
+    };
+    mockWorkflowStatus = "completed";
+    compareAndSetChatActiveStreamId.mockImplementationOnce(
+      (
+        _chatId: string,
+        expectedStreamId: string | null,
+        _nextStreamId: string | null,
+      ) => {
+        expect(expectedStreamId).toBe("stream-1");
+        if (ownedSessionChatResult.ok) {
+          ownedSessionChatResult.chat.activeStreamId = "stream-2";
+        }
+        return Promise.resolve(false);
+      },
+    );
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(
+      new Request(
+        "http://localhost/api/sessions/session-1/chats/chat-1/messages/message-2",
+        {
+          method: "DELETE",
+        },
+      ),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(compareAndSetChatActiveStreamId).toHaveBeenCalledWith(
+      "chat-1",
+      "stream-1",
+      null,
+    );
+    expect(ownedSessionChatResult.chat.activeStreamId).toBe("stream-2");
+    expect(deleteCalls).toEqual([{ chatId: "chat-1", messageId: "message-2" }]);
   });
 
   test("returns 404 when message is not found", async () => {
