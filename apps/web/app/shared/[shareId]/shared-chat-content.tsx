@@ -9,7 +9,7 @@ import {
   GitPullRequest,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { Streamdown } from "streamdown";
 import type {
   WebAgentUIMessage,
@@ -27,7 +27,10 @@ import { ToolCall } from "@/components/tool-call";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import type { Chat } from "@/lib/db/schema";
-import { streamdownPlugins } from "@/lib/streamdown-config";
+import {
+  hasLikelyCodeBlock,
+  useStreamdownPlugins,
+} from "@/lib/use-streamdown-plugins";
 import { cn } from "@/lib/utils";
 import { SharedChatStatus } from "./shared-chat-status";
 import "streamdown/styles.css";
@@ -91,6 +94,29 @@ function getReasoningGroupText(parts: ReasoningMessagePart[]): string {
     .map((part) => part.text)
     .filter((text) => text.trim().length > 0)
     .join("\n\n");
+}
+
+function SharedMarkdown({
+  children,
+  components,
+}: {
+  children: string;
+  components: {
+    a: (props: AssistantFileLinkProps) => ReactNode;
+  };
+}) {
+  const streamdownPlugins = useStreamdownPlugins(hasLikelyCodeBlock(children));
+
+  return (
+    <Streamdown
+      mode="static"
+      isAnimating={false}
+      components={components}
+      plugins={streamdownPlugins}
+    >
+      {children}
+    </Streamdown>
+  );
 }
 
 export function SharedChatContent({
@@ -440,14 +466,9 @@ function SharedMessage({
               </div>
             ) : (
               <div className="min-w-0 w-full overflow-hidden">
-                <Streamdown
-                  mode="static"
-                  isAnimating={false}
-                  components={streamdownComponents}
-                  plugins={streamdownPlugins}
-                >
+                <SharedMarkdown components={streamdownComponents}>
                   {p.text}
-                </Streamdown>
+                </SharedMarkdown>
               </div>
             )}
           </div>
