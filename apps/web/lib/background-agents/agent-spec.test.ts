@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAgentPayload,
+  buildFormFromAgent,
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
   describeOutputModePermissions,
@@ -13,6 +14,7 @@ import {
   isStepValid,
   outputModeLabel,
   type ConditionField,
+  type BackgroundAgent,
   type FormState,
   type StepId,
 } from "./agent-spec";
@@ -153,6 +155,69 @@ describe("buildAgentPayload", () => {
       makeForm({ triggerKind: "github.pull_request" }),
     );
     expect(prPayload.triggers[0]?.schedule).toBeNull();
+  });
+});
+
+describe("buildFormFromAgent", () => {
+  function makeAgent(
+    overrides: Partial<BackgroundAgent> = {},
+  ): BackgroundAgent {
+    return {
+      id: "agent-1",
+      name: "PR reporter",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize pull requests.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: {
+        github: {
+          contents: "read",
+          pullRequests: "read",
+          issues: "read",
+          deployments: "read",
+          statuses: "read",
+          checks: "read",
+        },
+      },
+      composioToolkitSlugs: [],
+      triggers: [
+        {
+          id: "trigger-1",
+          name: "A pull request changes",
+          kind: "github.pull_request",
+          status: "enabled",
+          conditions: { actions: ["opened"] },
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("REG-019: saved GitHub permissions round-trip through edit even when outputMode was ready_pr", () => {
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "ready_pr",
+        permissions: {
+          github: {
+            contents: "read",
+            pullRequests: "read",
+            issues: "read",
+            deployments: "read",
+            statuses: "read",
+            checks: "read",
+          },
+        },
+      }),
+    );
+
+    expect(form.outputMode).toBe("ready_pr");
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
   });
 });
 
