@@ -32,10 +32,7 @@ import {
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
 import { SettingsSectionHeader } from "./_components/section-header";
-import {
-  getSingleOptionPickerState,
-  shouldCollapseSingleOption,
-} from "./preferences-helpers";
+import { getSingleOptionPickerState } from "./preferences-helpers";
 
 // Re-export model section components so loading.tsx and layout.tsx keep working
 // without changing their import paths. The canonical definitions now live in
