@@ -3,13 +3,13 @@
 import { toRelativePath } from "@open-agents/shared/lib/tool-state";
 import { Pencil } from "lucide-react";
 import { MultiFileDiff } from "@pierre/diffs/react";
-import { useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { defaultDiffOptions } from "@/lib/diffs-config";
 import { ToolLayout } from "../tool-layout";
 import { FileNamePill } from "../file-name-pill";
 
-export function EditRenderer({
+export const EditRenderer = memo(function EditRenderer({
   part,
   state,
   cwd = "",
@@ -104,4 +104,4 @@ export function EditRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

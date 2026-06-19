@@ -19,7 +19,10 @@ import { WorkspaceStartupStatus } from "@/app/sessions/[sessionId]/chats/[chatId
 import { AssistantMessageGroups } from "@/components/assistant-message-groups";
 import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call/tool-call";
-import { streamdownPlugins } from "@/lib/streamdown-config";
+import {
+  hasLikelyCodeBlock,
+  useStreamdownPlugins,
+} from "@/lib/use-streamdown-plugins";
 import { MobileUserBubble } from "./mobile-user-bubble";
 
 // Markdown renderer for assistant text — same package/plugins the desktop chat
@@ -28,6 +31,26 @@ const Streamdown = dynamic(
   () => import("streamdown").then((m) => m.Streamdown),
   { ssr: false },
 );
+
+function MobileMarkdown({
+  children,
+  isStreaming,
+}: {
+  children: string;
+  isStreaming: boolean;
+}) {
+  const streamdownPlugins = useStreamdownPlugins(hasLikelyCodeBlock(children));
+
+  return (
+    <Streamdown
+      mode={isStreaming ? "streaming" : "static"}
+      isAnimating={isStreaming}
+      plugins={streamdownPlugins}
+    >
+      {children}
+    </Streamdown>
+  );
+}
 
 export interface MobileMessageThreadProps {
   messages: WebAgentUIMessage[];
@@ -198,13 +221,9 @@ export function MobileMessageThread({
                           key={`${message.id}-tx${partIndex}`}
                           className="min-w-0 break-words text-sm leading-relaxed text-foreground"
                         >
-                          <Streamdown
-                            mode={isMessageStreaming ? "streaming" : "static"}
-                            isAnimating={isMessageStreaming}
-                            plugins={streamdownPlugins}
-                          >
+                          <MobileMarkdown isStreaming={isMessageStreaming}>
                             {part.text}
-                          </Streamdown>
+                          </MobileMarkdown>
                         </div>
                       );
                     }
