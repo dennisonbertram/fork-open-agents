@@ -641,6 +641,17 @@ function getLatestContextUsage(
   return getUsageTotals(undefined);
 }
 
+function getLatestUserMessageId(messages: WebAgentUIMessage[]): string | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message?.role === "user") {
+      return message.id;
+    }
+  }
+
+  return null;
+}
+
 function getConversationUsage(
   messages: WebAgentUIMessage[],
 ): MessageUsageTotals {
@@ -1172,12 +1183,14 @@ function ShareDialog({
 }
 
 export function SessionChatContent({
+  harnessEnabled,
   initialIsOnlyChatInSession,
   messageDurationMap,
   messageStartedAtMap,
   lastUserMessageSentAt,
   codeEditorDisabledReason,
 }: {
+  harnessEnabled: boolean;
   initialIsOnlyChatInSession: boolean;
   /** Pre-computed generation duration (ms) per assistant message ID */
   messageDurationMap: Record<string, number>;
@@ -1571,6 +1584,10 @@ export function SessionChatContent({
   const renderMessages = useMemo(
     () => (hasMounted ? messages : initialMessages),
     [hasMounted, messages, initialMessages],
+  );
+  const latestUserMessageId = useMemo(
+    () => getLatestUserMessageId(renderMessages),
+    [renderMessages],
   );
   // Track explicit user-initiated stops so the UI can immediately reflect the
   // idle state even if the AI SDK `status` is stuck (common on iOS/Safari where
@@ -3302,7 +3319,12 @@ export function SessionChatContent({
 
   const verifiedBuildPanelElement =
     gitPanelOpen && rightPanelView === "verified-build" ? (
-      <VerifiedBuildPanel sessionId={session.id} chatId={chatInfo.id} />
+      <VerifiedBuildPanel
+        chatId={chatInfo.id}
+        harnessEnabled={harnessEnabled}
+        latestUserMessageId={latestUserMessageId}
+        sessionId={session.id}
+      />
     ) : null;
 
   const runtimePanelElement =

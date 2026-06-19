@@ -174,6 +174,22 @@ describe("Verified Build aria-label regression", () => {
 });
 
 describe("VerifiedBuildPanelEmpty regression", () => {
+  test("VerifiedBuildPanel renders the Start Verified Build CTA when no run exists", async () => {
+    const { VerifiedBuildPanel } = await verifiedBuildPanelModule;
+
+    const html = renderToStaticMarkup(
+      <VerifiedBuildPanel
+        chatId="c"
+        harnessEnabled={true}
+        latestUserMessageId="msg_999"
+        sessionId="s"
+      />,
+    );
+
+    expect(html).toContain("No Verified Build run for this chat.");
+    expect(html).toContain("Start Verified Build");
+  });
+
   // Regression: when harness is disabled, the disabled message must never
   // accidentally show the start button (which would call the disabled endpoint).
   test("harnessEnabled=false never renders the Start Verified Build button", async () => {

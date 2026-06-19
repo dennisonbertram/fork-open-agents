@@ -199,6 +199,7 @@ export default async function SessionChatPage({
         initialModelOptions={initialModelOptions}
       >
         <SessionChatContent
+          harnessEnabled={process.env.HARNESS_ENABLED === "true"}
           initialIsOnlyChatInSession={initialIsOnlyChatInSession}
           messageDurationMap={messageDurationMap}
           messageStartedAtMap={messageStartedAtMap}
