@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowLeft, Plus } from "lucide-react";
+import { ChevronRight, Plus } from "lucide-react";
 import { redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
@@ -26,17 +26,30 @@ export default async function RepoLoopsPage({ params }: RepoLoopsPageProps) {
   const newHref = `/loops/new?repoOwner=${encodeURIComponent(owner)}&repoName=${encodeURIComponent(repo)}`;
 
   return (
-    <main className="h-full overflow-y-auto bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-4xl space-y-6 px-4 py-8">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <Link
-              href={`/repos/${owner}/${repo}`}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+          <div className="min-w-0">
+            <nav
+              aria-label="Loop breadcrumb"
+              className="mb-3 flex min-w-0 items-center gap-1.5 text-sm"
             >
-              <ArrowLeft className="h-4 w-4" />
-              {owner}/{repo}
-            </Link>
+              <Link
+                href="/sessions"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                Workspace
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Link
+                href={`/repos/${owner}/${repo}`}
+                className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+              >
+                {owner}/{repo}
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="shrink-0 font-medium">Loops</span>
+            </nav>
             <h1 className="text-2xl font-semibold">Loops</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Multi-step agent loops that run against{" "}
