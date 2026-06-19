@@ -169,7 +169,7 @@ describe("/api/sandbox/reconnect", () => {
     expect(payload.lifecycle.state).toBe("active");
     expect(typeof payload.expiresAt).toBe("number");
     expect(connectCalls).toHaveLength(1);
-    expect(probeCalls).toBe(1);
+    expect(probeCalls).toBe(0);
 
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]?.sessionId).toBe("session-1");
