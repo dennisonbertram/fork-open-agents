@@ -1,6 +1,7 @@
 "use client";
 
 import { FolderSearch } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
@@ -27,7 +28,7 @@ function truncatePath(path: string): string {
   return `…/${parts.slice(-2).join("/")}`;
 }
 
-export function GlobRenderer({
+export const GlobRenderer = memo(function GlobRenderer({
   part,
   state,
   onApprove,
@@ -71,4 +72,4 @@ export function GlobRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

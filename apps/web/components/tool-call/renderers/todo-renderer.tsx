@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowRight, LayoutList, ListChecks, ListTodo } from "lucide-react";
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
@@ -104,7 +104,7 @@ function TodoItem({ todo }: { todo: Todo }) {
   );
 }
 
-export function TodoRenderer({
+export const TodoRenderer = memo(function TodoRenderer({
   part,
   state,
 }: ToolRendererProps<"tool-todo_write">) {
@@ -165,4 +165,4 @@ export function TodoRenderer({
       defaultExpanded={false}
     />
   );
-}
+});

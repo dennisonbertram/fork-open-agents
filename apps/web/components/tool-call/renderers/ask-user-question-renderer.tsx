@@ -1,10 +1,11 @@
 "use client";
 
 import { MessageCircleQuestion } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
-export function AskUserQuestionRenderer({
+export const AskUserQuestionRenderer = memo(function AskUserQuestionRenderer({
   part,
   state,
 }: ToolRendererProps<"tool-ask_user_question">) {
@@ -76,4 +77,4 @@ export function AskUserQuestionRenderer({
       defaultExpanded={false}
     />
   );
-}
+});

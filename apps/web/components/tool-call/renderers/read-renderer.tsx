@@ -6,6 +6,7 @@ import { File as DiffsFile } from "@pierre/diffs/react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { defaultFileOptions } from "@/lib/diffs-config";
 import type { BaseCodeOptions } from "@pierre/diffs/react";
+import { memo } from "react";
 import { ToolLayout } from "../tool-layout";
 import { FileNamePill } from "../file-name-pill";
 
@@ -14,7 +15,7 @@ const partialReadFileOptions: BaseCodeOptions = {
   disableLineNumbers: true,
 };
 
-export function ReadRenderer({
+export const ReadRenderer = memo(function ReadRenderer({
   part,
   state,
   cwd = "",
@@ -93,4 +94,4 @@ export function ReadRenderer({
       onDeny={onDeny}
     />
   );
-}
+});
