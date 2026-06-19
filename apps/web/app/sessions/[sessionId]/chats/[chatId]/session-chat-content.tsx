@@ -145,7 +145,12 @@ import {
 import { getPrDeploymentRefreshInterval } from "@/lib/pr-deployment-polling";
 import { fetcher } from "@/lib/swr";
 
-import { streamdownPlugins } from "@/lib/streamdown-config";
+// Streamdown plugins are loaded lazily to keep Shiki (~2 MB WASM) out of the
+// main bundle.  The plugins are fetched on first code-block render via
+// useEffect + dynamic import() in useStreamdownPlugins (see the <Streamdown>
+// usage site).  Removing the static import saves ~2 MB from the critical path.
+// import { streamdownPlugins } from "@/lib/streamdown-config";
+
 import { cn } from "@/lib/utils";
 import {
   type SandboxInfo,
@@ -243,6 +248,29 @@ function useHasMounted() {
     () => true,
     () => false,
   );
+}
+
+/**
+ * Lazy-loads Streamdown code plugins (Shiki WASM, ~2 MB) on first render of a
+ * code block.  The static import of streamdownPlugins was removed so Shiki is
+ * not in the critical-path bundle.  Returns the plugins once loaded, or null
+ * while the dynamic import is in flight — Streamdown gracefully falls back to
+ * unhighlighted code blocks in the meantime.
+ */
+function useStreamdownPlugins() {
+  const [plugins, setPlugins] = useState<
+    import("@/lib/streamdown-config").streamdownPlugins | null
+  >(null);
+  useEffect(() => {
+    let cancelled = false;
+    import("@/lib/streamdown-config").then((mod) => {
+      if (!cancelled) setPlugins(mod.streamdownPlugins);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return plugins;
 }
 
 type ReasoningMessagePart = Extract<
@@ -1211,6 +1239,7 @@ export function SessionChatContent({
   const [branchPreviewUrlChangeBaseline, setBranchPreviewUrlChangeBaseline] =
     useState<string | null | undefined>(undefined);
   const hasMounted = useHasMounted();
+  const streamdownPlugins = useStreamdownPlugins();
   const {
     activeView,
     gitPanelOpen,
