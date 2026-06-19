@@ -1,10 +1,11 @@
 "use client";
 
 import { Globe } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
-export function FetchRenderer({
+export const FetchRenderer = memo(function FetchRenderer({
   part,
   state,
   onApprove,
@@ -40,4 +41,4 @@ export function FetchRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

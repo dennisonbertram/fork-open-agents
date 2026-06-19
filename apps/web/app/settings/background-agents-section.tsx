@@ -47,7 +47,6 @@ import {
   defaultForm,
   describeOutputModePermissions,
   fieldsForTrigger,
-  flowSteps,
   isStepValid,
   outputModeLabel,
   supportedOutputModes,
@@ -56,6 +55,7 @@ import {
   type ConditionField,
   type FormState,
   type OutputMode,
+  type StepId,
   type TriggerKind,
 } from "./background-agents-form";
 import {
@@ -123,13 +123,47 @@ const conditionFormKey: Record<ConditionField, keyof FormState> = {
   statuses: "conditionSeverities",
 };
 
+const stepOrder: StepId[] = [
+  "trigger",
+  "conditions",
+  "instructions",
+  "permissions",
+  "outputs",
+  "test",
+];
+
+const stepLabels: Record<StepId, string> = {
+  trigger: "Trigger",
+  conditions: "Conditions",
+  instructions: "Instructions",
+  permissions: "Permissions",
+  outputs: "Output",
+  test: "Review",
+};
+
+export function readinessBlockReason(
+  readinessData: BackgroundReadinessResponse | undefined,
+) {
+  if (!readinessData) {
+    return null;
+  }
+  if (readinessData.ready && readinessData.enabled) {
+    return null;
+  }
+  if (!readinessData.enabled) {
+    return "Background agents are disabled for this deployment.";
+  }
+  const count = readinessData.missing.length;
+  return `${count} background agent setup ${count === 1 ? "step" : "steps"} must be completed first.`;
+}
+
 type ConditionFieldsProps = {
   form: FormState;
   triggerKind: TriggerKind;
   onChange: (patch: Partial<FormState>) => void;
 };
 
-function ConditionFields({
+export function ConditionFields({
   form,
   triggerKind,
   onChange,
@@ -224,6 +258,37 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+export function PermissionsSummary({ outputMode }: { outputMode: OutputMode }) {
+  const requiresWrite = outputMode === "ready_pr";
+  return (
+    <div className="rounded-md border border-border bg-muted/20 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Permissions summary</p>
+          <p className="text-pretty text-xs text-muted-foreground">
+            {describeOutputModePermissions(outputMode)}
+          </p>
+        </div>
+        <StatusPill status={requiresWrite ? "write access" : "read-only"} />
+      </div>
+      <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+        <div className="rounded border border-border bg-background px-2 py-1.5">
+          <span className="text-muted-foreground">GitHub contents: </span>
+          <span className="font-medium">
+            {requiresWrite ? "write" : "read"}
+          </span>
+        </div>
+        <div className="rounded border border-border bg-background px-2 py-1.5">
+          <span className="text-muted-foreground">Pull requests: </span>
+          <span className="font-medium">
+            {requiresWrite ? "write" : "read"}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function BackgroundAgentsSection() {
   const router = useRouter();
   const { data, error, isLoading, mutate } = useSWR<BackgroundAgentsResponse>(
@@ -258,10 +323,13 @@ export function BackgroundAgentsSection() {
   >(null);
   const [copiedWebhookId, setCopiedWebhookId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState<StepId>("trigger");
 
   const agents = data?.agents ?? [];
   const runs = runsData?.runs ?? [];
   const canSubmit = useMemo(() => isStepValid(form, "test"), [form]);
+  const readinessReason = readinessBlockReason(readinessData);
+  const canSave = canSubmit && !readinessReason;
 
   const isEditing = editingAgentId !== null;
 
@@ -275,10 +343,11 @@ export function BackgroundAgentsSection() {
     setForm(defaultForm);
     setEditingAgentId(null);
     setMessage(null);
+    setActiveStep("trigger");
   }
 
   async function saveAgent() {
-    if (!canSubmit) {
+    if (!canSave) {
       return;
     }
     setSaving(true);
@@ -308,6 +377,7 @@ export function BackgroundAgentsSection() {
       }
       setForm(defaultForm);
       setEditingAgentId(null);
+      setActiveStep("trigger");
       setMessage(
         isEditing ? "Background agent updated." : "Background agent created.",
       );
@@ -428,138 +498,181 @@ export function BackgroundAgentsSection() {
               </Button>
             )}
           </div>
-          <div className="flex flex-wrap gap-1.5">
-            {flowSteps.map((step) => (
-              <span
-                key={step}
-                className="rounded border border-border bg-muted/30 px-2 py-1 text-[10px] text-muted-foreground"
-              >
-                {step}
-              </span>
-            ))}
+          <div
+            className="flex flex-wrap gap-1.5"
+            role="tablist"
+            aria-label="Background agent setup steps"
+          >
+            {stepOrder.map((step, index) => {
+              const valid = isStepValid(form, step);
+              return (
+                <button
+                  key={step}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeStep === step}
+                  onClick={() => setActiveStep(step)}
+                  className={cn(
+                    "rounded border px-2 py-1 text-[10px] font-medium transition-colors",
+                    activeStep === step
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-muted/30 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {index + 1}. {stepLabels[step]}
+                  {!valid && <span className="sr-only"> incomplete</span>}
+                </button>
+              );
+            })}
           </div>
         </div>
-        <div className="grid gap-4 p-4 md:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="agent-name">Name</Label>
-            <Input
-              id="agent-name"
-              value={form.name}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, name: event.target.value }))
-              }
-            />
-          </div>
-          <div className="flex items-end gap-3">
-            <div className="flex-1 space-y-2">
-              <Label htmlFor="agent-trigger">Trigger</Label>
-              <Select
-                value={form.triggerKind}
-                onValueChange={(value) => {
-                  const newKind = value as TriggerKind;
-                  const liveFields = fieldsForTrigger(newKind);
-                  setForm((current) => ({
-                    ...current,
-                    triggerKind: newKind,
-                    // Reset dead condition fields so stale values don't accumulate
-                    conditionActions: liveFields.has("actions")
-                      ? current.conditionActions
-                      : "",
-                    conditionBranches: liveFields.has("branches")
-                      ? current.conditionBranches
-                      : "",
-                    conditionLabels: liveFields.has("labels")
-                      ? current.conditionLabels
-                      : "",
-                    conditionEnvironments: liveFields.has("environments")
-                      ? current.conditionEnvironments
-                      : "",
-                    conditionSeverities: liveFields.has("statuses")
-                      ? current.conditionSeverities
-                      : "",
-                    // Reset schedule when switching away from cron
-                    schedule:
-                      newKind === "schedule.cron" ? current.schedule : "",
-                  }));
-                }}
-              >
-                <SelectTrigger id="agent-trigger">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(triggerLabels).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2 pb-2">
-              <Switch
-                checked={form.enabled}
-                onCheckedChange={(enabled) =>
-                  setForm((current) => ({ ...current, enabled }))
-                }
-              />
-              <span className="text-xs text-muted-foreground">Enabled</span>
-            </div>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="repo-owner">Owner</Label>
-            <Input
-              id="repo-owner"
-              value={form.repoOwner}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  repoOwner: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="repo-name">Repo</Label>
-            <Input
-              id="repo-name"
-              value={form.repoName}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  repoName: event.target.value,
-                }))
-              }
-            />
-          </div>
-          {form.triggerKind === "schedule.cron" && (
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="agent-schedule">Schedule</Label>
+        <div className="p-4">
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "trigger"}
+            className="grid gap-4 md:grid-cols-2"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="agent-name">Name</Label>
               <Input
-                id="agent-schedule"
-                value={form.schedule}
-                placeholder="@hourly"
+                id="agent-name"
+                value={form.name}
                 onChange={(event) =>
                   setForm((current) => ({
                     ...current,
-                    schedule: event.target.value,
+                    name: event.target.value,
                   }))
                 }
               />
             </div>
-          )}
-          <ConditionFields
-            form={form}
-            triggerKind={form.triggerKind}
-            onChange={(patch) =>
-              setForm((current) => ({ ...current, ...patch }))
-            }
-          />
-          <div className="space-y-2 md:col-span-2">
+            <div className="flex items-end gap-3">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="agent-trigger">Trigger</Label>
+                <Select
+                  value={form.triggerKind}
+                  onValueChange={(value) => {
+                    const newKind = value as TriggerKind;
+                    const liveFields = fieldsForTrigger(newKind);
+                    setForm((current) => ({
+                      ...current,
+                      triggerKind: newKind,
+                      conditionActions: liveFields.has("actions")
+                        ? current.conditionActions
+                        : "",
+                      conditionBranches: liveFields.has("branches")
+                        ? current.conditionBranches
+                        : "",
+                      conditionLabels: liveFields.has("labels")
+                        ? current.conditionLabels
+                        : "",
+                      conditionEnvironments: liveFields.has("environments")
+                        ? current.conditionEnvironments
+                        : "",
+                      conditionSeverities: liveFields.has("statuses")
+                        ? current.conditionSeverities
+                        : "",
+                      schedule:
+                        newKind === "schedule.cron" ? current.schedule : "",
+                    }));
+                  }}
+                >
+                  <SelectTrigger id="agent-trigger">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(triggerLabels).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2 pb-2">
+                <Switch
+                  checked={form.enabled}
+                  onCheckedChange={(enabled) =>
+                    setForm((current) => ({ ...current, enabled }))
+                  }
+                />
+                <span className="text-xs text-muted-foreground">Enabled</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="repo-owner">Owner</Label>
+              <Input
+                id="repo-owner"
+                value={form.repoOwner}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    repoOwner: event.target.value,
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="repo-name">Repo</Label>
+              <Input
+                id="repo-name"
+                value={form.repoName}
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    repoName: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "conditions"}
+            className="grid gap-4 md:grid-cols-2"
+          >
+            {form.triggerKind === "schedule.cron" && (
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="agent-schedule">Schedule</Label>
+                <Input
+                  id="agent-schedule"
+                  value={form.schedule}
+                  placeholder="@hourly"
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      schedule: event.target.value,
+                    }))
+                  }
+                />
+              </div>
+            )}
+            <ConditionFields
+              form={form}
+              triggerKind={form.triggerKind}
+              onChange={(patch) =>
+                setForm((current) => ({ ...current, ...patch }))
+              }
+            />
+            {fieldsForTrigger(form.triggerKind).size === 0 &&
+              form.triggerKind !== "schedule.cron" && (
+                <p className="text-sm text-muted-foreground md:col-span-2">
+                  This trigger does not need condition fields.
+                </p>
+              )}
+          </div>
+
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "instructions"}
+            className="space-y-2"
+          >
             <Label htmlFor="agent-instructions">Instructions</Label>
             <Textarea
               id="agent-instructions"
               className="min-h-28"
               value={form.instructions}
+              placeholder="Review this PR for regressions and comment findings."
               onChange={(event) =>
                 setForm((current) => ({
                   ...current,
@@ -568,50 +681,98 @@ export function BackgroundAgentsSection() {
               }
             />
           </div>
-          <div className="space-y-2 md:col-span-2">
-            <Label htmlFor="agent-output">Output mode</Label>
-            <Select
-              value={form.outputMode}
-              onValueChange={(value) =>
-                setForm((current) => ({
-                  ...current,
-                  outputMode: value as OutputMode,
-                }))
-              }
-            >
-              <SelectTrigger id="agent-output">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {supportedOutputModes.map((mode) => (
-                  <SelectItem key={mode} value={mode}>
-                    {outputModeLabel(mode)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "permissions"}
+            className="space-y-4"
+          >
+            <PermissionsSummary outputMode={form.outputMode} />
             <p className="text-xs text-muted-foreground">
-              {describeOutputModePermissions(form.outputMode)}
+              Permissions are derived from the selected output mode so the agent
+              only gets the access needed to produce that result.
             </p>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="agent-check">Check command</Label>
-            <Input
-              id="agent-check"
-              value={form.checkCommand}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  checkCommand: event.target.value,
-                }))
-              }
-            />
+
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "outputs"}
+            className="grid gap-4 md:grid-cols-2"
+          >
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="agent-output">Output mode</Label>
+              <Select
+                value={form.outputMode}
+                onValueChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    outputMode: value as OutputMode,
+                  }))
+                }
+              >
+                <SelectTrigger id="agent-output">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {supportedOutputModes.map((mode) => (
+                    <SelectItem key={mode} value={mode}>
+                      {outputModeLabel(mode)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <PermissionsSummary outputMode={form.outputMode} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="agent-check">Check command</Label>
+              <Input
+                id="agent-check"
+                value={form.checkCommand}
+                placeholder="bun --bun run ci"
+                onChange={(event) =>
+                  setForm((current) => ({
+                    ...current,
+                    checkCommand: event.target.value,
+                  }))
+                }
+              />
+            </div>
           </div>
-          <div className="flex items-center justify-between gap-3 border-t border-border pt-4 md:col-span-2">
+
+          <div
+            role="tabpanel"
+            hidden={activeStep !== "test"}
+            className="space-y-4"
+          >
+            <div className="rounded-md border border-border bg-muted/20 p-3 text-sm">
+              <p className="font-medium">
+                {canSubmit
+                  ? "Ready to save this background agent."
+                  : "Finish the required setup fields before saving."}
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {form.enabled
+                  ? "It will run when its trigger fires."
+                  : "It will be saved disabled so you can test before turning it on."}
+              </p>
+              {readinessReason && (
+                <p className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+                  {readinessReason}
+                </p>
+              )}
+            </div>
+            <PermissionsSummary outputMode={form.outputMode} />
+          </div>
+
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
             <p className="text-xs text-muted-foreground">
               Tool providers coming later. Composio is planned for v1.5.
             </p>
-            <Button disabled={!canSubmit || saving} onClick={saveAgent}>
+            <Button
+              disabled={!canSave || saving}
+              onClick={saveAgent}
+              title={readinessReason ?? undefined}
+            >
               {isEditing ? (
                 <Save className="h-4 w-4" />
               ) : (
@@ -621,9 +782,7 @@ export function BackgroundAgentsSection() {
             </Button>
           </div>
           {message && (
-            <p className="text-xs text-muted-foreground md:col-span-2">
-              {message}
-            </p>
+            <p className="mt-3 text-xs text-muted-foreground">{message}</p>
           )}
         </div>
       </section>
@@ -722,7 +881,10 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="outline"
                     size="sm"
-                    disabled={testingAgentId === agent.id}
+                    disabled={
+                      testingAgentId === agent.id || Boolean(readinessReason)
+                    }
+                    title={readinessReason ?? undefined}
                     onClick={() => void testAgent(agent.id)}
                   >
                     <Play className="h-3.5 w-3.5" />

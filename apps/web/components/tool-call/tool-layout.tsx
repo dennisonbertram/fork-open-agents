@@ -3,7 +3,7 @@
 import type { ToolRenderState } from "@open-agents/shared/lib/tool-state";
 import { CircleX, Loader2, Minus, OctagonPause, Plus } from "lucide-react";
 import type React from "react";
-import { type ReactNode, useEffect, useState } from "react";
+import { memo, type ReactNode, useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { ApprovalButtons } from "./approval-buttons";
 
@@ -64,7 +64,7 @@ function trimErrorPrefix(message: string) {
   return message.replace(/^Error:\s*/i, "").trim();
 }
 
-export function ToolLayout({
+export const ToolLayout = memo(function ToolLayout({
   name,
   summary,
   summaryClassName,
@@ -328,4 +328,4 @@ export function ToolLayout({
       )}
     </div>
   );
-}
+});
