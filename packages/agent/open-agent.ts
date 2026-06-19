@@ -31,6 +31,11 @@ import {
   PROPOSE_TOOL_NAME,
   type ProposeToolAction,
 } from "./tools/propose-tool";
+import {
+  getManageBackgroundAgentTool,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
+  type ManageBackgroundAgentAction,
+} from "./tools/manage-background-agent";
 
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
