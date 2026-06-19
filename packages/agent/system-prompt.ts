@@ -347,9 +347,29 @@ export interface BuildSystemPromptOptions {
   environmentDetails?: string;
   skills?: SkillMetadata[];
   modelId?: string;
+  /**
+   * Human-facing name of the user inference profile serving this session, when
+   * the request routes through a user-supplied provider endpoint rather than
+   * the gateway. Used only to make the model-identity section more specific.
+   */
+  inferenceProfileName?: string;
   runtimeMode?: "classic" | "managed_runtime";
   /** When true, the session has no sandbox VM. Informs the agent it cannot execute code. */
   sandboxFree?: boolean;
+  /**
+   * When true, typed GitHub tools were injected for this step. Adds a prompt
+   * section steering the agent to prefer them over shell gh/curl for issue and
+   * PR metadata operations. Absent or false = no section added (zero behavior
+   * change when the tools are off).
+   */
+  githubToolsEnabled?: boolean;
+  /**
+   * When true, authenticated GitHub tools (native `github_*` or Composio
+   * `GITHUB_*`) are available this step. Adds a section steering the agent to
+   * use them instead of the unauthenticated `web_fetch` tool for GitHub hosts.
+   * Absent or false = no section added.
+   */
+  githubToolAvailable?: boolean;
 }
 
 const SANDBOX_FREE_PROMPT = `# Chat-Only Mode (No Sandbox)
@@ -377,6 +397,38 @@ When the user asks to set up, build, adjust, infer, or test a managed runtime pr
 3. Present the draft to the user and wait for their approval before proceeding with any runtime setup or verification.
 
 Never skip the \`setup_managed_runtime_profile\` call when the intent is to configure a managed runtime profile. The draft card is the required review gate.`;
+
+export const GITHUB_TOOLS_PROMPT = `# GitHub Issue and Pull-Request Tools
+
+Typed GitHub tools are available for this repository: github_list_issues, github_create_issue, github_update_issue, github_comment_on_issue, github_set_issue_labels, github_close_issue. Prefer these typed tools over \`gh\`, \`curl\`, or raw GitHub API calls for reading, triaging, creating, commenting on, labeling, and closing issues — they run as the GitHub App with the correct scoped permission and an issue-only guard.
+
+Continue using shell git for repository mechanics (clone, branch, edit, diff, commit, push).`;
+
+export const GITHUB_TOOL_PREFERENCE_PROMPT = `# Use GitHub Tools, Not web_fetch, For GitHub
+
+Authenticated GitHub tools are connected for this session. For anything on github.com or api.github.com (issues, pull requests, repositories, file contents), use those tools — never the \`web_fetch\` tool. \`web_fetch\` is unauthenticated and returns 404 for private repositories, so it cannot see private issues or repos. Reserve \`web_fetch\` for non-GitHub URLs.`;
+
+/**
+ * Build the model-identity section.
+ *
+ * Models cannot introspect their own deployment, so when asked "what model are
+ * you?" they answer from training-data patterns — which is frequently wrong
+ * (e.g. GLM served via an Anthropic-compatible endpoint claiming to be Claude).
+ * Stating the actual serving model id up front stops that misidentification.
+ */
+function buildModelIdentityPrompt(
+  modelId: string,
+  inferenceProfileName?: string,
+): string {
+  const via = inferenceProfileName
+    ? ` It is served through the user's "${inferenceProfileName}" inference profile (a custom provider endpoint).`
+    : "";
+  return `# Model Identity
+
+The model serving this session is \`${modelId}\`.${via}
+
+When the user asks which model or AI you are, answer with \`${modelId}\`. Do NOT claim to be a different model or vendor (e.g. Claude, GPT, or Gemini) based on your training data: a model has no reliable knowledge of its own deployment, and your training-time guess does not reflect what is actually running here. If you are unsure about anything beyond \`${modelId}\`, say so plainly instead of guessing a vendor or version.`;
+}
 
 /**
  * Build the skills section for the system prompt.
@@ -443,6 +495,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const parts = [CORE_SYSTEM_PROMPT, getModelOverlay(family, options.modelId)];
 
+  if (options.modelId) {
+    parts.push(
+      `\n${buildModelIdentityPrompt(options.modelId, options.inferenceProfileName)}`,
+    );
+  }
+
   if (options.sandboxFree) {
     parts.push(SANDBOX_FREE_PROMPT);
   }
@@ -467,6 +525,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     );
     parts.push(`\nCurrent branch: ${options.currentBranch}`);
     parts.push(`\n${cloudSandboxInstructions}`);
+  }
+
+  if (options.githubToolsEnabled) {
+    parts.push(`\n${GITHUB_TOOLS_PROMPT}`);
+  }
+
+  if (options.githubToolAvailable) {
+    parts.push(`\n${GITHUB_TOOL_PREFERENCE_PROMPT}`);
   }
 
   if (options.customInstructions) {

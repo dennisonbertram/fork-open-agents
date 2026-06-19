@@ -272,3 +272,63 @@ describe("buildAgentRoster — Phase 3: merging user_default agent rows", () => 
     }
   });
 });
+
+// BT-P3-GH: githubToolsEnabled threading through roster builder
+describe("buildAgentRoster — githubToolsEnabled (BT-P3-GH)", () => {
+  // BT-P3-GH-001: githubToolsEnabled=true from user_default row flows to roster row
+  test("BT-P3-GH-001: user_default row githubToolsEnabled=true flows to the Main roster row", () => {
+    const rows = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      userDefaultAgentRows: [
+        {
+          role: "main",
+          modelId: null,
+          composioToolkitSlugs: [],
+          composioProfileId: null,
+          instructions: null,
+          managedRuntimeProfileId: null,
+          githubToolsEnabled: true,
+        },
+      ],
+    });
+    const main = rows.find((r) => r.key === "main");
+    expect(main).toHaveProperty("githubToolsEnabled");
+    expect(main?.githubToolsEnabled).toBe(true);
+  });
+
+  // BT-P3-GH-002: githubToolsEnabled=false (or absent) defaults to false
+  test("BT-P3-GH-002: roster row githubToolsEnabled defaults to false when no user_default row", () => {
+    const rows = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      userDefaultAgentRows: [],
+    });
+    const main = rows.find((r) => r.key === "main");
+    expect(main?.githubToolsEnabled).toBe(false);
+  });
+
+  // BT-P3-GH-003: githubToolsEnabled from user_default row with explicit false
+  test("BT-P3-GH-003: user_default row githubToolsEnabled=false flows to the roster row as false", () => {
+    const rows = buildAgentRoster({
+      preferences: basePrefs,
+      composioDefaults: noComposioDefaults,
+      runtimeProfiles,
+      userDefaultAgentRows: [
+        {
+          role: "main",
+          modelId: null,
+          composioToolkitSlugs: [],
+          composioProfileId: null,
+          instructions: null,
+          managedRuntimeProfileId: null,
+          githubToolsEnabled: false,
+        },
+      ],
+    });
+    const main = rows.find((r) => r.key === "main");
+    expect(main?.githubToolsEnabled).toBe(false);
+  });
+});

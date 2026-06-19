@@ -91,20 +91,34 @@ function toVariantOption(
   };
 }
 
+/**
+ * Build a user-key model option. `model` carries the routing id sent to the
+ * endpoint (`glm-4.6` for discovered models, `anthropic/claude-opus-4.7` for
+ * the legacy catalog-clone fallback), its display label, and optional metadata.
+ */
 function toUserInferenceOption(
   profile: SafeInferenceProfile,
-  model: AvailableModel,
+  model: {
+    id: string;
+    label: string;
+    contextWindow?: number;
+    cost?: AvailableModelCost;
+  },
 ): ModelOption {
-  const label = getModelDisplayName(model);
   const provider = getProviderFromModelId(model.id);
+  // Never trust the label to be present (stored jsonb can drift); fall back to
+  // the routing id so the picker can't crash on a missing display name.
+  const label = model.label || model.id;
 
   return {
     id: createUserInferenceModelOptionId(profile.id, model.id),
     label,
     shortLabel: stripProviderPrefix(label, provider),
-    description: `Direct Anthropic via ${profile.name}`,
+    description: `Via ${profile.name} (your key)`,
     isVariant: false,
-    contextWindow: model.context_window,
+    ...(typeof model.contextWindow === "number"
+      ? { contextWindow: model.contextWindow }
+      : {}),
     ...(model.cost ? { cost: model.cost } : {}),
     provider: "user",
     source: "user",
@@ -112,7 +126,7 @@ function toUserInferenceOption(
     inferenceProfileId: profile.id,
     secondaryLabel: profile.name,
     searchText: [
-      label,
+      model.label,
       model.id,
       provider,
       profile.name,
@@ -166,6 +180,9 @@ export function groupByProvider(options: ModelOption[]): ModelGroup[] {
 
 export type ModelSortKey = "name" | "provider" | "cost-asc" | "cost-desc";
 
+/** Source facet: catalog (gateway) models vs the user's own-key profile models. */
+export type ModelSourceFilter = "all" | "catalog" | "user";
+
 export interface ModelFilterOptions {
   /** Provider key to filter by, or "all" to include every provider. */
   providerFilter: string;
@@ -173,6 +190,12 @@ export interface ModelFilterOptions {
   sort: ModelSortKey;
   /** Case-insensitive substring to match against label (and searchText if present). */
   search: string;
+  /** Source facet filter. Defaults to "all". */
+  source?: ModelSourceFilter;
+  /** When true, keep only options whose id is in `selectedIds`. */
+  selectedOnly?: boolean;
+  /** Ids considered "selected" for the `selectedOnly` filter. */
+  selectedIds?: ReadonlySet<string>;
 }
 
 /**
@@ -181,11 +204,27 @@ export interface ModelFilterOptions {
  */
 export function filterAndSortModelOptions(
   options: ModelOption[],
-  { providerFilter, sort, search }: ModelFilterOptions,
+  {
+    providerFilter,
+    sort,
+    search,
+    source = "all",
+    selectedOnly = false,
+    selectedIds,
+  }: ModelFilterOptions,
 ): ModelOption[] {
   const needle = search.trim().toLowerCase();
 
   let filtered = options;
+
+  if (source !== "all") {
+    const wantUser = source === "user";
+    filtered = filtered.filter((o) => (o.source === "user") === wantUser);
+  }
+
+  if (selectedOnly) {
+    filtered = filtered.filter((o) => selectedIds?.has(o.id) ?? false);
+  }
 
   if (providerFilter !== "all") {
     filtered = filtered.filter((o) => o.provider === providerFilter);
@@ -278,11 +317,35 @@ export function buildModelOptions(
 
   const userInferenceOptions = inferenceProfiles
     .filter((profile) => profile.enabled && profile.provider === "anthropic")
-    .flatMap((profile) =>
-      models
+    .flatMap((profile) => {
+      // Prefer the endpoint's own discovered models (e.g. ZAI's glm-4.6).
+      const discoveredModels = profile.models ?? [];
+      if (discoveredModels.length > 0) {
+        return discoveredModels.map((model) =>
+          toUserInferenceOption(profile, {
+            id: model.id,
+            label: model.displayName || model.id,
+            ...(typeof model.contextWindow === "number"
+              ? { contextWindow: model.contextWindow }
+              : {}),
+          }),
+        );
+      }
+      // Fallback (models not yet discovered): expose the Anthropic catalog,
+      // labeled by the app's model names.
+      return models
         .filter((model) => model.id.startsWith("anthropic/"))
-        .map((model) => toUserInferenceOption(profile, model)),
-    );
+        .map((model) =>
+          toUserInferenceOption(profile, {
+            id: model.id,
+            label: getModelDisplayName(model),
+            ...(typeof model.context_window === "number"
+              ? { contextWindow: model.context_window }
+              : {}),
+            ...(model.cost ? { cost: model.cost } : {}),
+          }),
+        );
+    });
 
   return [...userInferenceOptions, ...baseModelOptions, ...variantOptions];
 }

@@ -29,6 +29,12 @@ export type RepositoryComposioSettingsValues = {
   allowedProfileIds: string[];
   blockedToolkitSlugs: string[];
   agentDefaults: Partial<ComposioAgentDefaults>;
+  /**
+   * Active Composio toolkits for this repo (subset of globally-connected
+   * toolkits), applied to every chat on the repo. NULL = never configured
+   * (GitHub default-on applies at resolution); an array = explicit choice.
+   */
+  selectedToolkitSlugs: string[] | null;
 };
 
 export type ComposioToolProfileValues = {
@@ -129,6 +135,8 @@ export const repositoryComposioSettingsInputSchema = z
     allowedProfileIds: z.array(z.string().trim().min(1)).default([]),
     blockedToolkitSlugs: z.array(z.string()).default([]),
     agentDefaults: composioAgentDefaultsInputSchema.partial().default({}),
+    // null = never configured (GitHub default-on); array = explicit choice.
+    selectedToolkitSlugs: z.array(z.string()).nullable().default(null),
   })
   .strict();
 
@@ -330,6 +338,11 @@ export function normalizeRepositoryComposioSettings(
       parsed.blockedToolkitSlugs,
     ),
     agentDefaults: parsed.agentDefaults,
+    // Preserve null (never configured) vs an explicit, normalized array.
+    selectedToolkitSlugs:
+      parsed.selectedToolkitSlugs === null
+        ? null
+        : normalizeComposioToolkitSlugs(parsed.selectedToolkitSlugs),
   };
 }
 

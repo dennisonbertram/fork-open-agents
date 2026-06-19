@@ -47,6 +47,16 @@ export type AgentRosterRow = {
    * the user's agents, so this label is identical across every role row.
    */
   skillsLabel: string;
+  /**
+   * Whether GitHub tools are enabled for this agent.
+   * Only meaningful for the "main" role; sub-roles always get false.
+   */
+  githubToolsEnabled: boolean;
+  /**
+   * Whether tool authoring is enabled for this agent (propose_composio_tool).
+   * Only meaningful for the "main" role; sub-roles always get false.
+   */
+  toolAuthoringEnabled: boolean;
 };
 
 /** Minimal shape of a user_default agent row needed by the roster builder. */
@@ -57,6 +67,8 @@ export type UserDefaultAgentRowSummary = {
   composioProfileId: string | null;
   instructions: string | null;
   managedRuntimeProfileId: string | null;
+  githubToolsEnabled?: boolean;
+  toolAuthoringEnabled?: boolean;
 };
 
 export type BuildAgentRosterInput = {
@@ -231,6 +243,8 @@ export function buildAgentRoster({
       runtimeLabel,
       runtimeCustom,
       skillsLabel,
+      githubToolsEnabled: agentRow?.githubToolsEnabled ?? false,
+      toolAuthoringEnabled: agentRow?.toolAuthoringEnabled ?? false,
     };
   });
 }

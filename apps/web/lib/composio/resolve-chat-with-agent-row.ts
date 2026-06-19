@@ -31,6 +31,13 @@ export type ChatMainComposioInput = {
    * null means no agent row or not set.
    */
   agentRowComposioProfileId: string | null;
+  /**
+   * Repo/workspace-level toolkit slugs (already resolved, incl. GitHub
+   * default-on). Lowest precedence: applied only when nothing else is selected
+   * — the case where a chat would otherwise get no Composio tools. Optional so
+   * existing callers/behavior are unchanged when omitted.
+   */
+  repoSelectedSlugs?: string[] | null;
 };
 
 export type ChatMainComposioResult = {
@@ -81,6 +88,15 @@ export function resolveComposioSlugsForChatMain(
   // Agent row profile id used as default
   if (agentRowComposioProfileId != null) {
     return { directSlugs: null, profileId: agentRowComposioProfileId };
+  }
+
+  // Repo/workspace-level selection — lowest precedence, only when nothing else
+  // is selected. This is the case that previously yielded no tools and forced
+  // the model onto unauthenticated web_fetch for GitHub.
+  const repoSlugsNonEmpty =
+    input.repoSelectedSlugs != null && input.repoSelectedSlugs.length > 0;
+  if (repoSlugsNonEmpty) {
+    return { directSlugs: input.repoSelectedSlugs ?? null, profileId: null };
   }
 
   // No selection — today's behavior (null/null = off)

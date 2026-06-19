@@ -116,6 +116,10 @@ type SessionChatContextValue = {
   chat: UseChatHelpers<WebAgentUIMessage>;
   contextLimit: number | null;
   stopChatStream: () => void;
+  /** The currently selected workflow ID from the workflow picker, or null if none. */
+  selectedWorkflowId: string | null;
+  /** Update the selected workflow ID from the workflow picker. */
+  setSelectedWorkflowId: (id: string | null) => void;
   sandboxInfo: SandboxInfo | null;
   workspaceStatus: WebAgentWorkspaceStatusData | null;
   clearWorkspaceStatus: () => void;
@@ -219,6 +223,8 @@ type SessionChatContextValue = {
   modelOptions: ModelOption[];
   /** Whether model options are still loading */
   modelOptionsLoading: boolean;
+  /** The currently selected model-option id (model id, or model+profile composite) */
+  selectedModelOptionId: string;
 };
 
 type SessionChatRuntimeContextValue = Pick<
@@ -231,6 +237,8 @@ type SessionChatRuntimeContextValue = Pick<
   | "retryChatStream"
   | "hadInitialMessages"
   | "initialMessages"
+  | "selectedWorkflowId"
+  | "setSelectedWorkflowId"
 >;
 
 type SessionChatWorkspaceContextValue = Pick<
@@ -286,6 +294,7 @@ type SessionChatMetadataContextValue = Pick<
   | "checkBranchAndPr"
   | "modelOptions"
   | "modelOptionsLoading"
+  | "selectedModelOptionId"
 >;
 
 const SessionChatRuntimeContext = createContext<
@@ -371,6 +380,11 @@ export function SessionChatProvider({
     [modelOptions, selectedModelOptionId],
   );
   const hadInitialMessages = initialMessages.length > 0;
+
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null,
+  );
+
   const {
     chat,
     stopChatStream,
@@ -383,6 +397,7 @@ export function SessionChatProvider({
     initialMessages,
     initialChatActiveStreamId: initialChat.activeStreamId,
     contextLimit,
+    selectedWorkflowId,
   });
 
   const [sandboxInfo, setSandboxInfoState] = useState<SandboxInfo | null>(
@@ -1149,6 +1164,8 @@ export function SessionChatProvider({
       clearWorkspaceStatus,
       hadInitialMessages,
       initialMessages,
+      selectedWorkflowId,
+      setSelectedWorkflowId,
     }),
     [
       chat,
@@ -1159,6 +1176,8 @@ export function SessionChatProvider({
       clearWorkspaceStatus,
       hadInitialMessages,
       initialMessages,
+      selectedWorkflowId,
+      setSelectedWorkflowId,
     ],
   );
 
@@ -1238,6 +1257,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      selectedModelOptionId,
     }),
     [
       sessionRecord,
@@ -1267,6 +1287,7 @@ export function SessionChatProvider({
       checkBranchAndPr,
       modelOptions,
       modelOptionsLoading,
+      selectedModelOptionId,
     ],
   );
 

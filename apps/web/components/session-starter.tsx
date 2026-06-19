@@ -9,8 +9,9 @@ import {
   MessageSquare,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status";
+import { useRepoDefaults } from "@/hooks/use-repo-defaults";
 import { useSession } from "@/hooks/use-session";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { useVercelRepoProjects } from "@/hooks/use-vercel-repo-projects";
@@ -125,6 +126,31 @@ export function SessionStarter({
     setVercelProjectChoice(null);
   }, [repoProjects, repoProjectsLoading, shouldLoadVercelProjects]);
 
+  // ── Repo defaults pre-fill ─────────────────────────────────────────────────
+  // Fetch resolved repo defaults when a repo is selected in repo mode.
+  // The result is used as a fallback in the effective-value chain below;
+  // state variables stay null so user edits are never clobbered.
+  const { defaults: repoDefaults } = useRepoDefaults({
+    enabled: mode === "repo" && !!selectedOwner && !!selectedRepo,
+    repoOwner: selectedOwner,
+    repoName: selectedRepo,
+  });
+
+  // Track which repo key has already had its branch defaults applied so the
+  // effect fires once per repo selection and never clobbers subsequent user edits.
+  const appliedRepoDefaultsKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!repoDefaults) return;
+    const key = `${selectedOwner}/${selectedRepo}`;
+    if (appliedRepoDefaultsKey.current === key) return;
+    appliedRepoDefaultsKey.current = key;
+    setIsNewBranch(Boolean(repoDefaults.isNewBranch));
+    if (repoDefaults.defaultBranch) {
+      setSelectedBranch(repoDefaults.defaultBranch);
+    }
+  }, [repoDefaults, selectedOwner, selectedRepo]);
+
   const handleRepoSelect = (owner: string, repo: string) => {
     setSelectedOwner(owner);
     setSelectedRepo(repo);
@@ -183,8 +209,10 @@ export function SessionStarter({
     requiresVercelChoice,
   });
 
-  const effectiveAutoCommitPush = autoCommitPush ?? defaultAutoCommitPush;
-  const effectiveAutoCreatePr = autoCreatePr ?? defaultAutoCreatePr;
+  const effectiveAutoCommitPush =
+    autoCommitPush ?? repoDefaults?.autoCommitPush ?? defaultAutoCommitPush;
+  const effectiveAutoCreatePr =
+    autoCreatePr ?? repoDefaults?.autoCreatePr ?? defaultAutoCreatePr;
   const showVercelProjectSection =
     mode === "repo" &&
     !githubConnectionLoading &&

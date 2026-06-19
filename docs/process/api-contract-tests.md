@@ -43,18 +43,38 @@ Against a protected preview deployment (test-auth must be enabled there, see
 `docs/plans/release-safety-pipeline.md`):
 
 ```bash
-CONTRACT_BASE_URL=https://<preview-host> bun run test:contract
+CONTRACT_BASE_URL=https://<preview-host> \
+  VERCEL_AUTOMATION_BYPASS_SECRET=<secret> bun run test:contract
 ```
 
 Auth uses the `open_agents_test_user_id` cookie for `dev-managed-runtime-user`
 (see `apps/web/lib/session/test-auth.ts`); the client lives in
-`apps/web/tests/contract/_client.ts`.
+`apps/web/tests/contract/_client.ts`. The client sends the Vercel automation
+bypass header when `VERCEL_AUTOMATION_BYPASS_SECRET` is set, and retries
+idempotent reads on a transient 5xx (a freshly-forked preview Neon branch can
+blip on its first connection).
+
+## CI
+
+`.github/workflows/contract-tests.yml` runs this suite on every successful
+**non-production** preview deployment (`deployment_status` trigger), pointing
+`CONTRACT_BASE_URL` at the preview URL with the bypass secret — mirroring the
+`preview-smoke` job. It is a **separate, non-required** workflow: it surfaces
+backend-contract signal on PRs without gating merges. Promote it to a required
+check once it has proven stable.
+
+Resilience: the suite probes auth once at startup. If the target lacks
+`OPEN_AGENTS_ENABLE_TEST_AUTH` (or the dev user), the authenticated suites
+**skip** and only the unauthenticated auth-gating checks run, so the job stays
+green instead of failing.
 
 ## Extending
 
-Add a `*.test.ts` under `apps/web/tests/contract/` wrapped in
-`describe.skipIf(!contractEnabled)` and use `apiFetch` / `apiJson` from
-`_client.ts`. Keep mutations safe (idempotent or self-cleaning) and avoid
+Add a `*.test.ts` under `apps/web/tests/contract/` and use `apiFetch` /
+`apiJson` from `_client.ts`. Wrap auth-gating (no-cookie) suites in
+`describe.skipIf(!contractEnabled)`; wrap authenticated suites in
+`describe.skipIf(!(contractEnabled && authAvailable))` so they skip when the
+target has no test-auth. Keep mutations safe (idempotent or self-cleaning) and avoid
 endpoints that require external services (harness/SSE), OAuth callbacks, or
 real git pushes — those need a mock/service and are out of scope for the
 black-box suite.

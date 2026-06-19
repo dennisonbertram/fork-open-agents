@@ -58,8 +58,9 @@ const RouteContentShell = memo(function RouteContentShell({
 }) {
   const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const { target, closeWorkspaceSettings } = useWorkspaceSettings();
-  // The sidebar is offcanvas, so when hidden there is nothing in the panel to
-  // reopen it with — surface a persistent control in the content area.
+  // The sidebar uses offcanvas collapse: it slides fully off-screen when
+  // collapsed, leaving nothing visible to reopen it with.  Surface a
+  // persistent "Open panel" button in the content area whenever it is hidden.
   const sidebarHidden = isMobile ? !openMobile : state === "collapsed";
 
   useEffect(() => {

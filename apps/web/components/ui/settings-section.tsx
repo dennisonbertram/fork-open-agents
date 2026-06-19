@@ -16,13 +16,19 @@ export interface SettingsPageHeaderProps {
  * One per settings page. Replaces ad-hoc inline `<h1 className="text-2xl …">`
  * headers so every page reads the same: a title plus a plain-language summary.
  */
-export function SettingsPageHeader({ title, description, action }: SettingsPageHeaderProps) {
+export function SettingsPageHeader({
+  title,
+  description,
+  action,
+}: SettingsPageHeaderProps) {
   return (
     <header className="flex items-start justify-between gap-4">
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description ? (
-          <p className="text-pretty text-sm text-muted-foreground">{description}</p>
+          <p className="text-pretty text-sm text-muted-foreground">
+            {description}
+          </p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}
@@ -66,12 +72,19 @@ export function SettingsSection({
     <section
       className={cn(
         "rounded-xl border bg-card p-5 shadow-sm",
-        tone === "danger" ? "border-destructive/30 bg-destructive/[0.03]" : "border-border",
+        tone === "danger"
+          ? "border-destructive/30 bg-destructive/[0.03]"
+          : "border-border",
       )}
     >
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
-          <h2 className={cn("text-sm font-medium", tone === "danger" && "text-destructive")}>
+          <h2
+            className={cn(
+              "text-sm font-medium",
+              tone === "danger" && "text-destructive",
+            )}
+          >
             {title}
           </h2>
           {description ? (
@@ -107,7 +120,12 @@ export function SettingsSection({
             aria-expanded={open}
             className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
           >
-            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")} />
+            <ChevronDown
+              className={cn(
+                "h-3.5 w-3.5 transition-transform",
+                open && "rotate-180",
+              )}
+            />
             {advanced.label ?? "Advanced"}
           </button>
           {open ? <div className="mt-3">{advanced.children}</div> : null}

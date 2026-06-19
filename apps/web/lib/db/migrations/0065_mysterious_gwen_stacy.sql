@@ -1,0 +1,1 @@
+ALTER TABLE "repository_composio_settings" ADD COLUMN "selected_toolkit_slugs" jsonb;

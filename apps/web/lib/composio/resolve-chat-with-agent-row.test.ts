@@ -46,6 +46,60 @@ describe("resolveComposioSlugsForChatMain — no-row parity", () => {
   });
 });
 
+// ── Repo/workspace-level selection — lowest-precedence fallback ────────────────
+
+describe("resolveComposioSlugsForChatMain — repo-level fallback", () => {
+  it("applies repoSelectedSlugs when nothing else is selected", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: null,
+      chatMainProfileId: null,
+      agentRowComposioSlugs: null,
+      agentRowComposioProfileId: null,
+      repoSelectedSlugs: ["github"],
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toEqual(["github"]);
+    expect(result.profileId).toBeNull();
+  });
+
+  it("explicit per-chat selection still wins over repo slugs", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: ["linear"],
+      chatMainProfileId: null,
+      agentRowComposioSlugs: null,
+      agentRowComposioProfileId: null,
+      repoSelectedSlugs: ["github"],
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toEqual(["linear"]);
+  });
+
+  it("agent row still wins over repo slugs", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: null,
+      chatMainProfileId: null,
+      agentRowComposioSlugs: ["slack"],
+      agentRowComposioProfileId: null,
+      repoSelectedSlugs: ["github"],
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toEqual(["slack"]);
+  });
+
+  it("empty repo slugs → no tools (today's behavior)", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: null,
+      chatMainProfileId: null,
+      agentRowComposioSlugs: null,
+      agentRowComposioProfileId: null,
+      repoSelectedSlugs: [],
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toBeNull();
+    expect(result.profileId).toBeNull();
+  });
+});
+
 // ── BT-C-002: Explicit per-chat directSlugs WINS over agent row ───────────────
 
 describe("resolveComposioSlugsForChatMain — explicit chat selection wins", () => {

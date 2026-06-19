@@ -175,4 +175,49 @@ describe("resolveComposioToolsForToolkitList", () => {
 
     expect(capturedHash).toBe(h1);
   });
+
+  test("BT-RTL-005: reports selected toolkits with no ACTIVE account as disconnected", async () => {
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
+
+    const result = await resolveComposioToolsForToolkitList({
+      userId,
+      slugs: ["github", "linear"],
+      composio: fakeComposio as never,
+      // github connected, linear missing → linear is disconnected
+      connectedAccountIdsByToolkit: { github: ["acct-gh-1"] },
+      getCachedSession: () => Promise.resolve(null),
+      upsertSession: () => Promise.resolve({ id: "row-new" }),
+      touchSession: () => Promise.resolve(),
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.disconnectedToolkits).toEqual(["linear"]);
+    }
+  });
+
+  test("BT-RTL-006: all toolkits connected → empty disconnected list (cache hit too)", async () => {
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
+
+    const result = await resolveComposioToolsForToolkitList({
+      userId,
+      slugs: ["github", "linear"],
+      composio: fakeComposio as never,
+      connectedAccountIdsByToolkit: {
+        github: ["acct-gh-1"],
+        linear: ["acct-ln-1"],
+      },
+      getCachedSession: () =>
+        Promise.resolve({ id: "row-1", composioSessionId: "sid" }),
+      upsertSession: () => Promise.resolve({ id: "row-1" }),
+      touchSession: () => Promise.resolve(),
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.disconnectedToolkits).toEqual([]);
+    }
+  });
 });
