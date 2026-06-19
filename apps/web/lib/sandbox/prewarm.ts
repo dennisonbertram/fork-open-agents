@@ -87,7 +87,10 @@ export async function prewarmSessionSandbox(params: {
 
     if (session.cloneUrl) {
       if (!session.repoOwner || !session.repoName) {
-        return { status: "failed", reason: "Session is missing repository metadata" };
+        return {
+          status: "failed",
+          reason: "Session is missing repository metadata",
+        };
       }
 
       const access = await verifyRepoAccess({
@@ -166,10 +169,7 @@ export async function prewarmSessionSandbox(params: {
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown error during pre-warm";
-    console.error(
-      `[prewarm] Failed to pre-warm session ${sessionId}:`,
-      error,
-    );
+    console.error(`[prewarm] Failed to pre-warm session ${sessionId}:`, error);
     return { status: "failed", reason: message };
   }
 }

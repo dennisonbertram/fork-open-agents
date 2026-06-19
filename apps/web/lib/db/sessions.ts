@@ -364,10 +364,7 @@ export async function clearSessionPrewarmRunId(
     .update(sessions)
     .set({ sandboxPrewarmRunId: null, updatedAt: new Date() })
     .where(
-      and(
-        eq(sessions.id, sessionId),
-        eq(sessions.sandboxPrewarmRunId, runId),
-      ),
+      and(eq(sessions.id, sessionId), eq(sessions.sandboxPrewarmRunId, runId)),
     );
 }
 
