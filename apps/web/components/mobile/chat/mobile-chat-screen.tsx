@@ -13,6 +13,8 @@ import {
   shouldUseChatListStreamingState,
   hasRenderableAssistantPart,
 } from "@/lib/chat-streaming-state";
+import type { ChatComposioSelection } from "@/lib/composio/types";
+import { ComposioToolSelectorCompact } from "@/components/composio-tool-selector-compact";
 import type { MobileStatusDescriptor } from "@/components/mobile/lib/types";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
@@ -31,6 +33,7 @@ export interface MobileChatScreenProps {
   repoOwner: string | null;
   repoName: string | null;
   branch: string | null;
+  cloneUrl: string | null;
 }
 
 /**
@@ -46,8 +49,10 @@ export function MobileChatScreen({
   chatId,
   sessionId,
   sessionTitle,
+  repoOwner,
   repoName,
   branch,
+  cloneUrl,
 }: MobileChatScreenProps) {
   const router = useRouter();
 
@@ -59,6 +64,8 @@ export function MobileChatScreen({
     modelOptionsLoading,
     selectedModelOptionId,
     updateChatModel,
+    chatInfo,
+    updateChatComposioSelection,
   } = useSessionChatMetadataContext();
 
   const { messages, status, addToolApprovalResponse, sendMessage } = chat;
@@ -222,6 +229,22 @@ export function MobileChatScreen({
     [selectedModelOptionId, updateChatModel],
   );
 
+  // Change which Composio tools the agent can use, inline.
+  const [isUpdatingTools, setIsUpdatingTools] = useState(false);
+  const handleComposioSelectionChange = useCallback(
+    async (selection: ChatComposioSelection) => {
+      setIsUpdatingTools(true);
+      try {
+        await updateChatComposioSelection(selection);
+      } catch {
+        toast.error("Couldn't update tools — please try again.");
+      } finally {
+        setIsUpdatingTools(false);
+      }
+    },
+    [updateChatComposioSelection],
+  );
+
   // Derived repo label
   const repoLabel = repoName
     ? branch
@@ -265,13 +288,21 @@ export function MobileChatScreen({
         onDeny={handleDeny}
       />
 
-      {/* Inline model selector above the composer */}
-      <div className="flex items-center border-t border-border px-2 pt-1.5">
+      {/* Inline model + tools selectors above the composer */}
+      <div className="flex items-center gap-1 border-t border-border px-2 pt-1.5">
         <ModelSelectorCompact
           value={selectedModelOptionId}
           modelOptions={modelOptions}
           onChange={handleModelChange}
           disabled={modelOptionsLoading || effectiveIsInFlight}
+        />
+        <ComposioToolSelectorCompact
+          selection={chatInfo.composioSelection}
+          onChange={handleComposioSelectionChange}
+          disabled={!!pendingApproval || effectiveIsInFlight || isUpdatingTools}
+          repoOwner={repoOwner}
+          repoName={repoName}
+          githubConnected={!!cloneUrl}
         />
       </div>
 
