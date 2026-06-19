@@ -71,7 +71,7 @@ export function decryptInferenceProfileApiKey(
 
       throw Object.assign(
         new Error(
-          `This chat's model ("${profile.name}") couldn't be loaded — switch to a different model to keep going, or re-add its API key in Settings → Models.`,
+          `The saved API key for inference profile "${profile.name}" can't be decrypted in this environment — re-enter it in Settings → Models.`,
         ),
         { name: "InferenceProfileResolutionError" },
       );
