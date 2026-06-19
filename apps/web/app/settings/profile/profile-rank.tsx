@@ -27,7 +27,7 @@ export function ProfileRank({
       href="/settings/leaderboard"
       className="text-sm font-medium text-foreground underline-offset-2 hover:underline"
     >
-      #{rank.rank} in {rank.domain}
+      Your rank: #{rank.rank} of {rank.total} · {rank.domain}
     </Link>
   );
 }
