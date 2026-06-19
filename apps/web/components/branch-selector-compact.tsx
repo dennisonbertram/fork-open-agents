@@ -150,15 +150,15 @@ export function BranchSelectorCompact({
                   />
                   <span className="truncate">{branch}</span>
                   {branch === defaultBranch && (
-                    <span className="ml-auto text-xs text-muted-foreground">
-                      default
+                    <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                      repository default
                     </span>
                   )}
                 </CommandItem>
               ))}
             </CommandGroup>
             <CommandSeparator />
-            <CommandGroup>
+            <CommandGroup heading="Safe — creates a workspace branch">
               <CommandItem onSelect={handleSelectNewBranch}>
                 <CheckIcon
                   className={cn(
@@ -168,6 +168,9 @@ export function BranchSelectorCompact({
                 />
                 <PlusIcon className="mr-2 size-4" />
                 New branch (auto-generated)
+                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                  doesn&apos;t write to main
+                </span>
               </CommandItem>
             </CommandGroup>
           </CommandList>
