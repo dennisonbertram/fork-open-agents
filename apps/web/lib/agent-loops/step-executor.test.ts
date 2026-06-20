@@ -188,6 +188,7 @@ mock.module("@open-agents/sandbox", () => ({
 }));
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   openAgent: {
     generate: mock(async () => ({
       finishReason: "stop",

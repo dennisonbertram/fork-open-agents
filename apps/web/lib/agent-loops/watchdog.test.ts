@@ -258,6 +258,7 @@ mock.module("ai", () => ({
 }));
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: mock(() => ({})),
 }));
 

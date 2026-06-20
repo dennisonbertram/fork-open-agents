@@ -82,6 +82,25 @@ export function getGithubToolAvailable(experimental_context: unknown): boolean {
 }
 
 /**
+ * Whether this agent run is unattended (a background agent or agent-loop step)
+ * with no human available to approve tool calls.
+ *
+ * Read directly from the raw context (not via isAgentContext) so it works in
+ * approval checks before the sandbox is attached. Defaults to false when absent.
+ */
+export function getUnattended(experimental_context: unknown): boolean {
+  if (
+    typeof experimental_context !== "object" ||
+    experimental_context === null
+  ) {
+    return false;
+  }
+  return (
+    (experimental_context as Record<string, unknown>)["unattended"] === true
+  );
+}
+
+/**
  * Get sandbox from experimental context with null safety.
  * Throws a descriptive error if sandbox is not initialized.
  *
