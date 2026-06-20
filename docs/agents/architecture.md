@@ -38,6 +38,12 @@ Inside `apps/web`:
   `apps/web/lib/managed-runtime`).
 - **Background Agents** - triggered/cron sandbox automation gated by repo
   allowlist and tool grants (`apps/web/lib/background-agents`).
+- **Chief of Staff Account Coordinator** - authenticated account status and
+  diagnosis API for scoped cross-subsystem observability
+  (`apps/web/lib/account-coordinator`,
+  `apps/web/app/api/account/status`,
+  `apps/web/app/api/account/diagnosis`; see
+  `docs/plans/chief-of-staff-account-coordinator.md`).
 - **Verified Build** - verified build bridge, contracts, and observability
   (`apps/web/lib/verified-build`).
 - **Composio Tools** - external tool connections for agents
