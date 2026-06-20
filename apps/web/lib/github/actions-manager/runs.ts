@@ -254,6 +254,54 @@ export async function listWorkflowRuns(
   };
 }
 
+export async function rerunRun(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  runId: number,
+): Promise<void> {
+  await octokit.request(
+    "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun",
+    {
+      owner,
+      repo,
+      run_id: runId,
+    },
+  );
+}
+
+export async function rerunFailedJobs(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  runId: number,
+): Promise<void> {
+  await octokit.request(
+    "POST /repos/{owner}/{repo}/actions/runs/{run_id}/rerun-failed-jobs",
+    {
+      owner,
+      repo,
+      run_id: runId,
+    },
+  );
+}
+
+export async function cancelRun(
+  octokit: Octokit,
+  owner: string,
+  repo: string,
+  runId: number,
+): Promise<void> {
+  await octokit.request(
+    "POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel",
+    {
+      owner,
+      repo,
+      run_id: runId,
+    },
+  );
+}
+
 export function assertSharedDashboardErrorKind(
   errorKind: DashboardErrorKind,
 ): DashboardErrorKind {

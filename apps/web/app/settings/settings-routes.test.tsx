@@ -35,6 +35,7 @@ describe("settings route metadata", () => {
       "composio",
       "connections",
       "leaderboard",
+      "learnings",
       "mcp",
       "models",
       "preferences",

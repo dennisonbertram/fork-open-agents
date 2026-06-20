@@ -95,6 +95,7 @@ export default async function BackgroundRunPage({
       redactionStatus: event.redactionStatus,
       payload: event.payload,
       createdAt: event.createdAt.toISOString(),
+      sequence: event.sequence,
     })),
     outputs: outputs.map((output) => ({
       id: output.id,

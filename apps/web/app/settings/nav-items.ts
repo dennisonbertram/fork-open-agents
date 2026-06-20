@@ -66,7 +66,11 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
   {
     id: "insights",
     label: "Insights",
-    items: [settingsNavItem("usage"), settingsNavItem("leaderboard")],
+    items: [
+      settingsNavItem("usage"),
+      settingsNavItem("leaderboard"),
+      settingsNavItem("learnings"),
+    ],
   },
   {
     id: "admin",

@@ -5,7 +5,7 @@ import { verifyRepoAccess } from "@/lib/github/access";
 import { getActionsManagerReadinessCheck } from "@/lib/github/actions-manager/readiness";
 import type { ActionsRouteContext } from "../_lib";
 
-export async function GET(_request: Request, context: ActionsRouteContext) {
+export async function GET(request: Request, context: ActionsRouteContext) {
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -32,10 +32,18 @@ export async function GET(_request: Request, context: ActionsRouteContext) {
     );
   }
 
+  const url = new URL(request.url);
+  const requiredPermission =
+    url.searchParams.get("permission") === "write" ? "write" : "read";
   const readiness = await getActionsManagerReadinessCheck({
     installationId: access.installationId,
     repositoryId: access.repositoryId,
+    requiredPermission,
   });
 
-  return Response.json({ ok: true, readiness });
+  return Response.json({
+    ok: true,
+    readiness,
+    defaultBranch: access.defaultBranch,
+  });
 }

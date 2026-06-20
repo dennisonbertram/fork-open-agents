@@ -43,7 +43,9 @@ function appInstallSettingsUrl(installationId: number, slug?: string | null) {
 export async function getActionsManagerReadinessCheck(params: {
   installationId: number;
   repositoryId: number;
+  requiredPermission?: "read" | "write";
 }): Promise<ActionsManagerReadinessVerdict> {
+  const requiredPermission = params.requiredPermission ?? "read";
   if (!isGitHubAppConfigured()) {
     return {
       status: "unavailable",
@@ -66,11 +68,15 @@ export async function getActionsManagerReadinessCheck(params: {
     }
 
     const appPermissions = parsed.data.permissions ?? {};
-    if (!permissionSatisfies(appPermissions.actions, "read")) {
+    if (!permissionSatisfies(appPermissions.actions, requiredPermission)) {
+      const verb = requiredPermission === "write" ? "manage" : "view";
       return {
         status: "action-needed",
-        headline: "Re-authorize the GitHub App to view Actions",
-        subtext: "This repo needs the GitHub App's Actions read permission.",
+        headline: `Re-authorize the GitHub App to ${verb} Actions`,
+        subtext:
+          requiredPermission === "write"
+            ? "This repo needs the GitHub App's Actions write permission."
+            : "This repo needs the GitHub App's Actions read permission.",
         actionHref: appInstallSettingsUrl(
           params.installationId,
           parsed.data.slug,
@@ -84,7 +90,7 @@ export async function getActionsManagerReadinessCheck(params: {
       await withScopedInstallationOctokit({
         installationId: params.installationId,
         repositoryId: params.repositoryId,
-        permissions: { actions: "read", metadata: "read" },
+        permissions: { actions: requiredPermission, metadata: "read" },
         operation: async () => undefined,
       });
     } catch (error) {
@@ -95,9 +101,14 @@ export async function getActionsManagerReadinessCheck(params: {
       ) {
         return {
           status: "action-needed",
-          headline: "Re-authorize the GitHub App to view Actions",
+          headline:
+            requiredPermission === "write"
+              ? "Re-authorize the GitHub App to manage Actions"
+              : "Re-authorize the GitHub App to view Actions",
           subtext:
-            "This installation has not granted Actions read permission for this repo.",
+            requiredPermission === "write"
+              ? "This installation has not granted Actions write permission for this repo."
+              : "This installation has not granted Actions read permission for this repo.",
           actionHref: appInstallSettingsUrl(
             params.installationId,
             parsed.data.slug,
@@ -117,8 +128,14 @@ export async function getActionsManagerReadinessCheck(params: {
 
     return {
       status: "ready",
-      headline: "Connected — Actions read available",
-      subtext: "Workflow runs, jobs, and logs can be viewed for this repo.",
+      headline:
+        requiredPermission === "write"
+          ? "Connected — Actions management available"
+          : "Connected — Actions read available",
+      subtext:
+        requiredPermission === "write"
+          ? "Workflow runs can be re-run, cancelled, and manually dispatched."
+          : "Workflow runs, jobs, and logs can be viewed for this repo.",
     };
   } catch {
     return {

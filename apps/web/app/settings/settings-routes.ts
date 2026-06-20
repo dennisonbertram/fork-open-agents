@@ -6,6 +6,7 @@ import {
   Boxes,
   Cable,
   Cpu,
+  Lightbulb,
   Server,
   ShieldAlert,
   SlidersHorizontal,
@@ -24,6 +25,7 @@ export type SettingsRouteId =
   | "background-agents"
   | "composio"
   | "connections"
+  | "learnings"
   | "leaderboard"
   | "mcp"
   | "models"
@@ -126,6 +128,14 @@ export const SETTINGS_ROUTE_METADATA = {
       "See how much you've used Open Agents across tokens, cost, and repositories.",
     href: "/settings/usage",
     icon: BarChart3,
+    audience: "user",
+  },
+  learnings: {
+    title: "Learnings",
+    description:
+      "Durable patterns, gotchas, and conventions your repos have learned from pull requests.",
+    href: "/settings/learnings",
+    icon: Lightbulb,
     audience: "user",
   },
   leaderboard: {
