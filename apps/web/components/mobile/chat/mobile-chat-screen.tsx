@@ -7,6 +7,7 @@ import {
   useSessionChatMetadataContext,
   useSessionChatRuntimeContext,
 } from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
+import { useStreamRecovery } from "@/app/sessions/[sessionId]/chats/[chatId]/hooks/use-stream-recovery";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import {
   isChatInFlight,
@@ -55,7 +56,7 @@ export function MobileChatScreen({
   const router = useRouter();
 
   // Runtime context provides the live chat state
-  const { chat, stopChatStream, workspaceStatus } =
+  const { chat, stopChatStream, retryChatStream, workspaceStatus } =
     useSessionChatRuntimeContext();
   const {
     modelOptions,
@@ -127,6 +128,15 @@ export function MobileChatScreen({
   const effectiveIsInFlight = userStopped
     ? false
     : hasPendingResponse || isChatInFlightNow || shouldUseChatListStreaming;
+
+  useStreamRecovery({
+    sessionId,
+    chatId,
+    status,
+    isChatInFlight: isChatInFlightNow,
+    hasAssistantRenderableContent,
+    retryChatStream,
+  });
 
   // --- Pending approval detection ---
   const pendingApproval = useMemo(
