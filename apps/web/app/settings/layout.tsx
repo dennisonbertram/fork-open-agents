@@ -22,6 +22,11 @@ import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
 import { findActiveNavItem } from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
+import { SettingsPageHeader } from "./_components/page-header";
+import {
+  getSettingsRouteMetadata,
+  type SettingsRouteId,
+} from "./settings-routes";
 import { SettingsNav } from "./settings-nav";
 import { SkillsSectionSkeleton } from "./skills/skills-section";
 
@@ -179,7 +184,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isAdmin } = useSession();
   const activeItem = findActiveNavItem(pathname);
-  const fallbackTitle = activeItem?.label ?? "Profile";
+  const fallbackRouteId =
+    activeItem?.id && activeItem.id !== "loops"
+      ? (activeItem.id as SettingsRouteId)
+      : "profile";
+  const fallbackRoute = getSettingsRouteMetadata(fallbackRouteId);
   const fallbackContent =
     activeItem?.id === "connections" ? (
       <ConnectionsPageSkeleton />
@@ -208,7 +217,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <AuthGuard
       loadingFallback={
         <SettingsLayout pathname={pathname} isAdmin={false}>
-          <h1 className="text-2xl font-semibold">{fallbackTitle}</h1>
+          <SettingsPageHeader
+            title={fallbackRoute.title}
+            description={fallbackRoute.description}
+          />
           {fallbackContent}
         </SettingsLayout>
       }

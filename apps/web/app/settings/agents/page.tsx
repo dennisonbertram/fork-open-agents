@@ -1,21 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 import { AgentsLoader } from "./agents-loader";
 
-export const metadata: Metadata = {
-  title: "Agents",
-  description:
-    "View the AI roles that run inside your chats — Main and the helper subagents it spawns.",
-};
+export const metadata: Metadata = toNextMetadata("agents");
 
 export default function AgentsPage() {
+  const route = getSettingsRouteMetadata("agents");
+
   return (
     <>
-      <SettingsPageHeader
-        title="Agents"
-        description="Agents are the AI roles that work inside your chats — the one you talk to (Main) and the helpers it spawns. To set up agents that run on their own in a repo, see Background agents."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
       <p className="text-sm text-muted-foreground">
         Looking for triggered automations?{" "}
         <Link

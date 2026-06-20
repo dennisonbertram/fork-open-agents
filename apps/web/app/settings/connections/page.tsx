@@ -1,21 +1,18 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
 import { AccountsSection, AccountsSectionSkeleton } from "../accounts-section";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 import { VercelSection, VercelSectionSkeleton } from "../vercel-section";
 
-export const metadata: Metadata = {
-  title: "Connections",
-  description: "Manage your connected accounts and integrations.",
-};
+export const metadata: Metadata = toNextMetadata("connections");
 
 export default function ConnectionsPage() {
+  const route = getSettingsRouteMetadata("connections");
+
   return (
     <>
-      <SettingsPageHeader
-        title="Connections"
-        description="Link the accounts Open Agents uses to act on your behalf."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
       <Suspense fallback={<VercelSectionSkeleton />}>
         <VercelSection />
       </Suspense>

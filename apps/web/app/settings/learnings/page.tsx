@@ -1,20 +1,16 @@
 import type { Metadata } from "next";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 import { LearningsSection } from "./learnings-section";
 
-export const metadata: Metadata = {
-  title: "Learnings",
-  description:
-    "Durable patterns, gotchas, and conventions your repos have learned from pull requests.",
-};
+export const metadata: Metadata = toNextMetadata("learnings");
 
 export default function LearningsPage() {
+  const route = getSettingsRouteMetadata("learnings");
+
   return (
     <>
-      <SettingsPageHeader
-        title="Learnings"
-        description="Durable patterns, gotchas, and conventions your repos have learned from pull requests."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
       <LearningsSection />
     </>
   );
