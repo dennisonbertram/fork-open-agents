@@ -61,6 +61,7 @@ function observability(
     services: [],
     browserRuns: [],
     workflowGoals: [],
+    workflowArtifacts: [],
     ...overrides,
   };
 }

@@ -561,6 +561,84 @@ async function validateGoalForClose(input: {
   return { ok: false, reason: result.reason };
 }
 
+async function recordResearchAndSpecArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  try {
+    const { buildArtifactInputs, recordWorkflowArtifactBestEffort } =
+      await import("@/lib/workflows/artifact-generator");
+
+    const inputs = buildArtifactInputs(ctx);
+    await Promise.all(
+      inputs.map((input) => recordWorkflowArtifactBestEffort(input)),
+    );
+  } catch (error: unknown) {
+    console.error(
+      "[chat] Failed to record research/spec artifacts (best-effort, ignoring):",
+      error,
+    );
+  }
+}
+
+async function recordReceiptAndFinalReportArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  workflowStatus: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  try {
+    const { recordWorkflowArtifactBestEffort } =
+      await import("@/lib/workflows/artifact-generator");
+    const { listArtifacts } = await import("@/lib/db/workflow-artifacts");
+    const { buildFinalReportInputs, buildReceiptInputs } =
+      await import("@/lib/workflows/final-report");
+
+    let hasRequiredEvidence = false;
+    try {
+      const existingArtifacts = await listArtifacts({
+        workflowRunId: ctx.workflowRunId,
+      });
+      const availableKinds = new Set(
+        existingArtifacts
+          .filter((artifact) => artifact.status === "available")
+          .map((artifact) => artifact.kind),
+      );
+      hasRequiredEvidence =
+        availableKinds.has("research_packet") && availableKinds.has("spec");
+    } catch (error: unknown) {
+      console.error(
+        "[chat] Failed to check workflow artifact evidence (best-effort, treating as missing):",
+        error,
+      );
+    }
+
+    const receiptInput = buildReceiptInputs(ctx);
+    const finalReportInput = buildFinalReportInputs(ctx, {
+      hasRequiredEvidence,
+    });
+
+    await Promise.all([
+      recordWorkflowArtifactBestEffort(receiptInput),
+      recordWorkflowArtifactBestEffort(finalReportInput),
+    ]);
+  } catch (error: unknown) {
+    console.error(
+      "[chat] Failed to record receipt/final-report artifacts (best-effort, ignoring):",
+      error,
+    );
+  }
+}
+
 async function persistInputMessages(
   chatId: string,
   messages: WebAgentUIMessage[],
@@ -2080,6 +2158,34 @@ export async function runAgentWorkflow(options: Options) {
       );
       await sendDataPart(writable, runtimeProofPart);
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+
+      const objectiveText = options.messages
+        .filter((message) => message.role === "user")
+        .flatMap((message) =>
+          message.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text),
+        )
+        .join(" ")
+        .trim()
+        .slice(0, 1000);
+
+      await recordResearchAndSpecArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        objectiveText,
+      });
+
+      await recordReceiptAndFinalReportArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        workflowStatus,
+        objectiveText,
+      });
     }
 
     await Promise.all([
