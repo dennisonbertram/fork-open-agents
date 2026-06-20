@@ -20,7 +20,7 @@ interface TestSessionRecord {
   id: string;
   userId: string;
   lifecycleVersion: number;
-  sandboxState: { type: "vercel" };
+  sandboxState: { type: "vercel"; sandboxName?: string; expiresAt?: number };
   vercelProjectId: string | null;
   vercelProjectName: string | null;
   vercelTeamId: string | null;
@@ -347,6 +347,48 @@ describe("/api/sandbox lifecycle kicks", () => {
       },
     });
     expect(dotenvSyncCalls).toHaveLength(0);
+  });
+
+  test("returns immediately when prewarm already persisted an active sandbox", async () => {
+    const { POST } = await routeModulePromise;
+    const expiresAt = Date.now() + 120_000;
+
+    sessionRecord.sandboxState = {
+      type: "vercel",
+      sandboxName: "session_session-1",
+      expiresAt,
+    };
+
+    const response = await POST(
+      new Request("http://localhost/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          repoUrl: "https://github.com/acme/private-repo",
+          branch: "main",
+          sandboxType: "vercel",
+        }),
+      }),
+    );
+
+    const payload = (await response.json()) as {
+      mode: string;
+      timeout: number;
+      currentBranch?: string;
+      timing: { readyMs: number };
+    };
+
+    expect(response.ok).toBe(true);
+    expect(payload.mode).toBe("vercel");
+    expect(payload.currentBranch).toBe("main");
+    expect(payload.timeout).toBeGreaterThan(0);
+    expect(payload.timeout).toBeLessThanOrEqual(120_000);
+    expect(payload.timing.readyMs).toBe(0);
+    expect(connectConfigs).toHaveLength(0);
+    expect(updateCalls).toHaveLength(0);
+    expect(kickCalls).toHaveLength(0);
+    expect(globalSkillInstallCalls).toHaveLength(0);
   });
 
   test("repo sandboxes use a setup-only installation token instead of embedding it", async () => {
