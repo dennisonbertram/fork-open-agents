@@ -61,6 +61,8 @@ export {
   setupManagedRuntimeProfileOutputSchema,
 } from "./tools/managed-runtime-profile-builder";
 export type { SkillToolInput } from "./tools/skill";
+// Browser session cleanup export — used by chat.ts to close per-chat sessions.
+export { closeBrowserSession } from "./tools/browser-session";
 // Tool exports
 export type {
   TaskPendingToolCall,

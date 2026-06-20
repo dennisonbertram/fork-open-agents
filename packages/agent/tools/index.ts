@@ -23,3 +23,17 @@ export {
 } from "./managed-runtime-profile-builder";
 export { skillTool, type SkillToolInput } from "./skill";
 export { webFetchTool } from "./fetch";
+export {
+  browserNavigateTool,
+  browserClickTool,
+  browserTypeTool,
+  browserExtractTool,
+  browserScreenshotTool,
+  type ScreenshotToolResult,
+} from "./browser";
+export {
+  buildScreenshotPart,
+  buildScreenshotStreamChunk,
+  type ScreenshotImagePart,
+  type FileStreamChunk,
+} from "./browser-image-part";

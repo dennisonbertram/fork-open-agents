@@ -2,6 +2,7 @@ import { tool } from "ai";
 import { z } from "zod";
 import * as path from "path";
 import { getSandbox } from "./utils";
+import { bashPolicy, classifyToolApproval } from "./approval-policy";
 
 const TIMEOUT_MS = 120_000;
 
@@ -28,45 +29,31 @@ interface ToolOptions {
   needsApproval?: boolean | ApprovalFn;
 }
 
-// Commands that should require approval
-const DANGEROUS_COMMAND_PATTERNS = [
-  /\bcurl\b/,
-  /\brm\s+(?:[^\n;&|]*\s)?(?:-[A-Za-z]*r[A-Za-z]*f|-[A-Za-z]*f[A-Za-z]*r|-r\s+-f|-f\s+-r|-{1,2}recursive\b.*-{1,2}force\b|-{1,2}force\b.*-{1,2}recursive\b)/,
-  /\bfind\b[^\n;&|]*(?:-delete|-exec\s+rm\b)/,
-  /\b(?:shred|mkfs|dd)\b/,
-  /:\(\)\s*\{\s*:\|:/,
-];
-
-const SENSITIVE_FILE_PATTERNS = [
-  /\.\s*env/i,
-  /\.e(?:['"]{2}|\\|\$\{[^}]*\}|\$\([^)]*\))?nv/i,
-  /\.e\$\([^)]*nv[^)]*\)/i,
-  /\$\([^)]*env[^)]*\)/i,
-  /`[^`]*env[^`]*`/i,
-  /\b(?:aws\/credentials|id_rsa|id_ed25519|\.ssh|proc\/self\/environ)\b/i,
-];
-
 /**
  * Check if a command should require approval.
- * Returns true for dangerous patterns or commands that reference dotenv files.
+ * Thin wrapper delegating to bashPolicy ONLY (backward-compat export).
+ * Returns true for dangerous rm/find/shred and dotenv file patterns.
+ *
+ * NOTE: This function is intentionally bashPolicy-only. It does NOT include
+ * gitPushPolicy. For full policy enforcement (including git force-push / reset
+ * --hard / clean -fd), use bashTool().needsApproval or
+ * classifyToolApproval("bash", { command }) instead.
  */
 export function commandNeedsApproval(command: string): boolean {
-  const trimmedCommand = command.trim();
-  const lowerCommand = trimmedCommand.toLowerCase();
-
-  for (const pattern of DANGEROUS_COMMAND_PATTERNS) {
-    if (pattern.test(trimmedCommand)) {
-      return true;
-    }
-  }
-
-  return SENSITIVE_FILE_PATTERNS.some((pattern) => pattern.test(lowerCommand));
+  return bashPolicy(command).requires;
 }
 
 export const bashTool = (options?: ToolOptions) =>
   tool({
     needsApproval: async (args) => {
-      if (commandNeedsApproval(args.command)) {
+      // Route through the full policy classifier so gitPushPolicy fires first,
+      // then bashPolicy. This ensures destructive git ops (force-push, reset
+      // --hard, clean -fd) are gated at runtime, not just in the policy engine.
+      const decision = classifyToolApproval("bash", {
+        command: args.command,
+      });
+
+      if (decision.requires) {
         if (typeof options?.needsApproval === "function") {
           return options.needsApproval(args);
         }
