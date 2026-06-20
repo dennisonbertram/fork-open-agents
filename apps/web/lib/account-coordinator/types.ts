@@ -48,6 +48,7 @@ export interface AccountWorkItem {
     branch?: string;
   };
   href?: string;
+  diagnosisHref?: string;
   summary?: string;
   metadata?: Record<string, string | number | boolean | null>;
 }
@@ -79,4 +80,93 @@ export interface AccountSnapshotResponse {
   waitingOnUser: AccountWorkItem[];
   stale: AccountWorkItem[];
   scheduledAgents: AccountScheduledAgent[];
+}
+
+export type AccountDiagnosisSource = AccountWorkSource;
+
+export type AccountDiagnosticEvidenceKind =
+  | "target"
+  | "timeline_event"
+  | "workflow_run"
+  | "workflow_input_snapshot"
+  | "workflow_step"
+  | "session_event"
+  | "background_agent_event"
+  | "background_agent_output"
+  | "background_agent_tool_session"
+  | "agent_loop_step"
+  | "agent_loop_event"
+  | "agent_loop_watchdog"
+  | "managed_runtime_profile_run"
+  | "sandbox_service"
+  | "browser_run"
+  | "workflow_goal"
+  | "workflow_goal_event"
+  | "verified_build_run"
+  | "verified_build_event";
+
+export interface AccountDiagnosticEvidence {
+  id: string;
+  kind: AccountDiagnosticEvidenceKind;
+  title: string;
+  status?: string;
+  level?: "info" | "warn" | "error";
+  summary?: string;
+  occurredAt?: string;
+  redactionStatus?: string;
+  correlations?: Record<string, string | number | boolean | null>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface AccountDiagnosticSourceGap {
+  source: string;
+  reason: string;
+}
+
+export interface AccountDiagnosticSourceStatus {
+  source: string;
+  status: AccountSourceStatusState;
+  itemCount: number;
+  error?: string;
+}
+
+export interface AccountDiagnosticCorrelations {
+  sessionIds: string[];
+  chatIds: string[];
+  workflowRunIds: string[];
+  requestIds: string[];
+  harnessRunIds: string[];
+  sandboxNames: string[];
+  serviceIds: string[];
+  browserRunIds: string[];
+  prNumbers: number[];
+  issueNumbers: number[];
+}
+
+export interface AccountDiagnosisResponse {
+  generatedAt: string;
+  source: AccountDiagnosisSource;
+  id: string;
+  target: AccountWorkItem;
+  sourceStatus: AccountDiagnosticSourceStatus[];
+  project?: {
+    repo?: {
+      owner: string;
+      name: string;
+      branch?: string;
+    };
+    prNumber?: number;
+    issueNumber?: number;
+  };
+  diagnosis: {
+    status: AccountWorkStatus;
+    needsAttention: boolean;
+    attentionReasons: AccountAttentionReason[];
+    summary: string;
+    evidenceCounts: Record<AccountDiagnosticEvidenceKind, number>;
+    sourceGaps: AccountDiagnosticSourceGap[];
+  };
+  correlations: AccountDiagnosticCorrelations;
+  timeline: AccountDiagnosticEvidence[];
+  evidence: AccountDiagnosticEvidence[];
 }

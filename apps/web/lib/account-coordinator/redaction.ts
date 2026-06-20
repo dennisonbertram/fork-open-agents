@@ -1,5 +1,7 @@
 const DEFAULT_MAX_STRING_LENGTH = 240;
 const DEFAULT_MAX_OBJECT_KEYS = 12;
+const DEFAULT_MAX_ARRAY_ITEMS = 20;
+const DEFAULT_MAX_DEPTH = 4;
 
 const SECRET_KEY_PATTERN =
   /(api[_-]?key|authorization|cookie|credential|password|secret|session[_-]?token|stderr|stdout|token)/i;
@@ -57,4 +59,65 @@ export function redactMetadata(
   }
 
   return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+export function redactJsonValue(
+  value: unknown,
+  options: {
+    maxDepth?: number;
+    maxObjectKeys?: number;
+    maxArrayItems?: number;
+    maxStringLength?: number;
+  } = {},
+): unknown {
+  const maxDepth = options.maxDepth ?? DEFAULT_MAX_DEPTH;
+  const maxObjectKeys = options.maxObjectKeys ?? DEFAULT_MAX_OBJECT_KEYS;
+  const maxArrayItems = options.maxArrayItems ?? DEFAULT_MAX_ARRAY_ITEMS;
+  const maxStringLength = options.maxStringLength ?? DEFAULT_MAX_STRING_LENGTH;
+
+  function redact(rawValue: unknown, depth: number): unknown {
+    if (
+      rawValue === null ||
+      typeof rawValue === "number" ||
+      typeof rawValue === "boolean"
+    ) {
+      return rawValue;
+    }
+
+    if (typeof rawValue === "string") {
+      return redactText(rawValue, maxStringLength) ?? "";
+    }
+
+    if (depth >= maxDepth) {
+      return "[truncated]";
+    }
+
+    if (Array.isArray(rawValue)) {
+      return rawValue
+        .slice(0, maxArrayItems)
+        .map((item) => redact(item, depth + 1));
+    }
+
+    if (typeof rawValue !== "object" || rawValue === undefined) {
+      return undefined;
+    }
+
+    const entries: Array<[string, unknown]> = [];
+    for (const [key, nestedValue] of Object.entries(rawValue)) {
+      if (entries.length >= maxObjectKeys) {
+        break;
+      }
+
+      if (SECRET_KEY_PATTERN.test(key)) {
+        entries.push([key, "[redacted]"]);
+        continue;
+      }
+
+      entries.push([key, redact(nestedValue, depth + 1)]);
+    }
+
+    return Object.fromEntries(entries);
+  }
+
+  return redact(value, 0);
 }

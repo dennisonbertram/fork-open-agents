@@ -121,6 +121,9 @@ describe("account coordinator snapshot", () => {
 
     expect(snapshot.window.hours).toBe(24);
     expect(snapshot.running.map((item) => item.id)).toEqual(["session-1"]);
+    expect(snapshot.running[0]?.diagnosisHref).toBe(
+      "/api/account/diagnosis?source=session&id=session-1",
+    );
     expect(snapshot.stale.map((item) => item.id)).toEqual(["session-stale"]);
     expect(snapshot.waitingOnUser.map((item) => item.id)).toEqual([
       "loop-run-1",
@@ -128,6 +131,10 @@ describe("account coordinator snapshot", () => {
     expect(snapshot.recentlyCompleted.map((item) => item.id)).toContain(
       "workflow-1",
     );
+    expect(
+      snapshot.recentlyCompleted.find((item) => item.id === "workflow-1")
+        ?.diagnosisHref,
+    ).toBe("/api/account/diagnosis?source=chat_workflow&id=workflow-1");
     expect(snapshot.needsAttention.map((item) => item.id)).toEqual([
       "bg-run-1",
       "loop-run-1",

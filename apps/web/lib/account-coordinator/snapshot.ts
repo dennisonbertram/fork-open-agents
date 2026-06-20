@@ -164,6 +164,11 @@ function maybeRepo(
   };
 }
 
+function diagnosisHref(source: AccountWorkItem["source"], id: string): string {
+  const params = new URLSearchParams({ source, id });
+  return `/api/account/diagnosis?${params.toString()}`;
+}
+
 function markStale(
   status: AccountWorkStatus,
   updatedAt: Date,
@@ -272,6 +277,7 @@ export function normalizeSession(
     updatedAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     repo: maybeRepo(row.repoOwner, row.repoName, row.branch),
+    diagnosisHref: diagnosisHref("session", row.id),
     summary: row.lifecycleError ? "Session failed" : undefined,
     metadata: redactMetadata({
       lifecycleState: row.lifecycleState,
@@ -295,6 +301,7 @@ export function normalizeChatWorkflowRun(
     updatedAt: row.finishedAt.toISOString(),
     createdAt: row.startedAt.toISOString(),
     completedAt: row.finishedAt.toISOString(),
+    diagnosisHref: diagnosisHref("chat_workflow", row.id),
     summary: row.errorMessage ? "Workflow failed" : undefined,
     metadata: redactMetadata({
       chatId: row.chatId,
@@ -325,6 +332,7 @@ export function normalizeBackgroundAgentRun(
     completedAt: toIso(row.finishedAt),
     repo: maybeRepo(row.repoOwner, row.repoName, row.branch),
     href: row.outputUrl ?? undefined,
+    diagnosisHref: diagnosisHref("background_agent", row.id),
     summary: row.errorMessage
       ? failureSummary("Background agent run failed", row.errorKind)
       : undefined,
@@ -355,6 +363,7 @@ export function normalizeAgentLoopRun(
     createdAt: row.createdAt.toISOString(),
     completedAt: toIso(row.finishedAt),
     repo: maybeRepo(row.repoOwner, row.repoName),
+    diagnosisHref: diagnosisHref("agent_loop", row.id),
     summary: row.errorMessage
       ? failureSummary("Agent loop run failed", row.errorKind)
       : undefined,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { redactMetadata, redactText } from "./redaction";
+import { redactJsonValue, redactMetadata, redactText } from "./redaction";
 
 describe("account coordinator redaction", () => {
   test("redacts common secret-looking values and bounds strings", () => {
@@ -21,6 +21,31 @@ describe("account coordinator redaction", () => {
       stdout: "[redacted]",
       sessionId: "session-1",
       title: "safe",
+    });
+  });
+
+  test("redacts nested diagnostic JSON and bounds arrays", () => {
+    expect(
+      redactJsonValue(
+        {
+          payload: {
+            authorization: "Bearer abc.def",
+            message: "safe",
+            nested: [
+              { token: "ghp_secret" },
+              { value: "ok" },
+              { value: "skip" },
+            ],
+          },
+        },
+        { maxArrayItems: 2 },
+      ),
+    ).toEqual({
+      payload: {
+        authorization: "[redacted]",
+        message: "safe",
+        nested: [{ token: "[redacted]" }, { value: "ok" }],
+      },
     });
   });
 });
