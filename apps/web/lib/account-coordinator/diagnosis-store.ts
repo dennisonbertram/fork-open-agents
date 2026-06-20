@@ -27,6 +27,7 @@ import {
   workflowRuns,
   workflowRunSteps,
 } from "@/lib/db/schema";
+import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
 import { buildAccountDiagnosis, makeDiagnosticEvidence } from "./diagnosis";
 import { redactText } from "./redaction";
 import {
@@ -45,6 +46,7 @@ import type {
   AccountDiagnosticEvidence,
   AccountDiagnosticSourceGap,
   AccountDiagnosticSourceStatus,
+  AccountWorkItem,
 } from "./types";
 
 const DEFAULT_EVIDENCE_LIMIT = 80;
@@ -54,6 +56,7 @@ type SourceResult = {
   status: AccountDiagnosticSourceStatus;
   evidence: AccountDiagnosticEvidence[];
   gap?: AccountDiagnosticSourceGap;
+  gaps?: AccountDiagnosticSourceGap[];
 };
 
 type LoadedWorkflow = typeof workflowRuns.$inferSelect;
@@ -130,7 +133,10 @@ function compactSourceResults(results: SourceResult[]) {
     sourceStatus: results.map((result) => result.status),
     evidence: results.flatMap((result) => result.evidence),
     sourceGaps: results
-      .map((result) => result.gap)
+      .flatMap((result) => [
+        ...(result.gap ? [result.gap] : []),
+        ...(result.gaps ?? []),
+      ])
       .filter((gap): gap is AccountDiagnosticSourceGap => gap !== undefined),
   };
 }
@@ -163,6 +169,157 @@ function workflowRunEvidence(run: LoadedWorkflow): AccountDiagnosticEvidence {
       errorMessage: run.errorMessage,
     },
   });
+}
+
+async function loadGitHubRepoEvidence(params: {
+  userId: string;
+  target: AccountWorkItem;
+}): Promise<SourceResult[]> {
+  const repo = params.target.repo;
+  if (!repo) {
+    return [];
+  }
+
+  try {
+    const dashboard = await getRepoDashboardData({
+      userId: params.userId,
+      owner: repo.owner,
+      repo: repo.name,
+    });
+    const evidence: AccountDiagnosticEvidence[] = [];
+    const gaps: AccountDiagnosticSourceGap[] = [];
+    const targetPrNumber = params.target.metadata?.prNumber;
+    const targetIssueNumber = params.target.metadata?.issueNumber;
+
+    if (dashboard.prSummary.ok) {
+      evidence.push(
+        ...dashboard.prSummary.prs.map((pr) =>
+          makeDiagnosticEvidence({
+            id: `github-pr-${repo.owner}-${repo.name}-${pr.number}`,
+            kind: "github_pull_request",
+            title: `PR #${pr.number}: ${pr.title}`,
+            status: pr.checksStatus,
+            occurredAt: pr.updatedAt,
+            correlations: { prNumber: pr.number },
+            metadata: {
+              repoOwner: repo.owner,
+              repoName: repo.name,
+              isDraft: pr.isDraft,
+              author: pr.author,
+              baseBranch: pr.baseBranch,
+              url: pr.url,
+              selected: pr.number === targetPrNumber,
+            },
+          }),
+        ),
+      );
+    } else {
+      gaps.push({
+        source: "github_pull_requests",
+        reason: dashboard.prSummary.errorKind,
+      });
+    }
+
+    if (dashboard.issueSummary.ok) {
+      const issueSummary = dashboard.issueSummary;
+      evidence.push(
+        ...issueSummary.recent.map((issue) =>
+          makeDiagnosticEvidence({
+            id: `github-issue-${repo.owner}-${repo.name}-${issue.number}`,
+            kind: "github_issue",
+            title: `Issue #${issue.number}: ${issue.title}`,
+            status: "open",
+            occurredAt: issue.updatedAt,
+            correlations: { issueNumber: issue.number },
+            metadata: {
+              repoOwner: repo.owner,
+              repoName: repo.name,
+              labels: issue.labels,
+              totalOpen: issueSummary.totalOpen,
+              url: issue.url,
+              selected: issue.number === targetIssueNumber,
+            },
+          }),
+        ),
+      );
+    } else {
+      gaps.push({
+        source: "github_issues",
+        reason: dashboard.issueSummary.errorKind,
+      });
+    }
+
+    if (dashboard.actionsSummary.ok) {
+      const actionsSummary = dashboard.actionsSummary;
+      evidence.push(
+        ...actionsSummary.recentRuns.map((run) =>
+          makeDiagnosticEvidence({
+            id: `github-action-${repo.owner}-${repo.name}-${run.runId}`,
+            kind: "github_action_run",
+            title: run.name,
+            status: run.conclusion ?? run.status,
+            occurredAt: run.createdAt,
+            metadata: {
+              repoOwner: repo.owner,
+              repoName: repo.name,
+              runId: run.runId,
+              conclusion: run.conclusion,
+              status: run.status,
+              latestStatus: actionsSummary.latestStatus,
+              url: run.url,
+            },
+          }),
+        ),
+      );
+    } else {
+      gaps.push({
+        source: "github_actions",
+        reason: dashboard.actionsSummary.errorKind,
+      });
+    }
+
+    const status: AccountDiagnosticSourceStatus =
+      gaps.length === 0
+        ? {
+            source: "github_repo_dashboard",
+            status: "ok",
+            itemCount: evidence.length,
+          }
+        : {
+            source: "github_repo_dashboard",
+            status: evidence.length > 0 ? "partial" : "failed",
+            itemCount: evidence.length,
+            error: "GitHub source partially unavailable",
+          };
+
+    return [
+      {
+        evidence,
+        gaps,
+        status,
+      },
+    ];
+  } catch (error) {
+    return [
+      {
+        evidence: [],
+        status: sourceFailed("github_repo_dashboard", error),
+        gap: { source: "github_repo_dashboard", reason: "Source failed" },
+      },
+    ];
+  }
+}
+
+function repoFromSession(session: typeof sessions.$inferSelect | null) {
+  if (!session?.repoOwner || !session.repoName) {
+    return undefined;
+  }
+
+  return {
+    owner: session.repoOwner,
+    name: session.repoName,
+    ...(session.branch ? { branch: session.branch } : {}),
+  };
 }
 
 async function loadWorkflowRunsForSession(params: {
@@ -673,6 +830,10 @@ async function loadSessionDiagnosis(params: {
       workflowRunIds,
       limit: params.limit,
     })),
+    ...(await loadGitHubRepoEvidence({
+      userId: params.userId,
+      target,
+    })),
   ]);
 
   return buildAccountDiagnosis({
@@ -698,19 +859,30 @@ async function loadWorkflowDiagnosis(params: {
     return null;
   }
 
-  const target = normalizeChatWorkflowRun({
-    id: row.workflowRun.id,
-    chatId: row.workflowRun.chatId,
-    chatTitle: row.chat?.title ?? null,
-    sessionId: row.workflowRun.sessionId,
-    sessionTitle: row.session?.title ?? null,
-    status: row.workflowRun.status,
-    runtimeMode: row.workflowRun.runtimeMode,
-    errorMessage: row.workflowRun.errorMessage,
-    startedAt: row.workflowRun.startedAt,
-    finishedAt: row.workflowRun.finishedAt,
-    createdAt: row.workflowRun.createdAt,
-  } satisfies ChatWorkflowRunRow);
+  const targetRepo = repoFromSession(row.session);
+  const target: AccountWorkItem = {
+    ...normalizeChatWorkflowRun({
+      id: row.workflowRun.id,
+      chatId: row.workflowRun.chatId,
+      chatTitle: row.chat?.title ?? null,
+      sessionId: row.workflowRun.sessionId,
+      sessionTitle: row.session?.title ?? null,
+      status: row.workflowRun.status,
+      runtimeMode: row.workflowRun.runtimeMode,
+      errorMessage: row.workflowRun.errorMessage,
+      startedAt: row.workflowRun.startedAt,
+      finishedAt: row.workflowRun.finishedAt,
+      createdAt: row.workflowRun.createdAt,
+    } satisfies ChatWorkflowRunRow),
+    ...(targetRepo ? { repo: targetRepo } : {}),
+    metadata: {
+      chatId: row.workflowRun.chatId,
+      sessionId: row.workflowRun.sessionId,
+      runtimeMode: row.workflowRun.runtimeMode,
+      prNumber: row.session?.prNumber ?? null,
+      prStatus: row.session?.prStatus ?? null,
+    },
+  };
 
   const sessionResults = row.session
     ? await loadSessionChildEvidence({
@@ -732,6 +904,10 @@ async function loadWorkflowDiagnosis(params: {
       includeRuns: false,
     })),
     ...sessionResults,
+    ...(await loadGitHubRepoEvidence({
+      userId: params.userId,
+      target,
+    })),
   ]);
 
   return buildAccountDiagnosis({
@@ -949,6 +1125,10 @@ async function loadBackgroundAgentDiagnosis(params: {
       workflowRunIds: uniqueStrings([run.workflowRunId]),
       limit: params.limit,
     })),
+    ...(await loadGitHubRepoEvidence({
+      userId: params.userId,
+      target,
+    })),
   ]);
 
   return buildAccountDiagnosis({
@@ -1149,6 +1329,10 @@ async function loadAgentLoopDiagnosis(params: {
       userId: params.userId,
       workflowRunIds,
       limit: params.limit,
+    })),
+    ...(await loadGitHubRepoEvidence({
+      userId: params.userId,
+      target,
     })),
   ]);
 

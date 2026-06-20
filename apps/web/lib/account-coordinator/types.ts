@@ -103,7 +103,10 @@ export type AccountDiagnosticEvidenceKind =
   | "workflow_goal"
   | "workflow_goal_event"
   | "verified_build_run"
-  | "verified_build_event";
+  | "verified_build_event"
+  | "github_pull_request"
+  | "github_issue"
+  | "github_action_run";
 
 export interface AccountDiagnosticEvidence {
   id: string;

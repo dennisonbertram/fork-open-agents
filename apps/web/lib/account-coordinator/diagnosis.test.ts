@@ -64,6 +64,14 @@ describe("account diagnosis contract", () => {
           workflowRunId: "workflow-1",
         },
       }),
+      makeDiagnosticEvidence({
+        id: "github-pr-42",
+        kind: "github_pull_request",
+        title: "PR #42: fix the build",
+        status: "failing",
+        occurredAt: "2026-06-20T12:00:30.000Z",
+        correlations: { prNumber: 42 },
+      }),
     ];
 
     const diagnosis = buildAccountDiagnosis({
@@ -83,6 +91,7 @@ describe("account diagnosis contract", () => {
     );
     expect(diagnosis.diagnosis.evidenceCounts.background_agent_event).toBe(1);
     expect(diagnosis.diagnosis.evidenceCounts.workflow_run).toBe(1);
+    expect(diagnosis.diagnosis.evidenceCounts.github_pull_request).toBe(1);
     expect(diagnosis.correlations).toMatchObject({
       sessionIds: ["session-1"],
       chatIds: ["chat-1"],
@@ -91,6 +100,7 @@ describe("account diagnosis contract", () => {
       prNumbers: [42],
     });
     expect(diagnosis.timeline.map((item) => item.id)).toEqual([
+      "github-pr-42",
       "event-1",
       "event-2",
     ]);

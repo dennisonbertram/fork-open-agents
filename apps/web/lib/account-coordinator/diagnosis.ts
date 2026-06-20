@@ -37,6 +37,9 @@ const EVIDENCE_KINDS = [
   "workflow_goal_event",
   "verified_build_run",
   "verified_build_event",
+  "github_pull_request",
+  "github_issue",
+  "github_action_run",
 ] as const satisfies readonly AccountDiagnosticEvidenceKind[];
 
 export function isAccountDiagnosisSource(
