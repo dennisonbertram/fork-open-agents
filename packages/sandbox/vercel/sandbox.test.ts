@@ -427,6 +427,7 @@ describe("GitHub setup credential brokering", () => {
     expect(createCalls[0]?.source).toEqual({
       type: "git",
       url: "https://github.com/open-agents/example",
+      depth: 1,
       revision: "main",
     });
     expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
@@ -440,10 +441,18 @@ describe("GitHub setup credential brokering", () => {
 
     expect(updateNetworkPolicyCalls).toEqual([{ allow: { "*": [] } }]);
   });
+
+  test("does not clear GitHub auth when reconnecting without a brokered token", async () => {
+    await sandboxModule.VercelSandbox.connect("session_123", {
+      remainingTimeout: 0,
+    });
+
+    expect(updateNetworkPolicyCalls).toEqual([]);
+  });
 });
 
 describe("VercelSandbox.create", () => {
-  test("creates from base snapshot and clones git source", async () => {
+  test("shallow-clones the git source from a base snapshot in one round-trip", async () => {
     await sandboxModule.VercelSandbox.create({
       baseSnapshotId: "snap-base-1",
       source: {
@@ -457,17 +466,132 @@ describe("VercelSandbox.create", () => {
       type: "snapshot",
       snapshotId: "snap-base-1",
     });
-    expect(runCommandCalls[0]).toEqual({
-      cmd: "git",
+    const setupCalls = runCommandCalls.filter((c) => c.cmd === "bash");
+    expect(setupCalls).toEqual([
+      {
+        cmd: "bash",
+        args: [
+          "-c",
+          "git clone --depth=1 --single-branch --branch 'main' 'https://github.com/open-agents/example' .",
+        ],
+        cwd: "/vercel/sandbox",
+      },
+    ]);
+  });
+
+  test("combines shallow clone, git config, and branch checkout into one round-trip", async () => {
+    await sandboxModule.VercelSandbox.create({
+      baseSnapshotId: "snap-base-1",
+      gitUser: { name: "AI Agent", email: "agent@example.com" },
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+        newBranch: "agent/work",
+      },
+    });
+
+    const setupCalls = runCommandCalls.filter((c) => c.cmd === "bash");
+    expect(setupCalls.length).toBe(1);
+    expect(setupCalls[0]).toEqual({
+      cmd: "bash",
       args: [
-        "clone",
-        "--branch",
-        "main",
-        "https://github.com/open-agents/example",
-        ".",
+        "-c",
+        "git clone --depth=1 --single-branch --branch 'main' 'https://github.com/open-agents/example' . && " +
+          "git config user.name 'AI Agent' && " +
+          "git config user.email 'agent@example.com' && " +
+          "git checkout -b 'agent/work'",
       ],
       cwd: "/vercel/sandbox",
     });
+  });
+
+  test("shallow-clones the native git source and sets up in one round-trip", async () => {
+    await sandboxModule.VercelSandbox.create({
+      gitUser: { name: "AI Agent", email: "agent@example.com" },
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+        newBranch: "agent/work",
+      },
+    });
+
+    expect(createCalls[0]?.source).toEqual({
+      type: "git",
+      url: "https://github.com/open-agents/example",
+      depth: 1,
+      revision: "main",
+    });
+    const setupCalls = runCommandCalls.filter((c) => c.cmd === "bash");
+    expect(setupCalls).toEqual([
+      {
+        cmd: "bash",
+        args: [
+          "-c",
+          "git config user.name 'AI Agent' && " +
+            "git config user.email 'agent@example.com' && " +
+            "git checkout -b 'agent/work'",
+        ],
+        cwd: "/vercel/sandbox",
+      },
+    ]);
+  });
+
+  test("performs a FULL clone from base snapshot when cloneDepth is 0", async () => {
+    await sandboxModule.VercelSandbox.create({
+      baseSnapshotId: "snap-base-1",
+      cloneDepth: 0,
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+      },
+    });
+
+    const setupCalls = runCommandCalls.filter((c) => c.cmd === "bash");
+    expect(setupCalls).toEqual([
+      {
+        cmd: "bash",
+        args: [
+          "-c",
+          "git clone --branch 'main' 'https://github.com/open-agents/example' .",
+        ],
+        cwd: "/vercel/sandbox",
+      },
+    ]);
+  });
+
+  test("performs a FULL clone on the native git source when cloneDepth is 0", async () => {
+    await sandboxModule.VercelSandbox.create({
+      cloneDepth: 0,
+      source: {
+        url: "https://github.com/open-agents/example",
+        branch: "main",
+      },
+    });
+
+    expect(createCalls[0]?.source).toEqual({
+      type: "git",
+      url: "https://github.com/open-agents/example",
+      revision: "main",
+    });
+  });
+
+  test("throws with stderr when workspace setup fails", async () => {
+    runCommandMock = async () => ({
+      exitCode: 128,
+      cmdId: "cmd-clone-failed",
+      stdout: async () => "",
+      stderr: async () => "fatal: repository not found\n",
+    });
+
+    expect(
+      sandboxModule.VercelSandbox.create({
+        baseSnapshotId: "snap-base-1",
+        source: {
+          url: "https://github.com/open-agents/missing",
+          branch: "main",
+        },
+      }),
+    ).rejects.toThrow("fatal: repository not found");
   });
 
   test("creates empty git repo from base snapshot", async () => {
@@ -481,8 +605,8 @@ describe("VercelSandbox.create", () => {
       snapshotId: "snap-base-1",
     });
     expect(runCommandCalls[0]).toEqual({
-      cmd: "git",
-      args: ["init"],
+      cmd: "bash",
+      args: ["-c", "git init"],
       cwd: "/vercel/sandbox",
     });
   });
@@ -498,7 +622,9 @@ describe("VercelSandbox.create", () => {
       type: "snapshot",
       snapshotId: "snap-base-1",
     });
-    expect(runCommandCalls.filter((c) => c.cmd === "git")).toEqual([]);
+    expect(
+      runCommandCalls.filter((c) => c.cmd === "git" || c.cmd === "bash"),
+    ).toEqual([]);
   });
 });
 

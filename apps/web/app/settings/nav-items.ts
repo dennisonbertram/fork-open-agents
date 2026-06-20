@@ -1,20 +1,9 @@
 import type { LucideIcon } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import {
-  BarChart3,
-  Blocks,
-  Bot,
-  Boxes,
-  Cable,
-  Cpu,
-  RefreshCw,
-  Server,
-  ShieldAlert,
-  SlidersHorizontal,
-  Sparkles,
-  Trophy,
-  User,
-  Users,
-} from "lucide-react";
+  getSettingsRouteMetadata,
+  type SettingsRouteId,
+} from "./settings-routes";
 
 export type SettingsNavItem = {
   id: string;
@@ -31,6 +20,16 @@ export type SettingsNavGroup = {
   adminOnly?: boolean;
 };
 
+function settingsNavItem(id: SettingsRouteId): SettingsNavItem {
+  const route = getSettingsRouteMetadata(id);
+  return {
+    id,
+    label: route.title,
+    href: route.href,
+    icon: route.icon,
+  };
+}
+
 /**
  * Single source of truth for the settings navigation. Grouped by scope
  * (personal → shared → operator) so the rail reads as a map, not a flat pile.
@@ -40,100 +39,44 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
     id: "account",
     label: "Account",
     items: [
-      {
-        id: "profile",
-        label: "Profile",
-        href: "/settings/profile",
-        icon: User,
-      },
-      {
-        id: "preferences",
-        label: "Preferences",
-        href: "/settings/preferences",
-        icon: SlidersHorizontal,
-      },
-      {
-        id: "connections",
-        label: "Connections",
-        href: "/settings/connections",
-        icon: Cable,
-      },
+      settingsNavItem("profile"),
+      settingsNavItem("preferences"),
+      settingsNavItem("connections"),
     ],
   },
   {
     id: "tools",
     label: "Tools",
     items: [
-      {
-        id: "agents",
-        label: "Agents",
-        href: "/settings/agents",
-        icon: Users,
-      },
-      { id: "models", label: "Models", href: "/settings/models", icon: Boxes },
-      {
-        id: "composio",
-        label: "Composio",
-        href: "/settings/composio",
-        icon: Blocks,
-      },
-      {
-        id: "mcp",
-        label: "MCP servers",
-        href: "/settings/mcp",
-        icon: Server,
-      },
-      {
-        id: "skills",
-        label: "Skills",
-        href: "/settings/skills",
-        icon: Sparkles,
-      },
-      {
-        id: "background-agents",
-        label: "Background agents",
-        href: "/settings/background-agents",
-        icon: Bot,
-      },
+      settingsNavItem("agents"),
+      settingsNavItem("models"),
+      settingsNavItem("composio"),
+      settingsNavItem("mcp"),
+      settingsNavItem("skills"),
+      settingsNavItem("background-agents"),
       {
         id: "loops",
         label: "Loops",
         href: "/loops",
         icon: RefreshCw,
       },
-      {
-        id: "runtime-profiles",
-        label: "Runtime profiles",
-        href: "/settings/runtime-profiles",
-        icon: Cpu,
-      },
+      settingsNavItem("runtime-profiles"),
     ],
   },
   {
     id: "insights",
     label: "Insights",
     items: [
-      { id: "usage", label: "Usage", href: "/settings/usage", icon: BarChart3 },
-      {
-        id: "leaderboard",
-        label: "Leaderboard",
-        href: "/settings/leaderboard",
-        icon: Trophy,
-      },
+      settingsNavItem("usage"),
+      settingsNavItem("leaderboard"),
+      settingsNavItem("learnings"),
     ],
   },
   {
     id: "admin",
     label: "Admin",
     adminOnly: true,
-    items: [
-      {
-        id: "admin",
-        label: "Admin",
-        href: "/settings/admin",
-        icon: ShieldAlert,
-      },
-    ],
+    items: [settingsNavItem("admin")],
   },
 ];
 

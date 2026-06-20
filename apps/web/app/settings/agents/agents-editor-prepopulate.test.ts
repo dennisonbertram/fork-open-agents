@@ -1,7 +1,7 @@
 /**
  * Tests for Fix 1 (schema uniqueIndex) and Fix 2 (editor pre-population).
  *
- * Fix 1 (BT-FIX1-001): agents_user_role_scope_idx must be uniqueIndex in schema
+ * Fix 1 (BT-FIX1-001): agents_user_default_role_scope_idx must be uniqueIndex in schema
  *   so that ON CONFLICT in upsertUserDefaultAgent resolves to the correct row
  *   rather than throwing "no unique or exclusion constraint".
  *
@@ -35,32 +35,30 @@ const runtimeProfiles: ManagedRuntimeProfile[] = [];
 
 // ── Fix 1: schema uniqueIndex ─────────────────────────────────────────────────
 
-describe("Fix 1: agents_user_role_scope_idx must be uniqueIndex", () => {
+describe("Fix 1: agents_user_default_role_scope_idx must be uniqueIndex", () => {
   /**
-   * BT-FIX1-001: The Drizzle schema must declare agents_user_role_scope_idx
-   * using uniqueIndex() — not index() — so that ON CONFLICT in
+   * BT-FIX1-001: The Drizzle schema must declare agents_user_default_role_scope_idx
+   * using uniqueIndex() so that ON CONFLICT in
    * upsertUserDefaultAgent has a matching unique constraint.
-   *
-   * This test imports the agents table definition and inspects whether
-   * the generated SQL DDL name contains "UNIQUE" (Drizzle tags unique indexes
-   * with a `name` that matches the original name, but we can verify the
-   * builder object type is UniqueConstraintBuilder vs IndexBuilder by
-   * checking the config property set by Drizzle).
    */
-  test("BT-FIX1-001: agents table agents_user_role_scope_idx is a uniqueIndex", async () => {
+  test("BT-FIX1-001: agents table user-default index is a uniqueIndex", async () => {
     const { agents } = await import("@/lib/db/schema");
 
-    // Use getTableConfig from drizzle-orm/pg-core (the correct path for this version)
     const { getTableConfig } = await import("drizzle-orm/pg-core");
     const config = getTableConfig(agents);
 
-    const roleScopeIdx = config.indexes.find(
+    const userDefaultIdx = config.indexes.find(
+      (idx) => idx.config.name === "agents_user_default_role_scope_idx",
+    );
+    const lookupIdx = config.indexes.find(
       (idx) => idx.config.name === "agents_user_role_scope_idx",
     );
 
-    expect(roleScopeIdx).toBeDefined();
-    // This assertion fails until we change index() -> uniqueIndex() in schema.ts
-    expect(roleScopeIdx?.config.unique).toBe(true);
+    expect(userDefaultIdx).toBeDefined();
+    expect(userDefaultIdx?.config.unique).toBe(true);
+    expect(userDefaultIdx?.config.where).toBeDefined();
+    expect(lookupIdx).toBeDefined();
+    expect(lookupIdx?.config.unique).toBe(false);
   });
 });
 

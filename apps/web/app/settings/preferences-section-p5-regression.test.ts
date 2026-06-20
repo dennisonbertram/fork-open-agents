@@ -75,13 +75,17 @@ describe("P5 preferences-section retrofit regression", () => {
     expect(src).toContain('htmlFor="alert-sound-enabled"');
   });
 
-  // REG-P5-PREFS-008: The two untouched groups (Defaults, Sharing & privacy) still use
-  // GroupHeader, confirming they were not accidentally converted (scope discipline).
-  test("REG-P5-PREFS-008: Defaults for new chats still uses GroupHeader (not retrofitted)", () => {
-    expect(src).toContain("<GroupHeader>Defaults for new chats</GroupHeader>");
+  // REG-P5-PREFS-008: Shared settings group labels use the issue #234 header
+  // primitive wrapper instead of reintroducing bespoke kicker markup.
+  test("REG-P5-PREFS-008: Defaults for new chats uses the shared section title wrapper", () => {
+    expect(src).toContain(
+      "<PreferenceGroupTitle>Defaults for new chats</PreferenceGroupTitle>",
+    );
   });
 
-  test("REG-P5-PREFS-009: Sharing & privacy still uses GroupHeader (not retrofitted)", () => {
-    expect(src).toContain("<GroupHeader>Sharing &amp; privacy</GroupHeader>");
+  test("REG-P5-PREFS-009: Sharing & privacy uses the shared section title wrapper", () => {
+    expect(src).toContain(
+      "<PreferenceGroupTitle>Sharing &amp; privacy</PreferenceGroupTitle>",
+    );
   });
 });

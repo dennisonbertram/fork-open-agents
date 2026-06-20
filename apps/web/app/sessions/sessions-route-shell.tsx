@@ -1,12 +1,13 @@
 "use client";
 
-import { PanelLeft, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import type { CSSProperties, ReactNode } from "react";
 import {
   memo,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -22,13 +23,8 @@ import {
   SidebarContent,
   SidebarInset,
   SidebarProvider,
-  useSidebar,
+  SidebarRail,
 } from "@/components/ui/sidebar";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { useBackgroundChatNotifications } from "@/hooks/use-background-chat-notifications";
 import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -56,12 +52,8 @@ const RouteContentShell = memo(function RouteContentShell({
 }: {
   children: ReactNode;
 }) {
-  const { state, isMobile, openMobile, toggleSidebar } = useSidebar();
   const { target, closeWorkspaceSettings } = useWorkspaceSettings();
-  // The sidebar uses offcanvas collapse: it slides fully off-screen when
-  // collapsed, leaving nothing visible to reopen it with.  Surface a
-  // persistent "Open panel" button in the content area whenever it is hidden.
-  const sidebarHidden = isMobile ? !openMobile : state === "collapsed";
+  const workspaceSettingsTitleId = useId();
 
   useEffect(() => {
     if (!target) {
@@ -78,36 +70,21 @@ const RouteContentShell = memo(function RouteContentShell({
 
   return (
     <SidebarInset className="relative flex min-w-0 flex-1 flex-col overflow-hidden">
-      {sidebarHidden ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="outline"
-              size="icon"
-              onClick={toggleSidebar}
-              className="absolute left-2.5 top-2.5 z-30 h-8 w-8 bg-background/80 shadow-sm backdrop-blur"
-              aria-label="Open panel"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="right" sideOffset={4}>
-            Open panel
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
       {children}
       {target ? (
         <div
-          role="dialog"
-          aria-modal="true"
-          aria-label="Workspace settings"
+          role="region"
+          aria-labelledby={workspaceSettingsTitleId}
           className="absolute inset-0 z-40 flex flex-col bg-background"
         >
           <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
             <div className="min-w-0">
-              <h1 className="text-sm font-semibold">Workspace settings</h1>
+              <h1
+                id={workspaceSettingsTitleId}
+                className="text-sm font-semibold"
+              >
+                Workspace settings
+              </h1>
               <p className="truncate text-xs text-muted-foreground">
                 {target.label}
               </p>
@@ -392,7 +369,7 @@ export function SessionsRouteShell({
             } as CSSProperties
           }
         >
-          <Sidebar collapsible="offcanvas" className="border-r border-border">
+          <Sidebar collapsible="icon" className="border-r border-border">
             <SidebarContent className="bg-muted/20">
               <InboxSidebar
                 sessions={sessions}
@@ -412,6 +389,7 @@ export function SessionsRouteShell({
                 initialUser={currentUser}
               />
             </SidebarContent>
+            <SidebarRail />
           </Sidebar>
           <RouteContentShell>{children}</RouteContentShell>
         </SidebarProvider>

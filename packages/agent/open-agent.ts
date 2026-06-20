@@ -31,6 +31,11 @@ import {
   PROPOSE_TOOL_NAME,
   type ProposeToolAction,
 } from "./tools/propose-tool";
+import {
+  getManageBackgroundAgentTool,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
+  type ManageBackgroundAgentAction,
+} from "./tools/manage-background-agent";
 
 export const OPEN_AGENT_RUNTIME_MODES = ["classic", "managed_runtime"] as const;
 export type OpenAgentRuntimeMode = (typeof OPEN_AGENT_RUNTIME_MODES)[number];
@@ -111,6 +116,17 @@ const callOptionsSchema = z.object({
    * Only present when toolAuthoringEnabled=true.
    */
   proposeToolAction: z.custom<ProposeToolAction>().optional(),
+  /**
+   * Enables the policy-gated manage_background_agent tool.
+   */
+  manageAgentEnabled: z.boolean().optional(),
+  /**
+   * Web-provided action that persists an approved background-agent draft.
+   * Only present when manageAgentEnabled=true.
+   */
+  manageBackgroundAgentAction: z
+    .custom<ManageBackgroundAgentAction>()
+    .optional(),
   /**
    * True for unattended runs (background agents, agent-loop steps) where no
    * human can approve tool calls. Threaded into experimental_context so tools
@@ -210,6 +226,7 @@ function pickTools(
 const BUILTIN_TOOL_NAME_SET: ReadonlySet<string> = new Set<string>([
   ...OPEN_AGENT_TOOL_NAMES,
   PROPOSE_TOOL_NAME,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
 ]);
 
 /**
@@ -258,6 +275,7 @@ export function getRuntimeModeToolPolicy(
   policyOptions?: {
     sandboxFree?: boolean;
     toolAuthoringEnabled?: boolean;
+    manageAgentEnabled?: boolean;
     allowedBuiltinToolNames?: ReadonlyArray<string> | null;
   },
 ): ToolSet {
@@ -297,6 +315,17 @@ export function getRuntimeModeToolPolicy(
   });
   if (proposeTool) {
     mergedTools[PROPOSE_TOOL_NAME] = proposeTool;
+  }
+
+  // #449: conditionally add the agent-management tool when enabled.
+  // Background-agent creation/editing is a config-write action (no sandbox
+  // required).  Gated off by default; the web layer sets manageAgentEnabled
+  // when the resolved agent config permits it.
+  const manageAgentTool = getManageBackgroundAgentTool({
+    manageAgentEnabled: policyOptions?.manageAgentEnabled,
+  });
+  if (manageAgentTool) {
+    mergedTools[MANAGE_BACKGROUND_AGENT_TOOL_NAME] = manageAgentTool;
   }
 
   if (runtimeMode !== "managed_runtime") {
@@ -369,6 +398,9 @@ export const openAgent = new ToolLoopAgent({
     // Phase 6 (#242): optional tool authoring gate + web-injected action
     const toolAuthoringEnabled = options.toolAuthoringEnabled ?? false;
     const proposeToolAction = options.proposeToolAction;
+    // #449: optional background-agent management gate + web-injected closure
+    const manageAgentEnabled = options.manageAgentEnabled ?? false;
+    const manageBackgroundAgentAction = options.manageBackgroundAgentAction;
     const githubToolsEnabled = options.githubToolsEnabled ?? false;
     const githubToolAvailable = options.githubToolAvailable ?? false;
     const unattended = options.unattended ?? false;
@@ -395,6 +427,7 @@ export const openAgent = new ToolLoopAgent({
         tools: getRuntimeModeToolPolicy(runtimeMode, settings.tools, {
           sandboxFree,
           toolAuthoringEnabled,
+          manageAgentEnabled,
           allowedBuiltinToolNames,
         }) as typeof tools,
         model: callModel,
@@ -413,6 +446,10 @@ export const openAgent = new ToolLoopAgent({
         // Phase 6: only inject when enabled; undefined = no authoring in this session
         ...(toolAuthoringEnabled && proposeToolAction
           ? { proposeToolAction }
+          : {}),
+        // #449: inject agent management closure when enabled
+        ...(manageAgentEnabled && manageBackgroundAgentAction
+          ? { manageBackgroundAgentAction }
           : {}),
       },
     };

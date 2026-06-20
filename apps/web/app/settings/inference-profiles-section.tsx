@@ -35,6 +35,7 @@ import type {
 } from "@/lib/inference/types";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
+import { SettingsSectionHeader } from "./_components/section-header";
 
 export interface InferenceProfilesResponse {
   profiles: SafeInferenceProfile[];
@@ -520,26 +521,21 @@ export function InferenceProfilesSection() {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Inference Profiles
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Add user-paid Anthropic-compatible credentials. Saved profiles
-              appear as a User group in the chat model selector.
-            </p>
-          </div>
-          <Button
-            size="sm"
-            onClick={handleOpenCreate}
-            disabled={isSaving || testingProfileId !== null}
-            className="shrink-0"
-          >
-            <Plus className="size-3.5" />
-            New Profile
-          </Button>
-        </div>
+        <SettingsSectionHeader
+          title="Inference Profiles"
+          description="Add user-paid Anthropic-compatible credentials. Saved profiles appear as a User group in the chat model selector."
+          action={
+            <Button
+              size="sm"
+              onClick={handleOpenCreate}
+              disabled={isSaving || testingProfileId !== null}
+              className="shrink-0"
+            >
+              <Plus className="size-3.5" />
+              New Profile
+            </Button>
+          }
+        />
 
         {error && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">

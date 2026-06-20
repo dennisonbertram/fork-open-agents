@@ -4,8 +4,8 @@ import {
   requireOwnedSessionChat,
 } from "@/app/api/sessions/_lib/session-context";
 import {
+  compareAndSetChatActiveStreamId,
   deleteChatMessageAndFollowing,
-  updateChatActiveStreamId,
 } from "@/lib/db/sessions";
 
 type RouteContext = {
@@ -32,11 +32,12 @@ export async function DELETE(_req: Request, context: RouteContext) {
   const { chat } = chatContext;
 
   if (chat.activeStreamId) {
+    const runId = chat.activeStreamId;
     // Check if the workflow is actually still running. If it terminated
     // without cleaning up (e.g. due to a failure), clear the stale ID
     // and allow the delete to proceed.
     try {
-      const run = getRun(chat.activeStreamId);
+      const run = getRun(runId);
       const status = await run.status;
       if (status === "running" || status === "pending") {
         return Response.json(
@@ -49,7 +50,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
     }
 
     // Workflow is terminal or not found — clear the stale activeStreamId.
-    await updateChatActiveStreamId(chatId, null);
+    await clearStaleActiveStreamId(chatId, runId);
   }
 
   const result = await deleteChatMessageAndFollowing(chatId, messageId);
@@ -69,4 +70,14 @@ export async function DELETE(_req: Request, context: RouteContext) {
     success: true,
     deletedMessageIds: result.deletedMessageIds,
   });
+}
+
+async function clearStaleActiveStreamId(chatId: string, runId: string) {
+  const cleared = await compareAndSetChatActiveStreamId(chatId, runId, null);
+  if (!cleared) {
+    console.info("[workflow] chat_stream_stale_clear_skipped", {
+      chatId,
+      expectedRunId: runId,
+    });
+  }
 }

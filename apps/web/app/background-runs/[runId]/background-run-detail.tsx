@@ -8,74 +8,24 @@ import {
   ExternalLink,
 } from "lucide-react";
 import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
-import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { RunSummarySection } from "./run-summary-section";
+import { useBackgroundRunEventSource } from "./use-background-run-event-source";
+import type {
+  BackgroundRunDetailData,
+  SerializedBackgroundAgent,
+  SerializedBackgroundEvent,
+  SerializedBackgroundOutput,
+  SerializedBackgroundRun,
+  StreamStatus,
+} from "./types";
 
-type SerializedBackgroundRun = {
-  id: string;
-  status: string;
-  source: string;
-  triggerKind: string;
-  externalId: string;
-  idempotencyKey: string;
-  repoOwner: string;
-  repoName: string;
-  ref: string | null;
-  sha: string | null;
-  branch: string | null;
-  prNumber: number | null;
-  issueNumber: number | null;
-  deploymentUrl: string | null;
-  outputKind: string | null;
-  outputUrl: string | null;
-  sandboxName: string | null;
-  requestId: string | null;
-  workflowRunId: string | null;
-  errorKind: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  resultSummary?: RunSummary | null;
-};
-
-type SerializedBackgroundAgent = {
-  id: string;
-  name: string;
-  permissions: unknown;
-  checkCommand: string | null;
-};
-
-type SerializedBackgroundEvent = {
-  id: string;
-  eventName: string;
-  status: string;
-  summary: string | null;
-  workflowRunId: string | null;
-  sandboxName: string | null;
-  requestId: string | null;
-  errorKind: string | null;
-  redactionStatus: string;
-  payload: Record<string, unknown>;
-  createdAt: string;
-};
-
-type SerializedBackgroundOutput = {
-  id: string;
-  kind: string;
-  status: string;
-  url: string | null;
-  prNumber: number | null;
-};
-
-type BackgroundRunDetailData = {
-  run: SerializedBackgroundRun;
-  agent: SerializedBackgroundAgent | null;
-  events: SerializedBackgroundEvent[];
-  outputs: SerializedBackgroundOutput[];
-};
+function isSseEnabled(): boolean {
+  const env = process.env.NEXT_PUBLIC_ENABLE_BACKGROUND_RUN_SSE;
+  return env === "1" || env === "true";
+}
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
@@ -318,13 +268,53 @@ function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
   );
 }
 
+const STREAM_STATUS_LABELS: Record<StreamStatus, string> = {
+  idle: "",
+  connecting: "Connecting to live stream…",
+  live: "Live streaming",
+  reconnecting: "Reconnecting…",
+  terminal: "Stream ended",
+};
+
 export function BackgroundRunDetail({
   initialData,
 }: {
   initialData: BackgroundRunDetailData;
 }) {
+  const sseEnabled = isSseEnabled();
+  const [streamRunStatus, setStreamRunStatus] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<SerializedBackgroundEvent[]>(
+    [],
+  );
+
+  const onSseEvents = useCallback((newEvents: SerializedBackgroundEvent[]) => {
+    setStreamEvents((prev) => {
+      const seen = new Set(prev.map((e) => e.id));
+      const extra = newEvents.filter((e) => !seen.has(e.id));
+      return extra.length > 0 ? [...prev, ...extra] : prev;
+    });
+  }, []);
+
+  const onSseTerminal = useCallback((status: string) => {
+    setStreamRunStatus(status);
+  }, []);
+
+  const { status: sseStatus } = useBackgroundRunEventSource({
+    runId: initialData.run.id,
+    enabled:
+      sseEnabled &&
+      initialData.run.status !== "succeeded" &&
+      initialData.run.status !== "failed" &&
+      initialData.run.status !== "skipped" &&
+      initialData.run.status !== "cancelled",
+    onEvents: onSseEvents,
+    onTerminal: onSseTerminal,
+  });
+
   const { data, error } = useSWR<BackgroundRunDetailData>(
-    `/api/background-agent-runs/${initialData.run.id}`,
+    sseEnabled
+      ? null // suppress SWR polling when SSE is enabled
+      : `/api/background-agent-runs/${initialData.run.id}`,
     fetchJson,
     {
       fallbackData: initialData,
@@ -334,12 +324,37 @@ export function BackgroundRunDetail({
           : 0,
     },
   );
+
   const detail = data ?? initialData;
-  const { run, agent, events, outputs } = detail;
+  const { agent, outputs } = detail;
+
+  // When SSE is enabled, merge stream events with initial data; when
+  // a terminal status arrives via SSE, mirror it on the run object.
+  const mergedRun: SerializedBackgroundRun = useMemo(() => {
+    if (sseEnabled && streamRunStatus) {
+      return { ...detail.run, status: streamRunStatus };
+    }
+    return detail.run;
+  }, [sseEnabled, streamRunStatus, detail.run]);
+
+  const mergedEvents: SerializedBackgroundEvent[] = useMemo(() => {
+    if (!sseEnabled) return detail.events;
+    if (streamEvents.length === 0) return detail.events;
+
+    // Merge: stream events arrive later; deduplicate by id
+    const seen = new Set(detail.events.map((e) => e.id));
+    const extra = streamEvents.filter((e) => !seen.has(e.id));
+    return [...detail.events, ...extra];
+  }, [sseEnabled, detail.events, streamEvents]);
+
+  const { run, events } = { run: mergedRun, events: mergedEvents };
   const runCost = formatRunCost(events);
+  const isLive = run.status === "queued" || run.status === "running";
+  const streamStatusLabel =
+    sseEnabled && isLive ? STREAM_STATUS_LABELS[sseStatus] : null;
 
   return (
-    <main className="min-h-screen bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
@@ -364,6 +379,15 @@ export function BackgroundRunDetail({
               <p className="mt-2 text-xs text-destructive">
                 Live refresh failed. Existing evidence is still shown.
               </p>
+            )}
+            {/* ARIA live region for stream connection status */}
+            {streamStatusLabel && (
+              <div
+                aria-live="polite"
+                className="mt-2 text-xs text-muted-foreground"
+              >
+                {streamStatusLabel}
+              </div>
             )}
           </div>
           {run.outputUrl && (
@@ -468,9 +492,16 @@ export function BackgroundRunDetail({
             <section className="rounded-md border border-border">
               <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Live timeline</h2>
-                {(run.status === "queued" || run.status === "running") && (
+                {isLive && (
                   <span className="text-xs text-muted-foreground">
-                    Refreshing
+                    {sseEnabled
+                      ? sseStatus === "live"
+                        ? "Streaming"
+                        : sseStatus === "connecting" ||
+                            sseStatus === "reconnecting"
+                          ? "Connecting"
+                          : "Refreshing"
+                      : "Refreshing"}
                   </span>
                 )}
               </div>

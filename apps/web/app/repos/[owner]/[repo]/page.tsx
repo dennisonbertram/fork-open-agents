@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Boxes, ExternalLink } from "lucide-react";
+import { Boxes, ExternalLink, PlayCircle } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -101,6 +101,12 @@ export default async function RepoDashboardPage({
               >
                 <ExternalLink className="h-4 w-4" />
                 GitHub
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm">
+              <Link href={`/repos/${owner}/${repo}/actions`}>
+                <PlayCircle className="h-4 w-4" />
+                Actions
               </Link>
             </Button>
             <Button asChild variant="outline" size="sm">

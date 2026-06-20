@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Repository settings</title>
+    <style>
+      :root {
+        --bg: #0a0a0b;
+        --panel: #0e0e10;
+        --card: #121214;
+        --border: rgba(255, 255, 255, 0.07);
+        --border2: rgba(255, 255, 255, 0.045);
+        --txt: #ededee;
+        --muted: #8b8b91;
+        --muted2: #62626a;
+        --accent: #6366f1;
+        --accent2: #818cf8;
+        --ok: #34d399;
+        --err: #f472b6;
+        --r: 11px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+      }
+      body {
+        background: var(--bg);
+        color: var(--txt);
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        -webkit-font-smoothing: antialiased;
+        display: grid;
+        grid-template-columns: 228px 1fr;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+
+      aside {
+        background: var(--panel);
+        border-right: 1px solid var(--border);
+        padding: 14px 12px;
+        overflow: auto;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        padding: 6px 8px 16px;
+      }
+      .brand .logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, var(--accent), #a855f7);
+      }
+      .brand b {
+        font-weight: 600;
+        font-size: 14px;
+      }
+      .navlabel {
+        font-size: 10px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: var(--muted2);
+        padding: 14px 8px 6px;
+      }
+      .nav a {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 7px 8px;
+        border-radius: 8px;
+        color: var(--muted);
+        text-decoration: none;
+      }
+      .nav a .ic {
+        width: 15px;
+        height: 15px;
+        opacity: 0.7;
+        flex: none;
+      }
+      .nav a:hover {
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--txt);
+      }
+      .nav a.active {
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--txt);
+      }
+      .nav a.active .ic {
+        opacity: 1;
+        color: var(--accent2);
+      }
+
+      main {
+        overflow: auto;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        border-bottom: 1px solid var(--border);
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        z-index: 2;
+      }
+      .crumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .crumb .sep {
+        color: var(--muted2);
+        font-weight: 400;
+      }
+      .crumb .repo {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .crumb .ic {
+        color: var(--accent2);
+      }
+      .save {
+        display: flex;
+        gap: 9px;
+      }
+      .btn {
+        border: 1px solid var(--border);
+        background: var(--card);
+        color: var(--txt);
+        border-radius: 8px;
+        padding: 7px 14px;
+        font-size: 12.5px;
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: var(--accent);
+        border-color: transparent;
+      }
+      .btn.ghost {
+        background: transparent;
+        color: var(--muted);
+      }
+
+      .wrap {
+        padding: 22px 24px 60px;
+        max-width: 780px;
+      }
+      .pageh {
+        margin: 0 0 4px;
+        font-size: 18px;
+        font-weight: 600;
+      }
+      .pagesub {
+        color: var(--muted);
+        margin: 0 0 22px;
+        font-size: 12.5px;
+      }
+
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--r);
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .card > header {
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--border2);
+      }
+      .card > header h3 {
+        margin: 0;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .card > header p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 14px 18px;
+        border-top: 1px solid var(--border2);
+      }
+      .row:first-child {
+        border-top: none;
+      }
+      .row .l {
+        min-width: 0;
+      }
+      .row .l .name {
+        font-size: 13px;
+      }
+      .row .l .desc {
+        color: var(--muted);
+        font-size: 11.5px;
+        margin-top: 2px;
+        max-width: 430px;
+      }
+      .row .ctl {
+        flex: none;
+      }
+
+      /* controls */
+      .sw {
+        width: 38px;
+        height: 22px;
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.1);
+        position: relative;
+        transition: 0.15s;
+      }
+      .sw::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #d4d4d8;
+        transition: 0.15s;
+      }
+      .sw.on {
+        background: var(--accent);
+      }
+      .sw.on::after {
+        left: 18px;
+        background: #fff;
+      }
+      select.in,
+      input.in {
+        appearance: none;
+        -webkit-appearance: none;
+        background: #0b0b0d;
+        border: 1px solid var(--border);
+        color: var(--txt);
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 12.5px;
+        min-width: 200px;
+        font-family: inherit;
+        cursor: pointer;
+        transition:
+          border-color 0.12s,
+          box-shadow 0.12s;
+      }
+      select.in {
+        padding-right: 34px;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238b8b91' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 11px center;
+      }
+      select.in:hover,
+      input.in:hover {
+        border-color: rgba(255, 255, 255, 0.16);
+      }
+      select.in:focus,
+      input.in:focus {
+        outline: none;
+        border-color: var(--accent2);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+      }
+      select.in option {
+        background: #161618;
+        color: var(--txt);
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11.5px;
+        color: var(--ok);
+        background: rgba(52, 211, 153, 0.1);
+        padding: 4px 10px;
+        border-radius: 20px;
+      }
+      .tag .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--ok);
+      }
+      .pillbtn {
+        border: 1px solid var(--border);
+        background: #0b0b0d;
+        color: var(--txt);
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 7px;
+        align-items: center;
+      }
+
+      /* danger */
+      .danger {
+        border-color: rgba(244, 114, 182, 0.35);
+      }
+      .danger > header h3 {
+        color: var(--err);
+      }
+      .danger .row .btn.del {
+        border-color: rgba(244, 114, 182, 0.4);
+        color: var(--err);
+        background: rgba(244, 114, 182, 0.06);
+      }
+      .hint {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        color: var(--muted2);
+        font-size: 11px;
+        margin-top: 9px;
+      }
+    </style>
+  </head>
+  <body>
+    <aside>
+      <div class="brand">
+        <div class="logo"></div>
+        <b>Open Agents</b>
+      </div>
+      <div class="navlabel">Build</div>
+      <nav class="nav">
+        <a href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M12 2 2 7l10 5 10-5-10-5Z" />
+            <path d="m2 17 10 5 10-5" /></svg
+          >Agents</a
+        >
+        <a href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M21 12a9 9 0 1 1-3-6.7" />
+            <path d="M21 3v6h-6" /></svg
+          >Loops</a
+        >
+        <a class="active" href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"
+            />
+            <path d="M14 2v6h6" /></svg
+          >Repositories</a
+        >
+        <a href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M4 7h16M4 12h16M4 17h10" /></svg
+          >Tools</a
+        >
+      </nav>
+      <div class="navlabel">Observability</div>
+      <nav class="nav">
+        <a href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M3 3v18h18" />
+            <path d="m7 14 3-4 4 3 5-7" /></svg
+          >Metrics</a
+        >
+        <a href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path d="M4 6h16M4 12h16M4 18h16" /></svg
+          >Traces</a
+        >
+      </nav>
+      <div class="navlabel">Settings</div>
+      <nav class="nav">
+        <a class="active" href="#"
+          ><svg
+            class="ic"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 7.6 19a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 5 12.6a1.65 1.65 0 0 0-1.17-2.82H3a2 2 0 0 1 0-4h.09"
+            /></svg
+          >Settings</a
+        >
+      </nav>
+    </aside>
+
+    <main>
+      <div class="top">
+        <div class="crumb">
+          <span class="repo"
+            ><svg
+              class="ic"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"
+              /></svg
+            >dennisonbertram</span
+          >
+          <span class="sep">/</span><span>claudeops-logs</span>
+        </div>
+        <div class="save">
+          <button class="btn ghost">Discard</button
+          ><button class="btn primary">Save changes</button>
+        </div>
+      </div>
+
+      <div class="wrap">
+        <h1 class="pageh">Repository settings</h1>
+        <p class="pagesub">
+          Defaults applied to new sessions started from this repository.
+        </p>
+
+        <!-- General -->
+        <section class="card">
+          <header>
+            <h3>General</h3>
+            <p>Branch and naming defaults.</p>
+          </header>
+          <div class="row">
+            <div class="l">
+              <div class="name">Default branch</div>
+              <div class="desc">Branch checked out when a session starts.</div>
+            </div>
+            <div class="ctl">
+              <select class="in">
+                <option>main</option>
+                <option>develop</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Start new branch per session</div>
+              <div class="desc">
+                Create an isolated branch instead of working on the base branch.
+              </div>
+            </div>
+            <div class="ctl"><div class="sw on"></div></div>
+          </div>
+        </section>
+
+        <!-- Clone & runtime -->
+        <section class="card">
+          <header>
+            <h3>Clone &amp; runtime</h3>
+            <p>How the sandbox workspace is provisioned.</p>
+          </header>
+          <div class="row">
+            <div class="l">
+              <div class="name">Full clone</div>
+              <div class="desc">
+                Include full git history (enables
+                <span class="num">git log</span>/<span class="num">blame</span
+                >). Off uses a fast shallow clone — recommended.
+              </div>
+            </div>
+            <div class="ctl"><div class="sw"></div></div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Pre-warm sandbox on session start</div>
+              <div class="desc">
+                Provision &amp; clone the moment a session is created so the
+                first message is instant.
+              </div>
+            </div>
+            <div class="ctl"><div class="sw on"></div></div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Runtime mode</div>
+              <div class="desc">
+                Managed runtime installs a profile toolchain; classic uses the
+                base image.
+              </div>
+            </div>
+            <div class="ctl">
+              <select class="in">
+                <option>Managed runtime</option>
+                <option>Classic</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Runtime profile</div>
+              <div class="desc">
+                Toolchain installed and verified at startup.
+              </div>
+            </div>
+            <div class="ctl">
+              <select class="in">
+                <option>web-bun-agent-browser</option>
+                <option>python-uv</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">vCPUs</div>
+              <div class="desc">2 GB memory per vCPU.</div>
+            </div>
+            <div class="ctl">
+              <select class="in" style="min-width: 120px">
+                <option>4</option>
+                <option>2</option>
+                <option>8</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <!-- Git automation -->
+        <section class="card">
+          <header>
+            <h3>Git automation</h3>
+            <p>What happens after each agent turn.</p>
+          </header>
+          <div class="row">
+            <div class="l">
+              <div class="name">Auto commit &amp; push</div>
+              <div class="desc">
+                Commit and push changes automatically after every turn.
+              </div>
+            </div>
+            <div class="ctl"><div class="sw on"></div></div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Auto create pull request</div>
+              <div class="desc">
+                Open a PR once the branch has its first pushed commit.
+              </div>
+            </div>
+            <div class="ctl"><div class="sw"></div></div>
+          </div>
+        </section>
+
+        <!-- Integrations -->
+        <section class="card">
+          <header>
+            <h3>Integrations</h3>
+            <p>Connected services for this repository.</p>
+          </header>
+          <div class="row">
+            <div class="l">
+              <div class="name">GitHub App</div>
+              <div class="desc">
+                Installation grants read/write for commits and PRs.
+              </div>
+            </div>
+            <div class="ctl">
+              <span class="tag"
+                ><span class="dot"></span>Installed · #131496053</span
+              >
+            </div>
+          </div>
+          <div class="row">
+            <div class="l">
+              <div class="name">Vercel project</div>
+              <div class="desc">Used for preview env sync on this repo.</div>
+            </div>
+            <div class="ctl">
+              <button class="pillbtn">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M12 2 2 21h20L12 2Z" /></svg
+                >Link project
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Danger -->
+        <section class="card danger">
+          <header>
+            <h3>Danger zone</h3>
+            <p>Irreversible actions for this repository.</p>
+          </header>
+          <div class="row">
+            <div class="l">
+              <div class="name">Delete repository settings</div>
+              <div class="desc">
+                Removes saved defaults and unlinks integrations. Active sessions
+                are unaffected.
+              </div>
+              <div class="hint">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path d="M12 9v4M12 17h.01" />
+                  <path
+                    d="M10.3 3.3 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.3a2 2 0 0 0-3.4 0Z"
+                  /></svg
+                >Requires typing the repo name to confirm.
+              </div>
+            </div>
+            <div class="ctl"><button class="btn del">Delete…</button></div>
+          </div>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

@@ -43,6 +43,16 @@ let mockCheckRuns: MockCheckRun[] = [];
 let mockPrListError: Error | null = null;
 let mockIssueListError: Error | null = null;
 let mockWorkflowRunsError: Error | null = null;
+const withScopedInstallationOctokit = mock(
+  async (params: {
+    installationId: number;
+    repositoryId: number;
+    permissions: Record<string, string>;
+    operation: (
+      octokit: NonNullable<typeof mockUserOctokit>,
+    ) => Promise<unknown>;
+  }) => params.operation(makeMockOctokit()),
+);
 let mockUserOctokit: {
   rest: {
     pulls: { list: (_args: unknown) => Promise<OctokitResponse<MockPr[]>> };
@@ -64,6 +74,20 @@ let mockUserOctokit: {
 
 mock.module("@/lib/github/client", () => ({
   getUserOctokit: async () => mockUserOctokit,
+}));
+
+mock.module("@/lib/github/access", () => ({
+  verifyRepoAccess: async () => ({
+    ok: true,
+    installationId: 123,
+    repositoryId: 456,
+    defaultBranch: "develop",
+    userPermission: "write",
+  }),
+}));
+
+mock.module("@/lib/github/app", () => ({
+  withScopedInstallationOctokit,
 }));
 
 // Lazy-import after mocks are wired
@@ -112,6 +136,7 @@ describe("getRepoDashboardData", () => {
     mockPrListError = null;
     mockIssueListError = null;
     mockWorkflowRunsError = null;
+    withScopedInstallationOctokit.mockClear();
     mockUserOctokit = makeMockOctokit();
   });
 
@@ -137,6 +162,48 @@ describe("getRepoDashboardData", () => {
     expect(result.actionsSummary).toMatchObject({
       ok: false,
       errorKind: "github_not_connected",
+    });
+  });
+
+  test("BT-H-000: actions summary uses a scoped installation token and keeps the overview shape", async () => {
+    mockWorkflowRuns = [
+      {
+        id: 9001,
+        name: "CI",
+        conclusion: "success",
+        status: "completed",
+        created_at: "2026-06-19T10:00:00Z",
+        html_url: "https://github.com/acme/widgets/actions/runs/9001",
+      } as MockWorkflowRun,
+    ];
+
+    const { getRepoDashboardData } = await helperModulePromise;
+    const result = await getRepoDashboardData({
+      userId: "user-1",
+      owner: "acme",
+      repo: "widgets",
+    });
+
+    expect(withScopedInstallationOctokit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        installationId: 123,
+        repositoryId: 456,
+        permissions: { actions: "read", metadata: "read" },
+      }),
+    );
+    expect(result.actionsSummary).toEqual({
+      ok: true,
+      latestStatus: "passing",
+      recentRuns: [
+        {
+          runId: 9001,
+          name: "CI",
+          conclusion: "success",
+          status: "completed",
+          createdAt: "2026-06-19T10:00:00Z",
+          url: "https://github.com/acme/widgets/actions/runs/9001",
+        },
+      ],
     });
   });
 

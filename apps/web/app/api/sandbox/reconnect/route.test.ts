@@ -6,6 +6,8 @@ const updateCalls: Array<{
   sessionId: string;
   patch: Record<string, unknown>;
 }> = [];
+const connectCalls: Array<Record<string, unknown>> = [];
+let probeCalls = 0;
 
 let probeResult: {
   success: boolean;
@@ -65,11 +67,20 @@ mock.module("@open-agents/sandbox", () => ({
     sandboxName?: string;
     expiresAt?: number;
   }) => {
+    connectCalls.push(state);
+    if (state.sandboxName && !probeResult.success) {
+      throw new Error(
+        probeResult.stderr || probeResult.stdout || "sandbox reconnect failed",
+      );
+    }
     const expiresAt = Date.now() + 2 * 60_000;
     return {
       workingDirectory: "/vercel/sandbox",
       expiresAt,
-      exec: async () => probeResult,
+      exec: async () => {
+        probeCalls += 1;
+        return probeResult;
+      },
       getState: () => ({
         ...state,
         ...(state.sandboxName ? { sandboxName: state.sandboxName } : {}),
@@ -84,6 +95,8 @@ const routeModulePromise = import("./route");
 describe("/api/sandbox/reconnect", () => {
   beforeEach(() => {
     updateCalls.length = 0;
+    connectCalls.length = 0;
+    probeCalls = 0;
     probeResult = {
       success: true,
       stdout: "ok",
@@ -108,6 +121,35 @@ describe("/api/sandbox/reconnect", () => {
     };
   });
 
+  test("returns active future sandbox state without a live reconnect probe", async () => {
+    const { GET } = await routeModulePromise;
+
+    sessionRecord.lifecycleState = "active";
+    sessionRecord.lifecycleError = null;
+
+    const response = await GET(
+      new Request("http://localhost/api/sandbox/reconnect?sessionId=session-1"),
+    );
+    const payload = (await response.json()) as {
+      status: string;
+      hasSnapshot: boolean;
+      expiresAt?: number;
+      lifecycle: { state: string | null; sandboxExpiresAt: number | null };
+    };
+
+    expect(response.ok).toBe(true);
+    expect(payload.status).toBe("connected");
+    expect(payload.hasSnapshot).toBe(false);
+    expect(payload.lifecycle.state).toBe("active");
+    expect(payload.lifecycle.sandboxExpiresAt).toBe(
+      sessionRecord.sandboxExpiresAt?.getTime() ?? null,
+    );
+    expect(payload.expiresAt).toBe(sessionRecord.sandboxState.expiresAt);
+    expect(connectCalls).toHaveLength(0);
+    expect(probeCalls).toBe(0);
+    expect(updateCalls).toHaveLength(0);
+  });
+
   test("recovers failed lifecycle state when reconnect succeeds", async () => {
     const { GET } = await routeModulePromise;
 
@@ -126,6 +168,8 @@ describe("/api/sandbox/reconnect", () => {
     expect(payload.hasSnapshot).toBe(false);
     expect(payload.lifecycle.state).toBe("active");
     expect(typeof payload.expiresAt).toBe("number");
+    expect(connectCalls).toHaveLength(1);
+    expect(probeCalls).toBe(0);
 
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]?.sessionId).toBe("session-1");
@@ -133,7 +177,7 @@ describe("/api/sandbox/reconnect", () => {
     expect(updateCalls[0]?.patch.lifecycleError).toBeNull();
   });
 
-  test("marks sandbox expired when the reconnect probe hits a 410", async () => {
+  test("marks sandbox expired when the reconnect flow hits a 410", async () => {
     const { GET } = await routeModulePromise;
 
     probeResult = {
@@ -164,7 +208,7 @@ describe("/api/sandbox/reconnect", () => {
     });
   });
 
-  test("drops a missing sandbox resume handle when the reconnect probe hits a 404", async () => {
+  test("drops a missing sandbox resume handle when the reconnect flow hits a 404", async () => {
     const { GET } = await routeModulePromise;
 
     sessionRecord.snapshotUrl = null;

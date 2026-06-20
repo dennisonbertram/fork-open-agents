@@ -477,6 +477,41 @@
       "when": 1781728270910,
       "tag": "0067_curved_wolfpack",
       "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1781816102487,
+      "tag": "0067_mysterious_randall",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1781869796375,
+      "tag": "0068_minor_human_fly",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1781870579226,
+      "tag": "0069_loose_champions",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1781876545854,
+      "tag": "0070_futuristic_inhumans",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1781880160813,
+      "tag": "0071_mute_zombie",
+      "breakpoints": true
     }
   ]
 }

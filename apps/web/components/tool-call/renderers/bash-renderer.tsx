@@ -1,10 +1,11 @@
 "use client";
 
 import { Terminal } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
-export function BashRenderer({
+export const BashRenderer = memo(function BashRenderer({
   part,
   state,
   onApprove,
@@ -73,4 +74,4 @@ export function BashRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

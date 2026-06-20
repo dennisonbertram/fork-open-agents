@@ -10,6 +10,7 @@ import {
   getToolName,
   type ToolRenderState,
 } from "@/app/lib/render-tool";
+import { memo } from "react";
 import { DEFAULT_WORKING_DIRECTORY } from "@/lib/sandbox/config";
 import { ToolLayout } from "./tool-layout";
 import { BashRenderer } from "./renderers/bash-renderer";
@@ -42,8 +43,13 @@ export type ToolCallProps = {
 
 /**
  * Render a tool call based on its type.
+ *
+ * Wrapped in React.memo to prevent re-renders when none of the tool-call-
+ * specific props have changed, even if the parent re-renders.  The default
+ * shallow comparison treats `part` identity changes as a render signal, so
+ * streaming updates (which produce a new part object) still propagate.
  */
-export function ToolCall({
+export const ToolCall = memo(function ToolCall({
   part,
   activeApprovalId = null,
   cwd = DEFAULT_WORKING_DIRECTORY,
@@ -109,7 +115,7 @@ export function ToolCall({
         />
       );
   }
-}
+});
 
 function DefaultRenderer({
   part,

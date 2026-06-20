@@ -26,6 +26,7 @@ import {
   SkillEditorDialog,
   type SkillEditorSubmit,
 } from "./skill-editor-dialog";
+import { SettingsSectionHeader } from "../_components/section-header";
 
 type SkillListItem = EditableSkill & { enabled: boolean };
 
@@ -268,28 +269,23 @@ export function SkillsSection() {
   return (
     <>
       <div className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1.5">
-            <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Your skills
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Reusable instructions your agents can run like tools. Enabled
-              skills are available in every new chat.
-            </p>
-          </div>
-          {skills.length > 0 ? (
-            <Button
-              size="sm"
-              onClick={handleOpenCreate}
-              disabled={isSaving}
-              className="shrink-0"
-            >
-              <Plus className="size-3.5" />
-              New skill
-            </Button>
-          ) : null}
-        </div>
+        <SettingsSectionHeader
+          title="Your skills"
+          description="Reusable instructions your agents can run like tools. Enabled skills are available in every new chat."
+          action={
+            skills.length > 0 ? (
+              <Button
+                size="sm"
+                onClick={handleOpenCreate}
+                disabled={isSaving}
+                className="shrink-0"
+              >
+                <Plus className="size-3.5" />
+                New skill
+              </Button>
+            ) : null
+          }
+        />
 
         {error && (
           <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">

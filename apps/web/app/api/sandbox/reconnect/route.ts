@@ -55,7 +55,53 @@ function getStateExpiresAt(state: unknown): number | undefined {
   return typeof expiresAt === "number" ? expiresAt : undefined;
 }
 
+function getStateSandboxName(state: unknown): string | null {
+  if (!state || typeof state !== "object") return null;
+  const sandboxName = (state as { sandboxName?: unknown }).sandboxName;
+  return typeof sandboxName === "string" && sandboxName.length > 0
+    ? sandboxName
+    : null;
+}
+
+function hasActiveFutureSandboxState(
+  sessionRecord: SessionRecord,
+  state: SandboxState,
+  now: number,
+): boolean {
+  const stateExpiresAt = getStateExpiresAt(state);
+  return (
+    sessionRecord.lifecycleState === "active" &&
+    (sessionRecord.sandboxExpiresAt?.getTime() ?? 0) > now &&
+    stateExpiresAt !== undefined &&
+    stateExpiresAt > now
+  );
+}
+
+function logReconnectResolved({
+  sessionId,
+  sandboxName,
+  path,
+  durationMs,
+}: {
+  sessionId: string;
+  sandboxName: string | null;
+  path: "db-fast" | "live-probe";
+  durationMs: number;
+}) {
+  console.info(
+    JSON.stringify({
+      event: "sandbox-lifecycle",
+      message: "reconnect-resolved",
+      sessionId,
+      sandboxName,
+      path,
+      durationMs,
+    }),
+  );
+}
+
 export async function GET(req: Request): Promise<Response> {
+  const startedAt = Date.now();
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -106,19 +152,52 @@ export async function GET(req: Request): Promise<Response> {
     } satisfies ReconnectResponse);
   }
 
+  if (
+    hasActiveFutureSandboxState(
+      sessionRecord,
+      state as SandboxState,
+      Date.now(),
+    )
+  ) {
+    const expiresAt = getStateExpiresAt(state);
+    logReconnectResolved({
+      sessionId,
+      sandboxName: getStateSandboxName(state),
+      path: "db-fast",
+      durationMs: Date.now() - startedAt,
+    });
+    return Response.json({
+      status: "connected",
+      hasSnapshot: hasPausedState,
+      expiresAt,
+      lifecycle: buildLifecyclePayload(sessionRecord),
+    } satisfies ReconnectResponse);
+  }
+
   // Connect and probe the persisted runtime sandbox state.
   try {
     const sandbox = await connectSandbox(state as SandboxState);
-    const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
-    if (!probe.success) {
-      const probeError =
-        probe.stderr?.trim() || probe.stdout?.trim() || "sandbox probe failed";
-      if (isSandboxUnavailableError(probeError)) {
-        throw new Error(probeError);
+
+    // Fast-path: when reconnecting to a named sandbox (state.sandboxName is set),
+    // connectSandbox already verified the sandbox is alive through its internal
+    // reconnection flow.  Skipping the exec("pwd") probe saves ~200–600 ms on the
+    // most frequent action (opening a session) and avoids a Vercel control-plane
+    // exec call per reconnect.
+    const isNamedReconnect = Boolean(state.sandboxName);
+    if (!isNamedReconnect) {
+      const probe = await sandbox.exec("pwd", sandbox.workingDirectory, 15_000);
+      if (!probe.success) {
+        const probeError =
+          probe.stderr?.trim() ||
+          probe.stdout?.trim() ||
+          "sandbox probe failed";
+        if (isSandboxUnavailableError(probeError)) {
+          throw new Error(probeError);
+        }
+        console.warn(
+          `[Reconnect] session=${sessionId} non-fatal probe failure while reconnecting: ${probeError}`,
+        );
       }
-      console.warn(
-        `[Reconnect] session=${sessionId} non-fatal probe failure while reconnecting: ${probeError}`,
-      );
     }
 
     const refreshedState =
@@ -146,6 +225,12 @@ export async function GET(req: Request): Promise<Response> {
     console.log(
       `[Reconnect] session=${sessionId} status=connected hasSnapshot=${hasPausedState} expiresAt=${sandbox.expiresAt ?? "null"}`,
     );
+    logReconnectResolved({
+      sessionId,
+      sandboxName: getStateSandboxName(refreshedState),
+      path: "live-probe",
+      durationMs: Date.now() - startedAt,
+    });
     return Response.json({
       status: "connected",
       hasSnapshot: hasPausedState,

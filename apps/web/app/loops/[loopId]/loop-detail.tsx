@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Play, Workflow } from "lucide-react";
+import { ChevronRight, Play, Workflow } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -217,18 +217,29 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
   }
 
   return (
-    <main className="h-full overflow-y-auto bg-background text-foreground">
+    <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
       <div className="mx-auto max-w-6xl space-y-6 px-4 py-8">
         {/* Header */}
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
           <div className="min-w-0">
-            <Link
-              href={`/repos/${loop.repoOwner}/${loop.repoName}/loops`}
-              className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
+            <nav
+              aria-label="Loop breadcrumb"
+              className="mb-3 flex min-w-0 items-center gap-1.5 text-sm"
             >
-              <ArrowLeft className="h-4 w-4" />
-              {loop.repoOwner}/{loop.repoName}
-            </Link>
+              <Link
+                href="/loops"
+                className="shrink-0 text-muted-foreground hover:text-foreground"
+              >
+                Loops
+              </Link>
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <Link
+                href={`/repos/${loop.repoOwner}/${loop.repoName}`}
+                className="min-w-0 truncate font-mono text-muted-foreground hover:text-foreground"
+              >
+                {loop.repoOwner}/{loop.repoName}
+              </Link>
+            </nav>
             <div className="flex items-center gap-2">
               <h1 className="truncate text-2xl font-semibold">{loop.name}</h1>
               <StatusPill status={loop.status} />

@@ -43,6 +43,53 @@ export function filterAgentsByRepo(
   );
 }
 
+export type RepoSubGroupRailAction = {
+  id: "agents" | "loops";
+  ariaLabel: string;
+  tooltip: string;
+  href: string;
+  count: number;
+};
+
+export function getRepoSubGroupRailActions({
+  repoOwner,
+  repoName,
+  agents,
+  loops,
+  loopsFeatureDisabled,
+}: {
+  repoOwner: string;
+  repoName: string;
+  agents: SidebarAgent[];
+  loops: SidebarLoop[] | null;
+  loopsFeatureDisabled: boolean;
+}): RepoSubGroupRailAction[] {
+  const repoLabel = `${repoOwner}/${repoName}`;
+  const encodedOwner = encodeURIComponent(repoOwner);
+  const encodedName = encodeURIComponent(repoName);
+  const actions: RepoSubGroupRailAction[] = [
+    {
+      id: "agents",
+      ariaLabel: `Open agents for ${repoLabel}`,
+      tooltip: agents.length > 0 ? `Agents (${agents.length})` : "Agents",
+      href: `/repos/${encodedOwner}/${encodedName}/agents`,
+      count: agents.length,
+    },
+  ];
+
+  if (!loopsFeatureDisabled) {
+    actions.push({
+      id: "loops",
+      ariaLabel: `Open loops for ${repoLabel}`,
+      tooltip: loops && loops.length > 0 ? `Loops (${loops.length})` : "Loops",
+      href: `/loops?repoOwner=${encodedOwner}&repoName=${encodedName}`,
+      count: loops?.length ?? 0,
+    });
+  }
+
+  return actions;
+}
+
 // ── Sub-group shared primitives ───────────────────────────────────────────────
 
 type SubGroupHeaderProps = {

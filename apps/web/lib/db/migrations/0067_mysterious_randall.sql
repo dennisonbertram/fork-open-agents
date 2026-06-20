@@ -1,0 +1,2 @@
+DROP INDEX "agents_user_role_scope_idx";--> statement-breakpoint
+CREATE UNIQUE INDEX "agents_user_role_scope_idx" ON "agents" USING btree ("user_id","role","scope") WHERE "agents"."scope" = 'user_default';

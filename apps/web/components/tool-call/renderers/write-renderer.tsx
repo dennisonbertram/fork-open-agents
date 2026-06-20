@@ -3,6 +3,7 @@
 import { toRelativePath } from "@open-agents/shared/lib/tool-state";
 import { FilePlus } from "lucide-react";
 import { File as DiffsFile } from "@pierre/diffs/react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { defaultFileOptions } from "@/lib/diffs-config";
 import { ToolLayout } from "../tool-layout";
@@ -17,7 +18,7 @@ function shouldWrapFileContent(filePath: string) {
   );
 }
 
-export function WriteRenderer({
+export const WriteRenderer = memo(function WriteRenderer({
   part,
   state,
   cwd = "",
@@ -88,4 +89,4 @@ export function WriteRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

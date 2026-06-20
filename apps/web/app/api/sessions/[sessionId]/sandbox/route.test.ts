@@ -9,6 +9,7 @@
  * BT-005: Session not found returns 404.
  * BT-006: session.sandbox.attached event is emitted for new attach.
  * BT-007: Event is NOT emitted on a no-op (sandbox already present).
+ * BT-008: Failed VM creation can clear the provisional provisioning state.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -287,5 +288,69 @@ describe("POST /api/sessions/[sessionId]/sandbox", () => {
     expect(body.session).toBeDefined();
     expect(body.session?.sandboxState).toMatchObject({ type: "vercel" });
     expect(body.session?.lifecycleState).toBe("provisioning");
+  });
+});
+
+describe("DELETE /api/sessions/[sessionId]/sandbox", () => {
+  beforeEach(() => {
+    authSession = { user: { id: "user-1" } };
+    sessionRecord = {
+      id: "session-1",
+      userId: "user-1",
+      sandboxState: { type: "vercel" },
+      lifecycleState: "provisioning",
+      lifecycleVersion: 2,
+    };
+    updateSessionCalls.length = 0;
+    emittedEvents.length = 0;
+  });
+
+  test("clears provisional provisioning state after sandbox VM creation fails", async () => {
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(
+      postRequest("session-1"),
+      routeParams("session-1"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls).toEqual([
+      {
+        sessionId: "session-1",
+        update: {
+          sandboxState: null,
+          lifecycleState: null,
+          lifecycleVersion: 3,
+        },
+      },
+    ]);
+
+    const body = (await response.json()) as {
+      session: {
+        sandboxState: { type: string } | null;
+        lifecycleState: string | null;
+      };
+    };
+    expect(body.session.sandboxState).toBeNull();
+    expect(body.session.lifecycleState).toBeNull();
+  });
+
+  test("does not clear an active sandbox", async () => {
+    sessionRecord = {
+      id: "session-1",
+      userId: "user-1",
+      sandboxState: { type: "vercel" },
+      lifecycleState: "active",
+      lifecycleVersion: 2,
+    };
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(
+      postRequest("session-1"),
+      routeParams("session-1"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateSessionCalls.length).toBe(0);
   });
 });

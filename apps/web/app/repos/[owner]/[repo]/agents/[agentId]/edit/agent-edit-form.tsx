@@ -58,6 +58,7 @@ export function AgentEditForm({
   const [runError, setRunError] = useState<string | null>(
     _testRunError ?? null,
   );
+  const [testRunId, setTestRunId] = useState<string | null>(null);
 
   const form = buildFormFromAgent(agent);
   const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
@@ -93,6 +94,7 @@ export function AgentEditForm({
 
   async function handleRunTest() {
     setRunError(null);
+    setTestRunId(null);
     try {
       const res = await fetch(`/api/background-agents/${agent.id}/test`, {
         method: "POST",
@@ -107,7 +109,8 @@ export function AgentEditForm({
         setRunError("No background run was created for this test");
         return;
       }
-      router.push(`/background-runs/${runId}`);
+      // Show inline console instead of navigating away (decision C)
+      setTestRunId(runId);
     } catch (err) {
       setRunError(
         err instanceof Error ? err.message : "Failed to start test run",
@@ -134,6 +137,11 @@ export function AgentEditForm({
         initialConditionLabels={form.conditionLabels}
         initialConditionEnvironments={form.conditionEnvironments}
         initialConditionSeverities={form.conditionSeverities}
+        initialPermissionContents={form.permissionContents}
+        initialPermissionPullRequests={form.permissionPullRequests}
+        initialComposioToolkitSlugs={form.composioToolkitSlugs}
+        createdAgentId={agent.id}
+        testRunId={testRunId}
         onSave={handleSave}
         onRunTest={handleRunTest}
       />

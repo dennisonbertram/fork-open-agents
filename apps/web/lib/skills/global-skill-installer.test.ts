@@ -9,6 +9,10 @@ interface ExecCall {
 }
 
 const execCalls: ExecCall[] = [];
+const pendingSkillExecResolvers: Array<() => void> = [];
+let blockSkillExec = false;
+let activeSkillExecs = 0;
+let maxActiveSkillExecs = 0;
 
 const sandbox = {
   workingDirectory: "/workspace",
@@ -23,6 +27,15 @@ const sandbox = {
         stderr: "",
         truncated: false,
       };
+    }
+
+    if (blockSkillExec) {
+      activeSkillExecs += 1;
+      maxActiveSkillExecs = Math.max(maxActiveSkillExecs, activeSkillExecs);
+      await new Promise<void>((resolve) => {
+        pendingSkillExecResolvers.push(resolve);
+      });
+      activeSkillExecs -= 1;
     }
 
     return {
@@ -40,6 +53,10 @@ const installerModulePromise = import("./global-skill-installer");
 describe("installGlobalSkills", () => {
   beforeEach(() => {
     execCalls.length = 0;
+    pendingSkillExecResolvers.length = 0;
+    blockSkillExec = false;
+    activeSkillExecs = 0;
+    maxActiveSkillExecs = 0;
     sandbox.exec.mockClear();
   });
 
@@ -84,5 +101,31 @@ describe("installGlobalSkills", () => {
     });
 
     expect(execCalls).toEqual([]);
+  });
+
+  test("installs multiple global skills concurrently", async () => {
+    const { installGlobalSkills } = await installerModulePromise;
+
+    blockSkillExec = true;
+    const installPromise = installGlobalSkills({
+      sandbox: sandbox as never,
+      globalSkillRefs: [
+        { source: "vercel/ai", skillName: "ai-sdk" },
+        { source: "vercel/workflow", skillName: "workflow" },
+      ],
+    });
+
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    expect(pendingSkillExecResolvers).toHaveLength(2);
+    expect(maxActiveSkillExecs).toBe(2);
+
+    for (const resolve of pendingSkillExecResolvers) {
+      resolve();
+    }
+
+    await installPromise;
   });
 });
