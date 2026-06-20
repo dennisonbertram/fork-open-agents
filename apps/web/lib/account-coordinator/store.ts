@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq, gte, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   agentLoopRuns,
@@ -84,7 +84,10 @@ export function createAccountSnapshotLoaders(params: {
             ),
           ),
         )
-        .orderBy(desc(sessions.updatedAt))
+        .orderBy(
+          sql`case when ${sessions.status} = 'running' then 0 else 1 end`,
+          desc(sessions.updatedAt),
+        )
         .limit(limit),
     chatWorkflowRuns: async () =>
       db
@@ -221,7 +224,10 @@ export function createAccountSnapshotLoaders(params: {
             ),
           ),
         )
-        .orderBy(desc(backgroundAgentTriggers.nextRunAt))
+        .orderBy(
+          sql`case when ${backgroundAgentTriggers.nextRunAt} is null then 1 else 0 end`,
+          asc(backgroundAgentTriggers.nextRunAt),
+        )
         .limit(limit);
 
       return rows.flatMap((row): AccountScheduledAgent[] => {
