@@ -5,6 +5,7 @@ import {
 } from "@/app/api/sessions/_lib/session-context";
 import { db } from "@/lib/db/client";
 import { listGoalEvents, listGoals } from "@/lib/db/goal-ledger";
+import { listArtifacts } from "@/lib/db/workflow-artifacts";
 import { chatMessages, chats, workflowRuns } from "@/lib/db/schema";
 import {
   extractManagedRuntimeWorkersFromMessages,
@@ -150,6 +151,42 @@ export async function GET(req: Request, context: RouteContext) {
     workflowGoals = [];
   }
 
+  let workflowArtifacts: Array<{
+    id: string;
+    kind: string;
+    status: string;
+    redactionStatus: string;
+    createdByActor: string | null;
+    createdAt: string;
+    workflowRunId: string | null;
+    summary: string | null;
+    sourceLocation: string | null;
+  }> = [];
+
+  try {
+    const artifactRows = await listArtifacts({
+      sessionId,
+      chatId: chatId ?? undefined,
+    });
+    workflowArtifacts = artifactRows.map((row) => {
+      const isPassed = row.redactionStatus === "passed";
+      return {
+        id: row.id,
+        kind: row.kind,
+        status: row.status,
+        redactionStatus: row.redactionStatus,
+        createdByActor: row.createdByActor ?? null,
+        createdAt: row.createdAt.toISOString(),
+        workflowRunId: row.workflowRunId ?? null,
+        summary: isPassed ? (row.summary ?? null) : null,
+        sourceLocation: isPassed ? (row.sourceLocation ?? null) : null,
+      };
+    });
+  } catch {
+    // Artifact lookup is non-fatal; observability should still render.
+    workflowArtifacts = [];
+  }
+
   return Response.json({
     runtimeMode: sessionContext.sessionRecord.runtimeMode,
     events: events.map(toSessionEventSnapshot),
@@ -167,5 +204,6 @@ export async function GET(req: Request, context: RouteContext) {
     services,
     browserRuns,
     workflowGoals,
+    workflowArtifacts,
   });
 }

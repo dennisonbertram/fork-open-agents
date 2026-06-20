@@ -412,11 +412,17 @@ describe("tools execute behavior", () => {
   });
 
   test("commandNeedsApproval flags curl, rm -rf, and dotenv commands", () => {
+    // commandNeedsApproval is bashPolicy-only (backward-compat export).
+    // It does NOT include gitPushPolicy — that is intentional.
+    // For full git-force-push gating, use bashTool().needsApproval or
+    // classifyToolApproval("bash", { command }) instead.
     expect(commandNeedsApproval("ls -la")).toBe(false);
     expect(commandNeedsApproval("git status --short")).toBe(false);
     expect(commandNeedsApproval("npm install")).toBe(false);
     expect(commandNeedsApproval("bun install")).toBe(false);
     expect(commandNeedsApproval("custom-command --help")).toBe(false);
+    // git reset --hard is bashPolicy-only: NOT gated by commandNeedsApproval.
+    // Use bashTool().needsApproval for full gitPushPolicy enforcement.
     expect(commandNeedsApproval("git reset --hard HEAD~1")).toBe(false);
     expect(commandNeedsApproval("curl -s https://example.com")).toBe(true);
     expect(commandNeedsApproval("bash -c 'curl https://example.com'")).toBe(
@@ -475,6 +481,87 @@ describe("tools execute behavior", () => {
       },
     );
     expect(allowedBuildCommand).toBe(false);
+  });
+
+  // FIX-1: bashTool.needsApproval must enforce gitPushPolicy at runtime.
+  // Destructive git ops via bash REQUIRE approval (gitPushPolicy wired into
+  // the full classifyToolApproval call, not just bashPolicy-only).
+  test("bashTool needsApproval gates destructive git operations via gitPushPolicy (FIX-1)", async () => {
+    const baseContext = {
+      sandbox: { workingDirectory: "/repo" },
+      model: "test-model",
+    };
+
+    // git push --force must require approval
+    const forcePush = await getNeedsApprovalResult(
+      bashTool().needsApproval,
+      { command: "git push --force origin main" },
+      baseContext,
+    );
+    expect(forcePush).toBe(true);
+
+    // git reset --hard must require approval
+    const resetHard = await getNeedsApprovalResult(
+      bashTool().needsApproval,
+      { command: "git reset --hard HEAD~1" },
+      baseContext,
+    );
+    expect(resetHard).toBe(true);
+
+    // git clean -fd must require approval
+    const cleanFd = await getNeedsApprovalResult(
+      bashTool().needsApproval,
+      { command: "git clean -fd" },
+      baseContext,
+    );
+    expect(cleanFd).toBe(true);
+
+    // Ordinary git push must NOT require approval (safe command)
+    const ordinaryPush = await getNeedsApprovalResult(
+      bashTool().needsApproval,
+      { command: "git push origin main" },
+      baseContext,
+    );
+    expect(ordinaryPush).toBe(false);
+
+    // Safe commands still pass through without approval
+    const safeGitStatus = await getNeedsApprovalResult(
+      bashTool().needsApproval,
+      { command: "git status --short" },
+      baseContext,
+    );
+    expect(safeGitStatus).toBe(false);
+  });
+
+  test("webFetchTool needsApproval gates attended network egress", async () => {
+    const baseContext = {
+      sandbox: { workingDirectory: "/repo" },
+      model: "test-model",
+    };
+
+    const getResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "GET" as const },
+      baseContext,
+    );
+    expect(getResult).toBe(true);
+
+    const postResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "POST" as const },
+      baseContext,
+    );
+    expect(postResult).toBe(true);
+
+    const unattendedResult = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://example.com", method: "POST" as const },
+      {
+        ...baseContext,
+        unattended: true,
+      },
+    );
+    expect(unattendedResult).toBe(false);
   });
 
   afterEach(() => {

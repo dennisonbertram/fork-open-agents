@@ -3,6 +3,23 @@ import type { WorkflowGoal, WorkflowGoalEvent } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
+type WorkflowArtifactRow = {
+  id: string;
+  kind: string;
+  status: string;
+  redactionStatus: string;
+  sourceLocation: string | null;
+  summary: string | null;
+  createdByActor: string | null;
+  workflowRunId: string | null;
+  sessionId: string | null;
+  chatId: string | null;
+  goalId: string | null;
+  gateId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
 // ---------------------------------------------------------------------------
 // Auth mocks
 // ---------------------------------------------------------------------------
@@ -103,6 +120,23 @@ mock.module("@/lib/db/goal-ledger", () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Workflow artifact mocks (mutable per test)
+// ---------------------------------------------------------------------------
+
+let artifactsResult: WorkflowArtifactRow[] = [];
+let listArtifactsShouldThrow = false;
+const listArtifactsMock = mock(async (): Promise<WorkflowArtifactRow[]> => {
+  if (listArtifactsShouldThrow) {
+    throw new Error("artifact query failed");
+  }
+  return artifactsResult;
+});
+
+mock.module("@/lib/db/workflow-artifacts", () => ({
+  listArtifacts: listArtifactsMock,
+}));
+
+// ---------------------------------------------------------------------------
 // Route under test
 // ---------------------------------------------------------------------------
 
@@ -129,9 +163,12 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
     requireOwnedSessionMock.mockClear();
     listGoalsMock.mockClear();
     listGoalEventsMock.mockClear();
+    listArtifactsMock.mockClear();
     // Reset to empty by default
     listGoalsMock.mockResolvedValue([]);
     listGoalEventsMock.mockResolvedValue([]);
+    artifactsResult = [];
+    listArtifactsShouldThrow = false;
   });
 
   test("BT-001: response includes workflowGoals array when goals exist for the session+chat", async () => {
@@ -224,6 +261,7 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
     expect("browserRuns" in body).toBe(true);
     // New field also present
     expect("workflowGoals" in body).toBe(true);
+    expect("workflowArtifacts" in body).toBe(true);
   });
 
   test("BT-004: a goal-ledger query failure yields workflowGoals: [] without breaking the response", async () => {
@@ -306,5 +344,99 @@ describe("/api/sessions/[sessionId]/observability route — workflowGoals extens
     expect((b as Record<string, unknown>).blockedReason).toBe(
       "waiting on external API",
     );
+  });
+});
+
+describe("/api/sessions/[sessionId]/observability route — workflowArtifacts extension", () => {
+  beforeEach(() => {
+    listGoalsMock.mockResolvedValue([]);
+    listGoalEventsMock.mockResolvedValue([]);
+    artifactsResult = [];
+    listArtifactsShouldThrow = false;
+    listArtifactsMock.mockClear();
+  });
+
+  function artifactRow(
+    overrides: Partial<WorkflowArtifactRow> = {},
+  ): WorkflowArtifactRow {
+    return {
+      id: "artifact-1",
+      kind: "research_packet",
+      status: "available",
+      redactionStatus: "passed",
+      sourceLocation: "workflow-run/wrun-1/research-packet",
+      summary: "Safe artifact summary",
+      createdByActor: "workflow",
+      workflowRunId: "wrun-1",
+      sessionId: "session-1",
+      chatId: "chat-1",
+      goalId: null,
+      gateId: null,
+      createdAt: new Date("2026-05-01T10:00:00.000Z"),
+      updatedAt: new Date("2026-05-01T10:00:00.000Z"),
+      ...overrides,
+    };
+  }
+
+  test("returns passed artifacts with safe summary and source location", async () => {
+    artifactsResult = [artifactRow()];
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(makeRequest("chat-1"), routeContext());
+    const body = await getBody(response);
+    const artifacts = body.workflowArtifacts as Array<Record<string, unknown>>;
+
+    expect(response.status).toBe(200);
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      id: "artifact-1",
+      kind: "research_packet",
+      status: "available",
+      redactionStatus: "passed",
+      sourceLocation: "workflow-run/wrun-1/research-packet",
+      summary: "Safe artifact summary",
+      workflowRunId: "wrun-1",
+    });
+    expect(artifacts[0].createdAt).toBe("2026-05-01T10:00:00.000Z");
+  });
+
+  test("redacts non-passed artifact content from the full response body", async () => {
+    artifactsResult = [
+      artifactRow({
+        id: "artifact-pending",
+        redactionStatus: "pending",
+        sourceLocation: "workflow-run/wrun-1/secret-pending",
+        summary: "SECRET_PENDING_SUMMARY",
+      }),
+    ];
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(makeRequest("chat-1"), routeContext());
+    const body = await getBody(response);
+    const artifacts = body.workflowArtifacts as Array<Record<string, unknown>>;
+    const responseText = JSON.stringify(body);
+
+    expect(response.status).toBe(200);
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]).toMatchObject({
+      id: "artifact-pending",
+      redactionStatus: "pending",
+      sourceLocation: null,
+      summary: null,
+    });
+    expect(responseText).not.toContain("SECRET_PENDING_SUMMARY");
+    expect(responseText).not.toContain("secret-pending");
+  });
+
+  test("artifact query failure yields workflowArtifacts: [] without breaking observability", async () => {
+    listArtifactsShouldThrow = true;
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(makeRequest("chat-1"), routeContext());
+    const body = await getBody(response);
+
+    expect(response.status).toBe(200);
+    expect(body.workflowArtifacts).toEqual([]);
+    expect("runtimeMode" in body).toBe(true);
   });
 });
