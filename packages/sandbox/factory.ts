@@ -44,6 +44,11 @@ export interface ConnectOptions {
    * Skip git init in an empty workspace (e.g. when refreshing a Vercel base snapshot).
    */
   skipGitWorkspaceBootstrap?: boolean;
+  /**
+   * Git clone depth for the repo source. Defaults to a shallow clone (depth 1)
+   * for fast cold starts. Pass `0` for a full-history clone.
+   */
+  cloneDepth?: number;
 }
 
 /**

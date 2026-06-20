@@ -1,21 +1,18 @@
 import type { Metadata } from "next";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
 import { InferenceProfilesSection } from "../inference-profiles-section";
 import { ModelVariantsSection } from "../model-variants-section";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 import { ModelPreferencesSection } from "./models-preferences-section";
 
-export const metadata: Metadata = {
-  title: "Models",
-  description: "Configure model preferences and create model variants.",
-};
+export const metadata: Metadata = toNextMetadata("models");
 
 export default function ModelsPage() {
+  const route = getSettingsRouteMetadata("models");
+
   return (
     <div className="space-y-8">
-      <SettingsPageHeader
-        title="Models"
-        description="Pick the models your agents use and create named setups for specific jobs."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
 
       <ModelPreferencesSection />
 

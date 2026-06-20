@@ -38,6 +38,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
     branch?: string;
     cloneUrl?: string;
     isNewBranch: boolean;
+    fullClone: boolean;
     sandboxType: SandboxType;
     autoCommitPush: boolean;
     autoCreatePr: boolean;
@@ -52,6 +53,7 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
         branch: input.branch,
         cloneUrl: input.cloneUrl,
         isNewBranch: input.isNewBranch,
+        fullClone: input.fullClone,
         sandboxType: input.sandboxType,
         autoCommitPush: input.autoCommitPush,
         autoCreatePr: input.autoCreatePr,

@@ -10,6 +10,10 @@ import type {
 import type { SandboxStatus } from "../types";
 import type { VercelSandboxConfig, VercelSandboxConnectConfig } from "./config";
 import type { VercelState } from "./state";
+import {
+  buildWorkspaceSetupCommand,
+  SHALLOW_CLONE_DEPTH,
+} from "./workspace-setup-command";
 
 const MAX_OUTPUT_LENGTH = 50_000;
 const DEFAULT_WORKING_DIRECTORY = "/vercel/sandbox";
@@ -524,7 +528,11 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       snapshotExpiration,
       hooks,
       skipGitWorkspaceBootstrap = false,
+      cloneDepth,
     } = config;
+
+    // Default to a shallow clone; `cloneDepth: 0` opts into full history.
+    const effectiveCloneDepth = cloneDepth ?? SHALLOW_CLONE_DEPTH;
 
     // Clamp proactive timeout to stay under the SDK's hard max when buffer is applied.
     const effectiveTimeout = Math.min(timeout, MAX_PROACTIVE_TIMEOUT_MS);
@@ -565,6 +573,8 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
         source: {
           type: "git",
           url: source.url,
+          // SDK requires depth >= 1; omit entirely for a full clone.
+          ...(effectiveCloneDepth > 0 ? { depth: effectiveCloneDepth } : {}),
           ...(source.branch && { revision: source.branch }),
         },
       });
@@ -574,93 +584,56 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
 
     const workingDirectory = DEFAULT_WORKING_DIRECTORY;
 
-    // TODO: `git clone ... .` requires the directory to be empty. If the base
-    // snapshot has files in /vercel/sandbox (dotfiles, tool configs, etc.), the
-    // clone will fail. Consider using git init + remote add + fetch + checkout
-    // instead, which works regardless of existing directory contents.
-    if (source && baseSnapshotId) {
-      const cloneArgs = ["clone"];
-      if (source.branch) {
-        cloneArgs.push("--branch", source.branch);
-      }
-      cloneArgs.push(source.url, ".");
+    // Run all workspace setup (clone/init, git config, initial commit, branch
+    // checkout) in a single combined shell command. Each runCommand is a network
+    // round-trip, so collapsing them — and cloning shallowly — meaningfully cuts
+    // cold-start time. The clone here only runs when a base snapshot occupies the
+    // SDK `source` slot; otherwise the native git source already cloned the repo.
+    //
+    // NOTE: `git clone ... .` requires the working directory to be empty. If a
+    // base snapshot ships files under /vercel/sandbox, switch to
+    // init + remote add + fetch + checkout, which tolerates existing contents.
+    const isEmptyWorkspace =
+      !source && !restoreSnapshotId && !skipGitWorkspaceBootstrap;
+    const setupCommand = buildWorkspaceSetupCommand({
+      ...(source && baseSnapshotId
+        ? {
+            clone: {
+              url: source.url,
+              depth: effectiveCloneDepth,
+              ...(source.branch ? { branch: source.branch } : {}),
+            },
+          }
+        : {}),
+      ...(isEmptyWorkspace ? { initEmptyRepo: true } : {}),
+      ...(gitUser && (source || !skipGitWorkspaceBootstrap) ? { gitUser } : {}),
+      ...(isEmptyWorkspace && gitUser ? { initialEmptyCommit: true } : {}),
+      ...(source?.newBranch ? { newBranch: source.newBranch } : {}),
+    });
 
-      const cloneResult = await sdk.runCommand({
-        cmd: "git",
-        args: cloneArgs,
+    if (setupCommand) {
+      const setupResult = await sdk.runCommand({
+        cmd: "bash",
+        args: ["-c", setupCommand],
         cwd: workingDirectory,
       });
 
-      if (cloneResult.exitCode !== 0) {
+      if (setupResult.exitCode !== 0) {
         if (githubToken) {
           await clearGitHubCredentialBrokeringBestEffort(sdk);
         }
+        const stderr = (await setupResult.stderr()).trim();
         throw new Error(
-          `Failed to clone repository '${source.url}' (exit code ${cloneResult.exitCode})`,
+          `Failed to set up sandbox workspace (exit code ${setupResult.exitCode})${
+            stderr ? `: ${stderr}` : ""
+          }`,
         );
       }
     }
 
-    // Initialize git repo for empty sandboxes (no source provided)
-    // This ensures git commands work consistently (e.g., for diff viewing)
-    if (!source && !restoreSnapshotId && !skipGitWorkspaceBootstrap) {
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["init"],
-        cwd: workingDirectory,
-      });
-    }
-
-    // Configure git user for commits if provided (skip when no repo was created)
-    if (gitUser && (source || !skipGitWorkspaceBootstrap)) {
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["config", "user.name", gitUser.name],
-        cwd: workingDirectory,
-      });
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["config", "user.email", gitUser.email],
-        cwd: workingDirectory,
-      });
-    }
-
-    // Create initial empty commit for empty sandboxes so HEAD exists
-    // This is required for git diff HEAD to work (e.g., diff viewer)
-    // Must be done after gitUser config since git commit requires user info
-    if (
-      !source &&
-      !restoreSnapshotId &&
-      gitUser &&
-      !skipGitWorkspaceBootstrap
-    ) {
-      await sdk.runCommand({
-        cmd: "git",
-        args: ["commit", "--allow-empty", "-m", "Initial commit"],
-        cwd: workingDirectory,
-      });
-    }
-
-    // Track the current branch
+    // Track the current branch the workspace ended up on.
     let currentBranch: string | undefined;
-
-    // Create and checkout a new branch if specified
     if (source?.newBranch) {
-      const checkoutResult = await sdk.runCommand({
-        cmd: "git",
-        args: ["checkout", "-b", source.newBranch],
-        cwd: workingDirectory,
-      });
-
-      if (checkoutResult.exitCode !== 0) {
-        if (githubToken) {
-          await clearGitHubCredentialBrokeringBestEffort(sdk);
-        }
-        throw new Error(
-          `Failed to create branch '${source.newBranch}': ${await checkoutResult.stderr()}`,
-        );
-      }
-
       currentBranch = source.newBranch;
     } else if (source?.branch) {
       currentBranch = source.branch;
@@ -719,7 +692,9 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       name: sandboxName,
       resume: options.resume ?? false,
     });
-    await syncGitHubCredentialBrokering(sdk, undefined);
+    if (options.githubToken) {
+      await clearGitHubCredentialBrokering(sdk);
+    }
     const session = sdk.currentSession();
 
     // Use provided remainingTimeout when available; otherwise derive it from the

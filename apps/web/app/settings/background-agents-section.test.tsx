@@ -4,6 +4,7 @@ import {
   buildAgentPayload,
   buildFormFromAgent,
   supportedOutputModes,
+  type FormState,
 } from "./background-agents-form";
 
 type AgentListData = {
@@ -289,8 +290,9 @@ describe("BackgroundAgentsSection", () => {
       },
     };
     const configuredHtml = renderToStaticMarkup(<BackgroundAgentsSection />);
-    // Trigger kind is now humanized in run history: "Pull request" not raw "github.pull_request"
-    expect(configuredHtml).toContain("Pull request");
+    // Trigger kind is humanized in run history via the (now plain-language)
+    // triggerLabels map, not the raw "github.pull_request" enum value.
+    expect(configuredHtml).toContain("A pull request changes");
     expect(configuredHtml).not.toContain("github.pull_request");
     expect(configuredHtml).toContain("acme/widgets");
     expect(configuredHtml).toContain("PR #42");
@@ -344,8 +346,8 @@ describe("BackgroundAgentsSection", () => {
 
     expect(html).toContain("Deploy smoke");
     expect(html).toContain("acme/widgets");
-    expect(html).toContain("Pull request");
-    expect(html).toContain("Error webhook");
+    expect(html).toContain("A pull request changes");
+    expect(html).toContain("An error is reported (webhook)");
     expect(html).toContain("Tool providers coming later");
     expect(html).toContain("Composio is planned for v1.5");
     expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
@@ -533,8 +535,8 @@ describe("BackgroundAgentsSection", () => {
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
     // Humanized labels appear
-    expect(html).toContain("Pull request");
-    expect(html).toContain("Deployment status");
+    expect(html).toContain("A pull request changes");
+    expect(html).toContain("A deployment finishes");
     // Raw enum values must NOT appear in the run history
     expect(html).not.toContain("github.pull_request");
     expect(html).not.toContain("github.deployment_status");
@@ -568,6 +570,159 @@ describe("BackgroundAgentsSection", () => {
     expect(html).not.toContain("Deployment state");
     // The raw "Severities" mislabel must never appear
     expect(html).not.toContain("Severities");
+  });
+
+  test("ISSUE-229: condition field rendering follows the selected trigger", async () => {
+    const { ConditionFields } = await componentModulePromise;
+    const baseForm: FormState = {
+      name: "Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Review changes.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+    };
+
+    const prHtml = renderToStaticMarkup(
+      <ConditionFields
+        form={baseForm}
+        triggerKind="github.pull_request"
+        onChange={() => undefined}
+      />,
+    );
+    expect(prHtml).toContain("Actions");
+    expect(prHtml).toContain("Branches");
+    expect(prHtml).toContain("Labels");
+    expect(prHtml).not.toContain("Environments");
+    expect(prHtml).not.toContain("Deployment state");
+
+    const deploymentHtml = renderToStaticMarkup(
+      <ConditionFields
+        form={baseForm}
+        triggerKind="github.deployment_status"
+        onChange={() => undefined}
+      />,
+    );
+    expect(deploymentHtml).toContain("Environments");
+    expect(deploymentHtml).toContain("Deployment state");
+    expect(deploymentHtml).not.toContain("Branches");
+    expect(deploymentHtml).not.toContain("Labels");
+
+    const webhookHtml = renderToStaticMarkup(
+      <ConditionFields
+        form={baseForm}
+        triggerKind="webhook.error"
+        onChange={() => undefined}
+      />,
+    );
+    expect(webhookHtml).toContain("Severity");
+    expect(webhookHtml).not.toContain("Actions");
+    expect(webhookHtml).not.toContain("Branches");
+  });
+
+  test("ISSUE-229: permissions summary renders derived grants by output mode", async () => {
+    const { PermissionsSummary } = await componentModulePromise;
+
+    const readOnlyHtml = renderToStaticMarkup(
+      <PermissionsSummary outputMode="none" />,
+    );
+    expect(readOnlyHtml).toContain("Permissions summary");
+    expect(readOnlyHtml).toContain("GitHub contents: ");
+    expect(readOnlyHtml).toContain("Pull requests: ");
+    expect(readOnlyHtml).toContain("read-only");
+    expect(readOnlyHtml).not.toContain("write access");
+
+    const readyPrHtml = renderToStaticMarkup(
+      <PermissionsSummary outputMode="ready_pr" />,
+    );
+    expect(readyPrHtml).toContain("write access");
+    expect(readyPrHtml).toContain("GitHub contents: ");
+    expect(readyPrHtml).toContain("Pull requests: ");
+    expect(readyPrHtml).toContain("write");
+  });
+
+  test("ISSUE-229: readiness reason disables create and manual test affordances", async () => {
+    const { BackgroundAgentsSection, readinessBlockReason } =
+      await componentModulePromise;
+
+    expect(
+      readinessBlockReason({
+        enabled: true,
+        ready: true,
+        missing: [],
+        checks: [],
+      }),
+    ).toBeNull();
+    expect(
+      readinessBlockReason({
+        enabled: false,
+        ready: false,
+        missing: ["BACKGROUND_AGENTS_ENABLED"],
+        checks: [],
+      }),
+    ).toContain("disabled");
+    expect(
+      readinessBlockReason({
+        enabled: true,
+        ready: false,
+        missing: ["GITHUB_APP_ID", "GITHUB_APP_PRIVATE_KEY"],
+        checks: [],
+      }),
+    ).toContain("2 background agent setup steps");
+
+    readinessSwrState = {
+      data: {
+        enabled: true,
+        ready: false,
+        missing: ["GITHUB_APP_ID"],
+        checks: [],
+      },
+    };
+    agentsSwrState = {
+      data: {
+        agents: [
+          {
+            id: "agent-disabled-by-readiness",
+            name: "Needs setup",
+            description: null,
+            status: "enabled",
+            repoOwner: "acme",
+            repoName: "widgets",
+            instructions: "Run checks.",
+            outputMode: "none",
+            checkCommand: null,
+            triggers: [
+              {
+                id: "trigger-pr",
+                name: "Pull request",
+                kind: "github.pull_request",
+                status: "enabled",
+                schedule: null,
+                webhookPublicId: null,
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+    expect(html).toContain(
+      "1 background agent setup step must be completed first.",
+    );
+    expect(html).toContain("title=");
+    expect(html).toContain("disabled=");
   });
 
   test("builds edit form state and update payloads for existing agents", async () => {

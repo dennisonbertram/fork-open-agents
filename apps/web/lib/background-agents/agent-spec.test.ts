@@ -6,6 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAgentPayload,
+  buildFormFromAgent,
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
   describeOutputModePermissions,
@@ -13,6 +14,7 @@ import {
   isStepValid,
   outputModeLabel,
   type ConditionField,
+  type BackgroundAgent,
   type FormState,
   type StepId,
 } from "./agent-spec";
@@ -55,6 +57,9 @@ describe("buildAgentPayload", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }
@@ -88,18 +93,56 @@ describe("buildAgentPayload", () => {
     expect(JSON.stringify(payload)).not.toContain("auto_merge");
   });
 
-  test("BT-008: ready_pr output sets github write permissions on contents and pullRequests", () => {
-    const payload = buildAgentPayload(makeForm({ outputMode: "ready_pr" }));
+  test("BT-008: ready_pr output with write permissions in form sets github write permissions on contents and pullRequests", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        permissionContents: "write",
+        permissionPullRequests: "write",
+      }),
+    );
 
     expect(payload.permissions.github.contents).toBe("write");
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("BT-009: none output mode keeps contents and pullRequests as read", () => {
-    const payload = buildAgentPayload(makeForm({ outputMode: "none" }));
+  test("BT-009: none output mode with read permissions in form keeps contents and pullRequests as read", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        permissionContents: "read",
+        permissionPullRequests: "read",
+      }),
+    );
 
     expect(payload.permissions.github.contents).toBe("read");
     expect(payload.permissions.github.pullRequests).toBe("read");
+  });
+
+  test("BT-E1: ready_pr floors GitHub access to write regardless of form fields (Ready PR is non-functional without write)", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        permissionContents: "read",
+        permissionPullRequests: "read",
+      }),
+    );
+
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("BT-E2: permissionPullRequests write with outputMode none => payload pullRequests is write", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        permissionContents: "read",
+        permissionPullRequests: "write",
+      }),
+    );
+
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
   test("BT-010: schedule trigger sets schedule field; non-schedule trigger omits it", () => {
@@ -112,6 +155,69 @@ describe("buildAgentPayload", () => {
       makeForm({ triggerKind: "github.pull_request" }),
     );
     expect(prPayload.triggers[0]?.schedule).toBeNull();
+  });
+});
+
+describe("buildFormFromAgent", () => {
+  function makeAgent(
+    overrides: Partial<BackgroundAgent> = {},
+  ): BackgroundAgent {
+    return {
+      id: "agent-1",
+      name: "PR reporter",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize pull requests.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: {
+        github: {
+          contents: "read",
+          pullRequests: "read",
+          issues: "read",
+          deployments: "read",
+          statuses: "read",
+          checks: "read",
+        },
+      },
+      composioToolkitSlugs: [],
+      triggers: [
+        {
+          id: "trigger-1",
+          name: "A pull request changes",
+          kind: "github.pull_request",
+          status: "enabled",
+          conditions: { actions: ["opened"] },
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("REG-019: saved GitHub permissions round-trip through edit even when outputMode was ready_pr", () => {
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "ready_pr",
+        permissions: {
+          github: {
+            contents: "read",
+            pullRequests: "read",
+            issues: "read",
+            deployments: "read",
+            statuses: "read",
+            checks: "read",
+          },
+        },
+      }),
+    );
+
+    expect(form.outputMode).toBe("ready_pr");
+    expect(form.permissionContents).toBe("read");
+    expect(form.permissionPullRequests).toBe("read");
   });
 });
 
@@ -136,6 +242,9 @@ describe("isStepValid", () => {
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }
@@ -411,6 +520,9 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       outputMode: "none",
       checkCommand: "",
       enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
       ...overrides,
     };
   }

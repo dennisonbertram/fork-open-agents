@@ -168,6 +168,42 @@ describe("opaque config field preservation", () => {
     }
   });
 
+  it("BT-003: agent_step shared config fields pass through untouched", () => {
+    const def: LoopDefinition = {
+      nodes: [
+        {
+          id: "s",
+          kind: "start",
+          label: "S",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "a",
+          kind: "agent_step",
+          label: "Agent",
+          position: { x: 100, y: 0 },
+          instructions: "Inspect the repository and write structured output.",
+          outputSchema: {
+            passed: "boolean",
+            notes: "string",
+          },
+          checkCommand: "bun test apps/web/app/loops/definition-parity.test.ts",
+          composioToolkitSlugs: ["github", "linear"],
+        },
+        { id: "e", kind: "end", label: "E", position: { x: 200, y: 0 } },
+      ],
+      edges: [
+        { id: "e1", source: "s", target: "a", when: "always" },
+        { id: "e2", source: "a", target: "e", when: "success" },
+      ],
+    };
+
+    const { nodes, edges } = definitionToFlow(def);
+    const result = flowToDefinition(nodes, edges);
+
+    expect(JSON.stringify(result)).toBe(JSON.stringify(def));
+  });
+
   it("BT-003: condition config with value field passes through untouched", () => {
     const { nodes, edges } = definitionToFlow(CONDITION_DEF);
     const result = flowToDefinition(nodes, edges);

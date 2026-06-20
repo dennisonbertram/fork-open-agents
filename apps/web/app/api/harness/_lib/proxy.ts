@@ -78,19 +78,22 @@ export async function proxyRunAction(params: {
       }
     }
 
-    if (params.action === "cancel") {
-      await updateVerifiedBuildRunFromHarnessStatus({
-        runId: access.run.id,
-        status: "cancellation_requested",
-      });
-    }
-
     const result = await access.client.runAction({
       context: access.context,
       harnessRunId: access.run.harnessRunId,
       action: params.action,
       body: params.body,
     });
+
+    // DB write happens AFTER the external API call succeeds so a failed
+    // call (network timeout, 5xx) does not leave the local row stuck at
+    // "cancellation_requested" with no compensating rollback.
+    if (params.action === "cancel") {
+      await updateVerifiedBuildRunFromHarnessStatus({
+        runId: access.run.id,
+        status: "cancellation_requested",
+      });
+    }
 
     logHarnessEvent("info", {
       event: `verified_build.${params.action}.requested`,

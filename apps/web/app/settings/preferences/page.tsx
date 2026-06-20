@@ -1,19 +1,16 @@
 import type { Metadata } from "next";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 import { PreferencesSection } from "../preferences-section";
 
-export const metadata: Metadata = {
-  title: "Preferences",
-  description: "Adjust Open Agents preferences and behavior.",
-};
+export const metadata: Metadata = toNextMetadata("preferences");
 
 export default function PreferencesPage() {
+  const route = getSettingsRouteMetadata("preferences");
+
   return (
     <>
-      <SettingsPageHeader
-        title="Preferences"
-        description="Tune how Open Agents behaves for you. Changes apply to new chats right away."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
       <PreferencesSection />
     </>
   );

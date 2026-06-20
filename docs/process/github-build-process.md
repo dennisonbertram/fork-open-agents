@@ -61,6 +61,7 @@ Bad issue sizes:
    OAuth, or workflow changes.
 8. Do not push directly to `develop` or `main`; branch protection requires
    PR-based changes.
+9. Do not let agents merge their own PRs without an explicit human command.
 
 Use this branch model:
 
@@ -88,6 +89,14 @@ git push origin <branch-name>
 gh pr create --base develop --title "<title>" --body "<description>"
 ```
 
+Use predictable branch names:
+
+1. `agent/<issue-number>-<short-slug>` for implementation work,
+2. `fix/<issue-number>-<short-slug>` for bug regressions,
+3. `research/<short-slug>` for docs or research-only work with no backing issue;
+   if there IS a backing issue, use `research/<issue-number>-<short-slug>`.
+   Docs/research-only branches intentionally omit issue numbers when no issue exists.
+
 For parallel work:
 
 ```bash
@@ -96,6 +105,11 @@ git worktree add -b <branch-name> .worktrees/<branch-name> origin/develop
 cd .worktrees/<branch-name>
 bun install --frozen-lockfile
 ```
+
+Use one active agent per issue by default. The issue or PR should record the
+active agent/session, branch, worktree path, intended touched surfaces, current
+status, and any handoff notes needed by the next agent. Durable handoff belongs
+in the issue or PR, not only in chat history.
 
 ## Release Promotion
 

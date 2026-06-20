@@ -87,37 +87,51 @@ export const users = pgTable("users", {
 });
 
 // oauth provider accounts
-export const accounts = pgTable("accounts", {
-  id: text("id").primaryKey(),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at"),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: text("id").primaryKey(),
+    accountId: text("account_id").notNull(),
+    providerId: text("provider_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accessToken: text("access_token"),
+    refreshToken: text("refresh_token"),
+    idToken: text("id_token"),
+    accessTokenExpiresAt: timestamp("access_token_expires_at"),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    scope: text("scope"),
+    password: text("password"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("accounts_user_idx").on(table.userId),
+    index("accounts_account_provider_idx").on(
+      table.accountId,
+      table.providerId,
+    ),
+  ],
+);
 
 // better-auth sessions
-export const authSessions = pgTable("auth_sessions", {
-  id: text("id").primaryKey(),
-  expiresAt: timestamp("expires_at").notNull(),
-  token: text("token").notNull().unique(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  userId: text("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-});
+export const authSessions = pgTable(
+  "auth_sessions",
+  {
+    id: text("id").primaryKey(),
+    expiresAt: timestamp("expires_at").notNull(),
+    token: text("token").notNull().unique(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+    ipAddress: text("ip_address"),
+    userAgent: text("user_agent"),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (table) => [index("auth_sessions_user_idx").on(table.userId)],
+);
 
 // better-auth verification tokens
 export const verification = pgTable("verification", {
@@ -288,6 +302,9 @@ export const sessions = pgTable(
     vercelTeamSlug: text("vercel_team_slug"),
     // Whether this session uses a new auto-generated branch
     isNewBranch: boolean("is_new_branch").default(false).notNull(),
+    // When true, clone the full git history into the sandbox instead of a
+    // shallow (depth 1) clone. Default shallow for fast cold starts.
+    fullClone: boolean("full_clone").default(false).notNull(),
     // Optional per-session override for auto commit + push behavior.
     // null means "use the user's default preference".
     autoCommitPushOverride: boolean("auto_commit_push_override"),
@@ -329,6 +346,7 @@ export const sessions = pgTable(
     sandboxExpiresAt: timestamp("sandbox_expires_at"),
     hibernateAfter: timestamp("hibernate_after"),
     lifecycleRunId: text("lifecycle_run_id"),
+    sandboxPrewarmRunId: text("sandbox_prewarm_run_id"),
     lifecycleError: text("lifecycle_error"),
     // Git stats (for display in session list)
     linesAdded: integer("lines_added").default(0),
@@ -665,6 +683,7 @@ export const sessionEvents = pgTable(
         "service",
         "browser",
         "github",
+        "github-actions-manager",
         "system",
       ],
     }).notNull(),
@@ -751,18 +770,28 @@ export const shares = pgTable(
   (table) => [uniqueIndex("shares_chat_id_idx").on(table.chatId)],
 );
 
-export const chatMessages = pgTable("chat_messages", {
-  id: text("id").primaryKey(),
-  chatId: text("chat_id")
-    .notNull()
-    .references(() => chats.id, { onDelete: "cascade" }),
-  role: text("role", {
-    enum: ["user", "assistant"],
-  }).notNull(),
-  // Store the full message parts as JSON for flexibility
-  parts: jsonb("parts").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    chatId: text("chat_id")
+      .notNull()
+      .references(() => chats.id, { onDelete: "cascade" }),
+    role: text("role", {
+      enum: ["user", "assistant"],
+    }).notNull(),
+    // Store the full message parts as JSON for flexibility
+    parts: jsonb("parts").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("chat_messages_chat_id_idx").on(table.chatId),
+    index("chat_messages_chat_id_created_idx").on(
+      table.chatId,
+      table.createdAt,
+    ),
+  ],
+);
 
 export const chatReads = pgTable(
   "chat_reads",
@@ -1206,6 +1235,7 @@ export const backgroundAgentEvents = pgTable(
     })
       .notNull()
       .default("passed"),
+    sequence: integer("sequence"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
@@ -1214,6 +1244,10 @@ export const backgroundAgentEvents = pgTable(
       table.createdAt,
     ),
     index("background_agent_events_request_idx").on(table.requestId),
+    index("background_agent_events_run_seq_idx").on(
+      table.runId,
+      table.sequence,
+    ),
   ],
 );
 
@@ -2093,7 +2127,16 @@ export const agents = pgTable(
   },
   (table) => [
     index("agents_user_idx").on(table.userId),
-    uniqueIndex("agents_user_role_scope_idx").on(
+    uniqueIndex("agents_user_default_role_scope_idx")
+      .on(table.userId, table.role)
+      .where(sql`${table.scope} = 'user_default'`),
+    uniqueIndex("agents_repo_role_scope_idx")
+      .on(table.userId, table.role, table.repoOwner, table.repoName)
+      .where(sql`${table.scope} = 'repo'`),
+    uniqueIndex("agents_session_role_scope_idx")
+      .on(table.userId, table.role, table.sessionId)
+      .where(sql`${table.scope} = 'session'`),
+    index("agents_user_role_scope_idx").on(
       table.userId,
       table.role,
       table.scope,
@@ -2137,7 +2180,7 @@ export const usageEvents = pgTable("usage_events", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
-  source: text("source", { enum: ["web"] })
+  source: text("source", { enum: ["web", "background-agent"] })
     .notNull()
     .default("web"),
   agentType: text("agent_type", { enum: ["main", "subagent"] })

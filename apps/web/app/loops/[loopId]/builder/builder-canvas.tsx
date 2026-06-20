@@ -35,12 +35,11 @@ import {
   type EdgeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { ArrowLeft, Bot, Flag, Github, GitBranch, Save } from "lucide-react";
+import { Bot, ChevronRight, Flag, Github, GitBranch, Save } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
-import { useSidebar } from "@/components/ui/sidebar";
 import { useTheme } from "@/app/providers";
 import { nodeTypes } from "./loop-nodes";
 import { WhenEdge } from "./when-edge";
@@ -123,11 +122,6 @@ function BuilderCanvasInner({
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   const colorMode: ColorMode = resolvedTheme === "dark" ? "dark" : "light";
-  // When the app sidebar is collapsed, the shell shows a floating "Open panel"
-  // toggle at the top-left — pad the builder top bar so it never overlaps the
-  // back-link.
-  const { state: sidebarState, isMobile: sidebarMobile } = useSidebar();
-  const sidebarCollapsed = !sidebarMobile && sidebarState === "collapsed";
 
   const nodes = useStore(store, (s) => s.nodes);
   const edges = useStore(store, (s) => s.edges);
@@ -380,23 +374,29 @@ function BuilderCanvasInner({
 
   return (
     <BuilderErrorContext.Provider value={errorsById}>
-      <div className="flex h-screen flex-col bg-background">
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
         {/* Top bar */}
-        <div
-          className={`relative flex h-12 shrink-0 items-center gap-3 border-b border-border px-4 ${
-            sidebarCollapsed ? "pl-14" : ""
-          }`}
-        >
-          <Link
-            href={`/loops/${loopId}`}
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+          <nav
+            aria-label="Loop breadcrumb"
+            className="flex min-w-0 items-center gap-1.5 text-sm"
           >
-            <ArrowLeft className="size-4" />
-            {loopName}
-          </Link>
-
-          <span className="text-muted-foreground">·</span>
-          <span className="text-sm font-medium">Builder</span>
+            <Link
+              href="/loops"
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              Loops
+            </Link>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <Link
+              href={`/loops/${loopId}`}
+              className="min-w-0 truncate text-muted-foreground hover:text-foreground"
+            >
+              {loopName}
+            </Link>
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 font-medium">Builder</span>
+          </nav>
 
           {isDirty && (
             <span className="rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
@@ -427,7 +427,7 @@ function BuilderCanvasInner({
         </div>
 
         {/* Canvas + panels */}
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Node palette */}
           <div className="flex w-48 shrink-0 flex-col gap-1 border-r border-border p-3">
             <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
@@ -489,7 +489,7 @@ function BuilderCanvasInner({
           <div
             role="application"
             aria-label="Loop flow canvas"
-            className="relative flex-1"
+            className="relative min-w-0 flex-1"
             onKeyDown={handleCanvasKeyDown}
             tabIndex={-1}
           >

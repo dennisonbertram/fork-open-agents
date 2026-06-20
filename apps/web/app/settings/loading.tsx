@@ -1,4 +1,5 @@
 import { AccountsSectionSkeleton } from "./accounts-section";
+import { SettingsPageHeader } from "./_components/page-header";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
@@ -6,12 +7,24 @@ import {
   ModelPreferencesSectionSkeleton,
   PreferencesSectionSkeleton,
 } from "./preferences-section";
+import {
+  getSettingsRouteMetadata,
+  type SettingsRouteId,
+} from "./settings-routes";
 import { VercelSectionSkeleton } from "./vercel-section";
+
+function LoadingHeader({ routeId }: { routeId: SettingsRouteId }) {
+  const route = getSettingsRouteMetadata(routeId);
+
+  return (
+    <SettingsPageHeader title={route.title} description={route.description} />
+  );
+}
 
 function ProfilePageLoading() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Profile</h1>
+      <LoadingHeader routeId="profile" />
       <div className="flex flex-col gap-8 lg:flex-row lg:gap-10">
         <div className="w-full shrink-0 lg:w-56">
           <div className="space-y-6">
@@ -52,7 +65,7 @@ function ProfilePageLoading() {
 function ConnectionsPageLoading() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Connections</h1>
+      <LoadingHeader routeId="connections" />
       <VercelSectionSkeleton />
       <AccountsSectionSkeleton />
     </>
@@ -62,12 +75,7 @@ function ConnectionsPageLoading() {
 function PreferencesPageLoading() {
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Preferences</h1>
-        <p className="text-sm text-muted-foreground">
-          Adjust Open Agents preferences and behavior.
-        </p>
-      </div>
+      <LoadingHeader routeId="preferences" />
       <PreferencesSectionSkeleton />
     </div>
   );
@@ -76,13 +84,7 @@ function PreferencesPageLoading() {
 function ModelsPageLoading() {
   return (
     <div className="space-y-8">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Models</h1>
-        <p className="text-sm text-muted-foreground">
-          Set your default models and create named variants with provider-
-          specific settings.
-        </p>
-      </div>
+      <LoadingHeader routeId="models" />
       <ModelPreferencesSectionSkeleton />
       <div className="border-t border-border/50" />
       <InferenceProfilesSectionSkeleton />
@@ -95,12 +97,7 @@ function ModelsPageLoading() {
 function LeaderboardPageLoading() {
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold">Leaderboard</h1>
-        <p className="text-sm text-muted-foreground">
-          Internal organization leaderboard ranked by token usage.
-        </p>
-      </div>
+      <LoadingHeader routeId="leaderboard" />
       <LeaderboardSectionSkeleton />
     </div>
   );

@@ -1,19 +1,16 @@
 import type { Metadata } from "next";
-import { SettingsPageHeader } from "@/components/ui/settings-section";
+import { SettingsPageHeader } from "../_components/page-header";
 import { ComposioSection } from "../composio-section";
+import { getSettingsRouteMetadata, toNextMetadata } from "../settings-routes";
 
-export const metadata: Metadata = {
-  title: "Composio",
-  description: "Configure Composio tool profiles and agent access.",
-};
+export const metadata: Metadata = toNextMetadata("composio");
 
 export default function ComposioPage() {
+  const route = getSettingsRouteMetadata("composio");
+
   return (
     <>
-      <SettingsPageHeader
-        title="Composio"
-        description="Connect external tools — like GitHub, Linear, or Gmail — so your agents can use them in a chat."
-      />
+      <SettingsPageHeader title={route.title} description={route.description} />
       <ComposioSection />
     </>
   );

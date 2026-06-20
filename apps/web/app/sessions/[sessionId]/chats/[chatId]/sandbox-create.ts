@@ -132,3 +132,73 @@ export async function createSandbox(
 
   return { ...data, type: data.mode };
 }
+
+export async function resetSandboxProvisioning(
+  sessionId: string,
+): Promise<void> {
+  const response = await fetch(`/api/sessions/${sessionId}/sandbox`, {
+    method: "DELETE",
+  });
+
+  if (!response.ok) {
+    const rawBody = await response.text().catch(() => "");
+    const payload = parseCreateSandboxErrorResponse(rawBody);
+    const message =
+      getOptionalString(payload?.error) ??
+      "Failed to reset sandbox provisioning state.";
+
+    throw new SandboxCreateRequestError(message, {
+      status: response.status,
+      reason: getOptionalString(payload?.reason),
+      actionUrl: getOptionalString(payload?.actionUrl),
+      responseBody: rawBody || undefined,
+    });
+  }
+}
+
+export async function createOnDemandSandboxForSession({
+  sessionId,
+  sandboxType,
+}: {
+  sessionId: string;
+  sandboxType?: string;
+}): Promise<CreateSandboxResponse> {
+  const attachResponse = await fetch(`/api/sessions/${sessionId}/sandbox`, {
+    method: "POST",
+  });
+
+  if (!attachResponse.ok) {
+    const rawBody = await attachResponse.text().catch(() => "");
+    const payload = parseCreateSandboxErrorResponse(rawBody);
+    const message =
+      getOptionalString(payload?.error) ?? "Failed to attach sandbox";
+
+    throw new SandboxCreateRequestError(message, {
+      status: attachResponse.status,
+      reason: getOptionalString(payload?.reason),
+      actionUrl: getOptionalString(payload?.actionUrl),
+      responseBody: rawBody || undefined,
+    });
+  }
+
+  try {
+    return await createSandbox(
+      undefined,
+      undefined,
+      false,
+      sessionId,
+      sandboxType,
+    );
+  } catch (error) {
+    try {
+      await resetSandboxProvisioning(sessionId);
+    } catch (resetError) {
+      console.warn(
+        "[AddSandbox] Failed to reset sandbox provisioning state:",
+        resetError,
+      );
+    }
+
+    throw error;
+  }
+}

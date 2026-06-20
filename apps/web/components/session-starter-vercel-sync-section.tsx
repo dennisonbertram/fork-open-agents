@@ -91,8 +91,20 @@ export function SessionStarterVercelSyncSection({
           <AlertCircleIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
         ),
         label: (
-          <span className="text-xs text-muted-foreground">
+          <span className="flex items-center gap-2 text-xs text-muted-foreground">
             Could not load Vercel projects
+            {onRetry && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry();
+                }}
+                className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+              >
+                Retry
+              </button>
+            )}
           </span>
         ),
       };

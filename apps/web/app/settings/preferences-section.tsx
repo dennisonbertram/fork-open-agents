@@ -31,7 +31,8 @@ import {
   globalSkillRefSchema,
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
-import { shouldCollapseSingleOption } from "./preferences-helpers";
+import { SettingsSectionHeader } from "./_components/section-header";
+import { getSingleOptionPickerState } from "./preferences-helpers";
 
 // Re-export model section components so loading.tsx and layout.tsx keep working
 // without changing their import paths. The canonical definitions now live in
@@ -85,12 +86,8 @@ function getGlobalSkillRefError(params: {
   return duplicateExists ? "That global skill has already been added" : null;
 }
 
-function GroupHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-      {children}
-    </h3>
-  );
+function PreferenceGroupTitle({ children }: { children: React.ReactNode }) {
+  return <SettingsSectionHeader title={String(children)} />;
 }
 
 /**
@@ -98,12 +95,12 @@ function GroupHeader({ children }: { children: React.ReactNode }) {
  * height/border of a Select trigger so single-option fields read as a settled
  * value in line with the editable fields beside them — not floating text.
  */
-function ReadOnlyValue({ children }: { children: React.ReactNode }) {
+function ReadOnlyValue({ label, status }: { label: string; status: string }) {
   return (
     <div className="flex h-9 items-center justify-between rounded-md border border-input bg-muted/40 px-3 text-sm text-foreground">
-      <span className="truncate">{children}</span>
+      <span className="truncate">{label}</span>
       <span className="ml-2 shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        Only option
+        {status}
       </span>
     </div>
   );
@@ -126,7 +123,7 @@ export function PreferencesSectionSkeleton() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <GroupHeader>Defaults for new chats</GroupHeader>
+        <PreferenceGroupTitle>Defaults for new chats</PreferenceGroupTitle>
         <div className="grid gap-6 sm:grid-cols-2">
           <Skeleton className="h-16 w-full" />
           <Skeleton className="h-16 w-full" />
@@ -137,7 +134,7 @@ export function PreferencesSectionSkeleton() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <GroupHeader>Git automation</GroupHeader>
+        <PreferenceGroupTitle>Git automation</PreferenceGroupTitle>
         <div className="space-y-3">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-12 w-full" />
@@ -147,7 +144,7 @@ export function PreferencesSectionSkeleton() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <GroupHeader>Notifications</GroupHeader>
+        <PreferenceGroupTitle>Notifications</PreferenceGroupTitle>
         <div className="space-y-3">
           <Skeleton className="h-12 w-full" />
           <Skeleton className="h-12 w-full" />
@@ -157,7 +154,7 @@ export function PreferencesSectionSkeleton() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <GroupHeader>Sharing &amp; privacy</GroupHeader>
+        <PreferenceGroupTitle>Sharing &amp; privacy</PreferenceGroupTitle>
         <div className="space-y-3">
           <Skeleton className="h-12 w-full" />
         </div>
@@ -166,7 +163,7 @@ export function PreferencesSectionSkeleton() {
       <div className="border-t border-border/50" />
 
       <div className="space-y-4">
-        <GroupHeader>Skills</GroupHeader>
+        <PreferenceGroupTitle>Skills</PreferenceGroupTitle>
         <div className="space-y-3">
           <div className="space-y-1">
             <Skeleton className="h-4 w-24" />
@@ -452,6 +449,16 @@ export function PreferencesSection() {
       (preferences?.defaultManagedRuntimeProfileId ??
         MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.id),
   );
+  const managedRuntimePickerOptions = MANAGED_RUNTIME_PROFILE_OPTIONS.map(
+    (profile) => ({
+      id: profile.id,
+      name: profile.displayName,
+    }),
+  );
+  const sandboxPickerState = getSingleOptionPickerState(SANDBOX_OPTIONS);
+  const managedRuntimePickerState = getSingleOptionPickerState(
+    managedRuntimePickerOptions,
+  );
 
   return (
     <div className="space-y-8">
@@ -485,15 +492,16 @@ export function PreferencesSection() {
 
       {/* ── 2. Defaults for new chats ── */}
       <div className="space-y-4">
-        <GroupHeader>Defaults for new chats</GroupHeader>
+        <PreferenceGroupTitle>Defaults for new chats</PreferenceGroupTitle>
         <div className="grid gap-6 sm:grid-cols-2">
           {/* Default sandbox */}
           <div className="grid gap-2">
             <Label htmlFor="sandbox">Default sandbox</Label>
-            {shouldCollapseSingleOption(SANDBOX_OPTIONS) ? (
-              <ReadOnlyValue>
-                {SANDBOX_OPTIONS[0]?.name ?? "None"}
-              </ReadOnlyValue>
+            {sandboxPickerState ? (
+              <ReadOnlyValue
+                label={sandboxPickerState.label}
+                status={sandboxPickerState.status}
+              />
             ) : (
               <Select
                 value={preferences?.defaultSandboxType ?? DEFAULT_SANDBOX_TYPE}
@@ -525,15 +533,11 @@ export function PreferencesSection() {
             <Label htmlFor="managed-runtime-profile">
               Default runtime profile
             </Label>
-            {shouldCollapseSingleOption(
-              MANAGED_RUNTIME_PROFILE_OPTIONS.map((p) => ({
-                id: p.id,
-                name: p.displayName,
-              })),
-            ) ? (
-              <ReadOnlyValue>
-                {MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.displayName ?? "None"}
-              </ReadOnlyValue>
+            {managedRuntimePickerState ? (
+              <ReadOnlyValue
+                label={managedRuntimePickerState.label}
+                status={managedRuntimePickerState.status}
+              />
             ) : (
               <Select
                 value={preferences?.defaultManagedRuntimeProfileId}
@@ -667,7 +671,7 @@ export function PreferencesSection() {
 
       {/* ── 5. Sharing & privacy ── */}
       <div className="space-y-4">
-        <GroupHeader>Sharing &amp; privacy</GroupHeader>
+        <PreferenceGroupTitle>Sharing &amp; privacy</PreferenceGroupTitle>
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-4">
             <div className="space-y-0.5">
@@ -716,7 +720,7 @@ export function PreferencesSection() {
 
       {/* ── 6. Skills ── */}
       <div className="space-y-4">
-        <GroupHeader>Skills</GroupHeader>
+        <PreferenceGroupTitle>Skills</PreferenceGroupTitle>
 
         <div className="grid gap-3">
           <div className="space-y-1">

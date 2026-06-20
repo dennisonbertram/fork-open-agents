@@ -65,6 +65,12 @@ export interface VercelSandboxConfig {
    */
   ports?: number[];
   /**
+   * Git clone depth for the repo source.
+   * Defaults to a shallow clone (depth 1) for fast cold starts. Pass `0` to
+   * perform a full-history clone (e.g. when the agent needs `git log`/`blame`).
+   */
+  cloneDepth?: number;
+  /**
    * Optional snapshot ID to use as the base image for new sandboxes.
    * When provided, the sandbox is created from this snapshot first.
    */

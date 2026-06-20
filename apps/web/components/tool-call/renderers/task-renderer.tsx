@@ -18,6 +18,7 @@ import {
   Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { memo } from "react";
 import {
   extractRenderState,
   getToolName,
@@ -366,7 +367,7 @@ function PendingMiniToolCall({
 // TaskRenderer
 // ---------------------------------------------------------------------------
 
-export function TaskRenderer({
+export const TaskRenderer = memo(function TaskRenderer({
   part,
   state,
   onApprove,
@@ -512,4 +513,4 @@ export function TaskRenderer({
       {approvalWarning}
     </ToolLayout>
   );
-}
+});

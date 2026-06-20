@@ -19,6 +19,7 @@ export type GitHubInstallationTokenPermissions = Partial<
     | "issues"
     | "metadata"
     | "pull_requests"
+    | "secrets"
     | "statuses"
     | "workflows",
     GitHubInstallationPermissionValue

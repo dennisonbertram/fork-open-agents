@@ -6,6 +6,12 @@ import {
 
 mock.module("server-only", () => ({}));
 
+mock.module("next/server", () => ({
+  after: (callback: () => Promise<void>) => {
+    void callback();
+  },
+}));
+
 mock.module("botid/server", () => ({
   checkBotId: async () => ({ isBot: false }),
 }));
@@ -65,11 +71,26 @@ const writeFileCalls: Array<{ path: string; content: string }> = [];
 const execCalls: Array<{ command: string; cwd: string; timeoutMs: number }> =
   [];
 const dotenvSyncCalls: Array<Record<string, unknown>> = [];
+const globalSkillInstallCalls: Array<{
+  refs: Array<{ source: string; skillName: string }>;
+}> = [];
 
 let sessionRecord: TestSessionRecord;
 let currentVercelAuthInfo: TestVercelAuthInfo | null;
 let currentDotenvContent: string;
 let currentDotenvError: Error | null;
+let blockGlobalSkillInstall: Promise<void> | null;
+let unblockGlobalSkillInstall: (() => void) | null;
+let blockTokenRevoke: Promise<void> | null;
+let unblockTokenRevoke: (() => void) | null;
+
+function createDeferred() {
+  let resolveDeferred: () => void = () => {};
+  const promise = new Promise<void>((resolve) => {
+    resolveDeferred = resolve;
+  });
+  return { promise, resolve: resolveDeferred };
+}
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => ({
@@ -126,7 +147,11 @@ mock.module("@/lib/github/app", () => ({
     repositoryIds: [123],
     permissions: { contents: "read" },
   }),
-  revokeInstallationToken: async () => {},
+  revokeInstallationToken: async () => {
+    if (blockTokenRevoke) {
+      await blockTokenRevoke;
+    }
+  },
 }));
 
 mock.module("@/lib/vercel/token", () => ({
@@ -176,6 +201,11 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
     };
     globalSkillRefs: Array<{ source: string; skillName: string }>;
   }) => {
+    globalSkillInstallCalls.push({ refs: params.globalSkillRefs });
+    if (blockGlobalSkillInstall) {
+      await blockGlobalSkillInstall;
+    }
+
     const homeResult = await params.sandbox.exec(
       'printf %s "$HOME"',
       params.sandbox.workingDirectory,
@@ -253,6 +283,11 @@ describe("/api/sandbox lifecycle kicks", () => {
     writeFileCalls.length = 0;
     execCalls.length = 0;
     dotenvSyncCalls.length = 0;
+    globalSkillInstallCalls.length = 0;
+    blockGlobalSkillInstall = null;
+    unblockGlobalSkillInstall = null;
+    blockTokenRevoke = null;
+    unblockTokenRevoke = null;
     currentVercelAuthInfo = {
       token: "vercel-token",
       expiresAt: 1_700_000_000,
@@ -349,6 +384,53 @@ describe("/api/sandbox lifecycle kicks", () => {
       },
     });
     expect(connectConfigs[0]?.state.source).not.toHaveProperty("token");
+  });
+
+  test("repo sandbox creation responds before skill install and token revoke finish", async () => {
+    const { POST } = await routeModulePromise;
+    const globalSkillDeferred = createDeferred();
+    const tokenRevokeDeferred = createDeferred();
+
+    blockGlobalSkillInstall = globalSkillDeferred.promise;
+    unblockGlobalSkillInstall = globalSkillDeferred.resolve;
+    blockTokenRevoke = tokenRevokeDeferred.promise;
+    unblockTokenRevoke = tokenRevokeDeferred.resolve;
+    sessionRecord.vercelProjectId = null;
+    sessionRecord.vercelProjectName = null;
+    sessionRecord.vercelTeamId = null;
+    sessionRecord.globalSkillRefs = [
+      { source: "vercel/ai", skillName: "ai-sdk" },
+    ];
+
+    const postPromise = POST(
+      new Request("http://localhost/api/sandbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          repoUrl: "https://github.com/acme/private-repo",
+          branch: "main",
+          sandboxType: "vercel",
+        }),
+      }),
+    );
+
+    const result = await Promise.race([
+      postPromise.then(() => "response"),
+      new Promise<"blocked">((resolve) => {
+        setTimeout(() => resolve("blocked"), 25);
+      }),
+    ]);
+
+    expect(result).toBe("response");
+    const response = await postPromise;
+    expect(response.ok).toBe(true);
+    expect(globalSkillInstallCalls).toEqual([
+      { refs: [{ source: "vercel/ai", skillName: "ai-sdk" }] },
+    ]);
+
+    unblockGlobalSkillInstall?.();
+    unblockTokenRevoke?.();
   });
 
   test("rejects repo URLs that only contain github.com in the path", async () => {

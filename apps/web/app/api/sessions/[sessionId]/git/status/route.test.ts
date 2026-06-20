@@ -53,6 +53,26 @@ describe("GET /api/sessions/[sessionId]/git/status", () => {
     expect(getGitStatusCalls).toHaveLength(0);
   });
 
+  test("403 when the caller does not own the session", async () => {
+    ownedResult = {
+      ok: false,
+      response: Response.json({ error: "Forbidden" }, { status: 403 }),
+    };
+    const res = await GET(getRequest(), context());
+    expect(res.status).toBe(403);
+    expect(getGitStatusCalls).toHaveLength(0);
+  });
+
+  test("404 when the session is missing", async () => {
+    ownedResult = {
+      ok: false,
+      response: Response.json({ error: "Session not found" }, { status: 404 }),
+    };
+    const res = await GET(getRequest(), context());
+    expect(res.status).toBe(404);
+    expect(getGitStatusCalls).toHaveLength(0);
+  });
+
   test("returns the status under a 'status' key for the owned session", async () => {
     const res = await GET(getRequest(), context("sess_9"));
     expect(res.status).toBe(200);

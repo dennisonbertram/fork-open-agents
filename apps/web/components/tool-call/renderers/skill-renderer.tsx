@@ -1,6 +1,7 @@
 "use client";
 
 import { Zap } from "lucide-react";
+import { memo } from "react";
 import type { ToolRendererProps } from "@/app/lib/render-tool";
 import { ToolLayout } from "../tool-layout";
 
@@ -13,7 +14,7 @@ function getDisplayString(value: unknown): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function SkillRenderer({
+export const SkillRenderer = memo(function SkillRenderer({
   part,
   state,
   onApprove,
@@ -50,4 +51,4 @@ export function SkillRenderer({
       onDeny={onDeny}
     />
   );
-}
+});

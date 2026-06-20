@@ -91,6 +91,7 @@ export async function createBackgroundAgent(
         permissions: input.permissions,
         outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
+        composioToolkitSlugs: input.composioToolkitSlugs,
       })
       .returning();
 
@@ -158,6 +159,9 @@ export async function updateBackgroundAgent(
           : {}),
         ...(input.checkCommand !== undefined
           ? { checkCommand: normalizeOptionalText(input.checkCommand) }
+          : {}),
+        ...(input.composioToolkitSlugs !== undefined
+          ? { composioToolkitSlugs: input.composioToolkitSlugs }
           : {}),
         updatedAt: new Date(),
       })
@@ -415,6 +419,18 @@ export async function createRunForTrigger(params: {
 export async function recordBackgroundAgentEvent(
   input: RecordEventInput,
 ): Promise<BackgroundAgentEvent> {
+  // Assign a monotonic per-run sequence in application code.
+  // We compute max(sequence) for the run and add 1, using raw SQL
+  // coalesce so the first event starts at 1.
+  const [seqRow] = await db
+    .select({
+      nextSeq: sql<number>`coalesce(max(${backgroundAgentEvents.sequence}), 0) + 1`,
+    })
+    .from(backgroundAgentEvents)
+    .where(eq(backgroundAgentEvents.runId, input.runId));
+
+  const sequence = Number(seqRow?.nextSeq ?? 1);
+
   const [event] = await db
     .insert(backgroundAgentEvents)
     .values({
@@ -432,6 +448,7 @@ export async function recordBackgroundAgentEvent(
       errorKind: input.errorKind ?? null,
       payload: redactBackgroundAgentPayload(input.payload),
       redactionStatus: "passed",
+      sequence,
     })
     .returning();
 
@@ -616,6 +633,25 @@ export async function listBackgroundAgentEvents(
     orderBy: [desc(backgroundAgentEvents.createdAt)],
     limit: 200,
   });
+}
+
+export async function listBackgroundAgentEventsAfter(
+  runId: string,
+  afterSequence: number,
+): Promise<BackgroundAgentEvent[]> {
+  const rows = await db
+    .select()
+    .from(backgroundAgentEvents)
+    .where(
+      and(
+        eq(backgroundAgentEvents.runId, runId),
+        sql`${backgroundAgentEvents.sequence} > ${afterSequence}`,
+      ),
+    )
+    .orderBy(sql`${backgroundAgentEvents.sequence} asc`)
+    .limit(200);
+
+  return rows;
 }
 
 export async function listBackgroundAgentOutputs(

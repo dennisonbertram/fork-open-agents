@@ -13,19 +13,20 @@ import {
   getDefaultModelOptionId,
   withMissingModelOption,
 } from "@/lib/model-options";
+import { SettingsSectionHeader } from "../_components/section-header";
 
-function SectionHeader({ children }: { children: React.ReactNode }) {
-  return (
-    <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-      {children}
-    </h3>
-  );
+function ModelSettingsSectionTitle({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return <SettingsSectionHeader title={String(children)} />;
 }
 
 export function ModelPreferencesSectionSkeleton() {
   return (
     <div className="space-y-4">
-      <SectionHeader>Model preferences</SectionHeader>
+      <ModelSettingsSectionTitle>Model preferences</ModelSettingsSectionTitle>
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="grid gap-2">
           <Skeleton className="h-4 w-24" />
@@ -401,7 +402,7 @@ export function ModelPreferencesSection() {
 
   return (
     <div className="space-y-4">
-      <SectionHeader>Model preferences</SectionHeader>
+      <ModelSettingsSectionTitle>Model preferences</ModelSettingsSectionTitle>
 
       <div className="grid gap-6 sm:grid-cols-2">
         <div className="grid gap-2">

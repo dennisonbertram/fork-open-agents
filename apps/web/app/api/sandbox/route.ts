@@ -1,4 +1,5 @@
 import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
+import { after } from "next/server";
 import {
   requireAuthenticatedUser,
   requireOwnedSession,
@@ -82,6 +83,7 @@ interface CreateSandboxRequest {
 async function installSessionGlobalSkills(params: {
   sessionRecord: SessionRecord;
   sandbox: Awaited<ReturnType<typeof connectSandbox>>;
+  sandboxName: string | null;
 }): Promise<void> {
   const globalSkillRefs = params.sessionRecord.globalSkillRefs ?? [];
   if (globalSkillRefs.length === 0) {
@@ -91,6 +93,37 @@ async function installSessionGlobalSkills(params: {
   await installGlobalSkills({
     sandbox: params.sandbox,
     globalSkillRefs,
+    observability: {
+      sessionId: params.sessionRecord.id,
+      sandboxName: params.sandboxName,
+    },
+  });
+}
+
+function getErrorKind(error: unknown): string {
+  if (error instanceof Error) {
+    return error.name || "Error";
+  }
+
+  return typeof error;
+}
+
+function scheduleSandboxCreateBackgroundWork(
+  callback: () => Promise<void>,
+): void {
+  after(callback);
+}
+
+function runBackgroundTask(params: {
+  task: () => Promise<void>;
+  onError: (error: unknown) => void;
+}): void {
+  scheduleSandboxCreateBackgroundWork(async () => {
+    try {
+      await params.task();
+    } catch (error) {
+      params.onError(error);
+    }
   });
 }
 
@@ -228,7 +261,16 @@ export async function POST(req: Request) {
     });
   } finally {
     if (setupToken) {
-      await revokeInstallationToken(setupToken.token);
+      const token = setupToken.token;
+      runBackgroundTask({
+        task: () => revokeInstallationToken(token),
+        onError: (error) => {
+          console.warn("[sandbox] revoke-token-failed", {
+            sessionId,
+            errorKind: getErrorKind(error),
+          });
+        },
+      });
     }
   }
 
@@ -259,24 +301,32 @@ export async function POST(req: Request) {
       //   );
       // }
 
-      try {
-        await installSessionGlobalSkills({
-          sessionRecord,
-          sandbox,
-        });
-      } catch (error) {
-        console.error(
-          `Failed to install global skills for session ${sessionRecord.id}:`,
-          error,
-        );
-      }
+      const nextSandboxName = nextState.sandboxName ?? sandboxName ?? null;
 
-      await installSessionUserSkills({
-        userId: session.user.id,
-        sessionId: sessionRecord.id,
-        sandboxName: nextState.sandboxName ?? null,
-        sandbox,
-        didSetupWorkspace: true,
+      runBackgroundTask({
+        task: async () => {
+          await Promise.all([
+            installSessionGlobalSkills({
+              sessionRecord,
+              sandbox,
+              sandboxName: nextSandboxName,
+            }),
+            installSessionUserSkills({
+              userId: session.user.id,
+              sessionId: sessionRecord.id,
+              sandboxName: nextSandboxName,
+              sandbox,
+              didSetupWorkspace: true,
+            }),
+          ]);
+        },
+        onError: (error) => {
+          console.warn("[sandbox] session-skill-install-failed", {
+            sessionId: sessionRecord.id,
+            sandboxName: nextSandboxName,
+            errorKind: getErrorKind(error),
+          });
+        },
       });
     }
 
