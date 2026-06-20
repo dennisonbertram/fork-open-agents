@@ -261,6 +261,7 @@ const generate = mock(async (input: GenerateCall) => {
   };
 });
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (id: string) => id,
   openAgent: { generate },
 }));
@@ -345,6 +346,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     outputMode: "ready_pr",
     checkCommand: null,
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,

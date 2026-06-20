@@ -542,9 +542,16 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
         }
       }
 
-      // Fail-fast path (watchdog disabled or watchdog threw)
+      // Default sink (watchdog disabled or watchdog threw): a failed step with
+      // no failure edge has nowhere to route, so the run terminates as failed.
+      // Surface the step's actual error (errorKind/errorMessage) as the run's
+      // error instead of masking it with a generic "no failure edge" string —
+      // the underlying cause (e.g. "Agent step failed: Tool result is missing
+      // …") is what the operator needs. Fall back to the routing message only
+      // when the step provided no error detail.
       const resolvedErrorKind = errorKind ?? "step_failed";
-      const resolvedErrorMessage = `Step failed with no failure edge: ${nodeId}`;
+      const noFailureEdgeMessage = `Step failed with no failure edge: ${nodeId}`;
+      const resolvedErrorMessage = errorMessage ?? noFailureEdgeMessage;
 
       await updateAgentLoopRunStatus({
         runId: loopRunId,
@@ -565,6 +572,10 @@ async function advanceLoopRun(params: AdvanceParams): Promise<void> {
           errorKind: resolvedErrorKind,
           errorMessage: resolvedErrorMessage,
           nodeId,
+          // The failure was unhandled by the graph (no failure edge) and routed
+          // to the implicit default sink that terminates the run.
+          routedToDefaultSink: true,
+          noFailureEdge: true,
         },
         workflowRunId,
       });

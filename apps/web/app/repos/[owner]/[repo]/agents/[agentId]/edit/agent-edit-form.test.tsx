@@ -97,6 +97,7 @@ function makeAgent(
     outputMode: "none",
     checkCommand: "bun --bun run ci",
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [

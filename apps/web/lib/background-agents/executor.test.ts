@@ -295,6 +295,7 @@ mock.module("@/lib/github/users", () => ({
 }));
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
   openAgent: {
     generate,
@@ -361,6 +362,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
+    builtinToolNames: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -591,5 +593,45 @@ describe("executeBackgroundAgentRun", () => {
       status: "succeeded",
       outputUrl: "https://github.com/acme/widgets/pull/42",
     });
+  });
+
+  test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      builtinToolNames: ["read", "grep", "bash"],
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { unattended?: boolean; allowedBuiltinToolNames?: string[] };
+    };
+    expect(call?.options?.unattended).toBe(true);
+    expect(call?.options?.allowedBuiltinToolNames).toEqual([
+      "read",
+      "grep",
+      "bash",
+    ]);
+  });
+
+  test("defaults builtinToolNames to null (no restriction) when the agent has none", async () => {
+    currentAgent = buildAgent({ outputMode: "ready_pr" });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { allowedBuiltinToolNames?: unknown };
+    };
+    expect(call?.options?.allowedBuiltinToolNames).toBeNull();
   });
 });

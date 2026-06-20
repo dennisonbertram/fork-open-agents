@@ -201,6 +201,7 @@ const baseAgent: BackgroundAgentWithTriggers = {
   outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
+  builtinToolNames: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   triggers: [
