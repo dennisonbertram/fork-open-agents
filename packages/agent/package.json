@@ -5,7 +5,9 @@
   "type": "module",
   "main": "./index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./browser-session-cleanup": "./tools/browser-session-cache.ts",
+    "./model-ids": "./model-ids.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -15,6 +17,7 @@
     "@ai-sdk/openai": "catalog:",
     "@open-agents/sandbox": "workspace:*",
     "ai": "catalog:",
+    "playwright": "^1.60.0",
     "zod": "catalog:"
   },
   "devDependencies": {

@@ -149,6 +149,18 @@ const spies = {
   ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
   listManagedBrowserRuns: mock(async (): Promise<unknown[]> => []),
+  createArtifact: mock(async (input: Record<string, unknown>) => ({
+    id: `artifact-${String(input.kind ?? "unknown")}`,
+    ...input,
+    createdAt: new Date("2026-06-20T12:00:00.000Z"),
+    updatedAt: new Date("2026-06-20T12:00:00.000Z"),
+  })),
+  listArtifacts: mock(
+    async (): Promise<Array<Record<string, unknown>>> => [
+      { kind: "research_packet", status: "available" },
+      { kind: "spec", status: "available" },
+    ],
+  ),
   recordGoalLedgerStart: mock(() => Promise.resolve("goal-test-abc123")),
   recordGoalLedgerEvent: mock(() => Promise.resolve()),
   recordGoalLedgerClose: mock(() => Promise.resolve()),
@@ -464,6 +476,11 @@ mock.module("@/lib/workflows/goal-ledger-recorder", () => ({
   recordGoalLedgerClose: spies.recordGoalLedgerClose,
 }));
 
+mock.module("@/lib/db/workflow-artifacts", () => ({
+  createArtifact: spies.createArtifact,
+  listArtifacts: spies.listArtifacts,
+}));
+
 // Mock the goal-validation module so integration tests can control its output.
 // The spy delegates to the real implementation by default, so it does not
 // interfere with goal-validation.test.ts which tests the real module directly.
@@ -668,6 +685,18 @@ beforeEach(() => {
   spies.recordGoalLedgerStart.mockResolvedValue("goal-test-abc123");
   spies.recordGoalLedgerEvent.mockResolvedValue(undefined);
   spies.recordGoalLedgerClose.mockResolvedValue(undefined);
+  spies.createArtifact.mockImplementation(
+    async (input: Record<string, unknown>) => ({
+      id: `artifact-${String(input.kind ?? "unknown")}`,
+      ...input,
+      createdAt: new Date("2026-06-20T12:00:00.000Z"),
+      updatedAt: new Date("2026-06-20T12:00:00.000Z"),
+    }),
+  );
+  spies.listArtifacts.mockResolvedValue([
+    { kind: "research_packet", status: "available" },
+    { kind: "spec", status: "available" },
+  ]);
   // Reset goal-validation spy and result (null = use real logic in spy).
   goalValidationResult = null;
   validateGoalCompletionSpy.mockClear();
@@ -1037,6 +1066,42 @@ describe("runAgentWorkflow", () => {
     expect(spies.listManagedBrowserRuns).toHaveBeenCalledWith({
       sessionId: "session-1",
       chatId: "chat-1",
+    });
+  });
+
+  test("records workflow artifacts after managed runtime completion", async () => {
+    spies.resolveChatSandboxRuntime.mockImplementationOnce(
+      (params: { assistantId: string }) => {
+        writtenChunks.push({ type: "start", messageId: params.assistantId });
+        return Promise.resolve(
+          createResolvedChatSandboxRuntime({
+            runtimeMode: "managed_runtime",
+            managedRuntime: {
+              profileId: "web-bun-agent-browser",
+              profileVersion: "2026-05-23.1",
+              profileDisplayName: "Web app with Bun and browser checks",
+              profileRunId: "profile-run-1",
+              sandboxName: "session_session-1",
+            },
+          }),
+        );
+      },
+    );
+
+    await runAgentWorkflow(makeOptions());
+
+    const artifactKinds = spies.createArtifact.mock.calls.map(
+      ([input]) => (input as { kind: string }).kind,
+    );
+
+    expect(artifactKinds).toEqual([
+      "research_packet",
+      "spec",
+      "receipt",
+      "final_build_report",
+    ]);
+    expect(spies.listArtifacts).toHaveBeenCalledWith({
+      workflowRunId: "wrun_test-123",
     });
   });
 

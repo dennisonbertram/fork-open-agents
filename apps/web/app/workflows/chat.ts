@@ -9,12 +9,12 @@ import {
   pruneMessages,
   type UIMessageChunk,
 } from "ai";
-import {
-  toAnthropicDirectModelId,
-  type AgentModelSelection,
-  type OpenAgentCallOptions,
-  type SubagentRoster,
+import type {
+  AgentModelSelection,
+  OpenAgentCallOptions,
+  SubagentRoster,
 } from "@open-agents/agent";
+import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
 import { getComposioUserFacingError } from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
@@ -559,6 +559,84 @@ async function validateGoalForClose(input: {
   }
 
   return { ok: false, reason: result.reason };
+}
+
+async function recordResearchAndSpecArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  try {
+    const { buildArtifactInputs, recordWorkflowArtifactBestEffort } =
+      await import("@/lib/workflows/artifact-generator");
+
+    const inputs = buildArtifactInputs(ctx);
+    await Promise.all(
+      inputs.map((input) => recordWorkflowArtifactBestEffort(input)),
+    );
+  } catch (error: unknown) {
+    console.error(
+      "[chat] Failed to record research/spec artifacts (best-effort, ignoring):",
+      error,
+    );
+  }
+}
+
+async function recordReceiptAndFinalReportArtifacts(ctx: {
+  workflowRunId: string;
+  sessionId: string;
+  chatId: string;
+  userId: string;
+  workflowStatus: string;
+  objectiveText: string;
+}): Promise<void> {
+  "use step";
+
+  try {
+    const { recordWorkflowArtifactBestEffort } =
+      await import("@/lib/workflows/artifact-generator");
+    const { listArtifacts } = await import("@/lib/db/workflow-artifacts");
+    const { buildFinalReportInputs, buildReceiptInputs } =
+      await import("@/lib/workflows/final-report");
+
+    let hasRequiredEvidence = false;
+    try {
+      const existingArtifacts = await listArtifacts({
+        workflowRunId: ctx.workflowRunId,
+      });
+      const availableKinds = new Set(
+        existingArtifacts
+          .filter((artifact) => artifact.status === "available")
+          .map((artifact) => artifact.kind),
+      );
+      hasRequiredEvidence =
+        availableKinds.has("research_packet") && availableKinds.has("spec");
+    } catch (error: unknown) {
+      console.error(
+        "[chat] Failed to check workflow artifact evidence (best-effort, treating as missing):",
+        error,
+      );
+    }
+
+    const receiptInput = buildReceiptInputs(ctx);
+    const finalReportInput = buildFinalReportInputs(ctx, {
+      hasRequiredEvidence,
+    });
+
+    await Promise.all([
+      recordWorkflowArtifactBestEffort(receiptInput),
+      recordWorkflowArtifactBestEffort(finalReportInput),
+    ]);
+  } catch (error: unknown) {
+    console.error(
+      "[chat] Failed to record receipt/final-report artifacts (best-effort, ignoring):",
+      error,
+    );
+  }
 }
 
 async function persistInputMessages(
@@ -1687,6 +1765,10 @@ export async function runAgentWorkflow(options: Options) {
               workingDirectory: "/",
             },
       ...(runtime.skills.length > 0 ? { skills: runtime.skills } : {}),
+      // Thread the chat id as the browser session key so each chat gets its own
+      // isolated Playwright browser context (separate cookies, storage, page state).
+      // Without this, all calls in the process share the "_default" singleton page.
+      sessionId: options.chatId,
     };
     sandboxState =
       runtime.mode === "sandbox" ? runtime.sandboxState : undefined;
@@ -2080,6 +2162,34 @@ export async function runAgentWorkflow(options: Options) {
       );
       await sendDataPart(writable, runtimeProofPart);
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
+
+      const objectiveText = options.messages
+        .filter((message) => message.role === "user")
+        .flatMap((message) =>
+          message.parts
+            .filter((part) => part.type === "text")
+            .map((part) => part.text),
+        )
+        .join(" ")
+        .trim()
+        .slice(0, 1000);
+
+      await recordResearchAndSpecArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        objectiveText,
+      });
+
+      await recordReceiptAndFinalReportArtifacts({
+        workflowRunId,
+        sessionId: options.sessionId,
+        chatId: options.chatId,
+        userId: options.userId,
+        workflowStatus,
+        objectiveText,
+      });
     }
 
     await Promise.all([
@@ -2104,6 +2214,17 @@ export async function runAgentWorkflow(options: Options) {
       await persistAssistantMessage(options.chatId, pendingAssistantResponse);
     }
   } finally {
+    // SHOULD-6: Best-effort close of the per-chat browser session at run end.
+    // Prevents Chromium processes from leaking across workflow runs.
+    // Wrapped in a separate try/catch so a close failure never masks the real error.
+    try {
+      const { closeBrowserSession } =
+        await import("@open-agents/agent/browser-session-cleanup");
+      await closeBrowserSession({ sessionId: options.chatId });
+    } catch {
+      // Best-effort — swallow close errors silently.
+    }
+
     try {
       // On unexpected errors, still clear the active stream and close
       // so the chat is never permanently marked as streaming.
@@ -2298,7 +2419,7 @@ const runAgentStep = async (
   let lastStreamError: unknown;
 
   try {
-    const stepAgentOptions =
+    const baseStepAgentOptions =
       inferenceProfileId && agentOptions.model
         ? {
             ...agentOptions,
@@ -2314,6 +2435,41 @@ const runAgentStep = async (
             }),
           }
         : agentOptions;
+
+    // Thread the stream writer so browser tools can stream inline screenshots.
+    // All writes (from the main stream pump AND from tool writers) are serialized
+    // through a shared promise queue so they never race on the WritableStream lock.
+    // The WHATWG WritableStream throws synchronously from getWriter() if another
+    // writer is already active; the queue prevents that race.
+    let writeQueue: Promise<void> = Promise.resolve();
+    const enqueueWrite = (chunk: UIMessageChunk): Promise<void> => {
+      // Queue the per-write promise so callers can await THIS write's outcome.
+      const next = writeQueue.then(async () => {
+        const w = writable.getWriter();
+        try {
+          await w.write(chunk);
+        } finally {
+          w.releaseLock();
+        }
+      });
+      // The tail that future writes chain on MUST be non-rejecting so that one
+      // failed write does NOT poison the queue and silently drop all later writes.
+      writeQueue = next.catch(() => undefined);
+      return next;
+    };
+
+    const stepAgentOptions = {
+      ...baseStepAgentOptions,
+      writer: {
+        write: async (chunk: {
+          type: "file";
+          url: string;
+          mediaType: string;
+        }) => {
+          await enqueueWrite(chunk as UIMessageChunk);
+        },
+      },
+    };
 
     await emitSessionEvent({
       sessionId,
@@ -2627,9 +2783,7 @@ const runAgentStep = async (
         responseMessage = finishedResponseMessage;
       },
     })) {
-      const writer = writable.getWriter();
-      await writer.write(part);
-      writer.releaseLock();
+      await enqueueWrite(part);
     }
 
     if (responseMessage == null) {

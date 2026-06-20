@@ -231,6 +231,9 @@ record of intent (link back to it from new planning docs and issues):
   allowlist and tool grants. See
   [Background Agents Epic](docs/plans/background-agents-epic.md) and the
   [Background Agents Live Proof](docs/process/background-agents-live-proof.md).
+- **Chief of Staff Account Coordinator** — authenticated account status and
+  deep diagnosis APIs for scoped cross-subsystem observability. See
+  [Chief of Staff Account Coordinator](docs/plans/chief-of-staff-account-coordinator.md).
 - **Verified Build** — verified build bridge, contracts, and observability. See
   [Verified Build Roadmap](docs/plans/verified-build-roadmap.md).
 - **Composio Tools** — external tool connections for agents. See

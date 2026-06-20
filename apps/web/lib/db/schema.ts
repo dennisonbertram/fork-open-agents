@@ -1191,6 +1191,66 @@ export const backgroundAgentRuns = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Parked tool approvals
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists tool calls that require human approval before execution.
+ *
+ * Lifecycle:
+ *   park → pending → approved | denied | expired
+ *
+ * Idempotency: consumeToolApproval uses an atomic UPDATE … WHERE consumed=false
+ * RETURNING pattern so a duplicate resume POST cannot double-apply a decision.
+ *
+ * Migration slot: ~0048 (note: may need renumbering after PRs #120/#137/#138 merge).
+ */
+export const workflowToolApprovals = pgTable(
+  "workflow_tool_approvals",
+  {
+    id: text("id").primaryKey(),
+    approvalId: text("approval_id").notNull().unique(),
+    toolName: text("tool_name").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
+    category: text("category"),
+    reason: text("reason"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    decision: text("decision", {
+      enum: ["pending", "approved", "denied", "expired"],
+    })
+      .notNull()
+      .default("pending"),
+    consumed: boolean("consumed").notNull().default(false),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_tool_approvals_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("workflow_tool_approvals_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type WorkflowToolApproval = typeof workflowToolApprovals.$inferSelect;
+export type NewWorkflowToolApproval = typeof workflowToolApprovals.$inferInsert;
+
+// ---------------------------------------------------------------------------
+
 export const backgroundAgentEvents = pgTable(
   "background_agent_events",
   {
@@ -1531,6 +1591,64 @@ export const workflowRuns = pgTable(
     index("workflow_runs_profile_run_idx").on(table.managedRuntimeProfileRunId),
   ],
 );
+
+export const workflowArtifacts = pgTable(
+  "workflow_artifacts",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", {
+      enum: [
+        "research_packet",
+        "spec",
+        "receipt",
+        "gate_report",
+        "final_build_report",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "expected",
+        "generating",
+        "available",
+        "superseded",
+        "redacted",
+        "failed",
+        "missing",
+        "archived",
+      ],
+    })
+      .notNull()
+      .default("expected"),
+    redactionStatus: text("redaction_status", {
+      enum: ["pending", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("pending"),
+    sourceLocation: text("source_location"),
+    summary: text("summary"),
+    createdByActor: text("created_by_actor"),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    goalId: text("goal_id"),
+    gateId: text("gate_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_artifacts_workflow_run_idx").on(table.workflowRunId),
+    index("workflow_artifacts_kind_status_idx").on(table.kind, table.status),
+  ],
+);
+
+export type WorkflowArtifact = typeof workflowArtifacts.$inferSelect;
+export type NewWorkflowArtifact = typeof workflowArtifacts.$inferInsert;
 
 export const workflowRunSteps = pgTable(
   "workflow_run_steps",

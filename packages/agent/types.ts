@@ -17,6 +17,22 @@ export const todoItemSchema = z.object({
 });
 export type TodoItem = z.infer<typeof todoItemSchema>;
 
+/**
+ * Writer for streaming inline UI chunks (e.g. screenshot images) from tool executes.
+ * The chunk shape matches the UIMessageChunk "file" variant used by the chat renderer
+ * at shared-chat-content.tsx: p.type === "file" && p.mediaType?.startsWith("image/").
+ *
+ * write() may return Promise<void> — the screenshot tool always awaits it so
+ * a rejection does not escape as an unhandled rejection.
+ */
+export type AgentContextWriter = {
+  write: (chunk: {
+    type: "file";
+    url: string;
+    mediaType: string;
+  }) => Promise<void> | void;
+};
+
 export interface AgentContext {
   sandbox: AgentSandboxContext;
   skills?: SkillMetadata[];
@@ -41,6 +57,16 @@ export interface AgentContext {
    * unauthenticated calls to GitHub hosts and steer the model to those tools.
    */
   githubToolAvailable?: boolean;
+  /**
+   * Optional stream writer for inline image/file parts (e.g. browser screenshots).
+   * When present, tools call writer.write({ type: "file", url, mediaType }) to
+   * stream chunks that render inline in the chat UI.
+   */
+  writer?: AgentContextWriter;
+  /**
+   * Session-scoped id used by browser tools to isolate Playwright contexts.
+   */
+  sessionId?: string;
 }
 
 export interface SandboxExecutionContext {

@@ -34,6 +34,9 @@ Start here:
   happened to users and operators.
 - [Diagnostic Bundles](diagnostic-bundles.md) - bounded, redacted session-chat
   exports for debugging runs without production shell access.
+- [Chief of Staff Account Coordinator](../plans/chief-of-staff-account-coordinator.md)
+  - backend-first account status and diagnosis API contract for future Chief of
+  Staff UI/tooling.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
@@ -51,4 +54,5 @@ Supporting docs:
 - [Code Style](../agents/code-style.md)
 - [Lessons Learned](../agents/lessons-learned.md)
 - [Managed Runtime Profiles](../plans/managed-runtime-profiles.md)
+- [Chief of Staff Account Coordinator](../plans/chief-of-staff-account-coordinator.md)
 - [Verified Build Roadmap](../plans/verified-build-roadmap.md)
