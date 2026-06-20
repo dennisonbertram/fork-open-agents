@@ -36,6 +36,7 @@ import {
   clearSandboxState,
   getSessionSandboxName,
   hasResumableSandboxState,
+  isSandboxActive,
 } from "@/lib/sandbox/utils";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { checkRateLimit, rateLimitKey } from "@/lib/rate-limit";
@@ -178,6 +179,30 @@ export async function POST(req: Request) {
   sessionRecord = sessionContext.sessionRecord;
 
   const sandboxName = getSessionSandboxName(sessionId);
+  const parsedRequestRepo = repoUrl ? parseGitHubHttpsUrl(repoUrl) : null;
+  if (repoUrl && !parsedRequestRepo) {
+    return Response.json(
+      { error: "Invalid GitHub repository URL" },
+      { status: 400 },
+    );
+  }
+
+  const activeSandboxState = sessionRecord.sandboxState;
+  if (isSandboxActive(activeSandboxState)) {
+    const now = Date.now();
+    const expiresAt =
+      typeof activeSandboxState.expiresAt === "number"
+        ? activeSandboxState.expiresAt
+        : now;
+
+    return Response.json({
+      createdAt: now,
+      timeout: Math.max(0, expiresAt - now),
+      currentBranch: repoUrl ? branch : undefined,
+      mode: activeSandboxState.type,
+      timing: { readyMs: 0 },
+    });
+  }
 
   const source = repoUrl
     ? {
@@ -191,19 +216,11 @@ export async function POST(req: Request) {
   // a repo-scoped read token for clone/setup when a repo is provided
   let setupToken: ScopedInstallationToken | undefined;
 
-  if (repoUrl) {
-    const parsedRepo = parseGitHubHttpsUrl(repoUrl);
-    if (!parsedRepo) {
-      return Response.json(
-        { error: "Invalid GitHub repository URL" },
-        { status: 400 },
-      );
-    }
-
+  if (repoUrl && parsedRequestRepo) {
     const access = await verifyRepoAccess({
       userId: session.user.id,
-      owner: parsedRepo.owner,
-      repo: parsedRepo.repo,
+      owner: parsedRequestRepo.owner,
+      repo: parsedRequestRepo.repo,
     });
 
     if (!access.ok) {
