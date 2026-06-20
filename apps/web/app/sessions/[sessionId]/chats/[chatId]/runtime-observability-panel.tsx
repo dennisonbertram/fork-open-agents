@@ -34,6 +34,7 @@ import {
   type WorkflowRunJson,
 } from "./hooks/use-session-observability";
 import { GoalLedgerSection } from "./goal-ledger-panel";
+import { WorkflowArtifactsSection } from "./workflow-artifact-panel";
 
 const statusClassName: Record<string, string> = {
   started: "border-blue-500/25 bg-blue-500/10 text-blue-600 dark:text-blue-300",
@@ -731,6 +732,7 @@ export function RuntimeObservabilityPanel({
           <LikelyIssue events={data?.events ?? []} />
 
           <GoalLedgerSection goals={data?.workflowGoals ?? []} />
+          <WorkflowArtifactsSection artifacts={data?.workflowArtifacts ?? []} />
 
           <Section title="Managed Profile">
             {latestProfileRun ? (

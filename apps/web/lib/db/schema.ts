@@ -1532,6 +1532,64 @@ export const workflowRuns = pgTable(
   ],
 );
 
+export const workflowArtifacts = pgTable(
+  "workflow_artifacts",
+  {
+    id: text("id").primaryKey(),
+    kind: text("kind", {
+      enum: [
+        "research_packet",
+        "spec",
+        "receipt",
+        "gate_report",
+        "final_build_report",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: [
+        "expected",
+        "generating",
+        "available",
+        "superseded",
+        "redacted",
+        "failed",
+        "missing",
+        "archived",
+      ],
+    })
+      .notNull()
+      .default("expected"),
+    redactionStatus: text("redaction_status", {
+      enum: ["pending", "passed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("pending"),
+    sourceLocation: text("source_location"),
+    summary: text("summary"),
+    createdByActor: text("created_by_actor"),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    goalId: text("goal_id"),
+    gateId: text("gate_id"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_artifacts_workflow_run_idx").on(table.workflowRunId),
+    index("workflow_artifacts_kind_status_idx").on(table.kind, table.status),
+  ],
+);
+
+export type WorkflowArtifact = typeof workflowArtifacts.$inferSelect;
+export type NewWorkflowArtifact = typeof workflowArtifacts.$inferInsert;
+
 export const workflowRunSteps = pgTable(
   "workflow_run_steps",
   {

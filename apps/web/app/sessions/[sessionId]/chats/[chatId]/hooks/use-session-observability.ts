@@ -159,6 +159,18 @@ export type WorkflowGoalJson = {
   events: WorkflowGoalEventJson[];
 };
 
+export type WorkflowArtifactJson = {
+  id: string;
+  kind: string;
+  status: string;
+  redactionStatus: string;
+  createdByActor: string | null;
+  createdAt: string;
+  workflowRunId: string | null;
+  summary: string | null;
+  sourceLocation: string | null;
+};
+
 export type SessionObservabilityResponse = {
   runtimeMode: RuntimeMode;
   events: SessionEventJson[];
@@ -170,6 +182,7 @@ export type SessionObservabilityResponse = {
   services: RuntimeServiceJson[];
   browserRuns: RuntimeBrowserRunJson[];
   workflowGoals: WorkflowGoalJson[];
+  workflowArtifacts: WorkflowArtifactJson[];
 };
 
 export function useSessionObservability(params: {
