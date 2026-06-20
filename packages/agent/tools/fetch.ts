@@ -1,6 +1,11 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { getGithubToolAvailable, getSandbox, shellEscape } from "./utils";
+import {
+  getGithubToolAvailable,
+  getSandbox,
+  getUnattended,
+  shellEscape,
+} from "./utils";
 
 const TIMEOUT_MS = 30_000;
 export const MAX_BODY_LENGTH = 10_000;
@@ -264,7 +269,13 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
-  needsApproval: true,
+  // web_fetch is a network-egress gate. In an attended session it requires a
+  // human approval. In an unattended run (background agent / agent-loop step)
+  // there is no approver: exposure is governed by the agent's tool allowlist,
+  // so being available *is* the pre-approval. Auto-approve to avoid wedging the
+  // run with a dangling, never-approved tool call.
+  needsApproval: (_input, { experimental_context }) =>
+    !getUnattended(experimental_context),
   description: `Fetch a URL from the web.
 
 USAGE:

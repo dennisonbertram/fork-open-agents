@@ -280,6 +280,7 @@ const openAgentGenerateMock = mock(async (_params: unknown) => {
 });
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   openAgent: {
     generate: openAgentGenerateMock,
   },
@@ -519,6 +520,50 @@ describe("BT-S01: happy path — sandbox, agent, output JSON, commit", () => {
     });
 
     expect(result.outcome).toBe("success");
+  });
+
+  test("BT-S01: runs the agent in unattended mode so approval-gated calls cannot wedge the run", async () => {
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { unattended?: boolean; allowedBuiltinToolNames?: unknown };
+    };
+    expect(call?.options?.unattended).toBe(true);
+    // No allowlist configured on the node → default policy (null).
+    expect(call?.options?.allowedBuiltinToolNames).toBeNull();
+  });
+
+  test("BT-S01: forwards the node's builtinToolNames allowlist to the agent", async () => {
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        builtinToolNames: ["read", "grep", "bash"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { allowedBuiltinToolNames?: string[] };
+    };
+    expect(call?.options?.allowedBuiltinToolNames).toEqual([
+      "read",
+      "grep",
+      "bash",
+    ]);
   });
 
   test("BT-S01: sandbox named agent_loop_<stepRunId> is connected", async () => {

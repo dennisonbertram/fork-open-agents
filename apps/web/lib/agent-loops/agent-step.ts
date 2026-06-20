@@ -58,7 +58,7 @@
 
 import "server-only";
 
-import { openAgent } from "@open-agents/agent";
+import { openAgent, sanitizeUnattendedToolCalls } from "@open-agents/agent";
 import {
   connectSandbox,
   hasUncommittedChanges,
@@ -439,6 +439,13 @@ export async function executeAgentStep(
           }
         : undefined,
       runtimeMode: "classic" as const,
+      // Unattended: no human can approve tool calls. Tools resolve their
+      // approval gates deterministically (web_fetch auto-approves; dangerous
+      // bash / sensitive reads are denied via the sanitizer below) so an
+      // approval-gated call cannot wedge the run with a dangling tool_use.
+      unattended: true,
+      // Pre-approved built-in tools for this step. null = default policy.
+      allowedBuiltinToolNames: node.builtinToolNames ?? null,
       customInstructions:
         "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
     };
@@ -462,12 +469,16 @@ export async function executeAgentStep(
     }
 
     // Accumulate messages across turns so the next call sees prior tool results.
-    const agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
+    let agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
 
     try {
       let loopStep = 0;
       while (true) {
         loopStep++;
+        // Repair any approval-gated tool call the previous turn left without a
+        // result before re-sending history — otherwise the provider rejects the
+        // request ("Tool result is missing for tool call …") and fails the run.
+        agentMessages = sanitizeUnattendedToolCalls(agentMessages);
         agentResult = await openAgent.generate({
           messages: agentMessages,
           options: agentOptions,

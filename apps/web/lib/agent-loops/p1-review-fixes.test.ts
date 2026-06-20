@@ -258,6 +258,7 @@ const openAgentGenerateMock = mock(async (_params: unknown) => {
 });
 
 mock.module("@open-agents/agent", () => ({
+  sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   openAgent: {
     generate: openAgentGenerateMock,
   },

@@ -2577,6 +2577,12 @@
           "notNull": true,
           "default": "'[]'::jsonb"
         },
+        "builtin_tool_names": {
+          "name": "builtin_tool_names",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp",
