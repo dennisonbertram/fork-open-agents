@@ -56,10 +56,16 @@ function jsonError(errorKind: GithubSecretsErrorKind, status?: number) {
 }
 
 function repoAccessErrorKind(reason: string): GithubSecretsErrorKind {
-  if (reason === "no_installation" || reason === "app_no_access") {
+  if (reason === "no_user_token") {
+    return "github_not_connected";
+  }
+  if (reason === "no_installation") {
     return "no_installation";
   }
-  return "github_error";
+  if (reason === "app_no_access") {
+    return "app_no_access";
+  }
+  return "repo_access_denied";
 }
 
 function createRequestId(): string {

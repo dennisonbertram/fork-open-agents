@@ -1,7 +1,10 @@
 import "server-only";
 
 export type GithubSecretsErrorKind =
+  | "github_not_connected"
   | "no_installation"
+  | "app_no_access"
+  | "repo_access_denied"
   | "app_no_secrets_permission"
   | "secret_name_invalid"
   | "secret_too_large"
@@ -67,7 +70,10 @@ export function statusForSecretsErrorKind(errorKind: GithubSecretsErrorKind) {
       return 413;
     case "github_rate_limited":
       return 429;
+    case "github_not_connected":
     case "no_installation":
+    case "app_no_access":
+    case "repo_access_denied":
     case "app_no_secrets_permission":
       return 403;
     case "github_error":

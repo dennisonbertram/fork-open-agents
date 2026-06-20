@@ -44,4 +44,16 @@ describe("Secrets page", () => {
     );
     expect(html).toContain("SECRETS_CLIENT_STUB:acme/widgets");
   });
+
+  test("secret value input supports multiline values", async () => {
+    const source = await Bun.file(
+      "apps/web/app/repos/[owner]/[repo]/secrets/add-secret-dialog.tsx",
+    ).text();
+
+    expect(source).toContain(
+      'import { Textarea } from "@/components/ui/textarea"',
+    );
+    expect(source).toContain("<Textarea");
+    expect(source).not.toContain('type="password"');
+  });
 });

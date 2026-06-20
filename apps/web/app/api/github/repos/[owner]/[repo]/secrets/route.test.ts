@@ -21,7 +21,15 @@ let repoAccess:
       defaultBranch: string;
       userPermission: "read" | "write";
     }
-  | { ok: false; reason: "no_installation" | "app_no_access" } = {
+  | {
+      ok: false;
+      reason:
+        | "no_user_token"
+        | "user_no_access"
+        | "user_no_write"
+        | "no_installation"
+        | "app_no_access";
+    } = {
   ok: true,
   installationId: 123,
   repositoryId: 456,
@@ -163,6 +171,26 @@ describe("repository Actions secrets route", () => {
     });
     expect(listRepoSecrets).not.toHaveBeenCalled();
   });
+
+  test.each([
+    ["no_user_token", "github_not_connected"],
+    ["user_no_access", "repo_access_denied"],
+    ["user_no_write", "repo_access_denied"],
+    ["app_no_access", "app_no_access"],
+  ] as const)(
+    "maps repo access denial %s without calling GitHub secrets",
+    async (reason, errorKind) => {
+      repoAccess = { ok: false, reason };
+      const { GET } = await routeModulePromise;
+
+      const response = await GET(createRequest(), routeContext());
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toMatchObject({ errorKind });
+      expect(listRepoSecrets).not.toHaveBeenCalled();
+    },
+  );
 
   test("creates a secret through a scoped installation token and emits a redacted audit event", async () => {
     const { POST } = await routeModulePromise;

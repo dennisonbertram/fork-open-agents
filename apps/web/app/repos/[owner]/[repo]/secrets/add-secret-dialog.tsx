@@ -22,6 +22,7 @@ import {
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const MAX_SECRET_BYTES = 48 * 1024;
 const SECRET_NAME_HELP =
@@ -175,13 +176,13 @@ export function AddSecretDialog({
             </Field>
             <Field data-invalid={Boolean(valueError)}>
               <FieldLabel htmlFor="secret-value">Value</FieldLabel>
-              <Input
+              <Textarea
                 aria-describedby="secret-value-error"
                 aria-invalid={Boolean(valueError)}
                 autoComplete="off"
+                className="min-h-28 resize-y font-mono"
                 disabled={form.formState.isSubmitting}
                 id="secret-value"
-                type="password"
                 {...form.register("value")}
               />
               <FieldError id="secret-value-error">{valueError}</FieldError>

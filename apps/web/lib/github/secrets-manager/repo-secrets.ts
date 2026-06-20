@@ -22,6 +22,7 @@ type GitHubRepoSecret = {
 
 type GitHubRepoSecretsResponse = {
   secrets?: GitHubRepoSecret[];
+  total_count?: number;
 };
 
 type GitHubPublicKeyResponse = {
@@ -61,17 +62,33 @@ export async function listRepoSecrets(
   owner: string,
   repo: string,
 ): Promise<RepoSecretSummary[]> {
-  const response = await octokit.request(
-    "GET /repos/{owner}/{repo}/actions/secrets",
-    {
-      owner,
-      repo,
-      per_page: 100,
-    },
-  );
-  const data = response.data as GitHubRepoSecretsResponse;
+  const secrets: GitHubRepoSecret[] = [];
+  let page = 1;
+  let totalCount: number | undefined;
 
-  return (data.secrets ?? [])
+  do {
+    const response = await octokit.request(
+      "GET /repos/{owner}/{repo}/actions/secrets",
+      {
+        owner,
+        repo,
+        page,
+        per_page: 100,
+      },
+    );
+    const data = response.data as GitHubRepoSecretsResponse;
+    const pageSecrets = data.secrets ?? [];
+    secrets.push(...pageSecrets);
+    totalCount = data.total_count;
+
+    if (pageSecrets.length < 100) {
+      break;
+    }
+
+    page += 1;
+  } while (typeof totalCount !== "number" || secrets.length < totalCount);
+
+  return secrets
     .filter((secret) => secret.name && secret.created_at && secret.updated_at)
     .map((secret) => ({
       name: secret.name ?? "",
