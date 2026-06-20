@@ -15,6 +15,11 @@ import { buildSystemPrompt } from "./system-prompt";
 import {
   askUserQuestionTool,
   bashTool,
+  browserClickTool,
+  browserExtractTool,
+  browserNavigateTool,
+  browserScreenshotTool,
+  browserTypeTool,
   editFileTool,
   globTool,
   grepTool,
@@ -142,6 +147,29 @@ const callOptionsSchema = z.object({
    * built-in tools it may call.
    */
   allowedBuiltinToolNames: z.array(z.string()).nullish(),
+  /**
+   * Optional stream writer for inline image/file chunks (e.g. browser screenshots).
+   * When provided, browser screenshot tool calls writer.write({ type: "file", ... })
+   * so screenshots render inline in chat.
+   * writer.write may return Promise<void> — it is always awaited inside the tool.
+   */
+  writer: z
+    .custom<{
+      write: (chunk: {
+        type: "file";
+        url: string;
+        mediaType: string;
+      }) => Promise<void> | void;
+    }>()
+    .optional(),
+  /**
+   * Session-scoped id used to key the browser session cache.
+   * When provided, each distinct sessionId gets its own isolated Playwright
+   * browser context (separate cookies, storage, page state).
+   * Typically set to the chat/run id by the caller so different workflows
+   * do not share a browser page.
+   */
+  sessionId: z.string().optional(),
 });
 
 export type OpenAgentCallOptions = z.infer<typeof callOptionsSchema>;
@@ -173,6 +201,11 @@ const tools = {
   setup_managed_runtime_profile: setupManagedRuntimeProfileTool,
   skill: skillTool,
   web_fetch: webFetchTool,
+  browser_navigate: browserNavigateTool(),
+  browser_click: browserClickTool(),
+  browser_type: browserTypeTool(),
+  browser_extract: browserExtractTool(),
+  browser_screenshot: browserScreenshotTool(),
 } satisfies ToolSet;
 
 export const OPEN_AGENT_TOOL_NAMES = Object.keys(tools) as Array<
@@ -405,6 +438,8 @@ export const openAgent = new ToolLoopAgent({
     const githubToolAvailable = options.githubToolAvailable ?? false;
     const unattended = options.unattended ?? false;
     const allowedBuiltinToolNames = options.allowedBuiltinToolNames ?? null;
+    const writer = options.writer;
+    const sessionId = options.sessionId;
 
     const instructions = buildSystemPrompt({
       cwd: sandbox.workingDirectory,
@@ -451,6 +486,11 @@ export const openAgent = new ToolLoopAgent({
         ...(manageAgentEnabled && manageBackgroundAgentAction
           ? { manageBackgroundAgentAction }
           : {}),
+        ...(writer ? { writer } : {}),
+        // Thread the session-scoped id into context so each browser tool call
+        // uses an isolated Playwright browser context per chat/run instead of
+        // the process-wide "_default" singleton.
+        ...(sessionId ? { sessionId } : {}),
       },
     };
   },

@@ -1191,6 +1191,66 @@ export const backgroundAgentRuns = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------------------
+// Parked tool approvals
+// ---------------------------------------------------------------------------
+
+/**
+ * Persists tool calls that require human approval before execution.
+ *
+ * Lifecycle:
+ *   park → pending → approved | denied | expired
+ *
+ * Idempotency: consumeToolApproval uses an atomic UPDATE … WHERE consumed=false
+ * RETURNING pattern so a duplicate resume POST cannot double-apply a decision.
+ *
+ * Migration slot: ~0048 (note: may need renumbering after PRs #120/#137/#138 merge).
+ */
+export const workflowToolApprovals = pgTable(
+  "workflow_tool_approvals",
+  {
+    id: text("id").primaryKey(),
+    approvalId: text("approval_id").notNull().unique(),
+    toolName: text("tool_name").notNull(),
+    toolCallId: text("tool_call_id").notNull(),
+    category: text("category"),
+    reason: text("reason"),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "cascade",
+    }),
+    decision: text("decision", {
+      enum: ["pending", "approved", "denied", "expired"],
+    })
+      .notNull()
+      .default("pending"),
+    consumed: boolean("consumed").notNull().default(false),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("workflow_tool_approvals_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("workflow_tool_approvals_user_created_idx").on(
+      table.userId,
+      table.createdAt,
+    ),
+  ],
+);
+
+export type WorkflowToolApproval = typeof workflowToolApprovals.$inferSelect;
+export type NewWorkflowToolApproval = typeof workflowToolApprovals.$inferInsert;
+
+// ---------------------------------------------------------------------------
+
 export const backgroundAgentEvents = pgTable(
   "background_agent_events",
   {
