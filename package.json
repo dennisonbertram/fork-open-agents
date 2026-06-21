@@ -20,6 +20,7 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "sandbox:snapshot-base": "bun run scripts/vercel-refresh-base-snapshot.ts",
+    "proof:isolated-worker": "bun run apps/web/scripts/isolated-worker-live-proof.ts",
     "typecheck": "turbo typecheck",
     "check": "ultracite check",
     "fix": "ultracite fix",

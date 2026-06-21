@@ -39,6 +39,8 @@ Start here:
   Staff UI/tooling.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
+- [Isolated Worker Live Proof](isolated-worker-live-proof.md) - operator smoke
+  for delegated isolated workspace evidence.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
   handoff.
 - [Workflow Catalog Conventions](workflow-catalog-conventions.md) - id naming,
