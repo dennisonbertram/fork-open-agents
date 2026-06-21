@@ -4,6 +4,8 @@ import type { TaskPendingToolCall } from "@open-agents/agent";
 import { formatTokens, toRelativePath } from "@open-agents/shared";
 import type { ToolRenderState } from "@open-agents/shared/lib/tool-state";
 import {
+  AlertTriangle,
+  CheckCircle2,
   Bot,
   FileText,
   FilePlus,
@@ -283,6 +285,198 @@ function getProfileLabel(runtime: {
   return runtime.profileDisplayName ?? runtime.profileId ?? null;
 }
 
+function statusClassName(status: string | undefined): string {
+  switch (status) {
+    case "completed":
+    case "valid":
+      return "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+    case "running":
+    case "launching":
+      return "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300";
+    case "blocked":
+    case "failed":
+    case "invalid":
+      return "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
+    case "cancelled":
+    case "stale":
+    case "missing":
+    case "partial":
+      return "border-muted bg-muted/50 text-muted-foreground";
+    default:
+      return "border-border bg-muted/40 text-muted-foreground";
+  }
+}
+
+function StatusBadge({
+  label,
+  status,
+}: {
+  label?: string;
+  status: string | undefined;
+}) {
+  if (!status) {
+    return null;
+  }
+
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium",
+        statusClassName(status),
+      )}
+    >
+      {label ? `${label} ` : ""}
+      {status.replaceAll("_", " ")}
+    </span>
+  );
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function getCompletionPacket(output: unknown) {
+  return asRecord(asRecord(output)?.completionPacket);
+}
+
+function getCompletionPacketValidation(output: unknown) {
+  return asRecord(asRecord(output)?.completionPacketValidation);
+}
+
+function getLifecycle(output: unknown) {
+  return asRecord(asRecord(output)?.delegatedWorkerLifecycle);
+}
+
+function getWorkspaceMode(output: unknown): string | null {
+  const packetMode = asString(getCompletionPacket(output)?.workspaceMode);
+  if (packetMode) {
+    return packetMode;
+  }
+  const lifecycleMode = asString(getLifecycle(output)?.workspaceMode);
+  if (lifecycleMode) {
+    return lifecycleMode;
+  }
+  const policy = asRecord(asRecord(output)?.workspacePolicy);
+  return asString(policy?.executionMode);
+}
+
+function getWorkerStatus(output: unknown): string | null {
+  const lifecycleStatus = asString(getLifecycle(output)?.status);
+  if (lifecycleStatus) {
+    return lifecycleStatus;
+  }
+  return asString(getCompletionPacket(output)?.status);
+}
+
+function getReasonCode(output: unknown): string | null {
+  return (
+    asString(getLifecycle(output)?.reasonCode) ??
+    asString(getCompletionPacketValidation(output)?.reasonCode)
+  );
+}
+
+function WorkerEvidencePanel({ output }: { output: unknown }) {
+  const packet = getCompletionPacket(output);
+  const validation = getCompletionPacketValidation(output);
+  const workerStatus = getWorkerStatus(output);
+  const workspaceMode = getWorkspaceMode(output);
+  const reasonCode = getReasonCode(output);
+  const summary = asString(packet?.summary);
+  const changedFiles = asStringArray(packet?.changedFiles);
+  const verification = asStringArray(packet?.verification);
+  const blockers = asStringArray(packet?.blockers);
+  const integration = asStringArray(packet?.integrationInstructions);
+  const validationStatus = asString(validation?.status);
+  const showPanel =
+    workerStatus ||
+    workspaceMode ||
+    summary ||
+    validationStatus ||
+    blockers.length > 0 ||
+    integration.length > 0;
+
+  if (!showPanel) {
+    return null;
+  }
+
+  const statusIcon =
+    workerStatus === "completed" ? (
+      <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+    ) : workerStatus === "failed" || workerStatus === "blocked" ? (
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-500" />
+    ) : (
+      <Telescope className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+    );
+
+  return (
+    <div className="mt-2 ml-6 overflow-hidden rounded-md border border-border/70 bg-muted/20">
+      <div className="flex flex-wrap items-center gap-1.5 border-b border-border/60 px-2 py-1.5">
+        {statusIcon}
+        <span className="mr-1 text-[11px] font-medium text-foreground">
+          Worker evidence
+        </span>
+        <StatusBadge status={workerStatus ?? undefined} />
+        <StatusBadge label="mode" status={workspaceMode ?? undefined} />
+        <StatusBadge label="packet" status={validationStatus ?? undefined} />
+      </div>
+      <div className="space-y-1.5 px-2 py-2 text-[11px] text-muted-foreground">
+        {summary && (
+          <p className="line-clamp-2 text-foreground" title={summary}>
+            {summary}
+          </p>
+        )}
+        <div className="flex flex-wrap gap-x-3 gap-y-1">
+          <span>
+            Changes:{" "}
+            <span className="font-medium text-foreground">
+              {changedFiles.length}
+            </span>
+          </span>
+          <span>
+            Verification:{" "}
+            <span className="font-medium text-foreground">
+              {verification.length}
+            </span>
+          </span>
+          {workspaceMode === "isolated" && (
+            <span>
+              Integration:{" "}
+              <span className="font-medium text-foreground">
+                {integration.length > 0 ? "review child artifacts" : "pending"}
+              </span>
+            </span>
+          )}
+        </div>
+        {changedFiles.length > 0 && (
+          <p className="truncate font-mono text-[10px]">
+            {changedFiles.slice(0, 4).join(", ")}
+            {changedFiles.length > 4 ? ` +${changedFiles.length - 4}` : ""}
+          </p>
+        )}
+        {blockers.length > 0 ? (
+          <p className="line-clamp-2 text-red-700 dark:text-red-300">
+            {blockers[0]}
+          </p>
+        ) : reasonCode ? (
+          <p className="truncate font-mono text-[10px]">reason {reasonCode}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Pending tool call (streaming only — no output yet)
 // ---------------------------------------------------------------------------
@@ -510,6 +704,7 @@ export const TaskRenderer = memo(function TaskRenderer({
       defaultExpanded={!isComplete}
     >
       {runtimeDetails}
+      <WorkerEvidencePanel output={output} />
       {approvalWarning}
     </ToolLayout>
   );
