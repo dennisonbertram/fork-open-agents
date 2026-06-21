@@ -18,6 +18,13 @@ import {
   type DelegatedWorkerLifecycleStatus,
 } from "../delegated-worker-lifecycle";
 import {
+  buildDelegatedWorkerCompletionPacket,
+  delegatedWorkerCompletionPacketSchema,
+  delegatedWorkerCompletionPacketValidationStatusSchema,
+  type DelegatedWorkerCompletionPacket,
+  type DelegatedWorkerCompletionPacketValidation,
+} from "../delegated-worker-completion-packet";
+import {
   IsolatedWorkspaceProvisioningError,
   isolatedWorkerWorkspaceResultSchema,
   provisionIsolatedWorkerWorkspace,
@@ -123,6 +130,15 @@ export const taskOutputSchema = z.object({
   delegatedWorkerLifecycleEvents: z
     .array(delegatedWorkerLifecycleEventSchema)
     .optional(),
+  completionPacket: delegatedWorkerCompletionPacketSchema.optional(),
+  completionPacketValidation: z
+    .object({
+      status: delegatedWorkerCompletionPacketValidationStatusSchema,
+      reasonCode: z.string(),
+      reason: z.string(),
+      createdAt: z.number().int().nonnegative(),
+    })
+    .optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -195,6 +211,40 @@ function getSessionId(experimentalContext: unknown): string {
 
 function isWriteCapableSubagent(subagentType: string): boolean {
   return WRITE_CAPABLE_SUBAGENTS.has(subagentType);
+}
+
+function buildTaskEvidenceRefs(output: {
+  runtime?: TaskToolOutput["runtime"];
+  workspacePolicy?: TaskToolOutput["workspacePolicy"];
+  workspaceResolution?: TaskToolOutput["workspaceResolution"];
+  isolatedWorkspace?: TaskToolOutput["isolatedWorkspace"];
+  usage?: LanguageModelUsage;
+}) {
+  const refs: Array<{
+    kind: "task_output" | "runtime" | "workspace" | "usage";
+    ref: string;
+  }> = [{ kind: "task_output", ref: "tool-task.output" }];
+
+  if (output.runtime) {
+    refs.push({ kind: "runtime", ref: "tool-task.output.runtime" });
+  }
+
+  if (output.workspacePolicy || output.workspaceResolution) {
+    refs.push({ kind: "workspace", ref: "tool-task.output.workspace" });
+  }
+
+  if (output.isolatedWorkspace) {
+    refs.push({
+      kind: "workspace",
+      ref: "tool-task.output.isolatedWorkspace",
+    });
+  }
+
+  if (output.usage) {
+    refs.push({ kind: "usage", ref: "tool-task.output.usage" });
+  }
+
+  return refs;
 }
 
 function buildManagedRuntimeWorkerInstructions(params: {
@@ -318,6 +368,13 @@ IMPORTANT:
     let workerSandboxContext = sandboxContext.sandbox;
     const delegatedWorkerLifecycleEvents: DelegatedWorkerLifecycleEvent[] = [];
     const workerId = toolCallId ?? `${subagentType}-${startedAt}`;
+    let toolCallCount = 0;
+    let pending: TaskPendingToolCall | undefined;
+    let usage: LanguageModelUsage | undefined;
+    let completionPacket: DelegatedWorkerCompletionPacket | undefined;
+    let completionPacketValidation:
+      | DelegatedWorkerCompletionPacketValidation
+      | undefined;
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
       environmentDetails: sandboxContext.sandbox.environmentDetails,
@@ -372,6 +429,35 @@ IMPORTANT:
       });
       delegatedWorkerLifecycleEvents.push(event);
       return event;
+    };
+    const buildTerminalCompletionPacket = (
+      status: "completed" | "blocked" | "failed" | "cancelled",
+      reasonCode: string,
+      finalMessages?: ModelMessage[],
+    ) => {
+      const packetResult = buildDelegatedWorkerCompletionPacket({
+        status,
+        reasonCode,
+        workerId,
+        workerType: subagentType,
+        workspaceMode:
+          workspaceResolution.status === "accepted"
+            ? workspaceResolution.decision
+            : workspacePolicyOutput.executionMode,
+        finalMessages,
+        taskTitle: task,
+        toolCallCount,
+        evidenceRefs: buildTaskEvidenceRefs({
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          isolatedWorkspace,
+          usage,
+        }),
+        createdAt: Date.now(),
+      });
+      completionPacket = packetResult.packet;
+      completionPacketValidation = packetResult.validation;
     };
 
     if (
@@ -428,6 +514,7 @@ IMPORTANT:
           "blocked",
           error.result.reasonCode,
         );
+        buildTerminalCompletionPacket("blocked", error.result.reasonCode);
         yield {
           toolCallCount: 0,
           startedAt,
@@ -438,6 +525,8 @@ IMPORTANT:
           isolatedWorkspace,
           delegatedWorkerLifecycle: blockedLifecycle,
           delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+          completionPacket,
+          completionPacketValidation,
         };
         throw error;
       }
@@ -475,6 +564,7 @@ IMPORTANT:
           "blocked",
           "shared_writer_lock_denied",
         );
+        buildTerminalCompletionPacket("blocked", "shared_writer_lock_denied");
         yield {
           toolCallCount: 0,
           startedAt,
@@ -486,6 +576,8 @@ IMPORTANT:
           sharedWriterLeaseEvents: sharedWriterLease.events,
           delegatedWorkerLifecycle: blockedLifecycle,
           delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+          completionPacket,
+          completionPacketValidation,
         };
         throw new SharedWriterLeaseConflictError(sharedWriterLease);
       }
@@ -506,6 +598,7 @@ IMPORTANT:
           "blocked",
           "workspace_drift_detected",
         );
+        buildTerminalCompletionPacket("blocked", "workspace_drift_detected");
         yield {
           toolCallCount: 0,
           startedAt,
@@ -523,6 +616,8 @@ IMPORTANT:
           sharedWorkspaceDrift,
           delegatedWorkerLifecycle: blockedLifecycle,
           delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+          completionPacket,
+          completionPacketValidation,
         };
         throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
       }
@@ -530,6 +625,10 @@ IMPORTANT:
       if (sharedWorkspaceDrift.status === "unsupported") {
         releaseSharedWriterLease("unsupported_workspace_baseline");
         const blockedLifecycle = appendLifecycleEvent(
+          "blocked",
+          "unsupported_workspace_baseline",
+        );
+        buildTerminalCompletionPacket(
           "blocked",
           "unsupported_workspace_baseline",
         );
@@ -550,15 +649,14 @@ IMPORTANT:
           sharedWorkspaceDrift,
           delegatedWorkerLifecycle: blockedLifecycle,
           delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+          completionPacket,
+          completionPacketValidation,
         };
         throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
       }
     }
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
-    let toolCallCount = 0;
-    let pending: TaskPendingToolCall | undefined;
-    let usage: LanguageModelUsage | undefined;
     const launchingLifecycle = appendLifecycleEvent(
       "launching",
       "worker_launching",
@@ -653,6 +751,12 @@ IMPORTANT:
         "completed",
         "worker_terminal",
       );
+      usage = finalUsage;
+      buildTerminalCompletionPacket(
+        "completed",
+        "worker_terminal",
+        response.messages,
+      );
       yield {
         final: response.messages,
         toolCallCount,
@@ -673,6 +777,8 @@ IMPORTANT:
         isolatedWorkspace,
         delegatedWorkerLifecycle: completedLifecycle,
         delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        completionPacket,
+        completionPacketValidation,
       };
     } catch (error) {
       const reasonCode = abortSignal?.aborted
@@ -680,6 +786,10 @@ IMPORTANT:
         : "worker_failed";
       releaseSharedWriterLease(reasonCode);
       const terminalLifecycle = appendLifecycleEvent(
+        abortSignal?.aborted ? "cancelled" : "failed",
+        reasonCode,
+      );
+      buildTerminalCompletionPacket(
         abortSignal?.aborted ? "cancelled" : "failed",
         reasonCode,
       );
@@ -703,6 +813,8 @@ IMPORTANT:
         isolatedWorkspace,
         delegatedWorkerLifecycle: terminalLifecycle,
         delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        completionPacket,
+        completionPacketValidation,
       };
       throw error;
     } finally {
