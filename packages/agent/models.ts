@@ -10,10 +10,8 @@ import {
   createAnthropic,
   type AnthropicLanguageModelOptions,
 } from "@ai-sdk/anthropic";
-import {
-  createOpenAI,
-  type OpenAIResponsesProviderOptions,
-} from "@ai-sdk/openai";
+import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { toAnthropicDirectModelId } from "./model-ids";
 
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
@@ -148,10 +146,10 @@ export interface DirectAnthropicConfig {
 }
 
 export interface DirectOpenAIConfig {
-  provider: "openai";
+  provider: "openai-compatible";
   modelId: string;
   apiKey: string;
-  baseURL?: string;
+  baseURL: string;
 }
 
 export type DirectInferenceConfig = DirectAnthropicConfig | DirectOpenAIConfig;
@@ -204,14 +202,15 @@ export function directOpenAIModel(
     "http-referer": options.appUrl ?? "https://open-agents.dev",
     "x-title": options.appName ?? "Open Agents",
   };
-  const openAIProvider = createOpenAI({
+  const openAIProvider = createOpenAICompatible({
+    name: "openai-compatible",
     apiKey: config.apiKey,
-    ...(config.baseURL ? { baseURL: config.baseURL } : {}),
+    baseURL: config.baseURL,
     headers: attributionHeaders,
   });
 
-  return openAIProvider(
-    config.modelId as Parameters<typeof openAIProvider>[0],
+  return openAIProvider.chatModel(
+    config.modelId as Parameters<typeof openAIProvider.chatModel>[0],
   ) as WrappableLanguageModel;
 }
 
