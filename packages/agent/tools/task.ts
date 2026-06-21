@@ -6,6 +6,12 @@ import {
 } from "ai";
 import { z } from "zod";
 import {
+  buildDelegatedWorkspaceLaunchPolicy,
+  delegatedWorkspaceLaunchPolicySchema,
+  delegatedWorkspacePolicySchema,
+  type DelegatedWorkspaceLaunchPolicy,
+} from "../delegated-workspace";
+import {
   buildSubagentSummaryLines,
   SUBAGENT_REGISTRY,
   SUBAGENT_TYPES,
@@ -27,6 +33,11 @@ const taskInputSchema = z.object({
   subagentType: subagentTypeSchema.describe(
     `Subagent to launch. Available options:\n${subagentSummaryLines}`,
   ),
+  workspacePolicy: delegatedWorkspacePolicySchema
+    .optional()
+    .describe(
+      "Workspace policy for the delegated worker: auto, shared, or isolated. Defaults to auto for backward compatibility.",
+    ),
   task: z
     .string()
     .describe("Short description of the task (displayed to user)"),
@@ -45,6 +56,7 @@ const taskPendingToolCallSchema = z.object({
 });
 
 export type TaskPendingToolCall = z.infer<typeof taskPendingToolCallSchema>;
+export type TaskWorkspacePolicy = DelegatedWorkspaceLaunchPolicy;
 
 const taskRuntimeOutputSchema = z.object({
   mode: z.literal("managed_runtime"),
@@ -63,6 +75,7 @@ export const taskOutputSchema = z.object({
   startedAt: z.number().int().nonnegative().optional(),
   modelId: z.string().optional(),
   runtime: taskRuntimeOutputSchema.optional(),
+  workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -180,6 +193,7 @@ BEHAVIOR:
 
 HOW TO USE:
 - Choose the appropriate subagentType based on the subagent descriptions above
+- Choose workspacePolicy when it matters: auto preserves the default policy, shared declares use of the active session workspace, and isolated declares that the worker should use an isolated workspace when provisioning is available
 - Provide a short task string (for display) summarizing the goal
 - Provide detailed instructions including goals, steps, constraints, and verification criteria
 
@@ -189,14 +203,22 @@ IMPORTANT:
 - The parent agent will not see the subagent's internal tool calls, only its final summary`,
   inputSchema: taskInputSchema,
   outputSchema: taskOutputSchema,
-  execute: async function* (
-    { subagentType, task, instructions },
-    { experimental_context, abortSignal },
-  ) {
+  execute: async function* (rawInput, { experimental_context, abortSignal }) {
+    const parsedInput = taskInputSchema.safeParse(rawInput);
+    if (!parsedInput.success) {
+      throw new Error(
+        "policy_validation_failed: invalid workspacePolicy; expected auto, shared, or isolated. Worker was not started.",
+      );
+    }
+
+    const { subagentType, task, instructions } = parsedInput.data;
+    const workspacePolicy = parsedInput.data.workspacePolicy ?? "auto";
     const sandboxContext = getSandboxContext(experimental_context, "task");
     const defaultModel = getSubagentModel(experimental_context, "task");
     const roster = getSubagentRoster(experimental_context);
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
+    const workspacePolicyOutput =
+      buildDelegatedWorkspaceLaunchPolicy(workspacePolicy);
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
       environmentDetails: sandboxContext.sandbox.environmentDetails,
@@ -233,7 +255,13 @@ IMPORTANT:
 
     // Emit before starting the subagent stream so chat UIs can show that the
     // delegated worker has actually started, even before its first tool call.
-    yield { toolCallCount, startedAt, modelId: subagentModelId, runtime };
+    yield {
+      toolCallCount,
+      startedAt,
+      modelId: subagentModelId,
+      runtime,
+      workspacePolicy: workspacePolicyOutput,
+    };
 
     const result = await subagent.stream({
       prompt:
@@ -243,6 +271,7 @@ IMPORTANT:
         instructions: effectiveInstructions,
         sandbox: sandboxContext.sandbox,
         model,
+        workspacePolicy: workspacePolicyOutput,
       },
       abortSignal,
     });
@@ -258,6 +287,7 @@ IMPORTANT:
           startedAt,
           modelId: subagentModelId,
           runtime,
+          workspacePolicy: workspacePolicyOutput,
         };
       }
 
@@ -272,6 +302,7 @@ IMPORTANT:
           startedAt,
           modelId: subagentModelId,
           runtime,
+          workspacePolicy: workspacePolicyOutput,
         };
       }
     }
@@ -285,6 +316,7 @@ IMPORTANT:
       startedAt,
       modelId: subagentModelId,
       runtime,
+      workspacePolicy: workspacePolicyOutput,
     };
   },
   toModelOutput: ({ output: { final: messages } }) => {

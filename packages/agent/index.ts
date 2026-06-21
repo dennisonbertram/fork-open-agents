@@ -48,6 +48,15 @@ export type {
 export type { SubagentRoster, SubagentRosterEntry } from "./subagents/roster";
 export type { BuildSystemPromptOptions } from "./system-prompt";
 export { buildSystemPrompt } from "./system-prompt";
+export type {
+  DelegatedWorkspaceLaunchPolicy,
+  DelegatedWorkspacePolicy,
+} from "./delegated-workspace";
+export {
+  DELEGATED_WORKSPACE_POLICIES,
+  delegatedWorkspaceLaunchPolicySchema,
+  delegatedWorkspacePolicySchema,
+} from "./delegated-workspace";
 export {
   type AskUserQuestionInput,
   type AskUserQuestionOutput,
@@ -71,6 +80,7 @@ export type {
   TaskPendingToolCall,
   TaskToolOutput,
   TaskToolUIPart,
+  TaskWorkspacePolicy,
 } from "./tools/task";
 export type { TodoItem, TodoStatus } from "./types";
 export {
