@@ -104,12 +104,12 @@ Existing Verified Build code surfaces:
 - `apps/web/lib/verified-build/task-classifier.ts`
 - `apps/web/app/api/harness/**`
 
-Likely Step 2 code surfaces, pending local exploration:
+Step 2 code surfaces:
 
 - `apps/web/lib/verified-build/contracts.ts`
+- `apps/web/lib/verified-build/contracts.test.ts`
 - `apps/web/lib/verified-build/contract-validation.ts`
 - `apps/web/lib/verified-build/fixtures/*`
-- `apps/web/lib/verified-build/contracts.test.ts`
 - `apps/web/lib/verified-build/evidence-coverage.test.ts`
 
 Agent rule:
