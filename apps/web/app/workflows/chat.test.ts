@@ -195,6 +195,7 @@ let testPreferences: {
   globalSkillRefs: never[];
   modelVariants: never[];
   enabledModelIds: string[];
+  modelSystemPrompts: Record<string, string>;
 };
 
 // Track what the agent stream yields
@@ -679,6 +680,7 @@ beforeEach(() => {
     globalSkillRefs: [],
     modelVariants: [],
     enabledModelIds: [],
+    modelSystemPrompts: {},
   };
   Object.values(spies).forEach((s) => s.mockClear());
   // Reset recorder spies to their default successful implementations.
@@ -2771,6 +2773,20 @@ describe("runAgentWorkflow", () => {
     );
     expect(source).toContain('"@/lib/workflows/goal-validation"');
     expect(source).toContain("validateGoalCompletion");
+  });
+
+  test("threads the selected model custom system prompt into agent options", async () => {
+    testChatRecord.modelId = "openai/gpt-5.4";
+    testPreferences.modelSystemPrompts = {
+      "openai/gpt-5.4": "Prefer compact model-specific updates.",
+    };
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    expect(opts?.modelSystemPrompt).toBe(
+      "Prefer compact model-specific updates.",
+    );
   });
 
   // ── PARAMOUNT INVARIANT: subagent roster must be null when no DB rows ──────

@@ -526,6 +526,13 @@
       "when": 1781990280873,
       "tag": "0073_peaceful_wildside",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1782050591141,
+      "tag": "0074_powerful_big_bertha",
+      "breakpoints": true
     }
   ]
 }

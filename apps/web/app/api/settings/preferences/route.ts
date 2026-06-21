@@ -10,6 +10,10 @@ import {
   globalSkillRefsSchema,
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
+import {
+  modelSystemPromptsSchema,
+  type ModelSystemPrompts,
+} from "@/lib/model-system-prompts";
 
 interface UpdatePreferencesRequest {
   defaultModelId?: string;
@@ -25,6 +29,7 @@ interface UpdatePreferencesRequest {
   publicUsageEnabled?: boolean;
   globalSkillRefs?: GlobalSkillRef[];
   enabledModelIds?: string[];
+  modelSystemPrompts?: ModelSystemPrompts;
 }
 
 export async function GET(_req: Request) {
@@ -210,6 +215,19 @@ export async function PATCH(req: Request) {
       );
     }
     updates.enabledModelIds = body.enabledModelIds;
+  }
+
+  if (body.modelSystemPrompts !== undefined) {
+    const parsedModelSystemPrompts = modelSystemPromptsSchema.safeParse(
+      body.modelSystemPrompts,
+    );
+    if (!parsedModelSystemPrompts.success) {
+      return Response.json(
+        { error: "Invalid modelSystemPrompts value" },
+        { status: 400 },
+      );
+    }
+    updates.modelSystemPrompts = parsedModelSystemPrompts.data;
   }
 
   try {
