@@ -65,6 +65,7 @@ import {
 import type { CheckRun } from "@/lib/github/pulls";
 import type {
   WebAgentCommitDataPart,
+  WebAgentMessageMetadata,
   WebAgentPrDataPart,
   WebAgentRuntimeProofDataPart,
   WebAgentSnippetDataPart,
@@ -801,6 +802,137 @@ function getConversationCost(
   return { total, source };
 }
 
+type MessageResponseStats = {
+  totalTokens: number;
+  tokensPerSecond: number | null;
+  cost: number | null;
+  costSource: "gateway" | "estimate" | null;
+};
+
+function getMetadataModelCost(
+  metadata: WebAgentMessageMetadata,
+  modelOptions: ModelOption[],
+): AvailableModelCost | undefined {
+  const modelId = metadata.modelId;
+  const selectedModelId = metadata.selectedModelId;
+  if (!modelId) {
+    return selectedModelId
+      ? modelOptions.find((option) => option.id === selectedModelId)?.cost
+      : undefined;
+  }
+
+  return modelOptions.find(
+    (option) =>
+      option.id === selectedModelId ||
+      option.id === modelId ||
+      option.baseModelId === modelId,
+  )?.cost;
+}
+
+function getMessageResponseStats({
+  metadata,
+  durationMs,
+  modelOptions,
+}: {
+  metadata: WebAgentMessageMetadata;
+  durationMs: number | null;
+  modelOptions: ModelOption[];
+}): MessageResponseStats | null {
+  const usage = metadata.totalMessageUsage ?? metadata.lastStepUsage;
+  if (!usage) {
+    return null;
+  }
+
+  const inputTokens = usage.inputTokens ?? 0;
+  const outputTokens = usage.outputTokens ?? 0;
+  const totalTokens = usage.totalTokens ?? inputTokens + outputTokens;
+  if (totalTokens <= 0) {
+    return null;
+  }
+
+  const hasGatewayCost =
+    typeof metadata.totalMessageCost === "number" &&
+    Number.isFinite(metadata.totalMessageCost) &&
+    metadata.totalMessageCost >= 0;
+  const estimatedCost = hasGatewayCost
+    ? undefined
+    : estimateModelUsageCost(
+        getUsageTotals(usage),
+        getMetadataModelCost(metadata, modelOptions),
+      );
+  const tokensPerSecond =
+    durationMs && durationMs > 0 ? outputTokens / (durationMs / 1000) : null;
+
+  return {
+    totalTokens,
+    tokensPerSecond:
+      tokensPerSecond !== null && Number.isFinite(tokensPerSecond)
+        ? tokensPerSecond
+        : null,
+    cost: hasGatewayCost
+      ? (metadata.totalMessageCost as number)
+      : (estimatedCost ?? null),
+    costSource: hasGatewayCost
+      ? "gateway"
+      : estimatedCost === undefined
+        ? null
+        : "estimate",
+  };
+}
+
+function formatTokensPerSecond(tokensPerSecond: number | null): string {
+  if (tokensPerSecond === null) {
+    return "--";
+  }
+
+  return tokensPerSecond >= 10
+    ? tokensPerSecond.toFixed(0)
+    : tokensPerSecond.toFixed(1);
+}
+
+function AssistantResponseMetadataFooter({
+  metadata,
+  durationMs,
+  modelOptions,
+}: {
+  metadata: WebAgentMessageMetadata;
+  durationMs: number | null;
+  modelOptions: ModelOption[];
+}) {
+  const stats = getMessageResponseStats({ metadata, durationMs, modelOptions });
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[11px] leading-tight text-muted-foreground/60">
+      <MessageModelPill metadata={metadata} modelOptions={modelOptions} />
+      {stats && (
+        <>
+          <span aria-hidden className="text-muted-foreground/30">
+            ·
+          </span>
+          <span>{formatTokens(stats.totalTokens)} tokens</span>
+          <span aria-hidden className="text-muted-foreground/30">
+            ·
+          </span>
+          <span className="tabular-nums">
+            {formatTokensPerSecond(stats.tokensPerSecond)} tok/s
+          </span>
+          {stats.cost !== null && (
+            <>
+              <span aria-hidden className="text-muted-foreground/30">
+                ·
+              </span>
+              <span className="tabular-nums">
+                {stats.costSource === "estimate" ? "est. " : ""}
+                {formatUsd(stats.cost)}
+              </span>
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -1475,12 +1607,11 @@ const MessageRow = memo(function MessageRow({
                     {!isMessageStreaming &&
                       isFinalAssistantTextPart &&
                       m.metadata && (
-                        <span className="opacity-0 transition group-hover:opacity-100">
-                          <MessageModelPill
-                            metadata={m.metadata}
-                            modelOptions={modelOptions}
-                          />
-                        </span>
+                        <AssistantResponseMetadataFooter
+                          metadata={m.metadata}
+                          durationMs={durationMs}
+                          modelOptions={modelOptions}
+                        />
                       )}
                   </div>
                 )}
