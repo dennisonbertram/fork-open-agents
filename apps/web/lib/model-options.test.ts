@@ -193,6 +193,83 @@ describe("model options", () => {
     ).toBe(false);
   });
 
+  test("buildModelOptions exposes discovered OpenAI-compatible profile models", () => {
+    const options = buildModelOptions(
+      [createModel({ id: "openai/gpt-5", name: "GPT-5" })],
+      [],
+      [
+        {
+          id: "profile-openai",
+          name: "Local Gateway",
+          provider: "openai-compatible",
+          baseUrl: "https://llm.example.com/v1",
+          keyLast4: "1234",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: "Profile test passed. Discovered 2 models.",
+          enabled: true,
+          models: [
+            { id: "gpt-4o-mini", displayName: "gpt-4o-mini" },
+            {
+              id: "custom/reasoner",
+              displayName: "Custom Reasoner",
+              contextWindow: 128_000,
+            },
+          ],
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    expect(options.map((option) => option.id)).toEqual([
+      "user-profile:profile-openai:gpt-4o-mini",
+      "user-profile:profile-openai:custom%2Freasoner",
+      "openai/gpt-5",
+    ]);
+    expect(options[0]).toMatchObject({
+      label: "gpt-4o-mini",
+      provider: "user",
+      source: "user",
+      baseModelId: "gpt-4o-mini",
+      inferenceProfileId: "profile-openai",
+      secondaryLabel: "Local Gateway",
+    });
+    expect(options[1]).toMatchObject({
+      label: "Custom Reasoner",
+      contextWindow: 128_000,
+      baseModelId: "custom/reasoner",
+    });
+  });
+
+  test("buildModelOptions does not invent OpenAI-compatible models before discovery", () => {
+    const options = buildModelOptions(
+      [createModel({ id: "openai/gpt-5", name: "GPT-5" })],
+      [],
+      [
+        {
+          id: "profile-openai",
+          name: "Local Gateway",
+          provider: "openai-compatible",
+          baseUrl: "https://llm.example.com/v1",
+          keyLast4: "1234",
+          keyFingerprint: "fingerprint",
+          status: "untested",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          models: [],
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    expect(options).toHaveLength(1);
+    expect(options[0]).toMatchObject({ id: "openai/gpt-5" });
+  });
+
   test("buildModelOptions tolerates a discovered model with no displayName", () => {
     // Stored jsonb can drift; a missing displayName must not crash the picker.
     const profile = {

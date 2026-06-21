@@ -1,6 +1,9 @@
 import { z } from "zod";
 
-export const INFERENCE_PROFILE_PROVIDERS = ["anthropic"] as const;
+export const INFERENCE_PROFILE_PROVIDERS = [
+  "anthropic",
+  "openai-compatible",
+] as const;
 export const INFERENCE_PROFILE_STATUSES = [
   "untested",
   "verified",
@@ -13,6 +16,11 @@ export type InferenceProfileProvider =
 export type InferenceProfileStatus =
   (typeof INFERENCE_PROFILE_STATUSES)[number];
 export type InferenceRoute = (typeof INFERENCE_ROUTES)[number];
+
+export const INFERENCE_PROFILE_PROVIDER_LABELS = {
+  anthropic: "Anthropic-compatible",
+  "openai-compatible": "OpenAI-compatible",
+} satisfies Record<InferenceProfileProvider, string>;
 
 const profileNameSchema = z.string().trim().min(1).max(80);
 const baseUrlInputSchema = z
@@ -36,7 +44,7 @@ const baseUrlInputSchema = z
 
 export const createInferenceProfileInputSchema = z.object({
   name: profileNameSchema,
-  provider: z.literal("anthropic").default("anthropic"),
+  provider: z.enum(INFERENCE_PROFILE_PROVIDERS).default("anthropic"),
   baseUrl: baseUrlInputSchema,
   apiKey: z.string().trim().min(1).max(4096),
   enabled: z.boolean().default(true),
@@ -46,6 +54,7 @@ export const updateInferenceProfileInputSchema = z
   .object({
     profileId: z.string().trim().min(1),
     name: profileNameSchema.optional(),
+    provider: z.enum(INFERENCE_PROFILE_PROVIDERS).optional(),
     baseUrl: baseUrlInputSchema,
     apiKey: z.string().trim().min(1).max(4096).optional(),
     enabled: z.boolean().optional(),
@@ -53,6 +62,7 @@ export const updateInferenceProfileInputSchema = z
   .refine(
     (value) =>
       value.name !== undefined ||
+      value.provider !== undefined ||
       value.baseUrl !== undefined ||
       value.apiKey !== undefined ||
       value.enabled !== undefined,

@@ -23,6 +23,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
@@ -30,9 +37,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type {
+  InferenceProfileProvider,
   InferenceProfileTestResult,
   SafeInferenceProfile,
 } from "@/lib/inference/types";
+import { INFERENCE_PROFILE_PROVIDER_LABELS } from "@/lib/inference/types";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
 import { SettingsSectionHeader } from "./_components/section-header";
@@ -43,10 +52,16 @@ export interface InferenceProfilesResponse {
 
 type SaveProfileInput = {
   name: string;
+  provider: InferenceProfileProvider;
   baseUrl: string;
   apiKey: string;
   enabled: boolean;
 };
+
+const PROVIDER_OPTIONS: InferenceProfileProvider[] = [
+  "anthropic",
+  "openai-compatible",
+];
 
 function formatProfileDate(value: Date | string | null): string | null {
   if (!value) {
@@ -95,6 +110,8 @@ function ProfileDialog({
   onSubmit: (input: SaveProfileInput) => Promise<true | string>;
 }) {
   const [name, setName] = useState("");
+  const [provider, setProvider] =
+    useState<InferenceProfileProvider>("anthropic");
   const [baseUrl, setBaseUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [enabled, setEnabled] = useState(true);
@@ -106,6 +123,7 @@ function ProfileDialog({
     }
 
     setName(editingProfile?.name ?? "");
+    setProvider(editingProfile?.provider ?? "anthropic");
     setBaseUrl(editingProfile?.baseUrl ?? "");
     setApiKey("");
     setEnabled(editingProfile?.enabled ?? true);
@@ -123,9 +141,14 @@ function ProfileDialog({
       setError("API key is required");
       return;
     }
+    if (provider === "openai-compatible" && !baseUrl.trim()) {
+      setError("Base URL is required for OpenAI-compatible endpoints");
+      return;
+    }
 
     const result = await onSubmit({
       name: name.trim(),
+      provider,
       baseUrl: baseUrl.trim(),
       apiKey: apiKey.trim(),
       enabled,
@@ -149,8 +172,7 @@ function ProfileDialog({
             {isEditing ? "Edit Inference Profile" : "New Inference Profile"}
           </DialogTitle>
           <DialogDescription>
-            Save Anthropic-compatible credentials for direct user-paid model
-            calls.
+            Save user-paid provider credentials for direct model calls.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -166,6 +188,28 @@ function ProfileDialog({
           </div>
 
           <div className="grid gap-1.5">
+            <Label htmlFor="inference-profile-provider">Provider</Label>
+            <Select
+              value={provider}
+              onValueChange={(value) =>
+                setProvider(value as InferenceProfileProvider)
+              }
+              disabled={isSaving}
+            >
+              <SelectTrigger id="inference-profile-provider" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDER_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {INFERENCE_PROFILE_PROVIDER_LABELS[option]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid gap-1.5">
             <Label htmlFor="inference-profile-base-url">Base URL</Label>
             <Input
               id="inference-profile-base-url"
@@ -175,9 +219,9 @@ function ProfileDialog({
               disabled={isSaving}
             />
             <p className="text-xs text-muted-foreground">
-              Empty uses Anthropic. URLs without a version segment are
-              normalized to end in /v1 (e.g. https://api.z.ai/api/anthropic →
-              …/anthropic/v1).
+              {provider === "anthropic"
+                ? "Empty uses Anthropic. URLs without a version segment are normalized to end in /v1."
+                : "Required. Enter the OpenAI-compatible API root; URLs without a version segment are normalized to end in /v1."}
             </p>
           </div>
 
@@ -298,7 +342,8 @@ function ProfileCard({
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-xs text-muted-foreground">
-              Anthropic key ending {profile.keyLast4}
+              {INFERENCE_PROFILE_PROVIDER_LABELS[profile.provider]} key ending{" "}
+              {profile.keyLast4}
             </span>
             {profile.baseUrl && (
               <span className="max-w-full truncate text-xs text-muted-foreground">
@@ -400,6 +445,7 @@ export function InferenceProfilesSection() {
         body: JSON.stringify({
           ...(isEditing ? { profileId: editingProfile.id } : {}),
           name: input.name,
+          provider: input.provider,
           baseUrl: input.baseUrl || null,
           ...(input.apiKey ? { apiKey: input.apiKey } : {}),
           enabled: input.enabled,
@@ -523,7 +569,7 @@ export function InferenceProfilesSection() {
       <div className="space-y-4">
         <SettingsSectionHeader
           title="Inference Profiles"
-          description="Add user-paid Anthropic-compatible credentials. Saved profiles appear as a User group in the chat model selector."
+          description="Add user-paid provider credentials. Tested profiles appear as a User group in the chat model selector."
           action={
             <Button
               size="sm"

@@ -40,7 +40,10 @@ mock.module("@/lib/inference/encryption", () => ({
 }));
 
 mock.module("@/lib/inference/model-routing", () => ({
-  normalizeAnthropicBaseUrl: (url: string | null | undefined) => url ?? null,
+  normalizeInferenceProfileBaseUrl: (
+    _provider: string,
+    url: string | null | undefined,
+  ) => url ?? null,
 }));
 
 const { decryptInferenceProfileApiKey } = await import("./inference-profiles");

@@ -316,7 +316,7 @@ export function buildModelOptions(
   );
 
   const userInferenceOptions = inferenceProfiles
-    .filter((profile) => profile.enabled && profile.provider === "anthropic")
+    .filter((profile) => profile.enabled)
     .flatMap((profile) => {
       // Prefer the endpoint's own discovered models (e.g. ZAI's glm-4.6).
       const discoveredModels = profile.models ?? [];
@@ -330,6 +330,9 @@ export function buildModelOptions(
               : {}),
           }),
         );
+      }
+      if (profile.provider !== "anthropic") {
+        return [];
       }
       // Fallback (models not yet discovered): expose the Anthropic catalog,
       // labeled by the app's model names.

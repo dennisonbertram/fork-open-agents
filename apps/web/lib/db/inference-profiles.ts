@@ -9,7 +9,7 @@ import {
   InferenceSecretDecryptionError,
   lastFourSecretChars,
 } from "@/lib/inference/encryption";
-import { normalizeAnthropicBaseUrl } from "@/lib/inference/model-routing";
+import { normalizeInferenceProfileBaseUrl } from "@/lib/inference/model-routing";
 import type {
   CreateInferenceProfileInput,
   InferenceProfileModel,
@@ -113,7 +113,10 @@ export async function createInferenceProfile(
   userId: string,
   input: CreateInferenceProfileInput,
 ): Promise<SafeInferenceProfile> {
-  const normalizedBaseUrl = normalizeAnthropicBaseUrl(input.baseUrl);
+  const normalizedBaseUrl = normalizeInferenceProfileBaseUrl(
+    input.provider,
+    input.baseUrl,
+  );
   const now = new Date();
   const row: NewInferenceProfile = {
     id: nanoid(),
@@ -153,22 +156,42 @@ export async function updateInferenceProfile(
   const updates: Partial<NewInferenceProfile> = {
     updatedAt: new Date(),
   };
+  const nextProvider = input.provider ?? existing.provider;
 
   if (input.name !== undefined) {
     updates.name = input.name;
   }
+  if (input.provider !== undefined) {
+    updates.provider = input.provider;
+  }
   if (input.baseUrl !== undefined) {
-    updates.baseUrl = normalizeAnthropicBaseUrl(input.baseUrl);
+    updates.baseUrl = normalizeInferenceProfileBaseUrl(
+      nextProvider,
+      input.baseUrl,
+    );
+  } else if (input.provider !== undefined) {
+    updates.baseUrl = normalizeInferenceProfileBaseUrl(
+      nextProvider,
+      existing.baseUrl,
+    );
   }
   if (input.enabled !== undefined) {
     updates.enabled = input.enabled;
   }
-  if (input.apiKey !== undefined) {
-    Object.assign(updates, keyFieldsForSecret(input.apiKey), {
+  if (
+    input.apiKey !== undefined ||
+    input.baseUrl !== undefined ||
+    input.provider !== undefined
+  ) {
+    Object.assign(updates, {
       status: "untested",
       lastTestedAt: null,
       lastTestMessage: null,
+      models: [],
     } satisfies Partial<NewInferenceProfile>);
+  }
+  if (input.apiKey !== undefined) {
+    Object.assign(updates, keyFieldsForSecret(input.apiKey));
   }
 
   const [updated] = await db
