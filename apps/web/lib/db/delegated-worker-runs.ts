@@ -5,6 +5,7 @@ import { db } from "./client";
 import {
   delegatedWorkerRuns,
   type DelegatedWorkerLifecycleEvent,
+  type DelegatedWorkerCompletionPacket,
   type DelegatedWorkerRun,
   type DelegatedWorkerRunEvidenceRef,
   type NewDelegatedWorkerRun,
@@ -88,6 +89,12 @@ type TaskOutputRecord = {
     createdAt?: unknown;
   };
   usage?: unknown;
+  completionPacket?: unknown;
+  completionPacketValidation?: {
+    status?: unknown;
+    reasonCode?: unknown;
+    reason?: unknown;
+  };
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -112,6 +119,30 @@ function asWorkspaceMode(value: string | null) {
   return value === "shared" || value === "isolated" ? value : null;
 }
 
+function asCompletionPacket(
+  value: unknown,
+): DelegatedWorkerCompletionPacket | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const packet = value as DelegatedWorkerCompletionPacket;
+  return packet.version === 1 &&
+    typeof packet.workerId === "string" &&
+    typeof packet.summary === "string"
+    ? packet
+    : null;
+}
+
+function asCompletionPacketValidationStatus(value: string | null) {
+  return value === "valid" ||
+    value === "invalid" ||
+    value === "missing" ||
+    value === "partial"
+    ? value
+    : null;
+}
+
 function statusFromTaskPart(part: {
   state?: string;
   output?: TaskOutputRecord | null;
@@ -131,6 +162,12 @@ function statusFromTaskPart(part: {
   }
 
   if (part.output?.final) {
+    if (part.output.completionPacketValidation?.status === "invalid") {
+      return {
+        status: "completed",
+        reasonCode: "worker_completion_packet_invalid",
+      };
+    }
     return { status: "completed", reasonCode: "worker_terminal" };
   }
 
@@ -160,6 +197,13 @@ function buildEvidenceRefs(output: TaskOutputRecord | null) {
 
   if (output?.usage) {
     refs.push({ kind: "usage", ref: "tool-task.output.usage" });
+  }
+
+  if (output?.completionPacket || output?.completionPacketValidation) {
+    refs.push({
+      kind: "completion_packet",
+      ref: "tool-task.output.completionPacket",
+    });
   }
 
   return refs;
@@ -213,6 +257,11 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
     const workspaceResolution = output?.workspaceResolution;
     const sharedWriterLease = output?.sharedWriterLease;
     const isolatedWorkspace = output?.isolatedWorkspace;
+    const completionPacket = asCompletionPacket(output?.completionPacket);
+    const completionPacketValidationStatus =
+      asCompletionPacketValidationStatus(
+        asString(output?.completionPacketValidation?.status),
+      ) ?? (output?.final ? "missing" : null);
     const { status, reasonCode } = statusFromTaskPart({
       state: part.state,
       output,
@@ -273,6 +322,16 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
       managedRuntimeProfileRunId: asString(runtime?.profileRunId),
       evidenceRefs: buildEvidenceRefs(output),
       lifecycleEvents: [lifecycleEvent],
+      completionPacket,
+      completionPacketValidationStatus,
+      completionPacketValidationReasonCode:
+        asString(output?.completionPacketValidation?.reasonCode) ??
+        (output?.final ? "worker_completion_packet_missing" : null),
+      completionPacketValidationReason:
+        asString(output?.completionPacketValidation?.reason) ??
+        (output?.final
+          ? "Completed worker did not include a completion packet."
+          : null),
       startedAt: now,
       finishedAt: TERMINAL_STATUSES.has(status) ? now : null,
       createdAt: now,
@@ -320,6 +379,13 @@ export async function recordDelegatedWorkerRunsFromMessage(params: {
           managedRuntimeProfileRunId: record.managedRuntimeProfileRunId,
           evidenceRefs: record.evidenceRefs,
           lifecycleEvents: record.lifecycleEvents,
+          completionPacket: record.completionPacket,
+          completionPacketValidationStatus:
+            record.completionPacketValidationStatus,
+          completionPacketValidationReasonCode:
+            record.completionPacketValidationReasonCode,
+          completionPacketValidationReason:
+            record.completionPacketValidationReason,
           startedAt: record.startedAt,
           finishedAt: record.finishedAt,
           updatedAt: record.updatedAt,
@@ -343,4 +409,42 @@ export async function listDelegatedWorkerRunsForSession(params: {
     where: and(...conditions),
     orderBy: [desc(delegatedWorkerRuns.createdAt)],
   });
+}
+
+export async function listDelegatedWorkerCompletionPacketsForSession(params: {
+  sessionId: string;
+  chatId?: string | null;
+}): Promise<
+  Array<{
+    runId: string;
+    workerId: string;
+    workerType: string;
+    status: DelegatedWorkerRunStatus;
+    workspaceMode: "shared" | "isolated" | null;
+    completionPacket: DelegatedWorkerRun["completionPacket"];
+    validationStatus: DelegatedWorkerRun["completionPacketValidationStatus"];
+    validationReasonCode: DelegatedWorkerRun["completionPacketValidationReasonCode"];
+    validationReason: DelegatedWorkerRun["completionPacketValidationReason"];
+    evidenceRefs: DelegatedWorkerRunEvidenceRef[];
+  }>
+> {
+  const runs = await listDelegatedWorkerRunsForSession(params);
+  return runs
+    .filter(
+      (run) =>
+        run.completionPacket !== null ||
+        run.completionPacketValidationStatus !== null,
+    )
+    .map((run) => ({
+      runId: run.id,
+      workerId: run.workerId,
+      workerType: run.workerType,
+      status: run.status,
+      workspaceMode: run.workspaceMode,
+      completionPacket: run.completionPacket,
+      validationStatus: run.completionPacketValidationStatus,
+      validationReasonCode: run.completionPacketValidationReasonCode,
+      validationReason: run.completionPacketValidationReason,
+      evidenceRefs: run.evidenceRefs,
+    }));
 }

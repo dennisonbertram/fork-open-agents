@@ -538,8 +538,26 @@ export const managedRuntimeProfileRuns = pgTable(
 );
 
 export type DelegatedWorkerRunEvidenceRef = {
-  kind: "task_output" | "runtime" | "workspace" | "usage";
+  kind: "task_output" | "runtime" | "workspace" | "usage" | "completion_packet";
   ref: string;
+};
+
+export type DelegatedWorkerCompletionPacket = {
+  version: 1;
+  status: "completed" | "blocked" | "failed" | "cancelled";
+  workerId: string;
+  workerType: string;
+  workspaceMode?: "shared" | "isolated";
+  appliedToParentWorkspace: boolean;
+  summary: string;
+  scope: string[];
+  changedFiles: string[];
+  verification: string[];
+  blockers: string[];
+  integrationInstructions: string[];
+  artifacts: DelegatedWorkerRunEvidenceRef[];
+  recoveryInstructions: string[];
+  createdAt: number;
 };
 
 export type DelegatedWorkerLifecycleEvent = {
@@ -617,6 +635,21 @@ export const delegatedWorkerRuns = pgTable(
       .$type<DelegatedWorkerLifecycleEvent[]>()
       .notNull()
       .default([]),
+    completionPacket: jsonb(
+      "completion_packet",
+    ).$type<DelegatedWorkerCompletionPacket | null>(),
+    completionPacketValidationStatus: text(
+      "completion_packet_validation_status",
+      {
+        enum: ["valid", "invalid", "missing", "partial"],
+      },
+    ),
+    completionPacketValidationReasonCode: text(
+      "completion_packet_validation_reason_code",
+    ),
+    completionPacketValidationReason: text(
+      "completion_packet_validation_reason",
+    ),
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
