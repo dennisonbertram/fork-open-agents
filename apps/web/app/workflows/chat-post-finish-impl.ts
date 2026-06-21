@@ -24,6 +24,7 @@ import {
   type WorkflowRunStatus,
   type WorkflowRunStepTiming,
 } from "@/lib/db/workflow-runs";
+import { recordDelegatedWorkerRunsFromMessage } from "@/lib/db/delegated-worker-runs";
 import { recordUsage } from "@/lib/db/usage";
 
 const cachedInputTokensFor = (usage: LanguageModelUsage) =>
@@ -391,6 +392,18 @@ export async function recordWorkflowUsage(
         });
       } catch (error) {
         console.error("[workflow] Failed to record workflow run:", error);
+      }
+
+      try {
+        await recordDelegatedWorkerRunsFromMessage({
+          message: responseMessage,
+          workflowRunId: workflowRun.workflowRunId,
+          chatId: workflowRun.chatId,
+          sessionId: workflowRun.sessionId,
+          userId,
+        });
+      } catch (error) {
+        console.error("[workflow] Failed to record delegated workers:", error);
       }
     }
 
