@@ -1,4 +1,5 @@
 import { nanoid } from "nanoid";
+import { after } from "next/server";
 import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
 import { checkBotProtection } from "@/lib/botid";
 import {
@@ -458,6 +459,7 @@ export async function POST(req: Request) {
       kickSandboxPrewarmWorkflow({
         sessionId: result.session.id,
         userId: session.user.id,
+        scheduleBackgroundWork: after,
       });
     }
 
