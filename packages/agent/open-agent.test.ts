@@ -177,6 +177,27 @@ describe("model identity in system prompt", () => {
   });
 });
 
+describe("model-specific custom system prompt", () => {
+  test("adds configured model-specific prompt as its own section", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "openai/gpt-5.4",
+      modelSystemPrompt: "Prefer compact answers for this model.",
+    });
+
+    expect(prompt).toContain("Custom System Prompt For This Model");
+    expect(prompt).toContain("Prefer compact answers for this model.");
+  });
+
+  test("omits blank model-specific prompt", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "openai/gpt-5.4",
+      modelSystemPrompt: "   ",
+    });
+
+    expect(prompt).not.toContain("Custom System Prompt For This Model");
+  });
+});
+
 describe("chat-only tool policy (sandbox-free)", () => {
   // BT-001: getChatOnlyTools excludes every sandbox-dependent tool
   test("getChatOnlyTools excludes file/bash/exec/edit/task/grep/glob tools", () => {

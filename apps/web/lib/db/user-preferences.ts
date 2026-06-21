@@ -8,6 +8,10 @@ import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import {
+  normalizeModelSystemPrompts,
+  type ModelSystemPrompts,
+} from "@/lib/model-system-prompts";
+import {
   normalizeGlobalSkillRefs,
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
@@ -36,6 +40,7 @@ export interface UserPreferencesData {
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];
+  modelSystemPrompts: ModelSystemPrompts;
   composioAgentDefaults: ComposioAgentDefaults;
 }
 
@@ -54,6 +59,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   globalSkillRefs: [],
   modelVariants: [],
   enabledModelIds: [],
+  modelSystemPrompts: {},
   composioAgentDefaults: defaultComposioAgentDefaults,
 };
 
@@ -111,6 +117,7 @@ export function toUserPreferencesData(
       | "globalSkillRefs"
       | "modelVariants"
       | "enabledModelIds"
+      | "modelSystemPrompts"
       | "composioAgentDefaults"
     >
   >,
@@ -138,6 +145,7 @@ export function toUserPreferencesData(
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
+    modelSystemPrompts: normalizeModelSystemPrompts(row?.modelSystemPrompts),
     composioAgentDefaults: normalizeComposioAgentDefaults(
       row?.composioAgentDefaults,
     ),
@@ -215,6 +223,8 @@ export async function updateUserPreferences(
       modelVariants: updates.modelVariants ?? DEFAULT_PREFERENCES.modelVariants,
       enabledModelIds:
         updates.enabledModelIds ?? DEFAULT_PREFERENCES.enabledModelIds,
+      modelSystemPrompts:
+        updates.modelSystemPrompts ?? DEFAULT_PREFERENCES.modelSystemPrompts,
       composioAgentDefaults:
         updates.composioAgentDefaults ??
         DEFAULT_PREFERENCES.composioAgentDefaults,

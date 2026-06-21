@@ -4,6 +4,7 @@ import type { SetupManagedRuntimeProfileInput } from "@open-agents/agent";
 import type { ModelVariant } from "@/lib/model-variants";
 import type { InferenceProfileModel } from "@/lib/inference/types";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
+import type { ModelSystemPrompts } from "@/lib/model-system-prompts";
 import {
   type ChatComposioSelection,
   type ComposioAgentDefaults,
@@ -2154,6 +2155,10 @@ export const userPreferences = pgTable("user_preferences", {
     .$type<string[]>()
     .notNull()
     .default([]),
+  modelSystemPrompts: jsonb("model_system_prompts")
+    .$type<ModelSystemPrompts>()
+    .notNull()
+    .default({}),
   composioAgentDefaults: jsonb("composio_agent_defaults")
     .$type<ComposioAgentDefaults>()
     .notNull()
