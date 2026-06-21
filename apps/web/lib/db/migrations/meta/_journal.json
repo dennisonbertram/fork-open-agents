@@ -554,6 +554,13 @@
       "when": 1782082258369,
       "tag": "0077_great_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1782084161465,
+      "tag": "0078_jazzy_true_believers",
+      "breakpoints": true
     }
   ]
 }
