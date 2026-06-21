@@ -1,6 +1,7 @@
 import "server-only";
 
 import {
+  type InferenceProfileProvider,
   type InferenceProfileModel,
   inferenceProfileModelSchema,
 } from "@/lib/inference/types";
@@ -53,6 +54,53 @@ export function parseAnthropicModelsResponse(
   return models;
 }
 
+export function parseOpenAICompatibleModelsResponse(
+  body: unknown,
+): InferenceProfileModel[] {
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("data" in body) ||
+    !Array.isArray((body as { data: unknown }).data)
+  ) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const models: InferenceProfileModel[] = [];
+  for (const entry of (body as { data: unknown[] }).data) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    const record = entry as Record<string, unknown>;
+    const id = typeof record.id === "string" ? record.id.trim() : "";
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    const displayName =
+      typeof record.name === "string" && record.name.trim().length > 0
+        ? record.name.trim()
+        : id;
+    const contextWindow =
+      typeof record.context_window === "number" &&
+      Number.isInteger(record.context_window) &&
+      record.context_window > 0
+        ? record.context_window
+        : undefined;
+    const parsed = inferenceProfileModelSchema.safeParse({
+      id,
+      displayName,
+      ...(contextWindow ? { contextWindow } : {}),
+    });
+    if (parsed.success) {
+      seen.add(id);
+      models.push(parsed.data);
+    }
+  }
+
+  return models;
+}
+
 /** Build the `/models` listing URL from a normalized (versioned) base URL. */
 function modelsUrl(baseUrl: string | null): string {
   const root = (baseUrl ?? DEFAULT_ANTHROPIC_BASE_URL).replace(/\/+$/, "");
@@ -65,25 +113,36 @@ function modelsUrl(baseUrl: string | null): string {
  * fall back to the legacy catalog-clone behavior without surfacing an error.
  */
 export async function fetchInferenceProfileModels(params: {
+  provider?: InferenceProfileProvider;
   baseUrl: string | null;
   apiKey: string;
 }): Promise<InferenceProfileModel[]> {
-  const { apiKey, baseUrl } = params;
+  const { apiKey, baseUrl, provider = "anthropic" } = params;
+  if (provider !== "anthropic" && !baseUrl) {
+    return [];
+  }
 
   try {
     const response = await fetch(modelsUrl(baseUrl), {
       method: "GET",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": ANTHROPIC_VERSION,
-      },
+      headers:
+        provider === "anthropic"
+          ? {
+              "x-api-key": apiKey,
+              "anthropic-version": ANTHROPIC_VERSION,
+            }
+          : {
+              Authorization: `Bearer ${apiKey}`,
+            },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {
       return [];
     }
     const body = (await response.json()) as unknown;
-    return parseAnthropicModelsResponse(body);
+    return provider === "anthropic"
+      ? parseAnthropicModelsResponse(body)
+      : parseOpenAICompatibleModelsResponse(body);
   } catch {
     return [];
   }

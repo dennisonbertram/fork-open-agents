@@ -40,28 +40,28 @@ export async function resolveInferenceProfileModelSelection(params: {
     );
   }
 
-  if (profile.provider !== "anthropic") {
-    throw new InferenceProfileResolutionError(
-      "Selected inference profile uses an unsupported provider.",
-    );
-  }
-
   // Discovered provider models (e.g. ZAI's "glm-4.6") are sent to the
   // Anthropic-compatible endpoint verbatim. Only app-catalog ids carrying an
   // "anthropic/" prefix are mapped to Anthropic's direct model ids.
-  const directModelId = selection.id.startsWith("anthropic/")
-    ? toAnthropicDirectModelId(selection.id)
-    : selection.id;
-  if (!directModelId) {
+  const directModelId =
+    profile.provider === "anthropic" && selection.id.startsWith("anthropic/")
+      ? toAnthropicDirectModelId(selection.id)
+      : selection.id;
+  if (
+    !directModelId ||
+    (profile.provider === "anthropic" && directModelId.includes("/"))
+  ) {
     throw new InferenceProfileResolutionError(
-      "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
+      profile.provider === "anthropic"
+        ? "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway."
+        : "Selected inference profile only supports models discovered from its endpoint. Test the profile or switch back to Vercel AI Gateway.",
     );
   }
 
   return {
     ...selection,
-    directAnthropic: {
-      provider: "anthropic",
+    directInference: {
+      provider: profile.provider === "anthropic" ? "anthropic" : "openai",
       modelId: directModelId,
       apiKey: decryptInferenceProfileApiKey(profile),
       ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),

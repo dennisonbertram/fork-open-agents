@@ -2,7 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-const { parseAnthropicModelsResponse } = await import("./fetch-profile-models");
+const { parseAnthropicModelsResponse, parseOpenAICompatibleModelsResponse } =
+  await import("./fetch-profile-models");
 
 describe("parseAnthropicModelsResponse", () => {
   test("parses the ZAI/Anthropic-compatible models listing", () => {
@@ -49,5 +50,45 @@ describe("parseAnthropicModelsResponse", () => {
     expect(
       parseAnthropicModelsResponse({ error: { type: "rate_limit_error" } }),
     ).toEqual([]);
+  });
+});
+
+describe("parseOpenAICompatibleModelsResponse", () => {
+  test("parses OpenAI-compatible models listings", () => {
+    const body = {
+      data: [
+        { id: "gpt-4o-mini", object: "model" },
+        {
+          id: "custom/reasoning-model",
+          name: "Reasoning Model",
+          context_window: 128_000,
+        },
+      ],
+    };
+
+    expect(parseOpenAICompatibleModelsResponse(body)).toEqual([
+      { id: "gpt-4o-mini", displayName: "gpt-4o-mini" },
+      {
+        id: "custom/reasoning-model",
+        displayName: "Reasoning Model",
+        contextWindow: 128_000,
+      },
+    ]);
+  });
+
+  test("drops malformed and duplicate OpenAI-compatible models", () => {
+    const body = {
+      data: [
+        { id: "gpt-4o-mini" },
+        { id: "gpt-4o-mini", name: "dupe" },
+        { id: "" },
+        { name: "no id" },
+        null,
+      ],
+    };
+
+    expect(parseOpenAICompatibleModelsResponse(body)).toEqual([
+      { id: "gpt-4o-mini", displayName: "gpt-4o-mini" },
+    ]);
   });
 });
