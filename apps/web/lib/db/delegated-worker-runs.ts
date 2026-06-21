@@ -6,6 +6,7 @@ import {
   delegatedWorkerRuns,
   type DelegatedWorkerLifecycleEvent,
   type DelegatedWorkerCompletionPacket,
+  type DelegatedWorkerCleanupStatus,
   type DelegatedWorkerRun,
   type DelegatedWorkerRunEvidenceRef,
   type NewDelegatedWorkerRun,
@@ -72,6 +73,10 @@ type TaskOutputRecord = {
     workspaceId?: unknown;
     workerId?: unknown;
   };
+  sharedWriterLeaseRelease?: {
+    status?: unknown;
+    events?: unknown;
+  };
   sharedWorkspaceBaseline?: {
     status?: unknown;
     baselineKind?: unknown;
@@ -95,6 +100,17 @@ type TaskOutputRecord = {
     reasonCode?: unknown;
     reason?: unknown;
   };
+};
+
+type DelegatedWorkerCleanupState = {
+  cleanupStatus: DelegatedWorkerCleanupStatus;
+  cleanupReasonCode: string | null;
+  cleanupReason: string | null;
+  cleanupResourceId: string | null;
+  cleanupAttemptCount: number;
+  cleanupAttemptedAt: Date | null;
+  cleanupCompletedAt: Date | null;
+  recoveredAt: Date | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -209,6 +225,109 @@ function buildEvidenceRefs(output: TaskOutputRecord | null) {
   return refs;
 }
 
+function hasSharedWriterRelease(output: TaskOutputRecord | null): boolean {
+  if (!output?.sharedWriterLeaseRelease) {
+    return false;
+  }
+
+  if (output.sharedWriterLeaseRelease.status === "released") {
+    return true;
+  }
+
+  const events = output.sharedWriterLeaseRelease.events;
+  return (
+    Array.isArray(events) &&
+    events.some(
+      (event) =>
+        isRecord(event) && event.type === "shared_writer_lock_released",
+    )
+  );
+}
+
+function buildCleanupState(
+  output: TaskOutputRecord | null,
+  status: DelegatedWorkerRunStatus,
+  now: Date,
+): DelegatedWorkerCleanupState {
+  const terminal = TERMINAL_STATUSES.has(status);
+  if (!terminal) {
+    return {
+      cleanupStatus: "pending",
+      cleanupReasonCode: null,
+      cleanupReason: null,
+      cleanupResourceId:
+        asString(output?.isolatedWorkspace?.childWorkspaceId) ??
+        asString(output?.sharedWriterLease?.workspaceId) ??
+        null,
+      cleanupAttemptCount: 0,
+      cleanupAttemptedAt: null,
+      cleanupCompletedAt: null,
+      recoveredAt: null,
+    };
+  }
+
+  const workspaceMode = asWorkspaceMode(
+    asString(output?.workspacePolicy?.executionMode) ??
+      asString(output?.workspaceResolution?.decision),
+  );
+  const childWorkspaceId = asString(
+    output?.isolatedWorkspace?.childWorkspaceId,
+  );
+
+  if (workspaceMode === "shared" && output?.sharedWriterLease) {
+    if (hasSharedWriterRelease(output)) {
+      return {
+        cleanupStatus: "succeeded",
+        cleanupReasonCode: "shared_writer_lock_released",
+        cleanupReason:
+          "Shared writer lock was released on terminal worker state.",
+        cleanupResourceId: asString(output.sharedWriterLease.workspaceId),
+        cleanupAttemptCount: 1,
+        cleanupAttemptedAt: now,
+        cleanupCompletedAt: now,
+        recoveredAt: null,
+      };
+    }
+
+    return {
+      cleanupStatus: "cleanup_required",
+      cleanupReasonCode: "shared_writer_release_not_recorded",
+      cleanupReason:
+        "Terminal shared worker did not include a shared writer lock release event.",
+      cleanupResourceId: asString(output.sharedWriterLease.workspaceId),
+      cleanupAttemptCount: 1,
+      cleanupAttemptedAt: now,
+      cleanupCompletedAt: null,
+      recoveredAt: null,
+    };
+  }
+
+  if (workspaceMode === "isolated" && childWorkspaceId) {
+    return {
+      cleanupStatus: "cleanup_required",
+      cleanupReasonCode: "isolated_workspace_cleanup_unsupported",
+      cleanupReason:
+        "Isolated child workspace cleanup is not supported by the active sandbox backend.",
+      cleanupResourceId: childWorkspaceId,
+      cleanupAttemptCount: 1,
+      cleanupAttemptedAt: now,
+      cleanupCompletedAt: null,
+      recoveredAt: null,
+    };
+  }
+
+  return {
+    cleanupStatus: "not_required",
+    cleanupReasonCode: null,
+    cleanupReason: null,
+    cleanupResourceId: null,
+    cleanupAttemptCount: 0,
+    cleanupAttemptedAt: null,
+    cleanupCompletedAt: null,
+    recoveredAt: null,
+  };
+}
+
 export function canTransitionDelegatedWorkerRun(
   from: DelegatedWorkerRunStatus,
   to: DelegatedWorkerRunStatus,
@@ -222,6 +341,73 @@ export function canTransitionDelegatedWorkerRun(
   }
 
   return VALID_TRANSITIONS[from].has(to);
+}
+
+export function buildDelegatedWorkerStaleRecoveryUpdate(params: {
+  run: Pick<
+    DelegatedWorkerRun,
+    | "id"
+    | "status"
+    | "reasonCode"
+    | "workspaceMode"
+    | "workspaceId"
+    | "childWorkspaceId"
+    | "cleanupStatus"
+    | "cleanupAttemptCount"
+    | "updatedAt"
+    | "lifecycleEvents"
+  >;
+  now?: Date;
+  staleAfterMs?: number;
+}): Partial<DelegatedWorkerRun> | null {
+  const now = params.now ?? new Date();
+  const staleAfterMs = params.staleAfterMs ?? 15 * 60 * 1000;
+
+  if (TERMINAL_STATUSES.has(params.run.status)) {
+    return null;
+  }
+
+  const updatedAt = params.run.updatedAt;
+  if (!(updatedAt instanceof Date)) {
+    return null;
+  }
+
+  if (now.getTime() - updatedAt.getTime() < staleAfterMs) {
+    return null;
+  }
+
+  const cleanupResourceId =
+    params.run.childWorkspaceId ?? params.run.workspaceId ?? null;
+  const isolated = params.run.workspaceMode === "isolated";
+  const cleanupStatus: DelegatedWorkerCleanupStatus = "cleanup_required";
+  const cleanupReasonCode = isolated
+    ? "stale_isolated_workspace_cleanup_required"
+    : "stale_shared_worker_reconciliation_required";
+
+  return {
+    status: "stale",
+    reasonCode: "worker_timed_out",
+    cleanupStatus,
+    cleanupReasonCode,
+    cleanupReason: isolated
+      ? "Timed-out isolated worker may have an orphaned child workspace."
+      : "Timed-out shared worker requires reconciliation of any active lock.",
+    cleanupResourceId,
+    cleanupAttemptCount: params.run.cleanupAttemptCount + 1,
+    cleanupAttemptedAt: now,
+    cleanupCompletedAt: null,
+    recoveredAt: null,
+    finishedAt: now,
+    updatedAt: now,
+    lifecycleEvents: [
+      ...params.run.lifecycleEvents,
+      {
+        status: "stale",
+        reasonCode: "worker_timed_out",
+        createdAt: now.toISOString(),
+      },
+    ],
+  };
 }
 
 export function buildDelegatedWorkerRunRecordsFromMessage(params: {
@@ -266,6 +452,11 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
       state: part.state,
       output,
     });
+    const cleanupState = buildCleanupState(output, status, now);
+    const evidenceRefs = buildEvidenceRefs(output);
+    if (cleanupState.cleanupAttemptCount > 0) {
+      evidenceRefs.push({ kind: "cleanup", ref: "delegated-worker.cleanup" });
+    }
     const workerType =
       asString(runtime?.workerType) ??
       asString(input.subagentType) ??
@@ -320,7 +511,7 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
       managedRuntimeProfileId: asString(runtime?.profileId),
       managedRuntimeProfileVersion: asString(runtime?.profileVersion),
       managedRuntimeProfileRunId: asString(runtime?.profileRunId),
-      evidenceRefs: buildEvidenceRefs(output),
+      evidenceRefs,
       lifecycleEvents: [lifecycleEvent],
       completionPacket,
       completionPacketValidationStatus,
@@ -332,6 +523,7 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
         (output?.final
           ? "Completed worker did not include a completion packet."
           : null),
+      ...cleanupState,
       startedAt: now,
       finishedAt: TERMINAL_STATUSES.has(status) ? now : null,
       createdAt: now,
@@ -386,6 +578,14 @@ export async function recordDelegatedWorkerRunsFromMessage(params: {
             record.completionPacketValidationReasonCode,
           completionPacketValidationReason:
             record.completionPacketValidationReason,
+          cleanupStatus: record.cleanupStatus,
+          cleanupReasonCode: record.cleanupReasonCode,
+          cleanupReason: record.cleanupReason,
+          cleanupResourceId: record.cleanupResourceId,
+          cleanupAttemptCount: record.cleanupAttemptCount,
+          cleanupAttemptedAt: record.cleanupAttemptedAt,
+          cleanupCompletedAt: record.cleanupCompletedAt,
+          recoveredAt: record.recoveredAt,
           startedAt: record.startedAt,
           finishedAt: record.finishedAt,
           updatedAt: record.updatedAt,
@@ -394,6 +594,24 @@ export async function recordDelegatedWorkerRunsFromMessage(params: {
   }
 
   return records;
+}
+
+export async function reconcileDelegatedWorkerRunStaleState(params: {
+  run: Parameters<typeof buildDelegatedWorkerStaleRecoveryUpdate>[0]["run"];
+  now?: Date;
+  staleAfterMs?: number;
+}): Promise<Partial<DelegatedWorkerRun> | null> {
+  const update = buildDelegatedWorkerStaleRecoveryUpdate(params);
+  if (!update) {
+    return null;
+  }
+
+  await db
+    .update(delegatedWorkerRuns)
+    .set(update)
+    .where(eq(delegatedWorkerRuns.id, params.run.id));
+
+  return update;
 }
 
 export async function listDelegatedWorkerRunsForSession(params: {
@@ -425,6 +643,11 @@ export async function listDelegatedWorkerCompletionPacketsForSession(params: {
     validationStatus: DelegatedWorkerRun["completionPacketValidationStatus"];
     validationReasonCode: DelegatedWorkerRun["completionPacketValidationReasonCode"];
     validationReason: DelegatedWorkerRun["completionPacketValidationReason"];
+    cleanupStatus: DelegatedWorkerRun["cleanupStatus"];
+    cleanupReasonCode: DelegatedWorkerRun["cleanupReasonCode"];
+    cleanupReason: DelegatedWorkerRun["cleanupReason"];
+    cleanupResourceId: DelegatedWorkerRun["cleanupResourceId"];
+    cleanupAttemptCount: DelegatedWorkerRun["cleanupAttemptCount"];
     evidenceRefs: DelegatedWorkerRunEvidenceRef[];
   }>
 > {
@@ -445,6 +668,11 @@ export async function listDelegatedWorkerCompletionPacketsForSession(params: {
       validationStatus: run.completionPacketValidationStatus,
       validationReasonCode: run.completionPacketValidationReasonCode,
       validationReason: run.completionPacketValidationReason,
+      cleanupStatus: run.cleanupStatus,
+      cleanupReasonCode: run.cleanupReasonCode,
+      cleanupReason: run.cleanupReason,
+      cleanupResourceId: run.cleanupResourceId,
+      cleanupAttemptCount: run.cleanupAttemptCount,
       evidenceRefs: run.evidenceRefs,
     }));
 }
