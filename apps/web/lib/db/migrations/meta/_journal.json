@@ -547,6 +547,13 @@
       "when": 1782080155855,
       "tag": "0076_famous_young_avengers",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1782082258369,
+      "tag": "0077_great_polaris",
+      "breakpoints": true
     }
   ]
 }

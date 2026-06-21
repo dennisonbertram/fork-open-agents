@@ -67,6 +67,17 @@ export {
   delegatedWorkerLifecycleStatusSchema,
 } from "./delegated-worker-lifecycle";
 export type {
+  DelegatedWorkerCompletionPacket,
+  DelegatedWorkerCompletionPacketValidation,
+} from "./delegated-worker-completion-packet";
+export {
+  buildDelegatedWorkerCompletionPacket,
+  delegatedWorkerCompletionPacketSchema,
+  delegatedWorkerCompletionPacketStatusSchema,
+  delegatedWorkerCompletionPacketValidationStatusSchema,
+  validateDelegatedWorkerCompletionPacket,
+} from "./delegated-worker-completion-packet";
+export type {
   IsolatedWorkerWorkspaceEvent,
   IsolatedWorkerWorkspaceProvenance,
   IsolatedWorkerWorkspaceResult,
