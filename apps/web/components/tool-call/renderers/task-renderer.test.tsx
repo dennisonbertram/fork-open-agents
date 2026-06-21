@@ -88,4 +88,135 @@ describe("TaskRenderer managed runtime attribution", () => {
     expect(html).not.toContain("Managed worker");
     expect(html).not.toContain("Coordinator delegated");
   });
+
+  test("renders completed isolated worker completion packet evidence", () => {
+    const part = {
+      type: "tool-task",
+      toolCallId: "task-3",
+      state: "output-available",
+      input: {
+        subagentType: "executor",
+        task: "Prepare isolated change",
+        instructions: "Use an isolated workspace.",
+      },
+      output: {
+        toolCallCount: 1,
+        delegatedWorkerLifecycle: {
+          eventId: "event-1",
+          workerId: "worker-1",
+          workerType: "executor",
+          workerLabel: "executor",
+          parentToolCallId: "task-3",
+          status: "completed",
+          reasonCode: "worker_terminal",
+          workspaceMode: "isolated",
+          workspaceId: "child-workspace",
+          startedAt: 1,
+          updatedAt: 2,
+        },
+        completionPacket: {
+          version: 1,
+          status: "completed",
+          workerId: "worker-1",
+          workerType: "executor",
+          workspaceMode: "isolated",
+          appliedToParentWorkspace: false,
+          summary: "Prepared the change in the child workspace.",
+          scope: ["Prepare isolated change"],
+          changedFiles: ["apps/web/app/page.tsx", "apps/web/app/page.test.tsx"],
+          verification: ["bun test apps/web/app/page.test.tsx"],
+          blockers: [],
+          integrationInstructions: [
+            "Review child workspace artifacts before applying changes.",
+          ],
+          artifacts: [],
+          recoveryInstructions: [],
+          createdAt: 1,
+        },
+        completionPacketValidation: {
+          status: "valid",
+          reasonCode: "worker_completion_packet_validated",
+          reason: "Completion packet validated.",
+          createdAt: 1,
+        },
+      },
+    } as ToolRendererProps<"tool-task">["part"];
+
+    const html = renderToStaticMarkup(
+      <TaskRenderer part={part} state={baseState} />,
+    );
+
+    expect(html).toContain("Worker evidence");
+    expect(html).toContain("completed");
+    expect(html).toContain("mode isolated");
+    expect(html).toContain("packet valid");
+    expect(html).toContain("Prepared the change in the child workspace.");
+    expect(html).toContain("Changes:");
+    expect(html).toContain("Verification:");
+    expect(html).toContain("Integration:");
+    expect(html).toContain("review child artifacts");
+  });
+
+  test("renders blocked worker reason with readable status text", () => {
+    const part = {
+      type: "tool-task",
+      toolCallId: "task-4",
+      state: "output-available",
+      preliminary: true,
+      input: {
+        subagentType: "executor",
+        task: "Apply shared change",
+        instructions: "Use the shared workspace.",
+      },
+      output: {
+        delegatedWorkerLifecycle: {
+          eventId: "event-2",
+          workerId: "worker-1",
+          workerType: "executor",
+          workerLabel: "executor",
+          parentToolCallId: "task-4",
+          status: "blocked",
+          reasonCode: "shared_writer_lock_denied",
+          workspaceMode: "shared",
+          workspaceId: "parent-workspace",
+          startedAt: 1,
+          updatedAt: 2,
+        },
+        completionPacket: {
+          version: 1,
+          status: "blocked",
+          workerId: "worker-1",
+          workerType: "executor",
+          workspaceMode: "shared",
+          appliedToParentWorkspace: false,
+          summary: "Worker blocked before launch.",
+          scope: ["Apply shared change"],
+          changedFiles: [],
+          verification: [],
+          blockers: ["blocked: shared_writer_lock_denied"],
+          integrationInstructions: ["Changes were not applied."],
+          artifacts: [],
+          recoveryInstructions: [
+            "Inspect worker lifecycle events and rerun after the blocker is fixed.",
+          ],
+          createdAt: 1,
+        },
+        completionPacketValidation: {
+          status: "valid",
+          reasonCode: "worker_completion_packet_validated",
+          reason: "Completion packet validated.",
+          createdAt: 1,
+        },
+      },
+    } as ToolRendererProps<"tool-task">["part"];
+
+    const html = renderToStaticMarkup(
+      <TaskRenderer part={part} state={{ ...baseState, running: true }} />,
+    );
+
+    expect(html).toContain("Worker evidence");
+    expect(html).toContain("blocked");
+    expect(html).toContain("mode shared");
+    expect(html).toContain("blocked: shared_writer_lock_denied");
+  });
 });

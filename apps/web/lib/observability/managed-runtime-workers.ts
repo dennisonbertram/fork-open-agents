@@ -21,6 +21,13 @@ export type ManagedRuntimeWorkerSnapshot = {
   currentToolSummary: string | null;
   toolCallCount: number;
   summary: string | null;
+  workspaceMode: string | null;
+  completionPacketValidationStatus: string | null;
+  completionPacketReasonCode: string | null;
+  completionPacketSummary: string | null;
+  changedFileCount: number;
+  verificationCount: number;
+  integrationReady: boolean;
   updatedAt: string | null;
 };
 
@@ -131,6 +138,53 @@ function getRuntime(output: unknown): Record<string, unknown> | null {
   }
 
   return runtime;
+}
+
+function getCompletionPacket(output: unknown): Record<string, unknown> | null {
+  if (!isRecord(output) || !isRecord(output.completionPacket)) {
+    return null;
+  }
+
+  return output.completionPacket;
+}
+
+function getCompletionPacketValidation(
+  output: unknown,
+): Record<string, unknown> | null {
+  if (!isRecord(output) || !isRecord(output.completionPacketValidation)) {
+    return null;
+  }
+
+  return output.completionPacketValidation;
+}
+
+function getDelegatedWorkerLifecycle(
+  output: unknown,
+): Record<string, unknown> | null {
+  if (!isRecord(output) || !isRecord(output.delegatedWorkerLifecycle)) {
+    return null;
+  }
+
+  return output.delegatedWorkerLifecycle;
+}
+
+function getWorkspaceMode(output: unknown): string | null {
+  const packet = getCompletionPacket(output);
+  const lifecycle = getDelegatedWorkerLifecycle(output);
+  const policy =
+    isRecord(output) && isRecord(output.workspacePolicy)
+      ? output.workspacePolicy
+      : null;
+
+  return (
+    getString(packet?.workspaceMode) ??
+    getString(lifecycle?.workspaceMode) ??
+    getString(policy?.executionMode)
+  );
+}
+
+function getArrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 function toIsoString(value: Date | string | null | undefined): string | null {
@@ -251,6 +305,12 @@ export function extractManagedRuntimeWorkersFromParts(
     const currentToolSummary = pending
       ? getToolSummary(pendingName, pending.input)
       : null;
+    const completionPacket = getCompletionPacket(output);
+    const completionPacketValidation = getCompletionPacketValidation(output);
+    const completionSummary = getString(completionPacket?.summary);
+    const integrationInstructionCount = getArrayLength(
+      completionPacket?.integrationInstructions,
+    );
 
     workers.push({
       id: taskToolCallId,
@@ -269,6 +329,19 @@ export function extractManagedRuntimeWorkersFromParts(
         : null,
       toolCallCount: getNumber(output?.toolCallCount) ?? 0,
       summary: getString(input.task),
+      workspaceMode: getWorkspaceMode(output),
+      completionPacketValidationStatus: getString(
+        completionPacketValidation?.status,
+      ),
+      completionPacketReasonCode: getString(
+        completionPacketValidation?.reasonCode,
+      ),
+      completionPacketSummary: completionSummary
+        ? completionSummary.slice(0, 240)
+        : null,
+      changedFileCount: getArrayLength(completionPacket?.changedFiles),
+      verificationCount: getArrayLength(completionPacket?.verification),
+      integrationReady: integrationInstructionCount > 0,
       updatedAt: toIsoString(options.updatedAt),
     });
   }

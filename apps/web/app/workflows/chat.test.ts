@@ -614,6 +614,25 @@ function managedWorkerTaskPart(overrides: Record<string, unknown> = {}) {
     output: {
       final: [],
       toolCallCount: 3,
+      workspacePolicy: {
+        executionMode: "isolated",
+      },
+      completionPacket: {
+        status: "completed",
+        workspaceMode: "isolated",
+        summary: "Applied the requested UI change and verified it.",
+        changedFiles: [
+          "apps/web/components/example.tsx",
+          "apps/web/components/example.test.tsx",
+        ],
+        verification: ["bun test apps/web/components/example.test.tsx"],
+        integrationInstructions: ["Review and merge the isolated diff."],
+        blockers: [],
+      },
+      completionPacketValidation: {
+        status: "valid",
+        reasonCode: null,
+      },
       runtime: {
         mode: "managed_runtime",
         label: "Managed runtime worker",
@@ -1213,6 +1232,14 @@ describe("runAgentWorkflow", () => {
             currentToolSummary: null,
             toolCallCount: 3,
             summary: "Implement a small UI change",
+            workspaceMode: "isolated",
+            completionPacketValidationStatus: "valid",
+            completionPacketReasonCode: null,
+            completionPacketSummary:
+              "Applied the requested UI change and verified it.",
+            changedFileCount: 2,
+            verificationCount: 1,
+            integrationReady: true,
           },
         },
         coordinatorDirectToolUse: {
@@ -1223,7 +1250,7 @@ describe("runAgentWorkflow", () => {
           warning: null,
         },
         evidence: expect.arrayContaining([
-          "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls.",
+          "Managed worker evidence recorded: executor completed in sandbox session_session-1 with 3 tool calls using isolated workspace policy; completion packet valid.",
           "Managed dev-server evidence recorded: service-1 running on port 3000 (HTTP 200).",
           "Browser/screenshot evidence recorded: browser-1 passed with 1 artifact.",
         ]),

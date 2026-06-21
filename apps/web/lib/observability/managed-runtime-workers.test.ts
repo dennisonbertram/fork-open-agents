@@ -65,6 +65,13 @@ describe("extractManagedRuntimeWorkersFromMessages", () => {
         currentToolSummary: "bun --bun run ci",
         toolCallCount: 2,
         summary: "Implement a small UI change",
+        workspaceMode: null,
+        completionPacketValidationStatus: null,
+        completionPacketReasonCode: null,
+        completionPacketSummary: null,
+        changedFileCount: 0,
+        verificationCount: 0,
+        integrationReady: false,
         updatedAt: "2026-05-26T20:00:00.000Z",
       },
     ]);
