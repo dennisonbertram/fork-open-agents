@@ -740,6 +740,23 @@ describe("runAgentWorkflow", () => {
     expect(source).toContain("async function closeGoalLedger");
   });
 
+  test("regression: model runtime step does not return function-valued agent actions", async () => {
+    // Workflow step return values are serialized. Returning proposeToolAction or
+    // manageBackgroundAgentAction from resolveChatModelRuntime breaks production
+    // chat runs before the agent can use the sandbox.
+    const source = await Bun.file(new URL("chat.ts", import.meta.url)).text();
+    const stepStart = source.indexOf("async function resolveChatModelRuntime");
+    const helperStart = source.indexOf("type WorkflowActionAgentOptions");
+
+    expect(stepStart).toBeGreaterThan(-1);
+    expect(helperStart).toBeGreaterThan(stepStart);
+
+    const modelRuntimeStepSource = source.slice(stepStart, helperStart);
+    expect(modelRuntimeStepSource).toContain("actionResolution");
+    expect(modelRuntimeStepSource).not.toContain("proposeToolAction");
+    expect(modelRuntimeStepSource).not.toContain("manageBackgroundAgentAction");
+  });
+
   test("regression: objective is truncated to 200 chars from user message", async () => {
     // If the truncation is removed, long objectives would break DB column limits.
     const longText = "A".repeat(500);
@@ -967,6 +984,14 @@ describe("runAgentWorkflow", () => {
     });
     expect(spies.persistSandboxState).not.toHaveBeenCalled();
     expect(spies.refreshDiffCache).not.toHaveBeenCalled();
+  });
+
+  test("builds background-agent management hook in final agent options", async () => {
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    expect(opts?.manageAgentEnabled).toBe(true);
+    expect(typeof opts?.manageBackgroundAgentAction).toBe("function");
   });
 
   test("marks managed runtime proof no_activity when the coordinator answers without delegating or running tools", async () => {
