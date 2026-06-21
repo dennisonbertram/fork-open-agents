@@ -68,6 +68,19 @@ export {
   delegatedWorkspaceResolverInputSchema,
   resolveDelegatedWorkspacePolicy,
 } from "./delegated-workspace-resolver";
+export type {
+  SharedWriterLeaseEvent,
+  SharedWriterLeaseRelease,
+  SharedWriterLeaseResult,
+} from "./shared-writer-lease";
+export {
+  defaultSharedWriterLeaseManager,
+  sharedWriterLeaseEventSchema,
+  SharedWriterLeaseManager,
+  sharedWriterLeaseReleaseSchema,
+  sharedWriterLeaseResultSchema,
+} from "./shared-writer-lease";
+export { SharedWriterLeaseConflictError } from "./shared-writer-lease-error";
 export {
   type AskUserQuestionInput,
   type AskUserQuestionOutput,

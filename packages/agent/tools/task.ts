@@ -16,6 +16,15 @@ import {
   resolveDelegatedWorkspacePolicy,
 } from "../delegated-workspace-resolver";
 import {
+  defaultSharedWriterLeaseManager,
+  sharedWriterLeaseEventSchema,
+  sharedWriterLeaseReleaseSchema,
+  sharedWriterLeaseResultSchema,
+  type SharedWriterLeaseRelease,
+  type SharedWriterLeaseResult,
+} from "../shared-writer-lease";
+import { SharedWriterLeaseConflictError } from "../shared-writer-lease-error";
+import {
   buildSubagentSummaryLines,
   SUBAGENT_REGISTRY,
   SUBAGENT_TYPES,
@@ -62,6 +71,8 @@ const taskPendingToolCallSchema = z.object({
 export type TaskPendingToolCall = z.infer<typeof taskPendingToolCallSchema>;
 export type TaskWorkspacePolicy = DelegatedWorkspaceLaunchPolicy;
 
+const WRITE_CAPABLE_SUBAGENTS = new Set(["executor", "design"]);
+
 const taskRuntimeOutputSchema = z.object({
   mode: z.literal("managed_runtime"),
   label: z.literal("Managed runtime worker"),
@@ -81,6 +92,9 @@ export const taskOutputSchema = z.object({
   runtime: taskRuntimeOutputSchema.optional(),
   workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
   workspaceResolution: delegatedWorkspaceResolverDecisionSchema.optional(),
+  sharedWriterLease: sharedWriterLeaseResultSchema.optional(),
+  sharedWriterLeaseRelease: sharedWriterLeaseReleaseSchema.optional(),
+  sharedWriterLeaseEvents: z.array(sharedWriterLeaseEventSchema).optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -141,6 +155,18 @@ function getParentWorkspaceId(sandboxState: unknown): string | undefined {
   }
 
   return getString(sandboxState.sandboxId) ?? getString(sandboxState.id);
+}
+
+function getSessionId(experimentalContext: unknown): string {
+  if (!isRecord(experimentalContext)) {
+    return "session";
+  }
+
+  return getString(experimentalContext.sessionId) ?? "session";
+}
+
+function isWriteCapableSubagent(subagentType: string): boolean {
+  return WRITE_CAPABLE_SUBAGENTS.has(subagentType);
 }
 
 function buildManagedRuntimeWorkerInstructions(params: {
@@ -228,7 +254,10 @@ IMPORTANT:
 - The parent agent will not see the subagent's internal tool calls, only its final summary`,
   inputSchema: taskInputSchema,
   outputSchema: taskOutputSchema,
-  execute: async function* (rawInput, { experimental_context, abortSignal }) {
+  execute: async function* (
+    rawInput,
+    { experimental_context, abortSignal, toolCallId },
+  ) {
     const parsedInput = taskInputSchema.safeParse(rawInput);
     if (!parsedInput.success) {
       throw new Error(
@@ -238,6 +267,7 @@ IMPORTANT:
 
     const { subagentType, task, instructions } = parsedInput.data;
     const workspacePolicy = parsedInput.data.workspacePolicy ?? "auto";
+    const startedAt = Date.now();
     const sandboxContext = getSandboxContext(experimental_context, "task");
     const defaultModel = getSubagentModel(experimental_context, "task");
     const roster = getSubagentRoster(experimental_context);
@@ -245,13 +275,47 @@ IMPORTANT:
     const workspacePolicyOutput =
       buildDelegatedWorkspaceLaunchPolicy(workspacePolicy);
     const workspaceResolution = resolveDelegatedWorkspacePolicy({
-      parentRunId: "task",
+      parentRunId: toolCallId ?? "task",
       runtimeMode: getRuntimeMode(experimental_context),
       requestedPolicy: workspacePolicy,
       parentWorkspaceId:
         getParentWorkspaceId(sandboxContext.sandbox.state) ??
         "active-session-workspace",
     });
+    let sharedWriterLease: SharedWriterLeaseResult | undefined;
+    let sharedWriterLeaseRelease: SharedWriterLeaseRelease | undefined;
+    const releaseSharedWriterLease = (reasonCode: string) => {
+      if (
+        sharedWriterLease?.status !== "acquired" ||
+        sharedWriterLeaseRelease
+      ) {
+        return;
+      }
+
+      sharedWriterLeaseRelease = defaultSharedWriterLeaseManager.release({
+        sessionId: sharedWriterLease.sessionId,
+        workspaceId: sharedWriterLease.workspaceId,
+        workerId: sharedWriterLease.workerId,
+        reasonCode,
+      });
+    };
+    const workerId = toolCallId ?? `${subagentType}-${startedAt}`;
+    const shouldAcquireSharedWriterLease =
+      workspaceResolution.status === "accepted" &&
+      workspaceResolution.decision === "shared" &&
+      isWriteCapableSubagent(subagentType);
+
+    if (shouldAcquireSharedWriterLease) {
+      sharedWriterLease = defaultSharedWriterLeaseManager.acquire({
+        sessionId: getSessionId(experimental_context),
+        workspaceId: workspaceResolution.parentWorkspaceId,
+        workerId,
+      });
+
+      if (sharedWriterLease.status === "denied") {
+        throw new SharedWriterLeaseConflictError(sharedWriterLease);
+      }
+    }
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
       environmentDetails: sandboxContext.sandbox.environmentDetails,
@@ -281,7 +345,6 @@ IMPORTANT:
     const subagentModelId = typeof model === "string" ? model : model.modelId;
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
-    const startedAt = Date.now();
     let toolCallCount = 0;
     let pending: TaskPendingToolCall | undefined;
     let usage: LanguageModelUsage | undefined;
@@ -295,66 +358,84 @@ IMPORTANT:
       runtime,
       workspacePolicy: workspacePolicyOutput,
       workspaceResolution,
+      sharedWriterLease,
+      sharedWriterLeaseEvents: sharedWriterLease?.events,
     };
+    try {
+      const result = await subagent.stream({
+        prompt:
+          "Complete this task and provide a summary of what you accomplished.",
+        options: {
+          task,
+          instructions: effectiveInstructions,
+          sandbox: sandboxContext.sandbox,
+          model,
+          workspacePolicy: workspacePolicyOutput,
+        },
+        abortSignal,
+      });
 
-    const result = await subagent.stream({
-      prompt:
-        "Complete this task and provide a summary of what you accomplished.",
-      options: {
-        task,
-        instructions: effectiveInstructions,
-        sandbox: sandboxContext.sandbox,
-        model,
+      for await (const part of result.fullStream) {
+        if (part.type === "tool-call") {
+          toolCallCount += 1;
+          pending = { name: part.toolName, input: part.input };
+          yield {
+            pending,
+            toolCallCount,
+            usage,
+            startedAt,
+            modelId: subagentModelId,
+            runtime,
+            workspacePolicy: workspacePolicyOutput,
+            workspaceResolution,
+            sharedWriterLease,
+            sharedWriterLeaseEvents: sharedWriterLease?.events,
+          };
+        }
+
+        if (part.type === "finish-step") {
+          usage = sumLanguageModelUsage(usage, part.usage);
+          // Keep the last observed tool call in interim updates so task UIs don't
+          // flicker back to an initializing state between subagent steps.
+          yield {
+            pending,
+            toolCallCount,
+            usage,
+            startedAt,
+            modelId: subagentModelId,
+            runtime,
+            workspacePolicy: workspacePolicyOutput,
+            workspaceResolution,
+            sharedWriterLease,
+            sharedWriterLeaseEvents: sharedWriterLease?.events,
+          };
+        }
+      }
+
+      const response = await result.response;
+      const finalUsage = usage ?? (await result.usage);
+      releaseSharedWriterLease("worker_terminal");
+      yield {
+        final: response.messages,
+        toolCallCount,
+        usage: finalUsage,
+        startedAt,
+        modelId: subagentModelId,
+        runtime,
         workspacePolicy: workspacePolicyOutput,
-      },
-      abortSignal,
-    });
-
-    for await (const part of result.fullStream) {
-      if (part.type === "tool-call") {
-        toolCallCount += 1;
-        pending = { name: part.toolName, input: part.input };
-        yield {
-          pending,
-          toolCallCount,
-          usage,
-          startedAt,
-          modelId: subagentModelId,
-          runtime,
-          workspacePolicy: workspacePolicyOutput,
-          workspaceResolution,
-        };
-      }
-
-      if (part.type === "finish-step") {
-        usage = sumLanguageModelUsage(usage, part.usage);
-        // Keep the last observed tool call in interim updates so task UIs don't
-        // flicker back to an initializing state between subagent steps.
-        yield {
-          pending,
-          toolCallCount,
-          usage,
-          startedAt,
-          modelId: subagentModelId,
-          runtime,
-          workspacePolicy: workspacePolicyOutput,
-          workspaceResolution,
-        };
-      }
+        workspaceResolution,
+        sharedWriterLease,
+        sharedWriterLeaseRelease,
+        sharedWriterLeaseEvents: [
+          ...(sharedWriterLease?.events ?? []),
+          ...(sharedWriterLeaseRelease?.events ?? []),
+        ],
+      };
+    } finally {
+      releaseSharedWriterLease(
+        abortSignal?.aborted ? "worker_cancelled" : "worker_terminal",
+      );
     }
-
-    const response = await result.response;
-    const finalUsage = usage ?? (await result.usage);
-    yield {
-      final: response.messages,
-      toolCallCount,
-      usage: finalUsage,
-      startedAt,
-      modelId: subagentModelId,
-      runtime,
-      workspacePolicy: workspacePolicyOutput,
-      workspaceResolution,
-    };
   },
   toModelOutput: ({ output: { final: messages } }) => {
     if (!messages) {

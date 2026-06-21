@@ -86,6 +86,8 @@ const { skillTool } = await import("./skill");
 const { taskTool } = await import("./task");
 const { delegatedWorkspacePolicySchema } =
   await import("../delegated-workspace");
+const { defaultSharedWriterLeaseManager } =
+  await import("../shared-writer-lease");
 const { todoWriteTool } = await import("./todo");
 const { editFileTool, writeFileTool } = await import("./write");
 const { buildSystemPrompt } = await import("../system-prompt");
@@ -569,6 +571,7 @@ describe("tools execute behavior", () => {
   afterEach(() => {
     sandboxRegistry.clear();
     mockToolLoopAgentStream = undefined;
+    defaultSharedWriterLeaseManager.reset();
   });
 
   test("webFetchTool treats curl exit 23 as a truncated success", async () => {
@@ -1141,6 +1144,158 @@ describe("tools execute behavior", () => {
         status: "policy_recorded",
       },
     ]);
+  });
+
+  test("taskTool acquires and releases a shared writer lease for write-capable shared workers", async () => {
+    const finalMessages = [{ role: "assistant", content: "Done." }];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+
+    mockToolLoopAgentStream = mock(() => ({
+      fullStream: (async function* () {})(),
+      response: Promise.resolve({ messages: finalMessages }),
+      usage: Promise.resolve(usage),
+    }));
+
+    const outputs: unknown[] = [];
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "shared",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: "/repo" }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    for await (const output of result) {
+      outputs.push(output);
+    }
+
+    expect(outputs[0]).toMatchObject({
+      sharedWriterLease: {
+        status: "acquired",
+        sessionId: "session-1",
+        workspaceId: "sandbox-1",
+        workerId: "tool-call-1",
+      },
+      sharedWriterLeaseEvents: [
+        { type: "shared_writer_lock_acquired", workerId: "tool-call-1" },
+      ],
+    });
+    expect(outputs.at(-1)).toMatchObject({
+      sharedWriterLeaseRelease: {
+        status: "released",
+        events: [
+          {
+            type: "shared_writer_lock_released",
+            reasonCode: "worker_terminal",
+          },
+        ],
+      },
+      sharedWriterLeaseEvents: [
+        { type: "shared_writer_lock_acquired" },
+        { type: "shared_writer_lock_released" },
+      ],
+    });
+  });
+
+  test("taskTool rejects a second active shared writer before worker launch", async () => {
+    defaultSharedWriterLeaseManager.acquire({
+      sessionId: "session-1",
+      workspaceId: "sandbox-1",
+      workerId: "active-worker",
+    });
+    mockToolLoopAgentStream = mock(() => {
+      throw new Error("worker should not be launched");
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "shared",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: "/repo" }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    await expect(async () => {
+      for await (const _output of result) {
+        // The active shared writer should block launch before yielding.
+      }
+    }).toThrow("shared_writer_lock_denied");
+    expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
+  });
+
+  test("taskTool does not block read-only shared workers or isolated workers on the shared writer lease", async () => {
+    defaultSharedWriterLeaseManager.acquire({
+      sessionId: "session-1",
+      workspaceId: "sandbox-1",
+      workerId: "active-worker",
+    });
+    const finalMessages = [{ role: "assistant", content: "Done." }];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const launchedTasks: string[] = [];
+
+    mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
+      const options = args.options as { task?: string };
+      if (options.task) {
+        launchedTasks.push(options.task);
+      }
+
+      return {
+        fullStream: (async function* () {})(),
+        response: Promise.resolve({ messages: finalMessages }),
+        usage: Promise.resolve(usage),
+      };
+    });
+
+    for (const input of [
+      {
+        subagentType: "explorer" as const,
+        workspacePolicy: "shared" as const,
+        task: "Inspect files",
+        instructions: "Find relevant files.",
+      },
+      {
+        subagentType: "executor" as const,
+        workspacePolicy: "isolated" as const,
+        task: "Apply isolated change",
+        instructions: "Update the implementation.",
+      },
+    ]) {
+      const result = taskTool.execute?.(
+        input,
+        executionOptions({
+          ...createContext({ workingDirectory: "/repo" }),
+          sessionId: "session-1",
+        }),
+      ) as AsyncIterable<unknown> | undefined;
+
+      if (!result) {
+        throw new Error("taskTool execute missing in test");
+      }
+
+      for await (const _output of result) {
+        // Drain the worker.
+      }
+    }
+
+    expect(launchedTasks).toEqual(["Inspect files", "Apply isolated change"]);
   });
 
   test("taskTool rejects invalid workspace policy before worker launch", async () => {
