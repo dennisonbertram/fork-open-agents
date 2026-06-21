@@ -533,6 +533,13 @@
       "when": 1782050591141,
       "tag": "0074_powerful_big_bertha",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1782078237521,
+      "tag": "0075_uneven_gladiator",
+      "breakpoints": true
     }
   ]
 }
