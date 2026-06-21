@@ -1356,6 +1356,14 @@ function summarizeRuntimeWorkerEvidence(
           currentToolSummary: latest.currentToolSummary,
           toolCallCount: latest.toolCallCount,
           summary: latest.summary,
+          workspaceMode: latest.workspaceMode,
+          completionPacketValidationStatus:
+            latest.completionPacketValidationStatus,
+          completionPacketReasonCode: latest.completionPacketReasonCode,
+          completionPacketSummary: latest.completionPacketSummary,
+          changedFileCount: latest.changedFileCount,
+          verificationCount: latest.verificationCount,
+          integrationReady: latest.integrationReady,
         }
       : null,
   };
@@ -1434,8 +1442,14 @@ function formatWorkerEvidenceSummary(
           worker.toolCallCount === 1 ? "" : "s"
         }`
       : "";
+  const workspaceSuffix = worker.workspaceMode
+    ? ` using ${worker.workspaceMode} workspace policy`
+    : "";
+  const packetSuffix = worker.completionPacketValidationStatus
+    ? `; completion packet ${worker.completionPacketValidationStatus}`
+    : "";
 
-  return `Managed worker evidence recorded: ${worker.workerType} ${worker.status}${sandboxSuffix}${toolSuffix}.`;
+  return `Managed worker evidence recorded: ${worker.workerType} ${worker.status}${sandboxSuffix}${toolSuffix}${workspaceSuffix}${packetSuffix}.`;
 }
 
 function formatBrowserEvidenceSummary(
