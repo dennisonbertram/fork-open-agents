@@ -1205,6 +1205,20 @@ describe("tools execute behavior", () => {
     }
 
     expect(outputs[0]).toMatchObject({
+      delegatedWorkerLifecycle: {
+        workerId: "tool-call-1",
+        workerType: "executor",
+        status: "launching",
+        reasonCode: "worker_launching",
+        workspaceMode: "shared",
+      },
+      delegatedWorkerLifecycleEvents: [
+        {
+          workerId: "tool-call-1",
+          status: "launching",
+          reasonCode: "worker_launching",
+        },
+      ],
       sharedWriterLease: {
         status: "acquired",
         sessionId: "session-1",
@@ -1225,6 +1239,16 @@ describe("tools execute behavior", () => {
       },
     });
     expect(outputs.at(-1)).toMatchObject({
+      delegatedWorkerLifecycle: {
+        workerId: "tool-call-1",
+        status: "completed",
+        reasonCode: "worker_terminal",
+      },
+      delegatedWorkerLifecycleEvents: [
+        { status: "launching" },
+        { status: "running" },
+        { status: "completed" },
+      ],
       sharedWriterLeaseRelease: {
         status: "released",
         events: [
@@ -1268,11 +1292,34 @@ describe("tools execute behavior", () => {
       throw new Error("taskTool execute missing in test");
     }
 
+    const outputs: unknown[] = [];
     await expect(async () => {
-      for await (const _output of result) {
-        // The active shared writer should block launch before yielding.
+      for await (const output of result) {
+        outputs.push(output);
       }
     }).toThrow("shared_writer_lock_denied");
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      delegatedWorkerLifecycle: {
+        workerId: "tool-call-1",
+        status: "blocked",
+        reasonCode: "shared_writer_lock_denied",
+        workspaceMode: "shared",
+      },
+      delegatedWorkerLifecycleEvents: [
+        {
+          workerId: "tool-call-1",
+          status: "blocked",
+          reasonCode: "shared_writer_lock_denied",
+        },
+      ],
+      sharedWriterLease: {
+        status: "denied",
+        sessionId: "session-1",
+        workspaceId: "sandbox-1",
+        workerId: "tool-call-1",
+      },
+    });
     expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
   });
 
@@ -1356,12 +1403,86 @@ describe("tools execute behavior", () => {
       throw new Error("taskTool execute missing in test");
     }
 
+    const outputs: unknown[] = [];
     await expect(async () => {
-      for await (const _output of result) {
-        // Unsupported baselines fail closed before the worker starts.
+      for await (const output of result) {
+        outputs.push(output);
       }
     }).toThrow("workspace_drift_detected");
+    expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      delegatedWorkerLifecycle: {
+        workerId: "tool-call-1",
+        status: "blocked",
+        reasonCode: "unsupported_workspace_baseline",
+        workspaceMode: "shared",
+      },
+      delegatedWorkerLifecycleEvents: [
+        {
+          workerId: "tool-call-1",
+          status: "blocked",
+          reasonCode: "unsupported_workspace_baseline",
+        },
+      ],
+      sharedWorkspaceDrift: {
+        status: "unsupported",
+        reasonCode: "unsupported_baseline",
+      },
+    });
     expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
+  });
+
+  test("taskTool emits a failed lifecycle update when a delegated worker fails", async () => {
+    const workspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(() => {
+      throw new Error("worker exploded");
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "shared",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    const outputs: unknown[] = [];
+    await expect(async () => {
+      for await (const output of result) {
+        outputs.push(output);
+      }
+    }).toThrow("worker exploded");
+
+    expect(outputs.at(-1)).toMatchObject({
+      delegatedWorkerLifecycle: {
+        workerId: "tool-call-1",
+        status: "failed",
+        reasonCode: "worker_failed",
+      },
+      delegatedWorkerLifecycleEvents: [
+        { status: "launching" },
+        { status: "running" },
+        { status: "failed" },
+      ],
+      sharedWriterLeaseRelease: {
+        status: "released",
+        events: [
+          {
+            type: "shared_writer_lock_released",
+            reasonCode: "worker_failed",
+          },
+        ],
+      },
+    });
   });
 
   test("taskTool rejects invalid workspace policy before worker launch", async () => {
