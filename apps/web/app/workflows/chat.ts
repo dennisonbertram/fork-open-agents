@@ -93,6 +93,22 @@ type Options = {
   autoCreatePrEnabled?: boolean;
 };
 
+type ChatModelRuntimeAgentOptions = Omit<
+  OpenAgentCallOptions,
+  | "sandbox"
+  | "skills"
+  | "toolAuthoringEnabled"
+  | "proposeToolAction"
+  | "manageAgentEnabled"
+  | "manageBackgroundAgentAction"
+>;
+
+type ChatModelActionResolution = {
+  toolAuthoringEnabled: boolean;
+  toolAuthoringAgentId: string | null;
+  manageAgentEnabled: boolean;
+};
+
 type ChatModelRuntime = {
   selectedModelId: string;
   modelId: string;
@@ -100,7 +116,8 @@ type ChatModelRuntime = {
   inferenceProfileId: string | null;
   inferenceProfileName: string | null;
   inferenceProvider: string | null;
-  agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
+  agentOptions: ChatModelRuntimeAgentOptions;
+  actionResolution: ChatModelActionResolution;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
   /** Per-role subagent roster resolved from agents rows. null = no rows (today's defaults). */
@@ -341,100 +358,9 @@ async function resolveChatModelRuntime(params: {
     subagentRoster = null;
   }
 
-  // ── Phase 6 (#242 / #388): build proposeToolAction closure ───────────────────
-  // Only constructed when toolAuthoringEnabled=true and a real agentId exists.
-  // The closure captures userId, chatId, and agentId per-request (safe — no
-  // cross-request sharing). The DB import is deferred so there is no module-level
-  // dependency on the DB from the agent package.
-  const proposeToolAction =
-    mainAgentToolAuthoringEnabled && mainAgentId !== null
-      ? async (input: {
-          toolkitSlug: string;
-          chatId?: string;
-          runId?: string;
-        }) => {
-          const { createProposedToolEntry } =
-            await import("@/lib/db/agent-tool-entries");
-          const entry = await createProposedToolEntry({
-            agentId: mainAgentId as string,
-            userId: params.userId,
-            toolkitSlug: input.toolkitSlug,
-            createdByChatId: params.chatId,
-            createdByRunId: input.runId ?? null,
-          });
-          return { entryId: entry.id };
-        }
-      : undefined;
-
-  // ── #449: build manageBackgroundAgentAction closure ──────────────────────────
-  // Validates the agent-provided draft against the background agent Zod schema,
-  // then calls createBackgroundAgent or updateBackgroundAgent.  Uses the
-  // spec-tool-contract normalization helpers to bridge the agent tool's simplified
-  // trigger kinds and permissions format to the web-side canonical schema.
-  // DB imports are deferred so packages/agent has no direct DB dependency.
+  // Function-valued agent actions are built outside this step. Workflow steps
+  // persist return values, so only serializable flags and IDs may cross here.
   const manageAgentEnabled = true;
-  const manageBackgroundAgentAction = manageAgentEnabled
-    ? async (input: {
-        action: "create" | "update";
-        agentId?: string;
-        draft: unknown;
-        summary: string;
-        questionsForUser?: string[];
-      }) => {
-        const { createBackgroundAgentSchema } =
-          await import("@/lib/background-agents/types");
-        const { normalizeAgentDraft } =
-          await import("@/lib/background-agents/spec-tool-contract");
-        const { createBackgroundAgent, updateBackgroundAgent } =
-          await import("@/lib/background-agents/store");
-
-        // Try direct parse first (handles drafts already in web-side format).
-        // If that fails, normalize from agent-tool format (maps trigger kinds,
-        // converts flat conditions, renames snake_case permissions keys) and
-        // re-parse.
-        let parsed = createBackgroundAgentSchema.safeParse(input.draft);
-        if (
-          !parsed.success &&
-          input.draft != null &&
-          typeof input.draft === "object"
-        ) {
-          const normalized = normalizeAgentDraft(
-            input.draft as Record<string, unknown>,
-          );
-          parsed = createBackgroundAgentSchema.safeParse(normalized);
-        }
-        if (!parsed.success) {
-          throw new Error(
-            `Invalid background agent draft: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
-          );
-        }
-
-        if (input.action === "update" && input.agentId) {
-          const result = await updateBackgroundAgent(
-            params.userId,
-            input.agentId,
-            parsed.data,
-          );
-          if (!result) {
-            throw new Error(
-              `Background agent not found or access denied: ${input.agentId}`,
-            );
-          }
-          return {
-            agentId: result.id,
-            action: "updated" as const,
-            name: result.name,
-          };
-        }
-
-        const result = await createBackgroundAgent(params.userId, parsed.data);
-        return {
-          agentId: result.id,
-          action: "created" as const,
-          name: result.name,
-        };
-      }
-    : undefined;
 
   return {
     selectedModelId: getModelOptionSelectionId(
@@ -453,23 +379,127 @@ async function resolveChatModelRuntime(params: {
         : {}),
       customInstructions: assistantFileLinkPrompt,
       ...(subagentRoster ? { subagentRoster } : {}),
-      // Only enable tool authoring when both the flag AND the closure are
-      // available.  If mainAgentId is null, proposeToolAction is undefined and
-      // spreading toolAuthoringEnabled:true would tell the agent runtime to
-      // include the propose_composio_tool in the toolset — but the closure
-      // that actually persists the proposal is missing, so every invocation
-      // would fail with "proposeToolAction was not injected."
-      ...(mainAgentToolAuthoringEnabled && mainAgentId !== null
-        ? { toolAuthoringEnabled: true, proposeToolAction }
-        : {}),
-      ...(manageAgentEnabled && manageBackgroundAgentAction
-        ? { manageAgentEnabled: true, manageBackgroundAgentAction }
-        : {}),
+    },
+    actionResolution: {
+      toolAuthoringEnabled: mainAgentToolAuthoringEnabled,
+      toolAuthoringAgentId: mainAgentId,
+      manageAgentEnabled,
     },
     autoCommitEnabled,
     autoCreatePrEnabled,
     subagentRoster,
   };
+}
+
+type WorkflowActionAgentOptions = Pick<
+  OpenAgentCallOptions,
+  | "toolAuthoringEnabled"
+  | "proposeToolAction"
+  | "manageAgentEnabled"
+  | "manageBackgroundAgentAction"
+>;
+
+function buildWorkflowActionAgentOptions(params: {
+  userId: string;
+  chatId: string;
+  actionResolution: ChatModelActionResolution;
+}): Partial<WorkflowActionAgentOptions> {
+  const agentOptions: Partial<WorkflowActionAgentOptions> = {};
+
+  const { actionResolution } = params;
+
+  // Only enable tool authoring when both the flag AND the closure are
+  // available. If the main agent ID is null, enabling the tool would expose an
+  // action that cannot persist proposals.
+  if (
+    actionResolution.toolAuthoringEnabled &&
+    actionResolution.toolAuthoringAgentId !== null
+  ) {
+    const agentId = actionResolution.toolAuthoringAgentId;
+    agentOptions.toolAuthoringEnabled = true;
+    agentOptions.proposeToolAction = async (input: {
+      toolkitSlug: string;
+      chatId?: string;
+      runId?: string;
+    }) => {
+      const { createProposedToolEntry } =
+        await import("@/lib/db/agent-tool-entries");
+      const entry = await createProposedToolEntry({
+        agentId,
+        userId: params.userId,
+        toolkitSlug: input.toolkitSlug,
+        createdByChatId: params.chatId,
+        createdByRunId: input.runId ?? null,
+      });
+      return { entryId: entry.id };
+    };
+  }
+
+  if (actionResolution.manageAgentEnabled) {
+    agentOptions.manageAgentEnabled = true;
+    agentOptions.manageBackgroundAgentAction = async (input: {
+      action: "create" | "update";
+      agentId?: string;
+      draft: unknown;
+      summary: string;
+      questionsForUser?: string[];
+    }) => {
+      const { createBackgroundAgentSchema } =
+        await import("@/lib/background-agents/types");
+      const { normalizeAgentDraft } =
+        await import("@/lib/background-agents/spec-tool-contract");
+      const { createBackgroundAgent, updateBackgroundAgent } =
+        await import("@/lib/background-agents/store");
+
+      // Try direct parse first (handles drafts already in web-side format).
+      // If that fails, normalize from agent-tool format (maps trigger kinds,
+      // converts flat conditions, renames snake_case permissions keys) and
+      // re-parse.
+      let parsed = createBackgroundAgentSchema.safeParse(input.draft);
+      if (
+        !parsed.success &&
+        input.draft != null &&
+        typeof input.draft === "object"
+      ) {
+        const normalized = normalizeAgentDraft(
+          input.draft as Record<string, unknown>,
+        );
+        parsed = createBackgroundAgentSchema.safeParse(normalized);
+      }
+      if (!parsed.success) {
+        throw new Error(
+          `Invalid background agent draft: ${parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")}`,
+        );
+      }
+
+      if (input.action === "update" && input.agentId) {
+        const result = await updateBackgroundAgent(
+          params.userId,
+          input.agentId,
+          parsed.data,
+        );
+        if (!result) {
+          throw new Error(
+            `Background agent not found or access denied: ${input.agentId}`,
+          );
+        }
+        return {
+          agentId: result.id,
+          action: "updated" as const,
+          name: result.name,
+        };
+      }
+
+      const result = await createBackgroundAgent(params.userId, parsed.data);
+      return {
+        agentId: result.id,
+        action: "created" as const,
+        name: result.name,
+      };
+    };
+  }
+
+  return agentOptions;
 }
 
 const generateId = async () => {
@@ -1798,6 +1828,7 @@ export async function runAgentWorkflow(options: Options) {
           inferenceProfileName,
           inferenceProvider,
           agentOptions,
+          modelRuntime.actionResolution,
           step + 1,
         );
       } catch (error) {
@@ -2400,6 +2431,7 @@ const runAgentStep = async (
   inferenceProfileName: string | null,
   inferenceProvider: string | null,
   agentOptions: OpenAgentCallOptions,
+  actionResolution: ChatModelActionResolution,
   stepNumber: number,
 ) => {
   "use step";
@@ -2419,7 +2451,7 @@ const runAgentStep = async (
   let lastStreamError: unknown;
 
   try {
-    const baseStepAgentOptions =
+    const resolvedStepAgentOptions =
       inferenceProfileId && agentOptions.model
         ? {
             ...agentOptions,
@@ -2435,6 +2467,15 @@ const runAgentStep = async (
             }),
           }
         : agentOptions;
+    const workflowActionAgentOptions = buildWorkflowActionAgentOptions({
+      userId,
+      chatId,
+      actionResolution,
+    });
+    const baseStepAgentOptions = {
+      ...workflowActionAgentOptions,
+      ...resolvedStepAgentOptions,
+    };
 
     // Thread the stream writer so browser tools can stream inline screenshots.
     // All writes (from the main stream pump AND from tool writers) are serialized
