@@ -81,6 +81,19 @@ export {
   sharedWriterLeaseResultSchema,
 } from "./shared-writer-lease";
 export { SharedWriterLeaseConflictError } from "./shared-writer-lease-error";
+export type {
+  SharedWorkspaceBaseline,
+  SharedWorkspaceDriftCheck,
+  SharedWorkspaceDriftEvent,
+} from "./shared-workspace-drift";
+export {
+  captureSharedWorkspaceBaseline,
+  checkSharedWorkspaceDrift,
+  sharedWorkspaceBaselineSchema,
+  sharedWorkspaceDriftCheckSchema,
+  sharedWorkspaceDriftEventSchema,
+} from "./shared-workspace-drift";
+export { SharedWorkspaceDriftError } from "./shared-workspace-drift-error";
 export {
   type AskUserQuestionInput,
   type AskUserQuestionOutput,
