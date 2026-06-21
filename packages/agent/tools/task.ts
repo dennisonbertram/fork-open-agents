@@ -12,6 +12,10 @@ import {
   type DelegatedWorkspaceLaunchPolicy,
 } from "../delegated-workspace";
 import {
+  delegatedWorkspaceResolverDecisionSchema,
+  resolveDelegatedWorkspacePolicy,
+} from "../delegated-workspace-resolver";
+import {
   buildSubagentSummaryLines,
   SUBAGENT_REGISTRY,
   SUBAGENT_TYPES,
@@ -76,6 +80,7 @@ export const taskOutputSchema = z.object({
   modelId: z.string().optional(),
   runtime: taskRuntimeOutputSchema.optional(),
   workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
+  workspaceResolution: delegatedWorkspaceResolverDecisionSchema.optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -116,6 +121,26 @@ function getManagedRuntimeOutput(
     profileRunId: getString(managedRuntime.profileRunId),
     sandboxName: getString(managedRuntime.sandboxName),
   };
+}
+
+function getRuntimeMode(
+  experimentalContext: unknown,
+): "classic" | "managed_runtime" {
+  if (!isRecord(experimentalContext)) {
+    return "classic";
+  }
+
+  return experimentalContext.runtimeMode === "managed_runtime"
+    ? "managed_runtime"
+    : "classic";
+}
+
+function getParentWorkspaceId(sandboxState: unknown): string | undefined {
+  if (!isRecord(sandboxState)) {
+    return undefined;
+  }
+
+  return getString(sandboxState.sandboxId) ?? getString(sandboxState.id);
 }
 
 function buildManagedRuntimeWorkerInstructions(params: {
@@ -219,6 +244,14 @@ IMPORTANT:
     const runtime = getManagedRuntimeOutput(experimental_context, subagentType);
     const workspacePolicyOutput =
       buildDelegatedWorkspaceLaunchPolicy(workspacePolicy);
+    const workspaceResolution = resolveDelegatedWorkspacePolicy({
+      parentRunId: "task",
+      runtimeMode: getRuntimeMode(experimental_context),
+      requestedPolicy: workspacePolicy,
+      parentWorkspaceId:
+        getParentWorkspaceId(sandboxContext.sandbox.state) ??
+        "active-session-workspace",
+    });
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
       environmentDetails: sandboxContext.sandbox.environmentDetails,
@@ -261,6 +294,7 @@ IMPORTANT:
       modelId: subagentModelId,
       runtime,
       workspacePolicy: workspacePolicyOutput,
+      workspaceResolution,
     };
 
     const result = await subagent.stream({
@@ -288,6 +322,7 @@ IMPORTANT:
           modelId: subagentModelId,
           runtime,
           workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
         };
       }
 
@@ -303,6 +338,7 @@ IMPORTANT:
           modelId: subagentModelId,
           runtime,
           workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
         };
       }
     }
@@ -317,6 +353,7 @@ IMPORTANT:
       modelId: subagentModelId,
       runtime,
       workspacePolicy: workspacePolicyOutput,
+      workspaceResolution,
     };
   },
   toModelOutput: ({ output: { final: messages } }) => {
