@@ -112,6 +112,13 @@ export type WebAgentRuntimeProofData = {
       currentToolSummary: string | null;
       toolCallCount: number;
       summary: string | null;
+      workspaceMode: string | null;
+      completionPacketValidationStatus: string | null;
+      completionPacketReasonCode: string | null;
+      completionPacketSummary: string | null;
+      changedFileCount: number;
+      verificationCount: number;
+      integrationReady: boolean;
     } | null;
   };
   coordinatorDirectToolUse: {

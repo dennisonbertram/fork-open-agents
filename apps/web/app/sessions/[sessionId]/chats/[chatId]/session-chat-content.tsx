@@ -554,6 +554,10 @@ function RuntimeProofDataPartCard({
   const proofNoActivity = proofStatus === "no_activity";
   const latestServiceStatus = part.data.serviceEvidence?.latest?.status ?? null;
   const latestBrowserStatus = part.data.browserEvidence?.latest?.status ?? null;
+  const latestWorker = part.data.workerEvidence?.latest ?? null;
+  const latestWorkspaceMode = latestWorker?.workspaceMode ?? null;
+  const latestPacketStatus =
+    latestWorker?.completionPacketValidationStatus ?? null;
   const directToolUseObserved =
     part.data.coordinatorDirectToolUse?.observed ?? false;
   const statusClassName = proofPassed
@@ -592,6 +596,16 @@ function RuntimeProofDataPartCard({
         <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
           {workerCount} worker{workerCount === 1 ? "" : "s"}
         </span>
+        {latestWorkspaceMode && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">
+            {latestWorkspaceMode} workspace
+          </span>
+        )}
+        {latestPacketStatus && (
+          <span className="hidden shrink-0 text-[10px] text-muted-foreground md:inline">
+            packet {latestPacketStatus}
+          </span>
+        )}
         <span className="hidden min-w-0 truncate font-mono text-[11px] text-muted-foreground sm:inline">
           {part.data.profile.id}
         </span>
