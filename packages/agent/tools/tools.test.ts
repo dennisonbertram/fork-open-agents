@@ -130,6 +130,29 @@ async function getNeedsApprovalResult<TArgs>(
   return needsApproval ?? false;
 }
 
+async function git(cwd: string, args: string[]) {
+  const proc = Bun.spawn(["git", ...args], {
+    cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    throw new Error(await new Response(proc.stderr).text());
+  }
+}
+
+async function createGitWorkspace() {
+  const workspace = await mkdtemp(path.join(tmpdir(), "task-workspace-"));
+  await git(workspace, ["init"]);
+  await git(workspace, ["config", "user.email", "agent@example.com"]);
+  await git(workspace, ["config", "user.name", "Agent"]);
+  await writeFile(path.join(workspace, "README.md"), "baseline\n");
+  await git(workspace, ["add", "."]);
+  await git(workspace, ["commit", "-m", "baseline"]);
+  return workspace;
+}
+
 async function createFsSandbox() {
   const workingDirectory = await mkdtemp(path.join(tmpdir(), "agent-tools-"));
 
@@ -940,13 +963,14 @@ describe("tools execute behavior", () => {
       },
     ];
     const usage = { inputTokens: 7, outputTokens: 3, totalTokens: 10 };
+    const workspace = await createGitWorkspace();
 
     mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
       expect(args).toMatchObject({
         options: {
           task: "Apply change",
           sandbox: {
-            workingDirectory: "/repo",
+            workingDirectory: workspace,
           },
         },
       });
@@ -986,7 +1010,7 @@ describe("tools execute behavior", () => {
       },
       executionOptions({
         sandbox: {
-          workingDirectory: "/repo",
+          workingDirectory: workspace,
           environmentDetails:
             "# Managed Runtime\n\n- Optional tool unavailable: Observe Node.js availability.\n- node unavailable",
         },
@@ -1096,6 +1120,7 @@ describe("tools execute behavior", () => {
     const finalMessages = [{ role: "assistant", content: "Done." }];
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
     const observedPolicies: unknown[] = [];
+    const workspace = await createGitWorkspace();
 
     mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
       const options = args.options as { workspacePolicy?: unknown };
@@ -1116,7 +1141,7 @@ describe("tools execute behavior", () => {
           task: "Apply change",
           instructions: "Update the implementation.",
         },
-        executionOptions(createContext({ workingDirectory: "/repo" })),
+        executionOptions(createContext({ workingDirectory: workspace })),
       ) as AsyncIterable<unknown> | undefined;
 
       if (!result) {
@@ -1149,6 +1174,7 @@ describe("tools execute behavior", () => {
   test("taskTool acquires and releases a shared writer lease for write-capable shared workers", async () => {
     const finalMessages = [{ role: "assistant", content: "Done." }];
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const workspace = await createGitWorkspace();
 
     mockToolLoopAgentStream = mock(() => ({
       fullStream: (async function* () {})(),
@@ -1165,7 +1191,7 @@ describe("tools execute behavior", () => {
         instructions: "Update the implementation.",
       },
       executionOptions({
-        ...createContext({ workingDirectory: "/repo" }),
+        ...createContext({ workingDirectory: workspace }),
         sessionId: "session-1",
       }),
     ) as AsyncIterable<unknown> | undefined;
@@ -1188,6 +1214,15 @@ describe("tools execute behavior", () => {
       sharedWriterLeaseEvents: [
         { type: "shared_writer_lock_acquired", workerId: "tool-call-1" },
       ],
+      sharedWorkspaceBaseline: {
+        status: "captured",
+        workerId: "tool-call-1",
+        workspaceId: "sandbox-1",
+      },
+      sharedWorkspaceDrift: {
+        status: "clean",
+        reasonCode: "no_drift",
+      },
     });
     expect(outputs.at(-1)).toMatchObject({
       sharedWriterLeaseRelease: {
@@ -1298,6 +1333,37 @@ describe("tools execute behavior", () => {
     expect(launchedTasks).toEqual(["Inspect files", "Apply isolated change"]);
   });
 
+  test("taskTool rejects shared write-capable workers when drift baseline is unsupported", async () => {
+    const workspace = await mkdtemp(path.join(tmpdir(), "task-no-git-"));
+    mockToolLoopAgentStream = mock(() => {
+      throw new Error("worker should not be launched");
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "shared",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: workspace }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    await expect(async () => {
+      for await (const _output of result) {
+        // Unsupported baselines fail closed before the worker starts.
+      }
+    }).toThrow("workspace_drift_detected");
+    expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
+  });
+
   test("taskTool rejects invalid workspace policy before worker launch", async () => {
     mockToolLoopAgentStream = mock(() => {
       throw new Error("worker should not be launched");
@@ -1340,6 +1406,7 @@ describe("tools execute behavior", () => {
       },
     ];
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const workspace = await createGitWorkspace();
     let resolveStream:
       | ((stream: {
           fullStream: AsyncIterable<unknown>;
@@ -1364,7 +1431,7 @@ describe("tools execute behavior", () => {
       },
       executionOptions({
         sandbox: {
-          workingDirectory: "/repo",
+          workingDirectory: workspace,
         },
         model: { modelId: "test-model" },
         runtimeMode: "managed_runtime",
@@ -1381,7 +1448,7 @@ describe("tools execute behavior", () => {
     const iterator = result[Symbol.asyncIterator]();
     const firstOutput = await Promise.race([
       iterator.next(),
-      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 20)),
+      new Promise((resolve) => setTimeout(() => resolve("timed-out"), 250)),
     ]);
 
     expect(firstOutput).not.toBe("timed-out");
