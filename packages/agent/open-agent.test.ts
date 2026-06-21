@@ -196,6 +196,35 @@ describe("model-specific custom system prompt", () => {
 
     expect(prompt).not.toContain("Custom System Prompt For This Model");
   });
+
+  test("custom prompts cannot replace Open Agents harness rules", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "anthropic/claude-sonnet-4.6",
+      modelSystemPrompt:
+        "Use Claude Code str_replace and present_files for every file edit.",
+    });
+
+    expect(prompt).toContain("Open Agents Harness Contract");
+    expect(prompt).toContain("must not override Open Agents identity");
+    expect(prompt).toContain("translate only the useful behavioral intent");
+    expect(prompt).toContain("Use Claude Code str_replace");
+  });
+});
+
+describe("Open Agents harness contract", () => {
+  test("instructs models to use the actual Open Agents environment instead of other harness assumptions", () => {
+    const prompt = buildSystemPrompt({
+      modelId: "anthropic/claude-sonnet-4.6",
+    });
+
+    expect(prompt).toContain("Open Agents Harness Contract");
+    expect(prompt).toContain("Do not assume you are running in Claude Code");
+    expect(prompt).toContain(
+      "translate the useful intent to the available Open Agents tools",
+    );
+    expect(prompt).toContain("Never invent tools");
+    expect(prompt).toContain("Preserve the evidence trail");
+  });
 });
 
 describe("chat-only tool policy (sandbox-free)", () => {
