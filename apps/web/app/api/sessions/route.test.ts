@@ -25,6 +25,7 @@ const createCalls: Array<Record<string, unknown>> = [];
 const initialChatCalls: Array<Record<string, unknown>> = [];
 const upsertCalls: Array<Record<string, unknown>> = [];
 const prewarmKickCalls: Array<Record<string, unknown>> = [];
+const afterCallbacks: Array<() => Promise<void> | void> = [];
 let composioPolicy = { allowed: true, reason: null as string | null };
 
 // Mock resolveRepoDefaults so existing tests are not affected by the new
@@ -68,6 +69,12 @@ mock.module("@/lib/botid", () => ({
 mock.module("@/lib/sandbox/prewarm-kick", () => ({
   kickSandboxPrewarmWorkflow: (input: Record<string, unknown>) => {
     prewarmKickCalls.push(input);
+  },
+}));
+
+mock.module("next/server", () => ({
+  after: (callback: () => Promise<void> | void) => {
+    afterCallbacks.push(callback);
   },
 }));
 
@@ -216,6 +223,7 @@ describe("/api/sessions POST vercel project linking", () => {
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
     prewarmKickCalls.length = 0;
+    afterCallbacks.length = 0;
     composioPolicy = { allowed: true, reason: null };
   });
 
@@ -570,6 +578,7 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     initialChatCalls.length = 0;
     upsertCalls.length = 0;
     prewarmKickCalls.length = 0;
+    afterCallbacks.length = 0;
     composioPolicy = { allowed: true, reason: null };
   });
 
@@ -669,5 +678,37 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     // this catches it.
     expect(body.session.lifecycleState).toBe("provisioning");
     expect(body.session.sandboxState).toEqual({ type: "vercel" });
+  });
+
+  test("repo-backed session schedules sandbox prewarm through next/server after", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        repoOwner: "vercel",
+        repoName: "open-agents",
+        branch: "main",
+        cloneUrl: "https://github.com/vercel/open-agents",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(prewarmKickCalls).toHaveLength(1);
+    expect(prewarmKickCalls[0]).toMatchObject({
+      sessionId: createCalls[0]?.id,
+      userId: "user-1",
+    });
+
+    const scheduleBackgroundWork = prewarmKickCalls[0]?.scheduleBackgroundWork;
+    expect(typeof scheduleBackgroundWork).toBe("function");
+
+    const scheduledWork = mock(async () => undefined);
+    (scheduleBackgroundWork as (callback: () => Promise<void>) => void)(
+      scheduledWork,
+    );
+
+    expect(afterCallbacks).toHaveLength(1);
+    await afterCallbacks[0]?.();
+    expect(scheduledWork).toHaveBeenCalledTimes(1);
   });
 });

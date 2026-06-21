@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { notFound, redirect } from "next/navigation";
+import { after } from "next/server";
 import {
   createSessionWithInitialChat,
   getUsedSessionTitles,
@@ -127,6 +128,7 @@ export default async function RepoPage({ params }: RepoPageProps) {
   kickSandboxPrewarmWorkflow({
     sessionId: result.session.id,
     userId: session.user.id,
+    scheduleBackgroundWork: after,
   });
 
   redirect(`/sessions/${result.session.id}/chats/${result.chat.id}`);
