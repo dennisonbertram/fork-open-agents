@@ -1072,6 +1072,21 @@ describe("tools execute behavior", () => {
         label: "Managed runtime worker",
         workerType: "executor",
       },
+      completionPacket: {
+        version: 1,
+        status: "completed",
+        workerType: "executor",
+        workspaceMode: "shared",
+        summary: "Worker finished.",
+        verification: [
+          "Worker reached terminal completed state: worker_terminal.",
+          "Observed 1 delegated tool calls.",
+        ],
+      },
+      completionPacketValidation: {
+        status: "valid",
+        reasonCode: "worker_completion_packet_validated",
+      },
     });
   });
 
@@ -1513,6 +1528,20 @@ describe("tools execute behavior", () => {
           },
         ],
       },
+      completionPacket: {
+        status: "failed",
+        workerId: "tool-call-1",
+        workerType: "executor",
+        workspaceMode: "shared",
+        blockers: ["failed: worker_failed"],
+        recoveryInstructions: [
+          "Inspect worker lifecycle events and rerun after the blocker is fixed.",
+        ],
+      },
+      completionPacketValidation: {
+        status: "valid",
+        reasonCode: "worker_completion_packet_validated",
+      },
     });
   });
 
@@ -1619,6 +1648,21 @@ describe("tools execute behavior", () => {
         status: "completed",
         workspaceId: "child-sandbox",
       },
+      completionPacket: {
+        status: "completed",
+        workerId: "tool-call-1",
+        workerType: "executor",
+        workspaceMode: "isolated",
+        appliedToParentWorkspace: false,
+        integrationInstructions: [
+          "Review child workspace artifacts before applying changes to the parent workspace.",
+          "Do not assume isolated child changes mutated the parent workspace.",
+        ],
+      },
+      completionPacketValidation: {
+        status: "valid",
+        reasonCode: "worker_completion_packet_validated",
+      },
     });
   });
 
@@ -1662,6 +1706,16 @@ describe("tools execute behavior", () => {
         status: "blocked",
         reasonCode: "isolated_workspace_provisioner_unavailable",
         workspaceMode: "isolated",
+      },
+      completionPacket: {
+        status: "blocked",
+        workerType: "executor",
+        workspaceMode: "isolated",
+        blockers: ["blocked: isolated_workspace_provisioner_unavailable"],
+      },
+      completionPacketValidation: {
+        status: "valid",
+        reasonCode: "worker_completion_packet_validated",
       },
     });
     expect(mockToolLoopAgentStream).not.toHaveBeenCalled();

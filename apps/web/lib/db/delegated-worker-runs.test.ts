@@ -78,6 +78,35 @@ describe("delegated worker run records", () => {
                 },
               ],
             },
+            completionPacket: {
+              version: 1,
+              status: "completed",
+              workerId: "worker-1",
+              workerType: "executor",
+              workspaceMode: "shared",
+              appliedToParentWorkspace: true,
+              summary: "Implemented the change.",
+              scope: ["Apply change"],
+              changedFiles: [],
+              verification: ["Worker reached terminal completed state."],
+              blockers: [],
+              integrationInstructions: ["Changes applied to parent."],
+              artifacts: [
+                { kind: "task_output", ref: "tool-task.output" },
+                {
+                  kind: "completion_packet",
+                  ref: "tool-task.output.completionPacket",
+                },
+              ],
+              recoveryInstructions: [],
+              createdAt: now.getTime(),
+            },
+            completionPacketValidation: {
+              status: "valid",
+              reasonCode: "worker_completion_packet_validated",
+              reason: "Completion packet validated.",
+              createdAt: now.getTime(),
+            },
           },
         },
       ] as WebAgentUIMessage["parts"]),
@@ -108,11 +137,87 @@ describe("delegated worker run records", () => {
         { kind: "task_output", ref: "tool-task.output" },
         { kind: "runtime", ref: "tool-task.output.runtime" },
         { kind: "workspace", ref: "tool-task.output.workspace" },
+        {
+          kind: "completion_packet",
+          ref: "tool-task.output.completionPacket",
+        },
       ],
+      completionPacketValidationStatus: "valid",
+      completionPacketValidationReasonCode:
+        "worker_completion_packet_validated",
+    });
+    expect(records[0].completionPacket).toMatchObject({
+      version: 1,
+      status: "completed",
+      summary: "Implemented the change.",
     });
     expect(JSON.stringify(records[0])).not.toContain(
       "contains private implementation details",
     );
+  });
+
+  test("records invalid completion packets without treating them as evidence", () => {
+    const records = buildDelegatedWorkerRunRecordsFromMessage({
+      message: assistantMessage([
+        {
+          type: "tool-task",
+          toolCallId: "task-1",
+          state: "output-available",
+          input: {
+            subagentType: "executor",
+            task: "Apply change",
+            instructions: "Do the work.",
+          },
+          output: {
+            final: [],
+            completionPacket: {
+              version: 1,
+              status: "completed",
+              workerId: "worker-1",
+              workerType: "executor",
+              workspaceMode: "isolated",
+              appliedToParentWorkspace: false,
+              summary: "Prepared change.",
+              scope: ["Apply change"],
+              changedFiles: [],
+              verification: [],
+              blockers: [],
+              integrationInstructions: [],
+              artifacts: [],
+              recoveryInstructions: [],
+              createdAt: 1,
+            },
+            completionPacketValidation: {
+              status: "invalid",
+              reasonCode: "worker_completion_packet_invalid",
+              reason: "completed packets require verification evidence",
+              createdAt: 1,
+            },
+          },
+        },
+      ] as WebAgentUIMessage["parts"]),
+      workflowRunId: "workflow-1",
+      chatId: "chat-1",
+      sessionId: "session-1",
+      userId: "user-1",
+      now: new Date("2026-06-21T12:00:00.000Z"),
+    });
+
+    expect(records[0]).toMatchObject({
+      status: "completed",
+      reasonCode: "worker_completion_packet_invalid",
+      completionPacketValidationStatus: "invalid",
+      completionPacketValidationReasonCode: "worker_completion_packet_invalid",
+      completionPacketValidationReason:
+        "completed packets require verification evidence",
+      evidenceRefs: [
+        { kind: "task_output", ref: "tool-task.output" },
+        {
+          kind: "completion_packet",
+          ref: "tool-task.output.completionPacket",
+        },
+      ],
+    });
   });
 
   test("marks workspace drift output as blocked with the drift reason", () => {
