@@ -1,6 +1,7 @@
 import type { LanguageModel } from "ai";
 import { gateway, stepCountIs, ToolLoopAgent } from "ai";
 import { z } from "zod";
+import { delegatedWorkspaceLaunchPolicySchema } from "../delegated-workspace";
 import { bashTool } from "../tools/bash";
 import { globTool } from "../tools/glob";
 import { grepTool } from "../tools/grep";
@@ -69,6 +70,7 @@ const callOptionsSchema = z.object({
     .custom<SandboxExecutionContext["sandbox"]>()
     .describe("Sandbox for file system and shell operations"),
   model: z.custom<LanguageModel>().describe("Language model for this subagent"),
+  workspacePolicy: delegatedWorkspaceLaunchPolicySchema.optional(),
 });
 
 export type ExplorerCallOptions = z.infer<typeof callOptionsSchema>;
@@ -108,6 +110,7 @@ ${EXPLORER_REMINDER}`,
       experimental_context: {
         sandbox,
         model,
+        workspacePolicy: options.workspacePolicy,
       },
     };
   },
