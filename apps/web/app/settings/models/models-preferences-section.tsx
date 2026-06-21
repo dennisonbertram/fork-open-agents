@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { Plus, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Plus, RotateCcw, Save, Search, X } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
 import { ModelCombobox } from "@/components/model-combobox";
 import { useModelOptions } from "@/hooks/use-model-options";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -13,6 +15,7 @@ import {
   getDefaultModelOptionId,
   withMissingModelOption,
 } from "@/lib/model-options";
+import { MODEL_SYSTEM_PROMPT_MAX_LENGTH } from "@/lib/model-system-prompts";
 import { SettingsSectionHeader } from "../_components/section-header";
 
 function ModelSettingsSectionTitle({
@@ -63,6 +66,11 @@ export function ModelPreferencesSectionSkeleton() {
         </div>
         <Skeleton className="h-10 w-full" />
       </div>
+      <div className="grid gap-2">
+        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-10 w-full" />
+        <Skeleton className="h-36 w-full" />
+      </div>
     </div>
   );
 }
@@ -90,6 +98,11 @@ function useModelPreferencesSectionState() {
   const enabledModelIds = useMemo(
     () => new Set(preferences?.enabledModelIds),
     [preferences?.enabledModelIds],
+  );
+
+  const systemPromptModelOptions = useMemo(
+    () => withMissingModelOption(modelOptions, selectedDefaultModelId),
+    [modelOptions, selectedDefaultModelId],
   );
 
   const handleModelChange = async (modelId: string) => {
@@ -163,6 +176,29 @@ function useModelPreferencesSectionState() {
     [updatePreferences],
   );
 
+  const handleSaveModelSystemPrompt = useCallback(
+    async (modelId: string, prompt: string) => {
+      const trimmedPrompt = prompt.trim();
+      const currentPrompts = preferences?.modelSystemPrompts ?? {};
+      const nextPrompts = { ...currentPrompts };
+      if (trimmedPrompt.length > 0) {
+        nextPrompts[modelId] = trimmedPrompt;
+      } else {
+        delete nextPrompts[modelId];
+      }
+
+      setIsSaving(true);
+      try {
+        await updatePreferences({ modelSystemPrompts: nextPrompts });
+      } catch (error) {
+        console.error("Failed to update model system prompt:", error);
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [preferences?.modelSystemPrompts, updatePreferences],
+  );
+
   return {
     preferences,
     loading,
@@ -173,13 +209,182 @@ function useModelPreferencesSectionState() {
     selectedSubagentModelId,
     defaultModelOptions,
     subagentModelOptions,
+    systemPromptModelOptions,
     enabledModelIds,
     handleModelChange,
     handleSubagentModelChange,
     handleAddModel,
     handleRemoveModel,
     handleSetEnabledModels,
+    handleSaveModelSystemPrompt,
   };
+}
+
+function ModelSystemPromptSection({
+  modelOptions,
+  modelOptionsLoading,
+  selectedDefaultModelId,
+  modelSystemPrompts,
+  onSavePrompt,
+  disabled,
+}: {
+  modelOptions: ModelOption[];
+  modelOptionsLoading: boolean;
+  selectedDefaultModelId: string;
+  modelSystemPrompts: Record<string, string>;
+  onSavePrompt: (modelId: string, prompt: string) => void;
+  disabled: boolean;
+}) {
+  const [selectedModelId, setSelectedModelId] = useState(
+    selectedDefaultModelId,
+  );
+  const [draftPrompt, setDraftPrompt] = useState("");
+
+  useEffect(() => {
+    if (!selectedModelId) {
+      setSelectedModelId(selectedDefaultModelId);
+    }
+  }, [selectedDefaultModelId, selectedModelId]);
+
+  useEffect(() => {
+    setDraftPrompt(modelSystemPrompts[selectedModelId] ?? "");
+  }, [modelSystemPrompts, selectedModelId]);
+
+  const modelItems = useMemo(
+    () =>
+      modelOptions.map((option) => ({
+        id: option.id,
+        label: option.label,
+        description: option.description,
+        isVariant: option.isVariant,
+      })),
+    [modelOptions],
+  );
+
+  const promptModelIds = useMemo(
+    () =>
+      Object.keys(modelSystemPrompts).filter((modelId) =>
+        modelSystemPrompts[modelId]?.trim(),
+      ),
+    [modelSystemPrompts],
+  );
+
+  const promptModelLabels = useMemo(() => {
+    const labels = new Map(modelOptions.map((option) => [option.id, option]));
+    return promptModelIds.map((modelId) => {
+      const option = labels.get(modelId);
+      return {
+        id: modelId,
+        label: option?.label ?? modelId,
+        description: option?.description ?? modelId,
+      };
+    });
+  }, [modelOptions, promptModelIds]);
+
+  const savedPrompt = modelSystemPrompts[selectedModelId] ?? "";
+  const normalizedDraft = draftPrompt.trim();
+  const hasChanges = normalizedDraft !== savedPrompt;
+  const overLimit = draftPrompt.length > MODEL_SYSTEM_PROMPT_MAX_LENGTH;
+  const canSave =
+    Boolean(selectedModelId) && hasChanges && !overLimit && !disabled;
+
+  if (modelOptionsLoading) {
+    return (
+      <div className="grid gap-2">
+        <Label>Custom system prompts</Label>
+        <Skeleton className="h-44 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      <Label>Custom system prompts</Label>
+
+      <div className="grid gap-2">
+        <ModelCombobox
+          value={selectedModelId}
+          items={modelItems}
+          placeholder="Select a model"
+          searchPlaceholder="Search models..."
+          emptyText="No models found."
+          disabled={disabled || modelOptionsLoading}
+          onChange={setSelectedModelId}
+        />
+
+        <Textarea
+          id="model-system-prompt-model"
+          value={draftPrompt}
+          onChange={(event) => setDraftPrompt(event.target.value)}
+          className="min-h-36 resize-y rounded-md border-border bg-muted/30 font-mono text-xs leading-relaxed"
+          placeholder="Prefer concise status updates. Ask before risky operations. Run focused tests first."
+          disabled={disabled}
+          aria-label="Custom system prompt"
+          aria-invalid={overLimit}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p
+          className={
+            overLimit
+              ? "text-xs text-destructive"
+              : "text-xs text-muted-foreground"
+          }
+        >
+          {draftPrompt.length.toLocaleString()} /{" "}
+          {MODEL_SYSTEM_PROMPT_MAX_LENGTH.toLocaleString()} characters
+        </p>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={disabled || !savedPrompt}
+            onClick={() => onSavePrompt(selectedModelId, "")}
+          >
+            <RotateCcw className="size-3.5" />
+            Reset
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canSave}
+            onClick={() => onSavePrompt(selectedModelId, draftPrompt)}
+          >
+            <Save className="size-3.5" />
+            Save
+          </Button>
+        </div>
+      </div>
+
+      {promptModelLabels.length > 0 && (
+        <div className="divide-y divide-border/60 rounded-lg border border-border/70">
+          {promptModelLabels.map((model) => (
+            <button
+              key={model.id}
+              type="button"
+              disabled={disabled}
+              onClick={() => setSelectedModelId(model.id)}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-60"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">
+                  {model.label}
+                </span>
+                <span className="block truncate text-xs text-muted-foreground">
+                  {model.description}
+                </span>
+              </span>
+              <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                prompt
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function EnabledModelsSection({
@@ -381,15 +586,18 @@ export function ModelPreferencesSection() {
     selectedDefaultModelId,
     selectedSubagentModelId,
     subagentModelOptions,
+    systemPromptModelOptions,
     modelOptions,
     modelOptionsLoading,
     enabledModelIds,
     isSaving,
+    preferences,
     handleModelChange,
     handleSubagentModelChange,
     handleAddModel,
     handleRemoveModel,
     handleSetEnabledModels,
+    handleSaveModelSystemPrompt,
   } = state;
 
   return (
@@ -452,6 +660,15 @@ export function ModelPreferencesSection() {
         onAddModel={handleAddModel}
         onRemoveModel={handleRemoveModel}
         onSetEnabledModels={handleSetEnabledModels}
+        disabled={isSaving}
+      />
+
+      <ModelSystemPromptSection
+        modelOptions={systemPromptModelOptions}
+        modelOptionsLoading={modelOptionsLoading}
+        selectedDefaultModelId={selectedDefaultModelId}
+        modelSystemPrompts={preferences?.modelSystemPrompts ?? {}}
+        onSavePrompt={handleSaveModelSystemPrompt}
         disabled={isSaving}
       />
     </div>
