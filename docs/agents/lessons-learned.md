@@ -164,3 +164,4 @@ Note: `bunfig.toml [test] isolate=true` is NOT honored by Bun 1.3.14 — use the
 **Class A is also fixable** by backfilling every partial `mock.module()` factory with stubs for the missing named exports (e.g., `updateAgentLoopRunContext: mock(async () => undefined)`). Do this for any store mock that omits exports another test file in the same directory imports. Class B leaks (e.g., `chat.test.ts` mocking `./chat-post-finish`, then `chat-post-finish.test.ts` testing it "for real") cannot be fixed by stub backfill and require `--isolate`.
 
 When adding a new export to a shared store/module, grep for all `mock.module` factories that reference that module and add a stub for the new export in each, or multi-file non-isolated runs will hard-crash on the new export.
+- API smoke on 2026-06-21 exercised branch and pull request lifecycle plumbing.
