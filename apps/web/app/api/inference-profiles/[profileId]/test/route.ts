@@ -8,6 +8,7 @@ import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-contex
 import {
   decryptInferenceProfileApiKey,
   getInferenceProfileByIdForUser,
+  INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
   recordInferenceProfileTestResult,
   setInferenceProfileModels,
 } from "@/lib/db/inference-profiles";
@@ -51,7 +52,34 @@ export async function POST(req: Request, context: RouteContext) {
     body = {};
   }
 
-  const apiKey = decryptInferenceProfileApiKey(profile);
+  let apiKey: string;
+  try {
+    apiKey = decryptInferenceProfileApiKey(profile);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "InferenceProfileResolutionError"
+    ) {
+      const updatedProfile = await recordInferenceProfileTestResult(
+        authResult.userId,
+        profile.id,
+        {
+          status: "failed",
+          message: INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
+        },
+      );
+
+      return Response.json({
+        profile: updatedProfile,
+        result: {
+          status: "failed",
+          message: INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
+        },
+      });
+    }
+
+    throw error;
+  }
 
   try {
     const fetchedModels = await fetchInferenceProfileModels({
