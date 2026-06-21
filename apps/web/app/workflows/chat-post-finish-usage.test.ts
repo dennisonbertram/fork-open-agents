@@ -29,6 +29,7 @@ function makeAssistantMessage(
 const spies = {
   recordUsage: mock(() => Promise.resolve()),
   recordWorkflowRun: mock(() => Promise.resolve()),
+  recordDelegatedWorkerRunsFromMessage: mock(() => Promise.resolve([])),
   collectTaskToolUsageEvents: mock(
     (_message?: unknown) =>
       [] as Array<{
@@ -68,6 +69,11 @@ mock.module("@/lib/db/usage", () => ({
 
 mock.module("@/lib/db/workflow-runs", () => ({
   recordWorkflowRun: spies.recordWorkflowRun,
+}));
+
+mock.module("@/lib/db/delegated-worker-runs", () => ({
+  recordDelegatedWorkerRunsFromMessage:
+    spies.recordDelegatedWorkerRunsFromMessage,
 }));
 
 mock.module("@open-agents/agent", () => ({
@@ -139,6 +145,7 @@ describe("recordWorkflowUsage", () => {
     );
 
     expect(spies.recordWorkflowRun).toHaveBeenCalledTimes(1);
+    expect(spies.recordDelegatedWorkerRunsFromMessage).toHaveBeenCalledTimes(1);
     const calls = spies.recordWorkflowRun.mock.calls as unknown[][];
     expect(calls[0][0]).toMatchObject({
       id: "wrun-1",
@@ -152,6 +159,14 @@ describe("recordWorkflowUsage", () => {
         expect.objectContaining({ stepNumber: 1, durationMs: 2000 }),
         expect.objectContaining({ stepNumber: 2, durationMs: 3000 }),
       ],
+    });
+    const delegatedCalls = spies.recordDelegatedWorkerRunsFromMessage.mock
+      .calls as unknown[][];
+    expect(delegatedCalls[0][0]).toMatchObject({
+      workflowRunId: "wrun-1",
+      chatId: "chat-1",
+      sessionId: "session-1",
+      userId: "user-1",
     });
   });
 

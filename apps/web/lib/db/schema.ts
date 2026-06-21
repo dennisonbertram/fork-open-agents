@@ -537,6 +537,106 @@ export const managedRuntimeProfileRuns = pgTable(
   ],
 );
 
+export type DelegatedWorkerRunEvidenceRef = {
+  kind: "task_output" | "runtime" | "workspace" | "usage";
+  ref: string;
+};
+
+export type DelegatedWorkerLifecycleEvent = {
+  status:
+    | "planned"
+    | "launching"
+    | "running"
+    | "blocked"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "stale";
+  reasonCode: string;
+  createdAt: string;
+};
+
+export const delegatedWorkerRuns = pgTable(
+  "delegated_worker_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => sessions.id, { onDelete: "cascade" }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    parentToolCallId: text("parent_tool_call_id").notNull(),
+    parentWorkerRunId: text("parent_worker_run_id"),
+    workerId: text("worker_id").notNull(),
+    workerType: text("worker_type").notNull(),
+    taskTitle: text("task_title"),
+    status: text("status", {
+      enum: [
+        "planned",
+        "launching",
+        "running",
+        "blocked",
+        "completed",
+        "failed",
+        "cancelled",
+        "stale",
+      ],
+    }).notNull(),
+    reasonCode: text("reason_code").notNull(),
+    requestedWorkspacePolicy: text("requested_workspace_policy", {
+      enum: ["auto", "shared", "isolated"],
+    }),
+    effectiveWorkspacePolicy: text("effective_workspace_policy", {
+      enum: ["auto", "shared", "isolated"],
+    }),
+    workspaceMode: text("workspace_mode", {
+      enum: ["shared", "isolated"],
+    }),
+    workspaceId: text("workspace_id"),
+    sandboxName: text("sandbox_name"),
+    managedRuntimeProfileId: text("managed_runtime_profile_id"),
+    managedRuntimeProfileVersion: text("managed_runtime_profile_version"),
+    managedRuntimeProfileRunId: text("managed_runtime_profile_run_id"),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<DelegatedWorkerRunEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    lifecycleEvents: jsonb("lifecycle_events")
+      .$type<DelegatedWorkerLifecycleEvent[]>()
+      .notNull()
+      .default([]),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("delegated_worker_runs_workflow_tool_call_idx").on(
+      table.workflowRunId,
+      table.parentToolCallId,
+    ),
+    index("delegated_worker_runs_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+    ),
+    index("delegated_worker_runs_chat_created_idx").on(
+      table.chatId,
+      table.createdAt,
+    ),
+    index("delegated_worker_runs_status_idx").on(table.status),
+    index("delegated_worker_runs_parent_worker_idx").on(
+      table.parentWorkerRunId,
+    ),
+  ],
+);
+
 export const managedRuntimeSavedProfiles = pgTable(
   "managed_runtime_saved_profiles",
   {
@@ -1844,6 +1944,8 @@ export type ManagedRuntimeSavedProfile =
   typeof managedRuntimeSavedProfiles.$inferSelect;
 export type NewManagedRuntimeSavedProfile =
   typeof managedRuntimeSavedProfiles.$inferInsert;
+export type DelegatedWorkerRun = typeof delegatedWorkerRuns.$inferSelect;
+export type NewDelegatedWorkerRun = typeof delegatedWorkerRuns.$inferInsert;
 export type SessionEvent = typeof sessionEvents.$inferSelect;
 export type NewSessionEvent = typeof sessionEvents.$inferInsert;
 export type Share = typeof shares.$inferSelect;
