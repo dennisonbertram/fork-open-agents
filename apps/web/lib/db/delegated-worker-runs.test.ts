@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { WebAgentUIMessage } from "@/app/types";
 import {
   buildDelegatedWorkerRunRecordsFromMessage,
+  buildDelegatedWorkerStaleRecoveryUpdate,
   canTransitionDelegatedWorkerRun,
 } from "./delegated-worker-runs";
 
@@ -78,6 +79,20 @@ describe("delegated worker run records", () => {
                 },
               ],
             },
+            sharedWriterLeaseRelease: {
+              status: "released",
+              events: [
+                {
+                  type: "shared_writer_lock_released",
+                  sessionId: "session-1",
+                  workspaceId: "workspace-1",
+                  workerId: "worker-1",
+                  workspaceMode: "shared",
+                  reasonCode: "worker_terminal",
+                  releasedByWorkerId: "worker-1",
+                },
+              ],
+            },
             completionPacket: {
               version: 1,
               status: "completed",
@@ -141,6 +156,7 @@ describe("delegated worker run records", () => {
           kind: "completion_packet",
           ref: "tool-task.output.completionPacket",
         },
+        { kind: "cleanup", ref: "delegated-worker.cleanup" },
       ],
       completionPacketValidationStatus: "valid",
       completionPacketValidationReasonCode:
@@ -150,6 +166,14 @@ describe("delegated worker run records", () => {
       version: 1,
       status: "completed",
       summary: "Implemented the change.",
+    });
+    expect(records[0]).toMatchObject({
+      cleanupStatus: "succeeded",
+      cleanupReasonCode: "shared_writer_lock_released",
+      cleanupResourceId: "workspace-1",
+      cleanupAttemptCount: 1,
+      cleanupAttemptedAt: now,
+      cleanupCompletedAt: now,
     });
     expect(JSON.stringify(records[0])).not.toContain(
       "contains private implementation details",
@@ -336,8 +360,89 @@ describe("delegated worker run records", () => {
         { kind: "task_output", ref: "tool-task.output" },
         { kind: "workspace", ref: "tool-task.output.workspace" },
         { kind: "workspace", ref: "tool-task.output.isolatedWorkspace" },
+        { kind: "cleanup", ref: "delegated-worker.cleanup" },
+      ],
+      cleanupStatus: "cleanup_required",
+      cleanupReasonCode: "isolated_workspace_cleanup_unsupported",
+      cleanupReason:
+        "Isolated child workspace cleanup is not supported by the active sandbox backend.",
+      cleanupResourceId: "child-workspace",
+      cleanupAttemptCount: 1,
+      cleanupAttemptedAt: new Date("2026-06-21T12:00:00.000Z"),
+    });
+  });
+
+  test("builds an idempotent stale recovery update for timed-out running workers", () => {
+    const now = new Date("2026-06-21T12:10:00.000Z");
+    const update = buildDelegatedWorkerStaleRecoveryUpdate({
+      run: {
+        id: "delegated-worker:workflow-1:task-1",
+        status: "running",
+        reasonCode: "worker_running",
+        workspaceMode: "isolated",
+        workspaceId: "child-workspace",
+        childWorkspaceId: "child-workspace",
+        cleanupStatus: "pending",
+        cleanupAttemptCount: 0,
+        updatedAt: new Date("2026-06-21T12:00:00.000Z"),
+        lifecycleEvents: [
+          {
+            status: "running",
+            reasonCode: "worker_running",
+            createdAt: "2026-06-21T12:00:00.000Z",
+          },
+        ],
+      },
+      now,
+      staleAfterMs: 5 * 60 * 1000,
+    });
+
+    expect(update).toMatchObject({
+      status: "stale",
+      reasonCode: "worker_timed_out",
+      cleanupStatus: "cleanup_required",
+      cleanupReasonCode: "stale_isolated_workspace_cleanup_required",
+      cleanupResourceId: "child-workspace",
+      cleanupAttemptCount: 1,
+      cleanupAttemptedAt: now,
+      finishedAt: now,
+      updatedAt: now,
+      lifecycleEvents: [
+        {
+          status: "running",
+          reasonCode: "worker_running",
+          createdAt: "2026-06-21T12:00:00.000Z",
+        },
+        {
+          status: "stale",
+          reasonCode: "worker_timed_out",
+          createdAt: "2026-06-21T12:10:00.000Z",
+        },
       ],
     });
+
+    if (!update) {
+      throw new Error("expected stale recovery update");
+    }
+
+    expect(
+      buildDelegatedWorkerStaleRecoveryUpdate({
+        run: {
+          id: "delegated-worker:workflow-1:task-1",
+          status: "stale",
+          reasonCode: "worker_timed_out",
+          workspaceMode: "isolated",
+          workspaceId: "child-workspace",
+          childWorkspaceId: "child-workspace",
+          cleanupStatus: "cleanup_required",
+          cleanupAttemptCount: update.cleanupAttemptCount ?? 1,
+          updatedAt: update.updatedAt ?? now,
+          lifecycleEvents: update.lifecycleEvents ?? [],
+        },
+        now: new Date("2026-06-21T12:11:00.000Z"),
+        staleAfterMs: 5 * 60 * 1000,
+      }),
+    ).toBeNull();
   });
 
   test("uses deterministic ids so launch retries target the same record", () => {
