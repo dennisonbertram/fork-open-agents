@@ -4,6 +4,7 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
   type DirectAnthropicConfig,
+  type DirectInferenceConfig,
   type GatewayModelId,
   gateway,
   type ProviderOptionsByProvider,
@@ -54,6 +55,7 @@ export type ManagedRuntimeAgentContext = {
 
 export interface AgentModelSelection {
   id: GatewayModelId;
+  directInference?: DirectInferenceConfig;
   directAnthropic?: DirectAnthropicConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
   attribution?: {
@@ -411,12 +413,15 @@ export const openAgent = new ToolLoopAgent({
       : undefined;
 
     const callModel = gateway(mainSelection.id, {
-      directAnthropic: mainSelection.directAnthropic,
+      directInference:
+        mainSelection.directInference ?? mainSelection.directAnthropic,
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
       ? gateway(subagentSelection.id, {
-          directAnthropic: subagentSelection.directAnthropic,
+          directInference:
+            subagentSelection.directInference ??
+            subagentSelection.directAnthropic,
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;

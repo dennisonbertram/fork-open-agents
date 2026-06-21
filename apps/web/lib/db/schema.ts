@@ -205,7 +205,7 @@ export const inferenceProfiles = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     provider: text("provider", {
-      enum: ["anthropic"],
+      enum: ["anthropic", "openai-compatible"],
     }).notNull(),
     baseUrl: text("base_url"),
     encryptedApiKey: text("encrypted_api_key").notNull(),

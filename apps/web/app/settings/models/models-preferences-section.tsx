@@ -72,27 +72,19 @@ function useModelPreferencesSectionState() {
   const { modelOptions, loading: modelOptionsLoading } = useModelOptions();
   const [isSaving, setIsSaving] = useState(false);
 
-  const catalogModelOptions = useMemo(
-    () => modelOptions.filter((option) => option.source !== "user"),
-    [modelOptions],
-  );
-
   const selectedDefaultModelId =
-    preferences?.defaultModelId ?? getDefaultModelOptionId(catalogModelOptions);
+    preferences?.defaultModelId ?? getDefaultModelOptionId(modelOptions);
   const selectedSubagentModelId = preferences?.defaultSubagentModelId ?? "auto";
 
   const defaultModelOptions = useMemo(
-    () => withMissingModelOption(catalogModelOptions, selectedDefaultModelId),
-    [catalogModelOptions, selectedDefaultModelId],
+    () => withMissingModelOption(modelOptions, selectedDefaultModelId),
+    [modelOptions, selectedDefaultModelId],
   );
 
   const subagentModelOptions = useMemo(
     () =>
-      withMissingModelOption(
-        catalogModelOptions,
-        preferences?.defaultSubagentModelId,
-      ),
-    [catalogModelOptions, preferences?.defaultSubagentModelId],
+      withMissingModelOption(modelOptions, preferences?.defaultSubagentModelId),
+    [modelOptions, preferences?.defaultSubagentModelId],
   );
 
   const enabledModelIds = useMemo(
@@ -174,7 +166,7 @@ function useModelPreferencesSectionState() {
   return {
     preferences,
     loading,
-    modelOptions: catalogModelOptions,
+    modelOptions,
     modelOptionsLoading,
     isSaving,
     selectedDefaultModelId,
@@ -414,6 +406,7 @@ export function ModelPreferencesSection() {
               label: option.label,
               description: option.description,
               isVariant: option.isVariant,
+              provider: option.provider,
             }))}
             placeholder="Select a model"
             searchPlaceholder="Search models..."
@@ -437,6 +430,7 @@ export function ModelPreferencesSection() {
                 label: option.label,
                 description: option.description,
                 isVariant: option.isVariant,
+                provider: option.provider,
               })),
             ]}
             placeholder="Select a model"
