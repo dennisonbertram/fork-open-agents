@@ -25,6 +25,15 @@ import {
 } from "../shared-writer-lease";
 import { SharedWriterLeaseConflictError } from "../shared-writer-lease-error";
 import {
+  captureSharedWorkspaceBaseline,
+  checkSharedWorkspaceDrift,
+  sharedWorkspaceBaselineSchema,
+  sharedWorkspaceDriftCheckSchema,
+  type SharedWorkspaceBaseline,
+  type SharedWorkspaceDriftCheck,
+} from "../shared-workspace-drift";
+import { SharedWorkspaceDriftError } from "../shared-workspace-drift-error";
+import {
   buildSubagentSummaryLines,
   SUBAGENT_REGISTRY,
   SUBAGENT_TYPES,
@@ -95,6 +104,8 @@ export const taskOutputSchema = z.object({
   sharedWriterLease: sharedWriterLeaseResultSchema.optional(),
   sharedWriterLeaseRelease: sharedWriterLeaseReleaseSchema.optional(),
   sharedWriterLeaseEvents: z.array(sharedWriterLeaseEventSchema).optional(),
+  sharedWorkspaceBaseline: sharedWorkspaceBaselineSchema.optional(),
+  sharedWorkspaceDrift: sharedWorkspaceDriftCheckSchema.optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -284,6 +295,8 @@ IMPORTANT:
     });
     let sharedWriterLease: SharedWriterLeaseResult | undefined;
     let sharedWriterLeaseRelease: SharedWriterLeaseRelease | undefined;
+    let sharedWorkspaceBaseline: SharedWorkspaceBaseline | undefined;
+    let sharedWorkspaceDrift: SharedWorkspaceDriftCheck | undefined;
     const releaseSharedWriterLease = (reasonCode: string) => {
       if (
         sharedWriterLease?.status !== "acquired" ||
@@ -314,6 +327,26 @@ IMPORTANT:
 
       if (sharedWriterLease.status === "denied") {
         throw new SharedWriterLeaseConflictError(sharedWriterLease);
+      }
+
+      sharedWorkspaceBaseline = await captureSharedWorkspaceBaseline({
+        workerId,
+        workspaceId: workspaceResolution.parentWorkspaceId,
+        workspacePath: sandboxContext.workingDirectory,
+      });
+      sharedWorkspaceDrift = await checkSharedWorkspaceDrift({
+        baseline: sharedWorkspaceBaseline,
+        workspacePath: sandboxContext.workingDirectory,
+      });
+
+      if (sharedWorkspaceDrift.status === "blocked") {
+        releaseSharedWriterLease("workspace_drift_detected");
+        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
+      }
+
+      if (sharedWorkspaceDrift.status === "unsupported") {
+        releaseSharedWriterLease("unsupported_workspace_baseline");
+        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
       }
     }
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
@@ -360,6 +393,8 @@ IMPORTANT:
       workspaceResolution,
       sharedWriterLease,
       sharedWriterLeaseEvents: sharedWriterLease?.events,
+      sharedWorkspaceBaseline,
+      sharedWorkspaceDrift,
     };
     try {
       const result = await subagent.stream({
@@ -390,6 +425,8 @@ IMPORTANT:
             workspaceResolution,
             sharedWriterLease,
             sharedWriterLeaseEvents: sharedWriterLease?.events,
+            sharedWorkspaceBaseline,
+            sharedWorkspaceDrift,
           };
         }
 
@@ -408,6 +445,8 @@ IMPORTANT:
             workspaceResolution,
             sharedWriterLease,
             sharedWriterLeaseEvents: sharedWriterLease?.events,
+            sharedWorkspaceBaseline,
+            sharedWorkspaceDrift,
           };
         }
       }
@@ -430,6 +469,8 @@ IMPORTANT:
           ...(sharedWriterLease?.events ?? []),
           ...(sharedWriterLeaseRelease?.events ?? []),
         ],
+        sharedWorkspaceBaseline,
+        sharedWorkspaceDrift,
       };
     } finally {
       releaseSharedWriterLease(
