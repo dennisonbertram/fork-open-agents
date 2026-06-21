@@ -24,6 +24,9 @@ import {
   type NewInferenceProfile,
 } from "./schema";
 
+export const INFERENCE_PROFILE_REENTER_KEY_MESSAGE =
+  "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.";
+
 function toSafeInferenceProfile(
   profile: InferenceProfile,
 ): SafeInferenceProfile {
@@ -71,7 +74,7 @@ export function decryptInferenceProfileApiKey(
 
       throw Object.assign(
         new Error(
-          `The saved API key for inference profile "${profile.name}" can't be decrypted in this environment — re-enter it in Settings → Models.`,
+          `The saved API key for inference profile "${profile.name}" can't be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.`,
         ),
         { name: "InferenceProfileResolutionError" },
       );
