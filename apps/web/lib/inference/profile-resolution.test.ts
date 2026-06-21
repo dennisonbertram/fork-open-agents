@@ -46,7 +46,7 @@ describe("resolveInferenceProfileModelSelection", () => {
     expect(selection).toMatchObject({
       id: "custom/reasoner",
       directInference: {
-        provider: "openai",
+        provider: "openai-compatible",
         modelId: "custom/reasoner",
         apiKey: "decrypted-key",
         baseURL: "https://llm.example.com/v1",

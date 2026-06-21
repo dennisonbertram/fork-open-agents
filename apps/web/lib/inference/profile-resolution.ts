@@ -3,6 +3,7 @@ import "server-only";
 import {
   toAnthropicDirectModelId,
   type AgentModelSelection,
+  type DirectInferenceConfig,
 } from "@open-agents/agent";
 import {
   decryptInferenceProfileApiKey,
@@ -57,15 +58,34 @@ export async function resolveInferenceProfileModelSelection(params: {
         : "Selected inference profile only supports models discovered from its endpoint. Test the profile or switch back to Vercel AI Gateway.",
     );
   }
+  const apiKey = decryptInferenceProfileApiKey(profile);
+  let directInference: DirectInferenceConfig;
+  if (profile.provider === "anthropic") {
+    directInference = {
+      provider: "anthropic",
+      modelId: directModelId,
+      apiKey,
+      ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+    };
+  } else {
+    const baseURL = profile.baseUrl;
+    if (!baseURL) {
+      throw new InferenceProfileResolutionError(
+        "Selected OpenAI-compatible inference profile is missing its base URL. Edit the profile or switch back to Vercel AI Gateway.",
+      );
+    }
+
+    directInference = {
+      provider: "openai-compatible",
+      modelId: directModelId,
+      apiKey,
+      baseURL,
+    };
+  }
 
   return {
     ...selection,
-    directInference: {
-      provider: profile.provider === "anthropic" ? "anthropic" : "openai",
-      modelId: directModelId,
-      apiKey: decryptInferenceProfileApiKey(profile),
-      ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
-    },
+    directInference,
     attribution: {
       inferenceRoute: "user",
       inferenceProfileId: profile.id,

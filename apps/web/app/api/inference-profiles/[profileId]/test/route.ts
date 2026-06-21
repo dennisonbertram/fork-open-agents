@@ -79,22 +79,32 @@ export async function POST(req: Request, context: RouteContext) {
         400,
       );
     }
+    let testModel: Parameters<typeof generateText>[0]["model"];
+    if (profile.provider === "anthropic") {
+      testModel = directAnthropicModel({
+        provider: "anthropic",
+        modelId: directModelId,
+        apiKey,
+        ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+      });
+    } else {
+      if (!profile.baseUrl) {
+        return jsonError(
+          "OpenAI-compatible inference profile test requires a base URL",
+          400,
+        );
+      }
+
+      testModel = directOpenAIModel({
+        provider: "openai-compatible",
+        modelId: directModelId,
+        apiKey,
+        baseURL: profile.baseUrl,
+      });
+    }
 
     await generateText({
-      model:
-        profile.provider === "anthropic"
-          ? directAnthropicModel({
-              provider: "anthropic",
-              modelId: directModelId,
-              apiKey,
-              ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
-            })
-          : directOpenAIModel({
-              provider: "openai",
-              modelId: directModelId,
-              apiKey,
-              ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
-            }),
+      model: testModel,
       prompt: 'Reply with only "OK".',
       maxOutputTokens: 16,
     });
