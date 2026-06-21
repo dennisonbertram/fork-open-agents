@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -10,6 +10,12 @@ let profile: {
   baseUrl: string | null;
   encryptedApiKey: string;
 } | null = null;
+let decryptError: Error | null = null;
+const recordResultCalls: Array<{
+  userId: string;
+  profileId: string;
+  result: unknown;
+}> = [];
 
 mock.module("@open-agents/agent", () => ({
   directAnthropicModel: (config: unknown) => config,
@@ -19,14 +25,34 @@ mock.module("@open-agents/agent", () => ({
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({
-  decryptInferenceProfileApiKey: () => "decrypted-key",
+  INFERENCE_PROFILE_REENTER_KEY_MESSAGE:
+    "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.",
+  decryptInferenceProfileApiKey: () => {
+    if (decryptError) {
+      throw decryptError;
+    }
+    return "decrypted-key";
+  },
   getInferenceProfileByIdForUser: async () => profile,
+  recordInferenceProfileTestResult: async (
+    userId: string,
+    profileId: string,
+    result: unknown,
+  ) => {
+    recordResultCalls.push({ userId, profileId, result });
+    return null;
+  },
 }));
 
 const { resolveInferenceProfileModelSelection } =
   await import("./profile-resolution");
 
 describe("resolveInferenceProfileModelSelection", () => {
+  beforeEach(() => {
+    decryptError = null;
+    recordResultCalls.length = 0;
+  });
+
   test("routes OpenAI-compatible profile models through direct inference config", async () => {
     profile = {
       id: "profile-openai",
@@ -83,5 +109,42 @@ describe("resolveInferenceProfileModelSelection", () => {
         apiKey: "decrypted-key",
       },
     });
+  });
+
+  test("marks profile failed when the stored API key cannot be decrypted", async () => {
+    profile = {
+      id: "profile-zai",
+      name: "ZAI (GLM)",
+      provider: "anthropic",
+      enabled: true,
+      baseUrl: "https://api.z.ai/api/anthropic/v1",
+      encryptedApiKey: "encrypted-key",
+    };
+    decryptError = Object.assign(
+      new Error(
+        'The saved API key for inference profile "ZAI (GLM)" can\'t be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.',
+      ),
+      { name: "InferenceProfileResolutionError" },
+    );
+
+    await expect(
+      resolveInferenceProfileModelSelection({
+        userId: "user-1",
+        inferenceProfileId: "profile-zai",
+        selection: { id: "glm-5.2" as never },
+      }),
+    ).rejects.toThrow("Re-enter the API key");
+
+    expect(recordResultCalls).toEqual([
+      {
+        userId: "user-1",
+        profileId: "profile-zai",
+        result: {
+          status: "failed",
+          message:
+            "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.",
+        },
+      },
+    ]);
   });
 });

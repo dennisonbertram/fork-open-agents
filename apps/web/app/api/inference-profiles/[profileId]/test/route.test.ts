@@ -32,9 +32,19 @@ let currentSession: { user: { id: string } } | null = {
 };
 let profile: TestProfile | null = null;
 let fetchedModels: Array<{ id: string; displayName: string }> = [];
+let decryptError: Error | null = null;
 
-mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () => currentSession,
+mock.module("@/app/api/sessions/_lib/session-context", () => ({
+  requireAuthenticatedUser: async () =>
+    currentSession?.user
+      ? { ok: true, userId: currentSession.user.id }
+      : {
+          ok: false,
+          response: Response.json(
+            { error: "Not authenticated" },
+            { status: 401 },
+          ),
+        },
 }));
 
 mock.module("ai", () => ({
@@ -58,7 +68,14 @@ mock.module("@open-agents/agent", () => ({
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({
-  decryptInferenceProfileApiKey: () => "decrypted-key",
+  INFERENCE_PROFILE_REENTER_KEY_MESSAGE:
+    "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.",
+  decryptInferenceProfileApiKey: () => {
+    if (decryptError) {
+      throw decryptError;
+    }
+    return "decrypted-key";
+  },
   getInferenceProfileByIdForUser: async (_userId: string, profileId: string) =>
     profile?.id === profileId ? profile : null,
   recordInferenceProfileTestResult: async (
@@ -101,6 +118,11 @@ mock.module("@/lib/inference/fetch-profile-models", () => ({
   },
 }));
 
+mock.module("@/lib/inference/model-routing", () => ({
+  toInferenceProfileTestMessage: (error: unknown) =>
+    error instanceof Error ? error.message : "Failed to test profile.",
+}));
+
 const routeModulePromise = import("./route");
 
 function routeContext(profileId = "profile-openai") {
@@ -134,6 +156,7 @@ describe("/api/inference-profiles/[profileId]/test", () => {
       { id: "gpt-4o-mini", displayName: "gpt-4o-mini" },
       { id: "custom/reasoner", displayName: "Custom Reasoner" },
     ];
+    decryptError = null;
     generateTextCalls.length = 0;
     setModelsCalls.length = 0;
     recordResultCalls.length = 0;
@@ -184,6 +207,41 @@ describe("/api/inference-profiles/[profileId]/test", () => {
     expect(body.result).toEqual({
       status: "passed",
       message: "Profile test passed. Discovered 2 models.",
+    });
+  });
+
+  test("records a failed profile result when the saved key cannot be decrypted", async () => {
+    const { POST } = await routeModulePromise;
+    decryptError = Object.assign(
+      new Error(
+        'The saved API key for inference profile "Local Gateway" can\'t be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.',
+      ),
+      { name: "InferenceProfileResolutionError" },
+    );
+
+    const response = await POST(postRequest(), routeContext());
+    const body = (await response.json()) as {
+      result: { status: string; message: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(fetchModelsCalls).toEqual([]);
+    expect(generateTextCalls).toEqual([]);
+    expect(recordResultCalls).toEqual([
+      {
+        userId: "user-1",
+        profileId: "profile-openai",
+        result: {
+          status: "failed",
+          message:
+            "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.",
+        },
+      },
+    ]);
+    expect(body.result).toEqual({
+      status: "failed",
+      message:
+        "This saved API key can no longer be decrypted in this environment. Re-enter the API key in Settings -> Models, save the profile, and try again.",
     });
   });
 });
