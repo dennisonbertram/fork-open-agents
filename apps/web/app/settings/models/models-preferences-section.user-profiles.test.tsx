@@ -95,6 +95,7 @@ mock.module("@/hooks/use-user-preferences", () => ({
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      modelSystemPrompts: {},
     },
     loading: false,
     error: null,
@@ -107,7 +108,7 @@ describe("ModelPreferencesSection user inference models", () => {
     capturedComboboxes.length = 0;
   });
 
-  test("passes multiple discovered user profile models to the default and subagent pickers", async () => {
+  test("passes multiple discovered user profile models to model pickers", async () => {
     const { ModelPreferencesSection } =
       await import("./models-preferences-section");
 
@@ -117,7 +118,7 @@ describe("ModelPreferencesSection user inference models", () => {
     expect(html).toContain("Local Pro");
     expect(html).not.toContain("missing profile");
 
-    expect(capturedComboboxes).toHaveLength(2);
+    expect(capturedComboboxes).toHaveLength(3);
     expect(capturedComboboxes[0]).toMatchObject({
       value: userModelId,
       items: [
@@ -133,6 +134,14 @@ describe("ModelPreferencesSection user inference models", () => {
         { id: userModelId, label: "Local Mini", provider: "user" },
         { id: secondUserModelId, label: "Local Pro", provider: "user" },
         { id: "openai/gpt-5.4", label: "GPT 5.4", provider: "openai" },
+      ],
+    });
+    expect(capturedComboboxes[2]).toMatchObject({
+      value: userModelId,
+      items: [
+        { id: userModelId, label: "Local Mini" },
+        { id: secondUserModelId, label: "Local Pro" },
+        { id: "openai/gpt-5.4", label: "GPT 5.4" },
       ],
     });
   });
