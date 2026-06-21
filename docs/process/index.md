@@ -41,6 +41,8 @@ Start here:
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Isolated Worker Live Proof](isolated-worker-live-proof.md) - operator smoke
   for delegated isolated workspace evidence.
+- [Delegated Worker Cleanup And Recovery](delegated-worker-cleanup-recovery.md)
+  - cleanup statuses, safe operator evidence, and manual fallback steps.
 - [Formatting Gate](formatting-gate.md) - formatter and diff hygiene before
   handoff.
 - [Workflow Catalog Conventions](workflow-catalog-conventions.md) - id naming,

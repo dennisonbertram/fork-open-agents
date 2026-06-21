@@ -538,9 +538,23 @@ export const managedRuntimeProfileRuns = pgTable(
 );
 
 export type DelegatedWorkerRunEvidenceRef = {
-  kind: "task_output" | "runtime" | "workspace" | "usage" | "completion_packet";
+  kind:
+    | "task_output"
+    | "runtime"
+    | "workspace"
+    | "usage"
+    | "completion_packet"
+    | "cleanup";
   ref: string;
 };
+
+export type DelegatedWorkerCleanupStatus =
+  | "not_required"
+  | "pending"
+  | "succeeded"
+  | "cleanup_required"
+  | "failed"
+  | "recovered";
 
 export type DelegatedWorkerCompletionPacket = {
   version: 1;
@@ -650,6 +664,25 @@ export const delegatedWorkerRuns = pgTable(
     completionPacketValidationReason: text(
       "completion_packet_validation_reason",
     ),
+    cleanupStatus: text("cleanup_status", {
+      enum: [
+        "not_required",
+        "pending",
+        "succeeded",
+        "cleanup_required",
+        "failed",
+        "recovered",
+      ],
+    })
+      .notNull()
+      .default("not_required"),
+    cleanupReasonCode: text("cleanup_reason_code"),
+    cleanupReason: text("cleanup_reason"),
+    cleanupResourceId: text("cleanup_resource_id"),
+    cleanupAttemptCount: integer("cleanup_attempt_count").notNull().default(0),
+    cleanupAttemptedAt: timestamp("cleanup_attempted_at"),
+    cleanupCompletedAt: timestamp("cleanup_completed_at"),
+    recoveredAt: timestamp("recovered_at"),
     startedAt: timestamp("started_at"),
     finishedAt: timestamp("finished_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
