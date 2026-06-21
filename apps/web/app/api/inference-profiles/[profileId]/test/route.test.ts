@@ -160,7 +160,7 @@ describe("/api/inference-profiles/[profileId]/test", () => {
     expect(generateTextCalls[0]?.model).toEqual({
       kind: "openai-model",
       config: {
-        provider: "openai",
+        provider: "openai-compatible",
         modelId: "gpt-4o-mini",
         apiKey: "decrypted-key",
         baseURL: "https://llm.example.com/v1",
