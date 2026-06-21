@@ -22,8 +22,11 @@ function getProfileErrorMessage(error: unknown): string {
   if (/unique|duplicate/i.test(message)) {
     return "An inference profile with that name already exists.";
   }
+  if (/OpenAI-compatible profiles require a base URL/i.test(message)) {
+    return "OpenAI-compatible profiles require a base URL.";
+  }
   if (/base url/i.test(message) || /invalid url/i.test(message)) {
-    return "Base URL must be a valid Anthropic-compatible HTTP URL.";
+    return "Base URL must be a valid HTTP URL.";
   }
   return "Failed to save inference profile.";
 }
@@ -64,6 +67,7 @@ export async function POST(req: Request) {
     // Populate the endpoint's real model list up front (best-effort) so the
     // picker shows the provider's own models rather than the Anthropic catalog.
     const fetchedModels = await fetchInferenceProfileModels({
+      provider: profile.provider,
       baseUrl: profile.baseUrl,
       apiKey: parsed.data.apiKey,
     });

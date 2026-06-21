@@ -6,9 +6,16 @@ import {
 
 mock.module("server-only", () => ({}));
 
+const scheduledAfterCallbacks: Promise<void>[] = [];
+
+async function flushScheduledAfterCallbacks() {
+  const callbacks = scheduledAfterCallbacks.splice(0);
+  await Promise.allSettled(callbacks);
+}
+
 mock.module("next/server", () => ({
   after: (callback: () => Promise<void>) => {
-    void callback();
+    scheduledAfterCallbacks.push(callback());
   },
 }));
 
@@ -276,7 +283,11 @@ mock.module("@open-agents/sandbox", () => ({
 const routeModulePromise = import("./route");
 
 describe("/api/sandbox lifecycle kicks", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    unblockGlobalSkillInstall?.();
+    unblockTokenRevoke?.();
+    await flushScheduledAfterCallbacks();
+
     kickCalls.length = 0;
     updateCalls.length = 0;
     connectConfigs.length = 0;
@@ -457,22 +468,24 @@ describe("/api/sandbox lifecycle kicks", () => {
       }),
     );
 
-    const result = await Promise.race([
-      postPromise.then(() => "response"),
-      new Promise<"blocked">((resolve) => {
-        setTimeout(() => resolve("blocked"), 25);
-      }),
-    ]);
+    try {
+      const response = await Promise.race([
+        postPromise,
+        new Promise<null>((resolve) => {
+          setTimeout(() => resolve(null), 1000);
+        }),
+      ]);
 
-    expect(result).toBe("response");
-    const response = await postPromise;
-    expect(response.ok).toBe(true);
-    expect(globalSkillInstallCalls).toEqual([
-      { refs: [{ source: "vercel/ai", skillName: "ai-sdk" }] },
-    ]);
-
-    unblockGlobalSkillInstall?.();
-    unblockTokenRevoke?.();
+      expect(response).not.toBeNull();
+      expect(response?.ok).toBe(true);
+      expect(globalSkillInstallCalls).toEqual([
+        { refs: [{ source: "vercel/ai", skillName: "ai-sdk" }] },
+      ]);
+    } finally {
+      unblockGlobalSkillInstall?.();
+      unblockTokenRevoke?.();
+      await flushScheduledAfterCallbacks();
+    }
   });
 
   test("rejects repo URLs that only contain github.com in the path", async () => {

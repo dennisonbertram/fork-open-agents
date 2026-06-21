@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { InferenceProfileProvider } from "@/lib/inference/types";
+
 export function normalizeAnthropicBaseUrl(value: string | null): string | null {
   if (!value) {
     return null;
@@ -22,6 +24,35 @@ export function normalizeAnthropicBaseUrl(value: string | null): string | null {
   return url.toString().replace(/\/+$/, "");
 }
 
+export function normalizeOpenAICompatibleBaseUrl(value: string | null): string {
+  if (!value) {
+    throw new Error("OpenAI-compatible profiles require a base URL.");
+  }
+
+  const url = new URL(value.trim());
+  const trimmedPath = url.pathname.replace(/\/+$/, "");
+  const segments = trimmedPath.split("/").filter(Boolean);
+  const lastSegment = segments.at(-1);
+
+  url.pathname =
+    lastSegment && /^v\d+$/i.test(lastSegment)
+      ? trimmedPath
+      : `${trimmedPath}/v1`;
+
+  return url.toString().replace(/\/+$/, "");
+}
+
+export function normalizeInferenceProfileBaseUrl(
+  provider: InferenceProfileProvider,
+  value: string | null,
+): string | null {
+  if (provider === "anthropic") {
+    return normalizeAnthropicBaseUrl(value);
+  }
+
+  return normalizeOpenAICompatibleBaseUrl(value);
+}
+
 export function redactInferenceSecret(
   message: string,
   secret?: string,
@@ -41,6 +72,7 @@ export function redactInferenceSecret(
 export function toInferenceProfileTestMessage(
   error: unknown,
   secret?: string,
+  provider: InferenceProfileProvider = "anthropic",
 ): string {
   const rawMessage = error instanceof Error ? error.message : String(error);
   const message = redactInferenceSecret(rawMessage, secret);
@@ -64,7 +96,9 @@ export function toInferenceProfileTestMessage(
     /unauthorized/i.test(haystack) ||
     /invalid api key/i.test(haystack)
   ) {
-    return "Anthropic credentials were rejected. Check the API key and try again.";
+    return provider === "anthropic"
+      ? "Anthropic credentials were rejected. Check the API key and try again."
+      : "OpenAI-compatible credentials were rejected. Check the API key and try again.";
   }
 
   if (
@@ -82,14 +116,21 @@ export function toInferenceProfileTestMessage(
     /not[\s_]?found/i.test(haystack) ||
     /invalid json response/i.test(message)
   ) {
-    return "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.";
+    return provider === "anthropic"
+      ? "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint."
+      : "OpenAI-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.";
   }
 
   if (/fetch failed|network|ENOTFOUND|ECONNREFUSED/i.test(haystack)) {
-    return "Could not reach the Anthropic-compatible endpoint. Check the base URL and network access.";
+    return provider === "anthropic"
+      ? "Could not reach the Anthropic-compatible endpoint. Check the base URL and network access."
+      : "Could not reach the OpenAI-compatible endpoint. Check the base URL and network access.";
   }
 
   return message.length > 240
     ? `${message.slice(0, 237)}...`
-    : message || "Anthropic profile test failed.";
+    : message ||
+        (provider === "anthropic"
+          ? "Anthropic profile test failed."
+          : "OpenAI-compatible profile test failed.");
 }

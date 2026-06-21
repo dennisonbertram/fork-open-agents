@@ -2,6 +2,8 @@ import { describe, expect, mock, test } from "bun:test";
 import type { ProviderOptionsByProvider } from "./models";
 
 const createGatewayCalls: Array<Record<string, unknown>> = [];
+const createAnthropicCalls: Array<Record<string, unknown>> = [];
+const createOpenAICalls: Array<Record<string, unknown>> = [];
 
 mock.module("ai", () => {
   const gateway = (modelId: string) => ({ modelId });
@@ -19,6 +21,20 @@ mock.module("ai", () => {
   };
 });
 
+mock.module("@ai-sdk/anthropic", () => ({
+  createAnthropic: (settings?: Record<string, unknown>) => {
+    createAnthropicCalls.push(settings ?? {});
+    return (modelId: string) => ({ provider: "anthropic", modelId });
+  },
+}));
+
+mock.module("@ai-sdk/openai", () => ({
+  createOpenAI: (settings?: Record<string, unknown>) => {
+    createOpenAICalls.push(settings ?? {});
+    return (modelId: string) => ({ provider: "openai", modelId });
+  },
+}));
+
 mock.module("@ai-sdk/devtools", () => ({
   devToolsMiddleware: () => ({ kind: "devtools-middleware" }),
 }));
@@ -27,6 +43,8 @@ const {
   gateway,
   getProviderOptionsForModel,
   mergeProviderOptions,
+  directAnthropicModel,
+  directOpenAIModel,
   shouldApplyOpenAIReasoningDefaults,
   toAnthropicDirectModelId,
 } = await import("./models");
@@ -338,6 +356,60 @@ describe("direct Anthropic model ids", () => {
   });
 });
 
+describe("direct provider models", () => {
+  test("builds an Anthropic direct model with attribution headers", () => {
+    createAnthropicCalls.length = 0;
+
+    const model = directAnthropicModel({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+      apiKey: "anthropic-key",
+      baseURL: "https://anthropic.example/v1",
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "anthropic",
+      modelId: "claude-sonnet-4-6",
+    });
+    expect(createAnthropicCalls).toEqual([
+      {
+        apiKey: "anthropic-key",
+        baseURL: "https://anthropic.example/v1",
+        headers: {
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+  });
+
+  test("builds an OpenAI direct model with attribution headers", () => {
+    createOpenAICalls.length = 0;
+
+    const model = directOpenAIModel({
+      provider: "openai",
+      modelId: "gpt-4.1",
+      apiKey: "openai-key",
+      baseURL: "https://openai.example/v1",
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "openai",
+      modelId: "gpt-4.1",
+    });
+    expect(createOpenAICalls).toEqual([
+      {
+        apiKey: "openai-key",
+        baseURL: "https://openai.example/v1",
+        headers: {
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+  });
+});
+
 describe("gateway attribution headers", () => {
   test("sends default attribution headers", () => {
     createGatewayCalls.length = 0;
@@ -386,5 +458,35 @@ describe("gateway attribution headers", () => {
         },
       },
     ]);
+  });
+
+  test("routes through direct OpenAI-compatible providers", () => {
+    createOpenAICalls.length = 0;
+    createGatewayCalls.length = 0;
+
+    const model = gateway("openai/gpt-4o" as never, {
+      directInference: {
+        provider: "openai",
+        modelId: "gpt-4o-mini",
+        apiKey: "sk-openai",
+        baseURL: "https://openai.example/v1",
+      },
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "openai",
+      modelId: "gpt-4o-mini",
+    });
+    expect(createOpenAICalls).toEqual([
+      {
+        apiKey: "sk-openai",
+        baseURL: "https://openai.example/v1",
+        headers: {
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+    expect(createGatewayCalls).toEqual([]);
   });
 });

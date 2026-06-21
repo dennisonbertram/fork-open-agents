@@ -1,5 +1,6 @@
 import {
   directAnthropicModel,
+  directOpenAIModel,
   toAnthropicDirectModelId,
 } from "@open-agents/agent";
 import { generateText } from "ai";
@@ -22,6 +23,7 @@ type TestProfileRequest = {
 };
 
 const DEFAULT_TEST_MODEL_ID = "anthropic/claude-haiku-4.5";
+const DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID = "gpt-4o-mini";
 
 function jsonError(error: string, status: number) {
   return Response.json({ error }, { status });
@@ -49,35 +51,54 @@ export async function POST(req: Request, context: RouteContext) {
     body = {};
   }
 
-  const catalogModelId =
-    typeof body.modelId === "string" && body.modelId.trim().length > 0
-      ? body.modelId.trim()
-      : DEFAULT_TEST_MODEL_ID;
-  const directModelId = toAnthropicDirectModelId(catalogModelId);
-  if (!directModelId) {
-    return jsonError("Inference profile test requires an Anthropic model", 400);
-  }
-
   const apiKey = decryptInferenceProfileApiKey(profile);
 
   try {
+    const fetchedModels = await fetchInferenceProfileModels({
+      provider: profile.provider,
+      baseUrl: profile.baseUrl,
+      apiKey,
+    });
+    const modelId =
+      typeof body.modelId === "string" && body.modelId.trim().length > 0
+        ? body.modelId.trim()
+        : (fetchedModels[0]?.id ??
+          (profile.provider === "anthropic"
+            ? DEFAULT_TEST_MODEL_ID
+            : DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID));
+    const directModelId =
+      profile.provider === "anthropic" && modelId.startsWith("anthropic/")
+        ? toAnthropicDirectModelId(modelId)
+        : modelId;
+    if (
+      !directModelId ||
+      (profile.provider === "anthropic" && directModelId.includes("/"))
+    ) {
+      return jsonError(
+        "Inference profile test requires an Anthropic model",
+        400,
+      );
+    }
+
     await generateText({
-      model: directAnthropicModel({
-        provider: "anthropic",
-        modelId: directModelId,
-        apiKey,
-        ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
-      }),
+      model:
+        profile.provider === "anthropic"
+          ? directAnthropicModel({
+              provider: "anthropic",
+              modelId: directModelId,
+              apiKey,
+              ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+            })
+          : directOpenAIModel({
+              provider: "openai",
+              modelId: directModelId,
+              apiKey,
+              ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+            }),
       prompt: 'Reply with only "OK".',
       maxOutputTokens: 16,
     });
 
-    // A passing test means the endpoint + key work, so refresh the model list
-    // the endpoint actually serves (best-effort; keeps prior models on failure).
-    const fetchedModels = await fetchInferenceProfileModels({
-      baseUrl: profile.baseUrl,
-      apiKey,
-    });
     if (fetchedModels.length > 0) {
       await setInferenceProfileModels(
         authResult.userId,
@@ -109,7 +130,11 @@ export async function POST(req: Request, context: RouteContext) {
       },
     });
   } catch (error) {
-    const message = toInferenceProfileTestMessage(error, apiKey);
+    const message = toInferenceProfileTestMessage(
+      error,
+      apiKey,
+      profile.provider,
+    );
     const updatedProfile = await recordInferenceProfileTestResult(
       authResult.userId,
       profile.id,

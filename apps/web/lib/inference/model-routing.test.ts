@@ -4,6 +4,8 @@ mock.module("server-only", () => ({}));
 
 const {
   normalizeAnthropicBaseUrl,
+  normalizeInferenceProfileBaseUrl,
+  normalizeOpenAICompatibleBaseUrl,
   redactInferenceSecret,
   toInferenceProfileTestMessage,
 } = await import("./model-routing");
@@ -36,6 +38,25 @@ describe("inference model routing", () => {
     );
   });
 
+  test("normalizes OpenAI-compatible URLs to a versioned API root", () => {
+    expect(normalizeOpenAICompatibleBaseUrl("https://llm.example.com")).toBe(
+      "https://llm.example.com/v1",
+    );
+    expect(
+      normalizeOpenAICompatibleBaseUrl("https://llm.example.com/api/v1/"),
+    ).toBe("https://llm.example.com/api/v1");
+    expect(() => normalizeOpenAICompatibleBaseUrl(null)).toThrow(
+      "OpenAI-compatible profiles require a base URL.",
+    );
+  });
+
+  test("normalizes base URLs by provider", () => {
+    expect(normalizeInferenceProfileBaseUrl("anthropic", null)).toBeNull();
+    expect(
+      normalizeInferenceProfileBaseUrl("openai-compatible", "https://oai.test"),
+    ).toBe("https://oai.test/v1");
+  });
+
   test("redacts provider keys from error text", () => {
     const secret = "provider-secret-1234567890abcdef";
 
@@ -55,6 +76,15 @@ describe("inference model routing", () => {
     );
     expect(toInferenceProfileTestMessage(new Error("404 not found"))).toBe(
       "Anthropic-compatible endpoint was not found. Check that the base URL points to a /v1 API endpoint.",
+    );
+    expect(
+      toInferenceProfileTestMessage(
+        new Error("401 unauthorized"),
+        undefined,
+        "openai-compatible",
+      ),
+    ).toBe(
+      "OpenAI-compatible credentials were rejected. Check the API key and try again.",
     );
   });
 
