@@ -8,6 +8,8 @@ import {
 import {
   decryptInferenceProfileApiKey,
   getInferenceProfileByIdForUser,
+  INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
+  recordInferenceProfileTestResult,
 } from "@/lib/db/inference-profiles";
 
 export class InferenceProfileResolutionError extends Error {
@@ -58,7 +60,22 @@ export async function resolveInferenceProfileModelSelection(params: {
         : "Selected inference profile only supports models discovered from its endpoint. Test the profile or switch back to Vercel AI Gateway.",
     );
   }
-  const apiKey = decryptInferenceProfileApiKey(profile);
+  let apiKey: string;
+  try {
+    apiKey = decryptInferenceProfileApiKey(profile);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "InferenceProfileResolutionError"
+    ) {
+      await recordInferenceProfileTestResult(userId, profile.id, {
+        status: "failed",
+        message: INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
+      });
+    }
+
+    throw error;
+  }
   let directInference: DirectInferenceConfig;
   if (profile.provider === "anthropic") {
     directInference = {
