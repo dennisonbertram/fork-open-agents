@@ -2,6 +2,7 @@ import type { SandboxState } from "@open-agents/sandbox";
 import { stepCountIs, ToolLoopAgent, type ToolSet } from "ai";
 import { z } from "zod";
 import { addCacheControl } from "./context-management";
+import type { IsolatedWorkspaceProvisioner } from "./isolated-worker-workspace";
 import {
   type DirectAnthropicConfig,
   type DirectInferenceConfig,
@@ -73,6 +74,7 @@ export interface AgentSandboxContext {
   workingDirectory: string;
   currentBranch?: string;
   environmentDetails?: string;
+  isolatedWorkspaceProvisioner?: IsolatedWorkspaceProvisioner;
 }
 
 const callOptionsSchema = z.object({
