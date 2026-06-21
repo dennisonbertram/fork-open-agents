@@ -3,7 +3,7 @@ import type { ProviderOptionsByProvider } from "./models";
 
 const createGatewayCalls: Array<Record<string, unknown>> = [];
 const createAnthropicCalls: Array<Record<string, unknown>> = [];
-const createOpenAICalls: Array<Record<string, unknown>> = [];
+const createOpenAICompatibleCalls: Array<Record<string, unknown>> = [];
 
 mock.module("ai", () => {
   const gateway = (modelId: string) => ({ modelId });
@@ -28,10 +28,15 @@ mock.module("@ai-sdk/anthropic", () => ({
   },
 }));
 
-mock.module("@ai-sdk/openai", () => ({
-  createOpenAI: (settings?: Record<string, unknown>) => {
-    createOpenAICalls.push(settings ?? {});
-    return (modelId: string) => ({ provider: "openai", modelId });
+mock.module("@ai-sdk/openai-compatible", () => ({
+  createOpenAICompatible: (settings?: Record<string, unknown>) => {
+    createOpenAICompatibleCalls.push(settings ?? {});
+    return {
+      chatModel: (modelId: string) => ({
+        provider: "openai-compatible",
+        modelId,
+      }),
+    };
   },
 }));
 
@@ -384,21 +389,22 @@ describe("direct provider models", () => {
   });
 
   test("builds an OpenAI direct model with attribution headers", () => {
-    createOpenAICalls.length = 0;
+    createOpenAICompatibleCalls.length = 0;
 
     const model = directOpenAIModel({
-      provider: "openai",
+      provider: "openai-compatible",
       modelId: "gpt-4.1",
       apiKey: "openai-key",
       baseURL: "https://openai.example/v1",
     });
 
     expect(model as unknown).toEqual({
-      provider: "openai",
+      provider: "openai-compatible",
       modelId: "gpt-4.1",
     });
-    expect(createOpenAICalls).toEqual([
+    expect(createOpenAICompatibleCalls).toEqual([
       {
+        name: "openai-compatible",
         apiKey: "openai-key",
         baseURL: "https://openai.example/v1",
         headers: {
@@ -461,12 +467,12 @@ describe("gateway attribution headers", () => {
   });
 
   test("routes through direct OpenAI-compatible providers", () => {
-    createOpenAICalls.length = 0;
+    createOpenAICompatibleCalls.length = 0;
     createGatewayCalls.length = 0;
 
     const model = gateway("openai/gpt-4o" as never, {
       directInference: {
-        provider: "openai",
+        provider: "openai-compatible",
         modelId: "gpt-4o-mini",
         apiKey: "sk-openai",
         baseURL: "https://openai.example/v1",
@@ -474,11 +480,12 @@ describe("gateway attribution headers", () => {
     });
 
     expect(model as unknown).toEqual({
-      provider: "openai",
+      provider: "openai-compatible",
       modelId: "gpt-4o-mini",
     });
-    expect(createOpenAICalls).toEqual([
+    expect(createOpenAICompatibleCalls).toEqual([
       {
+        name: "openai-compatible",
         apiKey: "sk-openai",
         baseURL: "https://openai.example/v1",
         headers: {
