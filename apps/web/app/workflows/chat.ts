@@ -56,6 +56,7 @@ import { sanitizeInterruptedToolCalls } from "@/lib/chat/sanitize-interrupted-to
 import { getAllVariants } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
+import { getModelSystemPromptForSelection } from "@/lib/model-system-prompts";
 import type { InferenceRoute } from "@/lib/inference/types";
 import type { RecordSessionEventInput } from "@/lib/observability/events";
 import type { Session as AuthSession } from "@/lib/session/types";
@@ -286,6 +287,15 @@ async function resolveChatModelRuntime(params: {
     inferenceProvider = profile.provider;
   }
 
+  const modelSystemPrompt = getModelSystemPromptForSelection(
+    preferences?.modelSystemPrompts ?? {},
+    {
+      selectedModelId: selectedModelId ?? mainModelSelection.id,
+      resolvedModelId: mainModelSelection.id,
+      inferenceProfileId,
+    },
+  );
+
   // ── Phase 4: resolve per-role subagent roster ────────────────────────────────
   // Mirror the skills plumbing pattern: resolve in the web layer, thread through
   // agentOptions → experimental_context → task tool.
@@ -377,6 +387,7 @@ async function resolveChatModelRuntime(params: {
       ...(subagentModelSelection
         ? { subagentModel: subagentModelSelection }
         : {}),
+      ...(modelSystemPrompt ? { modelSystemPrompt } : {}),
       customInstructions: assistantFileLinkPrompt,
       ...(subagentRoster ? { subagentRoster } : {}),
     },

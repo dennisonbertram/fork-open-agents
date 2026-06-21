@@ -21,6 +21,7 @@ const preferencesState = {
   globalSkillRefs: [] as Array<{ source: string; skillName: string }>,
   modelVariants: [] as Array<Record<string, unknown>>,
   enabledModelIds: [] as string[],
+  modelSystemPrompts: {} as Record<string, string>,
 };
 
 const updateCalls: Array<Record<string, unknown>> = [];
@@ -61,6 +62,7 @@ describe("/api/settings/preferences", () => {
     preferencesState.defaultManagedRuntimeProfileId = "web-bun-agent-browser";
     preferencesState.modelVariants = [];
     preferencesState.enabledModelIds = [];
+    preferencesState.modelSystemPrompts = {};
     updateCalls.length = 0;
   });
 
@@ -91,6 +93,7 @@ describe("/api/settings/preferences", () => {
       "web-bun-agent-browser",
     );
     expect(body.preferences.globalSkillRefs).toEqual([]);
+    expect(body.preferences.modelSystemPrompts).toEqual({});
   });
 
   test("GET returns Opus defaults without hosted-demo filtering", async () => {
@@ -308,6 +311,46 @@ describe("/api/settings/preferences", () => {
     expect(body.preferences.globalSkillRefs).toEqual([
       { source: "vercel/ai", skillName: "ai-sdk" },
     ]);
+  });
+
+  test("PATCH rejects invalid modelSystemPrompts values", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        modelSystemPrompts: { "openai/gpt-5.4": 123 },
+      }),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid modelSystemPrompts value");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  test("PATCH updates modelSystemPrompts when valid map is provided", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        modelSystemPrompts: {
+          " openai/gpt-5.4 ": "  Be direct.  ",
+          "anthropic/claude-opus-4.6": "   ",
+        },
+      }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({
+      modelSystemPrompts: { "openai/gpt-5.4": "Be direct." },
+    });
+    expect(body.preferences.modelSystemPrompts).toEqual({
+      "openai/gpt-5.4": "Be direct.",
+    });
   });
 
   test("PATCH returns 400 for invalid JSON", async () => {

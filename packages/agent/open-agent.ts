@@ -80,6 +80,7 @@ const callOptionsSchema = z.object({
   model: z.custom<OpenAgentModelInput>().optional(),
   subagentModel: z.custom<OpenAgentModelInput>().optional(),
   customInstructions: z.string().optional(),
+  modelSystemPrompt: z.string().optional(),
   skills: z.custom<SkillMetadata[]>().optional(),
   runtimeMode: z.enum(OPEN_AGENT_RUNTIME_MODES).optional(),
   /** When true, the session has no sandbox VM. Tool policy will exclude all sandbox-dependent tools. */
@@ -426,6 +427,7 @@ export const openAgent = new ToolLoopAgent({
         })
       : undefined;
     const customInstructions = options.customInstructions;
+    const modelSystemPrompt = options.modelSystemPrompt;
     const sandbox = options.sandbox;
     const skills = options.skills ?? [];
     const runtimeMode = options.runtimeMode ?? "classic";
@@ -450,6 +452,7 @@ export const openAgent = new ToolLoopAgent({
       cwd: sandbox.workingDirectory,
       currentBranch: sandbox.currentBranch,
       customInstructions,
+      modelSystemPrompt,
       environmentDetails: sandbox.environmentDetails,
       skills,
       modelId: mainSelection.id,

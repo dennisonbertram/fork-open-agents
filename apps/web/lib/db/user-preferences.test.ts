@@ -26,6 +26,7 @@ describe("toUserPreferencesData", () => {
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
+      modelSystemPrompts: {},
       composioAgentDefaults: defaultComposioAgentDefaults,
     });
   });
@@ -199,7 +200,37 @@ describe("toUserPreferencesData", () => {
         },
       ],
       enabledModelIds: [],
+      modelSystemPrompts: {},
       composioAgentDefaults: defaultComposioAgentDefaults,
+    });
+  });
+
+  test("normalizes modelSystemPrompts from stored json", async () => {
+    const { toUserPreferencesData } = await userPreferencesModulePromise;
+
+    const result = toUserPreferencesData({
+      defaultModelId: "openai/gpt-5",
+      defaultSubagentModelId: null,
+      defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      defaultDiffMode: "split",
+      autoCommitPush: false,
+      autoCreatePr: false,
+      alertsEnabled: true,
+      alertSoundEnabled: true,
+      publicUsageEnabled: false,
+      globalSkillRefs: [],
+      modelVariants: [],
+      enabledModelIds: [],
+      modelSystemPrompts: {
+        " openai/gpt-5.4 ": "  Be concise. ",
+        "anthropic/claude-opus-4.6": "   ",
+        "openai/gpt-5": 42,
+      } as never,
+    });
+
+    expect(result.modelSystemPrompts).toEqual({
+      "openai/gpt-5.4": "Be concise.",
     });
   });
 
