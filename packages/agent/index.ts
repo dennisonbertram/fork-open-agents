@@ -58,6 +58,15 @@ export {
   delegatedWorkspacePolicySchema,
 } from "./delegated-workspace";
 export type {
+  DelegatedWorkerLifecycleEvent,
+  DelegatedWorkerLifecycleStatus,
+} from "./delegated-worker-lifecycle";
+export {
+  buildDelegatedWorkerLifecycleEvent,
+  delegatedWorkerLifecycleEventSchema,
+  delegatedWorkerLifecycleStatusSchema,
+} from "./delegated-worker-lifecycle";
+export type {
   DelegatedWorkspaceRejectionCode,
   DelegatedWorkspaceResolverDecision,
   DelegatedWorkspaceResolverInput,

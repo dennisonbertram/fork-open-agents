@@ -12,6 +12,12 @@ import {
   type DelegatedWorkspaceLaunchPolicy,
 } from "../delegated-workspace";
 import {
+  buildDelegatedWorkerLifecycleEvent,
+  delegatedWorkerLifecycleEventSchema,
+  type DelegatedWorkerLifecycleEvent,
+  type DelegatedWorkerLifecycleStatus,
+} from "../delegated-worker-lifecycle";
+import {
   delegatedWorkspaceResolverDecisionSchema,
   resolveDelegatedWorkspacePolicy,
 } from "../delegated-workspace-resolver";
@@ -106,6 +112,10 @@ export const taskOutputSchema = z.object({
   sharedWriterLeaseEvents: z.array(sharedWriterLeaseEventSchema).optional(),
   sharedWorkspaceBaseline: sharedWorkspaceBaselineSchema.optional(),
   sharedWorkspaceDrift: sharedWorkspaceDriftCheckSchema.optional(),
+  delegatedWorkerLifecycle: delegatedWorkerLifecycleEventSchema.optional(),
+  delegatedWorkerLifecycleEvents: z
+    .array(delegatedWorkerLifecycleEventSchema)
+    .optional(),
   final: z.custom<ModelMessage[]>().optional(),
   usage: z.custom<LanguageModelUsage>().optional(),
 });
@@ -297,58 +307,8 @@ IMPORTANT:
     let sharedWriterLeaseRelease: SharedWriterLeaseRelease | undefined;
     let sharedWorkspaceBaseline: SharedWorkspaceBaseline | undefined;
     let sharedWorkspaceDrift: SharedWorkspaceDriftCheck | undefined;
-    const releaseSharedWriterLease = (reasonCode: string) => {
-      if (
-        sharedWriterLease?.status !== "acquired" ||
-        sharedWriterLeaseRelease
-      ) {
-        return;
-      }
-
-      sharedWriterLeaseRelease = defaultSharedWriterLeaseManager.release({
-        sessionId: sharedWriterLease.sessionId,
-        workspaceId: sharedWriterLease.workspaceId,
-        workerId: sharedWriterLease.workerId,
-        reasonCode,
-      });
-    };
+    const delegatedWorkerLifecycleEvents: DelegatedWorkerLifecycleEvent[] = [];
     const workerId = toolCallId ?? `${subagentType}-${startedAt}`;
-    const shouldAcquireSharedWriterLease =
-      workspaceResolution.status === "accepted" &&
-      workspaceResolution.decision === "shared" &&
-      isWriteCapableSubagent(subagentType);
-
-    if (shouldAcquireSharedWriterLease) {
-      sharedWriterLease = defaultSharedWriterLeaseManager.acquire({
-        sessionId: getSessionId(experimental_context),
-        workspaceId: workspaceResolution.parentWorkspaceId,
-        workerId,
-      });
-
-      if (sharedWriterLease.status === "denied") {
-        throw new SharedWriterLeaseConflictError(sharedWriterLease);
-      }
-
-      sharedWorkspaceBaseline = await captureSharedWorkspaceBaseline({
-        workerId,
-        workspaceId: workspaceResolution.parentWorkspaceId,
-        workspacePath: sandboxContext.workingDirectory,
-      });
-      sharedWorkspaceDrift = await checkSharedWorkspaceDrift({
-        baseline: sharedWorkspaceBaseline,
-        workspacePath: sandboxContext.workingDirectory,
-      });
-
-      if (sharedWorkspaceDrift.status === "blocked") {
-        releaseSharedWriterLease("workspace_drift_detected");
-        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
-      }
-
-      if (sharedWorkspaceDrift.status === "unsupported") {
-        releaseSharedWriterLease("unsupported_workspace_baseline");
-        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
-      }
-    }
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
       experimentalContext: experimental_context,
       environmentDetails: sandboxContext.sandbox.environmentDetails,
@@ -376,11 +336,153 @@ IMPORTANT:
     const model = rosterOverrides.model as typeof defaultModel;
     const effectiveInstructions = rosterOverrides.instructions;
     const subagentModelId = typeof model === "string" ? model : model.modelId;
+    const appendLifecycleEvent = (
+      status: DelegatedWorkerLifecycleStatus,
+      reasonCode: string,
+    ) => {
+      const event = buildDelegatedWorkerLifecycleEvent({
+        workerId,
+        workerType: subagentType,
+        workerLabel: subagentType,
+        parentToolCallId: toolCallId,
+        status,
+        reasonCode,
+        workspaceMode:
+          workspaceResolution.status === "accepted"
+            ? workspaceResolution.decision
+            : workspacePolicyOutput.executionMode,
+        requestedWorkspacePolicy: workspacePolicyOutput.requestedPolicy,
+        effectiveWorkspacePolicy: workspacePolicyOutput.effectivePolicy,
+        workspaceId:
+          workspaceResolution.status === "accepted"
+            ? workspaceResolution.parentWorkspaceId
+            : undefined,
+        modelId: subagentModelId,
+        startedAt,
+      });
+      delegatedWorkerLifecycleEvents.push(event);
+      return event;
+    };
+    const releaseSharedWriterLease = (reasonCode: string) => {
+      if (
+        sharedWriterLease?.status !== "acquired" ||
+        sharedWriterLeaseRelease
+      ) {
+        return;
+      }
+
+      sharedWriterLeaseRelease = defaultSharedWriterLeaseManager.release({
+        sessionId: sharedWriterLease.sessionId,
+        workspaceId: sharedWriterLease.workspaceId,
+        workerId: sharedWriterLease.workerId,
+        reasonCode,
+      });
+    };
+    const shouldAcquireSharedWriterLease =
+      workspaceResolution.status === "accepted" &&
+      workspaceResolution.decision === "shared" &&
+      isWriteCapableSubagent(subagentType);
+
+    if (shouldAcquireSharedWriterLease) {
+      sharedWriterLease = defaultSharedWriterLeaseManager.acquire({
+        sessionId: getSessionId(experimental_context),
+        workspaceId: workspaceResolution.parentWorkspaceId,
+        workerId,
+      });
+
+      if (sharedWriterLease.status === "denied") {
+        const blockedLifecycle = appendLifecycleEvent(
+          "blocked",
+          "shared_writer_lock_denied",
+        );
+        yield {
+          toolCallCount: 0,
+          startedAt,
+          modelId: subagentModelId,
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          sharedWriterLease,
+          sharedWriterLeaseEvents: sharedWriterLease.events,
+          delegatedWorkerLifecycle: blockedLifecycle,
+          delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        };
+        throw new SharedWriterLeaseConflictError(sharedWriterLease);
+      }
+
+      sharedWorkspaceBaseline = await captureSharedWorkspaceBaseline({
+        workerId,
+        workspaceId: workspaceResolution.parentWorkspaceId,
+        workspacePath: sandboxContext.workingDirectory,
+      });
+      sharedWorkspaceDrift = await checkSharedWorkspaceDrift({
+        baseline: sharedWorkspaceBaseline,
+        workspacePath: sandboxContext.workingDirectory,
+      });
+
+      if (sharedWorkspaceDrift.status === "blocked") {
+        releaseSharedWriterLease("workspace_drift_detected");
+        const blockedLifecycle = appendLifecycleEvent(
+          "blocked",
+          "workspace_drift_detected",
+        );
+        yield {
+          toolCallCount: 0,
+          startedAt,
+          modelId: subagentModelId,
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          sharedWriterLease,
+          sharedWriterLeaseRelease,
+          sharedWriterLeaseEvents: [
+            ...(sharedWriterLease?.events ?? []),
+            ...(sharedWriterLeaseRelease?.events ?? []),
+          ],
+          sharedWorkspaceBaseline,
+          sharedWorkspaceDrift,
+          delegatedWorkerLifecycle: blockedLifecycle,
+          delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        };
+        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
+      }
+
+      if (sharedWorkspaceDrift.status === "unsupported") {
+        releaseSharedWriterLease("unsupported_workspace_baseline");
+        const blockedLifecycle = appendLifecycleEvent(
+          "blocked",
+          "unsupported_workspace_baseline",
+        );
+        yield {
+          toolCallCount: 0,
+          startedAt,
+          modelId: subagentModelId,
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          sharedWriterLease,
+          sharedWriterLeaseRelease,
+          sharedWriterLeaseEvents: [
+            ...(sharedWriterLease?.events ?? []),
+            ...(sharedWriterLeaseRelease?.events ?? []),
+          ],
+          sharedWorkspaceBaseline,
+          sharedWorkspaceDrift,
+          delegatedWorkerLifecycle: blockedLifecycle,
+          delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        };
+        throw new SharedWorkspaceDriftError(sharedWorkspaceDrift);
+      }
+    }
 
     const subagent = SUBAGENT_REGISTRY[subagentType].agent;
     let toolCallCount = 0;
     let pending: TaskPendingToolCall | undefined;
     let usage: LanguageModelUsage | undefined;
+    const launchingLifecycle = appendLifecycleEvent(
+      "launching",
+      "worker_launching",
+    );
 
     // Emit before starting the subagent stream so chat UIs can show that the
     // delegated worker has actually started, even before its first tool call.
@@ -395,8 +497,14 @@ IMPORTANT:
       sharedWriterLeaseEvents: sharedWriterLease?.events,
       sharedWorkspaceBaseline,
       sharedWorkspaceDrift,
+      delegatedWorkerLifecycle: launchingLifecycle,
+      delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
     };
     try {
+      const runningLifecycle = appendLifecycleEvent(
+        "running",
+        "worker_running",
+      );
       const result = await subagent.stream({
         prompt:
           "Complete this task and provide a summary of what you accomplished.",
@@ -427,6 +535,8 @@ IMPORTANT:
             sharedWriterLeaseEvents: sharedWriterLease?.events,
             sharedWorkspaceBaseline,
             sharedWorkspaceDrift,
+            delegatedWorkerLifecycle: runningLifecycle,
+            delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
           };
         }
 
@@ -447,6 +557,8 @@ IMPORTANT:
             sharedWriterLeaseEvents: sharedWriterLease?.events,
             sharedWorkspaceBaseline,
             sharedWorkspaceDrift,
+            delegatedWorkerLifecycle: runningLifecycle,
+            delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
           };
         }
       }
@@ -454,6 +566,10 @@ IMPORTANT:
       const response = await result.response;
       const finalUsage = usage ?? (await result.usage);
       releaseSharedWriterLease("worker_terminal");
+      const completedLifecycle = appendLifecycleEvent(
+        "completed",
+        "worker_terminal",
+      );
       yield {
         final: response.messages,
         toolCallCount,
@@ -471,7 +587,39 @@ IMPORTANT:
         ],
         sharedWorkspaceBaseline,
         sharedWorkspaceDrift,
+        delegatedWorkerLifecycle: completedLifecycle,
+        delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
       };
+    } catch (error) {
+      const reasonCode = abortSignal?.aborted
+        ? "worker_cancelled"
+        : "worker_failed";
+      releaseSharedWriterLease(reasonCode);
+      const terminalLifecycle = appendLifecycleEvent(
+        abortSignal?.aborted ? "cancelled" : "failed",
+        reasonCode,
+      );
+      yield {
+        pending,
+        toolCallCount,
+        usage,
+        startedAt,
+        modelId: subagentModelId,
+        runtime,
+        workspacePolicy: workspacePolicyOutput,
+        workspaceResolution,
+        sharedWriterLease,
+        sharedWriterLeaseRelease,
+        sharedWriterLeaseEvents: [
+          ...(sharedWriterLease?.events ?? []),
+          ...(sharedWriterLeaseRelease?.events ?? []),
+        ],
+        sharedWorkspaceBaseline,
+        sharedWorkspaceDrift,
+        delegatedWorkerLifecycle: terminalLifecycle,
+        delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+      };
+      throw error;
     } finally {
       releaseSharedWriterLease(
         abortSignal?.aborted ? "worker_cancelled" : "worker_terminal",
