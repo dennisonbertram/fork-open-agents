@@ -57,6 +57,17 @@ export {
   delegatedWorkspaceLaunchPolicySchema,
   delegatedWorkspacePolicySchema,
 } from "./delegated-workspace";
+export type {
+  DelegatedWorkspaceRejectionCode,
+  DelegatedWorkspaceResolverDecision,
+  DelegatedWorkspaceResolverInput,
+} from "./delegated-workspace-resolver";
+export {
+  delegatedWorkspaceRejectionCodeSchema,
+  delegatedWorkspaceResolverDecisionSchema,
+  delegatedWorkspaceResolverInputSchema,
+  resolveDelegatedWorkspacePolicy,
+} from "./delegated-workspace-resolver";
 export {
   type AskUserQuestionInput,
   type AskUserQuestionOutput,
