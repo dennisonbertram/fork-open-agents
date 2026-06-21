@@ -67,6 +67,23 @@ export {
   delegatedWorkerLifecycleStatusSchema,
 } from "./delegated-worker-lifecycle";
 export type {
+  IsolatedWorkerWorkspaceEvent,
+  IsolatedWorkerWorkspaceProvenance,
+  IsolatedWorkerWorkspaceResult,
+  IsolatedWorkspaceProvisioner,
+  IsolatedWorkspaceProvisionerInput,
+  IsolatedWorkspaceProvisionerResult,
+} from "./isolated-worker-workspace";
+export {
+  buildUnsupportedIsolatedWorkspaceResult,
+  getParentWorkspaceGitState,
+  IsolatedWorkspaceProvisioningError,
+  isolatedWorkerWorkspaceEventSchema,
+  isolatedWorkerWorkspaceProvenanceSchema,
+  isolatedWorkerWorkspaceResultSchema,
+  provisionIsolatedWorkerWorkspace,
+} from "./isolated-worker-workspace";
+export type {
   DelegatedWorkspaceRejectionCode,
   DelegatedWorkspaceResolverDecision,
   DelegatedWorkspaceResolverInput,

@@ -103,6 +103,10 @@ function createContext(sandbox: Record<string, unknown>) {
         typeof sandbox.workingDirectory === "string"
           ? sandbox.workingDirectory
           : "/repo",
+      isolatedWorkspaceProvisioner:
+        typeof sandbox.isolatedWorkspaceProvisioner === "function"
+          ? sandbox.isolatedWorkspaceProvisioner
+          : undefined,
     },
     approval: {},
     model: "test-model",
@@ -151,6 +155,21 @@ async function createGitWorkspace() {
   await git(workspace, ["add", "."]);
   await git(workspace, ["commit", "-m", "baseline"]);
   return workspace;
+}
+
+function createFakeIsolatedWorkspaceProvisioner(childId = "child-sandbox") {
+  return mock(async (input: { parentWorkspaceId: string }) => ({
+    sandbox: {
+      state: { type: "vercel" as const, sandboxId: childId },
+      workingDirectory: `/workspaces/${childId}`,
+    },
+    provenance: {
+      parentWorkspaceId: input.parentWorkspaceId,
+      childWorkspaceId: childId,
+      backendKind: "fake",
+      createdAt: Date.now(),
+    },
+  }));
 }
 
 async function createFsSandbox() {
@@ -1133,6 +1152,8 @@ describe("tools execute behavior", () => {
       };
     });
 
+    const isolatedWorkspaceProvisioner =
+      createFakeIsolatedWorkspaceProvisioner();
     for (const workspacePolicy of ["shared", "isolated"] as const) {
       const result = taskTool.execute?.(
         {
@@ -1141,7 +1162,12 @@ describe("tools execute behavior", () => {
           task: "Apply change",
           instructions: "Update the implementation.",
         },
-        executionOptions(createContext({ workingDirectory: workspace })),
+        executionOptions(
+          createContext({
+            workingDirectory: workspace,
+            isolatedWorkspaceProvisioner,
+          }),
+        ),
       ) as AsyncIterable<unknown> | undefined;
 
       if (!result) {
@@ -1332,6 +1358,8 @@ describe("tools execute behavior", () => {
     const finalMessages = [{ role: "assistant", content: "Done." }];
     const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
     const launchedTasks: string[] = [];
+    const isolatedWorkspaceProvisioner =
+      createFakeIsolatedWorkspaceProvisioner();
 
     mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
       const options = args.options as { task?: string };
@@ -1363,7 +1391,10 @@ describe("tools execute behavior", () => {
       const result = taskTool.execute?.(
         input,
         executionOptions({
-          ...createContext({ workingDirectory: "/repo" }),
+          ...createContext({
+            workingDirectory: "/repo",
+            isolatedWorkspaceProvisioner,
+          }),
           sessionId: "session-1",
         }),
       ) as AsyncIterable<unknown> | undefined;
@@ -1483,6 +1514,157 @@ describe("tools execute behavior", () => {
         ],
       },
     });
+  });
+
+  test("taskTool provisions an isolated child workspace before worker launch", async () => {
+    const parentWorkspace = await createGitWorkspace();
+    const childWorkspace = await mkdtemp(path.join(tmpdir(), "task-child-"));
+    const finalMessages = [{ role: "assistant", content: "Done." }];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const provisionerCalls: unknown[] = [];
+    const launchedSandboxes: unknown[] = [];
+
+    const isolatedWorkspaceProvisioner = mock(async (input: unknown) => {
+      provisionerCalls.push(input);
+      return {
+        sandbox: {
+          state: { type: "vercel" as const, sandboxId: "child-sandbox" },
+          workingDirectory: childWorkspace,
+        },
+        provenance: {
+          parentWorkspaceId: "sandbox-1",
+          childWorkspaceId: "child-sandbox",
+          backendKind: "fake",
+          createdAt: Date.now(),
+        },
+      };
+    });
+
+    mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
+      const options = args.options as { sandbox?: unknown };
+      launchedSandboxes.push(options.sandbox);
+      return {
+        fullStream: (async function* () {})(),
+        response: Promise.resolve({ messages: finalMessages }),
+        usage: Promise.resolve(usage),
+      };
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "isolated",
+        task: "Apply isolated change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({
+          workingDirectory: parentWorkspace,
+          isolatedWorkspaceProvisioner,
+        }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    const outputs: unknown[] = [];
+    for await (const output of result) {
+      outputs.push(output);
+    }
+
+    expect(provisionerCalls).toHaveLength(1);
+    expect(provisionerCalls[0]).toMatchObject({
+      parentWorkspaceId: "sandbox-1",
+      workerId: "tool-call-1",
+      sourceRef: expect.any(String),
+      sourceCommit: expect.any(String),
+    });
+    expect(launchedSandboxes).toEqual([
+      {
+        state: { type: "vercel", sandboxId: "child-sandbox" },
+        workingDirectory: childWorkspace,
+      },
+    ]);
+    expect(outputs[0]).toMatchObject({
+      delegatedWorkerLifecycle: {
+        status: "launching",
+        reasonCode: "isolated_workspace_creation_started",
+        workspaceMode: "isolated",
+      },
+    });
+    expect(outputs[1]).toMatchObject({
+      isolatedWorkspace: {
+        status: "created",
+        parentWorkspaceId: "sandbox-1",
+        childWorkspaceId: "child-sandbox",
+        backendKind: "fake",
+        sourceRef: expect.any(String),
+        sourceCommit: expect.any(String),
+      },
+      delegatedWorkerLifecycle: {
+        status: "launching",
+        reasonCode: "isolated_workspace_creation_succeeded",
+        workspaceId: "child-sandbox",
+      },
+    });
+    expect(outputs.at(-1)).toMatchObject({
+      isolatedWorkspace: {
+        status: "created",
+        childWorkspaceId: "child-sandbox",
+      },
+      delegatedWorkerLifecycle: {
+        status: "completed",
+        workspaceId: "child-sandbox",
+      },
+    });
+  });
+
+  test("taskTool blocks isolated workers when no workspace provisioner is available", async () => {
+    const parentWorkspace = await createGitWorkspace();
+    mockToolLoopAgentStream = mock(() => {
+      throw new Error("worker should not be launched");
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "isolated",
+        task: "Apply isolated change",
+        instructions: "Update the implementation.",
+      },
+      executionOptions({
+        ...createContext({ workingDirectory: parentWorkspace }),
+        sessionId: "session-1",
+      }),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    const outputs: unknown[] = [];
+    await expect(async () => {
+      for await (const output of result) {
+        outputs.push(output);
+      }
+    }).toThrow("isolated_workspace_provisioner_unavailable");
+
+    expect(outputs.at(-1)).toMatchObject({
+      isolatedWorkspace: {
+        status: "unsupported",
+        reasonCode: "isolated_workspace_provisioner_unavailable",
+        parentWorkspaceId: "sandbox-1",
+      },
+      delegatedWorkerLifecycle: {
+        status: "blocked",
+        reasonCode: "isolated_workspace_provisioner_unavailable",
+        workspaceMode: "isolated",
+      },
+    });
+    expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
   });
 
   test("taskTool rejects invalid workspace policy before worker launch", async () => {
