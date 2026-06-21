@@ -156,6 +156,85 @@ describe("delegated worker run records", () => {
     });
   });
 
+  test("extracts isolated workspace provenance from task output", () => {
+    const childCreatedAt = Date.UTC(2026, 5, 21, 12, 1, 0);
+    const records = buildDelegatedWorkerRunRecordsFromMessage({
+      message: assistantMessage([
+        {
+          type: "tool-task",
+          toolCallId: "task-1",
+          state: "output-available",
+          input: {
+            subagentType: "executor",
+            task: "Apply isolated change",
+            instructions: "Do the work.",
+          },
+          output: {
+            final: [],
+            workspacePolicy: {
+              requestedPolicy: "isolated",
+              effectivePolicy: "isolated",
+              executionMode: "isolated",
+              label: "isolated workspace",
+              status: "policy_recorded",
+            },
+            workspaceResolution: {
+              status: "accepted",
+              decision: "isolated",
+              requestedPolicy: "isolated",
+              effectivePolicy: "isolated",
+              reasonCode: "explicit_isolated_policy",
+              reason: "The worker requested an isolated workspace.",
+              parentWorkspaceId: "parent-workspace",
+              requiredCapabilities: ["workspace:create_isolated"],
+              createdResourceIds: ["child-workspace"],
+            },
+            isolatedWorkspace: {
+              status: "created",
+              reasonCode: "isolated_workspace_creation_succeeded",
+              parentWorkspaceId: "parent-workspace",
+              childWorkspaceId: "child-workspace",
+              sourceRef: "develop",
+              sourceCommit: "abc123",
+              createdAt: childCreatedAt,
+              durationMs: 25,
+              events: [
+                {
+                  type: "isolated_workspace_creation_succeeded",
+                  parentWorkspaceId: "parent-workspace",
+                  childWorkspaceId: "child-workspace",
+                  reasonCode: "isolated_workspace_creation_succeeded",
+                  durationMs: 25,
+                  createdAt: childCreatedAt,
+                },
+              ],
+            },
+          },
+        },
+      ] as WebAgentUIMessage["parts"]),
+      workflowRunId: "workflow-1",
+      chatId: "chat-1",
+      sessionId: "session-1",
+      userId: "user-1",
+      now: new Date("2026-06-21T12:00:00.000Z"),
+    });
+
+    expect(records[0]).toMatchObject({
+      workspaceMode: "isolated",
+      workspaceId: "child-workspace",
+      sourceWorkspaceId: "parent-workspace",
+      sourceRef: "develop",
+      sourceCommit: "abc123",
+      childWorkspaceId: "child-workspace",
+      childWorkspaceCreatedAt: new Date(childCreatedAt),
+      evidenceRefs: [
+        { kind: "task_output", ref: "tool-task.output" },
+        { kind: "workspace", ref: "tool-task.output.workspace" },
+        { kind: "workspace", ref: "tool-task.output.isolatedWorkspace" },
+      ],
+    });
+  });
+
   test("uses deterministic ids so launch retries target the same record", () => {
     const params = {
       message: assistantMessage([

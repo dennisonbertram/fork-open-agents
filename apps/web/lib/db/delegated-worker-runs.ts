@@ -79,6 +79,14 @@ type TaskOutputRecord = {
     status?: unknown;
     reasonCode?: unknown;
   };
+  isolatedWorkspace?: {
+    status?: unknown;
+    parentWorkspaceId?: unknown;
+    childWorkspaceId?: unknown;
+    sourceRef?: unknown;
+    sourceCommit?: unknown;
+    createdAt?: unknown;
+  };
   usage?: unknown;
 };
 
@@ -146,6 +154,10 @@ function buildEvidenceRefs(output: TaskOutputRecord | null) {
     refs.push({ kind: "workspace", ref: "tool-task.output.workspace" });
   }
 
+  if (output?.isolatedWorkspace) {
+    refs.push({ kind: "workspace", ref: "tool-task.output.isolatedWorkspace" });
+  }
+
   if (output?.usage) {
     refs.push({ kind: "usage", ref: "tool-task.output.usage" });
   }
@@ -200,6 +212,7 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
     const workspacePolicy = output?.workspacePolicy;
     const workspaceResolution = output?.workspaceResolution;
     const sharedWriterLease = output?.sharedWriterLease;
+    const isolatedWorkspace = output?.isolatedWorkspace;
     const { status, reasonCode } = statusFromTaskPart({
       state: part.state,
       output,
@@ -243,8 +256,17 @@ export function buildDelegatedWorkerRunRecordsFromMessage(params: {
           asString(workspaceResolution?.decision),
       ),
       workspaceId:
+        asString(isolatedWorkspace?.childWorkspaceId) ??
         asString(sharedWriterLease?.workspaceId) ??
         asString(workspaceResolution?.parentWorkspaceId),
+      sourceWorkspaceId: asString(isolatedWorkspace?.parentWorkspaceId),
+      sourceRef: asString(isolatedWorkspace?.sourceRef),
+      sourceCommit: asString(isolatedWorkspace?.sourceCommit),
+      childWorkspaceId: asString(isolatedWorkspace?.childWorkspaceId),
+      childWorkspaceCreatedAt:
+        typeof isolatedWorkspace?.createdAt === "number"
+          ? new Date(isolatedWorkspace.createdAt)
+          : null,
       sandboxName: asString(runtime?.sandboxName),
       managedRuntimeProfileId: asString(runtime?.profileId),
       managedRuntimeProfileVersion: asString(runtime?.profileVersion),
@@ -287,6 +309,11 @@ export async function recordDelegatedWorkerRunsFromMessage(params: {
           effectiveWorkspacePolicy: record.effectiveWorkspacePolicy,
           workspaceMode: record.workspaceMode,
           workspaceId: record.workspaceId,
+          sourceWorkspaceId: record.sourceWorkspaceId,
+          sourceRef: record.sourceRef,
+          sourceCommit: record.sourceCommit,
+          childWorkspaceId: record.childWorkspaceId,
+          childWorkspaceCreatedAt: record.childWorkspaceCreatedAt,
           sandboxName: record.sandboxName,
           managedRuntimeProfileId: record.managedRuntimeProfileId,
           managedRuntimeProfileVersion: record.managedRuntimeProfileVersion,

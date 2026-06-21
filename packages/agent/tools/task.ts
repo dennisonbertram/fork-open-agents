@@ -18,6 +18,12 @@ import {
   type DelegatedWorkerLifecycleStatus,
 } from "../delegated-worker-lifecycle";
 import {
+  IsolatedWorkspaceProvisioningError,
+  isolatedWorkerWorkspaceResultSchema,
+  provisionIsolatedWorkerWorkspace,
+  type IsolatedWorkerWorkspaceResult,
+} from "../isolated-worker-workspace";
+import {
   delegatedWorkspaceResolverDecisionSchema,
   resolveDelegatedWorkspacePolicy,
 } from "../delegated-workspace-resolver";
@@ -112,6 +118,7 @@ export const taskOutputSchema = z.object({
   sharedWriterLeaseEvents: z.array(sharedWriterLeaseEventSchema).optional(),
   sharedWorkspaceBaseline: sharedWorkspaceBaselineSchema.optional(),
   sharedWorkspaceDrift: sharedWorkspaceDriftCheckSchema.optional(),
+  isolatedWorkspace: isolatedWorkerWorkspaceResultSchema.optional(),
   delegatedWorkerLifecycle: delegatedWorkerLifecycleEventSchema.optional(),
   delegatedWorkerLifecycleEvents: z
     .array(delegatedWorkerLifecycleEventSchema)
@@ -307,6 +314,8 @@ IMPORTANT:
     let sharedWriterLeaseRelease: SharedWriterLeaseRelease | undefined;
     let sharedWorkspaceBaseline: SharedWorkspaceBaseline | undefined;
     let sharedWorkspaceDrift: SharedWorkspaceDriftCheck | undefined;
+    let isolatedWorkspace: IsolatedWorkerWorkspaceResult | undefined;
+    let workerSandboxContext = sandboxContext.sandbox;
     const delegatedWorkerLifecycleEvents: DelegatedWorkerLifecycleEvent[] = [];
     const workerId = toolCallId ?? `${subagentType}-${startedAt}`;
     const managedRuntimeInstructions = buildManagedRuntimeWorkerInstructions({
@@ -354,15 +363,86 @@ IMPORTANT:
         requestedWorkspacePolicy: workspacePolicyOutput.requestedPolicy,
         effectiveWorkspacePolicy: workspacePolicyOutput.effectivePolicy,
         workspaceId:
-          workspaceResolution.status === "accepted"
+          isolatedWorkspace?.childWorkspaceId ??
+          (workspaceResolution.status === "accepted"
             ? workspaceResolution.parentWorkspaceId
-            : undefined,
+            : undefined),
         modelId: subagentModelId,
         startedAt,
       });
       delegatedWorkerLifecycleEvents.push(event);
       return event;
     };
+
+    if (
+      workspaceResolution.status === "accepted" &&
+      workspaceResolution.decision === "isolated"
+    ) {
+      const provisioningStarted = appendLifecycleEvent(
+        "launching",
+        "isolated_workspace_creation_started",
+      );
+      yield {
+        toolCallCount: 0,
+        startedAt,
+        modelId: subagentModelId,
+        runtime,
+        workspacePolicy: workspacePolicyOutput,
+        workspaceResolution,
+        delegatedWorkerLifecycle: provisioningStarted,
+        delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+      };
+
+      try {
+        const provisioned = await provisionIsolatedWorkerWorkspace({
+          provisioner: sandboxContext.sandbox.isolatedWorkspaceProvisioner,
+          parentSandbox: sandboxContext.sandbox,
+          parentWorkspaceId: workspaceResolution.parentWorkspaceId,
+          workerId,
+          startedAt,
+        });
+        isolatedWorkspace = provisioned.result;
+        workerSandboxContext = provisioned.sandbox;
+        const provisioningSucceeded = appendLifecycleEvent(
+          "launching",
+          "isolated_workspace_creation_succeeded",
+        );
+        yield {
+          toolCallCount: 0,
+          startedAt,
+          modelId: subagentModelId,
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          isolatedWorkspace,
+          delegatedWorkerLifecycle: provisioningSucceeded,
+          delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        };
+      } catch (error) {
+        if (!(error instanceof IsolatedWorkspaceProvisioningError)) {
+          throw error;
+        }
+
+        isolatedWorkspace = error.result;
+        const blockedLifecycle = appendLifecycleEvent(
+          "blocked",
+          error.result.reasonCode,
+        );
+        yield {
+          toolCallCount: 0,
+          startedAt,
+          modelId: subagentModelId,
+          runtime,
+          workspacePolicy: workspacePolicyOutput,
+          workspaceResolution,
+          isolatedWorkspace,
+          delegatedWorkerLifecycle: blockedLifecycle,
+          delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
+        };
+        throw error;
+      }
+    }
+
     const releaseSharedWriterLease = (reasonCode: string) => {
       if (
         sharedWriterLease?.status !== "acquired" ||
@@ -497,6 +577,7 @@ IMPORTANT:
       sharedWriterLeaseEvents: sharedWriterLease?.events,
       sharedWorkspaceBaseline,
       sharedWorkspaceDrift,
+      isolatedWorkspace,
       delegatedWorkerLifecycle: launchingLifecycle,
       delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
     };
@@ -511,7 +592,7 @@ IMPORTANT:
         options: {
           task,
           instructions: effectiveInstructions,
-          sandbox: sandboxContext.sandbox,
+          sandbox: workerSandboxContext,
           model,
           workspacePolicy: workspacePolicyOutput,
         },
@@ -535,6 +616,7 @@ IMPORTANT:
             sharedWriterLeaseEvents: sharedWriterLease?.events,
             sharedWorkspaceBaseline,
             sharedWorkspaceDrift,
+            isolatedWorkspace,
             delegatedWorkerLifecycle: runningLifecycle,
             delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
           };
@@ -557,6 +639,7 @@ IMPORTANT:
             sharedWriterLeaseEvents: sharedWriterLease?.events,
             sharedWorkspaceBaseline,
             sharedWorkspaceDrift,
+            isolatedWorkspace,
             delegatedWorkerLifecycle: runningLifecycle,
             delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
           };
@@ -587,6 +670,7 @@ IMPORTANT:
         ],
         sharedWorkspaceBaseline,
         sharedWorkspaceDrift,
+        isolatedWorkspace,
         delegatedWorkerLifecycle: completedLifecycle,
         delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
       };
@@ -616,6 +700,7 @@ IMPORTANT:
         ],
         sharedWorkspaceBaseline,
         sharedWorkspaceDrift,
+        isolatedWorkspace,
         delegatedWorkerLifecycle: terminalLifecycle,
         delegatedWorkerLifecycleEvents: [...delegatedWorkerLifecycleEvents],
       };
