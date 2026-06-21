@@ -28,13 +28,21 @@ Current step: **Step 2, Executable Contracts**.
 
 Step 0 defined the concept model. Step 1 made the builder/process observability foundation durable enough for future agents. Step 2 must not advance until the contracts are executable, tested, and observable in deterministic fixtures.
 
+Step 2 progress:
+
+- `apps/web/lib/verified-build/contracts.ts` defines the first executable
+  contract schemas for delegated workcell workspace linkage, worker completion
+  packet attachment, plan-change proposals, and final report worker provenance.
+- `apps/web/lib/verified-build/contracts.test.ts` covers the initial delegated
+  workspace linkage fixtures for #596.
+
 ## Roadmap
 
 | Step | Name | Goal | Status |
 | --- | --- | --- | --- |
 | 0 | Concept Model | Define the coordinator, workers, trust loop, artifacts, and evidence model. | Complete |
 | 1 | Builder Observability Foundation | Save the repo-local guidance future agents need before implementation starts. | Complete |
-| 2 | Executable Contracts | Turn artifact docs into typed schemas and validation tests. | Next |
+| 2 | Executable Contracts | Turn artifact docs into typed schemas and validation tests. | In progress |
 | 3 | Dry-Run Coordinator | Prove the coordinator loop with mocked workers and deterministic traces. | Not started |
 | 4 | Harness Integration | Connect the coordinator contracts to harness gates, audit, cancellation, and reports. | Not started |
 | 5 | Real Worker Execution | Replace mocked workers with sandbox-spawned agents using scoped workcell contracts. | Not started |

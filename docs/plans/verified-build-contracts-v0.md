@@ -21,6 +21,10 @@ FinalBuildReport
 
 The contracts here are not final database schemas. They are the minimum shape needed to build a deterministic dry run, then a harness service, then a real Open Agents Verified Build loop.
 
+Executable schemas currently live in
+`apps/web/lib/verified-build/contracts.ts`, with initial delegated workspace
+linkage fixtures in `apps/web/lib/verified-build/contracts.test.ts`.
+
 ## Shared Conventions
 
 All contracts should follow these conventions.
@@ -344,6 +348,14 @@ type WorkcellContract = {
     | "sub_coordinator";
   mode: "research" | "implementation" | "integration" | "qa" | "repair";
   status: "draft" | "ready" | "running" | "blocked" | "completed" | "failed" | "cancelled";
+  workspace_mode: "shared" | "isolated";
+  delegated_worker?: {
+    worker_id: string;
+    run_id: string;
+    workspace_mode: "shared" | "isolated";
+    completion_packet_id?: string;
+    validation_status: "valid" | "invalid" | "missing" | "partial";
+  };
   assigned_agent?: {
     agent_id: string;
     agent_kind: "model_worker" | "deterministic_worker" | "sub_coordinator";
@@ -403,6 +415,9 @@ Validation rules:
 - Writable and forbidden surfaces must not overlap.
 - Broad writable scope requires an approval point.
 - A workcell should be understandable without reading the entire global plan.
+- `workspace_mode` is the delegated worker launch preference for the workcell.
+- `delegated_worker` records the persisted worker/run linkage after launch or
+  packet attachment.
 
 ## `WorkerCompletionPacket`
 
@@ -465,6 +480,12 @@ type WorkerCompletionPacket = {
     notes: string;
   };
   suggested_next_action: "integrate" | "repair" | "ask_user" | "needs_review" | "abandon";
+  delegated_worker: {
+    worker_id: string;
+    run_id: string;
+    workspace_mode: "shared" | "isolated";
+    validation_status: "valid" | "invalid" | "missing" | "partial";
+  };
   provenance: ContractProvenance;
 };
 ```
@@ -476,6 +497,8 @@ Validation rules:
 - `done` requires at least one command, gate, or evidence artifact unless the workcell is explicitly research-only.
 - Failed or blocked work should include enough artifacts to create a repair workcell or explain the blocker.
 - Completion packets are claims, not final truth. Parent integration and harness finalization may reject them.
+- Worker packets must name the delegated worker run and workspace mode so final
+  reports can cite provenance without scraping chat/tool transcripts.
 
 ## `PlanChangeProposal`
 
@@ -578,6 +601,12 @@ type FinalBuildReport = {
     workcell_id: string;
     summary: string;
     status: string;
+    delegated_worker?: {
+      worker_id: string;
+      run_id: string;
+      workspace_mode: "shared" | "isolated";
+      validation_status: "valid" | "invalid" | "missing" | "partial";
+    };
   }>;
   behavior_coverage: Array<{
     behavior_id: string;
