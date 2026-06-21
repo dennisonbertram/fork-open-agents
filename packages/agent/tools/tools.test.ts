@@ -84,6 +84,8 @@ const { setupManagedRuntimeProfileTool } =
 const { readFileTool } = await import("./read");
 const { skillTool } = await import("./skill");
 const { taskTool } = await import("./task");
+const { delegatedWorkspacePolicySchema } =
+  await import("../delegated-workspace");
 const { todoWriteTool } = await import("./todo");
 const { editFileTool, writeFileTool } = await import("./write");
 const { buildSystemPrompt } = await import("../system-prompt");
@@ -1025,6 +1027,154 @@ describe("tools execute behavior", () => {
         workerType: "executor",
       },
     });
+  });
+
+  test("taskTool defaults old calls to auto delegated workspace policy", async () => {
+    const finalMessages = [{ role: "assistant", content: "Done." }];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+
+    mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
+      expect(args).toMatchObject({
+        options: {
+          task: "Inspect files",
+          workspacePolicy: {
+            requestedPolicy: "auto",
+            effectivePolicy: "auto",
+            executionMode: "shared",
+            label: "shared workspace",
+            status: "policy_recorded",
+          },
+        },
+      });
+
+      return {
+        fullStream: (async function* () {})(),
+        response: Promise.resolve({ messages: finalMessages }),
+        usage: Promise.resolve(usage),
+      };
+    });
+
+    const outputs: unknown[] = [];
+    const result = taskTool.execute?.(
+      {
+        subagentType: "explorer",
+        task: "Inspect files",
+        instructions: "Find the relevant files.",
+      },
+      executionOptions(createContext({ workingDirectory: "/repo" })),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    for await (const output of result) {
+      outputs.push(output);
+    }
+
+    expect(outputs[0]).toMatchObject({
+      workspacePolicy: {
+        requestedPolicy: "auto",
+        effectivePolicy: "auto",
+        executionMode: "shared",
+      },
+    });
+    expect(outputs.at(-1)).toMatchObject({
+      final: finalMessages,
+      workspacePolicy: {
+        requestedPolicy: "auto",
+        effectivePolicy: "auto",
+        executionMode: "shared",
+      },
+    });
+  });
+
+  test("taskTool passes explicit shared and isolated workspace policies to workers", async () => {
+    const finalMessages = [{ role: "assistant", content: "Done." }];
+    const usage = { inputTokens: 1, outputTokens: 1, totalTokens: 2 };
+    const observedPolicies: unknown[] = [];
+
+    mockToolLoopAgentStream = mock((args: Record<string, unknown>) => {
+      const options = args.options as { workspacePolicy?: unknown };
+      observedPolicies.push(options.workspacePolicy);
+
+      return {
+        fullStream: (async function* () {})(),
+        response: Promise.resolve({ messages: finalMessages }),
+        usage: Promise.resolve(usage),
+      };
+    });
+
+    for (const workspacePolicy of ["shared", "isolated"] as const) {
+      const result = taskTool.execute?.(
+        {
+          subagentType: "executor",
+          workspacePolicy,
+          task: "Apply change",
+          instructions: "Update the implementation.",
+        },
+        executionOptions(createContext({ workingDirectory: "/repo" })),
+      ) as AsyncIterable<unknown> | undefined;
+
+      if (!result) {
+        throw new Error("taskTool execute missing in test");
+      }
+
+      for await (const _output of result) {
+        // Drain the generator so the worker launch happens.
+      }
+    }
+
+    expect(observedPolicies).toEqual([
+      {
+        requestedPolicy: "shared",
+        effectivePolicy: "shared",
+        executionMode: "shared",
+        label: "shared workspace",
+        status: "policy_recorded",
+      },
+      {
+        requestedPolicy: "isolated",
+        effectivePolicy: "isolated",
+        executionMode: "isolated",
+        label: "isolated workspace",
+        status: "policy_recorded",
+      },
+    ]);
+  });
+
+  test("taskTool rejects invalid workspace policy before worker launch", async () => {
+    mockToolLoopAgentStream = mock(() => {
+      throw new Error("worker should not be launched");
+    });
+
+    const result = taskTool.execute?.(
+      {
+        subagentType: "executor",
+        workspacePolicy: "private",
+        task: "Apply change",
+        instructions: "Update the implementation.",
+      } as unknown as Parameters<NonNullable<typeof taskTool.execute>>[0],
+      executionOptions(createContext({ workingDirectory: "/repo" })),
+    ) as AsyncIterable<unknown> | undefined;
+
+    if (!result) {
+      throw new Error("taskTool execute missing in test");
+    }
+
+    await expect(async () => {
+      for await (const _output of result) {
+        // The invalid policy should throw before yielding.
+      }
+    }).toThrow("policy_validation_failed");
+    expect(mockToolLoopAgentStream).not.toHaveBeenCalled();
+  });
+
+  test("delegated workspace policy schema accepts only known policies", () => {
+    expect(delegatedWorkspacePolicySchema.parse("auto")).toBe("auto");
+    expect(delegatedWorkspacePolicySchema.parse("shared")).toBe("shared");
+    expect(delegatedWorkspacePolicySchema.parse("isolated")).toBe("isolated");
+    expect(() => delegatedWorkspacePolicySchema.parse("private")).toThrow();
   });
 
   test("taskTool emits initial worker status before subagent stream startup completes", async () => {
