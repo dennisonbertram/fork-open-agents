@@ -136,6 +136,22 @@ describe("WorkflowPickerCompact", () => {
     expect(html).toContain("disabled");
   });
 
+  test("keeps the picker openable when catalog entries exist but are not runnable yet", async () => {
+    swrState = { data: { workflows: [disabledWorkflow] } };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        selectedWorkflowId={null}
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    expect(html).not.toContain('disabled=""');
+    expect(html).toContain("Workflow");
+  });
+
   // BT-005: disabled prop
   test("trigger is disabled when the disabled prop is true", async () => {
     swrState = { data: { workflows: [enabledWorkflow] } };
@@ -233,6 +249,21 @@ describe("WorkflowPickerItems", () => {
 
     expect(html).toContain("Test Run");
     expect(html).toContain("Deploy to Production");
+  });
+
+  test("explains all-disabled workflow catalogs as planned orchestration", async () => {
+    const { getWorkflowPickerTooltipText } = await componentModulePromise;
+
+    expect(
+      getWorkflowPickerTooltipText({
+        hasError: false,
+        isLoading: false,
+        workflowCount: 1,
+        availableWorkflowCount: 0,
+      }),
+    ).toBe(
+      "Workflow templates are planned orchestration runs. None are runnable yet.",
+    );
   });
 
   test("disabled item shows its disabledReason in the markup", async () => {

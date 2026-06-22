@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildToolIconItems } from "./tool-icon-stack";
+import { renderToStaticMarkup } from "react-dom/server";
+import { ToolIconStack, buildToolIconItems } from "./tool-icon-stack";
 
 describe("buildToolIconItems", () => {
   test("returns empty array when no toolkits and no GitHub", () => {
@@ -47,5 +48,19 @@ describe("buildToolIconItems", () => {
     expect(items).toHaveLength(2);
     expect(items[0].name).toBe("jira");
     expect(items[1].name).toBe("linear");
+  });
+
+  test("renders an add-tools affordance next to the stacked icons", () => {
+    const html = renderToStaticMarkup(
+      <ToolIconStack
+        items={buildToolIconItems({
+          activeToolkits: ["linear"],
+          githubConnected: true,
+        })}
+      />,
+    );
+
+    expect(html).toContain("Add tools");
+    expect(html).toContain("Active tools:");
   });
 });

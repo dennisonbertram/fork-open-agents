@@ -32,6 +32,32 @@ export interface WorkflowPickerCompactProps {
   onSelectWorkflow?: (id: string | null) => void;
 }
 
+export function getWorkflowPickerTooltipText({
+  hasError,
+  isLoading,
+  workflowCount,
+  availableWorkflowCount,
+}: {
+  hasError: boolean;
+  isLoading: boolean;
+  workflowCount: number;
+  availableWorkflowCount: number;
+}): string {
+  if (hasError) {
+    return "Workflow catalog unavailable";
+  }
+  if (isLoading) {
+    return "Loading workflow templates...";
+  }
+  if (workflowCount === 0) {
+    return "No workflow templates available";
+  }
+  if (availableWorkflowCount === 0) {
+    return "Workflow templates are planned orchestration runs. None are runnable yet.";
+  }
+  return "Choose an orchestration template for this chat";
+}
+
 // ── Fetcher ───────────────────────────────────────────────────────────────────
 
 async function fetchWorkflowCatalog(
@@ -136,19 +162,19 @@ export function WorkflowPickerCompact({
 
   const workflows = data?.workflows ?? [];
   const hasWorkflows = workflows.length > 0;
+  const availableWorkflows = workflows.filter((workflow) => workflow.available);
   const selectedWorkflow = workflows.find((w) => w.id === selectedWorkflowId);
   const triggerLabel = selectedWorkflow?.name ?? "Workflow";
 
   // Trigger is disabled when: parent disabled, loading, error, or no workflows
   const isTriggerDisabled = disabled || isLoading || !!error || !hasWorkflows;
 
-  const tooltipText = error
-    ? "Workflow catalog unavailable"
-    : isLoading
-      ? "Loading workflows…"
-      : !hasWorkflows
-        ? "No workflows available"
-        : "Select workflow";
+  const tooltipText = getWorkflowPickerTooltipText({
+    hasError: !!error,
+    isLoading,
+    workflowCount: workflows.length,
+    availableWorkflowCount: availableWorkflows.length,
+  });
 
   function handleSelect(id: string | null) {
     onSelectWorkflow?.(id);
@@ -167,6 +193,9 @@ export function WorkflowPickerCompact({
                 selectedWorkflow
                   ? "border-violet-500/25 bg-violet-500/10 text-violet-700 hover:bg-violet-500/15 dark:text-violet-300"
                   : "text-muted-foreground",
+                availableWorkflows.length === 0 &&
+                  !isLoading &&
+                  "opacity-70 hover:bg-transparent",
               )}
               disabled={isTriggerDisabled}
               size="sm"
@@ -183,10 +212,19 @@ export function WorkflowPickerCompact({
         </TooltipContent>
       </Tooltip>
       <DropdownMenuContent align="start" className="w-72">
-        <DropdownMenuLabel>Workflow</DropdownMenuLabel>
+        <DropdownMenuLabel>Workflow templates</DropdownMenuLabel>
+        <div className="px-2 pb-2 text-xs text-muted-foreground">
+          A workflow is a planned orchestration template for multi-step agent
+          runs. It is separate from Direct vs Coordinated runtime mode.
+        </div>
         {!hasWorkflows && !isLoading ? (
           <div className="text-muted-foreground px-2 py-1.5 text-xs">
             {error ? "Failed to load workflows." : "No workflows available."}
+          </div>
+        ) : availableWorkflows.length === 0 && !isLoading ? (
+          <div className="text-muted-foreground px-2 pb-2 text-xs">
+            These templates are not runnable yet, so chat will continue using
+            the selected runtime mode.
           </div>
         ) : null}
         <WorkflowPickerItems
