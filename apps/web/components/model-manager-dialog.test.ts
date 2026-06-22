@@ -7,7 +7,7 @@ import {
 describe("ModelManagerDialog layout", () => {
   test("keeps the dialog viewport-bounded with an internal scroll list", () => {
     expect(MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME).toContain(
-      "max-h-[calc(100dvh-2rem)]",
+      "max-h-[min(680px,calc(100dvh-2rem))]",
     );
     expect(MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME).toContain(
       "grid-rows-[auto_auto_auto_minmax(0,1fr)_auto]",

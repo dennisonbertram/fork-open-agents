@@ -40,7 +40,7 @@ interface ModelManagerDialogProps {
 }
 
 export const MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME =
-  "grid max-h-[calc(100dvh-2rem)] w-full max-w-lg grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-4rem)]";
+  "grid max-h-[min(680px,calc(100dvh-2rem))] w-full max-w-lg grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[min(620px,calc(100dvh-4rem))]";
 
 export const MODEL_MANAGER_DIALOG_LIST_CLASS_NAME = "min-h-0 overflow-hidden";
 

@@ -82,6 +82,7 @@ import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown"
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
+import { ComposioToolSelectorCompact } from "@/components/composio-tool-selector-compact";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -1851,6 +1852,7 @@ export function SessionChatContent({
     archiveSession,
     unarchiveSession: _unarchiveSession,
     updateChatModel,
+    updateChatComposioSelection,
     updateSessionTitle,
     updateRuntimeMode,
     updateManagedRuntimeProfile,
@@ -4908,6 +4910,25 @@ export function SessionChatContent({
                                 />
                               </div>
                             )}
+                            <ComposioToolSelectorCompact
+                              disabled={isArchived || isChatInFlight}
+                              githubConnected={Boolean(
+                                session.repoOwner && session.repoName,
+                              )}
+                              onChange={(selection) => {
+                                void updateChatComposioSelection(
+                                  selection,
+                                ).catch((error) => {
+                                  console.error(
+                                    "Failed to update chat tools:",
+                                    error,
+                                  );
+                                });
+                              }}
+                              repoName={session.repoName}
+                              repoOwner={session.repoOwner}
+                              selection={chatInfo.composioSelection}
+                            />
                             <RuntimeModeSelectorCompact
                               disabled={isArchived || isChatInFlight}
                               managedRuntimeProfileId={
