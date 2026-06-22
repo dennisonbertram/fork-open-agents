@@ -39,6 +39,11 @@ interface ModelManagerDialogProps {
   onSave: (enabledModelIds: string[]) => Promise<void>;
 }
 
+export const MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME =
+  "grid max-h-[calc(100dvh-2rem)] w-full max-w-lg grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-4rem)]";
+
+export const MODEL_MANAGER_DIALOG_LIST_CLASS_NAME = "min-h-0 overflow-hidden";
+
 /** Derive a deduplicated sorted list of provider keys from the given options. */
 function deriveProviders(options: ModelOption[]): string[] {
   const seen = new Set<string>();
@@ -156,7 +161,7 @@ export function ModelManagerDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="flex max-h-[80vh] w-full max-w-lg flex-col gap-0 p-0">
+      <DialogContent className={MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME}>
         <DialogHeader className="border-b px-4 py-3">
           <DialogTitle className="text-sm font-semibold">
             Manage models
@@ -283,7 +288,7 @@ export function ModelManagerDialog({
         </div>
 
         {/* Model list */}
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className={MODEL_MANAGER_DIALOG_LIST_CLASS_NAME}>
           <ul className="divide-y">
             {visible.length === 0 && (
               <li className="px-4 py-6 text-center text-sm text-muted-foreground">
@@ -351,7 +356,7 @@ export function ModelManagerDialog({
         </ScrollArea>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t px-4 py-3">
+        <div className="flex shrink-0 items-center justify-between border-t px-4 py-3">
           <div className="flex items-center gap-3">
             <button
               type="button"
