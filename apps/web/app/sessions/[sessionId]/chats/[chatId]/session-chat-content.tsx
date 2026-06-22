@@ -39,6 +39,7 @@ import {
   Settings2,
   Square,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import dynamic from "next/dynamic";
@@ -129,6 +130,10 @@ import { useSessionChats } from "@/hooks/use-session-chats";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
+  ACCEPT_ATTACHMENT_TYPES,
+  isTextLikeAttachmentFile,
+} from "@/lib/attachment-file-types";
+import {
   getGitFinalizationState,
   hasRenderableAssistantPart,
   isChatInFlight as isChatInFlightStatus,
@@ -140,7 +145,7 @@ import {
   shouldShowThinkingIndicator,
   shouldUseChatListStreamingState,
 } from "@/lib/chat-streaming-state";
-import { ACCEPT_IMAGE_TYPES, isValidImageType } from "@/lib/image-utils";
+import { isValidImageType } from "@/lib/image-utils";
 import { isLargeText } from "@/lib/text-attachment-utils";
 import {
   type AvailableModelCost,
@@ -1810,7 +1815,6 @@ export function SessionChatContent({
   const {
     images,
     addImage,
-    addImages,
     removeImage,
     clearImages,
     getFileParts,
@@ -1823,6 +1827,21 @@ export function SessionChatContent({
     removeTextAttachment,
     clearTextAttachments,
   } = useTextAttachments();
+  const addAttachmentFiles = useCallback(
+    async (files: FileList | File[]) => {
+      for (const file of Array.from(files)) {
+        if (isValidImageType(file.type)) {
+          await addImage(file);
+          continue;
+        }
+        if (isTextLikeAttachmentFile(file)) {
+          const text = await file.text();
+          addTextAttachment(text, file.name);
+        }
+      }
+    },
+    [addImage, addTextAttachment],
+  );
   const { containerRef, isAtBottom, scrollToBottom } =
     useScrollToBottom<HTMLDivElement>();
   const {
@@ -4476,12 +4495,12 @@ export function SessionChatContent({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept={ACCEPT_IMAGE_TYPES}
+                    accept={ACCEPT_ATTACHMENT_TYPES}
                     multiple
                     onChange={(e) => {
                       const files = e.target.files;
                       if (files && files.length > 0) {
-                        addImages(files);
+                        void addAttachmentFiles(files);
                       }
                       e.target.value = "";
                     }}
@@ -4524,7 +4543,7 @@ export function SessionChatContent({
                     <PinnedTodoPanel todos={latestTodos} />
                     {/* Input form */}
                     <div
-                      className={`overflow-hidden rounded-2xl bg-muted transition-colors ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
+                      className={`relative overflow-hidden rounded-2xl bg-muted transition-colors ${isDragging ? "ring-2 ring-blue-500/50" : ""}`}
                     >
                       <form
                         onSubmit={async (e) => {
@@ -4674,6 +4693,7 @@ export function SessionChatContent({
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
+                          e.dataTransfer.dropEffect = "copy";
                           setIsDragging(true);
                         }}
                         onDragLeave={(e) => {
@@ -4691,7 +4711,7 @@ export function SessionChatContent({
                           setIsDragging(false);
                           const files = e.dataTransfer.files;
                           if (files.length > 0) {
-                            addImages(files);
+                            void addAttachmentFiles(files);
                           }
                         }}
                       >
@@ -4700,6 +4720,14 @@ export function SessionChatContent({
                           isArchived={isArchived}
                           snapshotPending={isArchiveSnapshotPending}
                         />
+                        {isDragging && !isArchived ? (
+                          <div className="pointer-events-none absolute inset-1 z-20 flex items-center justify-center rounded-xl border border-dashed border-primary/45 bg-background/90 text-foreground shadow-lg backdrop-blur-sm">
+                            <div className="flex items-center gap-2 rounded-full border border-border/70 bg-muted/80 px-3 py-2 text-sm font-medium">
+                              <Upload className="h-4 w-4 text-primary" />
+                              <span>Drop files here</span>
+                            </div>
+                          </div>
+                        ) : null}
 
                         {/* Attachments preview */}
                         {(images.length > 0 || textAttachments.length > 0) && (
