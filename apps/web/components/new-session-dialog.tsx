@@ -36,6 +36,8 @@ interface NewSessionDialogProps {
   }>;
 }
 
+export const NEW_SESSION_DIALOG_TITLE = "New session";
+
 export function NewSessionDialog({
   open,
   onOpenChange,
@@ -62,7 +64,7 @@ export function NewSessionDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-none gap-0 overflow-hidden border-none bg-transparent p-0 shadow-none [&>button]:hidden">
         <DialogHeader className="sr-only">
-          <DialogTitle>New chat</DialogTitle>
+          <DialogTitle>{NEW_SESSION_DIALOG_TITLE}</DialogTitle>
           <DialogDescription>
             Start a new chat or connect a repo for a repo session.
           </DialogDescription>

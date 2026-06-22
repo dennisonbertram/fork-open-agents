@@ -365,6 +365,7 @@ function VariantCard({
                   type="button"
                   size="icon-sm"
                   variant="ghost"
+                  aria-label={`Edit ${variant.name}`}
                   onClick={onEdit}
                   disabled={isSaving}
                   className="size-7"
@@ -380,6 +381,7 @@ function VariantCard({
                   type="button"
                   size="icon-sm"
                   variant="ghost"
+                  aria-label={`Delete ${variant.name}`}
                   onClick={onDelete}
                   disabled={isSaving}
                   className="size-7 text-muted-foreground hover:text-destructive"

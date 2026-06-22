@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { useSession } from "@/hooks/use-session";
 import {
   type DiffMode,
@@ -216,7 +217,12 @@ function usePreferencesSectionState() {
   const [globalSkillsError, setGlobalSkillsError] = useState<string | null>(
     null,
   );
+  const [agentInstructionsDraft, setAgentInstructionsDraft] = useState("");
   const [copiedPublicProfile, setCopiedPublicProfile] = useState(false);
+
+  useEffect(() => {
+    setAgentInstructionsDraft(preferences?.agentCustomInstructions ?? "");
+  }, [preferences?.agentCustomInstructions]);
 
   const publicProfilePath = session?.user?.username
     ? `/u/${session.user.username}`
@@ -319,6 +325,19 @@ function usePreferencesSectionState() {
     }
   };
 
+  const handleAgentInstructionsSave = async () => {
+    setIsSaving(true);
+    try {
+      await updatePreferences({
+        agentCustomInstructions: agentInstructionsDraft,
+      });
+    } catch (error) {
+      console.error("Failed to update agent instructions:", error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleCopyPublicProfileUrl = async () => {
     if (!publicProfilePath || typeof window === "undefined") {
       return;
@@ -397,6 +416,8 @@ function usePreferencesSectionState() {
     globalSkillName,
     setGlobalSkillName,
     globalSkillsError,
+    agentInstructionsDraft,
+    setAgentInstructionsDraft,
     copiedPublicProfile,
     publicProfilePath,
     handleThemeChange,
@@ -408,6 +429,7 @@ function usePreferencesSectionState() {
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
+    handleAgentInstructionsSave,
     handleCopyPublicProfileUrl,
     handleAddGlobalSkillRef,
     handleRemoveGlobalSkillRef,
@@ -432,6 +454,8 @@ export function PreferencesSection() {
     globalSkillSource,
     setGlobalSkillSource,
     globalSkillsError,
+    agentInstructionsDraft,
+    setAgentInstructionsDraft,
     handleThemeChange,
     handleSandboxChange,
     handleManagedRuntimeProfileChange,
@@ -441,6 +465,7 @@ export function PreferencesSection() {
     handleAlertsEnabledChange,
     handleAlertSoundEnabledChange,
     handlePublicUsageEnabledChange,
+    handleAgentInstructionsSave,
     handleCopyPublicProfileUrl,
     handleAddGlobalSkillRef,
     handleRemoveGlobalSkillRef,
@@ -452,6 +477,8 @@ export function PreferencesSection() {
       (preferences?.defaultManagedRuntimeProfileId ??
         MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.id),
   );
+  const agentInstructionsDirty =
+    agentInstructionsDraft !== (preferences?.agentCustomInstructions ?? "");
 
   return (
     <div className="space-y-8">
@@ -593,6 +620,35 @@ export function PreferencesSection() {
               How code changes are shown in chat: Unified = one column with +/-
               lines; Split = old vs new side by side.
             </p>
+          </div>
+        </div>
+
+        <div className="grid gap-2">
+          <Label htmlFor="agent-custom-instructions">Agent instructions</Label>
+          <Textarea
+            id="agent-custom-instructions"
+            value={agentInstructionsDraft}
+            onChange={(event) =>
+              setAgentInstructionsDraft(event.currentTarget.value)
+            }
+            disabled={isSaving}
+            placeholder="Always use the connected repository for GitHub questions. Prefer built-in GitHub tools over raw fetch."
+            className="min-h-32 resize-y"
+          />
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Added to the agent&apos;s project-specific instructions for new
+              chat turns.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleAgentInstructionsSave}
+              disabled={isSaving || !agentInstructionsDirty}
+              className="w-full sm:w-auto"
+            >
+              Save instructions
+            </Button>
           </div>
         </div>
       </div>

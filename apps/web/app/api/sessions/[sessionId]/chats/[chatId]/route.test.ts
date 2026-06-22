@@ -88,12 +88,16 @@ let inferenceProfile: {
   id: string;
   userId: string;
   enabled: boolean;
+  name: string;
   provider: "anthropic";
+  baseUrl: string | null;
 } | null = {
   id: "inference-profile-1",
   userId: "user-1",
   enabled: true,
+  name: "Anthropic",
   provider: "anthropic",
+  baseUrl: null,
 };
 let chatsInSession: Array<{ id: string }> = [
   { id: "chat-1" },
@@ -247,7 +251,9 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       id: "inference-profile-1",
       userId: "user-1",
       enabled: true,
+      name: "Anthropic",
       provider: "anthropic",
+      baseUrl: null,
     };
     chatsInSession = [{ id: "chat-1" }, { id: "chat-2" }];
     composioPolicy = { allowed: true, reason: null };
@@ -422,7 +428,38 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     ]);
   });
 
-  test("PATCH rejects user inference profile for non-Anthropic models", async () => {
+  test("PATCH persists ZAI inference profile with GLM model", async () => {
+    inferenceProfile = {
+      id: "inference-profile-zai",
+      userId: "user-1",
+      enabled: true,
+      name: "ZAI (GLM)",
+      provider: "anthropic",
+      baseUrl: "https://api.z.ai/api/anthropic",
+    };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        modelId: "zai/glm-4.6",
+        inferenceProfileId: "inference-profile-zai",
+      }),
+      createContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(updateChatCalls).toEqual([
+      {
+        chatId: "chat-1",
+        patch: {
+          modelId: "zai/glm-4.6",
+          inferenceProfileId: "inference-profile-zai",
+        },
+      },
+    ]);
+  });
+
+  test("PATCH rejects user inference profile for incompatible models", async () => {
     const { PATCH } = await routeModulePromise;
 
     const response = await PATCH(
@@ -432,8 +469,39 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
       }),
       createContext(),
     );
+    const body = (await response.json()) as { error: string };
 
     expect(response.status).toBe(400);
+    expect(body.error).toBe(
+      "Selected inference profile only supports Anthropic models. Choose a matching User model or switch back to Vercel AI Gateway.",
+    );
+    expect(updateChatCalls).toHaveLength(0);
+  });
+
+  test("PATCH rejects ZAI inference profile for Anthropic models", async () => {
+    inferenceProfile = {
+      id: "inference-profile-zai",
+      userId: "user-1",
+      enabled: true,
+      name: "ZAI (GLM)",
+      provider: "anthropic",
+      baseUrl: "https://api.z.ai/api/anthropic",
+    };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createPatchRequest({
+        modelId: "anthropic/claude-opus-4.6",
+        inferenceProfileId: "inference-profile-zai",
+      }),
+      createContext(),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe(
+      "Selected inference profile only supports ZAI models. Choose a matching User model or switch back to Vercel AI Gateway.",
+    );
     expect(updateChatCalls).toHaveLength(0);
   });
 

@@ -7,6 +7,10 @@ import {
   getChatMessages,
   getChatSummariesBySessionId,
 } from "@/lib/db/sessions";
+import {
+  attachTimelineToMessage,
+  getChatResponseTimelineMap,
+} from "@/lib/db/chat-response-timelines";
 import { listInferenceProfiles } from "@/lib/db/inference-profiles";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
 import { getUserPreferences } from "@/lib/db/user-preferences";
@@ -117,6 +121,7 @@ export default async function SessionChatPage({
     sessionChats,
     inferenceProfiles,
     runtimeProfile,
+    responseTimelines,
   ] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
@@ -129,6 +134,7 @@ export default async function SessionChatPage({
       sessionId,
       profileId: sessionRecord.managedRuntimeProfileId,
     }),
+    getChatResponseTimelineMap(chatId),
   ]);
 
   if (!chat) {
@@ -137,8 +143,6 @@ export default async function SessionChatPage({
     }
     notFound();
   }
-
-  const initialMessages = dbMessages.map((m) => m.parts as WebAgentUIMessage);
 
   // Compute generation duration for each assistant message:
   // duration = assistant.createdAt − preceding user.createdAt
@@ -157,6 +161,25 @@ export default async function SessionChatPage({
       }
     }
   }
+
+  const initialMessages = dbMessages.map((m) => {
+    const message = m.parts as WebAgentUIMessage;
+    const responseDurationMs = messageDurationMap[m.id];
+    if (m.role !== "assistant" || responseDurationMs === undefined) {
+      return attachTimelineToMessage(message, responseTimelines.get(m.id));
+    }
+
+    return attachTimelineToMessage(
+      {
+        ...message,
+        metadata: {
+          ...message.metadata,
+          responseDurationMs,
+        },
+      },
+      responseTimelines.get(m.id),
+    );
+  });
 
   // Fallback for refresh-during-stream: the streaming assistant message may
   // not be in the maps above (not yet persisted or different ID). Use the

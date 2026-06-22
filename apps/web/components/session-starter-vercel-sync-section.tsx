@@ -72,6 +72,7 @@ export function SessionStarterVercelSyncSection({
   const getCompactContent = (): {
     icon: React.ReactNode;
     label: React.ReactNode;
+    action?: React.ReactNode;
   } | null => {
     if (isVercelLookupPending) {
       return {
@@ -91,22 +92,19 @@ export function SessionStarterVercelSyncSection({
           <AlertCircleIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
         ),
         label: (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="text-xs text-muted-foreground">
             Could not load Vercel projects
-            {onRetry && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRetry();
-                }}
-                className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
-              >
-                Retry
-              </button>
-            )}
           </span>
         ),
+        action: onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+          >
+            Retry
+          </button>
+        ) : undefined,
       };
     }
     if (repoProjects?.projects.length === 0) {
@@ -151,15 +149,18 @@ export function SessionStarterVercelSyncSection({
 
   if (!expanded && compact) {
     return (
-      <button
-        type="button"
-        onClick={() => setManualExpanded(true)}
-        className="flex w-full items-center gap-2.5 rounded-lg border border-border/70 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/40 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
-      >
-        {compact.icon}
-        <span className="min-w-0 flex-1 truncate">{compact.label}</span>
-        <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-      </button>
+      <div className="flex w-full items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3.5 py-2.5 transition-colors hover:bg-muted/40 dark:border-white/10 dark:bg-white/[0.02] dark:hover:bg-white/[0.04]">
+        <button
+          type="button"
+          onClick={() => setManualExpanded(true)}
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+        >
+          {compact.icon}
+          <span className="min-w-0 flex-1 truncate">{compact.label}</span>
+          <ChevronDownIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+        </button>
+        {compact.action}
+      </div>
     );
   }
 

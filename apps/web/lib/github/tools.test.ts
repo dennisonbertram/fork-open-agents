@@ -240,7 +240,7 @@ beforeEach(resetToDefaults);
 // ── Factory gating tests ───────────────────────────────────────────────────────
 
 describe("resolveGitHubToolsForChat — factory gating", () => {
-  test("gate OFF: githubToolsEnabled=false → { status: 'off', reason: 'not_enabled' }", async () => {
+  test("repo-bound chats get GitHub tools even when the agent row toggle is false", async () => {
     mockAgentRow = { role: "main", fromDbRow: true, githubToolsEnabled: false };
 
     const result = await resolveGitHubToolsForChat({
@@ -248,9 +248,9 @@ describe("resolveGitHubToolsForChat — factory gating", () => {
       chatId: "chat-1",
     });
 
-    expect(result.status).toBe("off");
-    if (result.status === "off") {
-      expect(result.reason).toBe("not_enabled");
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.tools).toHaveProperty("github_list_issues");
     }
   });
 
@@ -283,7 +283,7 @@ describe("resolveGitHubToolsForChat — factory gating", () => {
     }
   });
 
-  test("managed_runtime mode: goes through full resolution flow and returns { status: 'ready' } when all gates pass", async () => {
+  test("managed_runtime mode: goes through full resolution flow and returns { status: 'ready' } when access passes", async () => {
     // After the non_classic_runtime early-return guard was removed, managed_runtime
     // sessions are no longer short-circuited. They run through the full resolution
     // path (gate check, repo access) and return ready when everything passes.
@@ -302,7 +302,7 @@ describe("resolveGitHubToolsForChat — factory gating", () => {
     expect(verifyRepoAccessCallCount).toBe(1);
   });
 
-  test("gate ON + access ok: returns { status: 'ready' } with github_list_issues tool present", async () => {
+  test("repo-bound chat + access ok: returns { status: 'ready' } with github_list_issues tool present", async () => {
     const result = await resolveGitHubToolsForChat({
       userId: "user-1",
       chatId: "chat-1",

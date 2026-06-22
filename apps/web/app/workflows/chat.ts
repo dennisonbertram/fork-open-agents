@@ -10,7 +10,6 @@ import {
   type UIMessageChunk,
 } from "ai";
 import {
-  toAnthropicDirectModelId,
   type AgentModelSelection,
   type OpenAgentCallOptions,
   type SubagentRoster,
@@ -22,7 +21,10 @@ import { getWorkflowMetadata, getWritable } from "workflow";
 import { getRun } from "workflow/api";
 import { assistantFileLinkPrompt } from "@/lib/assistant-file-links";
 import { addLanguageModelUsage } from "./usage-utils";
-import { extractGatewayCost } from "./gateway-metadata";
+import {
+  extractGatewayCost,
+  extractProviderTokensPerSecond,
+} from "./gateway-metadata";
 import { hasGithubTool, mergeExtraTools } from "./merge-extra-tools";
 import type {
   WebAgentCommitData,
@@ -91,6 +93,15 @@ type Options = {
   maxSteps?: number;
   autoCommitEnabled?: boolean;
   autoCreatePrEnabled?: boolean;
+  inferenceProfilePreflight?: {
+    inferenceProfileId: string;
+    inferenceProfileName: string | null;
+    inferenceProvider: string | null;
+    error: {
+      name: string;
+      message: string;
+    } | null;
+  } | null;
 };
 
 type ChatModelRuntime = {
@@ -100,6 +111,10 @@ type ChatModelRuntime = {
   inferenceProfileId: string | null;
   inferenceProfileName: string | null;
   inferenceProvider: string | null;
+  inferenceProfileError: {
+    name: string;
+    message: string;
+  } | null;
   agentOptions: Omit<OpenAgentCallOptions, "sandbox" | "skills">;
   autoCommitEnabled: boolean;
   autoCreatePrEnabled: boolean;
@@ -167,24 +182,30 @@ const convertMessages = async (
   });
 };
 
+function combineCustomInstructions(parts: Array<string | null | undefined>) {
+  const filteredParts = parts.flatMap((part) => {
+    const trimmedPart = part?.trim();
+    return trimmedPart ? [trimmedPart] : [];
+  });
+
+  return filteredParts.length > 0 ? filteredParts.join("\n\n") : undefined;
+}
+
 async function resolveChatModelRuntime(params: {
   userId: string;
   sessionId: string;
   chatId: string;
   requestUrl: string;
   authSession: AuthSessionContext;
+  inferenceProfilePreflight?: Options["inferenceProfilePreflight"];
 }): Promise<ChatModelRuntime> {
   "use step";
 
-  const [
-    { getChatById, getSessionById },
-    { getUserPreferences },
-    { getInferenceProfileByIdForUser },
-  ] = await Promise.all([
-    import("@/lib/db/sessions"),
-    import("@/lib/db/user-preferences"),
-    import("@/lib/db/inference-profiles"),
-  ]);
+  const [{ getChatById, getSessionById }, { getUserPreferences }] =
+    await Promise.all([
+      import("@/lib/db/sessions"),
+      import("@/lib/db/user-preferences"),
+    ]);
   const [sessionRecord, chat, rawPreferences] = await Promise.all([
     getSessionById(params.sessionId),
     getChatById(params.chatId),
@@ -212,13 +233,33 @@ async function resolveChatModelRuntime(params: {
     modelVariants,
     missingVariantLabel: "Selected model variant",
   });
-  const subagentModelSelection = preferences?.defaultSubagentModelId
+  let subagentModelSelection = preferences?.defaultSubagentModelId
     ? resolveChatModelSelection({
         selectedModelId: preferences.defaultSubagentModelId,
         modelVariants,
         missingVariantLabel: "Subagent model variant",
       })
     : undefined;
+  if (
+    subagentModelSelection &&
+    preferences?.defaultSubagentInferenceProfileId
+  ) {
+    try {
+      const { resolveInferenceProfileModelSelection } =
+        await import("@/lib/inference/profile-resolution");
+      subagentModelSelection = await resolveInferenceProfileModelSelection({
+        userId: params.userId,
+        inferenceProfileId: preferences.defaultSubagentInferenceProfileId,
+        selection: subagentModelSelection,
+      });
+    } catch (error) {
+      console.error(
+        "[chat] subagent inference profile resolution failed:",
+        error,
+      );
+      throw error;
+    }
+  }
   const autoCommitEnabled =
     (sessionRecord.autoCommitPushOverride ??
       preferences?.autoCommitPush ??
@@ -235,31 +276,18 @@ async function resolveChatModelRuntime(params: {
   let inferenceRoute: InferenceRoute = "gateway";
   let inferenceProfileName: string | null = null;
   let inferenceProvider: string | null = null;
+  let inferenceProfileError: ChatModelRuntime["inferenceProfileError"] = null;
 
-  if (inferenceProfileId) {
-    const profile = await getInferenceProfileByIdForUser(
-      params.userId,
-      inferenceProfileId,
-    );
-    if (!profile || !profile.enabled) {
-      const { InferenceProfileResolutionError } =
-        await import("@/lib/inference/profile-resolution");
-      throw new InferenceProfileResolutionError(
-        "Selected inference profile is unavailable. Choose another User model or switch back to Vercel AI Gateway.",
-      );
-    }
+  const profilePreflight =
+    params.inferenceProfilePreflight?.inferenceProfileId === inferenceProfileId
+      ? params.inferenceProfilePreflight
+      : null;
 
-    if (!toAnthropicDirectModelId(mainModelSelection.id)) {
-      const { InferenceProfileResolutionError } =
-        await import("@/lib/inference/profile-resolution");
-      throw new InferenceProfileResolutionError(
-        "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
-      );
-    }
-
+  if (inferenceProfileId && profilePreflight) {
     inferenceRoute = "user";
-    inferenceProfileName = profile.name;
-    inferenceProvider = profile.provider;
+    inferenceProfileName = profilePreflight.inferenceProfileName;
+    inferenceProvider = profilePreflight.inferenceProvider;
+    inferenceProfileError = profilePreflight.error;
   }
 
   // ── Phase 4: resolve per-role subagent roster ────────────────────────────────
@@ -369,12 +397,16 @@ async function resolveChatModelRuntime(params: {
     inferenceProfileId,
     inferenceProfileName,
     inferenceProvider,
+    inferenceProfileError,
     agentOptions: {
       model: mainModelSelection,
       ...(subagentModelSelection
         ? { subagentModel: subagentModelSelection }
         : {}),
-      customInstructions: assistantFileLinkPrompt,
+      customInstructions: combineCustomInstructions([
+        assistantFileLinkPrompt,
+        preferences?.agentCustomInstructions,
+      ]),
       ...(subagentRoster ? { subagentRoster } : {}),
       ...(mainAgentToolAuthoringEnabled
         ? { toolAuthoringEnabled: true, proposeToolAction }
@@ -1477,6 +1509,7 @@ export async function runAgentWorkflow(options: Options) {
         chatId: options.chatId,
         requestUrl: options.requestUrl,
         authSession: options.authSession,
+        inferenceProfilePreflight: options.inferenceProfilePreflight ?? null,
       }),
       modelMessagesPromise,
       inputMessagesPersistPromise,
@@ -1487,6 +1520,12 @@ export async function runAgentWorkflow(options: Options) {
     inferenceProfileId = modelRuntime.inferenceProfileId;
     inferenceProfileName = modelRuntime.inferenceProfileName;
     inferenceProvider = modelRuntime.inferenceProvider;
+    if (modelRuntime.inferenceProfileError) {
+      throw Object.assign(
+        new Error(modelRuntime.inferenceProfileError.message),
+        { name: modelRuntime.inferenceProfileError.name },
+      );
+    }
     runtimeMode = runtime.runtimeMode;
     // sandboxState is null for sandbox-free sessions; keep as undefined so
     // subsequent guards that check `sandboxState` (persist, refresh, etc.) skip
@@ -1582,6 +1621,8 @@ export async function runAgentWorkflow(options: Options) {
               workingDirectory: runtime.workingDirectory,
               currentBranch: runtime.currentBranch,
               environmentDetails: runtime.environmentDetails,
+              repoOwner: runtime.repoOwner,
+              repoName: runtime.repoName,
             }
           : {
               state: {} as import("@open-agents/sandbox").SandboxState,
@@ -2240,7 +2281,13 @@ const runAgentStep = async (
     let responseMessage: WebAgentUIMessage | undefined;
     let lastStepUsage: LanguageModelUsage | undefined;
     let lastStepCost: number | undefined;
+    let providerTokensPerSecond: number | undefined;
     const lastOriginalMessage = originalMessages.at(-1);
+    const existingResponseInferenceDurationMs =
+      lastOriginalMessage?.role === "assistant"
+        ? lastOriginalMessage.metadata?.responseInferenceDurationMs
+        : undefined;
+    let responseInferenceDurationMs = existingResponseInferenceDurationMs ?? 0;
     const existingStepFinishReasons: WebAgentStepFinishMetadata[] =
       lastOriginalMessage?.role === "assistant"
         ? [...(lastOriginalMessage.metadata?.stepFinishReasons ?? [])]
@@ -2423,7 +2470,7 @@ const runAgentStep = async (
           },
         });
       }
-      // Benign off cases (not_enabled, no_repo) emit nothing
+      // Benign off cases (no_repo) emit nothing
     } catch (error) {
       // Non-fatal: emit observability event and continue without GitHub tools
       // rather than breaking the chat. GitHubToolsSetupError is expected on misconfiguration.
@@ -2499,6 +2546,12 @@ const runAgentStep = async (
             lastStepCost = stepCost;
             totalMessageCost = (totalMessageCost ?? 0) + stepCost;
           }
+          const stepProviderTokensPerSecond = extractProviderTokensPerSecond(
+            streamPart.providerMetadata,
+          );
+          if (stepProviderTokensPerSecond !== undefined) {
+            providerTokensPerSecond = stepProviderTokensPerSecond;
+          }
           stepFinishReasons = [
             ...stepFinishReasons,
             {
@@ -2517,6 +2570,7 @@ const runAgentStep = async (
             totalMessageUsage,
             lastStepCost,
             totalMessageCost,
+            providerTokensPerSecond,
             lastStepFinishReason: streamPart.finishReason,
             lastStepRawFinishReason: streamPart.rawFinishReason,
             stepFinishReasons,
@@ -2593,6 +2647,19 @@ const runAgentStep = async (
       };
     }
 
+    const latestProviderTokensPerSecond = steps
+      .map((step) => extractProviderTokensPerSecond(step.providerMetadata))
+      .findLast((value) => value !== undefined);
+    if (latestProviderTokensPerSecond !== undefined) {
+      responseMessage = {
+        ...responseMessage,
+        metadata: {
+          ...responseMessage.metadata,
+          providerTokensPerSecond: latestProviderTokensPerSecond,
+        },
+      };
+    }
+
     if (finishReason === "other") {
       const stepDiagnostics = steps.map((step) => ({
         stepNumber: step.stepNumber,
@@ -2653,6 +2720,15 @@ const runAgentStep = async (
     }
 
     const stepFinishedAt = new Date();
+    const stepDurationMs = stepFinishedAt.getTime() - stepStartedAt.getTime();
+    responseInferenceDurationMs += stepDurationMs;
+    responseMessage = {
+      ...responseMessage,
+      metadata: {
+        ...responseMessage.metadata,
+        responseInferenceDurationMs,
+      },
+    };
     await emitSessionEvent({
       sessionId,
       chatId,
@@ -2673,7 +2749,7 @@ const runAgentStep = async (
         inferenceProfileId,
         finishReason,
         rawFinishReason: rawFinishReason ?? null,
-        durationMs: stepFinishedAt.getTime() - stepStartedAt.getTime(),
+        durationMs: stepDurationMs,
         modelStepCount: steps.length,
         toolCallCount: steps.reduce(
           (count, step) => count + step.toolCalls.length,

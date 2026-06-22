@@ -190,9 +190,10 @@ export const inferenceProfiles = pgTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     provider: text("provider", {
-      enum: ["anthropic"],
+      enum: ["anthropic", "openai-compatible"],
     }).notNull(),
     baseUrl: text("base_url"),
+    modelIds: jsonb("model_ids").$type<string[] | null>(),
     encryptedApiKey: text("encrypted_api_key").notNull(),
     keyLast4: text("key_last4").notNull(),
     keyFingerprint: text("key_fingerprint").notNull(),
@@ -1862,6 +1863,27 @@ export const repositoryComposioSettings = pgTable(
   ],
 );
 
+export const repositorySidebarArchives = pgTable(
+  "repository_sidebar_archives",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("repository_sidebar_archives_user_idx").on(table.userId),
+    uniqueIndex("repository_sidebar_archives_repo_idx").on(
+      table.userId,
+      table.repoOwner,
+      table.repoName,
+    ),
+  ],
+);
+
 export type ComposioToolProfile = typeof composioToolProfiles.$inferSelect;
 export type NewComposioToolProfile = typeof composioToolProfiles.$inferInsert;
 export type ComposioAgentSession = typeof composioAgentSessions.$inferSelect;
@@ -1870,6 +1892,10 @@ export type RepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferSelect;
 export type NewRepositoryComposioSettings =
   typeof repositoryComposioSettings.$inferInsert;
+export type RepositorySidebarArchive =
+  typeof repositorySidebarArchives.$inferSelect;
+export type NewRepositorySidebarArchive =
+  typeof repositorySidebarArchives.$inferInsert;
 
 // MCP server registrations — slice 1 of epic #371
 export const mcpServers = pgTable(
@@ -1921,6 +1947,9 @@ export const userPreferences = pgTable("user_preferences", {
     () => inferenceProfiles.id,
     { onDelete: "set null" },
   ),
+  defaultSubagentInferenceProfileId: text(
+    "default_subagent_inference_profile_id",
+  ).references(() => inferenceProfiles.id, { onDelete: "set null" }),
   defaultDiffMode: text("default_diff_mode", {
     enum: ["unified", "split"],
   }).default("unified"),
@@ -1929,6 +1958,9 @@ export const userPreferences = pgTable("user_preferences", {
   alertsEnabled: boolean("alerts_enabled").notNull().default(true),
   alertSoundEnabled: boolean("alert_sound_enabled").notNull().default(true),
   publicUsageEnabled: boolean("public_usage_enabled").notNull().default(false),
+  agentCustomInstructions: text("agent_custom_instructions")
+    .notNull()
+    .default(""),
   globalSkillRefs: jsonb("global_skill_refs")
     .$type<GlobalSkillRef[]>()
     .notNull()

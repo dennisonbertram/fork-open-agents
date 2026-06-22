@@ -107,7 +107,7 @@ const spies = {
   resolveGitHubToolsForChat: mock(
     async (): Promise<unknown> => ({
       status: "off" as const,
-      reason: "not_enabled" as const,
+      reason: "no_repo" as const,
     }),
   ),
   listManagedServices: mock(async (): Promise<unknown[]> => []),
@@ -136,6 +136,7 @@ let testPreferences: {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
   defaultInferenceProfileId: string | null;
+  defaultSubagentInferenceProfileId: string | null;
   defaultSandboxType: "vercel";
   defaultDiffMode: "unified";
   autoCommitPush: boolean;
@@ -143,6 +144,7 @@ let testPreferences: {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  agentCustomInstructions: string;
   globalSkillRefs: never[];
   modelVariants: never[];
   enabledModelIds: string[];
@@ -615,6 +617,7 @@ beforeEach(() => {
     defaultModelId: "anthropic/claude-haiku-4.5",
     defaultSubagentModelId: null,
     defaultInferenceProfileId: null,
+    defaultSubagentInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,
@@ -622,6 +625,7 @@ beforeEach(() => {
     alertsEnabled: true,
     alertSoundEnabled: true,
     publicUsageEnabled: false,
+    agentCustomInstructions: "",
     globalSkillRefs: [],
     modelVariants: [],
     enabledModelIds: [],
@@ -880,6 +884,19 @@ describe("runAgentWorkflow", () => {
         sandboxName: "session_session-1",
       },
     });
+  });
+
+  test("threads saved agent instructions into customInstructions", async () => {
+    testPreferences.agentCustomInstructions =
+      "Always use built-in GitHub tools for connected repository questions.";
+
+    await runAgentWorkflow(makeOptions());
+
+    const opts = agentStreamOptions as Record<string, unknown> | undefined;
+    expect(opts?.customInstructions).toContain("workspace file path");
+    expect(opts?.customInstructions).toContain(
+      "Always use built-in GitHub tools for connected repository questions.",
+    );
   });
 
   test("marks managed runtime proof incomplete when no managed worker executed", async () => {

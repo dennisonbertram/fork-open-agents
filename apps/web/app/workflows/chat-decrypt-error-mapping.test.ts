@@ -70,6 +70,7 @@ const spies = {
 
 // Control which error getInferenceProfileByIdForUser throws
 let inferenceProfileError: Error | null = null;
+let decryptInferenceProfileError: Error | null = null;
 
 // ── Module mocks ───────────────────────────────────────────────────
 
@@ -138,6 +139,7 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultModelId: "anthropic/claude-sonnet",
     defaultSubagentModelId: null,
     defaultInferenceProfileId: null,
+    defaultSubagentInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,
@@ -161,8 +163,16 @@ mock.module("@/lib/db/inference-profiles", () => ({
       id: "profile-dec-xyz",
       name: "Decrypt Test Profile",
       provider: "anthropic",
+      baseUrl: null,
       enabled: true,
     };
+  },
+  decryptInferenceProfileApiKey: () => {
+    if (decryptInferenceProfileError) {
+      throw decryptInferenceProfileError;
+    }
+
+    return "profile-api-key";
   },
 }));
 
@@ -199,6 +209,8 @@ mock.module("@/lib/workflows/goal-validation", () => ({
 const { runAgentWorkflow } = await import("./chat");
 
 function makeOptions() {
+  const preflightError = inferenceProfileError ?? decryptInferenceProfileError;
+
   return {
     messages: [
       {
@@ -221,6 +233,17 @@ function makeOptions() {
       },
     },
     maxSteps: 1,
+    inferenceProfilePreflight: {
+      inferenceProfileId: "profile-dec-xyz",
+      inferenceProfileName: "Decrypt Test Profile",
+      inferenceProvider: "anthropic",
+      error: preflightError
+        ? {
+            name: preflightError.name,
+            message: preflightError.message,
+          }
+        : null,
+    },
   } as Parameters<typeof runAgentWorkflow>[0];
 }
 
@@ -228,6 +251,7 @@ beforeEach(() => {
   writtenChunks.length = 0;
   runStatus = "running";
   inferenceProfileError = null;
+  decryptInferenceProfileError = null;
   for (const spy of Object.values(spies)) {
     spy.mockClear();
   }
@@ -329,6 +353,35 @@ describe("decrypt error → actionable user message mapping (BT-009)", () => {
     expect(delta).not.toContain(
       "Unsupported state or unable to authenticate data",
     );
+  });
+
+  test("BT-009b: profile decrypt failure before agent step surfaces actionable message", async () => {
+    decryptInferenceProfileError = Object.assign(
+      new Error(
+        'The saved API key for inference profile "Decrypt Test Profile" can\'t be decrypted in this environment — re-enter it in Settings → Models.',
+      ),
+      { name: "InferenceProfileResolutionError" },
+    );
+
+    try {
+      await runAgentWorkflow(makeOptions());
+    } catch {
+      // expected — the workflow throws after writing the error chunk
+    }
+
+    const errorChunk = writtenChunks.find(
+      (chunk) =>
+        chunk.type === "text-delta" &&
+        "id" in chunk &&
+        chunk.id === "setup-error",
+    );
+
+    expect(errorChunk).toBeDefined();
+    const delta = (errorChunk as { delta?: string }).delta ?? "";
+
+    expect(delta).not.toBe("Workspace setup failed. Try again in a moment.");
+    expect(delta).toContain("Decrypt Test Profile");
+    expect(delta.toLowerCase()).toContain("settings");
   });
 
   // BT-010: raw "Unsupported state or unable to authenticate data" crypto error

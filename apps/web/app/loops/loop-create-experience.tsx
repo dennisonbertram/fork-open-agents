@@ -48,6 +48,10 @@ const AI_EXAMPLES = [
   "Check my inbox; if a new email is a feature request, file it as an issue.",
 ];
 
+export function getTemplateActionLabel(templateName: string) {
+  return `Use ${templateName} template`;
+}
+
 // ── Tiny flow preview (node labels in authoring order) ──────────────────────────
 
 function FlowPreview({ definition }: { definition: LoopDefinition }) {
@@ -227,6 +231,7 @@ export function LoopCreateExperience({
                 <Button
                   type="button"
                   size="sm"
+                  aria-label={getTemplateActionLabel(template.name)}
                   onClick={() => chooseTemplate(template)}
                 >
                   Use this template

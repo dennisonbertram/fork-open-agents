@@ -1,5 +1,6 @@
 import {
   directAnthropicModel,
+  directOpenAICompatibleModel,
   toAnthropicDirectModelId,
 } from "@open-agents/agent";
 import { generateText } from "ai";
@@ -10,6 +11,12 @@ import {
   recordInferenceProfileTestResult,
 } from "@/lib/db/inference-profiles";
 import { toInferenceProfileTestMessage } from "@/lib/inference/model-routing";
+import {
+  getInferenceProfileModelProvider,
+  getInferenceProfileModelProviderDisplayName,
+  toAnthropicCompatibleProfileModelId,
+  toOpenAICompatibleProfileModelId,
+} from "@/lib/inference/profile-models";
 
 type RouteContext = {
   params: Promise<{ profileId: string }>;
@@ -20,6 +27,7 @@ type TestProfileRequest = {
 };
 
 const DEFAULT_TEST_MODEL_ID = "anthropic/claude-haiku-4.5";
+const DEFAULT_FIREWORKS_TEST_MODEL_ID = "fireworks/kimi-k2p5";
 
 function jsonError(error: string, status: number) {
   return Response.json({ error }, { status });
@@ -50,22 +58,73 @@ export async function POST(req: Request, context: RouteContext) {
   const catalogModelId =
     typeof body.modelId === "string" && body.modelId.trim().length > 0
       ? body.modelId.trim()
-      : DEFAULT_TEST_MODEL_ID;
-  const directModelId = toAnthropicDirectModelId(catalogModelId);
+      : profile.provider === "openai-compatible"
+        ? (profile.modelIds?.[0] ?? "")
+        : getInferenceProfileModelProvider(profile) === "fireworks"
+          ? DEFAULT_FIREWORKS_TEST_MODEL_ID
+          : DEFAULT_TEST_MODEL_ID;
+  const directModelId =
+    profile.provider === "openai-compatible"
+      ? toOpenAICompatibleProfileModelId(profile, catalogModelId)
+      : toAnthropicCompatibleProfileModelId(
+          profile,
+          catalogModelId,
+          toAnthropicDirectModelId,
+        );
   if (!directModelId) {
-    return jsonError("Inference profile test requires an Anthropic model", 400);
+    const providerName = getInferenceProfileModelProviderDisplayName(profile);
+    return jsonError(
+      `Inference profile test requires a ${providerName} model`,
+      400,
+    );
+  }
+  const providerName = getInferenceProfileModelProviderDisplayName(profile);
+
+  let apiKey: string;
+  try {
+    apiKey = decryptInferenceProfileApiKey(profile);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Saved API key could not be decrypted. Re-enter it in Settings → Models.";
+    const updatedProfile = await recordInferenceProfileTestResult(
+      authResult.userId,
+      profile.id,
+      {
+        status: "failed",
+        message,
+      },
+    );
+
+    return Response.json({
+      profile: updatedProfile,
+      result: {
+        status: "failed",
+        message,
+      },
+    });
   }
 
-  const apiKey = decryptInferenceProfileApiKey(profile);
-
   try {
+    const model =
+      profile.provider === "openai-compatible"
+        ? directOpenAICompatibleModel({
+            provider: "openai-compatible",
+            name: profile.name,
+            modelId: directModelId,
+            apiKey,
+            baseURL: profile.baseUrl ?? "",
+          })
+        : directAnthropicModel({
+            provider: "anthropic",
+            modelId: directModelId,
+            apiKey,
+            ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+          });
+
     await generateText({
-      model: directAnthropicModel({
-        provider: "anthropic",
-        modelId: directModelId,
-        apiKey,
-        ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
-      }),
+      model,
       prompt: 'Reply with only "OK".',
       maxOutputTokens: 16,
     });
@@ -75,7 +134,7 @@ export async function POST(req: Request, context: RouteContext) {
       profile.id,
       {
         status: "passed",
-        message: "Anthropic profile test passed.",
+        message: `${providerName} profile test passed.`,
       },
     );
 
@@ -83,11 +142,11 @@ export async function POST(req: Request, context: RouteContext) {
       profile: updatedProfile,
       result: {
         status: "passed",
-        message: "Anthropic profile test passed.",
+        message: `${providerName} profile test passed.`,
       },
     });
   } catch (error) {
-    const message = toInferenceProfileTestMessage(error, apiKey);
+    const message = toInferenceProfileTestMessage(error, apiKey, providerName);
     const updatedProfile = await recordInferenceProfileTestResult(
       authResult.userId,
       profile.id,

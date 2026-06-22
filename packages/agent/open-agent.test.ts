@@ -290,6 +290,15 @@ describe("GitHub tools prompt steer (githubToolsEnabled)", () => {
     expect(prompt).toContain("Prefer these typed tools");
   });
 
+  test("buildSystemPrompt with githubToolsEnabled:true defaults GitHub issue questions to the connected repo", () => {
+    const prompt = buildSystemPrompt({ githubToolsEnabled: true });
+
+    expect(prompt).toContain("current connected repository");
+    expect(prompt).toContain("are there any open GitHub issues?");
+    expect(prompt).toContain("Do not run `git remote -v`");
+    expect(prompt).toContain("call `github_list_issues`");
+  });
+
   // GT-002: when githubToolsEnabled=false the steer is absent
   test("buildSystemPrompt with githubToolsEnabled:false omits the GitHub tools steer", () => {
     const prompt = buildSystemPrompt({ githubToolsEnabled: false });
@@ -332,6 +341,7 @@ describe("GitHub tool-preference steer (githubToolAvailable)", () => {
 
     expect(prompt).toContain("web_fetch");
     expect(prompt).toContain("api.github.com");
+    expect(prompt).toContain("use the current connected repository");
   });
 
   // GTA-002: when githubToolAvailable is false/omitted the steer is absent
@@ -352,5 +362,22 @@ describe("GitHub tool-preference steer (githubToolAvailable)", () => {
 
     expect(prompt).toContain("api.github.com");
     expect(prompt).not.toContain("github_list_issues");
+  });
+});
+
+describe("connected repository prompt context", () => {
+  test("buildSystemPrompt identifies the connected repository separately from the sandbox directory", () => {
+    const prompt = buildSystemPrompt({
+      cwd: "/vercel/sandbox",
+      repoOwner: "dennisonbertram",
+      repoName: "synthetix",
+      currentBranch: "d/881fa842",
+    });
+
+    expect(prompt).toContain("Connected repository: dennisonbertram/synthetix");
+    expect(prompt).toContain(
+      "Do not infer the repo name from the sandbox working directory.",
+    );
+    expect(prompt).toContain("Current branch: d/881fa842");
   });
 });

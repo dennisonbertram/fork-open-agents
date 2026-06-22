@@ -426,8 +426,8 @@ describe("BackgroundAgentsSection", () => {
 
     // A destructive Delete button must be present in the agent action row
     expect(html).toContain("Delete");
-    // The delete button should have an aria-label for accessibility
-    expect(html).toContain("Delete agent");
+    // The delete button should name the target agent for accessibility.
+    expect(html).toContain("Delete background agent To be deleted");
   });
 
   test("REG-001: webhook URL not shown when webhookPublicId is null (regression guard)", async () => {

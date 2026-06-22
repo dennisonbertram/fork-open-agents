@@ -22,17 +22,31 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type {
+  InferenceProfileProvider,
   InferenceProfileTestResult,
   SafeInferenceProfile,
 } from "@/lib/inference/types";
+import {
+  CURSOR_OPENAI_COMPATIBLE_BASE_URL,
+  CURSOR_OPENAI_COMPATIBLE_MODEL_IDS,
+  getInferenceProfileModelProviderDisplayName,
+} from "@/lib/inference/profile-models";
 import { fetcher } from "@/lib/swr";
 import { cn } from "@/lib/utils";
 
@@ -42,10 +56,41 @@ export interface InferenceProfilesResponse {
 
 type SaveProfileInput = {
   name: string;
+  provider: InferenceProfileProvider;
   baseUrl: string;
+  modelIds: string[];
   apiKey: string;
   enabled: boolean;
 };
+
+export function createCursorInferenceProfileDraft(currentName: string): {
+  provider: InferenceProfileProvider;
+  name: string | null;
+  baseUrl: string;
+  modelIds: string;
+} {
+  return {
+    provider: "openai-compatible",
+    name: currentName.trim() ? null : "Cursor",
+    baseUrl: CURSOR_OPENAI_COMPATIBLE_BASE_URL,
+    modelIds: CURSOR_OPENAI_COMPATIBLE_MODEL_IDS.join("\n"),
+  };
+}
+
+function parseModelIds(value: string): string[] {
+  return Array.from(
+    new Set(
+      value
+        .split(/[\n,]/)
+        .map((modelId) => modelId.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function getProfileProviderLabel(profile: SafeInferenceProfile): string {
+  return getInferenceProfileModelProviderDisplayName(profile);
+}
 
 function formatProfileDate(value: Date | string | null): string | null {
   if (!value) {
@@ -94,7 +139,10 @@ function ProfileDialog({
   onSubmit: (input: SaveProfileInput) => Promise<true | string>;
 }) {
   const [name, setName] = useState("");
+  const [provider, setProvider] =
+    useState<InferenceProfileProvider>("anthropic");
   const [baseUrl, setBaseUrl] = useState("");
+  const [modelIds, setModelIds] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -105,7 +153,9 @@ function ProfileDialog({
     }
 
     setName(editingProfile?.name ?? "");
+    setProvider(editingProfile?.provider ?? "anthropic");
     setBaseUrl(editingProfile?.baseUrl ?? "");
+    setModelIds((editingProfile?.modelIds ?? []).join("\n"));
     setApiKey("");
     setEnabled(editingProfile?.enabled ?? true);
     setError(null);
@@ -122,10 +172,23 @@ function ProfileDialog({
       setError("API key is required");
       return;
     }
+    const parsedModelIds = parseModelIds(modelIds);
+    if (provider === "openai-compatible") {
+      if (!baseUrl.trim()) {
+        setError("Base URL is required for OpenAI-compatible profiles");
+        return;
+      }
+      if (parsedModelIds.length === 0) {
+        setError("Add at least one model ID");
+        return;
+      }
+    }
 
     const result = await onSubmit({
       name: name.trim(),
+      provider,
       baseUrl: baseUrl.trim(),
+      modelIds: parsedModelIds,
       apiKey: apiKey.trim(),
       enabled,
     });
@@ -139,6 +202,16 @@ function ProfileDialog({
   };
 
   const isEditing = editingProfile !== null;
+  const applyCursorPreset = () => {
+    const draft = createCursorInferenceProfileDraft(name);
+    setProvider(draft.provider);
+    if (draft.name) {
+      setName(draft.name);
+    }
+    setBaseUrl(draft.baseUrl);
+    setModelIds(draft.modelIds);
+    setError(null);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -148,18 +221,42 @@ function ProfileDialog({
             {isEditing ? "Edit Inference Profile" : "New Inference Profile"}
           </DialogTitle>
           <DialogDescription>
-            Save Anthropic-compatible credentials for direct user-paid model
-            calls.
+            Save provider credentials for direct user-paid model calls.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid gap-1.5">
+            <Label htmlFor="inference-profile-provider">Provider type</Label>
+            <Select
+              value={provider}
+              onValueChange={(value) =>
+                setProvider(value as InferenceProfileProvider)
+              }
+              disabled={isSaving}
+            >
+              <SelectTrigger id="inference-profile-provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="anthropic">Anthropic-compatible</SelectItem>
+                <SelectItem value="openai-compatible">
+                  OpenAI-compatible
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid gap-1.5">
             <Label htmlFor="inference-profile-name">Name</Label>
             <Input
               id="inference-profile-name"
               value={name}
               onChange={(event) => setName(event.target.value)}
-              placeholder="Personal Anthropic"
+              placeholder={
+                provider === "openai-compatible"
+                  ? "Sakana"
+                  : "Personal Anthropic"
+              }
               disabled={isSaving}
             />
           </div>
@@ -170,13 +267,75 @@ function ProfileDialog({
               id="inference-profile-base-url"
               value={baseUrl}
               onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="https://api.anthropic.com/v1"
+              placeholder={
+                provider === "openai-compatible"
+                  ? "https://api.sakana.ai/fugu/v1"
+                  : "https://api.anthropic.com/v1 or https://api.fireworks.ai/inference/v1"
+              }
               disabled={isSaving}
             />
             <p className="text-xs text-muted-foreground">
-              Empty uses Anthropic. Bare hosts are normalized to a /v1 endpoint.
+              {provider === "openai-compatible" ? (
+                <>
+                  Use the provider&apos;s OpenAI-compatible base URL, not the{" "}
+                  <span className="font-mono">/chat/completions</span> path. For
+                  Cursor Composer, run an OpenAI-compatible Cursor proxy and use{" "}
+                  <span className="font-mono">
+                    {CURSOR_OPENAI_COMPATIBLE_BASE_URL}
+                  </span>
+                  .
+                </>
+              ) : (
+                <>
+                  Empty uses Anthropic. Fireworks URLs are normalized to{" "}
+                  <span className="font-mono">
+                    https://api.fireworks.ai/inference/v1
+                  </span>
+                  .
+                </>
+              )}
             </p>
           </div>
+
+          <div className="rounded-md border border-border/70 bg-muted/30 p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Cursor Composer preset</p>
+                <p className="text-xs text-muted-foreground">
+                  Fills the OpenAI-compatible local Cursor proxy URL and
+                  Composer model IDs. You can still edit the list for any Cursor
+                  model your proxy exposes.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={applyCursorPreset}
+                disabled={isSaving}
+                className="shrink-0"
+              >
+                Use Cursor
+              </Button>
+            </div>
+          </div>
+
+          {provider === "openai-compatible" && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="inference-profile-model-ids">Model IDs</Label>
+              <Textarea
+                id="inference-profile-model-ids"
+                value={modelIds}
+                onChange={(event) => setModelIds(event.target.value)}
+                placeholder={"composer-2.5\ncomposer-2.5-fast"}
+                disabled={isSaving}
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground">
+                Enter one model ID per line, or separate them with commas.
+              </p>
+            </div>
+          )}
 
           <div className="grid gap-1.5">
             <Label htmlFor="inference-profile-api-key">API Key</Label>
@@ -295,11 +454,17 @@ function ProfileCard({
           </div>
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <span className="text-xs text-muted-foreground">
-              Anthropic key ending {profile.keyLast4}
+              {getProfileProviderLabel(profile)} key ending {profile.keyLast4}
             </span>
             {profile.baseUrl && (
               <span className="max-w-full truncate text-xs text-muted-foreground">
                 {profile.baseUrl}
+              </span>
+            )}
+            {profile.modelIds.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {profile.modelIds.length} model
+                {profile.modelIds.length === 1 ? "" : "s"}
               </span>
             )}
           </div>
@@ -397,7 +562,9 @@ export function InferenceProfilesSection() {
         body: JSON.stringify({
           ...(isEditing ? { profileId: editingProfile.id } : {}),
           name: input.name,
+          provider: input.provider,
           baseUrl: input.baseUrl || null,
+          modelIds: input.modelIds,
           ...(input.apiKey ? { apiKey: input.apiKey } : {}),
           enabled: input.enabled,
         }),
@@ -524,8 +691,9 @@ export function InferenceProfilesSection() {
               Inference Profiles
             </h3>
             <p className="text-sm text-muted-foreground">
-              Add user-paid Anthropic-compatible credentials. Saved profiles
-              appear as a User group in the chat model selector.
+              Add user-paid Anthropic-compatible or OpenAI-compatible
+              credentials. Saved profiles appear under their provider in the
+              chat model selector.
             </p>
           </div>
           <Button

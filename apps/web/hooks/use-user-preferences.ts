@@ -12,6 +12,7 @@ export interface UserPreferences {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
   defaultInferenceProfileId: string | null;
+  defaultSubagentInferenceProfileId: string | null;
   defaultSandboxType: SandboxType;
   defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;
@@ -20,6 +21,7 @@ export interface UserPreferences {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  agentCustomInstructions: string;
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];

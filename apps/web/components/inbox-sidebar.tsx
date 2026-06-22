@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
@@ -85,6 +86,20 @@ type ArchivedSessionsResponse = {
     nextOffset: number;
   };
   error?: string;
+};
+
+type RepositorySidebarArchivesResponse = {
+  repositories: Array<{
+    repoOwner: string;
+    repoName: string;
+  }>;
+  error?: string;
+};
+
+type SidebarRepository = {
+  repoOwner: string;
+  repoName: string;
+  label: string;
 };
 
 const ARCHIVED_SESSIONS_PAGE_SIZE = 50;
@@ -357,6 +372,10 @@ function groupSessionsByRepo(
 
 function getRepoGroupContentId(groupId: string): string {
   return `repo-group-panel-${groupId.replace(/[^a-z0-9-]+/gi, "-")}`;
+}
+
+function getRepositoryArchiveKey(repoOwner: string, repoName: string): string {
+  return `${repoOwner.trim().toLowerCase()}/${repoName.trim().toLowerCase()}`;
 }
 
 type SessionRowProps = {
@@ -726,6 +745,39 @@ export function InboxSidebar({
     useState(false);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
+  const [archiveConfirmRepository, setArchiveConfirmRepository] =
+    useState<SidebarRepository | null>(null);
+  const archiveRepositorySubmitRef = useRef<HTMLButtonElement>(null);
+  const archiveSessionSubmitRef = useRef<HTMLButtonElement>(null);
+  const [archivedRepositoryKeys, setArchivedRepositoryKeys] = useState<
+    Set<string>
+  >(() => new Set());
+  const [isArchivingRepository, setIsArchivingRepository] = useState(false);
+
+  const fetchArchivedRepositories = useCallback(async () => {
+    try {
+      const res = await fetch("/api/settings/repositories/archive");
+      const data = (await res.json()) as RepositorySidebarArchivesResponse;
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to load archived repositories");
+      }
+
+      setArchivedRepositoryKeys(
+        new Set(
+          data.repositories.map((repository) =>
+            getRepositoryArchiveKey(repository.repoOwner, repository.repoName),
+          ),
+        ),
+      );
+    } catch (error) {
+      console.error("Failed to load archived repositories:", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchArchivedRepositories();
+  }, [fetchArchivedRepositories]);
 
   const fetchArchivedSessionsPage = useCallback(
     async ({ offset, replace }: { offset: number; replace: boolean }) => {
@@ -798,7 +850,21 @@ export function InboxSidebar({
     void fetchArchivedSessionsPage({ offset: 0, replace: true });
   }, [archivedCount, fetchArchivedSessionsPage, showArchived]);
 
-  const activeSessions = sessions;
+  const activeSessions = useMemo(
+    () =>
+      sessions.filter((session) => {
+        const repoOwner = session.repoOwner?.trim();
+        const repoName = session.repoName?.trim();
+        if (!repoOwner || !repoName) {
+          return true;
+        }
+
+        return !archivedRepositoryKeys.has(
+          getRepositoryArchiveKey(repoOwner, repoName),
+        );
+      }),
+    [archivedRepositoryKeys, sessions],
+  );
   const displayedSessions = showArchived ? archivedSessions : activeSessions;
   const showLoadingSkeleton =
     (!showArchived && sessionsLoading && sessions.length === 0) ||
@@ -874,6 +940,13 @@ export function InboxSidebar({
     setArchiveConfirmSession(session);
   }, []);
 
+  const handleArchiveRepository = useCallback(
+    (repository: SidebarRepository) => {
+      setArchiveConfirmRepository(repository);
+    },
+    [],
+  );
+
   const handleConfirmArchive = useCallback(async () => {
     if (!archiveConfirmSession) return;
     const session = archiveConfirmSession;
@@ -902,6 +975,43 @@ export function InboxSidebar({
       console.error("Failed to archive session:", err);
     }
   }, [archiveConfirmSession, archivedCount, onArchiveSession]);
+
+  const handleConfirmArchiveRepository = useCallback(async () => {
+    if (!archiveConfirmRepository) return;
+
+    const repository = archiveConfirmRepository;
+    const archiveKey = getRepositoryArchiveKey(
+      repository.repoOwner,
+      repository.repoName,
+    );
+
+    setArchiveConfirmRepository(null);
+    setIsArchivingRepository(true);
+    try {
+      const res = await fetch(
+        `/api/settings/repositories/${encodeURIComponent(repository.repoOwner)}/${encodeURIComponent(repository.repoName)}/archive`,
+        { method: "PUT" },
+      );
+      const data = (await res.json()) as { error?: string };
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to archive repository");
+      }
+
+      setArchivedRepositoryKeys((current) => {
+        return new Set([...current, archiveKey]);
+      });
+      toast.success("Repository archived", {
+        description: `${repository.label} was hidden from the sidebar. Settings and sessions were kept.`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Failed to archive repository";
+      toast.error(message);
+    } finally {
+      setIsArchivingRepository(false);
+    }
+  }, [archiveConfirmRepository]);
 
   const handleUnarchiveSession = useCallback(
     async (session: SessionWithUnread) => {
@@ -1242,6 +1352,28 @@ export function InboxSidebar({
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  handleArchiveRepository({
+                                    repoOwner: groupRepoOwner,
+                                    repoName: groupRepoName,
+                                    label: group.label,
+                                  });
+                                }}
+                                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground"
+                                aria-label={`Archive ${group.label} from sidebar`}
+                              >
+                                <Archive className="h-3 w-3" />
+                              </button>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" sideOffset={4}>
+                              Archive repo
+                            </TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
                                   handleCreateForRepo(
                                     groupRepoOwner,
                                     groupRepoName,
@@ -1423,6 +1555,64 @@ export function InboxSidebar({
         />
       ) : null}
 
+      {/* Repository archive confirmation dialog */}
+      <Dialog
+        open={archiveConfirmRepository !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setArchiveConfirmRepository(null);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            archiveRepositorySubmitRef.current?.focus();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Archive repository?</DialogTitle>
+            <DialogDescription>
+              This hides {archiveConfirmRepository?.label ?? "the repository"}{" "}
+              from the sidebar. Sessions and workspace settings stay saved.
+            </DialogDescription>
+          </DialogHeader>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleConfirmArchiveRepository();
+            }}
+          >
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isArchivingRepository}
+                >
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                ref={archiveRepositorySubmitRef}
+                type="submit"
+                disabled={isArchivingRepository}
+              >
+                {isArchivingRepository ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Archiving
+                  </>
+                ) : (
+                  "Archive repo"
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
       {/* Archive confirmation dialog */}
       <Dialog
         open={archiveConfirmSession !== null}
@@ -1430,7 +1620,13 @@ export function InboxSidebar({
           if (!open) setArchiveConfirmSession(null);
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent
+          showCloseButton={false}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            archiveSessionSubmitRef.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>Archive session?</DialogTitle>
             <DialogDescription>
@@ -1438,18 +1634,23 @@ export function InboxSidebar({
               view it in the archive tab.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              onClick={() => {
-                void handleConfirmArchive();
-              }}
-            >
-              Archive
-            </Button>
-          </DialogFooter>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleConfirmArchive();
+            }}
+          >
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button ref={archiveSessionSubmitRef} type="submit">
+                Archive
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

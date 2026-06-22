@@ -23,7 +23,11 @@ interface TestResult {
 }
 
 function isIgnoredPath(path: string): boolean {
-  return path.startsWith("node_modules/") || path.startsWith(".");
+  return (
+    path.startsWith("node_modules/") ||
+    path.includes("/node_modules/") ||
+    path.startsWith(".")
+  );
 }
 
 function resolveConcurrency(): number {

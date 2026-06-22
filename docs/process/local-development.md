@@ -21,7 +21,8 @@ database migrations.
 3. Ensures `apps/web/.env.local` exists.
 4. Pulls Vercel **Development** environment variables when the env file is
    missing or `--force-env-pull` is passed.
-5. Generates a local `BETTER_AUTH_SECRET` only when that value is missing.
+5. Generates local `BETTER_AUTH_SECRET` and `ENCRYPTION_KEY` values only when
+   those values are missing.
 6. Validates the env file and prints clear warnings for partially configured
    auth, repo access, inference, Redis, and local OAuth state.
 7. Runs typecheck and a temporary local server smoke only when requested with
@@ -104,13 +105,14 @@ If the machine cannot access Vercel, use offline mode:
 ```
 
 Offline mode creates `apps/web/.env.local` from
-`apps/web/.env.example` when needed and generates `BETTER_AUTH_SECRET`, but it
-cannot fill service credentials. The app may not be runnable until you provide
-at least:
+`apps/web/.env.example` when needed and generates `BETTER_AUTH_SECRET` and
+`ENCRYPTION_KEY`, but it cannot fill service credentials. The app may not be
+runnable until you provide at least:
 
 ```env
 POSTGRES_URL=
 BETTER_AUTH_SECRET=
+ENCRYPTION_KEY=
 ```
 
 ## Refreshing Local Env
@@ -204,6 +206,7 @@ Minimum runnable env:
 ```env
 POSTGRES_URL=
 BETTER_AUTH_SECRET=
+ENCRYPTION_KEY=
 ```
 
 Required for sign-in:

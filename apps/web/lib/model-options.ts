@@ -15,6 +15,11 @@ import {
 } from "@/lib/inference/model-option-id";
 import type { SafeInferenceProfile } from "@/lib/inference/types";
 import {
+  getInferenceProfileModelProvider,
+  getInferenceProfileModelProviderDisplayName,
+  isModelCompatibleWithInferenceProfile,
+} from "@/lib/inference/profile-models";
+import {
   getProviderFromModelId,
   stripProviderPrefix,
 } from "@/components/provider-icons";
@@ -96,17 +101,20 @@ function toUserInferenceOption(
   model: AvailableModel,
 ): ModelOption {
   const label = getModelDisplayName(model);
-  const provider = getProviderFromModelId(model.id);
+  const modelProvider = getProviderFromModelId(model.id);
+  const provider = getInferenceProfileModelProvider(profile);
+  const profileModelProviderName =
+    getInferenceProfileModelProviderDisplayName(profile);
 
   return {
     id: createUserInferenceModelOptionId(profile.id, model.id),
     label,
-    shortLabel: stripProviderPrefix(label, provider),
-    description: `Direct Anthropic via ${profile.name}`,
+    shortLabel: stripProviderPrefix(label, modelProvider),
+    description: `Direct ${profileModelProviderName} via ${profile.name}`,
     isVariant: false,
     contextWindow: model.context_window,
     ...(model.cost ? { cost: model.cost } : {}),
-    provider: "user",
+    provider,
     source: "user",
     baseModelId: model.id,
     inferenceProfileId: profile.id,
@@ -114,12 +122,79 @@ function toUserInferenceOption(
     searchText: [
       label,
       model.id,
-      provider,
+      modelProvider,
       profile.name,
       profile.provider,
+      provider,
       profile.baseUrl ?? "",
     ].join(" "),
   };
+}
+
+function toOpenAICompatibleUserInferenceOption(
+  profile: SafeInferenceProfile,
+  modelId: string,
+): ModelOption {
+  const provider = getInferenceProfileModelProvider(profile);
+  const providerName = getInferenceProfileModelProviderDisplayName(profile);
+  const providerPrefix =
+    provider === "openai-compatible" ? "openai-compatible" : provider;
+  const optionModelId = modelId.includes("/")
+    ? modelId
+    : `${providerPrefix}/${modelId}`;
+  const shortLabel = modelId.includes("/")
+    ? modelId.slice(modelId.indexOf("/") + 1)
+    : modelId;
+  const label =
+    provider === "cursor" ? formatCursorModelLabel(shortLabel) : modelId;
+
+  return {
+    id: createUserInferenceModelOptionId(profile.id, optionModelId),
+    label,
+    shortLabel: label,
+    description: `Direct ${providerName} via ${profile.name}`,
+    isVariant: false,
+    provider,
+    source: "user",
+    baseModelId: optionModelId,
+    inferenceProfileId: profile.id,
+    secondaryLabel: profile.name,
+    searchText: [
+      label,
+      modelId,
+      optionModelId,
+      "openai",
+      "openai-compatible",
+      provider,
+      providerName,
+      profile.name,
+      profile.baseUrl ?? "",
+    ].join(" "),
+  };
+}
+
+function formatCursorModelLabel(modelId: string): string {
+  const normalized = modelId.trim().toLowerCase();
+  if (normalized === "composer-2.5") {
+    return "Composer 2.5";
+  }
+  if (normalized === "composer-2.5-fast") {
+    return "Composer 2.5 Fast";
+  }
+
+  return modelId
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) =>
+      part.length <= 3 && /\d/.test(part)
+        ? part.toUpperCase()
+        : part.charAt(0).toUpperCase() + part.slice(1),
+    )
+    .join(" ");
+}
+
+function getModelProviderHint(model: AvailableModel): string | undefined {
+  return model.specification?.provider;
 }
 
 /** Providers pinned to the top of the list, in order. */
@@ -277,12 +352,29 @@ export function buildModelOptions(
   );
 
   const userInferenceOptions = inferenceProfiles
-    .filter((profile) => profile.enabled && profile.provider === "anthropic")
-    .flatMap((profile) =>
-      models
-        .filter((model) => model.id.startsWith("anthropic/"))
-        .map((model) => toUserInferenceOption(profile, model)),
-    );
+    .filter(
+      (profile) =>
+        profile.enabled &&
+        (profile.provider === "anthropic" ||
+          profile.provider === "openai-compatible"),
+    )
+    .flatMap((profile) => {
+      if (profile.provider === "openai-compatible") {
+        return profile.modelIds.map((modelId) =>
+          toOpenAICompatibleUserInferenceOption(profile, modelId),
+        );
+      }
+
+      return models
+        .filter((model) =>
+          isModelCompatibleWithInferenceProfile(
+            profile,
+            model.id,
+            getModelProviderHint(model),
+          ),
+        )
+        .map((model) => toUserInferenceOption(profile, model));
+    });
 
   return [...userInferenceOptions, ...baseModelOptions, ...variantOptions];
 }
@@ -316,7 +408,7 @@ export function withMissingModelOption(
         description: "Inference profile no longer exists",
         isVariant: false,
         contextWindow: undefined,
-        provider: "user",
+        provider: parsed.modelId.split("/")[0] ?? "user",
         source: "user",
         baseModelId: parsed.modelId,
         inferenceProfileId: parsed.inferenceProfileId ?? undefined,

@@ -21,7 +21,10 @@ function getProfileErrorMessage(error: unknown): string {
     return "An inference profile with that name already exists.";
   }
   if (/base url/i.test(message) || /invalid url/i.test(message)) {
-    return "Base URL must be a valid Anthropic-compatible HTTP URL.";
+    return "Base URL must be a valid provider HTTP URL.";
+  }
+  if (/model id|openai-compatible/i.test(message)) {
+    return message;
   }
   return "Failed to save inference profile.";
 }

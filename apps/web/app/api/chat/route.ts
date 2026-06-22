@@ -236,6 +236,14 @@ export async function POST(req: Request) {
     }
   }
 
+  const { preflightInferenceProfile } =
+    await import("./_lib/inference-profile-preflight");
+  const inferenceProfilePreflight = await preflightInferenceProfile({
+    userId,
+    sessionRecord,
+    chat,
+  });
+
   // ── Workflow input validation gate (#46 FIX 2) ───────────────────────────
   // Architecture: validate BEFORE start(), persist AFTER start() with the REAL
   // run.runId. This fixes two critical issues:
@@ -314,6 +322,7 @@ export async function POST(req: Request) {
       requestId,
       authSession: session ?? null,
       maxSteps: 500,
+      inferenceProfilePreflight,
     },
   ]);
 

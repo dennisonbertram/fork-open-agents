@@ -35,6 +35,14 @@ interface SkillsResponse {
 
 const EMPTY_SKILLS: SkillListItem[] = [];
 
+export function getSkillActionLabels(skillName: string, enabled: boolean) {
+  return {
+    edit: `Edit /${skillName}`,
+    delete: `Delete /${skillName}`,
+    toggle: `${enabled ? "Disable" : "Enable"} /${skillName}`,
+  };
+}
+
 function Chip({ children }: { children: React.ReactNode }) {
   return (
     <span className="inline-flex items-center gap-1 rounded-sm bg-muted/70 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -57,6 +65,8 @@ function SkillCard({
   onDelete: (skill: SkillListItem) => void;
 }) {
   const toolCount = skill.allowedTools.length;
+  const labels = getSkillActionLabels(skill.name, skill.enabled);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <div
@@ -97,38 +107,68 @@ function SkillCard({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => onEdit(skill)}
-                  disabled={isBusy}
-                  className="size-7"
-                >
-                  <Pencil className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Edit skill</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  onClick={() => onDelete(skill)}
-                  disabled={isBusy}
-                  className="size-7 text-muted-foreground hover:text-destructive"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Delete skill</TooltipContent>
-            </Tooltip>
-          </div>
+          {confirmDelete ? (
+            <span className="flex items-center gap-1">
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  onDelete(skill);
+                  setConfirmDelete(false);
+                }}
+                disabled={isBusy}
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+              >
+                Confirm
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={() => setConfirmDelete(false)}
+                disabled={isBusy}
+                className="h-7 px-2 text-xs"
+              >
+                Cancel
+              </Button>
+            </span>
+          ) : (
+            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={labels.edit}
+                    onClick={() => onEdit(skill)}
+                    disabled={isBusy}
+                    className="size-7"
+                  >
+                    <Pencil className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit skill</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={labels.delete}
+                    onClick={() => setConfirmDelete(true)}
+                    disabled={isBusy}
+                    className="size-7 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete skill</TooltipContent>
+              </Tooltip>
+            </div>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <span>
@@ -136,7 +176,7 @@ function SkillCard({
                   checked={skill.enabled}
                   onCheckedChange={() => onToggleEnabled(skill)}
                   disabled={isBusy}
-                  aria-label={skill.enabled ? "Disable skill" : "Enable skill"}
+                  aria-label={labels.toggle}
                 />
               </span>
             </TooltipTrigger>
@@ -235,9 +275,6 @@ export function SkillsSection() {
   };
 
   const handleDelete = async (skill: SkillListItem) => {
-    if (!window.confirm(`Delete the "/${skill.name}" skill?`)) {
-      return;
-    }
     setIsSaving(true);
     setError(null);
     try {

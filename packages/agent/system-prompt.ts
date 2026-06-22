@@ -345,6 +345,8 @@ export interface BuildSystemPromptOptions {
   currentBranch?: string;
   customInstructions?: string;
   environmentDetails?: string;
+  repoOwner?: string;
+  repoName?: string;
   skills?: SkillMetadata[];
   modelId?: string;
   runtimeMode?: "classic" | "managed_runtime";
@@ -394,13 +396,15 @@ Never skip the \`setup_managed_runtime_profile\` call when the intent is to conf
 
 export const GITHUB_TOOLS_PROMPT = `# GitHub Issue and Pull-Request Tools
 
-Typed GitHub tools are available for this repository: github_list_issues, github_create_issue, github_update_issue, github_comment_on_issue, github_set_issue_labels, github_close_issue. Prefer these typed tools over \`gh\`, \`curl\`, or raw GitHub API calls for reading, triaging, creating, commenting on, labeling, and closing issues — they run as the GitHub App with the correct scoped permission and an issue-only guard.
+Typed GitHub tools are available for the current connected repository: github_list_issues, github_create_issue, github_update_issue, github_comment_on_issue, github_set_issue_labels, github_close_issue. When the user asks about GitHub issues or pull requests without naming an owner/repo, assume they mean the current connected repository for this session. Prefer these typed tools over \`gh\`, \`curl\`, \`web_fetch\`, or raw GitHub API calls for reading, triaging, creating, commenting on, labeling, and closing issues — they run as the GitHub App with the correct scoped permission and an issue-only guard.
+
+For questions like "are there any open GitHub issues?", call \`github_list_issues\` for the current connected repository. Do not run \`git remote -v\` just to identify the repository for issue or pull-request questions.
 
 Continue using shell git for repository mechanics (clone, branch, edit, diff, commit, push).`;
 
 export const GITHUB_TOOL_PREFERENCE_PROMPT = `# Use GitHub Tools, Not web_fetch, For GitHub
 
-Authenticated GitHub tools are connected for this session. For anything on github.com or api.github.com (issues, pull requests, repositories, file contents), use those tools — never the \`web_fetch\` tool. \`web_fetch\` is unauthenticated and returns 404 for private repositories, so it cannot see private issues or repos. Reserve \`web_fetch\` for non-GitHub URLs.`;
+Authenticated GitHub tools are connected for this session. For anything on github.com or api.github.com (issues, pull requests, repositories, file contents), use those tools — never the \`web_fetch\` tool. \`web_fetch\` is unauthenticated and returns 404 for private repositories, so it cannot see private issues or repos. If the user asks a GitHub question without specifying a repo, use the current connected repository through the GitHub tools. Reserve \`web_fetch\` for non-GitHub URLs.`;
 
 /**
  * Build the skills section for the system prompt.
@@ -479,6 +483,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     parts.push(
       "\n# Environment\n\nWorking directory: . (workspace root)\nUse workspace-relative paths for all file operations.",
     );
+    if (options.repoOwner && options.repoName) {
+      parts.push(
+        `\nConnected repository: ${options.repoOwner}/${options.repoName}\nWhen the user asks about this repo, the current repo, or the connected repo, use this connected repository. Do not infer the repo name from the sandbox working directory.`,
+      );
+    }
     if (options.environmentDetails) {
       parts.push(`\n${options.environmentDetails}`);
     }

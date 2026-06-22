@@ -10,6 +10,8 @@ let currentSession: {
 const preferencesState = {
   defaultModelId: "anthropic/claude-haiku-4.5",
   defaultSubagentModelId: null as string | null,
+  defaultInferenceProfileId: null as string | null,
+  defaultSubagentInferenceProfileId: null as string | null,
   defaultSandboxType: "vercel" as const,
   defaultManagedRuntimeProfileId: "web-bun-agent-browser",
   defaultDiffMode: "unified" as const,
@@ -18,6 +20,7 @@ const preferencesState = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  agentCustomInstructions: "",
   globalSkillRefs: [] as Array<{ source: string; skillName: string }>,
   modelVariants: [] as Array<Record<string, unknown>>,
   enabledModelIds: [] as string[],
@@ -58,9 +61,12 @@ describe("/api/settings/preferences", () => {
     currentSession = { user: { id: "user-1" } };
     preferencesState.defaultModelId = "anthropic/claude-haiku-4.5";
     preferencesState.defaultSubagentModelId = null;
+    preferencesState.defaultInferenceProfileId = null;
+    preferencesState.defaultSubagentInferenceProfileId = null;
     preferencesState.defaultManagedRuntimeProfileId = "web-bun-agent-browser";
     preferencesState.modelVariants = [];
     preferencesState.enabledModelIds = [];
+    preferencesState.agentCustomInstructions = "";
     updateCalls.length = 0;
   });
 
@@ -90,6 +96,7 @@ describe("/api/settings/preferences", () => {
     expect(body.preferences.defaultManagedRuntimeProfileId).toBe(
       "web-bun-agent-browser",
     );
+    expect(body.preferences.agentCustomInstructions).toBe("");
     expect(body.preferences.globalSkillRefs).toEqual([]);
   });
 
@@ -183,6 +190,31 @@ describe("/api/settings/preferences", () => {
     );
   });
 
+  test("PATCH updates the default subagent inference profile", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        defaultSubagentModelId: "cursor/composer-2.5",
+        defaultSubagentInferenceProfileId: "profile-cursor",
+      }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({
+      defaultSubagentModelId: "cursor/composer-2.5",
+      defaultSubagentInferenceProfileId: "profile-cursor",
+    });
+    expect(body.preferences.defaultSubagentModelId).toBe("cursor/composer-2.5");
+    expect(body.preferences.defaultSubagentInferenceProfileId).toBe(
+      "profile-cursor",
+    );
+  });
+
   test("PATCH rejects invalid autoCommitPush values", async () => {
     const { PATCH } = await routeModulePromise;
 
@@ -268,6 +300,43 @@ describe("/api/settings/preferences", () => {
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0]).toEqual({ publicUsageEnabled: true });
     expect(body.preferences.publicUsageEnabled).toBe(true);
+  });
+
+  test("PATCH rejects invalid agentCustomInstructions values", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", { agentCustomInstructions: false }),
+    );
+    const body = (await response.json()) as { error: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toBe("Invalid agentCustomInstructions value");
+    expect(updateCalls).toHaveLength(0);
+  });
+
+  test("PATCH updates agentCustomInstructions when a string is provided", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        agentCustomInstructions:
+          "Always use GitHub tools for connected repository questions.",
+      }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]).toEqual({
+      agentCustomInstructions:
+        "Always use GitHub tools for connected repository questions.",
+    });
+    expect(body.preferences.agentCustomInstructions).toBe(
+      "Always use GitHub tools for connected repository questions.",
+    );
   });
 
   test("PATCH rejects invalid globalSkillRefs values", async () => {

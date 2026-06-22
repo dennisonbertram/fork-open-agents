@@ -207,6 +207,7 @@ export function SessionHeader() {
               <TooltipTrigger asChild>
                 <button
                   type="button"
+                  aria-label="Share chat"
                   onClick={() => setShareRequested(true)}
                   className="ml-1 rounded p-1 text-muted-foreground/60 transition-colors hover:text-foreground"
                 >
@@ -234,6 +235,11 @@ export function SessionHeader() {
                     rightPanelView === "git" &&
                     "bg-accent text-accent-foreground",
                 )}
+                aria-label={
+                  gitPanelOpen && rightPanelView === "git"
+                    ? "Close files and changes panel"
+                    : "Open files and changes panel"
+                }
                 onClick={handleGitPanelToggle}
               >
                 <GitIcon

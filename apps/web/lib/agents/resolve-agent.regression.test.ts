@@ -41,6 +41,7 @@ const mockGetUserPreferences = mock(async (_userId: string) => ({
   defaultModelId: "anthropic/claude-opus-4",
   defaultSubagentModelId: null as string | null,
   defaultInferenceProfileId: null as string | null,
+  defaultSubagentInferenceProfileId: null,
   defaultManagedRuntimeProfileId: "web-bun-agent-browser",
   composioAgentDefaults: {
     main: { defaultProfileId: null },
@@ -98,6 +99,7 @@ describe("Regression: synthetic fallback == today's behavior (null rows)", () =>
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -128,6 +130,7 @@ describe("Regression: synthetic fallback == today's behavior (null rows)", () =>
       defaultModelId: "main-model",
       defaultSubagentModelId: "sub-model",
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -231,6 +234,7 @@ describe("Regression: ResolvedAgent never has undefined fields", () => {
       defaultModelId: "m",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "p",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -268,6 +272,7 @@ describe("Regression: ResolvedAgent never has undefined fields", () => {
       defaultModelId: "m",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "p",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -295,6 +300,7 @@ describe("Regression: githubToolsEnabled propagates through rowToResolvedAgent",
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -346,6 +352,7 @@ describe("Regression: skillRefs normalization in rowToResolvedAgent", () => {
       defaultModelId: "m",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "p",
       composioAgentDefaults: {
         main: { defaultProfileId: null },

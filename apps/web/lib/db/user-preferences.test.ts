@@ -15,6 +15,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5.4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "unified",
@@ -23,6 +24,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
@@ -44,6 +46,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
@@ -68,6 +71,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [],
       enabledModelIds: [],
@@ -84,6 +88,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
@@ -143,6 +148,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [{ id: "bad-id" }] as never,
       enabledModelIds: [],
@@ -165,6 +171,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [
         {
@@ -181,6 +188,7 @@ describe("toUserPreferencesData", () => {
       defaultModelId: "openai/gpt-5",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultSandboxType: "vercel",
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       defaultDiffMode: "split",
@@ -189,6 +197,7 @@ describe("toUserPreferencesData", () => {
       alertsEnabled: true,
       alertSoundEnabled: true,
       publicUsageEnabled: false,
+      agentCustomInstructions: "",
       globalSkillRefs: [],
       modelVariants: [
         {
@@ -201,6 +210,18 @@ describe("toUserPreferencesData", () => {
       enabledModelIds: [],
       composioAgentDefaults: defaultComposioAgentDefaults,
     });
+  });
+
+  test("keeps default subagent inference profile when provided", async () => {
+    const { toUserPreferencesData } = await userPreferencesModulePromise;
+
+    const result = toUserPreferencesData({
+      defaultSubagentModelId: "cursor/composer-2.5",
+      defaultSubagentInferenceProfileId: "profile-cursor",
+    });
+
+    expect(result.defaultSubagentModelId).toBe("cursor/composer-2.5");
+    expect(result.defaultSubagentInferenceProfileId).toBe("profile-cursor");
   });
 
   test("keeps publicUsageEnabled when provided", async () => {
@@ -223,5 +244,15 @@ describe("toUserPreferencesData", () => {
     });
 
     expect(result.publicUsageEnabled).toBe(true);
+  });
+
+  test("keeps agentCustomInstructions when provided", async () => {
+    const { toUserPreferencesData } = await userPreferencesModulePromise;
+
+    const result = toUserPreferencesData({
+      agentCustomInstructions: "Always use GitHub tools.",
+    });
+
+    expect(result.agentCustomInstructions).toBe("Always use GitHub tools.");
   });
 });

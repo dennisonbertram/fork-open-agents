@@ -8,6 +8,11 @@ import {
   decryptInferenceProfileApiKey,
   getInferenceProfileByIdForUser,
 } from "@/lib/db/inference-profiles";
+import {
+  getInferenceProfileModelProviderDisplayName,
+  toAnthropicCompatibleProfileModelId,
+  toOpenAICompatibleProfileModelId,
+} from "@/lib/inference/profile-models";
 
 export class InferenceProfileResolutionError extends Error {
   override name = "InferenceProfileResolutionError";
@@ -40,17 +45,44 @@ export async function resolveInferenceProfileModelSelection(params: {
     );
   }
 
-  if (profile.provider !== "anthropic") {
+  const directModelId =
+    profile.provider === "openai-compatible"
+      ? toOpenAICompatibleProfileModelId(profile, selection.id)
+      : toAnthropicCompatibleProfileModelId(
+          profile,
+          selection.id,
+          toAnthropicDirectModelId,
+        );
+  if (!directModelId) {
+    const providerName = getInferenceProfileModelProviderDisplayName(profile);
     throw new InferenceProfileResolutionError(
-      "Selected inference profile uses an unsupported provider.",
+      `Selected inference profile only supports ${providerName} models. Choose a matching User model or switch back to Vercel AI Gateway.`,
     );
   }
 
-  const directModelId = toAnthropicDirectModelId(selection.id);
-  if (!directModelId) {
-    throw new InferenceProfileResolutionError(
-      "Selected inference profile only supports Anthropic models. Choose an Anthropic User model or switch back to Vercel AI Gateway.",
-    );
+  if (profile.provider === "openai-compatible") {
+    if (!profile.baseUrl) {
+      throw new InferenceProfileResolutionError(
+        "Selected OpenAI-compatible inference profile is missing a base URL. Update it in Settings → Models.",
+      );
+    }
+
+    return {
+      ...selection,
+      directOpenAICompatible: {
+        provider: "openai-compatible",
+        name: profile.name,
+        modelId: directModelId,
+        apiKey: decryptInferenceProfileApiKey(profile),
+        baseURL: profile.baseUrl,
+      },
+      attribution: {
+        inferenceRoute: "user",
+        inferenceProfileId: profile.id,
+        inferenceProfileName: profile.name,
+        provider: profile.provider,
+      },
+    };
   }
 
   return {

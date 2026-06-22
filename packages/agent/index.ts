@@ -1,8 +1,10 @@
 export {
   type DirectAnthropicConfig,
+  type DirectOpenAICompatibleConfig,
   type GatewayConfig,
   type GatewayOptions,
   directAnthropicModel,
+  directOpenAICompatibleModel,
   gateway,
   toAnthropicDirectModelId,
 } from "./models";

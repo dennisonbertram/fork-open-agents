@@ -25,6 +25,7 @@ export interface UserPreferencesData {
   defaultModelId: string;
   defaultSubagentModelId: string | null;
   defaultInferenceProfileId: string | null;
+  defaultSubagentInferenceProfileId: string | null;
   defaultSandboxType: SandboxType;
   defaultManagedRuntimeProfileId: string;
   defaultDiffMode: DiffMode;
@@ -33,6 +34,7 @@ export interface UserPreferencesData {
   alertsEnabled: boolean;
   alertSoundEnabled: boolean;
   publicUsageEnabled: boolean;
+  agentCustomInstructions: string;
   globalSkillRefs: GlobalSkillRef[];
   modelVariants: ModelVariant[];
   enabledModelIds: string[];
@@ -43,6 +45,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   defaultModelId: APP_DEFAULT_MODEL_ID,
   defaultSubagentModelId: null,
   defaultInferenceProfileId: null,
+  defaultSubagentInferenceProfileId: null,
   defaultSandboxType: "vercel",
   defaultManagedRuntimeProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
   defaultDiffMode: "unified",
@@ -51,6 +54,7 @@ const DEFAULT_PREFERENCES: UserPreferencesData = {
   alertsEnabled: true,
   alertSoundEnabled: true,
   publicUsageEnabled: false,
+  agentCustomInstructions: "",
   globalSkillRefs: [],
   modelVariants: [],
   enabledModelIds: [],
@@ -93,6 +97,10 @@ function normalizeEnabledModelIds(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function normalizeAgentCustomInstructions(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 export function toUserPreferencesData(
   row?: Partial<
     Pick<
@@ -100,6 +108,7 @@ export function toUserPreferencesData(
       | "defaultModelId"
       | "defaultSubagentModelId"
       | "defaultInferenceProfileId"
+      | "defaultSubagentInferenceProfileId"
       | "defaultSandboxType"
       | "defaultManagedRuntimeProfileId"
       | "defaultDiffMode"
@@ -108,6 +117,7 @@ export function toUserPreferencesData(
       | "alertsEnabled"
       | "alertSoundEnabled"
       | "publicUsageEnabled"
+      | "agentCustomInstructions"
       | "globalSkillRefs"
       | "modelVariants"
       | "enabledModelIds"
@@ -123,6 +133,8 @@ export function toUserPreferencesData(
     defaultModelId: row?.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
     defaultInferenceProfileId: row?.defaultInferenceProfileId ?? null,
+    defaultSubagentInferenceProfileId:
+      row?.defaultSubagentInferenceProfileId ?? null,
     defaultSandboxType: normalizeSandboxType(row?.defaultSandboxType),
     defaultManagedRuntimeProfileId: normalizeManagedRuntimeProfileId(
       row?.defaultManagedRuntimeProfileId,
@@ -135,6 +147,9 @@ export function toUserPreferencesData(
       row?.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
     publicUsageEnabled:
       row?.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+    agentCustomInstructions: normalizeAgentCustomInstructions(
+      row?.agentCustomInstructions,
+    ),
     globalSkillRefs: normalizeGlobalSkillRefs(row?.globalSkillRefs),
     modelVariants: parsedModelVariants.success ? parsedModelVariants.data : [],
     enabledModelIds: normalizeEnabledModelIds(row?.enabledModelIds),
@@ -195,6 +210,8 @@ export async function updateUserPreferences(
         updates.defaultModelId ?? DEFAULT_PREFERENCES.defaultModelId,
       defaultSubagentModelId: updates.defaultSubagentModelId ?? null,
       defaultInferenceProfileId: updates.defaultInferenceProfileId ?? null,
+      defaultSubagentInferenceProfileId:
+        updates.defaultSubagentInferenceProfileId ?? null,
       defaultSandboxType:
         updates.defaultSandboxType ?? DEFAULT_PREFERENCES.defaultSandboxType,
       defaultManagedRuntimeProfileId:
@@ -210,6 +227,9 @@ export async function updateUserPreferences(
         updates.alertSoundEnabled ?? DEFAULT_PREFERENCES.alertSoundEnabled,
       publicUsageEnabled:
         updates.publicUsageEnabled ?? DEFAULT_PREFERENCES.publicUsageEnabled,
+      agentCustomInstructions:
+        updates.agentCustomInstructions ??
+        DEFAULT_PREFERENCES.agentCustomInstructions,
       globalSkillRefs:
         updates.globalSkillRefs ?? DEFAULT_PREFERENCES.globalSkillRefs,
       modelVariants: updates.modelVariants ?? DEFAULT_PREFERENCES.modelVariants,

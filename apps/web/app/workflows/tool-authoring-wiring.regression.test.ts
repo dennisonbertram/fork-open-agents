@@ -280,6 +280,7 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultModelId: "anthropic/claude-opus-4.6",
     defaultSubagentModelId: null,
     defaultInferenceProfileId: null,
+    defaultSubagentInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,
@@ -308,7 +309,7 @@ mock.module("@/lib/composio/session", () => ({
 mock.module("@/lib/github/tools", () => ({
   resolveGitHubToolsForChat: async () => ({
     status: "off" as const,
-    reason: "not_enabled" as const,
+    reason: "no_repo" as const,
   }),
 }));
 

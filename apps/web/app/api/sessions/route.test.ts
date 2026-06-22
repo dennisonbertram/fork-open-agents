@@ -49,6 +49,7 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultModelId: "anthropic/claude-haiku-4.5",
     defaultSubagentModelId: null,
     defaultInferenceProfileId: "inference-profile-1",
+    defaultSubagentInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultManagedRuntimeProfileId: "web-bun-agent-browser",
     defaultDiffMode: "unified",

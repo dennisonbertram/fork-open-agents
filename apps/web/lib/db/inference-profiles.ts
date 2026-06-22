@@ -9,7 +9,7 @@ import {
   InferenceSecretDecryptionError,
   lastFourSecretChars,
 } from "@/lib/inference/encryption";
-import { normalizeAnthropicBaseUrl } from "@/lib/inference/model-routing";
+import { normalizeInferenceBaseUrl } from "@/lib/inference/model-routing";
 import type {
   CreateInferenceProfileInput,
   InferenceProfileTestResult,
@@ -30,7 +30,8 @@ function toSafeInferenceProfile(
     id: profile.id,
     name: profile.name,
     provider: profile.provider,
-    baseUrl: profile.baseUrl,
+    baseUrl: normalizeInferenceBaseUrl(profile.provider, profile.baseUrl),
+    modelIds: profile.modelIds ?? [],
     keyLast4: profile.keyLast4,
     keyFingerprint: profile.keyFingerprint,
     status: profile.status,
@@ -97,21 +98,33 @@ export async function getInferenceProfileByIdForUser(
   userId: string,
   profileId: string,
 ): Promise<InferenceProfile | null> {
-  return (
+  const profile =
     (await db.query.inferenceProfiles.findFirst({
       where: and(
         eq(inferenceProfiles.id, profileId),
         eq(inferenceProfiles.userId, userId),
       ),
-    })) ?? null
-  );
+    })) ?? null;
+
+  if (!profile) {
+    return null;
+  }
+
+  return {
+    ...profile,
+    baseUrl: normalizeInferenceBaseUrl(profile.provider, profile.baseUrl),
+    modelIds: profile.modelIds ?? [],
+  };
 }
 
 export async function createInferenceProfile(
   userId: string,
   input: CreateInferenceProfileInput,
 ): Promise<SafeInferenceProfile> {
-  const normalizedBaseUrl = normalizeAnthropicBaseUrl(input.baseUrl);
+  const normalizedBaseUrl = normalizeInferenceBaseUrl(
+    input.provider,
+    input.baseUrl,
+  );
   const now = new Date();
   const row: NewInferenceProfile = {
     id: nanoid(),
@@ -119,6 +132,7 @@ export async function createInferenceProfile(
     name: input.name,
     provider: input.provider,
     baseUrl: normalizedBaseUrl,
+    modelIds: input.modelIds.length > 0 ? input.modelIds : null,
     ...keyFieldsForSecret(input.apiKey),
     status: "untested",
     lastTestedAt: null,
@@ -155,8 +169,31 @@ export async function updateInferenceProfile(
   if (input.name !== undefined) {
     updates.name = input.name;
   }
+  if (input.provider !== undefined) {
+    updates.provider = input.provider;
+  }
   if (input.baseUrl !== undefined) {
-    updates.baseUrl = normalizeAnthropicBaseUrl(input.baseUrl);
+    const provider = input.provider ?? existing.provider;
+    updates.baseUrl = normalizeInferenceBaseUrl(provider, input.baseUrl);
+  } else if (input.provider !== undefined) {
+    updates.baseUrl = normalizeInferenceBaseUrl(
+      input.provider,
+      existing.baseUrl,
+    );
+  }
+  if (input.modelIds !== undefined) {
+    updates.modelIds = input.modelIds.length > 0 ? input.modelIds : null;
+  }
+  if (
+    input.provider !== undefined ||
+    input.baseUrl !== undefined ||
+    input.modelIds !== undefined
+  ) {
+    Object.assign(updates, {
+      status: "untested",
+      lastTestedAt: null,
+      lastTestMessage: null,
+    } satisfies Partial<NewInferenceProfile>);
   }
   if (input.enabled !== undefined) {
     updates.enabled = input.enabled;
@@ -167,6 +204,18 @@ export async function updateInferenceProfile(
       lastTestedAt: null,
       lastTestMessage: null,
     } satisfies Partial<NewInferenceProfile>);
+  }
+
+  const nextProvider = updates.provider ?? existing.provider;
+  const nextBaseUrl = updates.baseUrl ?? existing.baseUrl;
+  const nextModelIds = updates.modelIds ?? existing.modelIds ?? null;
+  if (
+    nextProvider === "openai-compatible" &&
+    (!nextBaseUrl || !nextModelIds || nextModelIds.length === 0)
+  ) {
+    throw new Error(
+      "OpenAI-compatible profiles require a base URL and at least one model ID.",
+    );
   }
 
   const [updated] = await db

@@ -75,6 +75,7 @@ import type { SessionGitStatus } from "@/hooks/use-session-git-status";
 import { useSessionFiles } from "@/hooks/use-session-files";
 import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status";
 import { useGitPanel } from "./git-panel-context";
+import { getPullRequestCreationNotice } from "./git-panel-copy";
 import { FileTree } from "./file-tree";
 import { FileTreeErrorBoundary } from "./file-tree-error-boundary";
 import { useSessionChatWorkspaceContext } from "./session-chat-context";
@@ -597,6 +598,11 @@ function InlineCommitPanel({
           />
           <button
             type="button"
+            aria-label={
+              isGeneratingMessage
+                ? "Generating commit message"
+                : "Generate commit message"
+            }
             className="absolute bottom-1.5 left-1.5 rounded p-1 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
             onClick={() => void handleGenerateMessage()}
             disabled={isGeneratingMessage || !hasPendingGitWork}
@@ -1052,6 +1058,11 @@ function InlinePrCreatePanel({
             />
             <button
               type="button"
+              aria-label={
+                isGenerating
+                  ? "Generating pull request details"
+                  : "Generate pull request details"
+              }
               className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground/40 transition-colors hover:bg-muted/50 hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
               onClick={() => void handleGenerateContent()}
               disabled={isGenerating}
@@ -1086,6 +1097,13 @@ function InlinePrCreatePanel({
           </div>
         </>
       )}
+      <p className="text-[11px] leading-snug text-muted-foreground">
+        {getPullRequestCreationNotice({
+          branchName: displayBranch,
+          baseBranch,
+          willAutoGenerateTitle: !prTitle.trim(),
+        })}
+      </p>
       <div className="flex w-full">
         <Button
           size="sm"

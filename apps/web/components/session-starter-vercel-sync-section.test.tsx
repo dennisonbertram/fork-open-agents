@@ -22,6 +22,28 @@ describe("SessionStarterVercelSyncSection - retry on error", () => {
     expect(html.toLowerCase()).toContain("retry");
   });
 
+  test("BT-001a: renders compact Retry as a sibling control, not a nested button", () => {
+    const html = renderToStaticMarkup(
+      <SessionStarterVercelSyncSection
+        controlsDisabled={false}
+        isVercelLookupPending={false}
+        repoProjects={undefined}
+        repoProjectsError="Failed to load"
+        requiresVercelChoice={false}
+        vercelProjectChoice={undefined}
+        onVercelProjectChoiceChange={() => {}}
+        onRetry={() => {}}
+      />,
+    );
+    const firstButtonOpen = html.indexOf("<button");
+    const firstButtonClose = html.indexOf("</button>", firstButtonOpen);
+    const secondButtonOpen = html.indexOf("<button", firstButtonOpen + 1);
+
+    expect(firstButtonOpen).toBeGreaterThanOrEqual(0);
+    expect(firstButtonClose).toBeGreaterThan(firstButtonOpen);
+    expect(secondButtonOpen).toBeGreaterThan(firstButtonClose);
+  });
+
   test("BT-002: renders a Retry button in expanded error branch when onRetry is provided", () => {
     const onRetry = mock(() => {});
     // requiresVercelChoice=true forces expanded view

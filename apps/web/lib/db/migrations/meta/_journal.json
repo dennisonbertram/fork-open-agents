@@ -449,6 +449,34 @@
       "when": 1781312821468,
       "tag": "0063_slow_radioactive_man",
       "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1782086793894,
+      "tag": "0064_romantic_clea",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1782094963675,
+      "tag": "0065_slow_moon_knight",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1782095746699,
+      "tag": "0066_red_nightshade",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1782103818824,
+      "tag": "0067_powerful_gressill",
+      "breakpoints": true
     }
   ]
 }

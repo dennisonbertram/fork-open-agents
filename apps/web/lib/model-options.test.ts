@@ -9,6 +9,7 @@ import {
   groupByProvider,
   withMissingModelOption,
 } from "./model-options";
+import type { ModelOption } from "./model-options";
 import type { AvailableModel } from "./models";
 
 function createModel(input: {
@@ -105,6 +106,7 @@ describe("model options", () => {
           name: "Personal Anthropic",
           provider: "anthropic",
           baseUrl: "https://platformproxy.example.com/v1",
+          modelIds: [],
           keyLast4: "abcd",
           keyFingerprint: "fingerprint",
           status: "verified",
@@ -124,7 +126,7 @@ describe("model options", () => {
       description: "Direct Anthropic via Personal Anthropic",
       isVariant: false,
       contextWindow: 200_000,
-      provider: "user",
+      provider: "anthropic",
       source: "user",
       baseModelId: "anthropic/claude-opus-4.6",
       inferenceProfileId: "profile-1",
@@ -137,14 +139,271 @@ describe("model options", () => {
     ]);
   });
 
-  test("groupByProvider puts user, anthropic, and openai first, preserves insertion order", () => {
-    const options = [
+  test("buildModelOptions limits ZAI GLM profiles to ZAI models", () => {
+    const models: AvailableModel[] = [
+      createModel({
+        id: "anthropic/claude-opus-4.6",
+        name: "Claude Opus 4.6",
+      }),
+      createModel({ id: "zai/glm-4.6", name: "GLM 4.6" }),
+      createModel({ id: "zai/glm-5.1", name: "GLM 5.1" }),
+    ];
+
+    const options = buildModelOptions(
+      models,
+      [],
+      [
+        {
+          id: "profile-zai",
+          name: "ZAI (GLM)",
+          provider: "anthropic",
+          baseUrl: "https://api.z.ai/api/anthropic/v1",
+          modelIds: [],
+          keyLast4: "abcd",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    const userOptions = options.filter((option) => option.source === "user");
+
+    expect(userOptions.map((option) => option.id)).toEqual([
+      "user-profile:profile-zai:zai%2Fglm-4.6",
+      "user-profile:profile-zai:zai%2Fglm-5.1",
+    ]);
+    expect(userOptions.map((option) => option.label)).toEqual([
+      "GLM 4.6",
+      "GLM 5.1",
+    ]);
+    expect(userOptions[0]).toMatchObject({
+      description: "Direct ZAI via ZAI (GLM)",
+      baseModelId: "zai/glm-4.6",
+      provider: "zai",
+      secondaryLabel: "ZAI (GLM)",
+    });
+    expect(
+      userOptions.some((option) =>
+        option.baseModelId?.startsWith("anthropic/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("buildModelOptions does not attach ordinary Anthropic profiles to ZAI models", () => {
+    const models: AvailableModel[] = [
+      createModel({
+        id: "anthropic/claude-opus-4.6",
+        name: "Claude Opus 4.6",
+      }),
+      createModel({ id: "zai/glm-4.6", name: "GLM 4.6" }),
+    ];
+
+    const options = buildModelOptions(
+      models,
+      [],
+      [
+        {
+          id: "profile-anthropic",
+          name: "Personal Anthropic",
+          provider: "anthropic",
+          baseUrl: "https://api.anthropic.com/v1",
+          modelIds: [],
+          keyLast4: "abcd",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    const userOptions = options.filter((option) => option.source === "user");
+
+    expect(userOptions.map((option) => option.baseModelId)).toEqual([
+      "anthropic/claude-opus-4.6",
+    ]);
+  });
+
+  test("buildModelOptions limits Fireworks profiles to Fireworks models", () => {
+    const models: AvailableModel[] = [
+      createModel({
+        id: "anthropic/claude-opus-4.6",
+        name: "Claude Opus 4.6",
+      }),
+      {
+        ...createModel({
+          id: "deepseek/deepseek-v3.1",
+          name: "DeepSeek V3.1",
+        }),
+        specification: {
+          provider: "fireworks",
+          modelId: "deepseek/deepseek-v3.1",
+        },
+      },
+      {
+        ...createModel({
+          id: "deepseek/deepseek-v4-flash",
+          name: "DeepSeek V4 Flash",
+        }),
+        specification: {
+          provider: "fireworks",
+          modelId: "deepseek/deepseek-v4-flash",
+        },
+      },
+      {
+        ...createModel({
+          id: "zai/glm-5.2",
+          name: "GLM 5.2",
+        }),
+        specification: {
+          provider: "baseten",
+          modelId: "zai/glm-5.2",
+        },
+      },
+      createModel({ id: "deepseek/deepseek-v3.2", name: "DeepSeek V3.2" }),
+    ];
+
+    const options = buildModelOptions(
+      models,
+      [],
+      [
+        {
+          id: "profile-fireworks",
+          name: "Fireworks",
+          provider: "anthropic",
+          baseUrl: "https://api.fireworks.ai/inference/v1",
+          modelIds: [],
+          keyLast4: "abcd",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    const userOptions = options.filter((option) => option.source === "user");
+
+    expect(userOptions.map((option) => option.id)).toEqual([
+      "user-profile:profile-fireworks:deepseek%2Fdeepseek-v3.1",
+      "user-profile:profile-fireworks:deepseek%2Fdeepseek-v4-flash",
+      "user-profile:profile-fireworks:zai%2Fglm-5.2",
+    ]);
+    expect(userOptions[0]).toMatchObject({
+      description: "Direct Fireworks via Fireworks",
+      baseModelId: "deepseek/deepseek-v3.1",
+      provider: "fireworks",
+      secondaryLabel: "Fireworks",
+    });
+    expect(
+      userOptions.some((option) =>
+        option.baseModelId?.startsWith("anthropic/"),
+      ),
+    ).toBe(false);
+  });
+
+  test("buildModelOptions creates user options for OpenAI-compatible profile model ids", () => {
+    const options = buildModelOptions(
+      [createModel({ id: "openai/gpt-5", name: "GPT-5" })],
+      [],
+      [
+        {
+          id: "profile-sakana",
+          name: "Sakana",
+          provider: "openai-compatible",
+          baseUrl: "https://api.sakana.ai/fugu/v1",
+          modelIds: ["fugu-mini", "fugu-ultra"],
+          keyLast4: "abcd",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    const userOptions = options.filter((option) => option.source === "user");
+
+    expect(userOptions.map((option) => option.id)).toEqual([
+      "user-profile:profile-sakana:openai-compatible%2Ffugu-mini",
+      "user-profile:profile-sakana:openai-compatible%2Ffugu-ultra",
+    ]);
+    expect(userOptions[1]).toMatchObject({
+      label: "fugu-ultra",
+      shortLabel: "fugu-ultra",
+      description: "Direct OpenAI-compatible via Sakana",
+      provider: "openai-compatible",
+      baseModelId: "openai-compatible/fugu-ultra",
+      inferenceProfileId: "profile-sakana",
+      secondaryLabel: "Sakana",
+    });
+  });
+
+  test("buildModelOptions groups Cursor proxy model ids under Cursor", () => {
+    const options = buildModelOptions(
+      [createModel({ id: "openai/gpt-5", name: "GPT-5" })],
+      [],
+      [
+        {
+          id: "profile-cursor",
+          name: "Cursor",
+          provider: "openai-compatible",
+          baseUrl: "http://127.0.0.1:8787/v1",
+          modelIds: ["composer-2.5", "composer-2.5-fast"],
+          keyLast4: "ocal",
+          keyFingerprint: "fingerprint",
+          status: "verified",
+          lastTestedAt: null,
+          lastTestMessage: null,
+          enabled: true,
+          createdAt: new Date("2026-01-01T00:00:00.000Z"),
+          updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        },
+      ],
+    );
+
+    const userOptions = options.filter((option) => option.source === "user");
+
+    expect(userOptions.map((option) => option.id)).toEqual([
+      "user-profile:profile-cursor:cursor%2Fcomposer-2.5",
+      "user-profile:profile-cursor:cursor%2Fcomposer-2.5-fast",
+    ]);
+    expect(userOptions.map((option) => option.label)).toEqual([
+      "Composer 2.5",
+      "Composer 2.5 Fast",
+    ]);
+    expect(userOptions[0]).toMatchObject({
+      description: "Direct Cursor via Cursor",
+      provider: "cursor",
+      baseModelId: "cursor/composer-2.5",
+      inferenceProfileId: "profile-cursor",
+      secondaryLabel: "Cursor",
+    });
+  });
+
+  test("groupByProvider groups user-key options under their effective provider", () => {
+    const options: ModelOption[] = [
       {
         id: "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
         label: "Claude Opus 4.6",
         shortLabel: "Opus 4.6",
         isVariant: false,
-        provider: "user",
+        provider: "anthropic",
+        source: "user",
       },
       {
         id: "google/gemini-2.5",
@@ -179,14 +438,16 @@ describe("model options", () => {
     const groups = groupByProvider(options);
 
     expect(groups.map((g) => g.provider)).toEqual([
-      "user",
       "anthropic",
       "openai",
       "google",
     ]);
-    // Within anthropic: preserves original order (variant first, base second)
-    expect(groups[1].options[0].id).toBe("variant:opus-custom");
-    expect(groups[1].options[1].id).toBe("anthropic/claude-opus-4.6");
+    // Within anthropic: preserves original order, including user-key models.
+    expect(groups[0].options[0].id).toBe(
+      "user-profile:profile-1:anthropic%2Fclaude-opus-4.6",
+    );
+    expect(groups[0].options[1].id).toBe("variant:opus-custom");
+    expect(groups[0].options[2].id).toBe("anthropic/claude-opus-4.6");
   });
 
   test("withMissingModelOption appends missing variant option", () => {
@@ -234,7 +495,7 @@ describe("model options", () => {
         description: "Inference profile no longer exists",
         isVariant: false,
         contextWindow: undefined,
-        provider: "user",
+        provider: "anthropic",
         source: "user",
         baseModelId: "anthropic/claude-opus-4.6",
         inferenceProfileId: "profile-1",
@@ -293,7 +554,7 @@ describe("model options", () => {
 });
 
 describe("filterAndSortModelOptions", () => {
-  const allOptions = [
+  const allOptions: ModelOption[] = [
     {
       id: "anthropic/claude-opus-4",
       label: "Claude Opus 4",
@@ -334,7 +595,8 @@ describe("filterAndSortModelOptions", () => {
       label: "Claude Opus 4",
       shortLabel: "Opus 4",
       isVariant: false,
-      provider: "user",
+      provider: "anthropic",
+      source: "user",
       secondaryLabel: "My Key",
     },
   ];
@@ -347,7 +609,7 @@ describe("filterAndSortModelOptions", () => {
       search: "",
     });
     expect(result.every((o) => o.provider === "anthropic")).toBe(true);
-    expect(result).toHaveLength(2);
+    expect(result).toHaveLength(3);
   });
 
   // BT-002: 'all' provider filter returns all options
@@ -379,14 +641,12 @@ describe("filterAndSortModelOptions", () => {
       sort: "provider",
       search: "",
     });
-    // Should be grouped: anthropic options come before google before openai before user
-    // (priority providers: user, anthropic, openai come first; then alphabetical)
+    // Should be grouped by effective provider; user-key options stay in provider groups.
     const providers = result.map((o) => o.provider);
-    // user is priority first, then anthropic, then openai, then google
-    expect(providers.indexOf("user")).toBeLessThan(
-      providers.indexOf("anthropic"),
-    );
     expect(providers.indexOf("anthropic")).toBeLessThan(
+      providers.indexOf("openai"),
+    );
+    expect(providers.indexOf("openai")).toBeLessThan(
       providers.indexOf("google"),
     );
   });
@@ -415,15 +675,17 @@ describe("filterAndSortModelOptions", () => {
     expect(result.every((o) => o.provider === "openai")).toBe(true);
   });
 
-  // BT-007: user provider filter works for user-key options
-  test("BT-007: providerFilter=user returns only user-key models", () => {
+  // BT-007: user-key options filter by their effective provider.
+  test("BT-007: providerFilter=anthropic includes user-key Anthropic models", () => {
     const result = filterAndSortModelOptions(allOptions, {
-      providerFilter: "user",
+      providerFilter: "anthropic",
       sort: "name",
       search: "",
     });
-    expect(result.every((o) => o.provider === "user")).toBe(true);
-    expect(result).toHaveLength(1);
+    expect(result.every((o) => o.provider === "anthropic")).toBe(true);
+    expect(result.map((option) => option.id)).toContain(
+      "user-profile:profile-1:anthropic%2Fclaude-opus-4",
+    );
   });
 
   // BT-008: combined provider filter + search
@@ -439,7 +701,7 @@ describe("filterAndSortModelOptions", () => {
 });
 
 describe("filterAndSortModelOptions — regression", () => {
-  const options = [
+  const options: ModelOption[] = [
     {
       id: "openai/gpt-5",
       label: "GPT-5",
@@ -550,7 +812,7 @@ describe("RECOMMENDED_MODEL_IDS", () => {
 // buildRecommendedModelOptions
 // ---------------------------------------------------------------------------
 describe("buildRecommendedModelOptions", () => {
-  const allOptions = [
+  const allOptions: ModelOption[] = [
     {
       id: "openai/gpt-5.4",
       label: "GPT-5.4",

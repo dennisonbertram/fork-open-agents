@@ -10,6 +10,7 @@ import {
   createAnthropic,
   type AnthropicLanguageModelOptions,
 } from "@ai-sdk/anthropic";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { OpenAIResponsesProviderOptions } from "@ai-sdk/openai";
 
 type WrappableLanguageModel = Parameters<typeof wrapLanguageModel>[0]["model"];
@@ -143,9 +144,18 @@ export interface DirectAnthropicConfig {
   baseURL?: string;
 }
 
+export interface DirectOpenAICompatibleConfig {
+  provider: "openai-compatible";
+  name: string;
+  modelId: string;
+  apiKey: string;
+  baseURL: string;
+}
+
 export interface GatewayOptions {
   config?: GatewayConfig;
   directAnthropic?: DirectAnthropicConfig;
+  directOpenAICompatible?: DirectOpenAICompatibleConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
   appName?: string;
   appUrl?: string;
@@ -204,6 +214,25 @@ export function directAnthropicModel(
   return anthropicProvider(
     config.modelId as Parameters<typeof anthropicProvider>[0],
   ) as WrappableLanguageModel;
+}
+
+export function directOpenAICompatibleModel(
+  config: DirectOpenAICompatibleConfig,
+  options: Pick<GatewayOptions, "appName" | "appUrl"> = {},
+): WrappableLanguageModel {
+  const attributionHeaders = {
+    "http-referer": options.appUrl ?? "https://open-agents.dev",
+    "x-title": options.appName ?? "Open Agents",
+  };
+  const provider = createOpenAICompatible({
+    name: config.name,
+    apiKey: config.apiKey,
+    baseURL: config.baseURL,
+    headers: attributionHeaders,
+    includeUsage: true,
+  });
+
+  return provider.chatModel(config.modelId) as WrappableLanguageModel;
 }
 
 export function getProviderOptionsForModel(
@@ -270,8 +299,14 @@ export function gateway(
   modelId: GatewayModelId,
   options: GatewayOptions = {},
 ): LanguageModel {
-  const { config, directAnthropic, providerOptionsOverrides, appName, appUrl } =
-    options;
+  const {
+    config,
+    directAnthropic,
+    directOpenAICompatible,
+    providerOptionsOverrides,
+    appName,
+    appUrl,
+  } = options;
 
   const attributionHeaders = {
     "http-referer": appUrl ?? "https://open-agents.dev",
@@ -281,6 +316,11 @@ export function gateway(
   let model: WrappableLanguageModel;
   if (directAnthropic) {
     model = directAnthropicModel(directAnthropic, {
+      appName,
+      appUrl,
+    });
+  } else if (directOpenAICompatible) {
+    model = directOpenAICompatibleModel(directOpenAICompatible, {
       appName,
       appUrl,
     });

@@ -549,6 +549,34 @@ describe("tools execute behavior", () => {
     expect(needsApproval).toBe(true);
   });
 
+  test("webFetchTool does not ask for approval before blocking GitHub fetches when GitHub tools are available", async () => {
+    const needsApproval = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://api.github.com/repos/owner/repo/issues", method: "GET" },
+      {
+        sandbox: { workingDirectory: "/repo" },
+        model: "test-model",
+        githubToolAvailable: true,
+      },
+    );
+
+    expect(needsApproval).toBe(false);
+  });
+
+  test("webFetchTool still requires approval for GitHub fetches when GitHub tools are unavailable", async () => {
+    const needsApproval = await getNeedsApprovalResult(
+      webFetchTool.needsApproval,
+      { url: "https://api.github.com/repos/owner/repo/issues", method: "GET" },
+      {
+        sandbox: { workingDirectory: "/repo" },
+        model: "test-model",
+        githubToolAvailable: false,
+      },
+    );
+
+    expect(needsApproval).toBe(true);
+  });
+
   test("webFetchTool rejects public hostnames that resolve to private addresses", async () => {
     const sandbox = {
       workingDirectory: "/repo",

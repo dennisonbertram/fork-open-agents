@@ -9,7 +9,15 @@ import {
   getChatsBySessionId,
   updateChat,
 } from "@/lib/db/sessions";
+import {
+  attachTimelineToMessage,
+  getChatResponseTimelineMap,
+} from "@/lib/db/chat-response-timelines";
 import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
+import {
+  getInferenceProfileModelProviderDisplayName,
+  isModelCompatibleWithInferenceProfile,
+} from "@/lib/inference/profile-models";
 import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import {
   chatComposioSelectionInputSchema,
@@ -25,6 +33,38 @@ interface UpdateChatRequest {
   modelId?: string;
   inferenceProfileId?: string | null;
   composioSelection?: ChatComposioSelection;
+}
+
+function attachResponseDurations(
+  messages: Awaited<ReturnType<typeof getChatMessages>>,
+  responseTimelines: Awaited<ReturnType<typeof getChatResponseTimelineMap>>,
+): WebAgentUIMessage[] {
+  return messages.map((message, index) => {
+    const uiMessage = message.parts as WebAgentUIMessage;
+    const previousMessage = messages[index - 1];
+    if (
+      message.role !== "assistant" ||
+      !previousMessage ||
+      previousMessage.role !== "user"
+    ) {
+      return attachTimelineToMessage(
+        uiMessage,
+        responseTimelines.get(message.id),
+      );
+    }
+
+    return attachTimelineToMessage(
+      {
+        ...uiMessage,
+        metadata: {
+          ...uiMessage.metadata,
+          responseDurationMs:
+            message.createdAt.getTime() - previousMessage.createdAt.getTime(),
+        },
+      },
+      responseTimelines.get(message.id),
+    );
+  });
 }
 
 export interface ChatRefreshResponse {
@@ -56,7 +96,10 @@ export async function GET(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const messages = await getChatMessages(chatId);
+  const [messages, responseTimelines] = await Promise.all([
+    getChatMessages(chatId),
+    getChatResponseTimelineMap(chatId),
+  ]);
   const modelId = chatContext.chat.modelId ?? null;
 
   return Response.json({
@@ -68,7 +111,7 @@ export async function GET(_req: Request, context: RouteContext) {
       activeStreamId: chatContext.chat.activeStreamId,
     },
     isStreaming: chatContext.chat.activeStreamId !== null,
-    messages: messages.map((message) => message.parts as WebAgentUIMessage),
+    messages: attachResponseDurations(messages, responseTimelines),
   } satisfies ChatRefreshResponse);
 }
 
@@ -174,11 +217,15 @@ export async function PATCH(req: Request, context: RouteContext) {
 
       const effectiveModelId =
         nextModelId ?? chatContext.chat.modelId ?? undefined;
-      if (!effectiveModelId?.startsWith("anthropic/")) {
+      if (
+        !effectiveModelId ||
+        !isModelCompatibleWithInferenceProfile(profile, effectiveModelId)
+      ) {
+        const providerName =
+          getInferenceProfileModelProviderDisplayName(profile);
         return Response.json(
           {
-            error:
-              "User inference profiles currently support Anthropic models only",
+            error: `Selected inference profile only supports ${providerName} models. Choose a matching User model or switch back to Vercel AI Gateway.`,
           },
           { status: 400 },
         );

@@ -31,6 +31,63 @@ describe("models-preferences-section exports", () => {
   });
 });
 
+describe("model preference option ids", () => {
+  test("encodes profile-backed main defaults for the combobox value", async () => {
+    const mod = await import("./models-preferences-section");
+
+    expect(
+      mod.getSelectedDefaultModelOptionId(
+        {
+          defaultModelId: "cursor/composer-2.5",
+          defaultInferenceProfileId: "profile-cursor",
+        },
+        [],
+      ),
+    ).toBe("user-profile:profile-cursor:cursor%2Fcomposer-2.5");
+  });
+
+  test("encodes profile-backed subagent defaults independently", async () => {
+    const mod = await import("./models-preferences-section");
+
+    expect(
+      mod.getSelectedSubagentModelOptionId({
+        defaultSubagentModelId: "openai-compatible/fugu-ultra",
+        defaultSubagentInferenceProfileId: "profile-sakana",
+      }),
+    ).toBe("user-profile:profile-sakana:openai-compatible%2Ffugu-ultra");
+  });
+
+  test("decodes profile-backed main default updates", async () => {
+    const mod = await import("./models-preferences-section");
+
+    expect(
+      mod.toDefaultModelPreferenceUpdate(
+        "user-profile:profile-cursor:cursor%2Fcomposer-2.5",
+      ),
+    ).toEqual({
+      defaultModelId: "cursor/composer-2.5",
+      defaultInferenceProfileId: "profile-cursor",
+    });
+  });
+
+  test("decodes profile-backed subagent updates and clears auto", async () => {
+    const mod = await import("./models-preferences-section");
+
+    expect(
+      mod.toSubagentModelPreferenceUpdate(
+        "user-profile:profile-sakana:openai-compatible%2Ffugu-mini",
+      ),
+    ).toEqual({
+      defaultSubagentModelId: "openai-compatible/fugu-mini",
+      defaultSubagentInferenceProfileId: "profile-sakana",
+    });
+    expect(mod.toSubagentModelPreferenceUpdate("auto")).toEqual({
+      defaultSubagentModelId: null,
+      defaultSubagentInferenceProfileId: null,
+    });
+  });
+});
+
 // BT-002: models/page.tsx must import from the new location.
 describe("models page imports from models-preferences-section", () => {
   test("BT-002: page.tsx renders MODEL_PREFERENCES stub from models-preferences-section", async () => {

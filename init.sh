@@ -262,6 +262,25 @@ set_env_value() {
   fi
 }
 
+get_env_value() {
+  local file="$1"
+  local key="$2"
+
+  awk -F= -v key="$key" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      name = $1
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+      if (name == key) {
+        value = substr($0, index($0, "=") + 1)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+        print value
+        exit
+      }
+    }
+  ' "$file"
+}
+
 ensure_better_auth_secret() {
   if [[ ! -f "$WEB_ENV_FILE" ]]; then
     return 0
@@ -281,9 +300,30 @@ ensure_better_auth_secret() {
   ok "local BETTER_AUTH_SECRET generated"
 }
 
+ensure_encryption_key() {
+  if [[ ! -f "$WEB_ENV_FILE" ]]; then
+    return 0
+  fi
+  if env_has_value "$WEB_ENV_FILE" "ENCRYPTION_KEY"; then
+    return
+  fi
+
+  has_command openssl || {
+    warn "ENCRYPTION_KEY is missing and openssl is unavailable; add a stable secret manually"
+    return
+  }
+
+  info "Generating local ENCRYPTION_KEY"
+  set_env_value "$WEB_ENV_FILE" "ENCRYPTION_KEY" "$(openssl rand -base64 48)"
+  chmod 600 "$WEB_ENV_FILE"
+  ok "local ENCRYPTION_KEY generated"
+}
+
 create_env_skeleton() {
   if [[ -f "$WEB_ENV_FILE" ]]; then
     ok "local env file exists"
+    ensure_better_auth_secret
+    ensure_encryption_key
     return
   fi
 
@@ -291,6 +331,7 @@ create_env_skeleton() {
   cp "$WEB_ENV_EXAMPLE" "$WEB_ENV_FILE"
   chmod 600 "$WEB_ENV_FILE"
   ensure_better_auth_secret
+  ensure_encryption_key
   warn "created $WEB_ENV_FILE from .env.example; fill missing service credentials before running the full app"
 }
 
@@ -303,10 +344,16 @@ pull_vercel_env() {
   if [[ -f "$WEB_ENV_FILE" && "$FORCE_ENV_PULL" -eq 0 ]]; then
     ok "using existing apps/web/.env.local"
     ensure_better_auth_secret
+    ensure_encryption_key
     return
   fi
 
   link_vercel_if_requested
+
+  local existing_encryption_key=""
+  if [[ -f "$WEB_ENV_FILE" ]] && env_has_value "$WEB_ENV_FILE" "ENCRYPTION_KEY"; then
+    existing_encryption_key="$(get_env_value "$WEB_ENV_FILE" "ENCRYPTION_KEY")"
+  fi
 
   info "Pulling Vercel ${ENVIRONMENT} environment to apps/web/.env.local"
   local tmp_dir
@@ -318,6 +365,13 @@ pull_vercel_env() {
     rmdir "$tmp_dir"
     chmod 600 "$WEB_ENV_FILE"
     ensure_better_auth_secret
+    if [[ -n "$existing_encryption_key" ]] && ! env_has_value "$WEB_ENV_FILE" "ENCRYPTION_KEY"; then
+      info "Preserving existing local ENCRYPTION_KEY"
+      set_env_value "$WEB_ENV_FILE" "ENCRYPTION_KEY" "$existing_encryption_key"
+      chmod 600 "$WEB_ENV_FILE"
+      ok "local ENCRYPTION_KEY preserved"
+    fi
+    ensure_encryption_key
     ok "Vercel ${ENVIRONMENT} env written to apps/web/.env.local"
   else
     rm -rf "$tmp_dir"
@@ -363,7 +417,7 @@ validate_env() {
   info "Validating local env"
 
   local runnable_missing=""
-  if ! runnable_missing="$(missing_keys_csv "$WEB_ENV_FILE" POSTGRES_URL BETTER_AUTH_SECRET)"; then
+  if ! runnable_missing="$(missing_keys_csv "$WEB_ENV_FILE" POSTGRES_URL BETTER_AUTH_SECRET ENCRYPTION_KEY)"; then
     if [[ "$OFFLINE" -eq 1 ]]; then
       warn "missing runnable env keys: $runnable_missing"
     else

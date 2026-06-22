@@ -1,6 +1,10 @@
 "use client";
 
-import type { WebAgentMessageMetadata } from "@/app/types";
+import type {
+  WebAgentMessageMetadata,
+  WebAgentResponseTimeline,
+  WebAgentResponseTimelineCategory,
+} from "@/app/types";
 import type { ModelOption } from "@/lib/model-options";
 import {
   ProviderIcon,
@@ -12,40 +16,169 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import {
+  formatToolCallsSummaryResponseStats,
+  type ToolCallsSummaryResponseStats,
+} from "./tool-calls-summary-bar";
 
 interface MessageModelPillProps {
   metadata: WebAgentMessageMetadata;
   modelOptions: ModelOption[];
+  responseStats?: ToolCallsSummaryResponseStats | null;
 }
 
-/**
- * Format a USD cost for compact display alongside the model name.
- * Uses 4 decimals for sub-dollar amounts (typical for a single message)
- * and 2 decimals once we cross $1.
- */
-function formatCostUsd(amount: number): string {
-  if (amount === 0) {
-    return "$0";
+const TIMELINE_CATEGORY_CLASS_NAMES: Record<
+  WebAgentResponseTimelineCategory,
+  string
+> = {
+  database: "bg-sky-400/80",
+  inference: "bg-emerald-400/80",
+  third_party: "bg-amber-400/85",
+  system: "bg-zinc-400/80",
+  tool: "bg-fuchsia-400/80",
+};
+
+function formatDurationMs(durationMs: number): string {
+  if (durationMs < 1000) {
+    return `${Math.round(durationMs)}ms`;
   }
-  if (amount >= 1) {
-    return (
-      "$" +
-      amount.toLocaleString("en-US", {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-      })
-    );
+
+  const seconds = durationMs / 1000;
+  if (seconds < 10) {
+    return `${seconds.toFixed(1)}s`;
   }
-  // Show at least one significant digit for very small costs; cap at 4 decimals.
-  if (amount < 0.0001) {
-    return "<$0.0001";
+
+  return `${Math.round(seconds)}s`;
+}
+
+function getMetadataInferenceDurationMs(
+  metadata: WebAgentMessageMetadata,
+): number {
+  if (
+    typeof metadata.responseInferenceDurationMs === "number" &&
+    Number.isFinite(metadata.responseInferenceDurationMs) &&
+    metadata.responseInferenceDurationMs > 0
+  ) {
+    return metadata.responseInferenceDurationMs;
   }
+
   return (
-    "$" +
-    amount.toLocaleString("en-US", {
-      minimumFractionDigits: 4,
-      maximumFractionDigits: 4,
-    })
+    metadata.responseTimeline?.segments.reduce(
+      (totalDurationMs, segment) =>
+        segment.category === "inference"
+          ? totalDurationMs + segment.durationMs
+          : totalDurationMs,
+      0,
+    ) ?? 0
+  );
+}
+
+function getMetadataResponseStats(
+  metadata: WebAgentMessageMetadata,
+): ToolCallsSummaryResponseStats | null {
+  const usage = metadata.totalMessageUsage ?? metadata.lastStepUsage;
+  const outputTokens = usage?.outputTokens ?? 0;
+  const inferenceDurationSeconds =
+    getMetadataInferenceDurationMs(metadata) / 1000;
+  const measuredTokensPerSecond =
+    outputTokens > 0 && inferenceDurationSeconds > 0
+      ? outputTokens / inferenceDurationSeconds
+      : null;
+  const tokensPerSecond =
+    typeof metadata.providerTokensPerSecond === "number" &&
+    Number.isFinite(metadata.providerTokensPerSecond)
+      ? metadata.providerTokensPerSecond
+      : measuredTokensPerSecond;
+  const costUsd =
+    typeof metadata.totalMessageCost === "number" &&
+    Number.isFinite(metadata.totalMessageCost) &&
+    metadata.totalMessageCost >= 0
+      ? metadata.totalMessageCost
+      : null;
+
+  if (tokensPerSecond === null && costUsd === null) {
+    return null;
+  }
+
+  return {
+    tokensPerSecond,
+    costUsd,
+    costSource: costUsd === null ? null : "gateway",
+  };
+}
+
+function InlineResponseTimeline({
+  timeline,
+}: {
+  timeline: WebAgentResponseTimeline;
+}) {
+  if (timeline.segments.length === 0) {
+    return null;
+  }
+
+  const totalDurationMs = Math.max(
+    timeline.totalDurationMs,
+    timeline.segments.reduce((total, segment) => total + segment.durationMs, 0),
+    1,
+  );
+
+  const timelineLabel = `Response timeline, ${formatDurationMs(totalDurationMs)} total`;
+
+  const timelineStrip = (
+    <span
+      aria-label={timelineLabel}
+      className="ml-1 inline-flex h-5 w-28 shrink-0 items-center rounded px-1 align-middle"
+    >
+      <span className="inline-flex h-2 w-full overflow-hidden rounded-full bg-muted-foreground/15">
+        {timeline.segments.map((segment) => {
+          const width = Math.max(
+            1,
+            (segment.durationMs / totalDurationMs) * 100,
+          );
+
+          return (
+            <span
+              key={segment.id}
+              aria-hidden
+              className={TIMELINE_CATEGORY_CLASS_NAMES[segment.category]}
+              style={{ width: `${width}%` }}
+            />
+          );
+        })}
+      </span>
+    </span>
+  );
+
+  return (
+    <Tooltip delayDuration={100}>
+      <TooltipTrigger asChild>{timelineStrip}</TooltipTrigger>
+      <TooltipContent side="top" align="start" className="max-w-xs">
+        <div className="space-y-1 text-xs">
+          <div className="font-medium text-foreground">
+            Response timeline · {formatDurationMs(totalDurationMs)}
+          </div>
+          <div className="grid gap-1">
+            {timeline.segments.map((segment) => (
+              <div
+                key={segment.id}
+                className="grid grid-cols-[auto_1fr_auto] items-center gap-2"
+              >
+                <span
+                  className={`size-2 rounded-full ${TIMELINE_CATEGORY_CLASS_NAMES[segment.category]}`}
+                />
+                <span className="truncate">
+                  {segment.label}
+                  {segment.measured === false ? " (inferred)" : ""}
+                </span>
+                <span className="tabular-nums">
+                  {formatDurationMs(segment.durationMs)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -61,6 +194,7 @@ function formatCostUsd(amount: number): string {
 export function MessageModelPill({
   metadata,
   modelOptions,
+  responseStats,
 }: MessageModelPillProps) {
   const {
     selectedModelId,
@@ -98,10 +232,24 @@ export function MessageModelPill({
     : displayLabel;
 
   const isVariant = selectedOption?.isVariant ?? false;
-  const hasCost =
-    typeof totalMessageCost === "number" &&
-    Number.isFinite(totalMessageCost) &&
-    totalMessageCost >= 0;
+  const metadataResponseStats = getMetadataResponseStats(metadata);
+  const mergedResponseStats: ToolCallsSummaryResponseStats | null =
+    responseStats || metadataResponseStats
+      ? {
+          tokensPerSecond:
+            responseStats?.tokensPerSecond ??
+            metadataResponseStats?.tokensPerSecond ??
+            null,
+          costUsd:
+            responseStats?.costUsd ?? metadataResponseStats?.costUsd ?? null,
+          costSource:
+            responseStats?.costSource ??
+            metadataResponseStats?.costSource ??
+            null,
+        }
+      : null;
+  const responseStatSegments =
+    formatToolCallsSummaryResponseStats(mergedResponseStats);
 
   // For variants, tooltip shows the underlying model that actually ran.
   // When cost is available we also surface it in the tooltip so the exact
@@ -110,7 +258,11 @@ export function MessageModelPill({
   if (isVariant && resolvedModelId && resolvedModelId !== selectedModelId) {
     tooltipParts.push(resolvedOption?.label ?? resolvedModelId);
   }
-  if (hasCost) {
+  if (
+    typeof totalMessageCost === "number" &&
+    Number.isFinite(totalMessageCost) &&
+    totalMessageCost >= 0
+  ) {
     tooltipParts.push(
       `Cost: ${(totalMessageCost as number).toFixed(6)} (gateway)`,
     );
@@ -124,18 +276,19 @@ export function MessageModelPill({
   }
 
   const pill = (
-    <span className="inline-flex max-w-[320px] items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground/50 transition-colors hover:text-muted-foreground/80">
+    <span className="inline-flex max-w-[460px] items-center gap-1 rounded px-1.5 py-0.5 text-[11px] leading-tight text-muted-foreground/50 transition-colors hover:text-muted-foreground/80">
       <ProviderIcon provider={provider} className="size-3 shrink-0" />
       <span className="truncate">{shortLabel}</span>
-      {hasCost && (
-        <>
+      {responseStatSegments.map((segment) => (
+        <span key={segment} className="inline-flex items-center gap-1">
           <span aria-hidden className="text-muted-foreground/30">
             ·
           </span>
-          <span className="tabular-nums">
-            {formatCostUsd(totalMessageCost as number)}
-          </span>
-        </>
+          <span className="tabular-nums">{segment}</span>
+        </span>
+      ))}
+      {metadata.responseTimeline && (
+        <InlineResponseTimeline timeline={metadata.responseTimeline} />
       )}
     </span>
   );

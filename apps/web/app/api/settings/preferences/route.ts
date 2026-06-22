@@ -15,6 +15,7 @@ interface UpdatePreferencesRequest {
   defaultModelId?: string;
   defaultSubagentModelId?: string | null;
   defaultInferenceProfileId?: string | null;
+  defaultSubagentInferenceProfileId?: string | null;
   defaultSandboxType?: SandboxType;
   defaultManagedRuntimeProfileId?: string;
   defaultDiffMode?: DiffMode;
@@ -23,9 +24,12 @@ interface UpdatePreferencesRequest {
   alertsEnabled?: boolean;
   alertSoundEnabled?: boolean;
   publicUsageEnabled?: boolean;
+  agentCustomInstructions?: string;
   globalSkillRefs?: GlobalSkillRef[];
   enabledModelIds?: string[];
 }
+
+const MAX_AGENT_CUSTOM_INSTRUCTIONS_LENGTH = 12_000;
 
 export async function GET(_req: Request) {
   const session = await getServerSession();
@@ -121,6 +125,20 @@ export async function PATCH(req: Request) {
     updates.defaultInferenceProfileId = body.defaultInferenceProfileId;
   }
 
+  if (body.defaultSubagentInferenceProfileId !== undefined) {
+    if (
+      body.defaultSubagentInferenceProfileId !== null &&
+      typeof body.defaultSubagentInferenceProfileId !== "string"
+    ) {
+      return Response.json(
+        { error: "Invalid defaultSubagentInferenceProfileId" },
+        { status: 400 },
+      );
+    }
+    updates.defaultSubagentInferenceProfileId =
+      body.defaultSubagentInferenceProfileId;
+  }
+
   if (
     body.autoCommitPush !== undefined &&
     typeof body.autoCommitPush !== "boolean"
@@ -184,6 +202,24 @@ export async function PATCH(req: Request) {
   }
   if (body.publicUsageEnabled !== undefined) {
     updates.publicUsageEnabled = body.publicUsageEnabled;
+  }
+
+  if (body.agentCustomInstructions !== undefined) {
+    if (typeof body.agentCustomInstructions !== "string") {
+      return Response.json(
+        { error: "Invalid agentCustomInstructions value" },
+        { status: 400 },
+      );
+    }
+    if (
+      body.agentCustomInstructions.length > MAX_AGENT_CUSTOM_INSTRUCTIONS_LENGTH
+    ) {
+      return Response.json(
+        { error: "Agent instructions are too long" },
+        { status: 400 },
+      );
+    }
+    updates.agentCustomInstructions = body.agentCustomInstructions;
   }
 
   if (body.globalSkillRefs !== undefined) {

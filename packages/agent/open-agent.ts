@@ -4,6 +4,7 @@ import { z } from "zod";
 import { addCacheControl } from "./context-management";
 import {
   type DirectAnthropicConfig,
+  type DirectOpenAICompatibleConfig,
   type GatewayModelId,
   gateway,
   type ProviderOptionsByProvider,
@@ -45,6 +46,7 @@ export type ManagedRuntimeAgentContext = {
 export interface AgentModelSelection {
   id: GatewayModelId;
   directAnthropic?: DirectAnthropicConfig;
+  directOpenAICompatible?: DirectOpenAICompatibleConfig;
   providerOptionsOverrides?: ProviderOptionsByProvider;
   attribution?: {
     inferenceRoute?: "gateway" | "user";
@@ -61,6 +63,8 @@ export interface AgentSandboxContext {
   workingDirectory: string;
   currentBranch?: string;
   environmentDetails?: string;
+  repoOwner?: string;
+  repoName?: string;
 }
 
 const callOptionsSchema = z.object({
@@ -282,11 +286,13 @@ export const openAgent = new ToolLoopAgent({
 
     const callModel = gateway(mainSelection.id, {
       directAnthropic: mainSelection.directAnthropic,
+      directOpenAICompatible: mainSelection.directOpenAICompatible,
       providerOptionsOverrides: mainSelection.providerOptionsOverrides,
     });
     const subagentModel = subagentSelection
       ? gateway(subagentSelection.id, {
           directAnthropic: subagentSelection.directAnthropic,
+          directOpenAICompatible: subagentSelection.directOpenAICompatible,
           providerOptionsOverrides: subagentSelection.providerOptionsOverrides,
         })
       : undefined;
@@ -309,6 +315,8 @@ export const openAgent = new ToolLoopAgent({
       currentBranch: sandbox.currentBranch,
       customInstructions,
       environmentDetails: sandbox.environmentDetails,
+      repoOwner: sandbox.repoOwner,
+      repoName: sandbox.repoName,
       skills,
       modelId: mainSelection.id,
       runtimeMode,

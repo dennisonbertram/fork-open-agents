@@ -4,7 +4,6 @@ import { tool } from "ai";
 import type { ToolSet } from "ai";
 import { z } from "zod";
 import { getChatById, getSessionById } from "@/lib/db/sessions";
-import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
 import type { RepoAccessDeniedReason } from "@/lib/github/access";
 import { verifyRepoAccess } from "@/lib/github/access";
 import { withScopedInstallationOctokit } from "@/lib/github/app";
@@ -64,9 +63,9 @@ async function assertNotPullRequest(
 
 /**
  * Reason values for the "off" variant — lets callers distinguish benign cases
- * (not_enabled, no_repo) from misconfiguration (access_denied) for observability.
+ * (no_repo) from misconfiguration (access_denied) for observability.
  */
-export type GitHubToolsOffReason = "not_enabled" | "no_repo" | "access_denied";
+export type GitHubToolsOffReason = "no_repo" | "access_denied";
 
 export type ResolvedGitHubTools =
   | {
@@ -562,11 +561,10 @@ Prefer this over \`gh\`/\`curl\`/the raw API for closing issues — it runs as t
  *
  * Returns { status: "off", reason } when:
  *  - No repo is bound to the session
- *  - The githubToolsEnabled gate is off on the agent row
  *  - Repo access is denied (user or app permission issue)
  *
- * The reason field distinguishes benign cases (not_enabled, no_repo) from
- * misconfiguration (access_denied) for observability.
+ * The reason field distinguishes benign no-repo cases from access
+ * misconfiguration for observability.
  *
  * Throws GitHubToolsSetupError on unexpected failures.
  */
@@ -588,23 +586,6 @@ export async function resolveGitHubToolsForChat(params: {
     return { status: "off", reason: "no_repo" };
   }
 
-  // Gate check: only enable when the agent row opts in.
-  // We resolve role "main" with sessionId but NO repoOwner/repoName, so with no
-  // session/repo-scoped override this resolves to the user_default/main row —
-  // the exact row the Settings → Agents "Main" card writes githubToolsEnabled
-  // to. If session/repo-scoped agent writers are ever added, re-examine whether
-  // the Settings toggle still governs this gate (it would then read the more
-  // specific row, not user_default).
-  const agentRow = await resolveAgentForRole({
-    userId: params.userId,
-    role: "main",
-    sessionId: chat.sessionId,
-  });
-
-  if (!agentRow.githubToolsEnabled) {
-    return { status: "off", reason: "not_enabled" };
-  }
-
   // Repo access check: intersects user permissions with app installation scope
   const access = await verifyRepoAccess({
     userId: params.userId,
@@ -615,8 +596,7 @@ export async function resolveGitHubToolsForChat(params: {
 
   if (!access.ok) {
     // Permission/installation denial is a gating outcome, not a crash.
-    // Callers can detect this distinct case (vs not_enabled/no_repo) for
-    // observability — an opted-in user's misconfiguration should be surfaced.
+    // Callers can detect this distinct case (vs no_repo) for observability.
     return {
       status: "off",
       reason: "access_denied",

@@ -1,0 +1,1 @@
+ALTER TABLE "user_preferences" ADD COLUMN "agent_custom_instructions" text DEFAULT '' NOT NULL;

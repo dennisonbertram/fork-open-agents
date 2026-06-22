@@ -40,6 +40,7 @@ const mockGetUserPreferences = mock(async (_userId: string) => ({
   defaultModelId: "anthropic/claude-opus-4",
   defaultSubagentModelId: null as string | null,
   defaultInferenceProfileId: null as string | null,
+  defaultSubagentInferenceProfileId: null as string | null,
   defaultManagedRuntimeProfileId: "web-bun-agent-browser",
   composioAgentDefaults: {
     main: { defaultProfileId: null },
@@ -203,6 +204,7 @@ describe("resolveAgentForRole — synthetic fallback (no DB rows)", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -227,6 +229,7 @@ describe("resolveAgentForRole — synthetic fallback (no DB rows)", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: "anthropic/claude-haiku-4.5",
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -242,6 +245,30 @@ describe("resolveAgentForRole — synthetic fallback (no DB rows)", () => {
     });
 
     expect(resolved.modelId).toBe("anthropic/claude-haiku-4.5");
+  });
+
+  it("BT-002b2: sub-role synthetic fallback uses defaultSubagentInferenceProfileId when set", async () => {
+    mockGetUserPreferences.mockResolvedValue({
+      defaultModelId: "anthropic/claude-opus-4",
+      defaultSubagentModelId: "cursor/composer-2.5",
+      defaultInferenceProfileId: "profile-main",
+      defaultSubagentInferenceProfileId: "profile-cursor",
+      defaultManagedRuntimeProfileId: "web-bun-agent-browser",
+      composioAgentDefaults: {
+        main: { defaultProfileId: null },
+        explorer: { defaultProfileId: null },
+        executor: { defaultProfileId: null },
+        design: { defaultProfileId: null },
+      },
+    });
+
+    const resolved = await resolveAgentForRole({
+      userId: "user-1",
+      role: "executor",
+    });
+
+    expect(resolved.modelId).toBe("cursor/composer-2.5");
+    expect(resolved.inferenceProfileId).toBe("profile-cursor");
   });
 
   it("BT-002c: sub-role falls back to main defaultModelId when defaultSubagentModelId is null", async () => {
@@ -318,6 +345,7 @@ describe("resolveAgentForRole — DB row overrides synthetic fallback", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -439,6 +467,7 @@ describe("resolveAgentForRole — full 4-level cascade", () => {
       defaultModelId: "fallback-model",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -472,6 +501,7 @@ describe("resolveAgentForRole — ResolvedAgent shape", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -512,6 +542,7 @@ describe("resolveAgentForRole — data-access contract", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: null,
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -544,6 +575,7 @@ describe("resolveAgentForRole — fromDbRow discriminator", () => {
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: "anthropic/claude-haiku-4.5",
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },
@@ -619,6 +651,7 @@ describe("resolveAgentForRole — regression: fromDbRow invariant across paths",
       defaultModelId: "anthropic/claude-opus-4",
       defaultSubagentModelId: "anthropic/claude-haiku-4.5",
       defaultInferenceProfileId: null,
+      defaultSubagentInferenceProfileId: null,
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
       composioAgentDefaults: {
         main: { defaultProfileId: null },

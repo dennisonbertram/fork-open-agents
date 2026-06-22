@@ -159,13 +159,17 @@ export async function resolveAgentForRole(
   const modelId = isSubRole
     ? (prefs.defaultSubagentModelId ?? prefs.defaultModelId)
     : prefs.defaultModelId;
+  const inferenceProfileId = isSubRole
+    ? (prefs.defaultSubagentInferenceProfileId ??
+      prefs.defaultInferenceProfileId)
+    : prefs.defaultInferenceProfileId;
 
   return {
     role,
     fromDbRow: false,
     agentId: null,
     modelId,
-    inferenceProfileId: prefs.defaultInferenceProfileId ?? null,
+    inferenceProfileId: inferenceProfileId ?? null,
     instructions: null, // null = use built-in system prompt for the role
     skillRefs: [],
     builtinToolNames: null, // null = use role's default policy from packages/agent

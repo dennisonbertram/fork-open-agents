@@ -177,6 +177,7 @@ import {
   getSandboxCreateErrorDetails,
   type SandboxCreateErrorDetails,
 } from "./sandbox-create";
+import { shouldAutoStartProvisioningSandbox } from "./auto-start-sandbox";
 import { SandboxCreateErrorBanner } from "./sandbox-create-error-banner";
 import { WorkspaceFileViewer } from "./workspace-file-viewer";
 import { WorkspaceStartupStatus } from "./workspace-startup-status";
@@ -184,6 +185,9 @@ import "streamdown/styles.css";
 
 /** Minimum interval between textarea-focus activity pings (5 minutes). */
 const ACTIVITY_PING_THROTTLE_MS = 5 * 60 * 1000;
+const UNANSWERED_MESSAGE_RECOVERY_DELAYS_MS = [
+  3_000, 10_000, 25_000, 45_000, 75_000,
+] as const;
 
 const DiffViewer = dynamic(
   () => import("./diff-viewer").then((m) => m.DiffViewer),
@@ -666,6 +670,96 @@ type ConversationCost = {
   total: number;
   source: ConversationCostSource;
 };
+
+type MessageResponseStats = {
+  tokensPerSecond: number | null;
+  costUsd: number | null;
+  costSource: "gateway" | "estimate" | null;
+};
+
+function getMessageCost(
+  message: WebAgentUIMessage,
+  modelCost: AvailableModelCost | undefined,
+): { total: number; source: "gateway" | "estimate" } | null {
+  const gatewayCost = message.metadata?.totalMessageCost;
+  if (
+    typeof gatewayCost === "number" &&
+    Number.isFinite(gatewayCost) &&
+    gatewayCost >= 0
+  ) {
+    return { total: gatewayCost, source: "gateway" };
+  }
+
+  const usage =
+    message.metadata?.totalMessageUsage ?? message.metadata?.lastStepUsage;
+  if (!usage) {
+    return null;
+  }
+
+  const estimatedCost = estimateModelUsageCost(
+    getUsageTotals(usage),
+    modelCost,
+  );
+  if (estimatedCost === undefined) {
+    return null;
+  }
+
+  return { total: estimatedCost, source: "estimate" };
+}
+
+function getMessageInferenceDurationMs(message: WebAgentUIMessage): number {
+  const persistedDurationMs = message.metadata?.responseInferenceDurationMs;
+  if (
+    typeof persistedDurationMs === "number" &&
+    Number.isFinite(persistedDurationMs) &&
+    persistedDurationMs > 0
+  ) {
+    return persistedDurationMs;
+  }
+
+  const timelineInferenceDurationMs =
+    message.metadata?.responseTimeline?.segments.reduce(
+      (totalDurationMs, segment) =>
+        segment.category === "inference"
+          ? totalDurationMs + segment.durationMs
+          : totalDurationMs,
+      0,
+    ) ?? 0;
+
+  return timelineInferenceDurationMs > 0 ? timelineInferenceDurationMs : 0;
+}
+
+function getMessageResponseStats(
+  message: WebAgentUIMessage,
+  modelCost: AvailableModelCost | undefined,
+): MessageResponseStats | null {
+  const providerTokensPerSecond =
+    typeof message.metadata?.providerTokensPerSecond === "number" &&
+    Number.isFinite(message.metadata.providerTokensPerSecond)
+      ? message.metadata.providerTokensPerSecond
+      : null;
+  const usage =
+    message.metadata?.totalMessageUsage ?? message.metadata?.lastStepUsage;
+  const outputTokens = usage?.outputTokens ?? 0;
+  const inferenceDurationSeconds =
+    getMessageInferenceDurationMs(message) / 1000;
+  const measuredTokensPerSecond =
+    outputTokens > 0 && inferenceDurationSeconds > 0
+      ? outputTokens / inferenceDurationSeconds
+      : null;
+  const tokensPerSecond = providerTokensPerSecond ?? measuredTokensPerSecond;
+  const cost = getMessageCost(message, modelCost);
+
+  if (tokensPerSecond === null && cost === null) {
+    return null;
+  }
+
+  return {
+    tokensPerSecond,
+    costUsd: cost?.total ?? null,
+    costSource: cost?.source ?? null,
+  };
+}
 
 /**
  * Compute the cumulative USD cost across every assistant message in the
@@ -1244,6 +1338,7 @@ export function SessionChatContent({
   const isMountedRef = useRef(true);
   const copyResetTimeoutRef = useRef<number | null>(null);
   const lastActivityPingRef = useRef(0);
+  const autoStartedSandboxSessionRef = useRef<string | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -1375,6 +1470,7 @@ export function SessionChatContent({
     modelOptions,
     modelOptionsLoading,
   } = useSessionChatMetadataContext();
+  const isArchived = session.status === "archived";
   const { data: managedRuntimeProfilesData, mutate: mutateManagedProfiles } =
     useSWR<ManagedRuntimeProfilesResponse>(
       `/api/sessions/${session.id}/managed-runtime/profiles`,
@@ -1870,6 +1966,35 @@ export function SessionChatContent({
     clearError();
     setMessages(data.messages);
   }, [chatInfo.id, clearError, session.id, setMessages]);
+
+  useEffect(() => {
+    if (lastMessage?.role !== "user" || isChatInFlight) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutIds = UNANSWERED_MESSAGE_RECOVERY_DELAYS_MS.map((delayMs) =>
+      setTimeout(() => {
+        if (cancelled) {
+          return;
+        }
+
+        void refreshCurrentChatSnapshot();
+      }, delayMs),
+    );
+
+    return () => {
+      cancelled = true;
+      for (const timeoutId of timeoutIds) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    isChatInFlight,
+    lastMessage?.id,
+    lastMessage?.role,
+    refreshCurrentChatSnapshot,
+  ]);
 
   const refreshAfterTabResume = useCallback(async (): Promise<void> => {
     if (
@@ -2480,7 +2605,7 @@ export function SessionChatContent({
     waitForSandboxReady,
   ]);
 
-  const _handleCreateNewSandbox = useCallback(async () => {
+  const handleCreateNewSandbox = useCallback(async () => {
     setIsCreatingSandbox(true);
     setSandboxCreateError(null);
 
@@ -2516,6 +2641,38 @@ export function SessionChatContent({
     setSandboxInfo,
     setSandboxTypeFromUnknown,
     requestStatusSync,
+  ]);
+
+  useEffect(() => {
+    if (autoStartedSandboxSessionRef.current === session.id) {
+      return;
+    }
+
+    if (
+      !shouldAutoStartProvisioningSandbox({
+        session,
+        sandboxInfo,
+        isArchived,
+        isCreatingSandbox,
+        isRestoringSnapshot,
+        reconnectionStatus,
+        lifecycleState: lifecycleTiming.state,
+      })
+    ) {
+      return;
+    }
+
+    autoStartedSandboxSessionRef.current = session.id;
+    void handleCreateNewSandbox();
+  }, [
+    session,
+    sandboxInfo,
+    isArchived,
+    isCreatingSandbox,
+    isRestoringSnapshot,
+    reconnectionStatus,
+    lifecycleTiming.state,
+    handleCreateNewSandbox,
   ]);
 
   /**
@@ -2670,8 +2827,6 @@ export function SessionChatContent({
   ]);
 
   const shouldRefreshRestoredWorkspaceRef = useRef(false);
-
-  const isArchived = session.status === "archived";
 
   // After a snapshot restore, wait for the live workspace hooks to be active
   // again before forcing refreshes. Calling the pre-restore callbacks inside
@@ -4051,12 +4206,16 @@ export function SessionChatContent({
                                               {!isMessageStreaming &&
                                                 isFinalAssistantTextPart &&
                                                 m.metadata && (
-                                                  <span className="opacity-0 transition group-hover:opacity-100">
+                                                  <span className="opacity-0 transition group-hover:opacity-100 group-focus-within:opacity-100">
                                                     <MessageModelPill
                                                       metadata={m.metadata}
                                                       modelOptions={
                                                         modelOptions
                                                       }
+                                                      responseStats={getMessageResponseStats(
+                                                        m,
+                                                        selectedModelOption?.cost,
+                                                      )}
                                                     />
                                                   </span>
                                                 )}
@@ -4280,12 +4439,15 @@ export function SessionChatContent({
                               });
 
                             if (m.role === "assistant") {
+                              const durationMs =
+                                messageDurationMap[m.id] ?? null;
+
                               return (
                                 <AssistantMessageGroups
                                   key={m.id}
                                   message={m}
                                   isStreaming={isMessageStreaming}
-                                  durationMs={messageDurationMap[m.id] ?? null}
+                                  durationMs={durationMs}
                                   startedAt={
                                     messageStartedAtMap[m.id] ??
                                     (isMessageStreaming
@@ -4296,6 +4458,10 @@ export function SessionChatContent({
                                         : lastUserMessageSentAt
                                       : null)
                                   }
+                                  responseStats={getMessageResponseStats(
+                                    m,
+                                    selectedModelOption?.cost,
+                                  )}
                                 >
                                   {renderGroups}
                                 </AssistantMessageGroups>

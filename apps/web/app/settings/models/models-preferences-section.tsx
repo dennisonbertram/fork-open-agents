@@ -7,12 +7,19 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ModelCombobox } from "@/components/model-combobox";
 import { useModelOptions } from "@/hooks/use-model-options";
-import { useUserPreferences } from "@/hooks/use-user-preferences";
+import {
+  type UserPreferences,
+  useUserPreferences,
+} from "@/hooks/use-user-preferences";
 import {
   type ModelOption,
   getDefaultModelOptionId,
   withMissingModelOption,
 } from "@/lib/model-options";
+import {
+  getModelOptionSelectionId,
+  parseModelOptionSelection,
+} from "@/lib/inference/model-option-id";
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
@@ -20,6 +27,59 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
       {children}
     </h3>
   );
+}
+
+export function getSelectedDefaultModelOptionId(
+  preferences:
+    | Pick<UserPreferences, "defaultModelId" | "defaultInferenceProfileId">
+    | null
+    | undefined,
+  modelOptions: ModelOption[],
+): string {
+  return getModelOptionSelectionId(
+    preferences?.defaultModelId ?? getDefaultModelOptionId(modelOptions),
+    preferences?.defaultInferenceProfileId ?? null,
+  );
+}
+
+export function getSelectedSubagentModelOptionId(
+  preferences:
+    | Pick<
+        UserPreferences,
+        "defaultSubagentModelId" | "defaultSubagentInferenceProfileId"
+      >
+    | null
+    | undefined,
+): string {
+  return preferences?.defaultSubagentModelId
+    ? getModelOptionSelectionId(
+        preferences.defaultSubagentModelId,
+        preferences.defaultSubagentInferenceProfileId ?? null,
+      )
+    : "auto";
+}
+
+export function toDefaultModelPreferenceUpdate(modelOptionId: string) {
+  const parsed = parseModelOptionSelection(modelOptionId);
+  return {
+    defaultModelId: parsed.modelId,
+    defaultInferenceProfileId: parsed.inferenceProfileId,
+  };
+}
+
+export function toSubagentModelPreferenceUpdate(modelOptionId: string) {
+  if (modelOptionId === "auto") {
+    return {
+      defaultSubagentModelId: null,
+      defaultSubagentInferenceProfileId: null,
+    };
+  }
+
+  const parsed = parseModelOptionSelection(modelOptionId);
+  return {
+    defaultSubagentModelId: parsed.modelId,
+    defaultSubagentInferenceProfileId: parsed.inferenceProfileId,
+  };
 }
 
 export function ModelPreferencesSectionSkeleton() {
@@ -71,27 +131,24 @@ function useModelPreferencesSectionState() {
   const { modelOptions, loading: modelOptionsLoading } = useModelOptions();
   const [isSaving, setIsSaving] = useState(false);
 
-  const catalogModelOptions = useMemo(
-    () => modelOptions.filter((option) => option.source !== "user"),
-    [modelOptions],
+  const selectedDefaultModelId = getSelectedDefaultModelOptionId(
+    preferences,
+    modelOptions,
   );
-
-  const selectedDefaultModelId =
-    preferences?.defaultModelId ?? getDefaultModelOptionId(catalogModelOptions);
-  const selectedSubagentModelId = preferences?.defaultSubagentModelId ?? "auto";
+  const selectedSubagentModelId = getSelectedSubagentModelOptionId(preferences);
 
   const defaultModelOptions = useMemo(
-    () => withMissingModelOption(catalogModelOptions, selectedDefaultModelId),
-    [catalogModelOptions, selectedDefaultModelId],
+    () => withMissingModelOption(modelOptions, selectedDefaultModelId),
+    [modelOptions, selectedDefaultModelId],
   );
 
   const subagentModelOptions = useMemo(
     () =>
       withMissingModelOption(
-        catalogModelOptions,
-        preferences?.defaultSubagentModelId,
+        modelOptions,
+        selectedSubagentModelId === "auto" ? null : selectedSubagentModelId,
       ),
-    [catalogModelOptions, preferences?.defaultSubagentModelId],
+    [modelOptions, selectedSubagentModelId],
   );
 
   const enabledModelIds = useMemo(
@@ -102,7 +159,7 @@ function useModelPreferencesSectionState() {
   const handleModelChange = async (modelId: string) => {
     setIsSaving(true);
     try {
-      await updatePreferences({ defaultModelId: modelId });
+      await updatePreferences(toDefaultModelPreferenceUpdate(modelId));
     } catch (error) {
       console.error("Failed to update model preference:", error);
     } finally {
@@ -113,9 +170,7 @@ function useModelPreferencesSectionState() {
   const handleSubagentModelChange = async (value: string) => {
     setIsSaving(true);
     try {
-      await updatePreferences({
-        defaultSubagentModelId: value === "auto" ? null : value,
-      });
+      await updatePreferences(toSubagentModelPreferenceUpdate(value));
     } catch (error) {
       console.error("Failed to update subagent model preference:", error);
     } finally {
@@ -173,7 +228,7 @@ function useModelPreferencesSectionState() {
   return {
     preferences,
     loading,
-    modelOptions: catalogModelOptions,
+    modelOptions,
     modelOptionsLoading,
     isSaving,
     selectedDefaultModelId,

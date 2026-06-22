@@ -127,6 +127,7 @@ mock.module("@/lib/db/user-preferences", () => ({
     defaultModelId: "model-default",
     defaultSubagentModelId: null,
     defaultInferenceProfileId: null,
+    defaultSubagentInferenceProfileId: null,
     defaultSandboxType: "vercel",
     defaultDiffMode: "unified",
     autoCommitPush: false,

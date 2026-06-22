@@ -264,7 +264,17 @@ const fetchOutputSchema = z.union([
 ]);
 
 export const webFetchTool = tool({
-  needsApproval: true,
+  needsApproval: ({ url }, { experimental_context }) => {
+    const parsedUrl = new URL(url);
+    if (
+      getGithubToolAvailable(experimental_context) &&
+      isGitHubToolHost(parsedUrl.hostname)
+    ) {
+      return false;
+    }
+
+    return true;
+  },
   description: `Fetch a URL from the web.
 
 USAGE:

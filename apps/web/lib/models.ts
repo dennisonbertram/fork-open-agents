@@ -8,6 +8,10 @@ export interface GatewayAvailableModel {
   name: string;
   description?: string | null;
   modelType?: string | null;
+  specification?: {
+    provider?: string;
+    modelId?: string;
+  };
 }
 
 export interface AvailableModelCostTier {

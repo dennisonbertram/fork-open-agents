@@ -3,8 +3,11 @@
 import { Github, Settings } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
+import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
+import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
 import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
+import { markDisconnectedProfilesUnavailable } from "@/lib/composio/profile-option-availability";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
@@ -27,12 +30,12 @@ interface ComposioToolSelectorCompactProps {
   onChange: (selection: ChatComposioSelection) => void;
 }
 
-async function fetchComposioSettings(url: string) {
+async function fetchJson<T>(url: string) {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error("Failed to load Composio settings");
+    throw new Error(`Failed to load ${url}`);
   }
-  return (await response.json()) as ComposioSettingsResponse;
+  return (await response.json()) as T;
 }
 
 export function ComposioToolSelectorCompact({
@@ -50,7 +53,18 @@ export function ComposioToolSelectorCompact({
           repoName,
         }).toString()}`
       : "/api/settings/composio";
-  const { data, isLoading } = useSWR(settingsUrl, fetchComposioSettings);
+  const { data, isLoading } = useSWR<ComposioSettingsResponse>(
+    settingsUrl,
+    fetchJson<ComposioSettingsResponse>,
+  );
+  const { data: toolkitsData } = useSWR<ComposioToolkitsResponse>(
+    "/api/composio/toolkits",
+    fetchJson<ComposioToolkitsResponse>,
+  );
+  const { data: accountsData } = useSWR<ComposioConnectedAccountsResponse>(
+    "/api/composio/connected-accounts",
+    fetchJson<ComposioConnectedAccountsResponse>,
+  );
   const selectedProfile =
     data?.profiles.find((profile) => profile.id === selection.mainProfileId) ??
     null;
@@ -73,14 +87,18 @@ export function ComposioToolSelectorCompact({
     ? directSlugs
     : (selectedProfile?.toolkitSlugs ?? []);
 
-  const profileOptions =
-    data?.profileOptions ??
-    data?.profiles.map((profile) => ({
-      ...profile,
-      available: true,
-      disabledReason: null,
-    })) ??
-    [];
+  const profileOptions = markDisconnectedProfilesUnavailable({
+    profiles:
+      data?.profileOptions ??
+      data?.profiles.map((profile) => ({
+        ...profile,
+        available: true,
+        disabledReason: null,
+      })) ??
+      [],
+    toolkits: toolkitsData?.toolkits ?? [],
+    connectedAccounts: accountsData?.accounts ?? [],
+  });
 
   const activeProfileId = hasDirectSlugs
     ? ""

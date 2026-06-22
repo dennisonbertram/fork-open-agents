@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { WebAgentUIMessage } from "@/app/types";
 import { AssistantMessageGroups } from "./assistant-message-groups";
+import { formatToolCallsSummaryResponseStats } from "./tool-calls-summary-bar";
 
 describe("AssistantMessageGroups", () => {
   test("surfaces active managed runtime worker activity while collapsed", () => {
@@ -54,5 +55,50 @@ describe("AssistantMessageGroups", () => {
 
     expect(html).toContain("Managed worker: Bash bun run test:quick");
     expect(html).toContain("sbx_runtime_123");
+  });
+
+  test("keeps response metadata out of server markup to avoid hydration drift", () => {
+    const message = {
+      id: "assistant-2",
+      role: "assistant",
+      parts: [
+        {
+          type: "tool-bash",
+          toolCallId: "bash-1",
+          state: "output-available",
+          input: { command: "bun test" },
+          output: { exitCode: 0, stdout: "ok", stderr: "" },
+        },
+      ],
+    } as unknown as WebAgentUIMessage;
+
+    const html = renderToStaticMarkup(
+      <AssistantMessageGroups
+        durationMs={8000}
+        isStreaming={false}
+        message={message}
+        responseStats={{
+          costSource: "gateway",
+          costUsd: 0.0034,
+          tokensPerSecond: 42.25,
+        }}
+        startedAt={null}
+      >
+        {() => null}
+      </AssistantMessageGroups>,
+    );
+
+    expect(html).not.toContain("42.3 tok/s");
+    expect(html).not.toContain("cost $0.0034");
+  });
+
+  test("formats provider-reported throughput and cost hover metadata", () => {
+    expect(
+      formatToolCallsSummaryResponseStats({
+        costSource: "gateway",
+        costUsd: 0.0034,
+        tokensPerSecond: 42.25,
+      }),
+    ).toEqual(["42.3 tok/s", "cost $0.0034"]);
   });
 });

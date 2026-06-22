@@ -105,6 +105,29 @@ type ManualTestResponse = {
   error?: string;
 };
 
+export function getBackgroundAgentActionLabels(agent: {
+  name: string;
+  repoOwner: string;
+  repoName: string;
+}) {
+  const repo = `${agent.repoOwner}/${agent.repoName}`;
+  return {
+    edit: `Edit background agent ${agent.name}`,
+    test: `Test background agent ${agent.name}`,
+    repo: `Open agent settings for ${repo}`,
+    delete: `Delete background agent ${agent.name}`,
+    copyWebhook: `Copy webhook URL for ${agent.name}`,
+  };
+}
+
+export function getBackgroundRunActionLabels(run: BackgroundRun) {
+  const target = `${run.repoOwner}/${run.repoName} ${formatRunTarget(run)}`;
+  return {
+    output: `Open output for background run ${target}`,
+    details: `Open details for background run ${target}`,
+  };
+}
+
 // Condition field placeholder text by field
 const conditionPlaceholders: Record<ConditionField, string> = {
   actions: "opened, reopened",
@@ -501,6 +524,7 @@ export function BackgroundAgentsSection() {
                 onCheckedChange={(enabled) =>
                   setForm((current) => ({ ...current, enabled }))
                 }
+                aria-label="Enable background agent"
               />
               <span className="text-xs text-muted-foreground">Enabled</span>
             </div>
@@ -655,130 +679,19 @@ export function BackgroundAgentsSection() {
         ) : (
           <div className="divide-y divide-border">
             {agents.map((agent) => (
-              <div
+              <AgentRow
                 key={agent.id}
-                className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto]"
-              >
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    <p className="truncate text-sm font-medium">{agent.name}</p>
-                    <StatusPill status={agent.status} />
-                  </div>
-                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                    {agent.repoOwner}/{agent.repoName}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {agent.triggers.map((trigger) => (
-                      <span
-                        key={trigger.id}
-                        className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
-                      >
-                        {triggerLabels[trigger.kind]}
-                      </span>
-                    ))}
-                  </div>
-                  {agent.triggers.map((trigger) =>
-                    trigger.kind === "webhook.error" &&
-                    trigger.webhookPublicId ? (
-                      <div
-                        key={`webhook-url-${trigger.id}`}
-                        className="mt-2 flex items-center gap-1.5"
-                      >
-                        <Input
-                          readOnly
-                          value={`/api/background-agents/webhook/${trigger.webhookPublicId}`}
-                          className="h-6 font-mono text-[10px]"
-                          aria-label="Webhook URL"
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 shrink-0"
-                          aria-label="Copy webhook URL"
-                          onClick={() =>
-                            void copyWebhookUrl(trigger.webhookPublicId ?? "")
-                          }
-                        >
-                          {copiedWebhookId === trigger.webhookPublicId ? (
-                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
-                          ) : (
-                            <ClipboardCopy className="h-3.5 w-3.5" />
-                          )}
-                        </Button>
-                      </div>
-                    ) : null,
-                  )}
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => startEditing(agent)}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                    Edit
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={testingAgentId === agent.id}
-                    onClick={() => void testAgent(agent.id)}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                    Test
-                  </Button>
-                  <Button asChild variant="outline" size="sm">
-                    <Link
-                      href={`/repos/${agent.repoOwner}/${agent.repoName}/agents`}
-                    >
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Repo
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    aria-label="Delete agent"
-                    disabled={deletingAgentId === agent.id}
-                    onClick={() => setDeleteConfirmAgentId(agent.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Delete
-                  </Button>
-                  <Dialog
-                    open={deleteConfirmAgentId === agent.id}
-                    onOpenChange={(open) => {
-                      if (!open) {
-                        setDeleteConfirmAgentId(null);
-                      }
-                    }}
-                  >
-                    <DialogContent>
-                      <DialogHeader>
-                        <DialogTitle>Delete agent</DialogTitle>
-                        <DialogDescription>
-                          Are you sure you want to delete{" "}
-                          <strong>{agent.name}</strong>? This action cannot be
-                          undone.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <DialogFooter>
-                        <DialogClose asChild>
-                          <Button variant="outline">Cancel</Button>
-                        </DialogClose>
-                        <Button
-                          variant="destructive"
-                          disabled={deletingAgentId === agent.id}
-                          onClick={() => void deleteAgent(agent.id)}
-                        >
-                          Delete
-                        </Button>
-                      </DialogFooter>
-                    </DialogContent>
-                  </Dialog>
-                </div>
-              </div>
+                agent={agent}
+                copiedWebhookId={copiedWebhookId}
+                deleteConfirmAgentId={deleteConfirmAgentId}
+                deletingAgentId={deletingAgentId}
+                testingAgentId={testingAgentId}
+                onCopyWebhook={copyWebhookUrl}
+                onDelete={deleteAgent}
+                onEdit={startEditing}
+                onSetDeleteConfirmAgentId={setDeleteConfirmAgentId}
+                onTest={testAgent}
+              />
             ))}
           </div>
         )}
@@ -813,51 +726,206 @@ export function BackgroundAgentsSection() {
         ) : (
           <div className="divide-y divide-border">
             {runs.map((run) => (
-              <div
-                key={run.id}
-                className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto]"
-              >
-                <div className="min-w-0">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <p className="truncate text-sm font-medium">
-                      {triggerLabels[run.triggerKind as TriggerKind] ??
-                        run.triggerKind}
-                    </p>
-                    <StatusPill status={run.status} />
-                    {run.errorKind && (
-                      <span className="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] text-red-700 dark:text-red-300">
-                        {run.errorKind}
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                    {run.repoOwner}/{run.repoName} · {formatRunTarget(run)}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {run.source} · {formatRunDate(run.createdAt)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {run.outputUrl && (
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={run.outputUrl}>
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Output
-                      </Link>
-                    </Button>
-                  )}
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/background-runs/${run.id}`}>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Details
-                    </Link>
-                  </Button>
-                </div>
-              </div>
+              <RunRow key={run.id} run={run} />
             ))}
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function AgentRow({
+  agent,
+  copiedWebhookId,
+  deleteConfirmAgentId,
+  deletingAgentId,
+  testingAgentId,
+  onCopyWebhook,
+  onDelete,
+  onEdit,
+  onSetDeleteConfirmAgentId,
+  onTest,
+}: {
+  agent: BackgroundAgent;
+  copiedWebhookId: string | null;
+  deleteConfirmAgentId: string | null;
+  deletingAgentId: string | null;
+  testingAgentId: string | null;
+  onCopyWebhook: (webhookPublicId: string) => void | Promise<void>;
+  onDelete: (agentId: string) => void | Promise<void>;
+  onEdit: (agent: BackgroundAgent) => void;
+  onSetDeleteConfirmAgentId: (agentId: string | null) => void;
+  onTest: (agentId: string) => void | Promise<void>;
+}) {
+  const labels = getBackgroundAgentActionLabels(agent);
+
+  return (
+    <div className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto]">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <Bot className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <p className="truncate text-sm font-medium">{agent.name}</p>
+          <StatusPill status={agent.status} />
+        </div>
+        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+          {agent.repoOwner}/{agent.repoName}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {agent.triggers.map((trigger) => (
+            <span
+              key={trigger.id}
+              className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            >
+              {triggerLabels[trigger.kind]}
+            </span>
+          ))}
+        </div>
+        {agent.triggers.map((trigger) =>
+          trigger.kind === "webhook.error" && trigger.webhookPublicId ? (
+            <div
+              key={`webhook-url-${trigger.id}`}
+              className="mt-2 flex items-center gap-1.5"
+            >
+              <Input
+                readOnly
+                value={`/api/background-agents/webhook/${trigger.webhookPublicId}`}
+                className="h-6 font-mono text-[10px]"
+                aria-label={`Webhook URL for ${agent.name}`}
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6 shrink-0"
+                aria-label={labels.copyWebhook}
+                onClick={() =>
+                  void onCopyWebhook(trigger.webhookPublicId ?? "")
+                }
+              >
+                {copiedWebhookId === trigger.webhookPublicId ? (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                ) : (
+                  <ClipboardCopy className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
+          ) : null,
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={labels.edit}
+          onClick={() => onEdit(agent)}
+        >
+          <Pencil className="h-3.5 w-3.5" />
+          Edit
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          aria-label={labels.test}
+          disabled={testingAgentId === agent.id}
+          onClick={() => void onTest(agent.id)}
+        >
+          <Play className="h-3.5 w-3.5" />
+          Test
+        </Button>
+        <Button asChild variant="outline" size="sm">
+          <Link
+            href={`/repos/${agent.repoOwner}/${agent.repoName}/agents`}
+            aria-label={labels.repo}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Repo
+          </Link>
+        </Button>
+        <Button
+          variant="destructive"
+          size="sm"
+          aria-label={labels.delete}
+          disabled={deletingAgentId === agent.id}
+          onClick={() => onSetDeleteConfirmAgentId(agent.id)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+          Delete
+        </Button>
+        <Dialog
+          open={deleteConfirmAgentId === agent.id}
+          onOpenChange={(open) => {
+            if (!open) {
+              onSetDeleteConfirmAgentId(null);
+            }
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete agent</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete <strong>{agent.name}</strong>?
+                This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">Cancel</Button>
+              </DialogClose>
+              <Button
+                variant="destructive"
+                disabled={deletingAgentId === agent.id}
+                onClick={() => void onDelete(agent.id)}
+              >
+                Delete
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}
+
+function RunRow({ run }: { run: BackgroundRun }) {
+  const labels = getBackgroundRunActionLabels(run);
+
+  return (
+    <div className="grid gap-3 px-4 py-3 md:grid-cols-[1fr_auto]">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="truncate text-sm font-medium">
+            {triggerLabels[run.triggerKind as TriggerKind] ?? run.triggerKind}
+          </p>
+          <StatusPill status={run.status} />
+          {run.errorKind && (
+            <span className="rounded border border-red-500/25 bg-red-500/10 px-1.5 py-0.5 font-mono text-[10px] text-red-700 dark:text-red-300">
+              {run.errorKind}
+            </span>
+          )}
+        </div>
+        <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+          {run.repoOwner}/{run.repoName} · {formatRunTarget(run)}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {run.source} · {formatRunDate(run.createdAt)}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {run.outputUrl && (
+          <Button asChild variant="outline" size="sm">
+            <Link href={run.outputUrl} aria-label={labels.output}>
+              <ExternalLink className="h-3.5 w-3.5" />
+              Output
+            </Link>
+          </Button>
+        )}
+        <Button asChild variant="outline" size="sm">
+          <Link href={`/background-runs/${run.id}`} aria-label={labels.details}>
+            <ExternalLink className="h-3.5 w-3.5" />
+            Details
+          </Link>
+        </Button>
+      </div>
     </div>
   );
 }

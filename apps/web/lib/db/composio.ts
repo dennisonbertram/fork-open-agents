@@ -246,6 +246,33 @@ function getProfileDisabledReason(
     : null;
 }
 
+function getDisconnectedToolkitReason(
+  profile: ComposioToolProfileRecord,
+): string | null {
+  for (const toolkit of profile.toolkitSlugs) {
+    const normalizedToolkit = normalizeComposioToolkitSlug(toolkit) ?? toolkit;
+    const authConfigIds =
+      profile.authConfigIdsByToolkit[toolkit] ??
+      profile.authConfigIdsByToolkit[normalizedToolkit] ??
+      [];
+
+    if (authConfigIds.length === 0) {
+      continue;
+    }
+
+    const connectedAccountIds =
+      profile.connectedAccountIdsByToolkit[toolkit] ??
+      profile.connectedAccountIdsByToolkit[normalizedToolkit] ??
+      [];
+
+    if (connectedAccountIds.length === 0) {
+      return `Tool not connected: ${toolkit}.`;
+    }
+  }
+
+  return null;
+}
+
 export function applyRepositoryComposioPolicy(params: {
   profiles: ComposioToolProfileRecord[];
   settings: RepositoryComposioSettingsRecord | undefined;
@@ -253,7 +280,9 @@ export function applyRepositoryComposioPolicy(params: {
   const settings = getRepositoryComposioSettingsValues(params.settings);
 
   return params.profiles.map((profile) => {
-    const disabledReason = getProfileDisabledReason(profile, settings);
+    const disabledReason =
+      getProfileDisabledReason(profile, settings) ??
+      getDisconnectedToolkitReason(profile);
     return {
       ...profile,
       available: disabledReason === null,

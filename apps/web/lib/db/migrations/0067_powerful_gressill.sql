@@ -1,0 +1,2 @@
+ALTER TABLE "user_preferences" ADD COLUMN "default_subagent_inference_profile_id" text;--> statement-breakpoint
+ALTER TABLE "user_preferences" ADD CONSTRAINT "user_preferences_default_subagent_inference_profile_id_inference_profiles_id_fk" FOREIGN KEY ("default_subagent_inference_profile_id") REFERENCES "public"."inference_profiles"("id") ON DELETE set null ON UPDATE no action;

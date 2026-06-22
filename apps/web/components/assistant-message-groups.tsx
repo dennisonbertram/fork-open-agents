@@ -3,7 +3,10 @@
 import { isReasoningUIPart, isToolUIPart } from "ai";
 import { useMemo, useState, type ReactNode } from "react";
 import type { WebAgentUIMessage } from "@/app/types";
-import { ToolCallsSummaryBar } from "./tool-calls-summary-bar";
+import {
+  ToolCallsSummaryBar,
+  type ToolCallsSummaryResponseStats,
+} from "./tool-calls-summary-bar";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -169,6 +172,8 @@ export type AssistantMessageGroupsProps = {
   durationMs: number | null;
   /** ISO timestamp of the preceding user message's createdAt (for live timer while streaming) */
   startedAt: string | null;
+  /** Response usage metrics shown when hovering the collapsed summary. */
+  responseStats?: ToolCallsSummaryResponseStats | null;
   /**
    * Render function that produces the list of group elements.
    * Called with `isExpanded` so the caller can conditionally
@@ -187,6 +192,7 @@ export function AssistantMessageGroups({
   isStreaming,
   durationMs,
   startedAt,
+  responseStats,
   children,
 }: AssistantMessageGroupsProps) {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -229,6 +235,7 @@ export function AssistantMessageGroups({
         activityLabel={activityLabel}
         durationMs={durationMs}
         startedAt={startedAt}
+        responseStats={responseStats}
         statusWordSeed={message.id}
       />
       <div className="space-y-1">{children(effectiveExpanded)}</div>
