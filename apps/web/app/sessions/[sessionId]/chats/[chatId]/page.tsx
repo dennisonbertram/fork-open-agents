@@ -3,6 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import type { WebAgentUIMessage } from "@/app/types";
 import { DiffsProvider } from "@/components/diffs-provider";
 import {
+  attachTimelineToMessage,
+  getChatResponseTimelineMap,
+} from "@/lib/db/chat-response-timelines";
+import {
   getChatById,
   getChatMessages,
   getChatSummariesBySessionId,
@@ -117,6 +121,7 @@ export default async function SessionChatPage({
     sessionChats,
     inferenceProfiles,
     runtimeProfile,
+    responseTimelineMap,
   ] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
@@ -129,6 +134,7 @@ export default async function SessionChatPage({
       sessionId,
       profileId: sessionRecord.managedRuntimeProfileId,
     }),
+    getChatResponseTimelineMap(chatId),
   ]);
 
   if (!chat) {
@@ -138,7 +144,12 @@ export default async function SessionChatPage({
     notFound();
   }
 
-  const initialMessages = dbMessages.map((m) => m.parts as WebAgentUIMessage);
+  const initialMessages = dbMessages.map((m) =>
+    attachTimelineToMessage(
+      m.parts as WebAgentUIMessage,
+      responseTimelineMap.get(m.id),
+    ),
+  );
 
   // Compute generation duration for each assistant message:
   // duration = assistant.createdAt − preceding user.createdAt

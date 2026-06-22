@@ -1694,25 +1694,28 @@ export function InboxSidebar({
         }}
       >
         <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Archive session?</DialogTitle>
-            <DialogDescription>
-              This will stop the sandbox and archive the session. You can still
-              view it in the archive tab.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              onClick={() => {
-                void handleConfirmArchive();
-              }}
-            >
-              Archive
-            </Button>
-          </DialogFooter>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleConfirmArchive();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Archive session?</DialogTitle>
+              <DialogDescription>
+                This will stop the sandbox and archive the session. You can
+                still view it in the archive tab.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button type="submit">Archive</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
