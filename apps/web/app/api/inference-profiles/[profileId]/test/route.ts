@@ -13,7 +13,10 @@ import {
   setInferenceProfileModels,
 } from "@/lib/db/inference-profiles";
 import { fetchInferenceProfileModels } from "@/lib/inference/fetch-profile-models";
-import { toInferenceProfileTestMessage } from "@/lib/inference/model-routing";
+import {
+  normalizeInferenceProfileBaseUrl,
+  toInferenceProfileTestMessage,
+} from "@/lib/inference/model-routing";
 
 type RouteContext = {
   params: Promise<{ profileId: string }>;
@@ -82,9 +85,13 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   try {
+    const baseUrl = normalizeInferenceProfileBaseUrl(
+      profile.provider,
+      profile.baseUrl,
+    );
     const fetchedModels = await fetchInferenceProfileModels({
       provider: profile.provider,
-      baseUrl: profile.baseUrl,
+      baseUrl,
       apiKey,
     });
     const modelId =
@@ -113,10 +120,10 @@ export async function POST(req: Request, context: RouteContext) {
         provider: "anthropic",
         modelId: directModelId,
         apiKey,
-        ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+        ...(baseUrl ? { baseURL: baseUrl } : {}),
       });
     } else {
-      if (!profile.baseUrl) {
+      if (!baseUrl) {
         return jsonError(
           "OpenAI-compatible inference profile test requires a base URL",
           400,
@@ -127,7 +134,7 @@ export async function POST(req: Request, context: RouteContext) {
         provider: "openai-compatible",
         modelId: directModelId,
         apiKey,
-        baseURL: profile.baseUrl,
+        baseURL: baseUrl,
       });
     }
 

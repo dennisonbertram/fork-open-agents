@@ -107,6 +107,22 @@ function modelsUrl(baseUrl: string | null): string {
   return `${root}/models`;
 }
 
+function openAICompatibleAuthHeaders(baseUrl: string, apiKey: string) {
+  return {
+    Authorization: usesBasetenApiKeyAuth(baseUrl)
+      ? `Api-Key ${apiKey}`
+      : `Bearer ${apiKey}`,
+  };
+}
+
+function usesBasetenApiKeyAuth(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === "inference.baseten.co";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Fetch the model list an inference profile's endpoint actually serves.
  * Best-effort: returns `[]` on any network/HTTP/parse failure so callers can
@@ -131,9 +147,7 @@ export async function fetchInferenceProfileModels(params: {
               "x-api-key": apiKey,
               "anthropic-version": ANTHROPIC_VERSION,
             }
-          : {
-              Authorization: `Bearer ${apiKey}`,
-            },
+          : openAICompatibleAuthHeaders(baseUrl ?? "", apiKey),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {

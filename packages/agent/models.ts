@@ -198,20 +198,32 @@ export function directOpenAIModel(
   config: DirectOpenAIConfig,
   options: Pick<GatewayOptions, "appName" | "appUrl"> = {},
 ): WrappableLanguageModel {
+  const usesApiKeyAuth = usesBasetenApiKeyAuth(config.baseURL);
   const attributionHeaders = {
     "http-referer": options.appUrl ?? "https://open-agents.dev",
     "x-title": options.appName ?? "Open Agents",
   };
   const openAIProvider = createOpenAICompatible({
     name: "openai-compatible",
-    apiKey: config.apiKey,
     baseURL: config.baseURL,
-    headers: attributionHeaders,
+    ...(usesApiKeyAuth ? {} : { apiKey: config.apiKey }),
+    headers: {
+      ...attributionHeaders,
+      ...(usesApiKeyAuth ? { Authorization: `Api-Key ${config.apiKey}` } : {}),
+    },
   });
 
   return openAIProvider.chatModel(
     config.modelId as Parameters<typeof openAIProvider.chatModel>[0],
   ) as WrappableLanguageModel;
+}
+
+function usesBasetenApiKeyAuth(baseURL: string): boolean {
+  try {
+    return new URL(baseURL).hostname === "inference.baseten.co";
+  } catch {
+    return false;
+  }
 }
 
 export function getProviderOptionsForModel(

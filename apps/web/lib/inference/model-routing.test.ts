@@ -50,6 +50,35 @@ describe("inference model routing", () => {
     );
   });
 
+  test("normalizes OpenAI-compatible chat completion endpoints to the API root", () => {
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions/",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions/v1",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+  });
+
+  test("normalizes OpenAI-compatible endpoint URLs that omit the version segment", () => {
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://gateway.example.com/openai/chat/completions",
+      ),
+    ).toBe("https://gateway.example.com/openai/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl("https://gateway.example.com/models"),
+    ).toBe("https://gateway.example.com/v1");
+  });
+
   test("normalizes base URLs by provider", () => {
     expect(normalizeInferenceProfileBaseUrl("anthropic", null)).toBeNull();
     expect(

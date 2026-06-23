@@ -11,6 +11,7 @@ import {
   INFERENCE_PROFILE_REENTER_KEY_MESSAGE,
   recordInferenceProfileTestResult,
 } from "@/lib/db/inference-profiles";
+import { normalizeInferenceProfileBaseUrl } from "./model-routing";
 
 export class InferenceProfileResolutionError extends Error {
   override name = "InferenceProfileResolutionError";
@@ -77,16 +78,19 @@ export async function resolveInferenceProfileModelSelection(params: {
     throw error;
   }
   let directInference: DirectInferenceConfig;
+  const baseUrl = normalizeInferenceProfileBaseUrl(
+    profile.provider,
+    profile.baseUrl,
+  );
   if (profile.provider === "anthropic") {
     directInference = {
       provider: "anthropic",
       modelId: directModelId,
       apiKey,
-      ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+      ...(baseUrl ? { baseURL: baseUrl } : {}),
     };
   } else {
-    const baseURL = profile.baseUrl;
-    if (!baseURL) {
+    if (!baseUrl) {
       throw new InferenceProfileResolutionError(
         "Selected OpenAI-compatible inference profile is missing its base URL. Edit the profile or switch back to Vercel AI Gateway.",
       );
@@ -96,7 +100,7 @@ export async function resolveInferenceProfileModelSelection(params: {
       provider: "openai-compatible",
       modelId: directModelId,
       apiKey,
-      baseURL,
+      baseURL: baseUrl,
     };
   }
 

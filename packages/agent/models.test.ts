@@ -414,6 +414,33 @@ describe("direct provider models", () => {
       },
     ]);
   });
+
+  test("uses Baseten Api-Key auth for direct OpenAI-compatible models", () => {
+    createOpenAICompatibleCalls.length = 0;
+
+    const model = directOpenAIModel({
+      provider: "openai-compatible",
+      modelId: "zai-org/GLM-5.2",
+      apiKey: "baseten-key",
+      baseURL: "https://inference.baseten.co/v1",
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "openai-compatible",
+      modelId: "zai-org/GLM-5.2",
+    });
+    expect(createOpenAICompatibleCalls).toEqual([
+      {
+        name: "openai-compatible",
+        baseURL: "https://inference.baseten.co/v1",
+        headers: {
+          Authorization: "Api-Key baseten-key",
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+  });
 });
 
 describe("gateway attribution headers", () => {

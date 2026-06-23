@@ -119,6 +119,13 @@ mock.module("@/lib/inference/fetch-profile-models", () => ({
 }));
 
 mock.module("@/lib/inference/model-routing", () => ({
+  normalizeInferenceProfileBaseUrl: (
+    _provider: string,
+    baseUrl: string | null,
+  ) =>
+    baseUrl === "https://inference.baseten.co/v1/chat/completions/v1"
+      ? "https://inference.baseten.co/v1"
+      : baseUrl,
   toInferenceProfileTestMessage: (error: unknown) =>
     error instanceof Error ? error.message : "Failed to test profile.",
 }));
@@ -207,6 +214,40 @@ describe("/api/inference-profiles/[profileId]/test", () => {
     expect(body.result).toEqual({
       status: "passed",
       message: "Profile test passed. Discovered 2 models.",
+    });
+  });
+
+  test("normalizes saved OpenAI-compatible chat-completion URLs before testing", async () => {
+    const { POST } = await routeModulePromise;
+    profile = {
+      id: "profile-openai",
+      name: "Baseten",
+      provider: "openai-compatible",
+      enabled: true,
+      baseUrl: "https://inference.baseten.co/v1/chat/completions/v1",
+    };
+
+    const response = await POST(
+      postRequest({ modelId: "zai-org/GLM-5.2" }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchModelsCalls).toEqual([
+      {
+        provider: "openai-compatible",
+        baseUrl: "https://inference.baseten.co/v1",
+        apiKey: "decrypted-key",
+      },
+    ]);
+    expect(generateTextCalls[0]?.model).toEqual({
+      kind: "openai-model",
+      config: {
+        provider: "openai-compatible",
+        modelId: "zai-org/GLM-5.2",
+        apiKey: "decrypted-key",
+        baseURL: "https://inference.baseten.co/v1",
+      },
     });
   });
 

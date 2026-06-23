@@ -221,7 +221,7 @@ function ProfileDialog({
             <p className="text-xs text-muted-foreground">
               {provider === "anthropic"
                 ? "Empty uses Anthropic. URLs without a version segment are normalized to end in /v1."
-                : "Required. Enter the OpenAI-compatible API root; URLs without a version segment are normalized to end in /v1."}
+                : "Required. Enter the OpenAI-compatible API root. Full /chat/completions or /models URLs are normalized back to the /v1 root."}
             </p>
           </div>
 

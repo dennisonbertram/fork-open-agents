@@ -86,6 +86,32 @@ describe("resolveInferenceProfileModelSelection", () => {
     });
   });
 
+  test("normalizes saved OpenAI-compatible chat-completion URLs before routing", async () => {
+    profile = {
+      id: "profile-baseten",
+      name: "Baseten",
+      provider: "openai-compatible",
+      enabled: true,
+      baseUrl: "https://inference.baseten.co/v1/chat/completions/v1",
+      encryptedApiKey: "encrypted-key",
+    };
+
+    const selection = await resolveInferenceProfileModelSelection({
+      userId: "user-1",
+      inferenceProfileId: "profile-baseten",
+      selection: { id: "zai-org/GLM-5.2" as never },
+    });
+
+    expect(selection).toMatchObject({
+      directInference: {
+        provider: "openai-compatible",
+        modelId: "zai-org/GLM-5.2",
+        apiKey: "decrypted-key",
+        baseURL: "https://inference.baseten.co/v1",
+      },
+    });
+  });
+
   test("preserves Anthropic catalog id mapping for Anthropic-compatible profiles", async () => {
     profile = {
       id: "profile-anthropic",
