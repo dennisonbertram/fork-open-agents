@@ -1,6 +1,6 @@
 "use client";
 
-import { Github, Wrench } from "lucide-react";
+import { Github, Plus, Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -53,10 +53,19 @@ export function ToolIconStack({ items, maxVisible = 3 }: ToolIconStackProps) {
         <div
           className={cn(
             "flex size-4 items-center justify-center rounded-full",
-            "bg-muted/50 text-muted-foreground",
+            "border border-border/70 bg-muted/50 text-muted-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)]",
           )}
         >
           <Wrench className="size-2.5" />
+        </div>
+        <div
+          className={cn(
+            "-ml-1 flex size-4 items-center justify-center rounded-full",
+            "border border-border/70 bg-background/95 text-muted-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)]",
+          )}
+          title="Add tools"
+        >
+          <Plus className="size-2.5" />
         </div>
       </div>
     );
@@ -71,10 +80,10 @@ export function ToolIconStack({ items, maxVisible = 3 }: ToolIconStackProps) {
           key={`${item.name}-${index}`}
           className={cn(
             "flex size-4 items-center justify-center rounded-full",
-            "border border-border bg-background text-foreground",
+            "border border-border/70 bg-background text-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)]",
             index > 0 && "-ml-1",
           )}
-          style={{ zIndex: visible.length - index }}
+          style={{ zIndex: visible.length - index + 2 }}
           title={item.label}
         >
           {item.icon}
@@ -84,13 +93,23 @@ export function ToolIconStack({ items, maxVisible = 3 }: ToolIconStackProps) {
         <span
           className={cn(
             "-ml-1 flex size-4 items-center justify-center rounded-full",
-            "bg-muted text-[8px] font-medium text-muted-foreground",
+            "border border-border/70 bg-muted text-[8px] font-medium text-muted-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)]",
           )}
-          style={{ zIndex: 0 }}
+          style={{ zIndex: 1 }}
         >
           +{overflow}
         </span>
       )}
+      <span
+        className={cn(
+          "-ml-1 flex size-4 items-center justify-center rounded-full",
+          "border border-border/70 bg-background/95 text-muted-foreground shadow-[0_0_0_1px_rgba(255,255,255,0.03)]",
+        )}
+        style={{ zIndex: 0 }}
+        title="Add tools"
+      >
+        <Plus className="size-2.5" />
+      </span>
     </div>
   );
 }

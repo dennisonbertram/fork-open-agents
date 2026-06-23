@@ -36,6 +36,18 @@ interface ModelSelectorCompactProps {
   onSaveEnabledModelIds?: (ids: string[]) => Promise<void>;
 }
 
+export function getModelOptionSecondaryText(
+  option: ModelOption,
+): string | null {
+  if (!option.secondaryLabel) {
+    return null;
+  }
+
+  return option.source === "user"
+    ? `via ${option.secondaryLabel}`
+    : option.secondaryLabel;
+}
+
 export function ModelSelectorCompact({
   value,
   modelOptions,
@@ -220,9 +232,9 @@ export function ModelSelectorCompact({
                             <span className="min-w-0 truncate">
                               {option.shortLabel}
                             </span>
-                            {option.secondaryLabel && !isUserModel && (
+                            {getModelOptionSecondaryText(option) && (
                               <span className="min-w-0 truncate text-xs text-muted-foreground">
-                                {option.secondaryLabel}
+                                {getModelOptionSecondaryText(option)}
                               </span>
                             )}
                           </span>

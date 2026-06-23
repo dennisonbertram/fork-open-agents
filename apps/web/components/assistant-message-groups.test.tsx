@@ -55,4 +55,52 @@ describe("AssistantMessageGroups", () => {
     expect(html).toContain("Managed worker: Bash bun run test:quick");
     expect(html).toContain("sbx_runtime_123");
   });
+
+  test("surfaces response throughput and cost while collapsed", () => {
+    const message = {
+      id: "assistant-2",
+      role: "assistant",
+      metadata: {
+        responseInferenceDurationMs: 20_000,
+        totalMessageCost: 0.0125,
+        totalMessageUsage: {
+          inputTokens: 100,
+          inputTokenDetails: {
+            cacheReadTokens: undefined,
+            cacheWriteTokens: undefined,
+            noCacheTokens: undefined,
+          },
+          outputTokens: 500,
+          outputTokenDetails: {
+            reasoningTokens: undefined,
+            textTokens: undefined,
+          },
+          totalTokens: 600,
+        },
+      },
+      parts: [
+        {
+          type: "tool-bash",
+          toolCallId: "bash-1",
+          state: "output-available",
+          input: { command: "bun test" },
+          output: "pass",
+        },
+      ],
+    } as unknown as WebAgentUIMessage;
+
+    const html = renderToStaticMarkup(
+      <AssistantMessageGroups
+        durationMs={20_000}
+        isStreaming={false}
+        message={message}
+        startedAt="2026-06-22T15:00:00.000Z"
+      >
+        {() => null}
+      </AssistantMessageGroups>,
+    );
+
+    expect(html).toContain("25 tok/s");
+    expect(html).toContain("cost $0.01");
+  });
 });
