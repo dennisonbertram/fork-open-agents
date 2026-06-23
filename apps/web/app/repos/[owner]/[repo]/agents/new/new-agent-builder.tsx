@@ -24,7 +24,7 @@ import {
   type BlankTemplate,
 } from "../agent-templates";
 import { TemplatePicker } from "../template-picker";
-import { submitNewAgent } from "./create-agent-request";
+import { submitNewAgent, updateCreatedAgent } from "./create-agent-request";
 
 type ManualTestResponse = {
   enabled: boolean;
@@ -305,12 +305,28 @@ export function NewAgentBuilder({
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
+    if (createdAgentId) {
+      const result = await updateCreatedAgent(createdAgentId, payload);
+      setMessage(
+        result.ok
+          ? {
+              kind: "success",
+              text: "Agent updated. Run another test when you're ready.",
+            }
+          : { kind: "error", text: result.error },
+      );
+      return;
+    }
+
     const result = await submitNewAgent(payload);
     if (result.ok) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage({ kind: "success", text: "Agent created successfully." });
+      setMessage({
+        kind: "success",
+        text: "Agent created. Run a test, keep editing, or turn it on when ready.",
+      });
     } else {
       setMessage({ kind: "error", text: result.error });
     }
@@ -433,6 +449,12 @@ export function NewAgentBuilder({
         initialComposioToolkitSlugs={[]}
         createdAgentId={createdAgentId}
         testRunId={testRunId}
+        saveLabel={createdAgentId ? "Save changes" : "Save"}
+        savedAgentHref={
+          createdAgentId
+            ? `/repos/${owner}/${repo}/agents/${createdAgentId}`
+            : null
+        }
         statusMessage={message}
         onSave={handleSave}
         onRunTest={handleRunTest}

@@ -1,6 +1,7 @@
 "use client";
 
-import { ChevronDown, Play, Save } from "lucide-react";
+import { ArrowRight, ChevronDown, Play, Save } from "lucide-react";
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -61,6 +62,10 @@ type AgentSpecEditorProps = {
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
   testRunId?: string | null;
+  /** Button label for the primary save action. */
+  saveLabel?: string;
+  /** Detail page shown after a newly created agent is saved. */
+  savedAgentHref?: string | null;
   /** Action feedback shown next to Save/Run controls. */
   statusMessage?: { kind: "success" | "error"; text: string } | null;
   onSave: (
@@ -102,6 +107,8 @@ export function AgentSpecEditor({
   initialComposioToolkitSlugs = [],
   createdAgentId = null,
   testRunId = null,
+  saveLabel = "Save",
+  savedAgentHref = null,
   statusMessage = null,
   onSave,
   onRunTest,
@@ -245,7 +252,7 @@ export function AgentSpecEditor({
           <div className="flex flex-wrap items-center gap-3">
             <Button disabled={!canSave || saving} onClick={handleSave}>
               <Save className="h-4 w-4" />
-              Save
+              {saving ? "Saving" : saveLabel}
             </Button>
             <span
               title={!createdAgentId ? "Save first to run a test." : undefined}
@@ -259,6 +266,14 @@ export function AgentSpecEditor({
                 Run a test
               </Button>
             </span>
+            {savedAgentHref ? (
+              <Button asChild variant="ghost">
+                <Link href={savedAgentHref}>
+                  View agent
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </Button>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             <span className="text-xs font-medium text-muted-foreground">
@@ -301,9 +316,7 @@ export function AgentSpecEditor({
               ? enabled
                 ? "This agent is on — it runs when its trigger fires."
                 : "This agent is off — it won't run until you turn it on."
-              : enabled
-                ? "This agent will be created on."
-                : "New agents start off — test it, then turn it on here."}
+              : "Agent saved. Run a test, keep editing, or turn it on when ready."}
         </p>
         {statusMessage ? (
           <p

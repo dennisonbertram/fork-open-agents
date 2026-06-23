@@ -93,6 +93,21 @@ describe("TemplatePicker", () => {
     expect(html).not.toContain('id="repo-owner"');
     expect(html).not.toContain('id="repo-name"');
   });
+
+  test("template picker explains triggers in plain language", async () => {
+    const { TemplatePicker } = await templatePickerPromise;
+
+    const html = renderToStaticMarkup(
+      <TemplatePicker onSelect={() => undefined} />,
+    );
+
+    expect(html).toContain("A pull request changes");
+    expect(html).toContain("An issue is opened");
+    expect(html).toContain("On a schedule");
+    expect(html).not.toContain("github.pull_request");
+    expect(html).not.toContain("github.issue");
+    expect(html).not.toContain("schedule.cron");
+  });
 });
 
 describe("AgentSpecEditor", () => {
@@ -156,6 +171,36 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("Save");
     // enabled=false means the status section shows it as disabled
     expect(html).toContain("disabled");
+  });
+
+  test("newly saved agents show the post-create action copy", async () => {
+    const { AgentSpecEditor } = await agentSpecEditorPromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        repoOwner="acme"
+        repoName="widgets"
+        initialName="My Agent"
+        initialGoal="Some goal"
+        initialTriggerKind="github.pull_request"
+        initialInstructions="Do stuff"
+        initialOutputMode="none"
+        initialCheckCommand=""
+        initialEnabled={false}
+        createdAgentId="agent-1"
+        saveLabel="Save changes"
+        savedAgentHref="/repos/acme/widgets/agents/agent-1"
+        onSave={() => undefined}
+        onRunTest={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Save changes");
+    expect(html).toContain("View agent");
+    expect(html).toContain("/repos/acme/widgets/agents/agent-1");
+    expect(html).toContain(
+      "Agent saved. Run a test, keep editing, or turn it on when ready.",
+    );
   });
 
   test("BT-026: ready_pr output surfaces explicit write/PR permission copy", async () => {
