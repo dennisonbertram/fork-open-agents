@@ -62,10 +62,11 @@ export function mapReadinessToVerdict(
   if (response.enabled) {
     const count = response.missing.length;
     const noun = count === 1 ? "prerequisite" : "prerequisites";
+    const verb = count === 1 ? "needs" : "need";
     return {
       status: "action-needed",
       headline: "Background agents need a bit more setup.",
-      subtext: `${count} ${noun} need attention.`,
+      subtext: `${count} ${noun} ${verb} attention.`,
       checks,
     };
   }

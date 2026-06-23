@@ -10,6 +10,27 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 const push = mock((_url: string) => undefined);
+let swrKey: string | null = null;
+
+type MockReadinessData = {
+  enabled: boolean;
+  ready: boolean;
+  missing: string[];
+  checks: {
+    id: string;
+    label: string;
+    status: "ready" | "missing" | "disabled";
+    detail: string;
+    missing: string[];
+  }[];
+};
+
+let readinessData: MockReadinessData = {
+  enabled: true,
+  ready: true,
+  missing: [],
+  checks: [],
+};
 
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push }),
@@ -17,12 +38,56 @@ mock.module("next/navigation", () => ({
 }));
 
 mock.module("swr", () => ({
-  default: (_key: string) => ({
-    data: { enabled: true, ready: true, missing: [] },
-    error: null,
-    isLoading: false,
-    mutate: async () => undefined,
-  }),
+  default: (key: string) => {
+    swrKey = key;
+    return {
+      data: readinessData,
+      error: null,
+      isLoading: false,
+      mutate: async () => undefined,
+    };
+  },
+}));
+
+mock.module("next/link", () => ({
+  default: ({
+    href,
+    children,
+  }: {
+    href: string;
+    children: React.ReactNode;
+  }) => <a href={href}>{children}</a>,
+}));
+
+mock.module("@/components/ui/button", () => ({
+  Button: ({
+    children,
+    asChild,
+  }: {
+    children: React.ReactNode;
+    asChild?: boolean;
+  }) => (asChild ? <>{children}</> : <button type="button">{children}</button>),
+}));
+
+mock.module("@/components/ui/readiness-verdict", () => ({
+  ReadinessVerdict: ({
+    headline,
+    subtext,
+    action,
+    checks,
+  }: {
+    headline: string;
+    subtext?: string;
+    action?: React.ReactNode;
+    checks?: { label: string }[];
+  }) => (
+    <div>
+      <p>{headline}</p>
+      {subtext ? <p>{subtext}</p> : null}
+      {action}
+      {checks?.length ? <button type="button">Operator details</button> : null}
+    </div>
+  ),
 }));
 
 // Echo key props so we can assert the spec editor is/ isn't mounted.
@@ -34,11 +99,22 @@ mock.module("../agent-spec-editor", () => ({
   ),
 }));
 
+mock.module("../template-picker", () => ({
+  TemplatePicker: () => <div>TemplatePicker: PR Backlog Maintainer Blank</div>,
+}));
+
 const builderPromise = import("./new-agent-builder");
 
 describe("NewAgentBuilder", () => {
   beforeEach(() => {
     push.mockClear();
+    swrKey = null;
+    readinessData = {
+      enabled: true,
+      ready: true,
+      missing: [],
+      checks: [],
+    };
   });
 
   test("template-first: initial render shows the chooser, not the spec editor", async () => {
@@ -59,5 +135,44 @@ describe("NewAgentBuilder", () => {
     renderToStaticMarkup(<NewAgentBuilder owner="acme" repo="widgets" />);
 
     expect(push).not.toHaveBeenCalled();
+  });
+
+  test("checks repo-specific background agent prerequisites", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    renderToStaticMarkup(<NewAgentBuilder owner="acme" repo="widgets" />);
+
+    expect(swrKey).toBe(
+      "/api/background-agents/readiness?repoOwner=acme&repoName=widgets&permission=write",
+    );
+  });
+
+  test("shows setup details and a configuration link when prerequisites are missing", async () => {
+    readinessData = {
+      enabled: true,
+      ready: false,
+      missing: ["GITHUB_APP_ID"],
+      checks: [
+        {
+          id: "github_app",
+          label: "GitHub App",
+          status: "missing",
+          detail: "Required for webhook trust.",
+          missing: ["GITHUB_APP_ID"],
+        },
+      ],
+    };
+    const { NewAgentBuilder } = await builderPromise;
+
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+
+    expect(html).toContain("Background agents need a bit more setup.");
+    expect(html).toContain("1 prerequisite needs attention.");
+    expect(html).toContain("Open background agent settings");
+    expect(html).toContain("/settings/background-agents");
+    expect(html).toContain("Operator details");
+    expect(html).not.toContain("GITHUB_APP_ID");
   });
 });
