@@ -1,0 +1,50 @@
+<button node_id=1 aria-label="Collapse panel" type="button" />
+<button node_id=2 type="button">New session</button>
+<button node_id=3 aria-label="Quick chat (no repo)" type="button" />
+<button node_id=4 type="button">Active 14</button>
+<button node_id=5 type="button">Archive 55</button>
+<button node_id=6 type="button">Chats</button>
+<button node_id=7 type="button">Github Testing</button>
+<button node_id=8 type="button">dennisonbertram/synthetix</button>
+<button node_id=9 type="button">Agents 1</button>
+<button node_id=10 type="button">Loops</button>
+<button node_id=11 type="button">Chicago</button>
+<button node_id=12 type="button">Repo and Branch Verification</button>
+<button node_id=13 type="button">Testing Provider Implementation</button>
+<button node_id=14 type="button">Backlog Issues Review</button>
+<button node_id=15 type="button">GitHub Issue 262 Review</button>
+<button node_id=16 type="button">Model Runtime Identification</button>
+<button node_id=17 type="button">Casual Coding Session</button>
+<button node_id=18 type="button">Reykjavik</button>
+<button node_id=19 type="button">Getting Started</button>
+<button node_id=20 type="button">dennisonbertram/partyline</button>
+<button node_id=21 type="button">Agents</button>
+<button node_id=22 type="button">Loops</button>
+<button node_id=23 type="button">New Coding Session Started</button>
+<button node_id=24 aria-label="Open settings" type="button" />
+<button node_id=25 />
+<a node_id=26 href="https://github.com/dennisonbertram/synthetix">synthetix</a>
+<button node_id=27 aria-label="Share chat" type="button" />
+<button node_id=28 aria-label="Runtime mode" type="button" />
+<button node_id=29 aria-label="Open files and changes panel" />
+<button node_id=30 aria-label="Verified Build" />
+<button node_id=31 aria-label="Runtime inspector" />
+<button node_id=32 type="button">hello! I'm testing this provider.</button>
+<button node_id=33 aria-label="Rename chat" type="button" />
+<button node_id=34 aria-label="Close chat" type="button" />
+<button node_id=35 type="button">Fork of hello! I'm testing this provider.</button>
+<button node_id=36 aria-label="Rename chat" type="button" />
+<button node_id=37 aria-label="Close chat" type="button" />
+<button node_id=38 type="button" />
+<button node_id=39 aria-label="Resend this message and delete everything after it" type="button" />
+<button node_id=40 aria-label="Delete this message and everything after it" type="button" />
+<button node_id=41 aria-label="Simmered · 17s · 5 tool calls · 25.3 tok/s · est. cost $0.03" title="Simmered · 17s · 5 tool calls · 25.3 tok/s · est. cost $0.03" type="button">Simmered · 17s · 5 tool calls · 17s · 5 tool calls · 25.3 tok/s · est. cost $0.03</button>
+<textarea node_id=42 placeholder="Request changes or ask a question..." />
+<button node_id=43 aria-label="Attach files" title="Attach files" type="button" />
+<button node_id=44 aria-label="Change model" title="GLM 5.2 via Fireworks" type="button">GLM 5.2</button>
+<button node_id=45 aria-label="Select external tools" title="Select external tools" type="button" />
+<button node_id=46 aria-label="Runtime: Direct" type="button">Direct</button>
+<button node_id=47 aria-label="Select workflow" type="button">Workflow</button>
+<button node_id=48 aria-label="Record voice input" title="Record voice input" type="button" />
+<button node_id=49 aria-label="Open Next.js Dev Tools" />
+<div node_id=50 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>

@@ -1,0 +1,439 @@
+- complementary:
+  - link "Back":
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link "Profile":
+        - /url: /settings/profile
+        - text: Profile
+      - link "Preferences":
+        - /url: /settings/preferences
+        - text: Preferences
+      - link "Connections":
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link "Agents":
+        - /url: /settings/agents
+        - text: Agents
+      - link "Models":
+        - /url: /settings/models
+        - text: Models
+      - link "Composio":
+        - /url: /settings/composio
+        - text: Composio
+      - link "MCP servers":
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link "Skills":
+        - /url: /settings/skills
+        - text: Skills
+      - link "Background agents":
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link "Loops":
+        - /url: /loops
+        - text: Loops
+      - link "Runtime profiles":
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link "Usage" [active]:
+        - /url: /settings/usage
+        - text: Usage
+      - link "Leaderboard":
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button "Sign out":
+    - text: Sign out
+- main:
+  - heading "Usage" [level=1]
+  - paragraph: See how much you've used Open Agents — tokens, cost, and your busiest repos.
+  - generic: Usage
+  - generic: Token consumption and activity over the past 39 weeks. Click the chart to filter.
+  - generic: Total tokens
+  - generic: 26.7m
+  - generic: Estimated cost
+  - generic: $15.50
+  - generic: Estimated from 95% of tokens with known pricing
+  - generic: Messages
+  - generic: "126"
+  - generic: Tool calls
+  - generic: "900"
+  - button "Usage for Sun, Sep 28, 2025"
+  - button "Usage for Mon, Sep 29, 2025"
+  - button "Usage for Tue, Sep 30, 2025"
+  - button "Usage for Wed, Oct 1, 2025"
+  - button "Usage for Thu, Oct 2, 2025"
+  - button "Usage for Fri, Oct 3, 2025"
+  - button "Usage for Sat, Oct 4, 2025"
+  - button "Usage for Sun, Oct 5, 2025"
+  - button "Usage for Mon, Oct 6, 2025"
+  - button "Usage for Tue, Oct 7, 2025"
+  - button "Usage for Wed, Oct 8, 2025"
+  - button "Usage for Thu, Oct 9, 2025"
+  - button "Usage for Fri, Oct 10, 2025"
+  - button "Usage for Sat, Oct 11, 2025"
+  - button "Usage for Sun, Oct 12, 2025"
+  - button "Usage for Mon, Oct 13, 2025"
+  - button "Usage for Tue, Oct 14, 2025"
+  - button "Usage for Wed, Oct 15, 2025"
+  - button "Usage for Thu, Oct 16, 2025"
+  - button "Usage for Fri, Oct 17, 2025"
+  - button "Usage for Sat, Oct 18, 2025"
+  - button "Usage for Sun, Oct 19, 2025"
+  - button "Usage for Mon, Oct 20, 2025"
+  - button "Usage for Tue, Oct 21, 2025"
+  - button "Usage for Wed, Oct 22, 2025"
+  - button "Usage for Thu, Oct 23, 2025"
+  - button "Usage for Fri, Oct 24, 2025"
+  - button "Usage for Sat, Oct 25, 2025"
+  - button "Usage for Sun, Oct 26, 2025"
+  - button "Usage for Mon, Oct 27, 2025"
+  - button "Usage for Tue, Oct 28, 2025"
+  - button "Usage for Wed, Oct 29, 2025"
+  - button "Usage for Thu, Oct 30, 2025"
+  - button "Usage for Fri, Oct 31, 2025"
+  - button "Usage for Sat, Nov 1, 2025"
+  - button "Usage for Sun, Nov 2, 2025"
+  - button "Usage for Mon, Nov 3, 2025"
+  - button "Usage for Tue, Nov 4, 2025"
+  - button "Usage for Wed, Nov 5, 2025"
+  - button "Usage for Thu, Nov 6, 2025"
+  - button "Usage for Fri, Nov 7, 2025"
+  - button "Usage for Sat, Nov 8, 2025"
+  - button "Usage for Sun, Nov 9, 2025"
+  - button "Usage for Mon, Nov 10, 2025"
+  - button "Usage for Tue, Nov 11, 2025"
+  - button "Usage for Wed, Nov 12, 2025"
+  - button "Usage for Thu, Nov 13, 2025"
+  - button "Usage for Fri, Nov 14, 2025"
+  - button "Usage for Sat, Nov 15, 2025"
+  - button "Usage for Sun, Nov 16, 2025"
+  - button "Usage for Mon, Nov 17, 2025"
+  - button "Usage for Tue, Nov 18, 2025"
+  - button "Usage for Wed, Nov 19, 2025"
+  - button "Usage for Thu, Nov 20, 2025"
+  - button "Usage for Fri, Nov 21, 2025"
+  - button "Usage for Sat, Nov 22, 2025"
+  - button "Usage for Sun, Nov 23, 2025"
+  - button "Usage for Mon, Nov 24, 2025"
+  - button "Usage for Tue, Nov 25, 2025"
+  - button "Usage for Wed, Nov 26, 2025"
+  - button "Usage for Thu, Nov 27, 2025"
+  - button "Usage for Fri, Nov 28, 2025"
+  - button "Usage for Sat, Nov 29, 2025"
+  - button "Usage for Sun, Nov 30, 2025"
+  - button "Usage for Mon, Dec 1, 2025"
+  - button "Usage for Tue, Dec 2, 2025"
+  - button "Usage for Wed, Dec 3, 2025"
+  - button "Usage for Thu, Dec 4, 2025"
+  - button "Usage for Fri, Dec 5, 2025"
+  - button "Usage for Sat, Dec 6, 2025"
+  - button "Usage for Sun, Dec 7, 2025"
+  - button "Usage for Mon, Dec 8, 2025"
+  - button "Usage for Tue, Dec 9, 2025"
+  - button "Usage for Wed, Dec 10, 2025"
+  - button "Usage for Thu, Dec 11, 2025"
+  - button "Usage for Fri, Dec 12, 2025"
+  - button "Usage for Sat, Dec 13, 2025"
+  - button "Usage for Sun, Dec 14, 2025"
+  - button "Usage for Mon, Dec 15, 2025"
+  - button "Usage for Tue, Dec 16, 2025"
+  - button "Usage for Wed, Dec 17, 2025"
+  - button "Usage for Thu, Dec 18, 2025"
+  - button "Usage for Fri, Dec 19, 2025"
+  - button "Usage for Sat, Dec 20, 2025"
+  - button "Usage for Sun, Dec 21, 2025"
+  - button "Usage for Mon, Dec 22, 2025"
+  - button "Usage for Tue, Dec 23, 2025"
+  - button "Usage for Wed, Dec 24, 2025"
+  - button "Usage for Thu, Dec 25, 2025"
+  - button "Usage for Fri, Dec 26, 2025"
+  - button "Usage for Sat, Dec 27, 2025"
+  - button "Usage for Sun, Dec 28, 2025"
+  - button "Usage for Mon, Dec 29, 2025"
+  - button "Usage for Tue, Dec 30, 2025"
+  - button "Usage for Wed, Dec 31, 2025"
+  - button "Usage for Thu, Jan 1, 2026"
+  - button "Usage for Fri, Jan 2, 2026"
+  - button "Usage for Sat, Jan 3, 2026"
+  - button "Usage for Sun, Jan 4, 2026"
+  - button "Usage for Mon, Jan 5, 2026"
+  - button "Usage for Tue, Jan 6, 2026"
+  - button "Usage for Wed, Jan 7, 2026"
+  - button "Usage for Thu, Jan 8, 2026"
+  - button "Usage for Fri, Jan 9, 2026"
+  - button "Usage for Sat, Jan 10, 2026"
+  - button "Usage for Sun, Jan 11, 2026"
+  - button "Usage for Mon, Jan 12, 2026"
+  - button "Usage for Tue, Jan 13, 2026"
+  - button "Usage for Wed, Jan 14, 2026"
+  - button "Usage for Thu, Jan 15, 2026"
+  - button "Usage for Fri, Jan 16, 2026"
+  - button "Usage for Sat, Jan 17, 2026"
+  - button "Usage for Sun, Jan 18, 2026"
+  - button "Usage for Mon, Jan 19, 2026"
+  - button "Usage for Tue, Jan 20, 2026"
+  - button "Usage for Wed, Jan 21, 2026"
+  - button "Usage for Thu, Jan 22, 2026"
+  - button "Usage for Fri, Jan 23, 2026"
+  - button "Usage for Sat, Jan 24, 2026"
+  - button "Usage for Sun, Jan 25, 2026"
+  - button "Usage for Mon, Jan 26, 2026"
+  - button "Usage for Tue, Jan 27, 2026"
+  - button "Usage for Wed, Jan 28, 2026"
+  - button "Usage for Thu, Jan 29, 2026"
+  - button "Usage for Fri, Jan 30, 2026"
+  - button "Usage for Sat, Jan 31, 2026"
+  - button "Usage for Sun, Feb 1, 2026"
+  - button "Usage for Mon, Feb 2, 2026"
+  - button "Usage for Tue, Feb 3, 2026"
+  - button "Usage for Wed, Feb 4, 2026"
+  - button "Usage for Thu, Feb 5, 2026"
+  - button "Usage for Fri, Feb 6, 2026"
+  - button "Usage for Sat, Feb 7, 2026"
+  - button "Usage for Sun, Feb 8, 2026"
+  - button "Usage for Mon, Feb 9, 2026"
+  - button "Usage for Tue, Feb 10, 2026"
+  - button "Usage for Wed, Feb 11, 2026"
+  - button "Usage for Thu, Feb 12, 2026"
+  - button "Usage for Fri, Feb 13, 2026"
+  - button "Usage for Sat, Feb 14, 2026"
+  - button "Usage for Sun, Feb 15, 2026"
+  - button "Usage for Mon, Feb 16, 2026"
+  - button "Usage for Tue, Feb 17, 2026"
+  - button "Usage for Wed, Feb 18, 2026"
+  - button "Usage for Thu, Feb 19, 2026"
+  - button "Usage for Fri, Feb 20, 2026"
+  - button "Usage for Sat, Feb 21, 2026"
+  - button "Usage for Sun, Feb 22, 2026"
+  - button "Usage for Mon, Feb 23, 2026"
+  - button "Usage for Tue, Feb 24, 2026"
+  - button "Usage for Wed, Feb 25, 2026"
+  - button "Usage for Thu, Feb 26, 2026"
+  - button "Usage for Fri, Feb 27, 2026"
+  - button "Usage for Sat, Feb 28, 2026"
+  - button "Usage for Sun, Mar 1, 2026"
+  - button "Usage for Mon, Mar 2, 2026"
+  - button "Usage for Tue, Mar 3, 2026"
+  - button "Usage for Wed, Mar 4, 2026"
+  - button "Usage for Thu, Mar 5, 2026"
+  - button "Usage for Fri, Mar 6, 2026"
+  - button "Usage for Sat, Mar 7, 2026"
+  - button "Usage for Sun, Mar 8, 2026"
+  - button "Usage for Mon, Mar 9, 2026"
+  - button "Usage for Tue, Mar 10, 2026"
+  - button "Usage for Wed, Mar 11, 2026"
+  - button "Usage for Thu, Mar 12, 2026"
+  - button "Usage for Fri, Mar 13, 2026"
+  - button "Usage for Sat, Mar 14, 2026"
+  - button "Usage for Sun, Mar 15, 2026"
+  - button "Usage for Mon, Mar 16, 2026"
+  - button "Usage for Tue, Mar 17, 2026"
+  - button "Usage for Wed, Mar 18, 2026"
+  - button "Usage for Thu, Mar 19, 2026"
+  - button "Usage for Fri, Mar 20, 2026"
+  - button "Usage for Sat, Mar 21, 2026"
+  - button "Usage for Sun, Mar 22, 2026"
+  - button "Usage for Mon, Mar 23, 2026"
+  - button "Usage for Tue, Mar 24, 2026"
+  - button "Usage for Wed, Mar 25, 2026"
+  - button "Usage for Thu, Mar 26, 2026"
+  - button "Usage for Fri, Mar 27, 2026"
+  - button "Usage for Sat, Mar 28, 2026"
+  - button "Usage for Sun, Mar 29, 2026"
+  - button "Usage for Mon, Mar 30, 2026"
+  - button "Usage for Tue, Mar 31, 2026"
+  - button "Usage for Wed, Apr 1, 2026"
+  - button "Usage for Thu, Apr 2, 2026"
+  - button "Usage for Fri, Apr 3, 2026"
+  - button "Usage for Sat, Apr 4, 2026"
+  - button "Usage for Sun, Apr 5, 2026"
+  - button "Usage for Mon, Apr 6, 2026"
+  - button "Usage for Tue, Apr 7, 2026"
+  - button "Usage for Wed, Apr 8, 2026"
+  - button "Usage for Thu, Apr 9, 2026"
+  - button "Usage for Fri, Apr 10, 2026"
+  - button "Usage for Sat, Apr 11, 2026"
+  - button "Usage for Sun, Apr 12, 2026"
+  - button "Usage for Mon, Apr 13, 2026"
+  - button "Usage for Tue, Apr 14, 2026"
+  - button "Usage for Wed, Apr 15, 2026"
+  - button "Usage for Thu, Apr 16, 2026"
+  - button "Usage for Fri, Apr 17, 2026"
+  - button "Usage for Sat, Apr 18, 2026"
+  - button "Usage for Sun, Apr 19, 2026"
+  - button "Usage for Mon, Apr 20, 2026"
+  - button "Usage for Tue, Apr 21, 2026"
+  - button "Usage for Wed, Apr 22, 2026"
+  - button "Usage for Thu, Apr 23, 2026"
+  - button "Usage for Fri, Apr 24, 2026"
+  - button "Usage for Sat, Apr 25, 2026"
+  - button "Usage for Sun, Apr 26, 2026"
+  - button "Usage for Mon, Apr 27, 2026"
+  - button "Usage for Tue, Apr 28, 2026"
+  - button "Usage for Wed, Apr 29, 2026"
+  - button "Usage for Thu, Apr 30, 2026"
+  - button "Usage for Fri, May 1, 2026"
+  - button "Usage for Sat, May 2, 2026"
+  - button "Usage for Sun, May 3, 2026"
+  - button "Usage for Mon, May 4, 2026"
+  - button "Usage for Tue, May 5, 2026"
+  - button "Usage for Wed, May 6, 2026"
+  - button "Usage for Thu, May 7, 2026"
+  - button "Usage for Fri, May 8, 2026"
+  - button "Usage for Sat, May 9, 2026"
+  - button "Usage for Sun, May 10, 2026"
+  - button "Usage for Mon, May 11, 2026"
+  - button "Usage for Tue, May 12, 2026"
+  - button "Usage for Wed, May 13, 2026"
+  - button "Usage for Thu, May 14, 2026"
+  - button "Usage for Fri, May 15, 2026"
+  - button "Usage for Sat, May 16, 2026"
+  - button "Usage for Sun, May 17, 2026"
+  - button "Usage for Mon, May 18, 2026"
+  - button "Usage for Tue, May 19, 2026"
+  - button "Usage for Wed, May 20, 2026"
+  - button "Usage for Thu, May 21, 2026"
+  - button "Usage for Fri, May 22, 2026"
+  - button "Usage for Sat, May 23, 2026"
+  - button "Usage for Sun, May 24, 2026"
+  - button "Usage for Mon, May 25, 2026"
+  - button "Usage for Tue, May 26, 2026"
+  - button "Usage for Wed, May 27, 2026"
+  - button "Usage for Thu, May 28, 2026"
+  - button "Usage for Fri, May 29, 2026"
+  - button "Usage for Sat, May 30, 2026"
+  - button "Usage for Sun, May 31, 2026"
+  - button "Usage for Mon, Jun 1, 2026"
+  - button "Usage for Tue, Jun 2, 2026"
+  - button "Usage for Wed, Jun 3, 2026"
+  - button "Usage for Thu, Jun 4, 2026"
+  - button "Usage for Fri, Jun 5, 2026"
+  - button "Usage for Sat, Jun 6, 2026"
+  - button "Usage for Sun, Jun 7, 2026"
+  - button "Usage for Mon, Jun 8, 2026"
+  - button "Usage for Tue, Jun 9, 2026"
+  - button "Usage for Wed, Jun 10, 2026"
+  - button "Usage for Thu, Jun 11, 2026"
+  - button "Usage for Fri, Jun 12, 2026"
+  - button "Usage for Sat, Jun 13, 2026"
+  - button "Usage for Sun, Jun 14, 2026"
+  - button "Usage for Mon, Jun 15, 2026"
+  - button "Usage for Tue, Jun 16, 2026"
+  - button "Usage for Wed, Jun 17, 2026"
+  - button "Usage for Thu, Jun 18, 2026"
+  - button "Usage for Fri, Jun 19, 2026"
+  - button "Usage for Sat, Jun 20, 2026"
+  - button "Usage for Sun, Jun 21, 2026"
+  - generic: Less
+  - generic: More
+  - heading "Agent split" [level=3]
+  - img "Total tokens":
+    - img "Main agent"
+    - img "Subagents"
+  - generic: Main agent
+  - generic: 24.4m
+  - generic: (91%)
+  - generic: Subagents
+  - generic: 2.3m
+  - generic: (9%)
+  - heading "Usage by model" [level=3]
+  - img "Total tokens":
+    - img "gpt-5.4"
+    - img "glm-5.2"
+    - img "gpt-5.5"
+    - img "gemini-3.5-flash"
+    - img "claude-opus-4.6"
+    - img "Other"
+  - generic: gpt-5.4
+  - generic: 24.2m
+  - generic: (91%)
+  - generic: glm-5.2
+  - generic: 1.3m
+  - generic: (5%)
+  - generic: gpt-5.5
+  - generic: 509.2k
+  - generic: (2%)
+  - generic: gemini-3.5-flash
+  - generic: 354.3k
+  - generic: (1%)
+  - generic: claude-opus-4.6
+  - generic: 199.9k
+  - generic: (1%)
+  - generic: Other
+  - generic: 208.5k
+  - generic: (1%)
+  - heading "Insights · last 40 weeks" [level=2]
+  - generic: Tracked PRs
+  - generic: "5"
+  - generic: 0 merged · 0 open
+  - generic: Merge rate
+  - generic: 0%
+  - generic: 5 sessions with PRs
+  - generic: Largest turn
+  - generic: 5.0m
+  - generic: Tokens · main agent
+  - generic: Avg tokens / turn
+  - generic: 193.8k
+  - generic: 126 assistant turns
+  - generic: Tool calls / turn
+  - generic: "7.1"
+  - generic: Across all tool calls
+  - generic: Cache hit ratio
+  - generic: 87%
+  - generic: Cached / total input tokens
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Open Agents
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

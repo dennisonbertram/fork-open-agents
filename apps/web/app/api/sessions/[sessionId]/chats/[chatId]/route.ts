@@ -9,6 +9,10 @@ import {
   getChatsBySessionId,
   updateChat,
 } from "@/lib/db/sessions";
+import {
+  attachTimelineToMessage,
+  getChatResponseTimelineMap,
+} from "@/lib/db/chat-response-timelines";
 import { getInferenceProfileByIdForUser } from "@/lib/db/inference-profiles";
 import { isComposioProfileAllowedForRepository } from "@/lib/db/composio";
 import {
@@ -56,7 +60,10 @@ export async function GET(_req: Request, context: RouteContext) {
     return chatContext.response;
   }
 
-  const messages = await getChatMessages(chatId);
+  const [messages, responseTimelineMap] = await Promise.all([
+    getChatMessages(chatId),
+    getChatResponseTimelineMap(chatId),
+  ]);
   const modelId = chatContext.chat.modelId ?? null;
 
   return Response.json({
@@ -68,7 +75,12 @@ export async function GET(_req: Request, context: RouteContext) {
       activeStreamId: chatContext.chat.activeStreamId,
     },
     isStreaming: chatContext.chat.activeStreamId !== null,
-    messages: messages.map((message) => message.parts as WebAgentUIMessage),
+    messages: messages.map((message) =>
+      attachTimelineToMessage(
+        message.parts as WebAgentUIMessage,
+        responseTimelineMap.get(message.id),
+      ),
+    ),
   } satisfies ChatRefreshResponse);
 }
 

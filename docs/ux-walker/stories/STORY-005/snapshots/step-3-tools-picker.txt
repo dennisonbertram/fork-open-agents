@@ -1,0 +1,168 @@
+- button "Collapse panel":
+- button "New session":
+  - text: New session
+- button "Quick chat (no repo)":
+- button "Active13"
+- button "Archive 55":
+  - text: Archive
+  - generic: "55"
+- button "Chats" [expanded]:
+  - generic: Chats
+- button "Github Testing":
+  - paragraph: Github Testing
+- button "dennisonbertram/synthetix" [expanded]:
+  - generic: dennisonbertram/synthetix
+- button "Agents 1":
+  - generic: Agents
+  - generic: "1"
+- link "Create agent for dennisonbertram/synthetix":
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/synthetix":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button "Austin":
+  - paragraph: Austin
+- button "Testing Provider Implementation":
+  - paragraph: Testing Provider Implementation
+- button "Backlog Issues Review":
+  - paragraph: Backlog Issues Review
+- button "GitHub Issue 262 Review":
+  - paragraph: GitHub Issue 262 Review
+- button "Model Runtime Identification":
+  - paragraph: Model Runtime Identification
+- button "Casual Coding Session":
+  - paragraph: Casual Coding Session
+- button "Reykjavik":
+  - paragraph: Reykjavik
+- button "Getting Started":
+  - paragraph: Getting Started
+- button "dennisonbertram/partyline" [expanded]:
+  - generic: dennisonbertram/partyline
+- button "Agents":
+  - generic: Agents
+- link "Create agent for dennisonbertram/partyline":
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/partyline":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button "New Coding Session Started":
+  - paragraph: New Coding Session Started
+- button "Documentation Review Session":
+  - paragraph: Documentation Review Session
+- button "Architecture Overview Discussion":
+  - paragraph: Architecture Overview Discussion
+- button "Issue Status Overview Check +11 -3":
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- img "dennison-9116"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button "Open settings":
+- main:
+  - button:
+  - link "synthetix":
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Austin
+  - button:
+  - generic: Direct
+  - button "Runtime mode":
+  - button "Open Editor" [disabled]:
+  - button "Start dev server":
+  - button "Open latest preview deployment" [disabled]:
+  - button:
+  - button "Verified Build":
+  - button "Runtime inspector":
+  - button "New chat":
+    - generic: New chat
+  - button "Rename chat":
+  - button:
+  - paragraph: Send a message to get started
+  - textbox "Request changes or ask a question..." [active]
+  - button "Attach files":
+  - button "Change model":
+    - generic: GPT 5.5
+  - button "Select external tools":
+    - 'generic "Active tools: GitHub (native)"':
+      - generic "GitHub (native)":
+  - 'button "Runtime: Direct"':
+    - generic: Direct
+  - button "Select workflow":
+    - generic: Workflow
+  - button "Record voice input":
+  - button "Send message" [disabled]:
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Austin | Open Agents
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"
+- dialog:
+  - paragraph: Native connections
+  - generic: GitHub
+  - generic: Always on for this repo
+  - paragraph: Tools this chat can use
+  - paragraph: Choose specific tools
+  - textbox "Search tools":
+    - /placeholder: Add a tool — search Gmail, Slack…
+  - paragraph: Or use a saved profile
+  - button "Off"
+  - button "Email Gmail":
+    - generic: Email
+    - generic: Gmail
+  - link "Manage Composio":
+    - /url: /settings/composio
+    - text: Manage Composio

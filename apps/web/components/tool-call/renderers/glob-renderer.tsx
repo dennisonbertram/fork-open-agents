@@ -33,6 +33,7 @@ export const GlobRenderer = memo(function GlobRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-glob">) {
   const input = part.input;
   const pattern = input?.pattern ?? "...";
@@ -70,6 +71,7 @@ export const GlobRenderer = memo(function GlobRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

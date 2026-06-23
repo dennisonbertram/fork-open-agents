@@ -38,6 +38,23 @@ describe("inference model routing", () => {
     );
   });
 
+  test("normalizes Anthropic-compatible request endpoints to the SDK base", () => {
+    expect(
+      normalizeAnthropicBaseUrl(
+        "https://api.fireworks.ai/inference/v1/messages",
+      ),
+    ).toBe("https://api.fireworks.ai/inference/v1");
+    expect(
+      normalizeAnthropicBaseUrl("https://api.fireworks.ai/inference/messages"),
+    ).toBe("https://api.fireworks.ai/inference/v1");
+    expect(
+      normalizeAnthropicBaseUrl("https://api.z.ai/api/anthropic/v1/messages"),
+    ).toBe("https://api.z.ai/api/anthropic/v1");
+    expect(
+      normalizeAnthropicBaseUrl("https://api.anthropic.com/v1/models"),
+    ).toBe("https://api.anthropic.com/v1");
+  });
+
   test("normalizes OpenAI-compatible URLs to a versioned API root", () => {
     expect(normalizeOpenAICompatibleBaseUrl("https://llm.example.com")).toBe(
       "https://llm.example.com/v1",
@@ -48,6 +65,40 @@ describe("inference model routing", () => {
     expect(() => normalizeOpenAICompatibleBaseUrl(null)).toThrow(
       "OpenAI-compatible profiles require a base URL.",
     );
+  });
+
+  test("normalizes OpenAI-compatible chat completion endpoints to the API root", () => {
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://api.fireworks.ai/inference/v1/chat/completions",
+      ),
+    ).toBe("https://api.fireworks.ai/inference/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions/",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://inference.baseten.co/v1/chat/completions/v1",
+      ),
+    ).toBe("https://inference.baseten.co/v1");
+  });
+
+  test("normalizes OpenAI-compatible endpoint URLs that omit the version segment", () => {
+    expect(
+      normalizeOpenAICompatibleBaseUrl(
+        "https://gateway.example.com/openai/chat/completions",
+      ),
+    ).toBe("https://gateway.example.com/openai/v1");
+    expect(
+      normalizeOpenAICompatibleBaseUrl("https://gateway.example.com/models"),
+    ).toBe("https://gateway.example.com/v1");
   });
 
   test("normalizes base URLs by provider", () => {
@@ -122,5 +173,16 @@ describe("inference model routing", () => {
       "The provider account has no balance or an inactive plan. Add balance or renew the provider subscription, then try again.";
     expect(toInferenceProfileTestMessage(insufficientBalance)).toBe(expected);
     expect(toInferenceProfileTestMessage(expiredPlan)).toBe(expected);
+  });
+
+  test("maps provider model lookup failures separately from endpoint failures", () => {
+    const error = Object.assign(new Error("404 not found"), {
+      responseBody:
+        '{"error":{"message":"Model not found, inaccessible, and/or not deployed","param":"model","code":"NOT_FOUND","type":"error"}}',
+    });
+
+    expect(toInferenceProfileTestMessage(error)).toBe(
+      "The selected model was not found or is not accessible from this provider account. Choose a model served by this profile, then try again.",
+    );
   });
 });

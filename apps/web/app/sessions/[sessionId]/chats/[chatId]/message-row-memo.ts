@@ -17,6 +17,7 @@ export type MessageRowMemoProps = {
   onForkAssistantMessage: unknown;
   onApproveTool: unknown;
   onDenyTool: unknown;
+  onApproveAllToolsForSession: unknown;
   onManagedRuntimeProfileOutput: unknown;
   onOpenVerifiedBuildPanel: unknown;
   onOpenRuntimePanel: unknown;
@@ -45,6 +46,7 @@ export function areMessageRowPropsEqual(
     previous.onForkAssistantMessage === next.onForkAssistantMessage &&
     previous.onApproveTool === next.onApproveTool &&
     previous.onDenyTool === next.onDenyTool &&
+    previous.onApproveAllToolsForSession === next.onApproveAllToolsForSession &&
     previous.onManagedRuntimeProfileOutput ===
       next.onManagedRuntimeProfileOutput &&
     previous.onOpenVerifiedBuildPanel === next.onOpenVerifiedBuildPanel &&

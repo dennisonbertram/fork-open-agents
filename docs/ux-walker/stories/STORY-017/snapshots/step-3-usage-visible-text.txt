@@ -1,0 +1,100 @@
+Back
+ACCOUNT
+Profile
+Preferences
+Connections
+TOOLS
+Agents
+Models
+Composio
+MCP servers
+Skills
+Background agents
+Loops
+Runtime profiles
+INSIGHTS
+Usage
+Leaderboard
+Sign out
+Usage
+
+See how much you've used Open Agents — tokens, cost, and your busiest repos.
+
+Usage
+Token consumption and activity over the past 39 weeks. Click the chart to filter.
+Total tokens
+26.7m
+Estimated cost
+$15.61
+Estimated from 95% of tokens with known pricing
+Messages
+128
+Tool calls
+902
+Less
+More
+Agent split
+Main agent
+24.5m
+(92%)
+Subagents
+2.3m
+(8%)
+Usage by model
+gpt-5.4
+24.2m
+(90%)
+glm-5.2
+1.3m
+(5%)
+gpt-5.5
+538.5k
+(2%)
+gemini-3.5-flash
+354.3k
+(1%)
+claude-opus-4.6
+199.9k
+(1%)
+Other
+208.5k
+(1%)
+Insights · last 40 weeks
+Tracked PRs
+5
+0 merged · 0 open
+Merge rate
+0%
+5 sessions with PRs
+Largest turn
+5.0m
+Tokens · main agent
+Avg tokens / turn
+191.0k
+128 assistant turns
+Tool calls / turn
+7.0
+Across all tool calls
+Cache hit ratio
+87%
+Cached / total input tokens
+
+v3.0.2
+
+Output Detail
+Standard
+React Components
+Hide Until Restart
+Marker Color
+Clear on copy/send
+Block page interactions
+Manage MCP & Webhooks
+Manage MCP & Webhooks
+MCP Connection
+
+MCP connection allows agents to receive and act on annotations. Learn more
+
+Webhooks
+Auto-Send
+
+The webhook URL will receive live annotation changes and annotation data.

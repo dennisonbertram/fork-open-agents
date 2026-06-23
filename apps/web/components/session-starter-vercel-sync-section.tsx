@@ -8,6 +8,7 @@ import {
   Loader2Icon,
   XCircleIcon,
 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import type {
   VercelProjectSelection,
@@ -41,6 +42,8 @@ function formatVercelProjectLabel(project: VercelProjectSelection): string {
 interface SessionStarterVercelSyncSectionProps {
   controlsDisabled: boolean;
   isVercelLookupPending: boolean;
+  repoName?: string;
+  repoOwner?: string;
   repoProjects: VercelRepoProjectsResponse | undefined;
   repoProjectsError: string | null;
   requiresVercelChoice: boolean;
@@ -52,6 +55,8 @@ interface SessionStarterVercelSyncSectionProps {
 export function SessionStarterVercelSyncSection({
   controlsDisabled,
   isVercelLookupPending,
+  repoName,
+  repoOwner,
   repoProjects,
   repoProjectsError,
   requiresVercelChoice,
@@ -62,6 +67,12 @@ export function SessionStarterVercelSyncSection({
   // Auto-expand when user needs to make a choice
   const [manualExpanded, setManualExpanded] = useState(false);
   const expanded = manualExpanded || requiresVercelChoice;
+  const repoSettingsHref =
+    repoOwner && repoName
+      ? `/settings/repositories/${encodeURIComponent(
+          repoOwner,
+        )}/${encodeURIComponent(repoName)}`
+      : null;
 
   const selectedProject =
     typeof vercelProjectChoice === "string"
@@ -91,20 +102,8 @@ export function SessionStarterVercelSyncSection({
           <AlertCircleIcon className="h-3.5 w-3.5 text-muted-foreground/70" />
         ),
         label: (
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            Could not load Vercel projects
-            {onRetry && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRetry();
-                }}
-                className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
-              >
-                Retry
-              </button>
-            )}
+          <span className="text-xs text-muted-foreground">
+            Env sync needs a Vercel project check
           </span>
         ),
       };
@@ -114,7 +113,7 @@ export function SessionStarterVercelSyncSection({
         icon: <XCircleIcon className="h-3.5 w-3.5 text-muted-foreground/50" />,
         label: (
           <span className="text-xs text-muted-foreground">
-            No linked Vercel projects &mdash; starting without env sync
+            No matching Vercel project. Env sync is off.
           </span>
         ),
       };
@@ -211,28 +210,76 @@ export function SessionStarterVercelSyncSection({
         ) : repoProjectsError ? (
           <div className="flex items-start gap-2.5">
             <AlertCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
-            <div className="flex flex-col gap-1">
+            <div className="flex min-w-0 flex-col gap-2">
               <p className="text-xs leading-relaxed text-muted-foreground">
-                {repoProjectsError}. Will fall back to any saved repo default.
+                Environment sync copies Development env vars from a linked
+                Vercel project into the sandbox. We could not check matching
+                projects, so this session can still start without env sync.
               </p>
-              {onRetry && (
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  className="self-start rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+              <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                To enable it, connect Vercel in Settings and make sure the
+                Vercel project is connected to this GitHub repo.
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground/70">
+                Details: {repoProjectsError}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {onRetry && (
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                  >
+                    Retry
+                  </button>
+                )}
+                <Link
+                  href="/settings/connections"
+                  className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
                 >
-                  Retry
-                </button>
-              )}
+                  Connect Vercel
+                </Link>
+                {repoSettingsHref && (
+                  <Link
+                    href={repoSettingsHref}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                  >
+                    Repo settings
+                  </Link>
+                )}
+              </div>
             </div>
           </div>
         ) : repoProjects?.projects.length === 0 ? (
           <div className="flex items-start gap-2.5">
             <XCircleIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              No linked Vercel projects found for this repo. The session will
-              start without env sync.
-            </p>
+            <div className="flex min-w-0 flex-col gap-2">
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                No Vercel project connected to this GitHub repo was found.
+                Environment sync is optional, so this session will start without
+                copying Development env vars.
+              </p>
+              <p className="text-[11px] leading-relaxed text-muted-foreground/80">
+                To use env sync, connect this repo to a Vercel project and then
+                choose it here.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href="/settings/connections"
+                  className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                >
+                  Connect Vercel
+                </Link>
+                {repoSettingsHref && (
+                  <Link
+                    href={repoSettingsHref}
+                    className="rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-2 hover:text-foreground"
+                  >
+                    Repo settings
+                  </Link>
+                )}
+              </div>
+            </div>
           </div>
         ) : repoProjects ? (
           <div className="space-y-2">

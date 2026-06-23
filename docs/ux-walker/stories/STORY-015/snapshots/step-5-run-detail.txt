@@ -1,0 +1,268 @@
+- main:
+  - link "Repo agents":
+    - /url: /repos/dennisonbertram/synthetix/agents
+    - text: Repo agents
+  - heading "Background run" [level=1]
+  - generic: succeeded
+  - paragraph: VBbFB_81wtz-SLTTBcawB
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/synthetix/pull/960
+    - text: Output
+  - paragraph: Status
+  - paragraph: succeeded
+  - paragraph: Trigger
+  - paragraph: schedule.cron
+  - paragraph: Repository
+  - paragraph: dennisonbertram/synthetix
+  - paragraph: Ref
+  - paragraph: "-"
+  - paragraph: Sandbox
+  - paragraph: background_agent_VBbFB_81wtz-SLTTBcawB
+  - paragraph: Permissions
+  - paragraph: contents:write, pullRequests:write, issues:read, checks:read
+  - paragraph: Checks
+  - paragraph: skipped
+  - paragraph: Output
+  - paragraph: ready_pr · created
+  - paragraph: Duration
+  - paragraph: 49s
+  - heading "Event context" [level=2]
+  - paragraph: Trigger kind
+  - paragraph: schedule.cron
+  - paragraph: External event ID
+  - paragraph: manual-test:baas-dproof-1781743759:cd8ca5be-e890-41e5-b683-5064642039ef
+  - heading "Run summary" [level=2]
+  - paragraph: "Run succeeded — created ready_pr #960"
+  - paragraph: Artifacts
+  - list:
+    - 'link "PR #960"':
+      - /url: https://github.com/dennisonbertram/synthetix/pull/960
+      - generic: "PR #960"
+  - heading "Live timeline" [level=2]
+  - paragraph: Background agent created a ready PR with evidence.
+  - paragraph: background-agent.run.completed
+  - generic: succeeded
+  - generic: Jun 17, 8:58:08 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: "Created ready PR #960."
+  - paragraph: background-agent.output.created
+  - generic: succeeded
+  - generic: Jun 17, 8:58:08 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Verified GitHub App commit created.
+  - paragraph: background-agent.commit.completed
+  - generic: succeeded
+  - generic: Jun 17, 8:58:05 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Creating verified GitHub App commit for background changes.
+  - paragraph: background-agent.commit.started
+  - generic: running
+  - generic: Jun 17, 8:58:00 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: No check command configured.
+  - paragraph: background-agent.check.completed
+  - generic: skipped
+  - generic: Jun 17, 8:57:54 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Prepared background-agent PR branch.
+  - paragraph: background-agent.git.branch.resolved
+  - generic: succeeded
+  - generic: Jun 17, 8:57:54 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Background mutation agent completed.
+  - paragraph: background-agent.agent.completed
+  - generic: succeeded
+  - generic: Jun 17, 8:57:53 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Mutation agent step 3 completed with stop.
+  - paragraph: background-agent.agent.step.completed
+  - generic: succeeded
+  - paragraph: 3305ms
+  - generic: Jun 17, 8:57:53 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Mutation agent step 2 completed with tool-calls.
+  - paragraph: background-agent.agent.step.completed
+  - generic: succeeded
+  - paragraph: 7221ms
+  - generic: Jun 17, 8:57:50 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Mutation agent step 1 completed with tool-calls.
+  - paragraph: background-agent.agent.step.completed
+  - generic: succeeded
+  - paragraph: 5041ms
+  - generic: Jun 17, 8:57:42 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Background mutation agent started.
+  - paragraph: background-agent.agent.started
+  - generic: running
+  - generic: Jun 17, 8:57:37 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: "Command passed: git checkout background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz- 2>/dev/null || git checkout -b background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz-"
+  - paragraph: background-agent.git.branch.completed
+  - generic: succeeded
+  - paragraph: git checkout background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz- 2>/dev/null || git checkout -b background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz-
+  - paragraph: 345ms
+  - generic: Switched to a new branch 'background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz-'
+  - generic: Jun 17, 8:57:37 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Running git checkout background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz- 2>/dev/null || git checkout -b background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz-
+  - paragraph: background-agent.git.branch.started
+  - generic: running
+  - paragraph: git checkout background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz- 2>/dev/null || git checkout -b background-agent/d-proof-synthetix-execution-test/vbbfb_81wtz-
+  - generic: Jun 17, 8:57:36 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: "Command passed: git status --short && git rev-parse --short HEAD"
+  - paragraph: background-agent.git.context.completed
+  - generic: succeeded
+  - paragraph: git status --short && git rev-parse --short HEAD
+  - paragraph: 450ms
+  - generic: 65c1b87
+  - generic: Jun 17, 8:57:36 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Running git status --short && git rev-parse --short HEAD
+  - paragraph: background-agent.git.context.started
+  - generic: running
+  - paragraph: git status --short && git rev-parse --short HEAD
+  - generic: Jun 17, 8:57:35 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Background sandbox is ready.
+  - paragraph: background-agent.sandbox.started
+  - generic: succeeded
+  - generic: Jun 17, 8:57:35 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Resolved repo-scoped GitHub App installation access.
+  - paragraph: background-agent.github.installation.resolved
+  - generic: succeeded
+  - generic: Jun 17, 8:57:25 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: sandbox background_agent_VBbFB_81wtz-SLTTBcawB
+  - generic: redaction passed
+  - paragraph: Background agent workflow started.
+  - paragraph: background-agent.workflow.started
+  - generic: running
+  - generic: Jun 17, 8:57:21 PM
+  - generic: workflow wrun_01KVC3Q06RXEG31Y345M1KY0P8
+  - generic: redaction passed
+  - paragraph: Received manual background-agent test trigger.
+  - paragraph: background-agent.trigger.received
+  - generic: info
+  - generic: Jun 17, 8:57:17 PM
+  - generic: redaction passed
+  - paragraph: Queued D Proof — synthetix execution test.
+  - paragraph: background-agent.run.created
+  - generic: started
+  - generic: Jun 17, 8:57:17 PM
+  - generic: redaction passed
+  - complementary:
+    - heading "Run" [level=2]
+    - generic: Created
+    - generic: Jun 17, 8:57:16 PM
+    - generic: Started
+    - generic: Jun 17, 8:57:19 PM
+    - generic: Finished
+    - generic: Jun 17, 8:58:08 PM
+    - generic: Output
+    - generic: ready_pr
+    - heading "Debug" [level=2]
+    - generic: Run ID
+    - generic: VBbFB_81wtz-SLTTBcawB
+    - generic: Request ID
+    - generic: "-"
+    - generic: Workflow Run
+    - generic: wrun_01KVC3Q06RXEG31Y345M1KY0P8
+    - generic: Idempotency Key
+    - generic: baas-dproof-1781743759:baas-dproof-trg-1781743759:schedule:schedule.cron:manual-test:baas-dproof-1781743759:cd8ca5be-e890-41e5-b683-5064642039ef
+    - generic: Source
+    - generic: schedule
+    - generic: External Event
+    - generic: manual-test:baas-dproof-1781743759:cd8ca5be-e890-41e5-b683-5064642039ef
+    - generic: Trigger Target
+    - generic: manual-test:baas-dproof-1781743759:cd8ca5be-e890-41e5-b683-5064642039ef
+    - heading "Outputs" [level=2]
+    - generic: ready_pr
+    - generic: created
+    - link "Open":
+      - /url: https://github.com/dennisonbertram/synthetix/pull/960
+      - text: Open
+    - paragraph: "#960"
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Background run | Open Agents
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

@@ -1,0 +1,602 @@
+[
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:06:12.919Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:06:12.919Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:06:12.921Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:12.941Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 146ms",
+    "timestamp": "2026-06-22T04:06:12.985Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:13.328Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 228ms",
+    "timestamp": "2026-06-22T04:06:13.455Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:21.428Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 71ms",
+    "timestamp": "2026-06-22T04:06:21.462Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:06:39.105Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:06:39.122Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:39.265Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 180ms",
+    "timestamp": "2026-06-22T04:06:39.340Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:09:58.987Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:09:59.036Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:09:59.096Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:09:59.098Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/mcp color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:09:59.098Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:09:59.440Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 780ms",
+    "timestamp": "2026-06-22T04:10:00.119Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:11:15.820Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 505ms",
+    "timestamp": "2026-06-22T04:11:16.224Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:13:59.223Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:13:59.270Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:13:59.377Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:13:59.379Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/skills color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:13:59.379Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:13:59.681Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 284ms",
+    "timestamp": "2026-06-22T04:13:59.864Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:15:03.290Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 147ms",
+    "timestamp": "2026-06-22T04:15:03.369Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:15:26.950Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "warn",
+    "message": "[Fast Refresh] performing full reload\n\nFast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.\nYou might have a file which exports a React component but also exports a value that is imported by a non-React component file.\nConsider migrating the non-React component export to a separate file and importing it into both files.\n\nIt is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.\nFast Refresh requires at least one parent function component in your React tree.",
+    "timestamp": "2026-06-22T04:15:26.957Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 97ms",
+    "timestamp": "2026-06-22T04:15:27.001Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:15:27.970Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:15:28.003Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:15:28.089Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:15:28.089Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/skills color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:15:28.089Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:17:31.184Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:17:31.197Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:17:31.420Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:17:31.422Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/skills color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:17:31.422Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:18:08.645Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "warn",
+    "message": "[Fast Refresh] performing full reload\n\nFast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.\nYou might have a file which exports a React component but also exports a value that is imported by a non-React component file.\nConsider migrating the non-React component export to a separate file and importing it into both files.\n\nIt is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.\nFast Refresh requires at least one parent function component in your React tree.",
+    "timestamp": "2026-06-22T04:18:08.646Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:18:08.709Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:18:08.717Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:18:08.961Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:18:08.961Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/skills color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:18:08.963Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:18:19.242Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:18:19.249Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:18:19.485Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:18:19.485Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/skills color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:18:19.487Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:20:40.719Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:20:40.767Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:20:40.906Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:20:40.907Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/background-agents color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:20:40.907Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:22:22.724Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 155ms",
+    "timestamp": "2026-06-22T04:22:22.843Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "warn",
+    "message": "[Fast Refresh] performing full reload\n\nFast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.\nYou might have a file which exports a React component but also exports a value that is imported by a non-React component file.\nConsider migrating the non-React component export to a separate file and importing it into both files.\n\nIt is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.\nFast Refresh requires at least one parent function component in your React tree.",
+    "timestamp": "2026-06-22T04:22:22.889Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:22:23.197Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:22:23.398Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:22:23.443Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:22:23.443Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/background-agents color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:22:23.445Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:22:25.126Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 136ms",
+    "timestamp": "2026-06-22T04:22:25.160Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:22:25.386Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 732ms",
+    "timestamp": "2026-06-22T04:22:26.018Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:22:56.122Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:22:56.138Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:22:56.359Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:22:56.359Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/background-agents color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:22:56.361Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:23:24.791Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 181ms",
+    "timestamp": "2026-06-22T04:23:24.871Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/background-runs/VBbFB_81wtz-SLTTBcawB color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:23:25.446Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:24:42.201Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "warn",
+    "message": "[Fast Refresh] performing full reload\n\nFast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.\nYou might have a file which exports a React component but also exports a value that is imported by a non-React component file.\nConsider migrating the non-React component export to a separate file and importing it into both files.\n\nIt is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.\nFast Refresh requires at least one parent function component in your React tree.",
+    "timestamp": "2026-06-22T04:24:42.255Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 155ms",
+    "timestamp": "2026-06-22T04:24:42.258Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:24:43.345Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:24:43.353Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:24:43.392Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:24:43.392Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/background-runs/VBbFB_81wtz-SLTTBcawB color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:24:43.394Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:25:11.223Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 147ms",
+    "timestamp": "2026-06-22T04:25:11.269Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:25:11.370Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:25:11.737Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:25:11.750Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:25:11.865Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:25:11.865Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/loops color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:25:11.867Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  }
+]

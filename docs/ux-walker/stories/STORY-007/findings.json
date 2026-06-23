@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-007-001",
+    "story_id": "STORY-007",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Icon-only controls have accessible names",
+    "score": "warn",
+    "description": "The chat header's file and changes panel trigger was an icon-only button without an accessible name. The adjacent share icon also relied on tooltip text instead of an explicit button label.",
+    "expected": "Header icon buttons that open files, changes, or sharing should expose clear accessible labels and state-specific labels where the action toggles a panel.",
+    "actual": "The file/changes trigger appeared as an unlabeled icon button in the interactive tree before the fix, making the files and diffs path hard to discover by keyboard or screen-reader users.",
+    "screenshot": null,
+    "suggested_fix": "Add explicit aria-labels to the share button and file/changes panel toggle, with open/close wording for the toggle state.",
+    "files_likely_involved": [
+      "apps/web/app/sessions/[sessionId]/chats/[chatId]/session-header.tsx"
+    ]
+  }
+]

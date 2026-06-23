@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ModelVariant } from "@/lib/model-variants";
 import {
   RECOMMENDED_MODEL_IDS,
+  buildModelPickerOptions,
   buildModelOptions,
   buildRecommendedModelOptions,
   filterAndSortModelOptions,
@@ -1053,5 +1054,67 @@ describe("buildRecommendedModelOptions — regression", () => {
     expect(ids.has("a")).toBe(true);
     expect(ids.has("b")).toBe(true);
     expect(ids.has("c")).toBe(true);
+  });
+});
+
+describe("buildModelPickerOptions", () => {
+  const options = [
+    {
+      id: "openai/gpt-5.4",
+      label: "GPT-5.4",
+      shortLabel: "GPT-5.4",
+      isVariant: false,
+      provider: "openai",
+      source: "catalog" as const,
+    },
+    {
+      id: "user-profile:fireworks:glm-5.2",
+      label: "GLM 5.2",
+      shortLabel: "GLM 5.2",
+      isVariant: false,
+      provider: "user",
+      source: "user" as const,
+    },
+    {
+      id: "user-profile:fireworks:glm-5.2-air",
+      label: "GLM 5.2 Air",
+      shortLabel: "GLM 5.2 Air",
+      isVariant: false,
+      provider: "user",
+      source: "user" as const,
+    },
+    {
+      id: "user-profile:baseten:zai-org%2FGLM-5.2",
+      label: "GLM 5.2 via Baseten",
+      shortLabel: "GLM 5.2",
+      isVariant: false,
+      provider: "user",
+      source: "user" as const,
+    },
+  ];
+
+  test("respects enabled model preferences for user-key provider models", () => {
+    const result = buildModelPickerOptions({
+      allOptions: options,
+      enabledModelIds: ["openai/gpt-5.4", "user-profile:fireworks:glm-5.2"],
+    });
+
+    expect(result.map((option) => option.id)).toEqual([
+      "openai/gpt-5.4",
+      "user-profile:fireworks:glm-5.2",
+    ]);
+  });
+
+  test("keeps the current model visible even when it is outside the shortlist", () => {
+    const result = buildModelPickerOptions({
+      allOptions: options,
+      enabledModelIds: ["openai/gpt-5.4"],
+      selectedModelIds: ["user-profile:fireworks:glm-5.2-air"],
+    });
+
+    expect(result.map((option) => option.id)).toEqual([
+      "openai/gpt-5.4",
+      "user-profile:fireworks:glm-5.2-air",
+    ]);
   });
 });

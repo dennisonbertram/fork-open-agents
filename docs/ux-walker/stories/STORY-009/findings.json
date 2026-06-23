@@ -1,0 +1,19 @@
+[
+  {
+    "id": "F-STORY-009-001",
+    "story_id": "STORY-009",
+    "severity": "medium",
+    "category": "error-state",
+    "criterion": "Failure recovery is actionable at the point of failure",
+    "score": "warn",
+    "description": "The failed chat's main assistant message still says only `Workspace setup failed. Try again in a moment.` even though Runtime Inspector identifies the real cause and recovery step.",
+    "expected": "The failed message area should surface the same actionable recovery cause available in observability, or at least point directly to Runtime Inspector when richer failure evidence exists.",
+    "actual": "The main chat required opening Runtime Inspector to learn that the ZAI profile key could not be decrypted and must be re-entered in Settings → Models.",
+    "screenshot": null,
+    "suggested_fix": "Enhance historical generic workspace-failure messages with a runtime-evidence callout or inline Runtime Inspector recovery link when a failed workflow has a likely issue.",
+    "files_likely_involved": [
+      "apps/web/app/sessions/[sessionId]/chats/[chatId]/session-chat-content.tsx",
+      "apps/web/app/sessions/[sessionId]/chats/[chatId]/runtime-observability-panel.tsx"
+    ]
+  }
+]

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-015-001",
+    "story_id": "STORY-015",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Repeated row actions identify their target",
+    "score": "warn",
+    "description": "Background agent and run-history rows exposed repeated Edit, Test, Repo, Delete, Output, and Details controls without target-specific accessible names.",
+    "expected": "Repeated row actions should include the agent, repository, or run target, such as `Test background agent Live Proof Background Agent` and `Open details for background run dennisonbertram/synthetix ...`.",
+    "actual": "Multiple rows exposed identical `Edit`, `Test`, `Repo`, `Delete agent`, `Output`, and `Details` controls.",
+    "screenshot": null,
+    "suggested_fix": "Add target-specific accessible labels to background agent actions, webhook copy controls, and run output/details links.",
+    "files_likely_involved": [
+      "apps/web/app/settings/background-agents-section.tsx"
+    ]
+  }
+]

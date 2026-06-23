@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-010-001",
+    "story_id": "STORY-010",
+    "severity": "medium",
+    "category": "happy-path",
+    "criterion": "Primary CTA / happy path clarity",
+    "score": "warn",
+    "description": "The Cursor Composer preset was hidden until the user first changed Provider type to OpenAI-compatible.",
+    "expected": "A user who wants Cursor Composer can use the preset directly from the New Inference Profile dialog.",
+    "actual": "The shortcut was gated behind the provider dropdown, adding friction and making the path brittle when the dropdown is hard to interact with.",
+    "screenshot": null,
+    "suggested_fix": "Show the Cursor Composer preset before provider selection and have it set the provider, base URL, and model IDs.",
+    "files_likely_involved": [
+      "apps/web/app/settings/inference-profiles-section.tsx"
+    ]
+  }
+]

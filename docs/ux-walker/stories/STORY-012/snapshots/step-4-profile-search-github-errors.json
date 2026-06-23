@@ -1,0 +1,32 @@
+[
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:02:24.993Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:02:25.058Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:02:25.088Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:02:25.090Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/settings/composio color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:02:25.090Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  }
+]

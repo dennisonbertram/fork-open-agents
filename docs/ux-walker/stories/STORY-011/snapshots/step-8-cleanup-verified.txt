@@ -1,0 +1,8 @@
+Temporary variant cleanup was verified through the app database after browser
+automation wedged on the delete confirmation dialog.
+
+Command result:
+
+```json
+{"before":1,"touched":1,"remaining":0}
+```

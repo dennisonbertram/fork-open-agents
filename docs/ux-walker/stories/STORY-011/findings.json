@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-011-001",
+    "story_id": "STORY-011",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Icon-only actions have accessible names",
+    "score": "warn",
+    "description": "User-created model variants exposed edit and delete as icon-only buttons without accessible names.",
+    "expected": "Each variant action should be named with the target variant, such as `Edit UX Walker Temp Variant` and `Delete UX Walker Temp Variant`.",
+    "actual": "After creating a variant, the action controls appeared as unlabeled buttons in the interactive tree.",
+    "screenshot": null,
+    "suggested_fix": "Add per-variant aria-labels to the edit and delete icon buttons.",
+    "files_likely_involved": [
+      "apps/web/app/settings/model-variants-section.tsx"
+    ]
+  }
+]

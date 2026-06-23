@@ -146,6 +146,7 @@ import {
   shouldShowThinkingIndicator,
   shouldUseChatListStreamingState,
 } from "@/lib/chat-streaming-state";
+import { collectPendingApprovals } from "@/app/lib/pending-tool-approvals";
 import { isValidImageType } from "@/lib/image-utils";
 import { isLargeText } from "@/lib/text-attachment-utils";
 import {
@@ -1277,6 +1278,7 @@ export type MessageRowProps = {
   onForkAssistantMessage: (messageId: string) => void | Promise<void>;
   onApproveTool: (id: string) => void;
   onDenyTool: (id: string, reason?: string) => void;
+  onApproveAllToolsForSession: (id: string) => void;
   onManagedRuntimeProfileOutput: (
     toolCallId: string,
     output: SetupManagedRuntimeProfileOutput,
@@ -1304,6 +1306,7 @@ const MessageRow = memo(function MessageRow({
   onForkAssistantMessage,
   onApproveTool,
   onDenyTool,
+  onApproveAllToolsForSession,
   onManagedRuntimeProfileOutput,
   onOpenVerifiedBuildPanel,
   onOpenRuntimePanel,
@@ -1524,6 +1527,7 @@ const MessageRow = memo(function MessageRow({
               isStreaming={isMessageStreaming}
               onApprove={onApproveTool}
               onDeny={onDenyTool}
+              onApproveAllForSession={onApproveAllToolsForSession}
               onManagedRuntimeProfileOutput={onManagedRuntimeProfileOutput}
             />
           </div>
@@ -2072,6 +2076,9 @@ export function SessionChatContent({
   // idle state even if the AI SDK `status` is stuck (common on iOS/Safari where
   // fetch abort doesn't cleanly settle the hook status).
   const [userStopped, setUserStopped] = useState(false);
+  const [autoApproveToolCallsForSession, setAutoApproveToolCallsForSession] =
+    useState(false);
+  const autoApprovedToolApprovalIdsRef = useRef(new Set<string>());
   const isChatInFlight = isChatInFlightStatus(status) && !userStopped;
   const lastMessage = useMemo(
     () => renderMessages[renderMessages.length - 1],
@@ -2120,7 +2127,9 @@ export function SessionChatContent({
   // after switching to a different chat.
   useEffect(() => {
     setUserStopped(false);
-  }, [chatInfo.id]);
+    setAutoApproveToolCallsForSession(false);
+    autoApprovedToolApprovalIdsRef.current.clear();
+  }, [chatInfo.id, session.id]);
 
   // Sync hasPendingResponse with the AI SDK status.
   // IMPORTANT: hasPendingResponse is intentionally excluded from the dependency
@@ -2906,6 +2915,30 @@ export function SessionChatContent({
     },
     [addToolApprovalResponse],
   );
+
+  const handleApproveAllToolsForSession = useCallback(
+    (id: string) => {
+      setAutoApproveToolCallsForSession(true);
+      autoApprovedToolApprovalIdsRef.current.add(id);
+      handleApproveTool(id);
+    },
+    [handleApproveTool],
+  );
+
+  useEffect(() => {
+    if (!autoApproveToolCallsForSession) {
+      return;
+    }
+
+    for (const approval of collectPendingApprovals(renderMessages)) {
+      if (autoApprovedToolApprovalIdsRef.current.has(approval.id)) {
+        continue;
+      }
+
+      autoApprovedToolApprovalIdsRef.current.add(approval.id);
+      handleApproveTool(approval.id);
+    }
+  }, [autoApproveToolCallsForSession, handleApproveTool, renderMessages]);
 
   const handleDenyTool = useCallback(
     (id: string, reason?: string) => {
@@ -4435,6 +4468,9 @@ export function SessionChatContent({
                               }
                               onApproveTool={handleApproveTool}
                               onDenyTool={handleDenyTool}
+                              onApproveAllToolsForSession={
+                                handleApproveAllToolsForSession
+                              }
                               onManagedRuntimeProfileOutput={
                                 handleManagedRuntimeProfileOutput
                               }

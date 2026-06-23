@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-004-001",
+    "story_id": "STORY-004",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Valid interactive markup",
+    "score": "warn",
+    "description": "The compact Vercel project lookup error row rendered a Retry button inside the expandable row button.",
+    "expected": "The collapsed Vercel sync row should use valid interactive markup, with Retry available as a sibling control.",
+    "actual": "React reported that a button cannot be a descendant of another button when the Vercel project lookup failed.",
+    "screenshot": null,
+    "suggested_fix": "Render the compact row expansion button and Retry action as sibling buttons inside a non-button row container.",
+    "files_likely_involved": [
+      "apps/web/components/session-starter-vercel-sync-section.tsx"
+    ]
+  }
+]

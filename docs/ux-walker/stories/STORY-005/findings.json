@@ -1,0 +1,20 @@
+[
+  {
+    "id": "F-STORY-005-001",
+    "story_id": "STORY-005",
+    "severity": "medium",
+    "category": "agent-context",
+    "criterion": "Connected repository context",
+    "score": "warn",
+    "description": "The assistant answered that the repo was `sandbox` when asked to confirm the connected repo and branch.",
+    "expected": "The assistant should treat the connected session repository as authoritative and answer `dennisonbertram/synthetix` for this chat.",
+    "actual": "The assistant inferred the repo name from the sandbox workspace directory and answered `Repo: sandbox`.",
+    "screenshot": null,
+    "suggested_fix": "Pass connected repo owner/name into the agent sandbox context and include it explicitly in the system prompt environment section.",
+    "files_likely_involved": [
+      "apps/web/app/workflows/chat.ts",
+      "packages/agent/open-agent.ts",
+      "packages/agent/system-prompt.ts"
+    ]
+  }
+]

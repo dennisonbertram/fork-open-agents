@@ -1,0 +1,134 @@
+- button:
+- button:
+  - text: New session
+- button:
+- button: Active12
+- button:
+  - text: Archive
+  - generic: "55"
+- button [expanded]:
+  - generic: Chats
+- button:
+  - paragraph: Github Testing
+- button [expanded]:
+  - generic: dennisonbertram/synthetix
+- button:
+  - generic: Agents
+  - generic: "1"
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button:
+  - paragraph: Testing Provider Implementation
+- button:
+  - paragraph: Backlog Issues Review
+- button:
+  - paragraph: GitHub Issue 262 Review
+- button:
+  - paragraph: Model Runtime Identification
+- button:
+  - paragraph: Casual Coding Session
+- button:
+  - paragraph: Reykjavik
+- button:
+  - paragraph: Getting Started
+- button [expanded]:
+  - generic: dennisonbertram/partyline
+- button:
+  - generic: Agents
+- link:
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button:
+  - paragraph: New Coding Session Started
+- button:
+  - paragraph: Documentation Review Session
+- button:
+  - paragraph: Architecture Overview Discussion
+- button:
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button:
+- main:
+  - button:
+    - generic: Toggle Sidebar
+  - heading [level=3]: Select a Session
+  - paragraph: Choose a session from the sidebar to continue, or start a new one.
+  - button:
+    - text: New Session
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Sessions | Open Agents
+- button:
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button:
+  - text: Output Detail
+  - button:
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - checkbox [checked]
+  - generic: Clear on copy/send
+  - checkbox [checked]
+  - generic: Block page interactions
+  - button:
+    - generic: Manage MCP & Webhooks
+  - button:
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link:
+      - /url: https://agentation.dev/mcp
+      - text: Learn more
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox:
+    - /placeholder: Webhook URL
+- dialog "New chat":
+  - heading "New chat" [level=2]
+  - paragraph: Start a new chat or connect a repo for a repo session.
+  - button "New chat" [active]:
+    - text: New chat
+  - button "Connect a repo":
+    - text: Connect a repo
+  - paragraph: Start a new chat — no repository required.
+  - textbox "Session name":
+    - /placeholder: Session name (optional)
+  - button "Start chat"
+  - paragraph: Starts instantly — no sandbox. Add one later if the agent needs to run code.

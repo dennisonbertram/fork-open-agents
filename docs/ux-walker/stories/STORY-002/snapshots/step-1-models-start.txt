@@ -1,0 +1,156 @@
+- complementary:
+  - link "Back":
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link "Profile":
+        - /url: /settings/profile
+        - text: Profile
+      - link "Preferences":
+        - /url: /settings/preferences
+        - text: Preferences
+      - link "Connections":
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link "Agents":
+        - /url: /settings/agents
+        - text: Agents
+      - link "Models":
+        - /url: /settings/models
+        - text: Models
+      - link "Composio":
+        - /url: /settings/composio
+        - text: Composio
+      - link "MCP servers":
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link "Skills":
+        - /url: /settings/skills
+        - text: Skills
+      - link "Background agents":
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link "Loops":
+        - /url: /loops
+        - text: Loops
+      - link "Runtime profiles":
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link "Usage":
+        - /url: /settings/usage
+        - text: Usage
+      - link "Leaderboard":
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button "Sign out":
+    - text: Sign out
+- main:
+  - heading "Models" [level=1]
+  - paragraph: Pick the models your agents use and create named setups for specific jobs.
+  - heading "Model preferences" [level=3]
+  - generic: Default model
+  - button "GPT 5.5":
+    - generic: GPT 5.5
+  - paragraph: The AI model used for new chats.
+  - generic: Subagent model
+  - button "3.5 Flash":
+    - generic: 3.5 Flash
+  - paragraph: For explorer and executor subagents.
+  - generic: Custom model set
+  - paragraph: By default, every available model is shown in the model selector. Add models here to create a shortlist of just the ones you use.
+  - textbox "Search to add a model..."
+  - heading "Inference Profiles" [level=3]
+  - paragraph: Add user-paid Anthropic-compatible or OpenAI-compatible credentials. Saved profiles appear under their provider in the chat model selector.
+  - button "New Profile":
+    - text: New Profile
+  - heading "Fireworks" [level=3]
+  - generic: Fireworks key ending F39E
+  - generic: https://api.fireworks.ai/inference/v1
+  - text: Verified Jun 21, 9:11 PM
+  - generic: Fireworks profile test passed.
+  - button "Test"
+  - button "Edit inference profile":
+  - button "Delete inference profile":
+  - heading "ZAI (GLM)" [level=3]
+  - generic: ZAI key ending XWgX
+  - generic: https://api.z.ai/api/anthropic/v1
+  - text: Verified Jun 21, 8:51 PM
+  - generic: Anthropic profile test passed.
+  - button "Test"
+  - button "Edit inference profile":
+  - button "Delete inference profile":
+  - heading "Model Variants" [level=3]
+  - paragraph: Named presets that combine a base model with custom provider options. Variants appear alongside regular models in selectors across the app.
+  - button "New Variant":
+    - text: New Variant
+  - heading "GPT-5.4 (XHigh)" [level=3]
+  - generic: GPT 5.4
+  - generic: ·
+  - text: 2 options
+  - text: reasoningEffort
+  - generic: xhigh
+  - text: reasoningSummary
+  - generic: auto
+  - generic: Built-in
+  - heading "Claude Opus 4.6 (High)" [level=3]
+  - generic: Claude Opus 4.6
+  - generic: ·
+  - text: 1 option
+  - text: effort
+  - generic: high
+  - generic: Built-in
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

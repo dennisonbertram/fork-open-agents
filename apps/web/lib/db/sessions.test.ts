@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, mock, test } from "bun:test";
 type UpsertMode = "inserted" | "updated" | "conflict";
 
 let upsertMode: UpsertMode = "inserted";
+let lastInsertValue: unknown;
+let lastUpdateSetValue: unknown;
 
 // Rows returned by the fakeDb select() chain (used by getUsedSessionTitles)
 let fakeSelectRows: { title: string }[] = [];
@@ -43,20 +45,26 @@ const fakeDb = {
   ) => {
     const tx = {
       insert: (_table: unknown) => ({
-        values: (_input: unknown) => ({
-          onConflictDoNothing: (_config: unknown) => ({
-            returning: async () =>
-              upsertMode === "inserted" ? [fakeInsertedMessage] : [],
-          }),
-        }),
+        values: (input: unknown) => {
+          lastInsertValue = input;
+          return {
+            onConflictDoNothing: (_config: unknown) => ({
+              returning: async () =>
+                upsertMode === "inserted" ? [fakeInsertedMessage] : [],
+            }),
+          };
+        },
       }),
       update: (_table: unknown) => ({
-        set: (_input: unknown) => ({
-          where: (_condition: unknown) => ({
-            returning: async () =>
-              upsertMode === "updated" ? [fakeInsertedMessage] : [],
-          }),
-        }),
+        set: (input: unknown) => {
+          lastUpdateSetValue = input;
+          return {
+            where: (_condition: unknown) => ({
+              returning: async () =>
+                upsertMode === "updated" ? [fakeInsertedMessage] : [],
+            }),
+          };
+        },
       }),
     };
 
@@ -160,6 +168,8 @@ describe("getUsedSessionTitles", () => {
 describe("upsertChatMessageScoped", () => {
   beforeEach(() => {
     upsertMode = "inserted";
+    lastInsertValue = undefined;
+    lastUpdateSetValue = undefined;
   });
 
   test("returns inserted when no existing row conflicts", async () => {
@@ -202,5 +212,32 @@ describe("upsertChatMessageScoped", () => {
     });
 
     expect(result.status).toBe("conflict");
+  });
+
+  test("sanitizes null bytes before writing chat message JSON", async () => {
+    const { upsertChatMessageScoped } = await sessionsModulePromise;
+    upsertMode = "updated";
+
+    await upsertChatMessageScoped({
+      id: "message-1",
+      chatId: "chat-1",
+      role: "assistant",
+      parts: {
+        id: "message-1",
+        role: "assistant",
+        parts: [{ type: "text", text: "hash input: model\0cache" }],
+      },
+    });
+
+    expect(lastInsertValue).toMatchObject({
+      parts: {
+        parts: [{ text: "hash input: model\\u0000cache" }],
+      },
+    });
+    expect(lastUpdateSetValue).toMatchObject({
+      parts: {
+        parts: [{ text: "hash input: model\\u0000cache" }],
+      },
+    });
   });
 });
