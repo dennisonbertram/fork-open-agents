@@ -27,6 +27,11 @@ export type AgentTemplate = {
   permissionsNote?: string;
   /** Default schedule for schedule.cron templates */
   defaultSchedule?: string;
+  defaultConditionActions?: string;
+  defaultConditionBranches?: string;
+  defaultConditionLabels?: string;
+  defaultConditionEnvironments?: string;
+  defaultConditionSeverities?: string;
 };
 
 export type BlankTemplate = {
@@ -37,6 +42,11 @@ export type BlankTemplate = {
   outputMode: OutputMode;
   defaultCheckCommand: "";
   defaultEnabled: false;
+  defaultConditionActions?: string;
+  defaultConditionBranches?: string;
+  defaultConditionLabels?: string;
+  defaultConditionEnvironments?: string;
+  defaultConditionSeverities?: string;
 };
 
 /**

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Clock3, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   getOwnedBackgroundAgentWithTriggers,
   listBackgroundAgentRuns,
@@ -76,6 +76,24 @@ function SectionHeader({ children }: { children: React.ReactNode }) {
   );
 }
 
+const knownTriggerKinds = new Set<string>([
+  "github.pull_request",
+  "github.pull_request_review",
+  "github.issue",
+  "github.deployment_status",
+  "schedule.cron",
+  "webhook.error",
+]);
+
+function formatAgentTriggerKind(
+  kind: string,
+  conditions: Record<string, string[]> = {},
+): string {
+  return knownTriggerKinds.has(kind)
+    ? formatTriggerLabel(kind as TriggerKind, conditions)
+    : kind;
+}
+
 // ---- Page -------------------------------------------------------------------
 
 export const metadata: Metadata = {
@@ -141,12 +159,14 @@ export default async function AgentDetailPage({
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button asChild variant="default" size="sm">
-              <Link href={`/repos/${owner}/${repo}/agents/${agentId}/edit`}>
-                <Pencil className="h-3.5 w-3.5" />
-                Edit
-              </Link>
-            </Button>
+            <Link
+              href={`/repos/${owner}/${repo}/agents/${agentId}/edit`}
+              aria-label={`Edit ${agent.name}`}
+              className={buttonVariants({ variant: "default", size: "sm" })}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </Link>
             <Button asChild variant="outline" size="sm">
               <Link href={`/repos/${owner}/${repo}/agents`}>
                 ← Back to agents
@@ -204,29 +224,15 @@ export default async function AgentDetailPage({
           ) : (
             <div className="divide-y divide-border">
               {agent.triggers.map((trigger) => {
-                const knownKinds: TriggerKind[] = [
-                  "github.pull_request",
-                  "github.pull_request_review",
-                  "github.issue",
-                  "github.deployment_status",
-                  "schedule.cron",
-                  "webhook.error",
-                ];
-                const isKnown = knownKinds.includes(
-                  trigger.kind as TriggerKind,
-                );
-                const readableLabel = isKnown
-                  ? formatTriggerLabel(
-                      trigger.kind as TriggerKind,
-                      (trigger.conditions as Record<string, string[]>) ?? {},
-                    )
-                  : trigger.name;
-
                 // Render non-empty conditions
                 const conditions = (trigger.conditions ?? {}) as Record<
                   string,
                   string[] | undefined
                 >;
+                const readableLabel = formatAgentTriggerKind(
+                  trigger.kind,
+                  (trigger.conditions as Record<string, string[]>) ?? {},
+                );
                 const conditionEntries = Object.entries(conditions).filter(
                   ([, v]) => v && v.length > 0,
                 );
@@ -234,10 +240,10 @@ export default async function AgentDetailPage({
                 return (
                   <div key={trigger.id} className="px-4 py-3">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                        {trigger.kind}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
+                      <span
+                        className="rounded border border-border bg-muted/30 px-1.5 py-0.5 text-[10px] text-muted-foreground"
+                        title={trigger.kind}
+                      >
                         {readableLabel}
                       </span>
                       <span
@@ -337,7 +343,7 @@ export default async function AgentDetailPage({
                         <div className="flex items-center gap-2">
                           <Clock3 className="h-4 w-4 shrink-0 text-muted-foreground" />
                           <span className="font-mono text-xs text-muted-foreground">
-                            {run.triggerKind}
+                            {formatAgentTriggerKind(run.triggerKind)}
                           </span>
                           <RunStatusPill status={run.status} />
                         </div>
@@ -396,6 +402,9 @@ export default async function AgentDetailPage({
                       {/* Link to raw run timeline (evidence/debug) */}
                       <Link
                         href={`/background-runs/${run.id}`}
+                        aria-label={`Open timeline for ${formatAgentTriggerKind(
+                          run.triggerKind,
+                        )} run ${run.id}`}
                         className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
                       >
                         <span className="flex items-center gap-1">

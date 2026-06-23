@@ -227,6 +227,7 @@ export function LoopCreateExperience({
                 <Button
                   type="button"
                   size="sm"
+                  aria-label={`Use ${template.name} template`}
                   onClick={() => chooseTemplate(template)}
                 >
                   Use this template

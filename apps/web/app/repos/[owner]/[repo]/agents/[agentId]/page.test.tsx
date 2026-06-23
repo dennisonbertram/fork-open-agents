@@ -156,10 +156,11 @@ describe("AgentDetailPage", () => {
 
     // Name
     expect(html).toContain("Deploy Smoke");
+    expect(html).toContain('aria-label="Edit Deploy Smoke"');
     // Instructions / purpose section
     expect(html).toContain("Run smoke checks after each deployment");
     // Trigger section
-    expect(html).toContain("deployment_status");
+    expect(html).toContain("On deployment");
     // Permissions section
     expect(html).toContain("contents");
     // Current state — enabled
@@ -201,6 +202,9 @@ describe("AgentDetailPage", () => {
     );
 
     expect(html).toContain("/background-runs/run-1");
+    expect(html).toContain(
+      'aria-label="Open timeline for On deployment run run-1"',
+    );
   });
 
   test("BT-167-013: renders artifacts section with output links", async () => {

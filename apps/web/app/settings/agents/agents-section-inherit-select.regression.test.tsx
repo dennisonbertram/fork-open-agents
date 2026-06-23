@@ -18,6 +18,7 @@
  *               the two `value={INHERIT_SENTINEL}` lines are reverted to
  *               `value=""`, proving the regression cannot silently return.
  * REG-WI1-007: roundtrip for empty string (fromSelectValue(toSelectValue('')) === '').
+ * REG-WI1-008: collapsed row edit/done controls include the agent name.
  */
 
 import { describe, expect, test } from "bun:test";
@@ -97,5 +98,19 @@ describe("Regression WI-1: inherit-select sentinel helpers", () => {
   // REG-WI1-007: roundtrip for empty string
   test("REG-WI1-007: roundtrip fromSelectValue(toSelectValue('')) === ''", () => {
     expect(fromSelectValue(toSelectValue(""))).toBe("");
+  });
+
+  test("REG-WI1-008: agent row edit toggle labels include the target agent name", async () => {
+    const source = await Bun.file(
+      new URL("agents-section.tsx", import.meta.url),
+    ).text();
+    const labelExpression =
+      "aria-label={`" +
+      "$" +
+      '{expanded ? "Done editing" : "Edit"} ' +
+      "$" +
+      "{row.name}`}";
+
+    expect(source).toContain(labelExpression);
   });
 });

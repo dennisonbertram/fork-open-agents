@@ -324,6 +324,7 @@ function AgentCard({
           size="sm"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
+          aria-label={`${expanded ? "Done editing" : "Edit"} ${row.name}`}
           className="flex items-center gap-1"
         >
           {expanded ? (

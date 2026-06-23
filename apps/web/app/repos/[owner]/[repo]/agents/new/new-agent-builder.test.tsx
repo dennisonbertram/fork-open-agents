@@ -147,6 +147,21 @@ describe("NewAgentBuilder", () => {
     );
   });
 
+  test("shows drafting status when launched from Create with AI", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder
+        owner="acme"
+        repo="widgets"
+        aiPrompt="Label newly opened issues and leave a triage note."
+      />,
+    );
+
+    expect(html).toContain("Drafting an agent spec from your description.");
+    expect(html).toContain("TemplatePicker");
+  });
+
   test("shows setup details and a configuration link when prerequisites are missing", async () => {
     readinessData = {
       enabled: true,

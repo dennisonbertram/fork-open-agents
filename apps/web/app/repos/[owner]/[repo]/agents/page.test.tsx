@@ -130,7 +130,7 @@ describe("RepoAgentsPage", () => {
     expect(html).toContain("acme/widgets");
     expect(html).toContain("Deploy smoke");
     expect(html).toContain("Run smoke checks after deployments.");
-    expect(html).toContain("github.deployment_status");
+    expect(html).toContain("On deployment");
     expect(html).toContain("Production deployment succeeded");
     expect(html).toContain("abc123");
     expect(html).toContain("/background-runs/run-1");
@@ -168,6 +168,35 @@ describe("RepoAgentsPage", () => {
     expect(html).not.toContain("What should this agent do?");
     expect(html).not.toContain("Run a test");
     expect(html).not.toContain("Verification command");
+  });
+
+  test("recent runs show human-readable trigger labels", async () => {
+    repoRuns = [
+      {
+        id: "run-issue",
+        triggerKind: "github.issue",
+        status: "failed",
+        payloadSummary: {
+          title: "Issue triage failed",
+        },
+        externalId: "issue-1",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-05-27T12:00:00.000Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("On issue");
+    expect(html).not.toContain("github.issue");
+    expect(html).toContain("Open details for On issue run run-issue");
   });
 
   test("recent runs section shows at most 5 runs", async () => {

@@ -6,6 +6,7 @@ import { NewAgentBuilder } from "./new-agent-builder";
 
 type NewAgentPageProps = {
   params: Promise<{ owner: string; repo: string }>;
+  searchParams?: Promise<{ ai?: string; prompt?: string }>;
 };
 
 export const metadata: Metadata = {
@@ -13,13 +14,21 @@ export const metadata: Metadata = {
   description: "Create a new background agent for this repository.",
 };
 
-export default async function NewAgentPage({ params }: NewAgentPageProps) {
+export default async function NewAgentPage({
+  params,
+  searchParams,
+}: NewAgentPageProps) {
   const session = await getServerSession();
   if (!session?.user) {
     redirect("/");
   }
 
   const { owner, repo } = await params;
+  const resolvedSearchParams = await searchParams;
+  const aiPrompt =
+    resolvedSearchParams?.ai === "true"
+      ? (resolvedSearchParams.prompt?.trim() ?? null)
+      : null;
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
@@ -43,7 +52,7 @@ export default async function NewAgentPage({ params }: NewAgentPageProps) {
         </div>
 
         {/* Builder — template-first, then spec editor */}
-        <NewAgentBuilder owner={owner} repo={repo} />
+        <NewAgentBuilder owner={owner} repo={repo} aiPrompt={aiPrompt} />
       </div>
     </main>
   );

@@ -9,6 +9,8 @@ import {
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { BackgroundAgentRun } from "@/lib/db/schema";
+import type { TriggerKind } from "@/lib/background-agents/agent-spec";
+import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
 import { RepoAgentsDashboard } from "./repo-agents-dashboard";
 import { AgentCard } from "./agent-card";
 
@@ -57,6 +59,21 @@ function findLatestRunForAgent(
   runs: BackgroundAgentRun[],
 ): BackgroundAgentRun | null {
   return runs.find((r) => r.agentId === agentId) ?? null;
+}
+
+const knownTriggerKinds = new Set<string>([
+  "github.pull_request",
+  "github.pull_request_review",
+  "github.issue",
+  "github.deployment_status",
+  "schedule.cron",
+  "webhook.error",
+]);
+
+function formatRunTriggerKind(kind: string): string {
+  return knownTriggerKinds.has(kind)
+    ? formatTriggerLabel(kind as TriggerKind, {})
+    : kind;
 }
 
 export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
@@ -151,13 +168,16 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
                 <Link
                   key={run.id}
                   href={`/background-runs/${run.id}`}
+                  aria-label={`Open details for ${formatRunTriggerKind(
+                    run.triggerKind,
+                  )} run ${run.id}`}
                   className="grid gap-3 px-4 py-3 transition-colors hover:bg-muted/30 md:grid-cols-[1fr_auto]"
                 >
                   <div className="min-w-0">
                     <div className="flex min-w-0 items-center gap-2">
                       <Clock3 className="h-4 w-4 shrink-0 text-muted-foreground" />
                       <p className="truncate font-mono text-xs">
-                        {run.triggerKind}
+                        {formatRunTriggerKind(run.triggerKind)}
                       </p>
                       <StatusPill status={run.status} />
                     </div>

@@ -66,6 +66,7 @@ export function RepoAgentsDashboard({ owner, repo }: RepoAgentsDashboardProps) {
             <Textarea
               placeholder="e.g. When a new issue is opened, label it by type and add a triage comment."
               value={prompt}
+              maxLength={2000}
               onChange={(e) => setPrompt(e.target.value)}
               className="min-h-24"
               onKeyDown={(e) => {

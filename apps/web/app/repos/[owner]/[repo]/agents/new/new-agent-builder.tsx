@@ -2,7 +2,7 @@
 
 import { PlugZap, Settings2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
@@ -56,12 +56,82 @@ type FeedbackMessage = {
   text: string;
 };
 
+type DraftStatusMessage = {
+  kind: "loading" | "error";
+  text: string;
+};
+
+type DraftAgentResponse = {
+  draft: {
+    name: string;
+    goal: string;
+    triggerKind: TriggerKind;
+    instructions: string;
+    outputMode: OutputMode;
+    checkCommand: string;
+    schedule: string;
+    conditionActions: string;
+    conditionBranches: string;
+    conditionLabels: string;
+    conditionEnvironments: string;
+    conditionSeverities: string;
+  };
+};
+
+const draftRequestCache = new Map<string, Promise<DraftAgentResponse>>();
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
     throw new Error("Failed to load");
   }
   return (await response.json()) as T;
+}
+
+function buildDraftCacheKey(owner: string, repo: string, prompt: string) {
+  return `${owner}/${repo}:${prompt}`;
+}
+
+function requestAgentDraft(input: {
+  owner: string;
+  repo: string;
+  prompt: string;
+}): Promise<DraftAgentResponse> {
+  const cacheKey = buildDraftCacheKey(input.owner, input.repo, input.prompt);
+  const cached = draftRequestCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const request = fetch("/api/background-agents/draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      description: input.prompt,
+      repoOwner: input.owner,
+      repoName: input.repo,
+    }),
+  })
+    .then(async (response) => {
+      const body = (await response.json()) as
+        | DraftAgentResponse
+        | { error?: string };
+      if (!response.ok || !("draft" in body)) {
+        throw new Error(
+          "error" in body && body.error
+            ? body.error
+            : "Couldn't generate an agent spec. Try again.",
+        );
+      }
+      return body;
+    })
+    .catch((error: unknown) => {
+      draftRequestCache.delete(cacheKey);
+      throw error;
+    });
+
+  draftRequestCache.set(cacheKey, request);
+  return request;
 }
 
 function buildReadinessUrl(owner: string, repo: string): string {
@@ -120,6 +190,7 @@ type Step = "pick-template" | "edit-spec";
 type NewAgentBuilderProps = {
   owner: string;
   repo: string;
+  aiPrompt?: string | null;
 };
 
 /**
@@ -127,14 +198,27 @@ type NewAgentBuilderProps = {
  * Template-first: shows TemplatePicker first, then AgentSpecEditor.
  * After save, STAYS on the page (no router.push) so "Run a test" works.
  */
-export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
+export function NewAgentBuilder({
+  owner,
+  repo,
+  aiPrompt = null,
+}: NewAgentBuilderProps) {
   const [step, setStep] = useState<Step>("pick-template");
   const [selectedTemplate, setSelectedTemplate] = useState<
     AgentTemplate | BlankTemplate | null
   >(null);
   const [message, setMessage] = useState<FeedbackMessage | null>(null);
+  const [draftStatus, setDraftStatus] = useState<DraftStatusMessage | null>(
+    aiPrompt
+      ? {
+          kind: "loading",
+          text: "Drafting an agent spec from your description.",
+        }
+      : null,
+  );
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
+  const userSelectedTemplateRef = useRef(false);
 
   const {
     data: readinessData,
@@ -146,10 +230,78 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   );
 
   function handleSelectTemplate(template: AgentTemplate | BlankTemplate) {
+    userSelectedTemplateRef.current = true;
     setSelectedTemplate(template);
     setStep("edit-spec");
     setMessage(null);
+    setDraftStatus(null);
   }
+
+  useEffect(() => {
+    const prompt = aiPrompt?.trim();
+    if (!prompt) {
+      return;
+    }
+    const draftPrompt = prompt;
+
+    userSelectedTemplateRef.current = false;
+    let ignore = false;
+
+    async function draftAgent() {
+      setDraftStatus({
+        kind: "loading",
+        text: "Drafting an agent spec from your description.",
+      });
+      try {
+        const body = await requestAgentDraft({
+          owner,
+          repo,
+          prompt: draftPrompt,
+        });
+        if (ignore || userSelectedTemplateRef.current) {
+          return;
+        }
+        setSelectedTemplate({
+          name: body.draft.name,
+          goal: body.draft.goal,
+          triggerKind: body.draft.triggerKind,
+          instructions: body.draft.instructions,
+          outputMode: body.draft.outputMode,
+          defaultCheckCommand: body.draft.checkCommand,
+          defaultEnabled: false,
+          defaultSchedule: body.draft.schedule || undefined,
+          defaultConditionActions: body.draft.conditionActions,
+          defaultConditionBranches: body.draft.conditionBranches,
+          defaultConditionLabels: body.draft.conditionLabels,
+          defaultConditionEnvironments: body.draft.conditionEnvironments,
+          defaultConditionSeverities: body.draft.conditionSeverities,
+        });
+        setStep("edit-spec");
+        setDraftStatus(null);
+        setMessage({
+          kind: "success",
+          text: "Draft generated. Review it, then save when it looks right.",
+        });
+      } catch (err) {
+        if (ignore || userSelectedTemplateRef.current) {
+          return;
+        }
+        setDraftStatus({
+          kind: "error",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Couldn't generate an agent spec. Try again.",
+        });
+      }
+    }
+
+    void draftAgent();
+
+    return () => {
+      ignore = true;
+    };
+  }, [aiPrompt, owner, repo]);
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
@@ -231,6 +383,19 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
     return (
       <div className="space-y-4">
         {readinessPanel}
+        {draftStatus ? (
+          <p
+            aria-live="polite"
+            className={`rounded-md border px-3 py-2 text-xs ${
+              draftStatus.kind === "error"
+                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                : "border-border bg-muted/20 text-muted-foreground"
+            }`}
+            role="status"
+          >
+            {draftStatus.text}
+          </p>
+        ) : null}
         <TemplatePicker onSelect={handleSelectTemplate} />
       </div>
     );
@@ -256,6 +421,13 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialSchedule={
           "defaultSchedule" in template ? template.defaultSchedule : undefined
         }
+        initialConditionActions={template.defaultConditionActions ?? ""}
+        initialConditionBranches={template.defaultConditionBranches ?? ""}
+        initialConditionLabels={template.defaultConditionLabels ?? ""}
+        initialConditionEnvironments={
+          template.defaultConditionEnvironments ?? ""
+        }
+        initialConditionSeverities={template.defaultConditionSeverities ?? ""}
         initialPermissionContents={initialAccessLevel}
         initialPermissionPullRequests={initialAccessLevel}
         initialComposioToolkitSlugs={[]}

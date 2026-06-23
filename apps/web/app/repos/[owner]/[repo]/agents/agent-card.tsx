@@ -320,6 +320,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
           {latestRunHref && (
             <Link
               href={latestRunHref}
+              aria-label={`View latest run for ${agent.name}`}
               className="mt-1 flex items-center gap-1 text-muted-foreground hover:text-foreground"
             >
               View run <ExternalLink className="h-3 w-3" />
@@ -332,6 +333,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
         <div className="mt-2">
           <Link
             href={latestRunHref}
+            aria-label={`View active run for ${agent.name}`}
             className="text-xs text-amber-600 hover:underline dark:text-amber-400"
           >
             View active run →
@@ -347,6 +349,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
             size="sm"
             onClick={handleRunNow}
             disabled={isPending}
+            aria-label={`Run ${agent.name} now`}
           >
             <Play className="h-3.5 w-3.5" />
             Run now
@@ -359,6 +362,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
             size="sm"
             onClick={handlePauseResume}
             disabled={isPending}
+            aria-label={`Pause ${agent.name}`}
           >
             <Pause className="h-3.5 w-3.5" />
             Pause
@@ -369,6 +373,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
             size="sm"
             onClick={handlePauseResume}
             disabled={isPending}
+            aria-label={`Resume ${agent.name}`}
           >
             <RotateCcw className="h-3.5 w-3.5" />
             Resume
@@ -377,7 +382,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
 
         {/* Edit — links to the edit page for this agent */}
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`${detailHref}/edit`}>
+          <Link href={`${detailHref}/edit`} aria-label={`Edit ${agent.name}`}>
             <Pencil className="h-3.5 w-3.5" />
             Edit
           </Link>
@@ -385,7 +390,10 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
 
         {/* View runs — links to the recent-runs section on the detail page */}
         <Button variant="ghost" size="sm" asChild>
-          <Link href={`${detailHref}#runs`}>
+          <Link
+            href={`${detailHref}#runs`}
+            aria-label={`View runs for ${agent.name}`}
+          >
             <List className="h-3.5 w-3.5" />
             View runs
           </Link>
@@ -399,6 +407,7 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
             href={effectiveOutputUrl}
             target="_blank"
             rel="noreferrer"
+            aria-label={`Open latest output for ${agent.name}`}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
           >
             Latest output
@@ -407,7 +416,11 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
         </div>
       )}
 
-      {message && <p className="mt-2 text-xs text-destructive">{message}</p>}
+      {message && (
+        <p className="mt-2 text-xs text-destructive" role="status">
+          {message}
+        </p>
+      )}
     </div>
   );
 }

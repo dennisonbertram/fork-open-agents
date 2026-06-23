@@ -327,6 +327,35 @@ describe("AgentCard — status matrix", () => {
     expect(html).toContain("/repos/acme/widgets/agents/agent-42/edit");
   });
 
+  test("labels repeated controls with the agent name", async () => {
+    const { AgentCard } = await cardModulePromise;
+    const agent = makeAgent({ id: "agent-42", name: "PR Backlog Maintainer" });
+    const latestRun = makeRun({
+      id: "run-42",
+      outputUrl: "https://example.test/out",
+    });
+
+    const html = renderToStaticMarkup(
+      <AgentCard
+        agent={agent}
+        latestRun={latestRun}
+        owner="acme"
+        repo="widgets"
+      />,
+    );
+
+    expect(html).toContain('aria-label="Run PR Backlog Maintainer now"');
+    expect(html).toContain('aria-label="Pause PR Backlog Maintainer"');
+    expect(html).toContain('aria-label="Edit PR Backlog Maintainer"');
+    expect(html).toContain('aria-label="View runs for PR Backlog Maintainer"');
+    expect(html).toContain(
+      'aria-label="Open latest output for PR Backlog Maintainer"',
+    );
+    expect(html).toContain(
+      'aria-label="View latest run for PR Backlog Maintainer"',
+    );
+  });
+
   test("BT-167-003: run with resultSummary shows headline", async () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent();
