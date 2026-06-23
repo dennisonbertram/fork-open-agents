@@ -1,0 +1,16 @@
+[
+  {
+    "id": "F-STORY-016-001",
+    "story_id": "STORY-016",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Repeated template actions identify their target",
+    "score": "warn",
+    "description": "The loop template gallery exposed multiple buttons with the same accessible name, `Use this template`, making template selection ambiguous for keyboard and assistive-technology users.",
+    "expected": "Each template action should include the template name, such as `Use Review to issues template` or `Use Backlog -> PR template`.",
+    "actual": "Every visible template action was announced as `Use this template`.",
+    "screenshot": null,
+    "suggested_fix": "Add target-specific accessible labels to each template action while preserving concise visible copy.",
+    "files_likely_involved": ["apps/web/app/loops/loop-create-experience.tsx"]
+  }
+]

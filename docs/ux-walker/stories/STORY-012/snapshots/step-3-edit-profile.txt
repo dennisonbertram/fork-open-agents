@@ -1,0 +1,195 @@
+- complementary:
+  - link "Back":
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link "Profile":
+        - /url: /settings/profile
+        - text: Profile
+      - link "Preferences":
+        - /url: /settings/preferences
+        - text: Preferences
+      - link "Connections":
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link "Agents":
+        - /url: /settings/agents
+        - text: Agents
+      - link "Models":
+        - /url: /settings/models
+        - text: Models
+      - link "Composio":
+        - /url: /settings/composio
+        - text: Composio
+      - link "MCP servers":
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link "Skills":
+        - /url: /settings/skills
+        - text: Skills
+      - link "Background agents":
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link "Loops":
+        - /url: /loops
+        - text: Loops
+      - link "Runtime profiles":
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link "Usage":
+        - /url: /settings/usage
+        - text: Usage
+      - link "Leaderboard":
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button "Sign out":
+    - text: Sign out
+- main:
+  - heading "Composio" [level=1]
+  - paragraph: Connect external tools — like GitHub, Linear, or Gmail — so your agents can use them in a chat.
+  - paragraph: Composio is connected.
+  - paragraph: Your account credentials stay in Composio — Open Agents only stores which tools you pick.
+  - button "Refresh status":
+  - button "Operator details":
+    - text: Operator details
+  - heading "Connect tools" [level=2]
+  - paragraph: Connect the apps your agents can use. Search for an app, connect it once, and it stays pinned here.
+  - textbox "Search tools":
+    - /placeholder: Search tools — e.g. Gmail, Slack, Notion
+    - text: github
+  - paragraph: Showing 5 of 5 matching tools
+  - img "DeepWiki MCP logo"
+  - generic: DeepWiki MCP
+  - paragraph: Free AI-powered access to public GitHub repository documentation and codebase analysis via DeepWiki. No authentication required.
+  - paragraph: No sign-in needed
+  - img "Devin MCP logo"
+  - generic: Devin MCP
+  - paragraph: AI-powered access to GitHub repository documentation and codebase analysis, including private repositories, via Devin.
+  - link "Set up in Composio":
+    - /url: https://app.composio.dev
+  - img "Gist logo"
+  - generic: Gist
+  - paragraph: GitHub Gist is a service provided by GitHub that allows users to share code snippets, notes, and other text-based content. It supports both public and private gists, enabling easy sharing and collaboration.
+  - link "Set up in Composio":
+    - /url: https://app.composio.dev
+  - img "GitHub logo"
+  - generic: GitHub
+  - paragraph: GitHub is a code hosting platform for version control and collaboration, offering Git-based repository management, issue tracking, and continuous integration features
+  - text: Connected
+  - img "Linear logo"
+  - generic: Linear
+  - paragraph: Linear is a streamlined issue tracking and project planning tool for modern teams, featuring fast workflows, keyboard shortcuts, and GitHub integrations
+  - button "Connect"
+  - heading "Tool profiles" [level=2]
+  - paragraph:
+    - text: Named bundles of connected tools. Assign a profile to an agent below (Main, Explorer, …) so different agents get different tools — or pick tools directly in a chat.
+    - link "Open Composio":
+      - /url: https://app.composio.dev
+      - text: Open Composio
+  - textbox "Profile name" [active]: Email
+  - generic "Not connected — connect it in Connect tools above, or it won't work.":
+    - text: Gmail
+    - generic: · not connected
+    - button "Remove Gmail":
+  - textbox "Search tools":
+    - /placeholder: Add a tool — search Gmail, Slack…
+  - button "Advanced":
+    - text: Advanced
+  - button "Save"
+  - button "Cancel"
+  - button "Delete Email":
+  - button "New profile":
+    - text: New profile
+  - heading "Agent defaults" [level=2]
+  - paragraph: Pick the tools each agent starts with when a chat hasn't chosen its own. Main is your chat agent; Explorer and Executor are subagents it spawns for bigger tasks; Design handles design work. 'Off' means that agent gets no external tools.
+  - generic: MainThe main chat agent — handles top-level tasks and conversations.
+  - combobox:
+    - generic: "Off"
+  - generic "When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default.": Chat override
+  - switch "Allow chat override for Main" [checked]
+  - generic: ExplorerSubagent that researches and maps out solutions before acting.
+  - combobox:
+    - generic: "Off"
+  - generic "When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default.": Chat override
+  - switch "Allow chat override for Explorer"
+  - generic: ExecutorSubagent that carries out concrete actions (file edits, API calls).
+  - combobox:
+    - generic: "Off"
+  - generic "When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default.": Chat override
+  - switch "Allow chat override for Executor"
+  - generic: DesignSubagent focused on design-related tasks and visual output.
+  - combobox:
+    - generic: "Off"
+  - generic "When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default.": Chat override
+  - switch "Allow chat override for Design"
+  - paragraph: "Chat override: when on, an individual chat can change that agent's tools for the conversation; your saved default stays. Turn it off to lock the default."
+  - paragraph: "Tip: set a default profile for Main so new chats start with tools."
+  - heading "Bring your own auth (advanced)" [level=2]
+  - paragraph:
+    - text: Most people don't need this. Use Connect tools above to connect apps in one click.
+    - link "Open Composio dashboard":
+      - /url: https://app.composio.dev
+      - text: Open Composio dashboard
+  - paragraph:
+    - text: Use this only if you're bringing your own OAuth app — paste its Auth config ID from the
+    - link "Composio dashboard":
+      - /url: https://app.composio.dev
+      - text: Composio dashboard
+    - text: .
+  - button "Advanced — bring your own auth config":
+    - text: Advanced — bring your own auth config
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

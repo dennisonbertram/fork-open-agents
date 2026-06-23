@@ -134,6 +134,7 @@ function TaskItem({
   isStreaming,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: {
   part: TaskToolUIPart;
   isLast: boolean;
@@ -141,6 +142,7 @@ function TaskItem({
   isStreaming: boolean;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
 }) {
   const status = getTaskStatus(part, isStreaming);
   const isRunning = status === "running" || status === "pending";
@@ -262,6 +264,7 @@ function TaskItem({
             approvalId={approvalId}
             onApprove={onApprove}
             onDeny={onDeny}
+            onApproveAllForSession={onApproveAllForSession}
           />
         )}
 
@@ -296,6 +299,7 @@ export type TaskGroupViewProps = {
   isStreaming: boolean;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
 };
 
 export function TaskGroupView({
@@ -304,6 +308,7 @@ export function TaskGroupView({
   isStreaming,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: TaskGroupViewProps) {
   if (taskParts.length === 0) return null;
 
@@ -361,6 +366,7 @@ export function TaskGroupView({
             isStreaming={isStreaming}
             onApprove={onApprove}
             onDeny={onDeny}
+            onApproveAllForSession={onApproveAllForSession}
           />
         ))}
       </div>

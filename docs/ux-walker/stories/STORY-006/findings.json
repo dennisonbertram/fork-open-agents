@@ -1,0 +1,33 @@
+[
+  {
+    "id": "F-STORY-006-001",
+    "story_id": "STORY-006",
+    "severity": "medium",
+    "category": "error-state",
+    "criterion": "Contained provider failures",
+    "score": "warn",
+    "description": "The Actions window shows access denied, but offers no retry, reconnect, or install guidance and the local dev browser records the 403 as a console error.",
+    "expected": "A repo dashboard GitHub-provider failure should be contained to the affected window with a clear next action or retry path.",
+    "actual": "The Actions window only says \"Access denied to this repository.\" and the browser shows a Next dev issues overlay for the 403.",
+    "screenshot": null,
+    "suggested_fix": "Expand repo dashboard error states with retry/setup actions and avoid surfacing expected permission denials as dev-overlay errors.",
+    "files_likely_involved": [
+      "apps/web/app/repos/[owner]/[repo]/github-windows.tsx",
+      "apps/web/lib/github/repo-dashboard.ts"
+    ]
+  },
+  {
+    "id": "F-STORY-006-002",
+    "story_id": "STORY-006",
+    "severity": "medium",
+    "category": "navigation",
+    "criterion": "Route expectation",
+    "score": "warn",
+    "description": "The shorthand `/{owner}/{repo}` route starts a repo chat instead of opening the repo dashboard.",
+    "expected": "For the repository dashboard path, `/repos/{owner}/{repo}` and `/{owner}/{repo}` should either both land on the dashboard or the UI/catalog should make the distinction explicit.",
+    "actual": "`/dennisonbertram/synthetix` opened a new repo-backed chat session on `main` instead of showing the repo dashboard.",
+    "screenshot": null,
+    "suggested_fix": "Decide whether shorthand repo URLs are session launchers or dashboard aliases, then align routing, labels, and docs/catalog expectations.",
+    "files_likely_involved": ["apps/web/app/[username]/[repo]/page.tsx"]
+  }
+]

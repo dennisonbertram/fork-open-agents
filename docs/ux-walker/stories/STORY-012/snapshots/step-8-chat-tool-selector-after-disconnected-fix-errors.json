@@ -1,0 +1,302 @@
+[
+  {
+    "level": "error",
+    "message": "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\n%s%s https://react.dev/link/hydration-mismatch \n\n  ...\n    <div className=\"flex items...\">\n      ...\n        <PopperProvider scope={{Popper:[...]}} anchor={null} onAnchorChange={function bound dispatchSetState}>\n          <TooltipProvider scope={undefined} contentId=\"radix-_R_7...\" open={false} stateAttribute=\"closed\" ...>\n            <TooltipTrigger asChild={true}>\n              <TooltipTrigger data-slot=\"tooltip-tr...\" asChild={true}>\n                <PopperAnchor asChild={true} __scopePopper={{Popper:[...]}}>\n                  <Primitive.div asChild={true} ref={function}>\n                    <Primitive.div.Slot ref={function}>\n                      <Primitive.div.SlotClone ref={function}>\n                        <Primitive.button aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                          <Primitive.button.Slot aria-describedby={undefined} data-state=\"closed\" ...>\n                            <Primitive.button.SlotClone aria-describedby={undefined} data-state=\"closed\" ...>\n                              <button\n                                type=\"button\"\n+                               aria-label=\"Share chat\"\n-                               aria-label={null}\n                                onClick={function}\n                                className=\"ml-1 rounded p-1 text-muted-foreground/60 transition-colors hover:text-fore...\"\n                                aria-describedby={undefined}\n                                data-state=\"closed\"\n                                data-slot=\"tooltip-trigger\"\n                                onPointerMove={function handleEvent}\n                                onPointerLeave={function handleEvent}\n                                onPointerDown={function handleEvent}\n                                onFocus={function handleEvent}\n                                onBlur={function handleEvent}\n                                ref={function}\n                              >\n            ...\n      ...\n        <TooltipProvider scope={undefined} contentId=\"radix-_R_1...\" open={false} stateAttribute=\"closed\" trigger={null} ...>\n          <TooltipTrigger asChild={true}>\n            <TooltipTrigger data-slot=\"tooltip-tr...\" asChild={true}>\n              <PopperAnchor asChild={true} __scopePopper={{Popper:[...]}}>\n                <Primitive.div asChild={true} ref={function}>\n                  <Primitive.div.Slot ref={function}>\n                    <Primitive.div.SlotClone ref={function}>\n                      <Primitive.button aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                        <Primitive.button.Slot aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                          <Primitive.button.SlotClone aria-describedby={undefined} data-state=\"closed\" ...>\n                            <Button variant=\"ghost\" size=\"icon\" className=\"relative h...\" aria-label=\"Open files...\" ...>\n                              <button\n                                data-slot=\"tooltip-trigger\"\n                                data-variant=\"ghost\"\n                                data-size=\"icon\"\n                                className={\"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-m...\"}\n+                               aria-label=\"Open files and changes panel\"\n-                               aria-label={null}\n                                onClick={function}\n                                aria-describedby={undefined}\n                                data-state=\"closed\"\n                                onPointerMove={function handleEvent}\n                                onPointerLeave={function handleEvent}\n                                onPointerDown={function handleEvent}\n                                onFocus={function handleEvent}\n                                onBlur={function handleEvent}\n                                ref={function}\n                              >\n          ...\n",
+    "timestamp": "2026-06-22T04:03:10.315Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:03:10.390Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:03:10.409Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:03:10.410Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:03:10.412Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 181ms",
+    "timestamp": "2026-06-22T04:03:10.461Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:03:10.677Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 211ms",
+    "timestamp": "2026-06-22T04:03:10.786Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:04:31.726Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 233ms",
+    "timestamp": "2026-06-22T04:04:31.858Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:04:35.863Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 259ms",
+    "timestamp": "2026-06-22T04:04:36.022Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:04:38.701Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 102ms",
+    "timestamp": "2026-06-22T04:04:38.703Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:04:42.506Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 188ms",
+    "timestamp": "2026-06-22T04:04:42.594Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:04:55.517Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:04:55.536Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "error",
+    "message": "A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:\n\n- A server/client branch `if (typeof window !== 'undefined')`.\n- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.\n- Date formatting in a user's locale which doesn't match the server.\n- External changing data without sending a snapshot of it along with the HTML.\n- Invalid HTML tag nesting.\n\nIt can also happen if the client has a browser extension installed which messes with the HTML before React loaded.\n\n%s%s https://react.dev/link/hydration-mismatch \n\n  ...\n    <div className=\"flex items...\">\n      ...\n        <PopperProvider scope={{Popper:[...]}} anchor={null} onAnchorChange={function bound dispatchSetState}>\n          <TooltipProvider scope={undefined} contentId=\"radix-_R_7...\" open={false} stateAttribute=\"closed\" ...>\n            <TooltipTrigger asChild={true}>\n              <TooltipTrigger data-slot=\"tooltip-tr...\" asChild={true}>\n                <PopperAnchor asChild={true} __scopePopper={{Popper:[...]}}>\n                  <Primitive.div asChild={true} ref={function}>\n                    <Primitive.div.Slot ref={function}>\n                      <Primitive.div.SlotClone ref={function}>\n                        <Primitive.button aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                          <Primitive.button.Slot aria-describedby={undefined} data-state=\"closed\" ...>\n                            <Primitive.button.SlotClone aria-describedby={undefined} data-state=\"closed\" ...>\n                              <button\n                                type=\"button\"\n+                               aria-label=\"Share chat\"\n-                               aria-label={null}\n                                onClick={function}\n                                className=\"ml-1 rounded p-1 text-muted-foreground/60 transition-colors hover:text-fore...\"\n                                aria-describedby={undefined}\n                                data-state=\"closed\"\n                                data-slot=\"tooltip-trigger\"\n                                onPointerMove={function handleEvent}\n                                onPointerLeave={function handleEvent}\n                                onPointerDown={function handleEvent}\n                                onFocus={function handleEvent}\n                                onBlur={function handleEvent}\n                                ref={function}\n                              >\n            ...\n      ...\n        <TooltipProvider scope={undefined} contentId=\"radix-_R_1...\" open={false} stateAttribute=\"closed\" trigger={null} ...>\n          <TooltipTrigger asChild={true}>\n            <TooltipTrigger data-slot=\"tooltip-tr...\" asChild={true}>\n              <PopperAnchor asChild={true} __scopePopper={{Popper:[...]}}>\n                <Primitive.div asChild={true} ref={function}>\n                  <Primitive.div.Slot ref={function}>\n                    <Primitive.div.SlotClone ref={function}>\n                      <Primitive.button aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                        <Primitive.button.Slot aria-describedby={undefined} data-state=\"closed\" data-slot=\"tooltip-tr...\" ...>\n                          <Primitive.button.SlotClone aria-describedby={undefined} data-state=\"closed\" ...>\n                            <Button variant=\"ghost\" size=\"icon\" className=\"relative h...\" aria-label=\"Open files...\" ...>\n                              <button\n                                data-slot=\"tooltip-trigger\"\n                                data-variant=\"ghost\"\n                                data-size=\"icon\"\n                                className={\"inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-m...\"}\n+                               aria-label=\"Open files and changes panel\"\n-                               aria-label={null}\n                                onClick={function}\n                                aria-describedby={undefined}\n                                data-state=\"closed\"\n                                onPointerMove={function handleEvent}\n                                onPointerLeave={function handleEvent}\n                                onPointerDown={function handleEvent}\n                                onFocus={function handleEvent}\n                                onBlur={function handleEvent}\n                                ref={function}\n                              >\n          ...\n",
+    "timestamp": "2026-06-22T04:04:55.620Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:04:55.681Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 119ms",
+    "timestamp": "2026-06-22T04:04:55.681Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:04:55.714Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:04:55.716Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:04:55.716Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:08.267Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 1610ms",
+    "timestamp": "2026-06-22T04:06:10.090Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:10.500Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 224ms",
+    "timestamp": "2026-06-22T04:06:10.626Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:10.972Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 370ms",
+    "timestamp": "2026-06-22T04:06:11.242Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:11.371Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 225ms",
+    "timestamp": "2026-06-22T04:06:11.495Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:06:12.765Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:06:12.782Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:06:12.919Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:06:12.919Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:06:12.921Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:12.941Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 146ms",
+    "timestamp": "2026-06-22T04:06:12.985Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:13.328Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 228ms",
+    "timestamp": "2026-06-22T04:06:13.455Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:21.428Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 71ms",
+    "timestamp": "2026-06-22T04:06:21.462Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "info",
+    "message": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+    "timestamp": "2026-06-22T04:06:39.105Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[HMR] connected",
+    "timestamp": "2026-06-22T04:06:39.122Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] rebuilding",
+    "timestamp": "2026-06-22T04:06:39.265Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Debug mode is enabled by default in development. No requests will be sent to the server. color: rgb(120, 120, 120) color: inherit",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c Running queued event color: rgb(120, 120, 120) color: inherit pageview Object",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "%c[Vercel Web Analytics]%c [view] http://localhost:3002/sessions/1Q5F4CqxTRVvUJVYidMW6/chats/pmiFO7xOTZehzEFgTy7dW color: rgb(120, 120, 120) color: inherit Object /_vercel/insights/view",
+    "timestamp": "2026-06-22T04:06:39.297Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "log",
+    "message": "[Fast Refresh] done in 180ms",
+    "timestamp": "2026-06-22T04:06:39.340Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  }
+]

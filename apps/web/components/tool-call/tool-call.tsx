@@ -35,6 +35,7 @@ export type ToolCallProps = {
   isStreaming?: boolean;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
   onManagedRuntimeProfileOutput?: (
     toolCallId: string,
     output: SetupManagedRuntimeProfileOutput,
@@ -58,10 +59,11 @@ export const ToolCall = memo(function ToolCall({
   isStreaming = false,
   onApprove,
   onDeny,
+  onApproveAllForSession,
   onManagedRuntimeProfileOutput,
 }: ToolCallProps) {
   const state = extractRenderState(part, activeApprovalId, isStreaming);
-  const approvalProps = { onApprove, onDeny };
+  const approvalProps = { onApprove, onDeny, onApproveAllForSession };
 
   switch (part.type) {
     case "tool-bash":
@@ -123,12 +125,14 @@ function DefaultRenderer({
   toolName,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: {
   part: WebAgentUIToolPart;
   state: ToolRenderState;
   toolName: string;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
 }) {
   const name = toolName.charAt(0).toUpperCase() + toolName.slice(1);
   const input = part.input as Record<string, unknown> | undefined;
@@ -144,6 +148,7 @@ function DefaultRenderer({
       state={state}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 }

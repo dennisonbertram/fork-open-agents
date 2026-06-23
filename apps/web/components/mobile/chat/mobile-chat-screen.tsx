@@ -19,10 +19,8 @@ import { ModelSelectorCompact } from "@/components/model-selector-compact";
 import { parseModelOptionSelection } from "@/lib/inference/model-option-id";
 import { MobileChatHeader } from "./mobile-chat-header";
 import { MobileMessageThread } from "./mobile-message-thread";
-import {
-  MobileToolApprovalBar,
-  findPendingApproval,
-} from "./mobile-tool-approval-bar";
+import { findPendingApproval } from "@/app/lib/pending-tool-approvals";
+import { MobileToolApprovalBar } from "./mobile-tool-approval-bar";
 import { MobileComposer } from "./mobile-composer";
 
 export interface MobileChatScreenProps {

@@ -1,0 +1,301 @@
+- button "Collapse panel":
+- button "New session":
+  - text: New session
+- button "Quick chat (no repo)":
+- button "Active13"
+- button "Archive 55":
+  - text: Archive
+  - generic: "55"
+- button "Chats" [expanded]:
+  - generic: Chats
+- button "Github Testing":
+  - paragraph: Github Testing
+- button "dennisonbertram/synthetix" [expanded]:
+  - generic: dennisonbertram/synthetix
+- button "Agents 1":
+  - generic: Agents
+  - generic: "1"
+- link "Create agent for dennisonbertram/synthetix":
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/synthetix":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button "Repo and Branch Verification":
+  - paragraph: Repo and Branch Verification
+- button "Testing Provider Implementation":
+  - paragraph: Testing Provider Implementation
+- button "Backlog Issues Review":
+  - paragraph: Backlog Issues Review
+- button "GitHub Issue 262 Review":
+  - paragraph: GitHub Issue 262 Review
+- button "Model Runtime Identification":
+  - paragraph: Model Runtime Identification
+- button "Casual Coding Session":
+  - paragraph: Casual Coding Session
+- button "Reykjavik":
+  - paragraph: Reykjavik
+- button "Getting Started":
+  - paragraph: Getting Started
+- button "dennisonbertram/partyline" [expanded]:
+  - generic: dennisonbertram/partyline
+- button "Agents":
+  - generic: Agents
+- link "Create agent for dennisonbertram/partyline":
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/partyline":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button "New Coding Session Started":
+  - paragraph: New Coding Session Started
+- button "Documentation Review Session":
+  - paragraph: Documentation Review Session
+- button "Architecture Overview Discussion":
+  - paragraph: Architecture Overview Discussion
+- button "Issue Status Overview Check +11 -3":
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- img "dennison-9116"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button "Open settings":
+- main:
+  - main:
+    - heading "Repo dashboard" [level=1]
+    - paragraph: dennisonbertram/synthetix
+    - link "Open dennisonbertram/synthetix on GitHub":
+      - /url: https://github.com/dennisonbertram/synthetix
+      - text: GitHub
+    - link "Agents settings":
+      - /url: /settings/background-agents
+      - text: Agents settings
+    - region "Repo dashboard":
+      - region "Overview window":
+        - heading "Overview" [level=2]
+        - paragraph: Project agents
+        - paragraph: "1"
+        - paragraph: Runs
+        - paragraph: "3"
+        - paragraph: Repository
+        - paragraph: dennisonbertram/synthetix
+      - region "Pull Requests window":
+        - button "Pull Requests" [expanded]:
+          - heading "Pull Requests" [level=2]
+        - link "Open pull requests on GitHub":
+          - /url: https://github.com/dennisonbertram/synthetix/pulls
+          - text: View on GitHub
+        - link "#1021 Improve live session theater viewing space dennisonbertram → dev Jun 21":
+          - /url: https://github.com/dennisonbertram/synthetix/pull/1021
+          - generic: "#1021"
+          - paragraph: Improve live session theater viewing space
+          - paragraph: dennisonbertram → dev
+          - generic: Jun 21
+        - 'link "#1020 fix: make marketing consent buttons dismiss banner dennisonbertram → dev Jun 21"':
+          - /url: https://github.com/dennisonbertram/synthetix/pull/1020
+          - generic: "#1020"
+          - paragraph: "fix: make marketing consent buttons dismiss banner"
+          - paragraph: dennisonbertram → dev
+          - generic: Jun 21
+      - region "Issues window":
+        - button "Issues" [expanded]:
+          - heading "Issues" [level=2]
+        - link "Open issues on GitHub":
+          - /url: https://github.com/dennisonbertram/synthetix/issues
+          - text: View on GitHub
+        - paragraph: 10 open
+        - 'link "#1019 bug: consent banner buttons remain visible after privacy choice Jun 21"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/1019
+          - generic: "#1019"
+          - paragraph: "bug: consent banner buttons remain visible after privacy choice"
+          - generic: Jun 21
+        - link "#1018 Improve live session theater space and screenshot context Jun 21":
+          - /url: https://github.com/dennisonbertram/synthetix/issues/1018
+          - generic: "#1018"
+          - paragraph: Improve live session theater space and screenshot context
+          - generic: Jun 21
+        - 'link "#927 epic: observability & runtime hardening (consolidated) type:feature Jun 19"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/927
+          - generic: "#927"
+          - paragraph: "epic: observability & runtime hardening (consolidated)"
+          - generic: type:feature
+          - generic: Jun 19
+        - 'link "#262 UX: Admin pages return a misleading 404 for non-admins instead of a clear access-denied status:ready type:ux Jun 18"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/262
+          - generic: "#262"
+          - paragraph: "UX: Admin pages return a misleading 404 for non-admins instead of a clear access-denied"
+          - generic: status:ready
+          - generic: type:ux
+          - generic: Jun 18
+        - 'link "#942 fix(observability): AlertAggregatorDO dedup race re-fires Slack alerts (last_alert written after await postSlackAlert) type:bug type:regression Jun 15"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/942
+          - generic: "#942"
+          - paragraph: "fix(observability): AlertAggregatorDO dedup race re-fires Slack alerts (last_alert written after await postSlackAlert)"
+          - generic: type:bug
+          - generic: type:regression
+          - generic: Jun 15
+        - 'link "#943 fix(observability): recurring unknown_failure alerts — classifier gap leaves real failures undiagnosed (sess_0mqbvuqug…, sess_0mqfmqp9…) type:bug type:regression Jun 15"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/943
+          - generic: "#943"
+          - paragraph: "fix(observability): recurring unknown_failure alerts — classifier gap leaves real failures undiagnosed (sess_0mqbvuqug…, sess_0mqfmqp9…)"
+          - generic: type:bug
+          - generic: type:regression
+          - generic: Jun 15
+        - 'link "#928 feat(observability): instrument agent layer into PostHog LLM Analytics — metadata-only first slice type:feature Jun 13"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/928
+          - generic: "#928"
+          - paragraph: "feat(observability): instrument agent layer into PostHog LLM Analytics — metadata-only first slice"
+          - generic: type:feature
+          - generic: Jun 13
+        - 'link "#807 fix: deploy-prod detect_services diffs only the current push — services from a failed deploy run are never redeployed (prod/main drift, D1 schema ahead of API code) type:bug type:regression Jun 11"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/807
+          - generic: "#807"
+          - paragraph: "fix: deploy-prod detect_services diffs only the current push — services from a failed deploy run are never redeployed (prod/main drift, D1 schema ahead of API code)"
+          - generic: type:bug
+          - generic: type:regression
+          - generic: Jun 11
+        - 'link "#561 fix: harden apps/api workers-pool container test isolation (orphan-alarm cross-file flake) type:bug type:regression status:ready Jun 4"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/561
+          - generic: "#561"
+          - paragraph: "fix: harden apps/api workers-pool container test isolation (orphan-alarm cross-file flake)"
+          - generic: type:bug
+          - generic: type:regression
+          - generic: status:ready
+          - generic: Jun 4
+        - 'link "#269 fix: test suites use source-string readFileSync().toContain() + process.cwd() paths and don''t reset shared KV — false-green mutations (#231) and a flaky cross-tenant test (#246) type:bug type:regression status:ready Jun 4"':
+          - /url: https://github.com/dennisonbertram/synthetix/issues/269
+          - generic: "#269"
+          - paragraph: "fix: test suites use source-string readFileSync().toContain() + process.cwd() paths and don't reset shared KV — false-green mutations (#231) and a flaky cross-tenant test (#246)"
+          - generic: type:bug
+          - generic: type:regression
+          - generic: status:ready
+          - generic: Jun 4
+      - region "Actions window":
+        - button "Actions" [expanded]:
+          - heading "Actions" [level=2]
+        - link "Open actions on GitHub":
+          - /url: https://github.com/dennisonbertram/synthetix/actions
+          - text: View on GitHub
+        - generic: Access denied to this repository.
+      - region "Project agents window":
+        - heading "Project agents" [level=2]
+        - paragraph: D Proof — synthetix execution test
+        - generic: disabled
+        - paragraph: This is an automated PROOF-OF-EXECUTION test run for the background-agents system. Create a single new file at the repository root named BAC…
+        - generic: schedule.cron
+      - region "Loops window":
+        - button "Loops" [expanded]:
+          - heading "Loops" [level=2]
+        - link "See all":
+          - /url: /repos/dennisonbertram/synthetix/loops
+        - link "New loop":
+          - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+        - link "Review to issues Review the repository, compile a list of problems, and file each one as a GitHub issue.":
+          - /url: /loops/U0ZKL86vhn6l9k-uUpzwC
+          - paragraph: Review to issues
+          - paragraph: Review the repository, compile a list of problems, and file each one as a GitHub issue.
+        - generic: active
+        - button "Show recent runs":
+          - generic: Runs
+        - link "Review to issues Review the repository, compile a list of problems, and file each one as a GitHub issue.":
+          - /url: /loops/msNElATYdYXbc2mlYSawL
+          - paragraph: Review to issues
+          - paragraph: Review the repository, compile a list of problems, and file each one as a GitHub issue.
+        - generic: draft
+        - button "Show recent runs":
+          - generic: Runs
+        - link "Review to issues Review the repository, compile a list of problems, and file each one as a GitHub issue.":
+          - /url: /loops/M0R-eL6UBkfKETXrPys55
+          - paragraph: Review to issues
+          - paragraph: Review the repository, compile a list of problems, and file each one as a GitHub issue.
+        - generic: draft
+        - button "Show recent runs":
+          - generic: Runs
+        - link "Untitled loop":
+          - /url: /loops/sjWh6lGDOkd87FAnT5DTR
+          - paragraph: Untitled loop
+        - generic: draft
+        - button "Show recent runs":
+          - generic: Runs
+      - region "Activity window":
+        - heading "Activity" [level=2]
+        - link "schedule.cron succeeded Manual test for D Proof — synthetix execution test no ref Jun 17, 8:57 PM":
+          - /url: /background-runs/VBbFB_81wtz-SLTTBcawB
+          - paragraph: schedule.cron
+          - generic: succeeded
+          - paragraph: Manual test for D Proof — synthetix execution test
+          - paragraph: no ref
+          - generic: Jun 17, 8:57 PM
+        - link "schedule.cron succeeded baas-dproof-trg-1781743759:2026-06-18T00:50 no ref Jun 17, 8:50 PM":
+          - /url: /background-runs/lkqYGge4uAbOBNw3n5Gdb
+          - paragraph: schedule.cron
+          - generic: succeeded
+          - paragraph: baas-dproof-trg-1781743759:2026-06-18T00:50
+          - paragraph: no ref
+          - generic: Jun 17, 8:50 PM
+        - link "schedule.cron succeeded baas-dproof-trg-1781743759:2026-06-18T00:49 no ref Jun 17, 8:49 PM":
+          - /url: /background-runs/FdzfIWEzNt1KhL0VSIeYq
+          - paragraph: schedule.cron
+          - generic: succeeded
+          - paragraph: baas-dproof-trg-1781743759:2026-06-18T00:49
+          - paragraph: no ref
+          - generic: Jun 17, 8:49 PM
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- button "Open issues overlay":
+  - generic: "0"
+  - generic: "1"
+  - generic: Issue
+- button "Collapse issues badge":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

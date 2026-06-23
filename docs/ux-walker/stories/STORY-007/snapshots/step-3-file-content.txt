@@ -1,0 +1,364 @@
+- button "Collapse panel":
+- button "New session":
+  - text: New session
+- button "Quick chat (no repo)":
+- button "Active14"
+- button "Archive 55":
+  - text: Archive
+  - generic: "55"
+- button "Chats" [expanded]:
+  - generic: Chats
+- button "Github Testing":
+  - paragraph: Github Testing
+- button "dennisonbertram/synthetix" [expanded]:
+  - generic: dennisonbertram/synthetix
+- button "Agents 1":
+  - generic: Agents
+  - generic: "1"
+- link "Create agent for dennisonbertram/synthetix":
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/synthetix":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button "Chicago":
+  - paragraph: Chicago
+- button "Repo and Branch Verification":
+  - paragraph: Repo and Branch Verification
+- button "Testing Provider Implementation":
+  - paragraph: Testing Provider Implementation
+- button "Backlog Issues Review":
+  - paragraph: Backlog Issues Review
+- button "GitHub Issue 262 Review":
+  - paragraph: GitHub Issue 262 Review
+- button "Model Runtime Identification":
+  - paragraph: Model Runtime Identification
+- button "Casual Coding Session":
+  - paragraph: Casual Coding Session
+- button "Reykjavik":
+  - paragraph: Reykjavik
+- button "Getting Started":
+  - paragraph: Getting Started
+- button "dennisonbertram/partyline" [expanded]:
+  - generic: dennisonbertram/partyline
+- button "Agents":
+  - generic: Agents
+- link "Create agent for dennisonbertram/partyline":
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/partyline":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button "New Coding Session Started":
+  - paragraph: New Coding Session Started
+- button "Documentation Review Session":
+  - paragraph: Documentation Review Session
+- button "Architecture Overview Discussion":
+  - paragraph: Architecture Overview Discussion
+- button "Issue Status Overview Check +11 -3":
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- img "dennison-9116"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button "Open settings":
+- main:
+  - button:
+  - link "synthetix":
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Repo and Branch Verification
+  - button:
+  - generic: Direct
+  - button "Runtime mode":
+  - button "Open Editor" [disabled]:
+  - button "Start dev server":
+  - button "Open latest preview deployment" [disabled]:
+  - button:
+  - button "Verified Build":
+  - button "Runtime inspector":
+  - button "Hello, please briefly confirm the repo name and current branch.":
+    - generic: Hello, please briefly confirm the repo name and current branch.
+  - button "Rename chat":
+  - button "package.json":
+    - generic: package.json
+  - button:
+  - button:
+  - generic: package.json
+  - generic: package.json
+  - button:
+  - code:
+    - generic: "1"
+    - generic: "2"
+    - generic: "3"
+    - generic: "4"
+    - generic: "5"
+    - generic: "6"
+    - generic: "7"
+    - generic: "8"
+    - generic: "9"
+    - generic: "10"
+    - generic: "11"
+    - generic: "12"
+    - generic: "13"
+    - generic: "14"
+    - generic: "15"
+    - generic: "16"
+    - generic: "17"
+    - generic: "18"
+    - generic: "19"
+    - generic: "20"
+    - generic: "21"
+    - generic: "22"
+    - generic: "23"
+    - generic: "24"
+    - generic: "25"
+    - generic: "26"
+    - generic: "27"
+    - generic: "28"
+    - generic: "29"
+    - generic: "30"
+    - generic: "31"
+    - generic: "32"
+    - generic: "33"
+    - generic: "34"
+    - generic: "35"
+    - generic: "36"
+    - generic: "37"
+    - generic: "38"
+    - generic: "39"
+    - generic: "40"
+    - generic: "41"
+    - generic: "42"
+    - generic: "43"
+    - generic: "{"
+    - generic: "\"name\": \"synthetic-users\","
+    - generic: "\"version\": \"0.0.0\","
+    - generic: "\"private\": true,"
+    - generic: "\"description\": \"Synthetic Users — SaaS platform for synthetic-user UX testing (V1)\","
+    - generic: "\"packageManager\": \"pnpm@9.15.0\","
+    - generic: "\"scripts\": {"
+    - generic: "\"dev\": \"pnpm -r --parallel --filter './apps/*' run dev\","
+    - generic: "\"build\": \"pnpm -r run build\","
+    - generic: "\"typecheck\": \"pnpm -r run typecheck\","
+    - generic: "\"lint\": \"pnpm -r run lint\","
+    - generic: "\"format\": \"prettier --write \\\"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\\\" --ignore-path .gitignore --ignore-path .prettierignore\","
+    - generic: "\"format:check\": \"prettier --check \\\"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\\\" --ignore-path .gitignore --ignore-path .prettierignore\","
+    - generic: "\"research:validate-ux-corpus\": \"node scripts/research/validate-ux-corpus.mjs\","
+    - generic: "\"smoke:dashboard\": \"node scripts/dashboard-smoke.mjs\","
+    - generic: "\"smoke:local\": \"node scripts/local-baseline-smoke.mjs\","
+    - generic: "\"smoke:production-guided\": \"node scripts/production-guided-smoke.mjs\","
+    - generic: "\"architecture:system-flow\": \"node scripts/architecture/system-flow.mjs\","
+    - generic: "\"dev:doctor\": \"node scripts/dev/agent-env.mjs doctor\","
+    - generic: "\"dev:up\": \"node scripts/dev/agent-env.mjs up\","
+    - generic: "\"dev:down\": \"node scripts/dev/agent-env.mjs down\","
+    - generic: "\"dev:status\": \"node scripts/dev/agent-env.mjs status\","
+    - generic: "\"smoke:claude-linear\": \"node scripts/dev/agent-env.mjs smoke-claude-linear\","
+    - generic: "\"seed:demo-session\": \"node scripts/seed-demo-session.mjs\","
+    - generic: "\"test:dev-env\": \"node --test \\\"scripts/**/*.test.mjs\\\"\","
+    - generic: "\"test\": \"pnpm run test:dev-env && pnpm -r --if-present run test\","
+    - generic: "\"test:coverage\": \"pnpm -r --if-present run test:coverage\","
+    - generic: "\"test:e2e\": \"pnpm -r --if-present run test:e2e\","
+    - generic: "\"test:watch\": \"vitest\","
+    - generic: "\"verify\": \"pnpm format:check && pnpm typecheck && pnpm lint && pnpm test\""
+    - generic: "},"
+    - generic: "\"devDependencies\": {"
+    - generic: "\"@types/node\": \"^22.10.5\","
+    - generic: "\"@vitest/coverage-v8\": \"4.1.6\","
+    - generic: "\"prettier\": \"^3.4.2\","
+    - generic: "\"typescript\": \"^5.7.3\","
+    - generic: "\"vitest\": \"^4.1.6\","
+    - generic: "\"wrangler\": \"^4.92.0\""
+    - generic: "},"
+    - generic: "\"engines\": {"
+    - generic: "\"node\": \">=22\""
+    - generic: "}"
+    - generic: "}"
+  - button "Create PR":
+    - text: Create PR
+  - button "Files"
+  - button "Changes"
+  - button "PR"
+  - tree:
+    - treeitem "synthetix" [expanded] [level=1]:
+      - generic: synth
+      - generic: synth
+      - generic: …
+      - generic: …
+      - generic: etix
+      - generic: etix
+    - treeitem ".claude" [level=2]:
+      - generic: .
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: claude
+      - generic: claude
+    - treeitem ".codex / environments" [level=2]:
+      - generic: .codex
+      - generic: .codex
+      - generic: …
+      - text: /
+      - generic: environments
+      - generic: environments
+      - generic: …
+    - treeitem ".github" [level=2]:
+      - generic: .
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: github
+      - generic: github
+    - treeitem ".hallmark" [level=2]:
+      - generic: .
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: hallmark
+      - generic: hallmark
+    - treeitem "apps" [level=2]:
+      - generic: …
+      - generic: apps
+      - generic: apps
+    - treeitem "docs" [level=2]:
+      - generic: …
+      - generic: docs
+      - generic: docs
+    - treeitem "packages" [level=2]:
+      - generic: pack
+      - generic: pack
+      - generic: …
+      - generic: …
+      - generic: ages
+      - generic: ages
+    - treeitem "pocs" [level=2]:
+      - generic: …
+      - generic: pocs
+      - generic: pocs
+    - treeitem ".env.example" [level=2]:
+      - generic: .env.
+      - generic: .env.
+      - generic: …
+      - generic: …
+      - generic: example
+      - generic: example
+    - treeitem ".gitignore" [level=2]:
+      - generic: .
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: gitignore
+      - generic: gitignore
+    - treeitem ".prettierignore" [level=2]:
+      - generic: .prettie
+      - generic: .prettie
+      - generic: …
+      - generic: …
+      - generic: rignore
+      - generic: rignore
+    - treeitem ".prettierrc" [level=2]:
+      - generic: .
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: prettierrc
+      - generic: prettierrc
+    - treeitem "AGENTS.md" [level=2]:
+      - generic: AGENTS.
+      - generic: AGENTS.
+      - generic: …
+      - generic: …
+      - generic: md
+      - generic: md
+    - treeitem "CLAUDE.md" [level=2]:
+      - generic: CLAUDE.
+      - generic: CLAUDE.
+      - generic: …
+      - generic: …
+      - generic: md
+      - generic: md
+    - treeitem "components.json" [level=2]:
+      - generic: components.
+      - generic: components.
+      - generic: …
+      - generic: …
+      - generic: json
+      - generic: json
+    - treeitem "package.json" [level=2] [selected]:
+      - generic: package.
+      - generic: package.
+      - generic: …
+      - generic: …
+      - generic: json
+      - generic: json
+    - treeitem "pnpm-lock.yaml" [level=2]:
+      - generic: pnpm-lock.
+      - generic: pnpm-lock.
+      - generic: …
+      - generic: …
+      - generic: yaml
+      - generic: yaml
+    - treeitem "pnpm-workspace.yaml" [level=2]:
+      - generic: pnpm-workspace.
+      - generic: pnpm-workspace.
+      - generic: …
+      - generic: …
+      - generic: yaml
+      - generic: yaml
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

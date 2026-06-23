@@ -1,0 +1,132 @@
+- complementary:
+  - link "Back":
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link "Profile":
+        - /url: /settings/profile
+        - text: Profile
+      - link "Preferences":
+        - /url: /settings/preferences
+        - text: Preferences
+      - link "Connections":
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link "Agents":
+        - /url: /settings/agents
+        - text: Agents
+      - link "Models":
+        - /url: /settings/models
+        - text: Models
+      - link "Composio":
+        - /url: /settings/composio
+        - text: Composio
+      - link "MCP servers":
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link "Skills":
+        - /url: /settings/skills
+        - text: Skills
+      - link "Background agents":
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link "Loops":
+        - /url: /loops
+        - text: Loops
+      - link "Runtime profiles":
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link "Usage":
+        - /url: /settings/usage
+        - text: Usage
+      - link "Leaderboard":
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button "Sign out":
+    - text: Sign out
+- main:
+  - heading "MCP servers" [level=1]
+  - paragraph: Connect Model Context Protocol servers so their tools can be used by your agents.
+  - heading "Registered servers" [level=2]
+  - paragraph: Each server can supply tools to your agents in chats.
+  - generic: UX Walker MCP
+  - generic: Name
+  - textbox "Server name":
+    - /placeholder: e.g. internal-tools
+    - text: UX Walker MCP
+  - generic: URL
+  - textbox "Server URL":
+    - /placeholder: https://mcp.example.com/mcp
+    - text: http://localhost:8765/mcp
+  - generic: Transport
+  - combobox "Transport":
+    - generic: HTTP (Streamable)
+  - generic: Auth headers
+  - button "Add header":
+    - text: Add header
+  - textbox "Header 1 name":
+    - /placeholder: Header name
+    - text: Authorization
+  - textbox "Header 1 value":
+    - /placeholder: Value
+  - button "Remove header 1":
+  - paragraph: Header values are write-only; re-enter to replace.
+  - button "Save"
+  - button "Cancel"
+  - button "Add server":
+    - text: Add server
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

@@ -566,6 +566,7 @@ export const TaskRenderer = memo(function TaskRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-task">) {
   const input = part.input;
   const desc = input?.task ?? "Spawning subagent";
@@ -701,6 +702,7 @@ export const TaskRenderer = memo(function TaskRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
       defaultExpanded={!isComplete}
     >
       {runtimeDetails}

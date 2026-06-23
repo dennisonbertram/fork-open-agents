@@ -8,7 +8,9 @@ export function normalizeAnthropicBaseUrl(value: string | null): string | null {
   }
 
   const url = new URL(value.trim());
-  const trimmedPath = url.pathname.replace(/\/+$/, "");
+  const trimmedPath = trimAnthropicEndpointPath(
+    url.pathname.replace(/\/+$/, ""),
+  );
   const segments = trimmedPath.split("/").filter(Boolean);
   const lastSegment = segments.at(-1);
 
@@ -30,7 +32,9 @@ export function normalizeOpenAICompatibleBaseUrl(value: string | null): string {
   }
 
   const url = new URL(value.trim());
-  const trimmedPath = url.pathname.replace(/\/+$/, "");
+  const trimmedPath = trimOpenAICompatibleEndpointPath(
+    url.pathname.replace(/\/+$/, ""),
+  );
   const segments = trimmedPath.split("/").filter(Boolean);
   const lastSegment = segments.at(-1);
 
@@ -40,6 +44,82 @@ export function normalizeOpenAICompatibleBaseUrl(value: string | null): string {
       : `${trimmedPath}/v1`;
 
   return url.toString().replace(/\/+$/, "");
+}
+
+function trimOpenAICompatibleEndpointPath(path: string): string {
+  return trimKnownEndpointPath(path, isKnownOpenAIEndpointSuffix);
+}
+
+function trimAnthropicEndpointPath(path: string): string {
+  return trimKnownEndpointPath(path, isKnownAnthropicEndpointSuffix);
+}
+
+function trimKnownEndpointPath(
+  path: string,
+  isKnownEndpointSuffix: (segments: string[]) => boolean,
+): string {
+  const segments = path.split("/").filter(Boolean);
+  const lowerSegments = segments.map((segment) => segment.toLowerCase());
+  const versionIndex = lowerSegments.findIndex((segment) =>
+    /^v\d+$/.test(segment),
+  );
+
+  if (versionIndex >= 0) {
+    const afterVersion = lowerSegments.slice(versionIndex + 1);
+    if (isKnownEndpointSuffix(afterVersion)) {
+      return toPathname(segments.slice(0, versionIndex + 1));
+    }
+  }
+
+  const endpointStartIndex = findKnownEndpointStart(
+    lowerSegments,
+    isKnownEndpointSuffix,
+  );
+  if (endpointStartIndex >= 0) {
+    return toPathname(segments.slice(0, endpointStartIndex));
+  }
+
+  return path;
+}
+
+function isKnownOpenAIEndpointSuffix(segments: string[]): boolean {
+  return (
+    startsWithSegments(segments, ["chat", "completions"]) ||
+    startsWithSegments(segments, ["completions"]) ||
+    startsWithSegments(segments, ["responses"]) ||
+    startsWithSegments(segments, ["models"])
+  );
+}
+
+function isKnownAnthropicEndpointSuffix(segments: string[]): boolean {
+  return (
+    startsWithSegments(segments, ["messages"]) ||
+    startsWithSegments(segments, ["models"]) ||
+    startsWithSegments(segments, ["complete"]) ||
+    startsWithSegments(segments, ["count_tokens"])
+  );
+}
+
+function findKnownEndpointStart(
+  segments: string[],
+  isKnownEndpointSuffix: (segments: string[]) => boolean,
+): number {
+  for (let index = 0; index < segments.length; index++) {
+    const rest = segments.slice(index);
+    if (isKnownEndpointSuffix(rest)) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function startsWithSegments(value: string[], prefix: string[]): boolean {
+  return prefix.every((segment, index) => value[index] === segment);
+}
+
+function toPathname(segments: string[]): string {
+  return segments.length > 0 ? `/${segments.join("/")}` : "";
 }
 
 export function normalizeInferenceProfileBaseUrl(
@@ -109,6 +189,15 @@ export function toInferenceProfileTestMessage(
     /renew(?:ing)? the subscription/i.test(haystack)
   ) {
     return "The provider account has no balance or an inactive plan. Add balance or renew the provider subscription, then try again.";
+  }
+
+  if (
+    /model not found/i.test(haystack) ||
+    /inaccessible/i.test(haystack) ||
+    /not deployed/i.test(haystack) ||
+    /"param"\s*:\s*"model"/i.test(haystack)
+  ) {
+    return "The selected model was not found or is not accessible from this provider account. Choose a model served by this profile, then try again.";
   }
 
   if (

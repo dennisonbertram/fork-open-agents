@@ -47,6 +47,7 @@ export const GrepRenderer = memo(function GrepRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-grep">) {
   const input = part.input;
   const pattern = input?.pattern ?? "...";
@@ -92,6 +93,7 @@ export const GrepRenderer = memo(function GrepRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

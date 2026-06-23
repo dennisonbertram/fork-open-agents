@@ -1,0 +1,37 @@
+URL: http://localhost:3002/loops/new
+
+<button node_id=1 aria-label="Collapse panel" type="button" />
+<button node_id=2 type="button">New session</button>
+<button node_id=3 aria-label="Quick chat (no repo)" type="button" />
+<button node_id=4 type="button">Active 14</button>
+<button node_id=5 type="button">Archive 55</button>
+<button node_id=6 type="button">Chats</button>
+<button node_id=7 type="button">Github Testing</button>
+<button node_id=8 type="button">dennisonbertram/synthetix</button>
+<button node_id=9 type="button">Agents 1</button>
+<button node_id=10 type="button">Loops</button>
+<button node_id=11 type="button">Chicago</button>
+<button node_id=12 type="button">Repo and Branch Verification</button>
+<button node_id=13 type="button">Testing Provider Implementation</button>
+<button node_id=14 type="button">Backlog Issues Review</button>
+<button node_id=15 type="button">GitHub Issue 262 Review</button>
+<button node_id=16 type="button">Model Runtime Identification</button>
+<button node_id=17 type="button">Casual Coding Session</button>
+<button node_id=18 type="button">Reykjavik</button>
+<button node_id=19 type="button">Getting Started</button>
+<button node_id=20 type="button">dennisonbertram/partyline</button>
+<button node_id=21 type="button">Agents</button>
+<button node_id=22 type="button">Loops</button>
+<button node_id=23 type="button">New Coding Session Started</button>
+<button node_id=24 aria-label="Open settings" type="button" />
+<button node_id=35 type="button">Choose a different starting point</button>
+<input node_id=36 placeholder="My loop" value="Review to issues" required="true" />
+<button node_id=37 type="button">dennisonbertram/synthetix</button>
+<input node_id=38 placeholder="Describe what this loop does" value="Review the repository, compile a list of problems, and file each one as a GitHub issue." />
+<details node_id=39>Advanced — edit the loop definition (JSON) { &quot;nodes&quot;: [ { &quot;id&quot;: &quot;start&quot;, &quot;kind&quot;: &quot;start&quot;, &quot;label&quot;: &quot;Start&quot;, &quot;position&quot;: { &quot;x&quot;: 0, &quot;y&quot;: 0 } }, { &quot;id&quot;: &quot;review&quot;, </details>
+<summary node_id=40>Advanced — edit the loop definition (JSON)</summary>
+<textarea node_id=41 aria-label="Loop definition JSON">{ &quot;nodes&quot;: [ { &quot;id&quot;: &quot;start&quot;, &quot;kind&quot;: &quot;start&quot;, &quot;label&quot;: &quot;Start&quot;, &quot;position&quot;: { &quot;x&quot;: 0, &quot;y&quot;: 0 } }, { &quot;id&quot;: &quot;review&quot;, &quot;kind&quot;: &quot;agent_step&quot;, &quot;label&quot;: &quot;Review code</textarea>
+<button node_id=44 type="button">Cancel</button>
+<button node_id=45 type="submit">Create loop</button>
+<button node_id=46 aria-label="Open Next.js Dev Tools">Compiling . . .</button>
+<div node_id=34 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>

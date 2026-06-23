@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-008-001",
+    "story_id": "STORY-008",
+    "severity": "medium",
+    "category": "high-impact-action",
+    "criterion": "External write actions explain consequences",
+    "score": "warn",
+    "description": "The PR panel exposed Create Pull Request and Create Draft PR while the compact form had no visible copy explaining that the action would generate PR details and create a real GitHub pull request from the current branch.",
+    "expected": "Before an external GitHub write, the panel should name the source branch, base branch, and whether details will be generated automatically.",
+    "actual": "The compact PR form only showed Create Pull Request, PR options, and Edit title & description. The action was available with blank title/body and no visible consequence copy.",
+    "screenshot": null,
+    "suggested_fix": "Add compact consequence copy to the PR form and explicit labels for the generate-message/details icon buttons.",
+    "files_likely_involved": [
+      "apps/web/app/sessions/[sessionId]/chats/[chatId]/git-panel.tsx"
+    ]
+  }
+]

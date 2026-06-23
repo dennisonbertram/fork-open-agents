@@ -1,0 +1,34 @@
+<button node_id=1 aria-label="Collapse panel" type="button" />
+<button node_id=2 type="button">New session</button>
+<button node_id=3 aria-label="Quick chat (no repo)" type="button" />
+<button node_id=4 type="button">Active 14</button>
+<button node_id=5 type="button">Archive 55</button>
+<button node_id=6 type="button">Chats</button>
+<button node_id=7 type="button">Github Testing</button>
+<button node_id=8 type="button">dennisonbertram/synthetix</button>
+<button node_id=9 type="button">Agents 1</button>
+<button node_id=10 type="button">Loops</button>
+<button node_id=11 type="button">Chicago</button>
+<button node_id=12 type="button">Repo and Branch Verification</button>
+<button node_id=13 type="button">Testing Provider Implementation</button>
+<button node_id=14 type="button">Backlog Issues Review</button>
+<button node_id=15 type="button">GitHub Issue 262 Review</button>
+<button node_id=16 type="button">Model Runtime Identification</button>
+<button node_id=17 type="button">Casual Coding Session</button>
+<button node_id=18 type="button">Reykjavik</button>
+<button node_id=19 type="button">Getting Started</button>
+<button node_id=20 type="button">dennisonbertram/partyline</button>
+<button node_id=21 type="button">Agents</button>
+<button node_id=22 type="button">Loops</button>
+<button node_id=23 type="button">New Coding Session Started</button>
+<button node_id=24 aria-label="Open settings" type="button" />
+<a node_id=25 href="/loops">Loops</a>
+<div node_id=26 role="tablist">Templates Describe with AI Blank</div>
+<button node_id=27 role="tab" type="button">Templates</button>
+<button node_id=28 role="tab" type="button">Describe with AI</button>
+<button node_id=29 role="tab" type="button">Blank</button>
+<div node_id=30 role="tabpanel">Start from a working loop and adjust the steps. Review to issues Review the repository, compile a list of problems, and file each one as a GitHub issue. Start R</div>
+<button node_id=31 aria-label="Use Review to issues template" type="button">Use this template</button>
+<button node_id=32 aria-label="Use Backlog → PR template" type="button">Use this template</button>
+<button node_id=33 aria-label="Open Next.js Dev Tools" />
+<div node_id=34 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>

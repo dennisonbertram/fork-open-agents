@@ -22,6 +22,7 @@ export type ToolLayoutProps = {
   expandedContent?: ReactNode;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
   defaultExpanded?: boolean;
   /** Tool-specific icon (Lucide element). */
   icon?: ReactNode;
@@ -77,6 +78,7 @@ export const ToolLayout = memo(function ToolLayout({
   expandedContent,
   onApprove,
   onDeny,
+  onApproveAllForSession,
   defaultExpanded = false,
   icon,
   indicator,
@@ -278,6 +280,7 @@ export const ToolLayout = memo(function ToolLayout({
             approvalId={state.approvalId!}
             onApprove={onApprove}
             onDeny={onDeny}
+            onApproveAllForSession={onApproveAllForSession}
           />
         </div>
       )}

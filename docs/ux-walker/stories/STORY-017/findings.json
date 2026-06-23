@@ -1,0 +1,16 @@
+[
+  {
+    "id": "F-STORY-017-001",
+    "story_id": "STORY-017",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Dense charts should not flood the tab order",
+    "score": "warn",
+    "description": "The usage page exposes hundreds of individual chart bars as focusable buttons before users reach the aggregate summaries and settings-adjacent controls.",
+    "expected": "The chart should provide an efficient keyboard pattern, such as a single focusable chart region with roving focus, grouped range controls, or a separate accessible data table.",
+    "actual": "The page exposed 289 buttons, most of them empty visible-text date-bar controls like `Usage for Mon, Jun 22, 2026`.",
+    "screenshot": null,
+    "suggested_fix": "Redesign the chart interaction so date bars do not all appear in the normal tab order while preserving pointer filtering and accessible date selection.",
+    "files_likely_involved": ["apps/web/app/settings/usage-section.tsx"]
+  }
+]
