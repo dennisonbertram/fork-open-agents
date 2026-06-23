@@ -51,6 +51,15 @@ const dotClassName: Record<SandboxActivityStatusTone, string> = {
   offline: "bg-muted-foreground/40",
 };
 
+export const SANDBOX_ACTIVITY_HEADER_CONTENT_CLASS_NAME =
+  "flex min-w-0 flex-col gap-1 pr-8";
+
+export const SANDBOX_ACTIVITY_TITLE_CLASS_NAME =
+  "flex min-w-0 flex-wrap items-center gap-2 text-base";
+
+export const SANDBOX_ACTIVITY_STATUS_BADGE_CLASS_NAME =
+  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium";
+
 function formatDateTime(value: number | null): string {
   if (!value) {
     return "Not recorded";
@@ -140,30 +149,30 @@ export function SandboxActivityDialog({
       </DialogTrigger>
       <DialogContent className="max-h-[min(720px,calc(100vh-2rem))] overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b border-border px-4 py-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <DialogTitle className="flex items-center gap-2 text-base">
-                <Server className="h-4 w-4 text-cyan-500" />
-                Sandbox activity
-              </DialogTitle>
-              <DialogDescription className="mt-1">
-                {summary.description}
-              </DialogDescription>
-            </div>
-            <span
-              className={cn(
-                "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-xs font-medium",
-                toneClassName[summary.tone],
-              )}
-            >
+          <div className={SANDBOX_ACTIVITY_HEADER_CONTENT_CLASS_NAME}>
+            <DialogTitle className={SANDBOX_ACTIVITY_TITLE_CLASS_NAME}>
+              <span className="inline-flex min-w-0 items-center gap-2">
+                <Server className="h-4 w-4 shrink-0 text-cyan-500" />
+                <span>Sandbox activity</span>
+              </span>
               <span
                 className={cn(
-                  "h-1.5 w-1.5 rounded-full",
-                  dotClassName[summary.tone],
+                  SANDBOX_ACTIVITY_STATUS_BADGE_CLASS_NAME,
+                  toneClassName[summary.tone],
                 )}
-              />
-              {summary.label}
-            </span>
+              >
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    dotClassName[summary.tone],
+                  )}
+                />
+                {summary.label}
+              </span>
+            </DialogTitle>
+            <DialogDescription className="mt-1 max-w-[44rem]">
+              {summary.description}
+            </DialogDescription>
           </div>
         </DialogHeader>
 
