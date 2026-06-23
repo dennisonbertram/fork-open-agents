@@ -11,6 +11,10 @@ const modelOptions = [
     shortLabel: "GLM 5.2",
     isVariant: false,
     provider: "fireworks",
+    cost: {
+      input: 1,
+      output: 5,
+    },
   },
 ] satisfies ModelOption[];
 
@@ -105,5 +109,36 @@ describe("MessageModelPill", () => {
     expect(html).toContain("Response timeline");
     expect(html).toContain("h-5 w-28");
     expect(html).toContain("bg-emerald-400/80");
+  });
+
+  test("estimates response cost from usage metadata when gateway cost is missing", () => {
+    const html = renderToStaticMarkup(
+      <MessageModelPill
+        metadata={
+          {
+            selectedModelId: "fireworks/zai/glm-5.2",
+            modelId: "fireworks/zai/glm-5.2",
+            totalMessageUsage: {
+              inputTokens: 1000,
+              inputTokenDetails: {
+                cacheReadTokens: undefined,
+                cacheWriteTokens: undefined,
+                noCacheTokens: undefined,
+              },
+              outputTokens: 500,
+              outputTokenDetails: {
+                reasoningTokens: undefined,
+                textTokens: undefined,
+              },
+              totalTokens: 1500,
+            },
+          } satisfies WebAgentMessageMetadata
+        }
+        modelOptions={modelOptions}
+      />,
+    );
+
+    expect(html).toContain("GLM 5.2");
+    expect(html).toContain("est. cost $0.0035");
   });
 });
