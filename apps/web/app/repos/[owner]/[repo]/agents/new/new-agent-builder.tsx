@@ -1,13 +1,22 @@
 "use client";
 
+import { PlugZap, Settings2 } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 import useSWR from "swr";
+import { Button } from "@/components/ui/button";
+import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   buildAgentPayload,
   type GitHubAccessLevel,
   type OutputMode,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
+import {
+  mapReadinessToVerdict,
+  type BackgroundReadinessCheck,
+  type BackgroundReadinessResponse,
+} from "@/app/settings/background-readiness-verdict";
 import { AgentSpecEditor } from "../agent-spec-editor";
 import {
   getBlankTemplate,
@@ -26,10 +35,20 @@ type ManualTestResponse = {
   error?: string;
 };
 
-type BackgroundReadinessResponse = {
-  enabled: boolean;
+type BackgroundAgentRepoReadiness = {
   ready: boolean;
-  missing: string[];
+  repoOwner: string;
+  repoName: string;
+  requiredUserPermission: "read" | "write";
+  reason: string | null;
+  message: string;
+  installationId: number | null;
+  repositoryId: number | null;
+  defaultBranch: string | null;
+};
+
+type NewAgentReadinessResponse = BackgroundReadinessResponse & {
+  repoAccess?: BackgroundAgentRepoReadiness;
 };
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -38,6 +57,57 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error("Failed to load");
   }
   return (await response.json()) as T;
+}
+
+function buildReadinessUrl(owner: string, repo: string): string {
+  const params = new URLSearchParams({
+    repoOwner: owner,
+    repoName: repo,
+    permission: "write",
+  });
+  return `/api/background-agents/readiness?${params.toString()}`;
+}
+
+function buildRepoAccessCheck(
+  repoAccess: BackgroundAgentRepoReadiness | undefined,
+): BackgroundReadinessCheck | null {
+  if (!repoAccess) {
+    return null;
+  }
+
+  return {
+    id: "repo_access",
+    label: "Repository access",
+    status: repoAccess.ready ? "ready" : "missing",
+    detail: repoAccess.message,
+    missing: repoAccess.ready
+      ? []
+      : [
+          `${repoAccess.repoOwner}/${repoAccess.repoName} ${repoAccess.requiredUserPermission} access`,
+        ],
+  };
+}
+
+function buildCombinedReadiness(
+  readinessData: NewAgentReadinessResponse,
+): BackgroundReadinessResponse {
+  const repoAccessCheck = buildRepoAccessCheck(readinessData.repoAccess);
+  const repoAccessReady = readinessData.repoAccess?.ready ?? true;
+  const repoAccessMissing =
+    repoAccessCheck && repoAccessCheck.missing.length > 0
+      ? repoAccessCheck.missing
+      : [];
+
+  return {
+    enabled: readinessData.enabled,
+    ready: readinessData.ready && repoAccessReady,
+    missing: Array.from(
+      new Set([...readinessData.missing, ...repoAccessMissing]),
+    ),
+    checks: repoAccessCheck
+      ? [...readinessData.checks, repoAccessCheck]
+      : readinessData.checks,
+  };
 }
 
 type Step = "pick-template" | "edit-spec";
@@ -61,8 +131,12 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
 
-  const { data: readinessData } = useSWR<BackgroundReadinessResponse>(
-    "/api/background-agents/readiness",
+  const {
+    data: readinessData,
+    isLoading: readinessLoading,
+    mutate: mutateReadiness,
+  } = useSWR<NewAgentReadinessResponse>(
+    buildReadinessUrl(owner, repo),
     fetchJson,
   );
 
@@ -112,10 +186,40 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   }
 
   const template = selectedTemplate ?? getBlankTemplate();
+  const readinessPanel = readinessData ? (
+    <ReadinessVerdict
+      {...mapReadinessToVerdict(buildCombinedReadiness(readinessData))}
+      action={
+        <div className="flex flex-wrap gap-2">
+          <Button asChild size="sm" variant="outline">
+            <Link href="/settings/background-agents">
+              <Settings2 className="h-3.5 w-3.5" />
+              Open background agent settings
+            </Link>
+          </Button>
+          {readinessData.repoAccess?.ready === false ? (
+            <Button asChild size="sm" variant="ghost">
+              <Link href="/settings/connections">
+                <PlugZap className="h-3.5 w-3.5" />
+                Manage GitHub connection
+              </Link>
+            </Button>
+          ) : null}
+        </div>
+      }
+      onRefresh={() => void mutateReadiness()}
+      refreshing={readinessLoading}
+    />
+  ) : (
+    <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
+      Checking background agent prerequisites.
+    </div>
+  );
 
   if (step === "pick-template") {
     return (
-      <div>
+      <div className="space-y-4">
+        {readinessPanel}
         <TemplatePicker onSelect={handleSelectTemplate} />
       </div>
     );
@@ -126,14 +230,8 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
     template.outputMode === "ready_pr" ? "write" : "read";
 
   return (
-    <div>
-      {readinessData && !readinessData.ready && (
-        <div className="mb-4 rounded-md border border-amber-500/25 bg-amber-50/30 px-3 py-2 text-xs text-amber-700 dark:bg-amber-950/20 dark:text-amber-400">
-          {readinessData.missing.length} background agent prerequisite
-          {readinessData.missing.length === 1 ? "" : "s"} not yet configured.
-          The agent can be created but may not run until setup is complete.
-        </div>
-      )}
+    <div className="space-y-4">
+      {readinessPanel}
       <AgentSpecEditor
         repoOwner={owner}
         repoName={repo}
@@ -155,9 +253,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
-      {message && (
-        <p className="mt-4 text-xs text-muted-foreground">{message}</p>
-      )}
+      {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
   );
 }
