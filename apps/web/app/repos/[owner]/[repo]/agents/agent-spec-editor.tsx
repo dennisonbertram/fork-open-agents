@@ -61,6 +61,8 @@ type AgentSpecEditorProps = {
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
   testRunId?: string | null;
+  /** Action feedback shown next to Save/Run controls. */
+  statusMessage?: { kind: "success" | "error"; text: string } | null;
   onSave: (
     payload: ReturnType<typeof buildAgentPayload>,
   ) => void | Promise<void>;
@@ -100,6 +102,7 @@ export function AgentSpecEditor({
   initialComposioToolkitSlugs = [],
   createdAgentId = null,
   testRunId = null,
+  statusMessage = null,
   onSave,
   onRunTest,
 }: AgentSpecEditorProps) {
@@ -302,6 +305,20 @@ export function AgentSpecEditor({
                 ? "This agent will be created on."
                 : "New agents start off — test it, then turn it on here."}
         </p>
+        {statusMessage ? (
+          <p
+            aria-live="polite"
+            className={cn(
+              "rounded-md border px-3 py-2 text-xs",
+              statusMessage.kind === "error"
+                ? "border-destructive/30 bg-destructive/10 text-destructive"
+                : "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+            )}
+            role="status"
+          >
+            {statusMessage.text}
+          </p>
+        ) : null}
       </div>
 
       {/* Inline run test console — mounts below action bar when a test run is active */}

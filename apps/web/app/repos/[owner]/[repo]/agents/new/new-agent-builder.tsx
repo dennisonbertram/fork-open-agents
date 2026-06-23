@@ -51,6 +51,11 @@ type NewAgentReadinessResponse = BackgroundReadinessResponse & {
   repoAccess?: BackgroundAgentRepoReadiness;
 };
 
+type FeedbackMessage = {
+  kind: "success" | "error";
+  text: string;
+};
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -127,7 +132,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<
     AgentTemplate | BlankTemplate | null
   >(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<FeedbackMessage | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
 
@@ -153,15 +158,18 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage("Agent created successfully.");
+      setMessage({ kind: "success", text: "Agent created successfully." });
     } else {
-      setMessage(result.error);
+      setMessage({ kind: "error", text: result.error });
     }
   }
 
   async function handleRunTest() {
     if (!createdAgentId) {
-      setMessage("Save the agent first before running a test.");
+      setMessage({
+        kind: "error",
+        text: "Save the agent first before running a test.",
+      });
       return;
     }
     setMessage(null);
@@ -181,7 +189,10 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       // Stay on page — show inline console
       setTestRunId(runId);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to run test");
+      setMessage({
+        kind: "error",
+        text: err instanceof Error ? err.message : "Failed to run test",
+      });
     }
   }
 
@@ -250,10 +261,10 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialComposioToolkitSlugs={[]}
         createdAgentId={createdAgentId}
         testRunId={testRunId}
+        statusMessage={message}
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
-      {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
   );
 }

@@ -99,6 +99,27 @@ describe("AgentSpecEditor", () => {
     expect(runTestButtonTag(html)).not.toContain('disabled=""');
   });
 
+  test("(C1) action feedback appears near Save and Run a test", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        statusMessage={{
+          kind: "error",
+          text: "Background agents are disabled",
+        }}
+      />,
+    );
+
+    const messageIdx = html.indexOf("Background agents are disabled");
+    const nameIdx = html.indexOf("Name");
+    expect(messageIdx).toBeGreaterThanOrEqual(0);
+    expect(messageIdx).toBeLessThan(nameIdx);
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-live="polite"');
+  });
+
   test("(C5) with testRunId set the RunTestConsole mounts (renders console marker)", async () => {
     const { AgentSpecEditor } = await modulePromise;
 

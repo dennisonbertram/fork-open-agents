@@ -848,13 +848,13 @@ export function BackgroundAgentsSection() {
                           readOnly
                           value={`/api/background-agents/webhook/${trigger.webhookPublicId}`}
                           className="h-6 font-mono text-[10px]"
-                          aria-label="Webhook URL"
+                          aria-label={`Webhook URL for ${agent.name}`}
                         />
                         <Button
                           variant="ghost"
                           size="icon"
                           className="h-6 w-6 shrink-0"
-                          aria-label="Copy webhook URL"
+                          aria-label={`Copy webhook URL for ${agent.name}`}
                           onClick={() =>
                             void copyWebhookUrl(trigger.webhookPublicId ?? "")
                           }
@@ -873,6 +873,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label={`Edit background agent ${agent.name}`}
                     onClick={() => startEditing(agent)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -881,6 +882,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    aria-label={`Test background agent ${agent.name}`}
                     disabled={
                       testingAgentId === agent.id || Boolean(readinessReason)
                     }
@@ -893,6 +895,7 @@ export function BackgroundAgentsSection() {
                   <Button asChild variant="outline" size="sm">
                     <Link
                       href={`/repos/${agent.repoOwner}/${agent.repoName}/agents`}
+                      aria-label={`Open repository agents for ${agent.repoOwner}/${agent.repoName}`}
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Repo
@@ -901,7 +904,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="destructive"
                     size="sm"
-                    aria-label="Delete agent"
+                    aria-label={`Delete background agent ${agent.name}`}
                     disabled={deletingAgentId === agent.id}
                     onClick={() => setDeleteConfirmAgentId(agent.id)}
                   >
@@ -1002,14 +1005,20 @@ export function BackgroundAgentsSection() {
                 <div className="flex items-center gap-2">
                   {run.outputUrl && (
                     <Button asChild variant="outline" size="sm">
-                      <Link href={run.outputUrl}>
+                      <Link
+                        href={run.outputUrl}
+                        aria-label={`Open output for background run ${run.repoOwner}/${run.repoName} ${formatRunTarget(run)}`}
+                      >
                         <ExternalLink className="h-3.5 w-3.5" />
                         Output
                       </Link>
                     </Button>
                   )}
                   <Button asChild variant="outline" size="sm">
-                    <Link href={`/background-runs/${run.id}`}>
+                    <Link
+                      href={`/background-runs/${run.id}`}
+                      aria-label={`Open details for background run ${run.repoOwner}/${run.repoName} ${formatRunTarget(run)}`}
+                    >
                       <ExternalLink className="h-3.5 w-3.5" />
                       Details
                     </Link>
