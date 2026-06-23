@@ -1,0 +1,6 @@
+<a node_id=1 href="https://github.com/dennisonbertram/synthetix">dennisonbertram / synthetix</a>
+<a node_id=2 href="/sessions/mF8hLjVC-wpSKuRtjRnho/chats/TXPxfLToApEx1IH7Jrbng">Open session</a>
+<button node_id=3 aria-label="Philosophised · 12s" title="Philosophised · 12s" type="button">Philosophised · 12s · 12s</button>
+<button node_id=4 aria-label="Philosophised · 9s" title="Philosophised · 9s" type="button">Philosophised · 9s · 9s</button>
+<button node_id=5 aria-label="Open Next.js Dev Tools" />
+<div node_id=6 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>

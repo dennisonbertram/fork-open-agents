@@ -1,0 +1,175 @@
+- button:
+- button:
+  - text: New session
+- button:
+- button: Active13
+- button:
+  - text: Archive
+  - generic: "55"
+- button [expanded]:
+  - generic: Chats
+- button:
+  - paragraph: Github Testing
+- button [expanded]:
+  - generic: dennisonbertram/synthetix
+- button:
+  - generic: Agents
+  - generic: "1"
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button:
+  - paragraph: Austin
+- button:
+  - paragraph: Testing Provider Implementation
+- button:
+  - paragraph: Backlog Issues Review
+- button:
+  - paragraph: GitHub Issue 262 Review
+- button:
+  - paragraph: Model Runtime Identification
+- button:
+  - paragraph: Casual Coding Session
+- button:
+  - paragraph: Reykjavik
+- button:
+  - paragraph: Getting Started
+- button [expanded]:
+  - generic: dennisonbertram/partyline
+- button:
+  - generic: Agents
+- link:
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button:
+  - paragraph: New Coding Session Started
+- button:
+  - paragraph: Documentation Review Session
+- button:
+  - paragraph: Architecture Overview Discussion
+- button:
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button:
+- main:
+  - button:
+  - link:
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Austin
+  - button:
+  - generic: Direct
+  - button:
+  - button [disabled]:
+  - button:
+  - button [disabled]:
+  - button:
+  - button:
+  - button:
+  - button:
+    - generic: New chat
+  - button:
+  - button:
+  - paragraph: Send a message to get started
+  - textbox:
+    - /placeholder: Request changes or ask a question...
+  - button:
+  - button:
+    - generic: GPT 5.5
+  - button:
+  - button:
+    - generic: Direct
+  - button [expanded]:
+    - generic: Workflow
+  - button:
+  - button [disabled]:
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Austin | Open Agents
+- button:
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button:
+  - text: Output Detail
+  - button:
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - checkbox [checked]
+  - generic: Clear on copy/send
+  - checkbox [checked]
+  - generic: Block page interactions
+  - button:
+    - generic: Manage MCP & Webhooks
+  - button:
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link:
+      - /url: https://agentation.dev/mcp
+      - text: Learn more
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox:
+    - /placeholder: Webhook URL
+- text: "Direct: the agent edits your repo itself in the sandbox. Fastest — best for quick changes and exploration. Switch to Coordinated when you want a coordinator, managed workers, and a verifiable proof bundle."
+- tooltip: "Direct: the agent edits your repo itself in the sandbox. Fastest — best for quick changes and exploration. Switch to Coordinated when you want a coordinator, managed workers, and a verifiable proof bundle."
+- text: Select workflow
+- tooltip: Select workflow
+- menu "Select workflow" [active]:
+  - generic: Workflow
+  - group "Workflow options":
+    - menuitemradio "Verified Build level-3 Workflow is currently disabled" [disabled]:
+      - generic: Verified Build
+      - generic: level-3
+      - generic: Workflow is currently disabled
+    - menuitemradio "Deep Research level-1 Workflow is currently disabled" [disabled]:
+      - generic: Deep Research
+      - generic: level-1
+      - generic: Workflow is currently disabled
+    - menuitemradio "Runtime Profile Validation level-2 Workflow is currently disabled" [disabled]:
+      - generic: Runtime Profile Validation
+      - generic: level-2
+      - generic: Workflow is currently disabled
+    - menuitemradio "Release Smoke level-3 Workflow is currently disabled" [disabled]:
+      - generic: Release Smoke
+      - generic: level-3
+      - generic: Workflow is currently disabled

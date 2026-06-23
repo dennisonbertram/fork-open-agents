@@ -1,20 +1,34 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, RotateCcw, Save, Search, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, RotateCcw, Save, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ModelCombobox } from "@/components/model-combobox";
+import {
+  ProviderIcon,
+  getProviderDisplayName,
+} from "@/components/provider-icons";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useModelOptions } from "@/hooks/use-model-options";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import {
   type ModelOption,
+  type ModelSortKey,
+  filterAndSortModelOptions,
   getDefaultModelOptionId,
   withMissingModelOption,
 } from "@/lib/model-options";
+import { cn } from "@/lib/utils";
 import { MODEL_SYSTEM_PROMPT_MAX_LENGTH } from "@/lib/model-system-prompts";
 import { SettingsSectionHeader } from "../_components/section-header";
 
@@ -129,39 +143,6 @@ function useModelPreferencesSectionState() {
     }
   };
 
-  const handleAddModel = useCallback(
-    async (modelId: string) => {
-      const currentIds = preferences?.enabledModelIds ?? [];
-      if (currentIds.includes(modelId)) return;
-      setIsSaving(true);
-      try {
-        await updatePreferences({ enabledModelIds: [...currentIds, modelId] });
-      } catch (error) {
-        console.error("Failed to update enabled models:", error);
-      } finally {
-        setIsSaving(false);
-      }
-    },
-    [preferences?.enabledModelIds, updatePreferences],
-  );
-
-  const handleRemoveModel = useCallback(
-    async (modelId: string) => {
-      const currentIds = preferences?.enabledModelIds ?? [];
-      setIsSaving(true);
-      try {
-        await updatePreferences({
-          enabledModelIds: currentIds.filter((id) => id !== modelId),
-        });
-      } catch (error) {
-        console.error("Failed to update enabled models:", error);
-      } finally {
-        setIsSaving(false);
-      }
-    },
-    [preferences?.enabledModelIds, updatePreferences],
-  );
-
   const handleSetEnabledModels = useCallback(
     async (nextIds: string[]) => {
       setIsSaving(true);
@@ -213,8 +194,6 @@ function useModelPreferencesSectionState() {
     enabledModelIds,
     handleModelChange,
     handleSubagentModelChange,
-    handleAddModel,
-    handleRemoveModel,
     handleSetEnabledModels,
     handleSaveModelSystemPrompt,
   };
@@ -387,188 +366,584 @@ function ModelSystemPromptSection({
   );
 }
 
+export function getEffectiveEnabledModelIdSet({
+  enabledModelIds,
+  modelOptions,
+}: {
+  enabledModelIds: ReadonlySet<string>;
+  modelOptions: ModelOption[];
+}): Set<string> {
+  if (enabledModelIds.size === 0) {
+    return new Set(modelOptions.map((option) => option.id));
+  }
+
+  const availableModelIds = new Set(modelOptions.map((option) => option.id));
+  return new Set(
+    Array.from(enabledModelIds).filter((modelId) =>
+      availableModelIds.has(modelId),
+    ),
+  );
+}
+
+export function toEnabledModelPreferenceIds({
+  modelOptions,
+  selectedModelIds,
+}: {
+  modelOptions: ModelOption[];
+  selectedModelIds: Iterable<string>;
+}): string[] {
+  const selectedModelIdSet = new Set(selectedModelIds);
+  const selectedKnownIds = modelOptions
+    .map((option) => option.id)
+    .filter((modelId) => selectedModelIdSet.has(modelId));
+
+  if (selectedKnownIds.length === modelOptions.length) {
+    return [];
+  }
+
+  return selectedKnownIds;
+}
+
+const ALL_INFERENCE_SOURCE_ID = "all";
+const GATEWAY_INFERENCE_SOURCE_ID = "gateway";
+const USER_PROFILE_INFERENCE_SOURCE_PREFIX = "profile:";
+
+type InferenceSourceFilter = string;
+
+type InferenceSourceOption = {
+  id: InferenceSourceFilter;
+  label: string;
+  modelCount: number;
+};
+
+function toProfileInferenceSourceId(profileId: string): string {
+  return `${USER_PROFILE_INFERENCE_SOURCE_PREFIX}${profileId}`;
+}
+
+function fromProfileInferenceSourceId(sourceId: string): string | null {
+  return sourceId.startsWith(USER_PROFILE_INFERENCE_SOURCE_PREFIX)
+    ? sourceId.slice(USER_PROFILE_INFERENCE_SOURCE_PREFIX.length)
+    : null;
+}
+
+export function buildInferenceSourceOptions(
+  options: ModelOption[],
+): InferenceSourceOption[] {
+  const profileSources = new Map<
+    string,
+    { id: string; label: string; modelCount: number }
+  >();
+  let gatewayModelCount = 0;
+
+  for (const option of options) {
+    if (option.source === "user" && option.inferenceProfileId) {
+      const sourceId = toProfileInferenceSourceId(option.inferenceProfileId);
+      const existing = profileSources.get(sourceId);
+      profileSources.set(sourceId, {
+        id: sourceId,
+        label:
+          existing?.label ?? option.secondaryLabel ?? option.inferenceProfileId,
+        modelCount: (existing?.modelCount ?? 0) + 1,
+      });
+      continue;
+    }
+
+    gatewayModelCount += 1;
+  }
+
+  return [
+    {
+      id: ALL_INFERENCE_SOURCE_ID,
+      label: "All inference sources",
+      modelCount: options.length,
+    },
+    ...(gatewayModelCount > 0
+      ? [
+          {
+            id: GATEWAY_INFERENCE_SOURCE_ID,
+            label: "Vercel AI Gateway",
+            modelCount: gatewayModelCount,
+          },
+        ]
+      : []),
+    ...Array.from(profileSources.values()).sort((a, b) =>
+      a.label.localeCompare(b.label),
+    ),
+  ];
+}
+
+export function filterModelOptionsByInferenceSource(
+  options: ModelOption[],
+  sourceId: InferenceSourceFilter,
+): ModelOption[] {
+  if (sourceId === ALL_INFERENCE_SOURCE_ID) {
+    return options;
+  }
+
+  if (sourceId === GATEWAY_INFERENCE_SOURCE_ID) {
+    return options.filter((option) => option.source !== "user");
+  }
+
+  const profileId = fromProfileInferenceSourceId(sourceId);
+  if (profileId) {
+    return options.filter(
+      (option) =>
+        option.source === "user" && option.inferenceProfileId === profileId,
+    );
+  }
+
+  return options;
+}
+
+export function deriveModelProvidersForInferenceSource(
+  options: ModelOption[],
+  sourceId: InferenceSourceFilter,
+): string[] {
+  return deriveModelProviders(
+    filterModelOptionsByInferenceSource(options, sourceId),
+  );
+}
+
+function deriveModelProviders(options: ModelOption[]): string[] {
+  return Array.from(new Set(options.map((option) => option.provider))).sort(
+    (a, b) =>
+      getProviderDisplayName(a).localeCompare(getProviderDisplayName(b)),
+  );
+}
+
+export const ENABLED_MODELS_LIST_CLASS_NAME =
+  "max-h-[10.5rem] overflow-y-auto overflow-x-hidden";
+
+export const ENABLED_MODELS_ROW_CLASS_NAME =
+  "grid w-full max-w-full grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-60";
+
+export const ENABLED_MODELS_BULK_ACTION_LABELS = [
+  "Select all",
+  "Clear all",
+] as const;
+
+export function clearVisibleModelSelection({
+  allModelIds,
+  currentSelectedIds,
+  visibleModelIds,
+}: {
+  allModelIds: string[];
+  currentSelectedIds: Iterable<string>;
+  visibleModelIds: Iterable<string>;
+}): string[] {
+  const selected = new Set(currentSelectedIds);
+  const visible = new Set(visibleModelIds);
+  const next = allModelIds.filter((modelId) => {
+    return selected.has(modelId) && !visible.has(modelId);
+  });
+
+  if (next.length > 0 || allModelIds.length === 0) {
+    return next;
+  }
+
+  return [allModelIds[0]];
+}
+
 function EnabledModelsSection({
   modelOptions,
   modelOptionsLoading,
   enabledModelIds,
-  onAddModel,
-  onRemoveModel,
   onSetEnabledModels,
   disabled,
 }: {
   modelOptions: ModelOption[];
   modelOptionsLoading: boolean;
   enabledModelIds: Set<string>;
-  onAddModel: (modelId: string) => void;
-  onRemoveModel: (modelId: string) => void;
   onSetEnabledModels: (ids: string[]) => void;
   disabled: boolean;
 }) {
   const [search, setSearch] = useState("");
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [providerFilter, setProviderFilter] = useState("all");
+  const [inferenceSourceFilter, setInferenceSourceFilter] =
+    useState<InferenceSourceFilter>(ALL_INFERENCE_SOURCE_ID);
+  const [sort, setSort] = useState<ModelSortKey>("provider");
+  const [selectedOnly, setSelectedOnly] = useState(false);
 
-  const enabledCount = enabledModelIds.size;
-
-  const enabledOptions = useMemo(
-    () => modelOptions.filter((option) => enabledModelIds.has(option.id)),
-    [modelOptions, enabledModelIds],
+  const isShowingAllModels = enabledModelIds.size === 0;
+  const effectiveEnabledModelIds = useMemo(
+    () =>
+      getEffectiveEnabledModelIdSet({
+        enabledModelIds,
+        modelOptions,
+      }),
+    [enabledModelIds, modelOptions],
+  );
+  const inferenceSources = useMemo(
+    () => buildInferenceSourceOptions(modelOptions),
+    [modelOptions],
+  );
+  const effectiveInferenceSourceFilter = inferenceSources.some(
+    (source) => source.id === inferenceSourceFilter,
+  )
+    ? inferenceSourceFilter
+    : ALL_INFERENCE_SOURCE_ID;
+  const sourceFilteredOptions = useMemo(
+    () =>
+      filterModelOptionsByInferenceSource(
+        modelOptions,
+        effectiveInferenceSourceFilter,
+      ),
+    [effectiveInferenceSourceFilter, modelOptions],
+  );
+  const providers = useMemo(
+    () =>
+      deriveModelProvidersForInferenceSource(
+        modelOptions,
+        effectiveInferenceSourceFilter,
+      ),
+    [effectiveInferenceSourceFilter, modelOptions],
+  );
+  const effectiveProviderFilter =
+    providerFilter === "all" || providers.includes(providerFilter)
+      ? providerFilter
+      : "all";
+  const visibleOptions = useMemo(
+    () =>
+      filterAndSortModelOptions(sourceFilteredOptions, {
+        providerFilter: effectiveProviderFilter,
+        search,
+        selectedIds: effectiveEnabledModelIds,
+        selectedOnly,
+        sort,
+      }),
+    [
+      effectiveProviderFilter,
+      effectiveEnabledModelIds,
+      search,
+      selectedOnly,
+      sourceFilteredOptions,
+      sort,
+    ],
   );
 
-  const availableOptions = useMemo(() => {
-    const opts = modelOptions.filter(
-      (option) => !enabledModelIds.has(option.id),
-    );
-    if (!search.trim()) return opts;
-    const lower = search.toLowerCase();
-    return opts.filter(
-      (option) =>
-        option.label.toLowerCase().includes(lower) ||
-        option.id.toLowerCase().includes(lower) ||
-        (option.description?.toLowerCase().includes(lower) ?? false),
-    );
-  }, [modelOptions, enabledModelIds, search]);
+  const handleInferenceSourceChange = useCallback((sourceId: string) => {
+    setInferenceSourceFilter(sourceId);
+    setProviderFilter("all");
+  }, []);
 
-  const handleDeselectAll = () => {
-    onSetEnabledModels([]);
-  };
+  const commitSelectedIds = useCallback(
+    (nextSelectedIds: Iterable<string>) => {
+      const nextPreferenceIds = toEnabledModelPreferenceIds({
+        modelOptions,
+        selectedModelIds: nextSelectedIds,
+      });
 
-  const handleAdd = (modelId: string) => {
-    onAddModel(modelId);
-    setSearch("");
-    inputRef.current?.focus();
-  };
+      if (nextPreferenceIds.length === 0 && modelOptions.length > 0) {
+        onSetEnabledModels([]);
+        return;
+      }
+
+      onSetEnabledModels(nextPreferenceIds);
+    },
+    [modelOptions, onSetEnabledModels],
+  );
+
+  const handleToggleModel = useCallback(
+    (modelId: string) => {
+      const nextSelectedIds = new Set(effectiveEnabledModelIds);
+      if (nextSelectedIds.has(modelId)) {
+        if (nextSelectedIds.size <= 1) {
+          return;
+        }
+        nextSelectedIds.delete(modelId);
+      } else {
+        nextSelectedIds.add(modelId);
+      }
+
+      commitSelectedIds(nextSelectedIds);
+    },
+    [commitSelectedIds, effectiveEnabledModelIds],
+  );
+
+  const handleSelectAll = useCallback(() => {
+    const nextSelectedIds = new Set(effectiveEnabledModelIds);
+    for (const option of visibleOptions) {
+      nextSelectedIds.add(option.id);
+    }
+    commitSelectedIds(nextSelectedIds);
+  }, [commitSelectedIds, effectiveEnabledModelIds, visibleOptions]);
+
+  const handleClearAll = useCallback(() => {
+    if (visibleOptions.length === 0) {
+      return;
+    }
+    commitSelectedIds(
+      clearVisibleModelSelection({
+        allModelIds: modelOptions.map((option) => option.id),
+        currentSelectedIds: effectiveEnabledModelIds,
+        visibleModelIds: visibleOptions.map((option) => option.id),
+      }),
+    );
+  }, [
+    commitSelectedIds,
+    effectiveEnabledModelIds,
+    modelOptions,
+    visibleOptions,
+  ]);
 
   if (modelOptionsLoading) {
     return (
       <div className="grid gap-2">
-        <Label>Custom model set</Label>
+        <Label>Models shown in pickers</Label>
         <Skeleton className="h-48 w-full" />
       </div>
     );
   }
 
+  const enabledCount = effectiveEnabledModelIds.size;
+  const totalCount = modelOptions.length;
+  const hasUnselectedVisibleModels = visibleOptions.some(
+    (option) => !effectiveEnabledModelIds.has(option.id),
+  );
+  const hasSelectedVisibleModels = visibleOptions.some((option) =>
+    effectiveEnabledModelIds.has(option.id),
+  );
+  const canSelectAll = !disabled && hasUnselectedVisibleModels;
+  const canClearAll =
+    !disabled && hasSelectedVisibleModels && effectiveEnabledModelIds.size > 1;
+
   return (
-    <div className="grid gap-2">
+    <div className="grid gap-3">
       <div className="space-y-1">
         <div className="flex items-center justify-between gap-2">
-          <Label>Custom model set</Label>
-          {enabledCount > 0 && (
-            <button
-              type="button"
-              disabled={disabled}
-              onClick={handleDeselectAll}
-              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-40"
-            >
-              Clear all
-            </button>
-          )}
+          <Label>Models shown in pickers</Label>
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {isShowingAllModels
+              ? `Showing all ${totalCount} models`
+              : `Showing ${enabledCount} of ${totalCount} models`}
+          </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          {enabledCount === 0
-            ? "By default, every available model is shown in the model selector. Add models here to create a shortlist of just the ones you use."
-            : `The model selector will only show ${enabledCount === 1 ? "this model" : `these ${enabledCount} models`}. Remove all to go back to showing every model.`}
+          Controls which models appear in chat, default model, and subagent
+          pickers. Show everything, or narrow the list when providers expose
+          more models than you want to scan while working.
         </p>
       </div>
 
-      {enabledOptions.length > 0 && (
-        <div className="divide-y divide-border/60 rounded-lg border border-border/70">
-          {enabledOptions.map((option) => (
-            <div key={option.id} className="flex items-center gap-3 px-3 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate text-sm font-medium">
-                    {option.label}
-                  </span>
-                  {option.isVariant && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                      variant
-                    </span>
-                  )}
-                </div>
-                <p className="truncate text-xs text-muted-foreground">
-                  {option.id}
-                </p>
-              </div>
+      <div className="min-w-0 overflow-hidden rounded-lg border border-border/70">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border/70 p-2">
+          {inferenceSources.length > 1 && (
+            <Select
+              value={effectiveInferenceSourceFilter}
+              onValueChange={handleInferenceSourceChange}
+              disabled={disabled}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Filter models by inference source"
+                className="w-[13.5rem]"
+              >
+                <SelectValue placeholder="Inference source" />
+              </SelectTrigger>
+              <SelectContent>
+                {inferenceSources.map((source) => (
+                  <SelectItem key={source.id} value={source.id}>
+                    {source.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <div className="relative min-w-[12rem] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search models..."
+              disabled={disabled}
+              className="h-8 pl-9 pr-8 text-sm"
+              aria-label="Search models shown in pickers"
+            />
+            {search && (
               <button
                 type="button"
-                disabled={disabled}
-                onClick={() => onRemoveModel(option.id)}
-                className="shrink-0 rounded-md p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-                aria-label={`Remove ${option.label}`}
+                aria-label="Clear model search"
+                onClick={() => setSearch("")}
+                className="absolute right-2 top-1/2 flex size-5 -translate-y-1/2 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
               >
                 <X className="size-3.5" />
               </button>
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+          </div>
 
-      <div className="relative">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            ref={inputRef}
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              setDropdownOpen(true);
-            }}
-            onFocus={() => setDropdownOpen(true)}
-            placeholder="Search to add a model..."
+          {providers.length > 1 && (
+            <Select
+              value={effectiveProviderFilter}
+              onValueChange={setProviderFilter}
+              disabled={disabled}
+            >
+              <SelectTrigger
+                size="sm"
+                aria-label="Filter models by provider"
+                className="w-[8.5rem]"
+              >
+                <SelectValue placeholder="All providers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All providers</SelectItem>
+                {providers.map((provider) => (
+                  <SelectItem key={provider} value={provider}>
+                    {getProviderDisplayName(provider)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          <Select
+            value={sort}
+            onValueChange={(value) => setSort(value as ModelSortKey)}
             disabled={disabled}
-            className="pl-9"
-          />
+          >
+            <SelectTrigger
+              size="sm"
+              aria-label="Sort models"
+              className="w-[7.5rem]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="provider">Provider</SelectItem>
+              <SelectItem value="name">Name A-Z</SelectItem>
+              <SelectItem value="cost-asc">Cost low-high</SelectItem>
+              <SelectItem value="cost-desc">Cost high-low</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <button
+            type="button"
+            aria-pressed={selectedOnly}
+            disabled={disabled}
+            onClick={() => setSelectedOnly((value) => !value)}
+            className={cn(
+              "rounded-md border px-2 py-1 text-xs transition-colors disabled:pointer-events-none disabled:opacity-50",
+              selectedOnly
+                ? "border-primary/50 bg-primary/10 text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Selected only
+          </button>
+
+          <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+            {visibleOptions.length === totalCount
+              ? `${totalCount} models`
+              : `${visibleOptions.length} of ${totalCount}`}
+          </span>
         </div>
-        {dropdownOpen && (
-          <>
-            {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- backdrop dismiss */}
-            <div
-              className="fixed inset-0 z-10"
-              onClick={() => {
-                setDropdownOpen(false);
-                setSearch("");
-              }}
-            />
-            <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-popover shadow-md">
-              <div className="max-h-60 overflow-y-auto">
-                {availableOptions.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-muted-foreground">
-                    {search.trim()
-                      ? "No matching models."
-                      : "All models have been added."}
-                  </p>
-                ) : (
-                  availableOptions.map((option) => (
-                    <button
-                      key={option.id}
-                      type="button"
-                      onClick={() => handleAdd(option.id)}
-                      className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50"
-                    >
-                      <Plus className="size-3.5 shrink-0 text-muted-foreground" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-medium">
-                            {option.label}
-                          </span>
-                          {option.isVariant && (
-                            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
-                              variant
-                            </span>
-                          )}
-                        </div>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {option.description ?? option.id}
-                        </p>
-                      </div>
-                    </button>
-                  ))
-                )}
-              </div>
+
+        <div className={ENABLED_MODELS_LIST_CLASS_NAME}>
+          {visibleOptions.length === 0 ? (
+            <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+              No models match these filters.
             </div>
-          </>
-        )}
+          ) : (
+            <div className="divide-y divide-border/60">
+              {visibleOptions.map((option) => {
+                const isSelected = effectiveEnabledModelIds.has(option.id);
+                const cannotRemoveLastModel =
+                  isSelected && effectiveEnabledModelIds.size <= 1;
+
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    disabled={disabled || cannotRemoveLastModel}
+                    onClick={() => handleToggleModel(option.id)}
+                    className={ENABLED_MODELS_ROW_CLASS_NAME}
+                    aria-pressed={isSelected}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        "flex size-4 shrink-0 items-center justify-center rounded border",
+                        isSelected
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-muted-foreground/40",
+                      )}
+                    >
+                      {isSelected && <Check className="size-3" />}
+                    </span>
+
+                    {option.source === "user" ? (
+                      <span
+                        className="flex size-3.5 shrink-0 items-center justify-center"
+                        title="Uses your personal provider key"
+                      >
+                        <span
+                          aria-label="Your personal provider key"
+                          className="size-2 rounded-full bg-emerald-500"
+                        />
+                      </span>
+                    ) : (
+                      <ProviderIcon
+                        provider={option.provider}
+                        className="size-3.5 shrink-0 opacity-70"
+                      />
+                    )}
+
+                    <span className="min-w-0 overflow-hidden">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span className="truncate text-sm font-medium">
+                          {option.shortLabel}
+                        </span>
+                        {option.isVariant && (
+                          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase text-muted-foreground">
+                            variant
+                          </span>
+                        )}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {option.secondaryLabel
+                          ? `via ${option.secondaryLabel}`
+                          : (option.description ?? option.id)}
+                      </span>
+                    </span>
+
+                    <span className="hidden max-w-24 shrink-0 truncate text-xs text-muted-foreground sm:block">
+                      {option.source === "user"
+                        ? (option.secondaryLabel ?? "Your key")
+                        : getProviderDisplayName(option.provider)}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 px-3 py-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              disabled={!canSelectAll}
+              onClick={handleSelectAll}
+              className="text-xs text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              {ENABLED_MODELS_BULK_ACTION_LABELS[0]}
+            </button>
+            <button
+              type="button"
+              disabled={!canClearAll}
+              onClick={handleClearAll}
+              className="text-xs text-muted-foreground hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              {ENABLED_MODELS_BULK_ACTION_LABELS[1]}
+            </button>
+          </div>
+
+          <span className="text-xs text-muted-foreground tabular-nums">
+            {isShowingAllModels
+              ? "All models visible"
+              : `${enabledCount} selected`}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -594,8 +969,6 @@ export function ModelPreferencesSection() {
     preferences,
     handleModelChange,
     handleSubagentModelChange,
-    handleAddModel,
-    handleRemoveModel,
     handleSetEnabledModels,
     handleSaveModelSystemPrompt,
   } = state;
@@ -657,8 +1030,6 @@ export function ModelPreferencesSection() {
         modelOptions={modelOptions}
         modelOptionsLoading={modelOptionsLoading}
         enabledModelIds={enabledModelIds}
-        onAddModel={handleAddModel}
-        onRemoveModel={handleRemoveModel}
         onSetEnabledModels={handleSetEnabledModels}
         disabled={isSaving}
       />

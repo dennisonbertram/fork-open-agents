@@ -1,0 +1,310 @@
+- complementary:
+  - link "Back":
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link "Profile":
+        - /url: /settings/profile
+        - text: Profile
+      - link "Preferences":
+        - /url: /settings/preferences
+        - text: Preferences
+      - link "Connections":
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link "Agents":
+        - /url: /settings/agents
+        - text: Agents
+      - link "Models":
+        - /url: /settings/models
+        - text: Models
+      - link "Composio":
+        - /url: /settings/composio
+        - text: Composio
+      - link "MCP servers":
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link "Skills":
+        - /url: /settings/skills
+        - text: Skills
+      - link "Background agents":
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link "Loops":
+        - /url: /loops
+        - text: Loops
+      - link "Runtime profiles":
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link "Usage":
+        - /url: /settings/usage
+        - text: Usage
+      - link "Leaderboard":
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button "Sign out":
+    - text: Sign out
+- main:
+  - heading "Background agents" [level=1]
+  - heading "Readiness" [level=2]
+  - paragraph: Background agents aren't enabled on this deployment.
+  - paragraph: Ask your workspace administrator to enable them.
+  - button "Refresh status":
+  - button "Operator details" [expanded] [active]:
+    - text: Operator details
+  - list:
+    - generic: Feature flag
+    - paragraph: BACKGROUND_AGENTS_ENABLED gates trigger dispatch.
+    - generic: BACKGROUND_AGENTS_ENABLED ✗ not set
+    - generic: Auth and database
+    - paragraph: Required for Settings, sessions, and durable run persistence.
+    - generic: Vercel sign-in
+    - paragraph: Required for authenticated operator access.
+    - generic: GitHub OAuth
+    - paragraph: Required for repo connection and PR creation.
+    - generic: GitHub App
+    - paragraph: Required for webhook trust and repo-scoped installation access.
+    - generic: Sandbox runtime
+    - paragraph: Required so background runs can create run-scoped Vercel Sandboxes.
+    - generic: VERCEL ✗ not set
+    - generic: VERCEL_ENV ✗ not set
+    - generic: VERCEL_TOKEN ✗ not set
+    - generic: Inference gateway
+    - paragraph: Required so unattended background agents can call the default model.
+    - generic: VERCEL ✗ not set
+    - generic: VERCEL_ENV ✗ not set
+    - generic: AI_GATEWAY_API_KEY ✗ not set
+    - generic: Repo allowlist
+    - paragraph: Unset allows all repos; set BACKGROUND_AGENTS_ALLOWED_REPOS for controlled proof.
+    - generic: Cron dispatch secret
+    - paragraph: Required for scheduled trigger dispatch.
+    - generic: BACKGROUND_AGENTS_CRON_SECRET ✗ not set
+    - generic: CRON_SECRET ✗ not set
+    - generic: Generic webhook secret
+    - paragraph: Required for signed webhook.error triggers.
+    - generic: BACKGROUND_AGENTS_WEBHOOK_SECRET ✗ not set
+    - generic: GitHub App webhooks
+    - paragraph: GitHub App open-agents-dennison has the event subscriptions and repo permissions needed for background agents.
+  - heading "Create agent" [level=2]
+  - generic: Trigger
+  - generic: Conditions
+  - generic: Instructions
+  - generic: Permissions
+  - generic: Outputs
+  - generic: Test
+  - generic: Name
+  - textbox "Name"
+  - generic: Trigger
+  - combobox "Trigger":
+    - generic: Pull request
+  - switch
+  - generic: Enabled
+  - generic: Owner
+  - textbox "Owner"
+  - generic: Repo
+  - textbox "Repo"
+  - generic: Actions
+  - textbox "Actions":
+    - /placeholder: opened, reopened
+  - generic: Branches
+  - textbox "Branches":
+    - /placeholder: main, release/*
+  - generic: Labels
+  - textbox "Labels":
+    - /placeholder: bug, regression
+  - generic: Instructions
+  - textbox "Instructions"
+  - generic: Output mode
+  - combobox "Output mode":
+    - generic: None
+  - paragraph: Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything.
+  - generic: Check command
+  - textbox "Check command"
+  - paragraph: Tool providers coming later. Composio is planned for v1.5.
+  - button "Create" [disabled]:
+    - text: Create
+  - heading "Agents" [level=2]
+  - button "Refresh background agents":
+  - paragraph: D Proof — synthetix execution test
+  - generic: disabled
+  - paragraph: dennisonbertram/synthetix
+  - generic: Schedule
+  - button "Edit":
+    - text: Edit
+  - button "Test":
+    - text: Test
+  - link "Repo":
+    - /url: /repos/dennisonbertram/synthetix/agents
+    - text: Repo
+  - button "Delete agent":
+    - text: Delete
+  - paragraph: PR Backlog Maintainer
+  - generic: disabled
+  - paragraph: dennisonbertram/fork-open-agents
+  - generic: Pull request
+  - button "Edit":
+    - text: Edit
+  - button "Test":
+    - text: Test
+  - link "Repo":
+    - /url: /repos/dennisonbertram/fork-open-agents/agents
+    - text: Repo
+  - button "Delete agent":
+    - text: Delete
+  - paragraph: Live Proof Failure Agent
+  - generic: enabled
+  - paragraph: dennisonbertram/open-agents-background-agent-proof
+  - generic: Error webhook
+  - textbox "Webhook URL": /api/background-agents/webhook/IPD5gw1C6ItJd0_2
+  - button "Copy webhook URL":
+  - button "Edit":
+    - text: Edit
+  - button "Test":
+    - text: Test
+  - link "Repo":
+    - /url: /repos/dennisonbertram/open-agents-background-agent-proof/agents
+    - text: Repo
+  - button "Delete agent":
+    - text: Delete
+  - paragraph: Live Proof Background Agent
+  - generic: enabled
+  - paragraph: dennisonbertram/open-agents-background-agent-proof
+  - generic: Pull request
+  - generic: Issue
+  - generic: Error webhook
+  - textbox "Webhook URL": /api/background-agents/webhook/FSYeeafiYcm3pwLJ
+  - button "Copy webhook URL":
+  - button "Edit":
+    - text: Edit
+  - button "Test":
+    - text: Test
+  - link "Repo":
+    - /url: /repos/dennisonbertram/open-agents-background-agent-proof/agents
+    - text: Repo
+  - button "Delete agent":
+    - text: Delete
+  - heading "Run history" [level=2]
+  - button "Refresh background runs":
+  - paragraph: Schedule
+  - generic: succeeded
+  - paragraph: dennisonbertram/synthetix · manual-test:baas-dproof-1781743759:cd8ca5be-e890-41e5-b683-5064642039ef
+  - paragraph: schedule · Jun 17, 8:57 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/synthetix/pull/960
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/VBbFB_81wtz-SLTTBcawB
+    - text: Details
+  - paragraph: Schedule
+  - generic: succeeded
+  - paragraph: dennisonbertram/synthetix · baas-dproof-trg-1781743759:2026-06-18T00:50
+  - paragraph: schedule · Jun 17, 8:50 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/synthetix/pull/959
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/lkqYGge4uAbOBNw3n5Gdb
+    - text: Details
+  - paragraph: Schedule
+  - generic: succeeded
+  - paragraph: dennisonbertram/synthetix · baas-dproof-trg-1781743759:2026-06-18T00:49
+  - paragraph: schedule · Jun 17, 8:49 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/synthetix/pull/958
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/FdzfIWEzNt1KhL0VSIeYq
+    - text: Details
+  - paragraph: Pull request
+  - generic: succeeded
+  - paragraph: dennisonbertram/fork-open-agents · manual-test:Uwm-sQk24-hrFA6guT_9B:7dac4835-6a50-4f1f-958b-696e0480b77c
+  - paragraph: github · Jun 4, 11:45 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/fork-open-agents/pull/177
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/bXALWi3vywJSl3jpwruow
+    - text: Details
+  - paragraph: Error webhook
+  - generic: failed
+  - generic: checks_failed
+  - paragraph: dennisonbertram/open-agents-background-agent-proof · failure-live-proof-1779931841
+  - paragraph: webhook · May 27, 9:30 PM
+  - link "Details":
+    - /url: /background-runs/IY02ineSGRIaNOcff96lc
+    - text: Details
+  - paragraph: Error webhook
+  - generic: succeeded
+  - paragraph: dennisonbertram/open-agents-background-agent-proof · generic-live-proof-1779931758
+  - paragraph: webhook · May 27, 9:29 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/open-agents-background-agent-proof/pull/3
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/rOjwfChB1wHth2_mrK2g6
+    - text: Details
+  - paragraph: Issue
+  - generic: succeeded
+  - paragraph: "dennisonbertram/open-agents-background-agent-proof · Issue #1"
+  - paragraph: github · May 27, 8:54 PM
+  - link "Output":
+    - /url: https://github.com/dennisonbertram/open-agents-background-agent-proof/pull/2
+    - text: Output
+  - link "Details":
+    - /url: /background-runs/3DJuD_W4TTGkeCketjWdy
+    - text: Details
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

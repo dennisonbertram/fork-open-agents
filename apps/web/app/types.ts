@@ -18,6 +18,33 @@ export type WebAgentStepFinishMetadata = {
   rawFinishReason?: string;
 };
 
+export type WebAgentResponseTimelineCategory =
+  | "database"
+  | "inference"
+  | "third_party"
+  | "system"
+  | "tool";
+
+export type WebAgentResponseTimelineSegment = {
+  id: string;
+  label: string;
+  category: WebAgentResponseTimelineCategory;
+  startedAt: string;
+  finishedAt: string;
+  durationMs: number;
+  detail?: string;
+  measured?: boolean;
+};
+
+export type WebAgentResponseTimeline = {
+  workflowRunId: string;
+  status: "completed" | "aborted" | "failed";
+  totalDurationMs: number;
+  startedAt: string;
+  finishedAt: string;
+  segments: WebAgentResponseTimelineSegment[];
+};
+
 export type WebAgentMessageMetadata = {
   selectedModelId?: string;
   modelId?: string;
@@ -31,6 +58,14 @@ export type WebAgentMessageMetadata = {
   lastStepCost?: number;
   /** Cumulative gateway-reported cost across every step of the message, in USD. */
   totalMessageCost?: number;
+  /** Persisted wall-clock response duration for completed assistant messages. */
+  responseDurationMs?: number;
+  /** Measured wall-clock duration spent inside model/inference steps. */
+  responseInferenceDurationMs?: number;
+  /** Provider-reported throughput, when the provider exposes it. */
+  providerTokensPerSecond?: number;
+  /** Persisted run-level timing breakdown for this assistant response. */
+  responseTimeline?: WebAgentResponseTimeline;
   lastStepFinishReason?: FinishReason;
   lastStepRawFinishReason?: string;
   stepFinishReasons?: WebAgentStepFinishMetadata[];

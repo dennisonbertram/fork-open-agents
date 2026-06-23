@@ -303,6 +303,32 @@ export function buildRecommendedModelOptions(
   );
 }
 
+export function buildModelPickerOptions({
+  allOptions,
+  enabledModelIds,
+  selectedModelIds = [],
+}: {
+  allOptions: ModelOption[];
+  enabledModelIds: string[] | null | undefined;
+  selectedModelIds?: Array<string | null | undefined>;
+}): ModelOption[] {
+  if (!enabledModelIds || enabledModelIds.length === 0) {
+    return buildRecommendedModelOptions(allOptions);
+  }
+
+  const enabledSet = new Set(enabledModelIds);
+  const selectedSet = new Set<string>();
+  for (const id of selectedModelIds) {
+    if (id) {
+      selectedSet.add(id);
+    }
+  }
+
+  return allOptions.filter(
+    (option) => enabledSet.has(option.id) || selectedSet.has(option.id),
+  );
+}
+
 export function buildModelOptions(
   models: AvailableModel[],
   modelVariants: ModelVariant[],

@@ -36,7 +36,7 @@ import type { Chat, Session } from "@/lib/db/schema";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import {
   type ModelOption,
-  buildRecommendedModelOptions,
+  buildModelPickerOptions,
   withMissingModelOption,
 } from "@/lib/model-options";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
@@ -351,24 +351,15 @@ export function SessionChatProvider({
     chatInfo.modelId,
     chatInfo.inferenceProfileId,
   );
-  const baseModelOptions = useMemo(() => {
-    if (!enabledModelIds || enabledModelIds.length === 0) {
-      return buildRecommendedModelOptions(allModelOptions);
-    }
-    const enabledSet = new Set(enabledModelIds);
-    return allModelOptions.filter(
-      (option) =>
-        option.source === "user" ||
-        enabledSet.has(option.id) ||
-        option.id === selectedModelOptionId ||
-        option.id === chatInfo.modelId,
-    );
-  }, [
-    allModelOptions,
-    enabledModelIds,
-    chatInfo.modelId,
-    selectedModelOptionId,
-  ]);
+  const baseModelOptions = useMemo(
+    () =>
+      buildModelPickerOptions({
+        allOptions: allModelOptions,
+        enabledModelIds,
+        selectedModelIds: [selectedModelOptionId, chatInfo.modelId],
+      }),
+    [allModelOptions, enabledModelIds, chatInfo.modelId, selectedModelOptionId],
+  );
   const modelOptions = useMemo(
     () => withMissingModelOption(baseModelOptions, selectedModelOptionId),
     [baseModelOptions, selectedModelOptionId],

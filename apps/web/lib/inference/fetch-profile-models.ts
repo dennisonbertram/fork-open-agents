@@ -5,6 +5,10 @@ import {
   type InferenceProfileModel,
   inferenceProfileModelSchema,
 } from "@/lib/inference/types";
+import {
+  normalizeAnthropicBaseUrl,
+  normalizeOpenAICompatibleBaseUrl,
+} from "./model-routing";
 
 const DEFAULT_ANTHROPIC_BASE_URL = "https://api.anthropic.com/v1";
 const ANTHROPIC_VERSION = "2023-06-01";
@@ -101,10 +105,61 @@ export function parseOpenAICompatibleModelsResponse(
   return models;
 }
 
-/** Build the `/models` listing URL from a normalized (versioned) base URL. */
-function modelsUrl(baseUrl: string | null): string {
-  const root = (baseUrl ?? DEFAULT_ANTHROPIC_BASE_URL).replace(/\/+$/, "");
+/** Build the `/models` listing URL from a provider base or request endpoint. */
+function modelsUrl(
+  provider: InferenceProfileProvider,
+  baseUrl: string | null,
+): string {
+  const root = modelsBaseUrl(provider, baseUrl).replace(/\/+$/, "");
   return `${root}/models`;
+}
+
+function modelsBaseUrl(
+  provider: InferenceProfileProvider,
+  baseUrl: string | null,
+): string {
+  if (provider === "anthropic") {
+    return normalizeAnthropicBaseUrl(baseUrl) ?? DEFAULT_ANTHROPIC_BASE_URL;
+  }
+
+  return normalizeOpenAICompatibleBaseUrl(baseUrl);
+}
+
+function anthropicAuthHeaders(baseUrl: string | null, apiKey: string) {
+  return {
+    "anthropic-version": ANTHROPIC_VERSION,
+    ...(usesFireworksBearerAuth(baseUrl)
+      ? { Authorization: `Bearer ${apiKey}` }
+      : { "x-api-key": apiKey }),
+  };
+}
+
+function openAICompatibleAuthHeaders(baseUrl: string, apiKey: string) {
+  return {
+    Authorization: usesBasetenApiKeyAuth(baseUrl)
+      ? `Api-Key ${apiKey}`
+      : `Bearer ${apiKey}`,
+  };
+}
+
+function usesBasetenApiKeyAuth(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === "inference.baseten.co";
+  } catch {
+    return false;
+  }
+}
+
+function usesFireworksBearerAuth(baseUrl: string | null): boolean {
+  if (!baseUrl) {
+    return false;
+  }
+
+  try {
+    return new URL(baseUrl).hostname === "api.fireworks.ai";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -123,17 +178,13 @@ export async function fetchInferenceProfileModels(params: {
   }
 
   try {
-    const response = await fetch(modelsUrl(baseUrl), {
+    const url = modelsUrl(provider, baseUrl);
+    const response = await fetch(url, {
       method: "GET",
       headers:
         provider === "anthropic"
-          ? {
-              "x-api-key": apiKey,
-              "anthropic-version": ANTHROPIC_VERSION,
-            }
-          : {
-              Authorization: `Bearer ${apiKey}`,
-            },
+          ? anthropicAuthHeaders(url, apiKey)
+          : openAICompatibleAuthHeaders(baseUrl ?? "", apiKey),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!response.ok) {

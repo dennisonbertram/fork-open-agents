@@ -1,0 +1,205 @@
+- button:
+- button:
+  - text: New session
+- button:
+- button: Active14
+- button:
+  - text: Archive
+  - generic: "55"
+- button [expanded]:
+  - generic: Chats
+- button:
+  - paragraph: Github Testing
+- button [expanded]:
+  - generic: dennisonbertram/synthetix
+- button:
+  - generic: Agents
+  - generic: "1"
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button:
+  - paragraph: Chicago
+- button:
+  - paragraph: Repo and Branch Verification
+- button:
+  - paragraph: Testing Provider Implementation
+- button:
+  - paragraph: Backlog Issues Review
+- button:
+  - paragraph: GitHub Issue 262 Review
+- button:
+  - paragraph: Model Runtime Identification
+- button:
+  - paragraph: Casual Coding Session
+- button:
+  - paragraph: Reykjavik
+- button:
+  - paragraph: Getting Started
+- button [expanded]:
+  - generic: dennisonbertram/partyline
+- button:
+  - generic: Agents
+- link:
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button:
+  - generic: Loops
+- link:
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button:
+  - paragraph: New Coding Session Started
+- button:
+  - paragraph: Documentation Review Session
+- button:
+  - paragraph: Architecture Overview Discussion
+- button:
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button:
+- main:
+  - button:
+  - link:
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Repo and Branch Verification
+  - button:
+  - generic: Direct
+  - button:
+  - button [disabled]:
+  - button:
+  - button [disabled]:
+  - button:
+  - button:
+  - button:
+  - button:
+    - generic: Hello, please briefly confirm the repo name and current branch.
+  - button:
+  - button:
+  - paragraph: Hello, please briefly confirm the repo name and current branch.
+  - button:
+  - button:
+  - button:
+    - text: Philosophised
+    - generic: · 18s
+    - generic: · 2 tool calls
+    - generic: · 6.22 tok/s
+    - generic: · cost $0.06
+  - paragraph:
+    - text: "Repo:"
+    - code: sandbox
+    - text: "Current branch:"
+    - code: d/881fa842
+  - button:
+  - button:
+  - generic: GPT 5.5
+  - generic: ·
+  - generic: $0.0587
+  - paragraph: Please answer again with only the connected repository and current branch.
+  - button:
+  - button:
+  - paragraph: dennisonbertram/synthetix — d/881fa842
+  - button:
+  - button:
+  - generic: GPT 5.5
+  - generic: ·
+  - generic: $0.0497
+  - textbox:
+    - /placeholder: Request changes or ask a question...
+  - button:
+  - button:
+    - generic: GPT 5.5
+  - button:
+  - button:
+    - generic: Direct
+  - button:
+    - generic: Workflow
+  - generic: 1%
+  - button:
+  - button [disabled]:
+  - button:
+    - text: Create PR
+  - button: Files
+  - button: Changes
+  - button: PR
+  - textbox:
+    - /placeholder: PR title
+  - button:
+  - textbox:
+    - /placeholder: Description
+  - paragraph: Auto-merge
+  - paragraph: Merge automatically once checks pass.
+  - switch
+  - button:
+    - text: Create Pull Request
+  - button [expanded]:
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- button "Open issues overlay":
+  - generic: "0"
+  - generic: "1"
+  - generic: Issue
+- button "Collapse issues badge":
+- alert
+- button:
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button:
+  - text: Output Detail
+  - button:
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - checkbox [checked]
+  - generic: Clear on copy/send
+  - checkbox [checked]
+  - generic: Block page interactions
+  - button:
+    - generic: Manage MCP & Webhooks
+  - button:
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link:
+      - /url: https://agentation.dev/mcp
+      - text: Learn more
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox:
+    - /placeholder: Webhook URL
+- menu "PR options" [active]:
+  - menuitem "Create Draft PR"

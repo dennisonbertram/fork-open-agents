@@ -15,6 +15,7 @@ export const EditRenderer = memo(function EditRenderer({
   cwd = "",
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-edit">) {
   const input = part.input;
   const rawFilePath = input?.filePath ?? "...";
@@ -102,6 +103,7 @@ export const EditRenderer = memo(function EditRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

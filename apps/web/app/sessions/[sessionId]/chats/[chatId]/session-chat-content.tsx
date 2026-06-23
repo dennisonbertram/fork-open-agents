@@ -82,6 +82,7 @@ import { FileSuggestionsDropdown } from "@/components/file-suggestions-dropdown"
 import { ImageAttachmentsPreview } from "@/components/image-attachments-preview";
 import { TextAttachmentsPreview } from "@/components/text-attachments-preview";
 import { ModelSelectorCompact } from "@/components/model-selector-compact";
+import { ComposioToolSelectorCompact } from "@/components/composio-tool-selector-compact";
 import { useInlineQuestion } from "@/components/inline-question-input";
 import { SlashCommandDropdown } from "@/components/slash-command-dropdown";
 import { SnippetChip } from "@/components/snippet-chip";
@@ -145,6 +146,7 @@ import {
   shouldShowThinkingIndicator,
   shouldUseChatListStreamingState,
 } from "@/lib/chat-streaming-state";
+import { collectPendingApprovals } from "@/app/lib/pending-tool-approvals";
 import { isValidImageType } from "@/lib/image-utils";
 import { isLargeText } from "@/lib/text-attachment-utils";
 import {
@@ -1276,6 +1278,7 @@ export type MessageRowProps = {
   onForkAssistantMessage: (messageId: string) => void | Promise<void>;
   onApproveTool: (id: string) => void;
   onDenyTool: (id: string, reason?: string) => void;
+  onApproveAllToolsForSession: (id: string) => void;
   onManagedRuntimeProfileOutput: (
     toolCallId: string,
     output: SetupManagedRuntimeProfileOutput,
@@ -1303,6 +1306,7 @@ const MessageRow = memo(function MessageRow({
   onForkAssistantMessage,
   onApproveTool,
   onDenyTool,
+  onApproveAllToolsForSession,
   onManagedRuntimeProfileOutput,
   onOpenVerifiedBuildPanel,
   onOpenRuntimePanel,
@@ -1523,6 +1527,7 @@ const MessageRow = memo(function MessageRow({
               isStreaming={isMessageStreaming}
               onApprove={onApproveTool}
               onDeny={onDenyTool}
+              onApproveAllForSession={onApproveAllToolsForSession}
               onManagedRuntimeProfileOutput={onManagedRuntimeProfileOutput}
             />
           </div>
@@ -1851,6 +1856,7 @@ export function SessionChatContent({
     archiveSession,
     unarchiveSession: _unarchiveSession,
     updateChatModel,
+    updateChatComposioSelection,
     updateSessionTitle,
     updateRuntimeMode,
     updateManagedRuntimeProfile,
@@ -2070,6 +2076,9 @@ export function SessionChatContent({
   // idle state even if the AI SDK `status` is stuck (common on iOS/Safari where
   // fetch abort doesn't cleanly settle the hook status).
   const [userStopped, setUserStopped] = useState(false);
+  const [autoApproveToolCallsForSession, setAutoApproveToolCallsForSession] =
+    useState(false);
+  const autoApprovedToolApprovalIdsRef = useRef(new Set<string>());
   const isChatInFlight = isChatInFlightStatus(status) && !userStopped;
   const lastMessage = useMemo(
     () => renderMessages[renderMessages.length - 1],
@@ -2118,7 +2127,9 @@ export function SessionChatContent({
   // after switching to a different chat.
   useEffect(() => {
     setUserStopped(false);
-  }, [chatInfo.id]);
+    setAutoApproveToolCallsForSession(false);
+    autoApprovedToolApprovalIdsRef.current.clear();
+  }, [chatInfo.id, session.id]);
 
   // Sync hasPendingResponse with the AI SDK status.
   // IMPORTANT: hasPendingResponse is intentionally excluded from the dependency
@@ -2904,6 +2915,30 @@ export function SessionChatContent({
     },
     [addToolApprovalResponse],
   );
+
+  const handleApproveAllToolsForSession = useCallback(
+    (id: string) => {
+      setAutoApproveToolCallsForSession(true);
+      autoApprovedToolApprovalIdsRef.current.add(id);
+      handleApproveTool(id);
+    },
+    [handleApproveTool],
+  );
+
+  useEffect(() => {
+    if (!autoApproveToolCallsForSession) {
+      return;
+    }
+
+    for (const approval of collectPendingApprovals(renderMessages)) {
+      if (autoApprovedToolApprovalIdsRef.current.has(approval.id)) {
+        continue;
+      }
+
+      autoApprovedToolApprovalIdsRef.current.add(approval.id);
+      handleApproveTool(approval.id);
+    }
+  }, [autoApproveToolCallsForSession, handleApproveTool, renderMessages]);
 
   const handleDenyTool = useCallback(
     (id: string, reason?: string) => {
@@ -4320,30 +4355,32 @@ export function SessionChatContent({
           onOpenChange={setMobileArchiveDialogOpen}
         >
           <DialogContent showCloseButton={false}>
-            <DialogHeader>
-              <DialogTitle>Archive session?</DialogTitle>
-              <DialogDescription>
-                This will stop the sandbox and archive the session. You can
-                still view it in the archive tab.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button variant="outline">Cancel</Button>
-              </DialogClose>
-              <DialogClose asChild>
-                <Button
-                  onClick={() => {
-                    void archiveSession().catch((error: unknown) => {
-                      console.error("Failed to archive session:", error);
-                    });
-                    router.push("/sessions");
-                  }}
-                >
-                  Archive
-                </Button>
-              </DialogClose>
-            </DialogFooter>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                setMobileArchiveDialogOpen(false);
+                void archiveSession().catch((error: unknown) => {
+                  console.error("Failed to archive session:", error);
+                });
+                router.push("/sessions");
+              }}
+            >
+              <DialogHeader>
+                <DialogTitle>Archive session?</DialogTitle>
+                <DialogDescription>
+                  This will stop the sandbox and archive the session. You can
+                  still view it in the archive tab.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button type="button" variant="outline">
+                    Cancel
+                  </Button>
+                </DialogClose>
+                <Button type="submit">Archive</Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
         </Dialog>
 
@@ -4431,6 +4468,9 @@ export function SessionChatContent({
                               }
                               onApproveTool={handleApproveTool}
                               onDenyTool={handleDenyTool}
+                              onApproveAllToolsForSession={
+                                handleApproveAllToolsForSession
+                              }
                               onManagedRuntimeProfileOutput={
                                 handleManagedRuntimeProfileOutput
                               }
@@ -4906,6 +4946,25 @@ export function SessionChatContent({
                                 />
                               </div>
                             )}
+                            <ComposioToolSelectorCompact
+                              disabled={isArchived || isChatInFlight}
+                              githubConnected={Boolean(
+                                session.repoOwner && session.repoName,
+                              )}
+                              onChange={(selection) => {
+                                void updateChatComposioSelection(
+                                  selection,
+                                ).catch((error) => {
+                                  console.error(
+                                    "Failed to update chat tools:",
+                                    error,
+                                  );
+                                });
+                              }}
+                              repoName={session.repoName}
+                              repoOwner={session.repoOwner}
+                              selection={chatInfo.composioSelection}
+                            />
                             <RuntimeModeSelectorCompact
                               disabled={isArchived || isChatInFlight}
                               managedRuntimeProfileId={

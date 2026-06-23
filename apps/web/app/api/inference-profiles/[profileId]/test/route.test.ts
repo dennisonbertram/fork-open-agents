@@ -8,6 +8,7 @@ type TestProfile = {
   provider: "anthropic" | "openai-compatible";
   enabled: boolean;
   baseUrl: string | null;
+  models?: Array<{ id: string; displayName: string }>;
 };
 
 const generateTextCalls: Array<{ model: unknown; prompt: string }> = [];
@@ -119,6 +120,15 @@ mock.module("@/lib/inference/fetch-profile-models", () => ({
 }));
 
 mock.module("@/lib/inference/model-routing", () => ({
+  normalizeInferenceProfileBaseUrl: (
+    _provider: string,
+    baseUrl: string | null,
+  ) =>
+    baseUrl === "https://api.fireworks.ai/inference/v1/messages"
+      ? "https://api.fireworks.ai/inference/v1"
+      : baseUrl === "https://inference.baseten.co/v1/chat/completions/v1"
+        ? "https://inference.baseten.co/v1"
+        : baseUrl,
   toInferenceProfileTestMessage: (error: unknown) =>
     error instanceof Error ? error.message : "Failed to test profile.",
 }));
@@ -151,6 +161,7 @@ describe("/api/inference-profiles/[profileId]/test", () => {
       provider: "openai-compatible",
       enabled: true,
       baseUrl: "https://llm.example.com/v1",
+      models: [],
     };
     fetchedModels = [
       { id: "gpt-4o-mini", displayName: "gpt-4o-mini" },
@@ -207,6 +218,149 @@ describe("/api/inference-profiles/[profileId]/test", () => {
     expect(body.result).toEqual({
       status: "passed",
       message: "Profile test passed. Discovered 2 models.",
+    });
+  });
+
+  test("normalizes saved OpenAI-compatible chat-completion URLs before testing", async () => {
+    const { POST } = await routeModulePromise;
+    profile = {
+      id: "profile-openai",
+      name: "Baseten",
+      provider: "openai-compatible",
+      enabled: true,
+      baseUrl: "https://inference.baseten.co/v1/chat/completions/v1",
+    };
+
+    const response = await POST(
+      postRequest({ modelId: "zai-org/GLM-5.2" }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchModelsCalls).toEqual([
+      {
+        provider: "openai-compatible",
+        baseUrl: "https://inference.baseten.co/v1",
+        apiKey: "decrypted-key",
+      },
+    ]);
+    expect(generateTextCalls[0]?.model).toEqual({
+      kind: "openai-model",
+      config: {
+        provider: "openai-compatible",
+        modelId: "zai-org/GLM-5.2",
+        apiKey: "decrypted-key",
+        baseURL: "https://inference.baseten.co/v1",
+      },
+    });
+  });
+
+  test("tests Anthropic-compatible profiles with slash-bearing provider model ids", async () => {
+    const { POST } = await routeModulePromise;
+    profile = {
+      id: "profile-openai",
+      name: "Fireworks",
+      provider: "anthropic",
+      enabled: true,
+      baseUrl: "https://api.fireworks.ai/inference/v1/messages",
+    };
+    fetchedModels = [
+      {
+        id: "accounts/fireworks/models/kimi-k2p5",
+        displayName: "Kimi K2.5",
+      },
+    ];
+
+    const response = await POST(postRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(fetchModelsCalls).toEqual([
+      {
+        provider: "anthropic",
+        baseUrl: "https://api.fireworks.ai/inference/v1",
+        apiKey: "decrypted-key",
+      },
+    ]);
+    expect(generateTextCalls[0]?.model).toEqual({
+      kind: "anthropic-model",
+      config: {
+        provider: "anthropic",
+        modelId: "accounts/fireworks/models/kimi-k2p5",
+        apiKey: "decrypted-key",
+        baseURL: "https://api.fireworks.ai/inference/v1",
+      },
+    });
+  });
+
+  test("uses and saves the Fireworks GLM 5.2 model when model discovery returns empty", async () => {
+    const { POST } = await routeModulePromise;
+    profile = {
+      id: "profile-openai",
+      name: "Fireworks",
+      provider: "anthropic",
+      enabled: true,
+      baseUrl: "https://api.fireworks.ai/inference/v1/messages",
+      models: [],
+    };
+    fetchedModels = [];
+
+    const response = await POST(postRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(fetchModelsCalls).toEqual([
+      {
+        provider: "anthropic",
+        baseUrl: "https://api.fireworks.ai/inference/v1",
+        apiKey: "decrypted-key",
+      },
+    ]);
+    expect(generateTextCalls[0]?.model).toEqual({
+      kind: "anthropic-model",
+      config: {
+        provider: "anthropic",
+        modelId: "accounts/fireworks/models/glm-5p2",
+        apiKey: "decrypted-key",
+        baseURL: "https://api.fireworks.ai/inference/v1",
+      },
+    });
+    expect(setModelsCalls).toEqual([
+      {
+        userId: "user-1",
+        profileId: "profile-openai",
+        models: [
+          {
+            id: "accounts/fireworks/models/glm-5p2",
+            displayName: "GLM 5.2",
+            contextWindow: 1_048_576,
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("uses stored profile models before falling back to built-in test models", async () => {
+    const { POST } = await routeModulePromise;
+    profile = {
+      id: "profile-openai",
+      name: "Stored Models",
+      provider: "anthropic",
+      enabled: true,
+      baseUrl: "https://anthropic-compatible.example/v1",
+      models: [{ id: "custom/model", displayName: "Custom Model" }],
+    };
+    fetchedModels = [];
+
+    const response = await POST(postRequest(), routeContext());
+
+    expect(response.status).toBe(200);
+    expect(generateTextCalls[0]?.model).toEqual({
+      kind: "anthropic-model",
+      config: {
+        provider: "anthropic",
+        modelId: "custom/model",
+        apiKey: "decrypted-key",
+        baseURL: "https://anthropic-compatible.example/v1",
+      },
     });
   });
 

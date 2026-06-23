@@ -1,9 +1,18 @@
-import { describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-const { parseAnthropicModelsResponse, parseOpenAICompatibleModelsResponse } =
-  await import("./fetch-profile-models");
+const originalFetch = globalThis.fetch;
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
+});
+
+const {
+  fetchInferenceProfileModels,
+  parseAnthropicModelsResponse,
+  parseOpenAICompatibleModelsResponse,
+} = await import("./fetch-profile-models");
 
 describe("parseAnthropicModelsResponse", () => {
   test("parses the ZAI/Anthropic-compatible models listing", () => {
@@ -92,3 +101,73 @@ describe("parseOpenAICompatibleModelsResponse", () => {
     ]);
   });
 });
+
+describe("fetchInferenceProfileModels", () => {
+  test("uses Baseten Api-Key auth for OpenAI-compatible model discovery", async () => {
+    const calls = installFetchRecorder();
+
+    await fetchInferenceProfileModels({
+      provider: "openai-compatible",
+      baseUrl: "https://inference.baseten.co/v1",
+      apiKey: "baseten-key",
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "https://inference.baseten.co/v1/models",
+        headers: { Authorization: "Api-Key baseten-key" },
+      },
+    ]);
+  });
+
+  test("keeps bearer auth for generic OpenAI-compatible model discovery", async () => {
+    const calls = installFetchRecorder();
+
+    await fetchInferenceProfileModels({
+      provider: "openai-compatible",
+      baseUrl: "https://openai.example/v1",
+      apiKey: "openai-key",
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "https://openai.example/v1/models",
+        headers: { Authorization: "Bearer openai-key" },
+      },
+    ]);
+  });
+
+  test("normalizes Fireworks Anthropic-compatible message endpoints before model discovery", async () => {
+    const calls = installFetchRecorder();
+
+    await fetchInferenceProfileModels({
+      provider: "anthropic",
+      baseUrl: "https://api.fireworks.ai/inference/v1/messages",
+      apiKey: "fireworks-key",
+    });
+
+    expect(calls).toEqual([
+      {
+        url: "https://api.fireworks.ai/inference/v1/models",
+        headers: {
+          Authorization: "Bearer fireworks-key",
+          "anthropic-version": "2023-06-01",
+        },
+      },
+    ]);
+  });
+});
+
+function installFetchRecorder() {
+  const calls: Array<{ url: string; headers: HeadersInit | undefined }> = [];
+  globalThis.fetch = ((input, init) => {
+    calls.push({ url: String(input), headers: init?.headers });
+    return Promise.resolve(
+      new Response(JSON.stringify({ data: [{ id: "model-1" }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+  }) as typeof fetch;
+  return calls;
+}

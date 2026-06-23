@@ -13,7 +13,11 @@ import {
   setInferenceProfileModels,
 } from "@/lib/db/inference-profiles";
 import { fetchInferenceProfileModels } from "@/lib/inference/fetch-profile-models";
-import { toInferenceProfileTestMessage } from "@/lib/inference/model-routing";
+import {
+  normalizeInferenceProfileBaseUrl,
+  toInferenceProfileTestMessage,
+} from "@/lib/inference/model-routing";
+import type { InferenceProfileModel } from "@/lib/inference/types";
 
 type RouteContext = {
   params: Promise<{ profileId: string }>;
@@ -25,9 +29,58 @@ type TestProfileRequest = {
 
 const DEFAULT_TEST_MODEL_ID = "anthropic/claude-haiku-4.5";
 const DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID = "gpt-4o-mini";
+const FIREWORKS_ANTHROPIC_TEST_MODEL: InferenceProfileModel = {
+  id: "accounts/fireworks/models/glm-5p2",
+  displayName: "GLM 5.2",
+  contextWindow: 1_048_576,
+};
 
 function jsonError(error: string, status: number) {
   return Response.json({ error }, { status });
+}
+
+function isFireworksBaseUrl(baseUrl: string | null): boolean {
+  if (!baseUrl) {
+    return false;
+  }
+
+  try {
+    return new URL(baseUrl).hostname === "api.fireworks.ai";
+  } catch {
+    return false;
+  }
+}
+
+function isAnthropicBaseUrl(baseUrl: string | null): boolean {
+  if (!baseUrl) {
+    return true;
+  }
+
+  try {
+    return new URL(baseUrl).hostname === "api.anthropic.com";
+  } catch {
+    return false;
+  }
+}
+
+function fallbackTestModel(
+  provider: "anthropic" | "openai-compatible",
+  baseUrl: string | null,
+): InferenceProfileModel | null {
+  if (provider === "openai-compatible") {
+    return {
+      id: DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID,
+      displayName: DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID,
+    };
+  }
+
+  if (isFireworksBaseUrl(baseUrl)) {
+    return FIREWORKS_ANTHROPIC_TEST_MODEL;
+  }
+
+  return isAnthropicBaseUrl(baseUrl)
+    ? { id: DEFAULT_TEST_MODEL_ID, displayName: DEFAULT_TEST_MODEL_ID }
+    : null;
 }
 
 export async function POST(req: Request, context: RouteContext) {
@@ -82,28 +135,36 @@ export async function POST(req: Request, context: RouteContext) {
   }
 
   try {
+    const baseUrl = normalizeInferenceProfileBaseUrl(
+      profile.provider,
+      profile.baseUrl,
+    );
     const fetchedModels = await fetchInferenceProfileModels({
       provider: profile.provider,
-      baseUrl: profile.baseUrl,
+      baseUrl,
       apiKey,
     });
+    const storedModels = profile.models ?? [];
+    const fallbackModel = fallbackTestModel(profile.provider, baseUrl);
     const modelId =
       typeof body.modelId === "string" && body.modelId.trim().length > 0
         ? body.modelId.trim()
-        : (fetchedModels[0]?.id ??
-          (profile.provider === "anthropic"
-            ? DEFAULT_TEST_MODEL_ID
-            : DEFAULT_OPENAI_COMPATIBLE_TEST_MODEL_ID));
+        : (fetchedModels[0]?.id ?? storedModels[0]?.id ?? fallbackModel?.id);
+    if (!modelId) {
+      return jsonError(
+        "Could not discover a model from this inference profile. Add a model for the profile or choose a model before testing.",
+        400,
+      );
+    }
     const directModelId =
       profile.provider === "anthropic" && modelId.startsWith("anthropic/")
         ? toAnthropicDirectModelId(modelId)
         : modelId;
-    if (
-      !directModelId ||
-      (profile.provider === "anthropic" && directModelId.includes("/"))
-    ) {
+    if (!directModelId) {
       return jsonError(
-        "Inference profile test requires an Anthropic model",
+        profile.provider === "anthropic"
+          ? "Inference profile test requires a model served by this Anthropic-compatible endpoint"
+          : "Inference profile test requires a model served by this OpenAI-compatible endpoint",
         400,
       );
     }
@@ -113,10 +174,10 @@ export async function POST(req: Request, context: RouteContext) {
         provider: "anthropic",
         modelId: directModelId,
         apiKey,
-        ...(profile.baseUrl ? { baseURL: profile.baseUrl } : {}),
+        ...(baseUrl ? { baseURL: baseUrl } : {}),
       });
     } else {
-      if (!profile.baseUrl) {
+      if (!baseUrl) {
         return jsonError(
           "OpenAI-compatible inference profile test requires a base URL",
           400,
@@ -127,7 +188,7 @@ export async function POST(req: Request, context: RouteContext) {
         provider: "openai-compatible",
         modelId: directModelId,
         apiKey,
-        baseURL: profile.baseUrl,
+        baseURL: baseUrl,
       });
     }
 
@@ -137,18 +198,25 @@ export async function POST(req: Request, context: RouteContext) {
       maxOutputTokens: 16,
     });
 
-    if (fetchedModels.length > 0) {
+    const modelsToSave =
+      fetchedModels.length > 0
+        ? fetchedModels
+        : storedModels.length === 0 && fallbackModel?.id === modelId
+          ? [fallbackModel]
+          : [];
+
+    if (modelsToSave.length > 0) {
       await setInferenceProfileModels(
         authResult.userId,
         profile.id,
-        fetchedModels,
+        modelsToSave,
       );
     }
 
     const passedMessage =
-      fetchedModels.length > 0
-        ? `Profile test passed. Discovered ${fetchedModels.length} model${
-            fetchedModels.length === 1 ? "" : "s"
+      modelsToSave.length > 0
+        ? `Profile test passed. Discovered ${modelsToSave.length} model${
+            modelsToSave.length === 1 ? "" : "s"
           }.`
         : "Profile test passed.";
     const updatedProfile = await recordInferenceProfileTestResult(

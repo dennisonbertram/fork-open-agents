@@ -680,6 +680,7 @@ export function InboxSidebar({
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
   const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
     useState(false);
+  const archiveSubmitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
 
@@ -1693,26 +1694,37 @@ export function InboxSidebar({
           if (!open) setArchiveConfirmSession(null);
         }}
       >
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Archive session?</DialogTitle>
-            <DialogDescription>
-              This will stop the sandbox and archive the session. You can still
-              view it in the archive tab.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
-            </DialogClose>
-            <Button
-              onClick={() => {
-                void handleConfirmArchive();
-              }}
-            >
-              Archive
-            </Button>
-          </DialogFooter>
+        <DialogContent
+          showCloseButton={false}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            archiveSubmitButtonRef.current?.focus();
+          }}
+        >
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleConfirmArchive();
+            }}
+          >
+            <DialogHeader>
+              <DialogTitle>Archive session?</DialogTitle>
+              <DialogDescription>
+                This will stop the sandbox and archive the session. You can
+                still view it in the archive tab.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button type="button" variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button ref={archiveSubmitButtonRef} type="submit">
+                Archive
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

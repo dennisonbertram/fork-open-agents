@@ -2,8 +2,11 @@
 
 import { isReasoningUIPart, isToolUIPart } from "ai";
 import { useMemo, useState, type ReactNode } from "react";
-import type { WebAgentUIMessage } from "@/app/types";
-import { ToolCallsSummaryBar } from "./tool-calls-summary-bar";
+import type { WebAgentMessageMetadata, WebAgentUIMessage } from "@/app/types";
+import {
+  ToolCallsSummaryBar,
+  type ToolCallsSummaryResponseStats,
+} from "./tool-calls-summary-bar";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -49,6 +52,67 @@ function messageHasActiveApproval(message: WebAgentUIMessage): boolean {
   return message.parts.some(
     (p) => isToolUIPart(p) && p.state === "approval-requested",
   );
+}
+
+function getMetadataInferenceDurationMs(
+  metadata: WebAgentMessageMetadata | undefined,
+): number {
+  if (!metadata) {
+    return 0;
+  }
+
+  if (
+    typeof metadata.responseInferenceDurationMs === "number" &&
+    Number.isFinite(metadata.responseInferenceDurationMs) &&
+    metadata.responseInferenceDurationMs > 0
+  ) {
+    return metadata.responseInferenceDurationMs;
+  }
+
+  return (
+    metadata.responseTimeline?.segments.reduce(
+      (totalDurationMs, segment) =>
+        segment.category === "inference"
+          ? totalDurationMs + segment.durationMs
+          : totalDurationMs,
+      0,
+    ) ?? 0
+  );
+}
+
+function getResponseStats(
+  message: WebAgentUIMessage,
+): ToolCallsSummaryResponseStats | null {
+  const metadata = message.metadata;
+  const usage = metadata?.totalMessageUsage ?? metadata?.lastStepUsage;
+  const outputTokens = usage?.outputTokens ?? 0;
+  const inferenceDurationSeconds =
+    getMetadataInferenceDurationMs(metadata) / 1000;
+  const measuredTokensPerSecond =
+    outputTokens > 0 && inferenceDurationSeconds > 0
+      ? outputTokens / inferenceDurationSeconds
+      : null;
+  const tokensPerSecond =
+    typeof metadata?.providerTokensPerSecond === "number" &&
+    Number.isFinite(metadata.providerTokensPerSecond)
+      ? metadata.providerTokensPerSecond
+      : measuredTokensPerSecond;
+  const costUsd =
+    typeof metadata?.totalMessageCost === "number" &&
+    Number.isFinite(metadata.totalMessageCost) &&
+    metadata.totalMessageCost >= 0
+      ? metadata.totalMessageCost
+      : null;
+
+  if (tokensPerSecond === null && costUsd === null) {
+    return null;
+  }
+
+  return {
+    tokensPerSecond,
+    costUsd,
+    costSource: costUsd === null ? null : "gateway",
+  };
 }
 
 function formatSubagentType(value: unknown): string {
@@ -200,6 +264,8 @@ export function AssistantMessageGroups({
 
   const changedFiles = useMemo(() => getChangedFiles(message), [message]);
 
+  const responseStats = useMemo(() => getResponseStats(message), [message]);
+
   const activityLabel = useMemo(
     () => getTaskActivityLabel(message, isStreaming),
     [message, isStreaming],
@@ -230,6 +296,7 @@ export function AssistantMessageGroups({
         durationMs={durationMs}
         startedAt={startedAt}
         statusWordSeed={message.id}
+        responseStats={responseStats}
       />
       <div className="space-y-1">{children(effectiveExpanded)}</div>
     </>

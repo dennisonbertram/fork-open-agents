@@ -1,0 +1,16 @@
+[
+  {
+    "id": "F-STORY-003-001",
+    "story_id": "STORY-003",
+    "severity": "medium",
+    "category": "happy-path",
+    "criterion": "Labels/copy",
+    "score": "warn",
+    "description": "The New Session launcher opened a dialog announced as \"New chat\".",
+    "expected": "The dialog title should match the launching action and broader flow: New session.",
+    "actual": "The dialog title was \"New chat\" even though the dialog also contains the Connect a repo session path.",
+    "screenshot": null,
+    "suggested_fix": "Change the accessible DialogTitle to \"New session\" while keeping the inner first tab labeled \"New chat\".",
+    "files_likely_involved": ["apps/web/components/new-session-dialog.tsx"]
+  }
+]

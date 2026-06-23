@@ -1,0 +1,20 @@
+[
+  {
+    "id": "F-STORY-012-001",
+    "story_id": "STORY-012",
+    "severity": "medium",
+    "category": "tooling",
+    "criterion": "Saved tool profiles reflect connection state at point of use",
+    "score": "warn",
+    "description": "The chat tool selector allowed a saved Composio profile to be selected even though its Gmail toolkit was disconnected.",
+    "expected": "Saved profiles that contain disconnected required toolkits should be disabled in the chat selector and show a direct reason such as `Tool not connected: gmail.`.",
+    "actual": "The Composio settings page showed the Email profile's Gmail toolkit as not connected, but the chat selector listed `Email` as selectable without any warning.",
+    "screenshot": null,
+    "suggested_fix": "Apply connected-account availability checks to saved Composio profile options in the compact chat tool selector.",
+    "files_likely_involved": [
+      "apps/web/components/composio-tool-selector-compact.tsx",
+      "apps/web/lib/composio/profile-option-availability.ts",
+      "apps/web/lib/db/composio.ts"
+    ]
+  }
+]

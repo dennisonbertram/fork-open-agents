@@ -24,6 +24,7 @@ export const WriteRenderer = memo(function WriteRenderer({
   cwd = "",
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-write">) {
   const input = part.input;
   const rawFilePath = input?.filePath ?? "...";
@@ -87,6 +88,7 @@ export const WriteRenderer = memo(function WriteRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });
