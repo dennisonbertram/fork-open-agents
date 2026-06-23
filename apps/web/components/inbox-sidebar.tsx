@@ -680,6 +680,7 @@ export function InboxSidebar({
   const [isCreatingFromBranch, setIsCreatingFromBranch] = useState(false);
   const [isCreatingSandboxFreeChat, setIsCreatingSandboxFreeChat] =
     useState(false);
+  const archiveSubmitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [archiveConfirmSession, setArchiveConfirmSession] =
     useState<SessionWithUnread | null>(null);
 
@@ -1693,7 +1694,13 @@ export function InboxSidebar({
           if (!open) setArchiveConfirmSession(null);
         }}
       >
-        <DialogContent showCloseButton={false}>
+        <DialogContent
+          showCloseButton={false}
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            archiveSubmitButtonRef.current?.focus();
+          }}
+        >
           <form
             onSubmit={(event) => {
               event.preventDefault();
@@ -1713,7 +1720,9 @@ export function InboxSidebar({
                   Cancel
                 </Button>
               </DialogClose>
-              <Button type="submit">Archive</Button>
+              <Button ref={archiveSubmitButtonRef} type="submit">
+                Archive
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
