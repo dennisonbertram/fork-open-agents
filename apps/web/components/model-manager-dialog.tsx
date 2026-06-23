@@ -1,9 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckIcon, SearchIcon, XIcon } from "lucide-react";
 import {
-  RECOMMENDED_MODEL_IDS,
   type ModelOption,
   type ModelSortKey,
   type ModelSourceFilter,
@@ -37,12 +36,62 @@ interface ModelManagerDialogProps {
   enabledModelIds: string[];
   /** Called with the new complete list of enabled IDs when the user saves. */
   onSave: (enabledModelIds: string[]) => Promise<void>;
+  /** Close the dialog as soon as save starts instead of waiting on the network. */
+  closeOnSaveStart?: boolean;
+  emptySelectionMode?: "all" | "none";
+  title?: string;
 }
 
 export const MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME =
   "grid max-h-[min(680px,calc(100dvh-2rem))] w-full max-w-lg grid-rows-[auto_auto_auto_minmax(0,1fr)_auto] gap-0 overflow-hidden p-0 sm:max-h-[min(620px,calc(100dvh-4rem))]";
 
 export const MODEL_MANAGER_DIALOG_LIST_CLASS_NAME = "min-h-0 overflow-hidden";
+export const MODEL_MANAGER_BULK_ACTION_LABELS = [
+  "Select all",
+  "Clear all",
+] as const;
+
+export function getModelManagerSelectionSummary({
+  emptySelectionMode,
+  selectedCount,
+  totalCount,
+}: {
+  emptySelectionMode: "all" | "none";
+  selectedCount: number;
+  totalCount: number;
+}): string {
+  if (selectedCount === 0) {
+    return emptySelectionMode === "all"
+      ? `Selector shows all ${totalCount} models`
+      : "No models selected";
+  }
+
+  return emptySelectionMode === "all"
+    ? `Selector shows your ${selectedCount} models`
+    : `${selectedCount} of ${totalCount} selected`;
+}
+
+export async function saveModelManagerSelection({
+  closeOnSaveStart,
+  onOpenChange,
+  onSave,
+  selectedModelIds,
+}: {
+  closeOnSaveStart: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (enabledModelIds: string[]) => Promise<void>;
+  selectedModelIds: string[];
+}): Promise<void> {
+  if (closeOnSaveStart) {
+    onOpenChange(false);
+  }
+
+  await onSave(selectedModelIds);
+
+  if (!closeOnSaveStart) {
+    onOpenChange(false);
+  }
+}
 
 /** Derive a deduplicated sorted list of provider keys from the given options. */
 function deriveProviders(options: ModelOption[]): string[] {
@@ -59,6 +108,9 @@ export function ModelManagerDialog({
   modelOptions,
   enabledModelIds,
   onSave,
+  closeOnSaveStart = false,
+  emptySelectionMode = "all",
+  title = "Manage models",
 }: ModelManagerDialogProps) {
   const [search, setSearch] = useState("");
   const [providerFilter, setProviderFilter] = useState<string>("all");
@@ -69,12 +121,34 @@ export function ModelManagerDialog({
     () => new Set(enabledModelIds),
   );
   const [saving, setSaving] = useState(false);
+  const enabledModelIdsKey = enabledModelIds.join("\0");
+  const enabledModelIdsFromKey = useMemo(
+    () => (enabledModelIdsKey ? enabledModelIdsKey.split("\0") : []),
+    [enabledModelIdsKey],
+  );
+  const enabledModelIdsSet = useMemo(
+    () => new Set(enabledModelIdsFromKey),
+    [enabledModelIdsFromKey],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    setSelected(new Set(enabledModelIdsSet));
+    setSearch("");
+    setProviderFilter("all");
+    setSort("name");
+    setSource("all");
+    setSelectedOnly(false);
+  }, [enabledModelIdsSet, open]);
 
   // Reset local selection when dialog opens with latest enabledModelIds
   const handleOpenChange = useCallback(
     (next: boolean) => {
       if (next) {
-        setSelected(new Set(enabledModelIds));
+        setSelected(new Set(enabledModelIdsSet));
         setSearch("");
         setProviderFilter("all");
         setSort("name");
@@ -83,7 +157,7 @@ export function ModelManagerDialog({
       }
       onOpenChange(next);
     },
-    [enabledModelIds, onOpenChange],
+    [enabledModelIdsSet, onOpenChange],
   );
 
   const providers = useMemo(
@@ -95,6 +169,12 @@ export function ModelManagerDialog({
     () => modelOptions.some((o) => o.source === "user"),
     [modelOptions],
   );
+  const hasCatalogModels = useMemo(
+    () => modelOptions.some((o) => o.source !== "user"),
+    [modelOptions],
+  );
+  const shouldShowProviderFilter = providers.length > 1;
+  const shouldShowSourceFilter = hasUserModels && hasCatalogModels;
 
   const visible = useMemo(
     () =>
@@ -132,12 +212,16 @@ export function ModelManagerDialog({
   const handleSave = useCallback(async () => {
     setSaving(true);
     try {
-      await onSave(Array.from(selected));
-      onOpenChange(false);
+      await saveModelManagerSelection({
+        closeOnSaveStart,
+        onOpenChange,
+        onSave,
+        selectedModelIds: Array.from(selected),
+      });
     } finally {
       setSaving(false);
     }
-  }, [onSave, onOpenChange, selected]);
+  }, [closeOnSaveStart, onSave, onOpenChange, selected]);
 
   const handleClearAll = useCallback(() => {
     setSelected(new Set());
@@ -147,25 +231,19 @@ export function ModelManagerDialog({
     setSelected(new Set(modelOptions.map((o) => o.id)));
   }, [modelOptions]);
 
-  const handleRecommended = useCallback(() => {
-    // Intersect with the live catalog so we never select IDs that aren&apos;t present
-    const catalogIds = new Set(modelOptions.map((o) => o.id));
-    const liveRecommended = (RECOMMENDED_MODEL_IDS as readonly string[]).filter(
-      (id) => catalogIds.has(id),
-    );
-    setSelected(new Set(liveRecommended));
-  }, [modelOptions]);
-
   const selectedCount = selected.size;
   const totalCount = modelOptions.length;
+  const selectionSummary = getModelManagerSelectionSummary({
+    emptySelectionMode,
+    selectedCount,
+    totalCount,
+  });
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={MODEL_MANAGER_DIALOG_CONTENT_CLASS_NAME}>
         <DialogHeader className="border-b px-4 py-3">
-          <DialogTitle className="text-sm font-semibold">
-            Manage models
-          </DialogTitle>
+          <DialogTitle className="text-sm font-semibold">{title}</DialogTitle>
         </DialogHeader>
 
         {/* Filters row */}
@@ -194,23 +272,25 @@ export function ModelManagerDialog({
           </div>
 
           {/* Provider filter */}
-          <Select value={providerFilter} onValueChange={setProviderFilter}>
-            <SelectTrigger
-              size="sm"
-              aria-label="Filter by provider"
-              className="w-[130px]"
-            >
-              <SelectValue placeholder="All providers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All providers</SelectItem>
-              {providers.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {getProviderDisplayName(p)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {shouldShowProviderFilter && (
+            <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <SelectTrigger
+                size="sm"
+                aria-label="Filter by provider"
+                className="w-[130px]"
+              >
+                <SelectValue placeholder="All providers" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All providers</SelectItem>
+                {providers.map((p) => (
+                  <SelectItem key={p} value={p}>
+                    {getProviderDisplayName(p)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           {/* Sort */}
           <Select
@@ -235,7 +315,7 @@ export function ModelManagerDialog({
 
         {/* Facets row: source segmented control, selected-only toggle, count */}
         <div className="flex items-center gap-2 border-b px-4 py-2">
-          {hasUserModels && (
+          {shouldShowSourceFilter && (
             <div
               className="flex items-center rounded-md border p-0.5"
               role="group"
@@ -358,35 +438,23 @@ export function ModelManagerDialog({
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between border-t px-4 py-3">
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={handleRecommended}
-              className="text-xs text-muted-foreground hover:text-foreground"
-              title="Reset to the curated Recommended shortlist"
-            >
-              Recommended
-            </button>
-            <button
-              type="button"
-              onClick={handleSelectAll}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Select all
-            </button>
-            <button
-              type="button"
-              onClick={handleClearAll}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Clear all
-            </button>
+            {MODEL_MANAGER_BULK_ACTION_LABELS.map((label) => (
+              <button
+                key={label}
+                type="button"
+                onClick={
+                  label === "Select all" ? handleSelectAll : handleClearAll
+                }
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">
-              {selectedCount === 0
-                ? `Selector shows all ${totalCount} models`
-                : `Selector shows your ${selectedCount} models`}
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {selectionSummary}
             </span>
             <button
               type="button"

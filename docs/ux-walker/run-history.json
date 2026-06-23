@@ -1,0 +1,147 @@
+{
+  "runs": [
+    {
+      "timestamp": "2026-06-21T23:20:00-04:00",
+      "url": "http://localhost:3002",
+      "stories_walked": 18,
+      "stories_skipped": 0,
+      "stories_partial": 2,
+      "stories_re_verified": 0,
+      "findings_total": 17,
+      "quick_fixes_applied": 12,
+      "issues_filed": 0,
+      "stories_passed": 16,
+      "stories_failed": 0
+    }
+  ],
+  "stories": {
+    "STORY-001": {
+      "last_walked": "2026-06-21T23:11:00-04:00",
+      "status": "pass",
+      "findings_count": 0,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-002": {
+      "last_walked": "2026-06-21T23:38:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-003": {
+      "last_walked": "2026-06-21T23:44:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-004": {
+      "last_walked": "2026-06-21T23:58:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-005": {
+      "last_walked": "2026-06-22T00:14:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-006": {
+      "last_walked": "2026-06-22T00:23:00-04:00",
+      "status": "pass",
+      "findings_count": 2,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-007": {
+      "last_walked": "2026-06-22T00:40:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-008": {
+      "last_walked": "2026-06-22T00:49:00-04:00",
+      "status": "partial",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false,
+      "blocked_on": "Actual Create Pull Request/Create Draft PR actions would write to GitHub; needs explicit approval or disposable repo."
+    },
+    "STORY-009": {
+      "last_walked": "2026-06-22T00:57:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-010": {
+      "last_walked": "2026-06-21T23:20:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-011": {
+      "last_walked": "2026-06-22T01:08:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-012": {
+      "last_walked": "2026-06-22T01:20:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-013": {
+      "last_walked": "2026-06-22T01:39:00-04:00",
+      "status": "pass",
+      "findings_count": 0,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-014": {
+      "last_walked": "2026-06-22T02:02:00-04:00",
+      "status": "pass",
+      "findings_count": 2,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-015": {
+      "last_walked": "2026-06-22T02:24:00-04:00",
+      "status": "partial",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false,
+      "blocked_on": "Local deployment reports background agents disabled; create-and-test flow needs BACKGROUND_AGENTS_ENABLED=true and runtime/gateway secrets."
+    },
+    "STORY-016": {
+      "last_walked": "2026-06-22T00:45:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-017": {
+      "last_walked": "2026-06-22T00:55:00-04:00",
+      "status": "pass",
+      "findings_count": 1,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    },
+    "STORY-018": {
+      "last_walked": "2026-06-22T01:02:00-04:00",
+      "status": "pass",
+      "findings_count": 0,
+      "source_files_hash": "initial",
+      "fixes_merged_since": false
+    }
+  }
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "id": "F-STORY-014-001",
+    "story_id": "STORY-014",
+    "severity": "medium",
+    "category": "accessibility",
+    "criterion": "Icon-only actions have accessible names",
+    "score": "warn",
+    "description": "User-created skill cards exposed edit, delete, and enable/disable as controls without naming the target slash skill.",
+    "expected": "Skill card actions should be named with the target skill, such as `Edit /code-review`, `Delete /code-review`, and `Disable /code-review`.",
+    "actual": "After creating `/bad-name`, the card exposed two unlabeled buttons and a generic `Disable skill` switch.",
+    "screenshot": null,
+    "suggested_fix": "Add per-skill accessible labels to the edit, delete, and enabled switch controls.",
+    "files_likely_involved": ["apps/web/app/settings/skills/skills-section.tsx"]
+  },
+  {
+    "id": "F-STORY-014-002",
+    "story_id": "STORY-014",
+    "severity": "medium",
+    "category": "high-impact action",
+    "criterion": "Destructive actions confirm in app context",
+    "score": "warn",
+    "description": "Deleting a skill used a native browser confirmation instead of an in-app confirmation state.",
+    "expected": "The delete action should present visible in-app Confirm and Cancel controls near the destructive action.",
+    "actual": "The delete path relied on `window.confirm`, which is inconsistent with nearby settings flows and hard to inspect or automate in the app UI.",
+    "screenshot": null,
+    "suggested_fix": "Replace the native confirmation with inline Confirm/Cancel controls on the skill card.",
+    "files_likely_involved": ["apps/web/app/settings/skills/skills-section.tsx"]
+  }
+]

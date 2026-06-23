@@ -1,0 +1,14 @@
+[
+  {
+    "level": "error",
+    "message": "In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <button> button \n\n  ...\n    <FocusScope asChild={true} loop={true} trapped={true} onMountAutoFocus={undefined} ...>\n      <Primitive.div tabIndex={-1} asChild={true} ref={function} ...>\n        <Primitive.div.Slot tabIndex={-1} onKeyDown={function FocusScope.useCallback[handleKeyDown]} ref={function}>\n          <Primitive.div.SlotClone tabIndex={-1} onKeyDown={function FocusScope.useCallback[handleKeyDown]} ...>\n            <DismissableLayer role=\"dialog\" id=\"radix-_R_1...\" aria-describedby=\"radix-_R_1...\" ...>\n              <Primitive.div role=\"dialog\" id=\"radix-_R_1...\" aria-describedby=\"radix-_R_1...\" ...>\n                <div role=\"dialog\" id=\"radix-_R_1...\" aria-describedby=\"radix-_R_1...\" aria-labelledby=\"radix-_R_1...\" ...>\n                  <DialogHeader>\n                  <div className=\"min-w-0 ro...\">\n                    <SessionStarter onSubmit={function handleCreateSession} isLoading={false} ...>\n                      <div className=\"w-full min...\">\n                        <div className=\"flex flex-...\">\n                          <div>\n                          <div className=\"flex flex-...\">\n                            <RepoSelectorCompact>\n                            <BranchSelectorCompact>\n                            <SessionStarterVercelSyncSection controlsDisabled={false} isVercelLookupPending={false} ...>\n>                             <button\n>                               type=\"button\"\n>                               onClick={function onClick}\n>                               className=\"flex w-full items-center gap-2.5 rounded-lg border border-border/70 bg-mute...\"\n>                             >\n                                <CircleAlert>\n                                <span className=\"min-w-0 fl...\">\n                                  <span className=\"flex items...\">\n>                                   <button\n>                                     type=\"button\"\n>                                     onClick={function onClick}\n>                                     className=\"rounded px-1.5 py-0.5 text-xs font-medium underline underline-offset-...\"\n>                                   >\n                                ...\n                          ...\n                  ...\n    ...\n",
+    "timestamp": "2026-06-22T03:19:17.490Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  },
+  {
+    "level": "error",
+    "message": "<%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. button <button>",
+    "timestamp": "2026-06-22T03:19:17.490Z",
+    "url": "http://localhost:3002/_next/static/chunks/12y__next_dist_10qdchx._.js"
+  }
+]

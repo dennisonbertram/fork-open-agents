@@ -35,6 +35,7 @@ function makeProps(
     onForkAssistantMessage: noop,
     onApproveTool: noop,
     onDenyTool: noop,
+    onApproveAllToolsForSession: noop,
     onManagedRuntimeProfileOutput: noop,
     onOpenVerifiedBuildPanel: noop,
     onOpenRuntimePanel: noop,
@@ -75,6 +76,17 @@ describe("areMessageRowPropsEqual", () => {
       areMessageRowPropsEqual(completedRowProps, {
         ...completedRowProps,
         copiedAssistantMessageId: "assistant-done",
+      }),
+    ).toBe(false);
+  });
+
+  test("re-renders when the session-wide approval handler changes", () => {
+    const completedRowProps = makeProps();
+
+    expect(
+      areMessageRowPropsEqual(completedRowProps, {
+        ...completedRowProps,
+        onApproveAllToolsForSession: () => {},
       }),
     ).toBe(false);
   });

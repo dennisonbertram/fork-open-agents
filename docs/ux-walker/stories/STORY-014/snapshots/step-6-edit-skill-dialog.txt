@@ -1,0 +1,160 @@
+- complementary:
+  - link:
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link:
+        - /url: /settings/profile
+        - text: Profile
+      - link:
+        - /url: /settings/preferences
+        - text: Preferences
+      - link:
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link:
+        - /url: /settings/agents
+        - text: Agents
+      - link:
+        - /url: /settings/models
+        - text: Models
+      - link:
+        - /url: /settings/composio
+        - text: Composio
+      - link:
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link:
+        - /url: /settings/skills
+        - text: Skills
+      - link:
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link:
+        - /url: /loops
+        - text: Loops
+      - link:
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link:
+        - /url: /settings/usage
+        - text: Usage
+      - link:
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button:
+    - text: Sign out
+- main:
+  - heading [level=1]: Skills
+  - paragraph: Author reusable instructions your agents can run like tools. Build them by hand or generate a draft with AI, then enable the ones you want available in every chat.
+  - heading [level=3]: Your skills
+  - paragraph: Reusable instructions your agents can run like tools. Enabled skills are available in every new chat.
+  - button:
+    - text: New skill
+  - heading [level=3]: /bad-name
+  - paragraph: Temporary UX walker validation skill.
+  - button:
+  - button:
+  - switch [checked]
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button:
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button:
+  - text: Output Detail
+  - button:
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - checkbox [checked]
+  - generic: Clear on copy/send
+  - checkbox [checked]
+  - generic: Block page interactions
+  - button:
+    - generic: Manage MCP & Webhooks
+  - button:
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link:
+      - /url: https://agentation.dev/mcp
+      - text: Learn more
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox:
+    - /placeholder: Webhook URL
+- dialog "Edit skill":
+  - heading "Edit skill" [level=2]
+  - paragraph: A skill is a reusable instruction your agents can run, like a tool. Write it yourself or generate a draft with AI.
+  - generic: Generate with AI
+  - paragraph: Describe what the skill should do and we'll draft the name, description, and instructions for you to refine.
+  - textbox "e.g. Review a React component for accessibility issues and suggest fixes"
+  - button "Generate draft" [disabled]:
+    - text: Generate draft
+  - generic: Name
+  - generic: /
+  - textbox "Name":
+    - /placeholder: code-review
+    - text: ux-walker-skill
+  - paragraph:
+    - text: Lowercase letters, numbers, and hyphens. Used to invoke the skill as
+    - code: /ux-walker-skill
+    - text: .
+  - generic: Description
+  - textbox "Description":
+    - /placeholder: When should an agent reach for this skill?
+    - text: Temporary UX walker edited skill.
+  - generic: Instructions
+  - textbox "Instructions":
+    - /placeholder: "# What to do\n\nStep-by-step instructions the agent follows when this skill runs."
+    - text: "# Steps Use this edited skill only for UX walker validation."
+  - paragraph: Markdown. This becomes the body of the skill the agent reads.
+  - paragraph: Invocation
+  - generic: Model can invoke automatically
+  - generic: Let the agent run this skill on its own when relevant.
+  - switch "Model can invoke automatically" [checked]
+  - checkbox [checked]
+  - generic: Invocable with /slash
+  - generic: Let you trigger it directly by typing its name.
+  - switch "Invocable with a slash command" [checked]
+  - checkbox [checked]
+  - text: Allowed tools
+  - generic: (optional)
+  - textbox "Allowed tools (optional)" [active]:
+    - /placeholder: read_file, bash
+    - text: read_file, bash
+  - paragraph: Comma-separated. Leave blank to allow all tools.
+  - button "Cancel"
+  - button "Save changes"
+  - button "Close":
+    - generic: Close

@@ -328,6 +328,8 @@ export function SessionStarter({
               <SessionStarterVercelSyncSection
                 controlsDisabled={controlsDisabled}
                 isVercelLookupPending={isVercelLookupPending}
+                repoName={selectedRepo}
+                repoOwner={selectedOwner}
                 repoProjects={repoProjects}
                 repoProjectsError={repoProjectsError}
                 requiresVercelChoice={requiresVercelChoice}

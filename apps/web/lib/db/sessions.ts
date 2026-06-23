@@ -1,6 +1,7 @@
 import type { SandboxState } from "@open-agents/sandbox";
 import { and, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./client";
+import { sanitizeJsonbValue } from "./jsonb-safe";
 import {
   chatMessages,
   chatReads,
@@ -13,6 +14,11 @@ import {
   sessions,
   shares,
 } from "./schema";
+
+function sanitizeChatMessageData(data: NewChatMessage): NewChatMessage {
+  const parts = sanitizeJsonbValue(data.parts);
+  return parts === data.parts ? data : { ...data, parts };
+}
 
 export function normalizeLegacySandboxState(
   sandboxState: unknown,
@@ -668,7 +674,8 @@ export async function forkChatThroughMessage(
 }
 
 export async function createChatMessage(data: NewChatMessage) {
-  const [message] = await db.insert(chatMessages).values(data).returning();
+  const safeData = sanitizeChatMessageData(data);
+  const [message] = await db.insert(chatMessages).values(safeData).returning();
   if (!message) {
     throw new Error("Failed to create chat message");
   }
@@ -681,9 +688,10 @@ export async function createChatMessage(data: NewChatMessage) {
  * Returns the message if created, or undefined if it already existed.
  */
 export async function createChatMessageIfNotExists(data: NewChatMessage) {
+  const safeData = sanitizeChatMessageData(data);
   const [message] = await db
     .insert(chatMessages)
-    .values(data)
+    .values(safeData)
     .onConflictDoNothing({ target: chatMessages.id })
     .returning();
   return message;
@@ -694,12 +702,13 @@ export async function createChatMessageIfNotExists(data: NewChatMessage) {
  * Use this for assistant messages that may have tool results added client-side.
  */
 export async function upsertChatMessage(data: NewChatMessage) {
+  const safeData = sanitizeChatMessageData(data);
   const [message] = await db
     .insert(chatMessages)
-    .values(data)
+    .values(safeData)
     .onConflictDoUpdate({
       target: chatMessages.id,
-      set: { parts: data.parts },
+      set: { parts: safeData.parts },
     })
     .returning();
   return message;
@@ -717,10 +726,11 @@ type UpsertChatMessageScopedResult =
 export async function upsertChatMessageScoped(
   data: NewChatMessage,
 ): Promise<UpsertChatMessageScopedResult> {
+  const safeData = sanitizeChatMessageData(data);
   return db.transaction(async (tx) => {
     const [inserted] = await tx
       .insert(chatMessages)
-      .values(data)
+      .values(safeData)
       .onConflictDoNothing({ target: chatMessages.id })
       .returning();
 
@@ -730,12 +740,12 @@ export async function upsertChatMessageScoped(
 
     const [updated] = await tx
       .update(chatMessages)
-      .set({ parts: data.parts })
+      .set({ parts: safeData.parts })
       .where(
         and(
-          eq(chatMessages.id, data.id),
-          eq(chatMessages.chatId, data.chatId),
-          eq(chatMessages.role, data.role),
+          eq(chatMessages.id, safeData.id),
+          eq(chatMessages.chatId, safeData.chatId),
+          eq(chatMessages.role, safeData.role),
         ),
       )
       .returning();

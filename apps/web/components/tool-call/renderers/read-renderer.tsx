@@ -21,6 +21,7 @@ export const ReadRenderer = memo(function ReadRenderer({
   cwd = "",
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-read">) {
   const input = part.input;
   const rawFilePath = input?.filePath ?? "...";
@@ -92,6 +93,7 @@ export const ReadRenderer = memo(function ReadRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

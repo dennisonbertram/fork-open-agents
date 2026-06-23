@@ -1,0 +1,49 @@
+URL: http://localhost:3002/loops/kkW59lbrSEtHU80w-oS0O/builder
+
+<button node_id=1 aria-label="Collapse panel" type="button" />
+<button node_id=2 type="button">New session</button>
+<button node_id=3 aria-label="Quick chat (no repo)" type="button" />
+<button node_id=4 type="button">Active 14</button>
+<button node_id=5 type="button">Archive 55</button>
+<button node_id=6 type="button">Chats</button>
+<button node_id=7 type="button">Github Testing</button>
+<button node_id=8 type="button">dennisonbertram/synthetix</button>
+<button node_id=9 type="button">Agents 1</button>
+<button node_id=10 type="button">Loops</button>
+<button node_id=11 type="button">Chicago</button>
+<button node_id=12 type="button">Repo and Branch Verification</button>
+<button node_id=13 type="button">Testing Provider Implementation</button>
+<button node_id=14 type="button">Backlog Issues Review</button>
+<button node_id=15 type="button">GitHub Issue 262 Review</button>
+<button node_id=16 type="button">Model Runtime Identification</button>
+<button node_id=17 type="button">Casual Coding Session</button>
+<button node_id=18 type="button">Reykjavik</button>
+<button node_id=19 type="button">Getting Started</button>
+<button node_id=20 type="button">dennisonbertram/partyline</button>
+<button node_id=21 type="button">Agents</button>
+<button node_id=22 type="button">Loops</button>
+<button node_id=23 type="button">New Coding Session Started</button>
+<button node_id=24 aria-label="Open settings" type="button" />
+<a node_id=47 href="/loops/kkW59lbrSEtHU80w-oS0O">Review to issues</a>
+<button node_id=48 aria-label="Loop settings" title="Loop settings" />
+<button node_id=49>Agent step</button>
+<button node_id=50>GitHub check</button>
+<button node_id=51>Condition</button>
+<button node_id=52>End</button>
+<g node_id=53 aria-label="Edge from start to review" role="group" />
+<g node_id=54 aria-label="Edge from file to end" role="group" />
+<div node_id=55 role="group">Start start</div>
+<div node_id=56>Start start</div>
+<div node_id=57 role="group">Review code Review the repository for bugs, risks, and missing tests. Wr…</div>
+<div node_id=58>Review code Review the repository for bugs, risks, and missing tests. Wr…</div>
+<div node_id=59 role="group">File issues For each item in context.review.issues, run `gh issue create…</div>
+<div node_id=60>File issues For each item in context.review.issues, run `gh issue create…</div>
+<div node_id=61 role="group">Done end</div>
+<div node_id=62>Done end</div>
+<button node_id=63 aria-label="Zoom In" title="Zoom In" type="button" />
+<button node_id=64 aria-label="Zoom Out" title="Zoom Out" type="button" />
+<button node_id=65 aria-label="Fit View" title="Fit View" type="button" />
+<button node_id=66 aria-label="Toggle Interactivity" title="Toggle Interactivity" type="button" />
+<a node_id=67 aria-label="React Flow attribution" href="https://reactflow.dev">React Flow</a>
+<button node_id=33 aria-label="Open Next.js Dev Tools" />
+<div node_id=34 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>

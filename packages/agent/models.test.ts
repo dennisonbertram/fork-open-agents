@@ -388,6 +388,32 @@ describe("direct provider models", () => {
     ]);
   });
 
+  test("uses Fireworks bearer auth for Anthropic-compatible models", () => {
+    createAnthropicCalls.length = 0;
+
+    const model = directAnthropicModel({
+      provider: "anthropic",
+      modelId: "accounts/fireworks/models/glm-5",
+      apiKey: "fireworks-key",
+      baseURL: "https://api.fireworks.ai/inference/v1",
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "anthropic",
+      modelId: "accounts/fireworks/models/glm-5",
+    });
+    expect(createAnthropicCalls).toEqual([
+      {
+        authToken: "fireworks-key",
+        baseURL: "https://api.fireworks.ai/inference/v1",
+        headers: {
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+  });
+
   test("builds an OpenAI direct model with attribution headers", () => {
     createOpenAICompatibleCalls.length = 0;
 
@@ -408,6 +434,33 @@ describe("direct provider models", () => {
         apiKey: "openai-key",
         baseURL: "https://openai.example/v1",
         headers: {
+          "http-referer": "https://open-agents.dev",
+          "x-title": "Open Agents",
+        },
+      },
+    ]);
+  });
+
+  test("uses Baseten Api-Key auth for direct OpenAI-compatible models", () => {
+    createOpenAICompatibleCalls.length = 0;
+
+    const model = directOpenAIModel({
+      provider: "openai-compatible",
+      modelId: "zai-org/GLM-5.2",
+      apiKey: "baseten-key",
+      baseURL: "https://inference.baseten.co/v1",
+    });
+
+    expect(model as unknown).toEqual({
+      provider: "openai-compatible",
+      modelId: "zai-org/GLM-5.2",
+    });
+    expect(createOpenAICompatibleCalls).toEqual([
+      {
+        name: "openai-compatible",
+        baseURL: "https://inference.baseten.co/v1",
+        headers: {
+          Authorization: "Api-Key baseten-key",
           "http-referer": "https://open-agents.dev",
           "x-title": "Open Agents",
         },

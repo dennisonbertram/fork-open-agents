@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { WebAgentUIMessage, WebAgentResponseTimeline } from "@/app/types";
 import {
   type ChatComposioSelection,
   defaultChatComposioSelection,
@@ -38,7 +39,7 @@ type OwnedSessionChatResult =
 
 type ChatMessageRecord = {
   id: string;
-  parts: Array<{ type: string; text?: string }>;
+  parts: WebAgentUIMessage;
 };
 
 type ChatRecord = {
@@ -72,9 +73,14 @@ let currentSession: {
 let chatMessages: ChatMessageRecord[] = [
   {
     id: "message-1",
-    parts: [{ type: "text", text: "Hello" }],
+    parts: {
+      id: "message-1",
+      role: "assistant",
+      parts: [{ type: "text", text: "Hello" }],
+    },
   },
 ];
+let responseTimelineMap = new Map<string, WebAgentResponseTimeline>();
 
 let updatedChat: ChatRecord | null = {
   id: "chat-1",
@@ -150,6 +156,23 @@ mock.module("@/lib/db/sessions", () => ({
   deleteChat: async (chatId: string) => {
     deleteChatCalls.push(chatId);
   },
+}));
+
+mock.module("@/lib/db/chat-response-timelines", () => ({
+  getChatResponseTimelineMap: async (_chatId: string) => responseTimelineMap,
+  attachTimelineToMessage: (
+    message: WebAgentUIMessage,
+    timeline: WebAgentResponseTimeline | undefined,
+  ) =>
+    timeline
+      ? {
+          ...message,
+          metadata: {
+            ...message.metadata,
+            responseTimeline: timeline,
+          },
+        }
+      : message,
 }));
 
 mock.module("@/lib/db/inference-profiles", () => ({
@@ -234,9 +257,14 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     chatMessages = [
       {
         id: "message-1",
-        parts: [{ type: "text", text: "Hello" }],
+        parts: {
+          id: "message-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Hello" }],
+        },
       },
     ];
+    responseTimelineMap = new Map();
     updatedChat = {
       id: "chat-1",
       sessionId: "session-1",
@@ -286,11 +314,19 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     chatMessages = [
       {
         id: "message-1",
-        parts: [{ type: "text", text: "Hello" }],
+        parts: {
+          id: "message-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Hello" }],
+        },
       },
       {
         id: "message-2",
-        parts: [{ type: "text", text: "World" }],
+        parts: {
+          id: "message-2",
+          role: "assistant",
+          parts: [{ type: "text", text: "World" }],
+        },
       },
     ];
     const { GET } = await routeModulePromise;
@@ -305,7 +341,7 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
         activeStreamId: string | null;
       };
       isStreaming: boolean;
-      messages: ChatMessageRecord["parts"][];
+      messages: WebAgentUIMessage[];
     };
 
     expect(response.status).toBe(200);
@@ -318,6 +354,52 @@ describe("/api/sessions/[sessionId]/chats/[chatId]", () => {
     });
     expect(body.isStreaming).toBe(true);
     expect(body.messages).toEqual(chatMessages.map((message) => message.parts));
+  });
+
+  test("GET preserves response timelines in refreshed chat snapshots", async () => {
+    const responseTimeline = {
+      finishedAt: "2026-06-23T15:10:12.000Z",
+      segments: [
+        {
+          category: "inference",
+          durationMs: 1200,
+          finishedAt: "2026-06-23T15:10:12.000Z",
+          id: "run-1:inference:1",
+          label: "Model step 1",
+          startedAt: "2026-06-23T15:10:10.800Z",
+        },
+      ],
+      startedAt: "2026-06-23T15:10:10.000Z",
+      status: "completed",
+      totalDurationMs: 2000,
+      workflowRunId: "run-1",
+    } satisfies WebAgentResponseTimeline;
+    chatMessages = [
+      {
+        id: "message-1",
+        parts: {
+          id: "message-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Hello" }],
+          metadata: {
+            selectedModelId: "openai/gpt-5.5",
+          },
+        },
+      },
+    ];
+    responseTimelineMap = new Map([["message-1", responseTimeline]]);
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(createGetRequest(), createContext());
+    const body = (await response.json()) as {
+      messages: WebAgentUIMessage[];
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.messages[0]?.metadata?.selectedModelId).toBe("openai/gpt-5.5");
+    expect(body.messages[0]?.metadata?.responseTimeline).toEqual(
+      responseTimeline,
+    );
   });
 
   test("PATCH returns auth error from guard", async () => {

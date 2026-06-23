@@ -1,0 +1,253 @@
+- button "Collapse panel":
+- button "New session":
+  - text: New session
+- button "Quick chat (no repo)":
+- button "Active13"
+- button "Archive 55":
+  - text: Archive
+  - generic: "55"
+- button "Chats" [expanded]:
+  - generic: Chats
+- button "Github Testing":
+  - paragraph: Github Testing
+- button "dennisonbertram/synthetix" [expanded]:
+  - generic: dennisonbertram/synthetix
+- button "Agents 1":
+  - generic: Agents
+  - generic: "1"
+- link "Create agent for dennisonbertram/synthetix":
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/synthetix":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button "Austin":
+  - paragraph: Austin
+- button "Testing Provider Implementation":
+  - paragraph: Testing Provider Implementation
+- button "Backlog Issues Review":
+  - paragraph: Backlog Issues Review
+- button "GitHub Issue 262 Review":
+  - paragraph: GitHub Issue 262 Review
+- button "Model Runtime Identification":
+  - paragraph: Model Runtime Identification
+- button "Casual Coding Session":
+  - paragraph: Casual Coding Session
+- button "Reykjavik":
+  - paragraph: Reykjavik
+- button "Getting Started":
+  - paragraph: Getting Started
+- button "dennisonbertram/partyline" [expanded]:
+  - generic: dennisonbertram/partyline
+- button "Agents":
+  - generic: Agents
+- link "Create agent for dennisonbertram/partyline":
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/partyline":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button "New Coding Session Started":
+  - paragraph: New Coding Session Started
+- button "Documentation Review Session":
+  - paragraph: Documentation Review Session
+- button "Architecture Overview Discussion":
+  - paragraph: Architecture Overview Discussion
+- button "Issue Status Overview Check +11 -3":
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- img "dennison-9116"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button "Open settings":
+- main:
+  - button:
+  - link "synthetix":
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Austin
+  - button:
+  - generic: Direct
+  - button "Runtime mode":
+  - button "Open Editor" [disabled]:
+  - button "Start dev server":
+  - button "Open latest preview deployment" [disabled]:
+  - button:
+  - button "Verified Build":
+  - button "Runtime inspector":
+  - button "New chat":
+    - generic: New chat
+  - button "Rename chat":
+  - button:
+  - paragraph: Send a message to get started
+  - textbox "Request changes or ask a question..."
+  - button "Attach files":
+  - button "Change model" [expanded]:
+    - generic: GPT 5.5
+  - button "Select external tools":
+    - 'generic "Active tools: GitHub (native)"':
+      - generic "GitHub (native)":
+  - 'button "Runtime: Direct"':
+    - generic: Direct
+  - button "Select workflow":
+    - generic: Workflow
+  - button "Record voice input":
+  - button "Send message" [disabled]:
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert: Austin | Open Agents
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"
+- dialog:
+  - combobox [expanded] [active]
+  - button "Manage models":
+  - listbox "Suggestions":
+    - generic: Anthropic
+    - group "Anthropic":
+      - option "Haiku 4.5 $$ 200K Fast · Cheap" [selected]:
+        - generic: Haiku 4.5
+        - generic: $$
+        - generic: 200K
+        - generic: Fast · Cheap
+      - option "Opus 4.6 $$ 1000K Reasoning · 1M ctx":
+        - generic: Opus 4.6
+        - generic: $$
+        - generic: 1000K
+        - generic: Reasoning · 1M ctx
+    - generic: OpenAI
+    - group "OpenAI":
+      - option "GPT 5.4 $$ 922K Balanced default":
+        - generic: GPT 5.4
+        - generic: $$
+        - generic: 922K
+        - generic: Balanced
+        - generic: default
+      - option "GPT 5.4 Nano $ 400K Fast · Cheap":
+        - generic: GPT 5.4 Nano
+        - generic: $
+        - generic: 400K
+        - generic: Fast · Cheap
+      - option "GPT 5.5 $$ 1000K Premium":
+        - generic: GPT 5.5
+        - generic: $$
+        - generic: 1000K
+        - generic: Premium
+    - generic: Fireworks
+    - group "Fireworks":
+      - option "V3.1 Your personal provider key 164K":
+        - generic: V3.1
+        - generic "Your personal provider key"
+        - generic: 164K
+      - option "V4 Flash Your personal provider key 1000K":
+        - generic: V4 Flash
+        - generic "Your personal provider key"
+        - generic: 1000K
+      - option "GLM 5.2 Your personal provider key 1000K":
+        - generic: GLM 5.2
+        - generic "Your personal provider key"
+        - generic: 1000K
+    - generic: Google
+    - group "Google":
+      - option "2.5 Flash $ 1049K Long-context":
+        - generic: 2.5 Flash
+        - generic: $
+        - generic: 1049K
+        - generic: Long-context
+    - generic: ZAI
+    - group "ZAI":
+      - option "GLM-4.5 Your personal provider key 131K":
+        - generic: GLM-4.5
+        - generic "Your personal provider key"
+        - generic: 131K
+      - option "GLM 4.5 Air Your personal provider key 131K":
+        - generic: GLM 4.5 Air
+        - generic "Your personal provider key"
+        - generic: 131K
+      - option "GLM 4.5V Your personal provider key 64K":
+        - generic: GLM 4.5V
+        - generic "Your personal provider key"
+        - generic: 64K
+      - option "GLM 4.6 Your personal provider key 205K":
+        - generic: GLM 4.6
+        - generic "Your personal provider key"
+        - generic: 205K
+      - option "GLM-4.6V Your personal provider key 128K":
+        - generic: GLM-4.6V
+        - generic "Your personal provider key"
+        - generic: 128K
+      - option "GLM-4.6V-Flash Your personal provider key 128K":
+        - generic: GLM-4.6V-Flash
+        - generic "Your personal provider key"
+        - generic: 128K
+      - option "GLM 4.7 FlashX Your personal provider key 200K":
+        - generic: GLM 4.7 FlashX
+        - generic "Your personal provider key"
+        - generic: 200K
+      - option "GLM 5 Your personal provider key 205K":
+        - generic: GLM 5
+        - generic "Your personal provider key"
+        - generic: 205K
+      - option "GLM 5 Turbo Your personal provider key 200K":
+        - generic: GLM 5 Turbo
+        - generic "Your personal provider key"
+        - generic: 200K
+      - option "GLM 5.1 Your personal provider key 200K":
+        - generic: GLM 5.1
+        - generic "Your personal provider key"
+        - generic: 200K
+      - option "GLM 5V Turbo Your personal provider key 200K":
+        - generic: GLM 5V Turbo
+        - generic "Your personal provider key"
+        - generic: 200K

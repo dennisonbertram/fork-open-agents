@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
+import {
+  collectPendingApprovals,
+  findPendingApproval,
+} from "@/app/lib/pending-tool-approvals";
 import type { WebAgentUIMessage } from "@/app/types";
-import { findPendingApproval } from "./mobile-tool-approval-bar";
 
 /**
  * These tests feed the REAL AI SDK tool-part shapes the runtime produces
@@ -138,5 +141,49 @@ describe("findPendingApproval", () => {
       { role: "assistant", parts: [{ type: "text", text: "ok" }] },
     ]);
     expect(findPendingApproval(messages)).toBeNull();
+  });
+
+  it("collects unique pending approvals across assistant messages for session auto-approve", () => {
+    const messages = asMessages([
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-bash",
+            toolCallId: "c1",
+            state: "approval-requested",
+            approval: { id: "approval-1" },
+          },
+          {
+            type: "tool-bash",
+            toolCallId: "c1-duplicate",
+            state: "approval-requested",
+            approval: { id: "approval-1" },
+          },
+        ],
+      },
+      { role: "user", parts: [{ type: "text", text: "and then?" }] },
+      {
+        role: "assistant",
+        parts: [
+          {
+            type: "tool-web_fetch",
+            toolCallId: "c2",
+            state: "approval-requested",
+            approval: { id: "approval-2" },
+          },
+          {
+            type: "tool-read",
+            toolCallId: "c3",
+            state: "output-available",
+          },
+        ],
+      },
+    ]);
+
+    expect(collectPendingApprovals(messages)).toEqual([
+      { id: "approval-1", toolName: "bash" },
+      { id: "approval-2", toolName: "web_fetch" },
+    ]);
   });
 });

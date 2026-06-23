@@ -1,0 +1,15 @@
+<g node_id=30 aria-label="Edge from start to review" role="group" />
+<g node_id=31 aria-label="Edge from file to end" role="group" />
+<div node_id=32 role="group">Start idle start</div>
+<div node_id=33>Start idle start</div>
+<div node_id=34 role="group">Review code idle Review the repository for bugs, risks, and missing tests. Wr…</div>
+<div node_id=35>Review code idle Review the repository for bugs, risks, and missing tests. Wr…</div>
+<div node_id=36 role="group">File issues idle For each item in context.review.issues, run `gh issue create…</div>
+<div node_id=37>File issues idle For each item in context.review.issues, run `gh issue create…</div>
+<div node_id=38 role="group">Done idle end</div>
+<div node_id=39>Done idle end</div>
+<button node_id=44 aria-label="Open Next.js Dev Tools" />
+<div node_id=45 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>
+<button node_id=46 type="button">Keep running</button>
+<button node_id=47 type="button">Cancel run</button>
+<button node_id=48 type="button">Close</button>

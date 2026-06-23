@@ -38,6 +38,7 @@ export type ToolRendererProps<T extends ToolPartType> = {
   cwd?: string;
   onApprove?: (id: string) => void;
   onDeny?: (id: string, reason?: string) => void;
+  onApproveAllForSession?: (id: string) => void;
 };
 
 /**

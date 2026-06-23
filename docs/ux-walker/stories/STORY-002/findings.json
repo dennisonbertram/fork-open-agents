@@ -1,0 +1,18 @@
+[
+  {
+    "id": "F-STORY-002-001",
+    "story_id": "STORY-002",
+    "severity": "medium",
+    "category": "a11y",
+    "criterion": "Information density / keyboard navigation",
+    "score": "warn",
+    "description": "The Usage page exposes many daily chart bars as individual buttons, creating a very large tab/screen-reader surface.",
+    "expected": "The chart should remain inspectable without overwhelming keyboard and screen-reader navigation.",
+    "actual": "The accessibility tree contains dozens of separate buttons named like \"Usage for Sun, Sep 28, 2025\".",
+    "screenshot": null,
+    "suggested_fix": "Review the chart interaction model and consider roving focus, grouped chart semantics, or a summarised accessible table/detail pattern.",
+    "files_likely_involved": [
+      "apps/web/app/settings/usage/usage-insights-section.tsx"
+    ]
+  }
+]

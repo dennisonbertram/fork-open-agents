@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { formatTokens } from "@open-agents/shared";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import useSWR from "swr";
 import {
   CheckCircle2,
   KeyRound,
+  ListChecks,
   Loader2,
   Pencil,
   Plus,
   Trash2,
   XCircle,
 } from "lucide-react";
+import { ModelManagerDialog } from "@/components/model-manager-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -42,12 +45,42 @@ import type {
   SafeInferenceProfile,
 } from "@/lib/inference/types";
 import { INFERENCE_PROFILE_PROVIDER_LABELS } from "@/lib/inference/types";
+import { estimateModelUsageCost } from "@/lib/models";
+import type { ModelOption } from "@/lib/model-options";
 import { fetcher } from "@/lib/swr";
+import { formatUsd } from "@/lib/usage/summary";
 import { cn } from "@/lib/utils";
+import { useModelOptions } from "@/hooks/use-model-options";
+import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { SettingsSectionHeader } from "./_components/section-header";
 
 export interface InferenceProfilesResponse {
   profiles: SafeInferenceProfile[];
+}
+
+interface InferenceProfileUsageRow {
+  inferenceProfileId: string;
+  provider: string | null;
+  modelId: string | null;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  messageCount: number;
+  toolCallCount: number;
+}
+
+interface InferenceProfileUsageResponse {
+  usage: InferenceProfileUsageRow[];
+}
+
+export interface ProfileUsageSummary {
+  totalTokens: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+  pricedTokens: number;
+  modelCount: number;
 }
 
 type SaveProfileInput = {
@@ -62,6 +95,184 @@ const PROVIDER_OPTIONS: InferenceProfileProvider[] = [
   "anthropic",
   "openai-compatible",
 ];
+const EMPTY_ENABLED_MODEL_IDS: string[] = [];
+
+export function getProfileModelOptions(
+  modelOptions: ModelOption[],
+  profileId: string,
+): ModelOption[] {
+  return modelOptions.filter(
+    (option) =>
+      option.source === "user" && option.inferenceProfileId === profileId,
+  );
+}
+
+export function getProfileSelectedModelIds({
+  enabledModelIds,
+  profileModelOptions,
+}: {
+  enabledModelIds: string[];
+  profileModelOptions: ModelOption[];
+}): string[] {
+  const profileModelIds = profileModelOptions.map((option) => option.id);
+  if (enabledModelIds.length === 0) {
+    return profileModelIds;
+  }
+
+  const enabledModelIdSet = new Set(enabledModelIds);
+  return profileModelIds.filter((modelId) => enabledModelIdSet.has(modelId));
+}
+
+export function mergeProfileEnabledModelIds({
+  allModelOptions,
+  currentEnabledModelIds,
+  nextProfileModelIds,
+  profileModelOptions,
+}: {
+  allModelOptions: ModelOption[];
+  currentEnabledModelIds: string[];
+  nextProfileModelIds: string[];
+  profileModelOptions: ModelOption[];
+}): string[] {
+  if (profileModelOptions.length === 0) {
+    return currentEnabledModelIds;
+  }
+
+  const allModelIds = allModelOptions.map((option) => option.id);
+  const allModelIdSet = new Set(allModelIds);
+  const profileModelIdSet = new Set(
+    profileModelOptions.map((option) => option.id),
+  );
+  const nextEnabledModelIdSet =
+    currentEnabledModelIds.length === 0
+      ? new Set(allModelIds)
+      : new Set(currentEnabledModelIds);
+
+  for (const modelId of profileModelIdSet) {
+    nextEnabledModelIdSet.delete(modelId);
+  }
+
+  for (const modelId of nextProfileModelIds) {
+    if (profileModelIdSet.has(modelId)) {
+      nextEnabledModelIdSet.add(modelId);
+    }
+  }
+
+  const unknownCurrentModelIds =
+    currentEnabledModelIds.length === 0
+      ? []
+      : currentEnabledModelIds.filter((modelId) => !allModelIdSet.has(modelId));
+  const allKnownModelsSelected = allModelIds.every((modelId) =>
+    nextEnabledModelIdSet.has(modelId),
+  );
+
+  if (allKnownModelsSelected && unknownCurrentModelIds.length === 0) {
+    return [];
+  }
+
+  return [
+    ...allModelIds.filter((modelId) => nextEnabledModelIdSet.has(modelId)),
+    ...unknownCurrentModelIds,
+  ];
+}
+
+export function summarizeProfileUsage({
+  modelOptions,
+  profileId,
+  usageRows,
+}: {
+  modelOptions: ModelOption[];
+  profileId: string;
+  usageRows: InferenceProfileUsageRow[];
+}): ProfileUsageSummary | null {
+  const profileRows = usageRows.filter(
+    (row) => row.inferenceProfileId === profileId,
+  );
+  if (profileRows.length === 0) {
+    return null;
+  }
+
+  const costByModelId = new Map<string, NonNullable<ModelOption["cost"]>>();
+  for (const option of modelOptions) {
+    if (!option.cost) {
+      continue;
+    }
+
+    costByModelId.set(option.id, option.cost);
+    if (option.baseModelId) {
+      costByModelId.set(option.baseModelId, option.cost);
+    }
+  }
+
+  const modelIds = new Set<string>();
+  let inputTokens = 0;
+  let cachedInputTokens = 0;
+  let outputTokens = 0;
+  let estimatedCostUsd = 0;
+  let pricedTokens = 0;
+
+  for (const row of profileRows) {
+    inputTokens += row.inputTokens;
+    cachedInputTokens += row.cachedInputTokens;
+    outputTokens += row.outputTokens;
+
+    if (row.modelId) {
+      modelIds.add(row.modelId);
+    }
+
+    const modelTotalTokens = row.inputTokens + row.outputTokens;
+    const cost =
+      row.modelId === null
+        ? undefined
+        : estimateModelUsageCost(row, costByModelId.get(row.modelId));
+    if (cost === undefined) {
+      continue;
+    }
+
+    estimatedCostUsd += cost;
+    pricedTokens += modelTotalTokens;
+  }
+
+  const totalTokens = inputTokens + outputTokens;
+  if (totalTokens <= 0) {
+    return null;
+  }
+
+  return {
+    totalTokens,
+    inputTokens,
+    cachedInputTokens,
+    outputTokens,
+    estimatedCostUsd,
+    pricedTokens,
+    modelCount: modelIds.size,
+  };
+}
+
+export function getProfileUsageDisplayText(
+  summary: ProfileUsageSummary | null,
+): string | null {
+  if (!summary) {
+    return null;
+  }
+
+  const tokenLabel = formatTokens(summary.totalTokens);
+  if (summary.pricedTokens <= 0) {
+    return `Cost unavailable across ${tokenLabel} tokens`;
+  }
+
+  const pricedRatio =
+    summary.pricedTokens >= summary.totalTokens
+      ? null
+      : ` · ${Math.round((summary.pricedTokens / summary.totalTokens) * 100)}% priced`;
+  return `${formatUsd(summary.estimatedCostUsd)} est. spent across ${tokenLabel} tokens${pricedRatio ?? ""}`;
+}
+
+export function getProfileEnabledToggleLabel(
+  profile: Pick<SafeInferenceProfile, "enabled" | "name">,
+): string {
+  return `${profile.enabled ? "Disable" : "Enable"} ${profile.name}`;
+}
 
 function formatProfileDate(value: Date | string | null): string | null {
   if (!value) {
@@ -220,8 +431,8 @@ function ProfileDialog({
             />
             <p className="text-xs text-muted-foreground">
               {provider === "anthropic"
-                ? "Empty uses Anthropic. URLs without a version segment are normalized to end in /v1."
-                : "Required. Enter the OpenAI-compatible API root; URLs without a version segment are normalized to end in /v1."}
+                ? "Empty uses Anthropic. Base URLs and full /messages or /models URLs are normalized to the SDK /v1 base."
+                : "Required. Base URLs and full /chat/completions, /responses, or /models URLs are normalized to the /v1 root."}
             </p>
           </div>
 
@@ -304,20 +515,40 @@ function ProfileStatus({ profile }: { profile: SafeInferenceProfile }) {
 }
 
 function ProfileCard({
+  enabledModelCount,
   profile,
+  profileUsageSummary,
   isSaving,
   isTesting,
+  modelCount,
+  modelSelectionDisabled,
   onEdit,
   onDelete,
+  onManageModels,
   onTest,
+  onToggleEnabled,
 }: {
+  enabledModelCount: number;
   profile: SafeInferenceProfile;
+  profileUsageSummary: ProfileUsageSummary | null;
   isSaving: boolean;
   isTesting: boolean;
+  modelCount: number;
+  modelSelectionDisabled: boolean;
   onEdit: () => void;
   onDelete: () => void;
+  onManageModels: () => void;
   onTest: () => void;
+  onToggleEnabled: (enabled: boolean) => void;
 }) {
+  const enabledToggleId = `inference-profile-enabled-${profile.id}`;
+  const profileUsageText = getProfileUsageDisplayText(profileUsageSummary);
+  const modelSelectionTooltip = !profile.enabled
+    ? "Enable this profile before choosing its models."
+    : modelCount === 0
+      ? "Test this profile to discover models."
+      : "Choose which models from this profile appear in chat pickers.";
+
   return (
     <div
       className={cn(
@@ -359,8 +590,50 @@ function ProfileCard({
               </span>
             )}
           </div>
+          {profileUsageText && (
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+              <span className="font-mono tabular-nums">{profileUsageText}</span>
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          <div className="mr-1 flex items-center gap-2 rounded-md border border-border/70 px-2 py-1">
+            <Label
+              htmlFor={enabledToggleId}
+              className="text-xs font-normal text-muted-foreground"
+            >
+              {profile.enabled ? "Enabled" : "Disabled"}
+            </Label>
+            <Switch
+              id={enabledToggleId}
+              checked={profile.enabled}
+              onCheckedChange={onToggleEnabled}
+              disabled={isSaving || isTesting}
+              aria-label={getProfileEnabledToggleLabel(profile)}
+            />
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={onManageModels}
+                disabled={isSaving || isTesting || modelSelectionDisabled}
+                aria-label={`Manage models for ${profile.name}`}
+                className="gap-1.5"
+              >
+                <ListChecks className="size-3.5" />
+                Models
+                {modelCount > 0 && (
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {enabledModelCount}/{modelCount}
+                  </span>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{modelSelectionTooltip}</TooltipContent>
+          </Tooltip>
           <Button
             type="button"
             size="sm"
@@ -413,13 +686,56 @@ export function InferenceProfilesSection() {
     "/api/inference-profiles",
     fetcher,
   );
+  const { data: usageData, error: usageError } =
+    useSWR<InferenceProfileUsageResponse>(
+      "/api/inference-profiles/usage",
+      fetcher,
+    );
+  const {
+    error: modelOptionsError,
+    loading: modelOptionsLoading,
+    modelOptions,
+  } = useModelOptions();
+  const {
+    error: preferencesError,
+    loading: preferencesLoading,
+    preferences,
+    updatePreferences,
+  } = useUserPreferences();
   const profiles = data?.profiles ?? [];
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProfile, setEditingProfile] =
     useState<SafeInferenceProfile | null>(null);
+  const [managingModelsProfileId, setManagingModelsProfileId] = useState<
+    string | null
+  >(null);
   const [isSaving, setIsSaving] = useState(false);
   const [testingProfileId, setTestingProfileId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const currentEnabledModelIds =
+    preferences?.enabledModelIds ?? EMPTY_ENABLED_MODEL_IDS;
+  const managingModelsProfile =
+    profiles.find((profile) => profile.id === managingModelsProfileId) ?? null;
+  const managingProfileModelOptions = useMemo(
+    () =>
+      managingModelsProfileId
+        ? getProfileModelOptions(modelOptions, managingModelsProfileId)
+        : [],
+    [managingModelsProfileId, modelOptions],
+  );
+  const managingProfileSelectedModelIds = useMemo(
+    () =>
+      getProfileSelectedModelIds({
+        enabledModelIds: currentEnabledModelIds,
+        profileModelOptions: managingProfileModelOptions,
+      }),
+    [currentEnabledModelIds, managingProfileModelOptions],
+  );
+  const modelPreferencesUnavailable =
+    modelOptionsLoading ||
+    preferencesLoading ||
+    Boolean(modelOptionsError) ||
+    Boolean(preferencesError);
 
   const handleOpenCreate = () => {
     setEditingProfile(null);
@@ -560,6 +876,98 @@ export function InferenceProfilesSection() {
     }
   };
 
+  const handleToggleProfileEnabled = async (
+    profile: SafeInferenceProfile,
+    enabled: boolean,
+  ) => {
+    setIsSaving(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/inference-profiles", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profileId: profile.id,
+          enabled,
+        }),
+      });
+      const responseData = (await response.json()) as
+        | { profile: SafeInferenceProfile }
+        | { error?: string };
+
+      if (!response.ok || !("profile" in responseData)) {
+        setError(
+          "error" in responseData
+            ? (responseData.error ?? "Failed to update inference profile")
+            : "Failed to update inference profile",
+        );
+        return;
+      }
+
+      if (!enabled && managingModelsProfileId === profile.id) {
+        setManagingModelsProfileId(null);
+      }
+
+      await mutate(
+        {
+          profiles: profiles.map((existingProfile) =>
+            existingProfile.id === responseData.profile.id
+              ? responseData.profile
+              : existingProfile,
+          ),
+        },
+        { revalidate: false },
+      );
+    } catch (toggleError) {
+      console.error("Failed to update inference profile:", toggleError);
+      setError("Failed to update inference profile");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveProfileModels = useCallback(
+    async (nextProfileModelIds: string[]) => {
+      if (!managingModelsProfileId) {
+        return;
+      }
+
+      const profileModelOptions = getProfileModelOptions(
+        modelOptions,
+        managingModelsProfileId,
+      );
+      const enabledModelIds = mergeProfileEnabledModelIds({
+        allModelOptions: modelOptions,
+        currentEnabledModelIds,
+        nextProfileModelIds,
+        profileModelOptions,
+      });
+
+      setIsSaving(true);
+      setError(null);
+      try {
+        await updatePreferences({ enabledModelIds });
+      } catch (saveError) {
+        console.error("Failed to update profile model selection:", saveError);
+        setError(
+          saveError instanceof Error
+            ? saveError.message
+            : "Failed to update profile models",
+        );
+        throw saveError;
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [
+      currentEnabledModelIds,
+      managingModelsProfileId,
+      modelOptions,
+      updatePreferences,
+    ],
+  );
+
   if (isLoading) {
     return <InferenceProfilesSectionSkeleton />;
   }
@@ -588,6 +996,22 @@ export function InferenceProfilesSection() {
             <p className="text-xs text-destructive">{error}</p>
           </div>
         )}
+        {(modelOptionsError || preferencesError) && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+            <p className="text-xs text-destructive">
+              {modelOptionsError ??
+                preferencesError ??
+                "Could not load model preferences"}
+            </p>
+          </div>
+        )}
+        {usageError && (
+          <div className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2">
+            <p className="text-xs text-destructive">
+              Could not load inference profile usage.
+            </p>
+          </div>
+        )}
 
         {profiles.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">
@@ -595,17 +1019,45 @@ export function InferenceProfilesSection() {
           </div>
         ) : (
           <div className="space-y-2">
-            {profiles.map((profile) => (
-              <ProfileCard
-                key={profile.id}
-                profile={profile}
-                isSaving={isSaving}
-                isTesting={testingProfileId === profile.id}
-                onEdit={() => handleOpenEdit(profile)}
-                onDelete={() => handleDelete(profile.id)}
-                onTest={() => handleTest(profile.id)}
-              />
-            ))}
+            {profiles.map((profile) => {
+              const profileModelOptions = getProfileModelOptions(
+                modelOptions,
+                profile.id,
+              );
+              const selectedProfileModelIds = getProfileSelectedModelIds({
+                enabledModelIds: currentEnabledModelIds,
+                profileModelOptions,
+              });
+              const profileUsageSummary = summarizeProfileUsage({
+                modelOptions,
+                profileId: profile.id,
+                usageRows: usageData?.usage ?? [],
+              });
+
+              return (
+                <ProfileCard
+                  key={profile.id}
+                  enabledModelCount={selectedProfileModelIds.length}
+                  profile={profile}
+                  profileUsageSummary={profileUsageSummary}
+                  isSaving={isSaving}
+                  isTesting={testingProfileId === profile.id}
+                  modelCount={profileModelOptions.length}
+                  modelSelectionDisabled={
+                    modelPreferencesUnavailable ||
+                    profileModelOptions.length === 0 ||
+                    !profile.enabled
+                  }
+                  onEdit={() => handleOpenEdit(profile)}
+                  onDelete={() => handleDelete(profile.id)}
+                  onManageModels={() => setManagingModelsProfileId(profile.id)}
+                  onTest={() => handleTest(profile.id)}
+                  onToggleEnabled={(enabled) =>
+                    handleToggleProfileEnabled(profile, enabled)
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -616,6 +1068,24 @@ export function InferenceProfilesSection() {
         editingProfile={editingProfile}
         isSaving={isSaving}
         onSubmit={handleSubmit}
+      />
+      <ModelManagerDialog
+        closeOnSaveStart
+        emptySelectionMode="none"
+        enabledModelIds={managingProfileSelectedModelIds}
+        modelOptions={managingProfileModelOptions}
+        onOpenChange={(open) => {
+          if (!open) {
+            setManagingModelsProfileId(null);
+          }
+        }}
+        onSave={handleSaveProfileModels}
+        open={managingModelsProfile !== null}
+        title={
+          managingModelsProfile
+            ? `${managingModelsProfile.name} models`
+            : "Manage models"
+        }
       />
     </>
   );

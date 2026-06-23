@@ -10,6 +10,7 @@ export const FetchRenderer = memo(function FetchRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-web_fetch">) {
   const input = part.input;
   const url = input?.url ?? "...";
@@ -39,6 +40,7 @@ export const FetchRenderer = memo(function FetchRenderer({
       state={mergedState}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

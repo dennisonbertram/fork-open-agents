@@ -1,0 +1,1407 @@
+{
+  "buttonCount": 289,
+  "buttons": [
+    {
+      "aria": "",
+      "role": "",
+      "text": "Sign out"
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Sep 28, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Sep 29, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Sep 30, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Oct 1, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Oct 2, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Oct 3, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Oct 4, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Oct 5, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Oct 6, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Oct 7, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Oct 8, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Oct 9, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Oct 10, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Oct 11, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Oct 12, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Oct 13, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Oct 14, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Oct 15, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Oct 16, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Oct 17, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Oct 18, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Oct 19, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Oct 20, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Oct 21, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Oct 22, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Oct 23, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Oct 24, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Oct 25, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Oct 26, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Oct 27, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Oct 28, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Oct 29, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Oct 30, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Oct 31, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Nov 1, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Nov 2, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Nov 3, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Nov 4, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Nov 5, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Nov 6, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Nov 7, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Nov 8, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Nov 9, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Nov 10, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Nov 11, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Nov 12, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Nov 13, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Nov 14, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Nov 15, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Nov 16, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Nov 17, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Nov 18, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Nov 19, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Nov 20, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Nov 21, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Nov 22, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Nov 23, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Nov 24, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Nov 25, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Nov 26, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Nov 27, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Nov 28, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Nov 29, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Nov 30, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Dec 1, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Dec 2, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Dec 3, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Dec 4, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Dec 5, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Dec 6, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Dec 7, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Dec 8, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Dec 9, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Dec 10, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Dec 11, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Dec 12, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Dec 13, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Dec 14, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Dec 15, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Dec 16, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Dec 17, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Dec 18, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Dec 19, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Dec 20, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Dec 21, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Dec 22, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Dec 23, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Dec 24, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Dec 25, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Dec 26, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Dec 27, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Dec 28, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Dec 29, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Dec 30, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Dec 31, 2025",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jan 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jan 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jan 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jan 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jan 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jan 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jan 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jan 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jan 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jan 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jan 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jan 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jan 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jan 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jan 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jan 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jan 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jan 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jan 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jan 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jan 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jan 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jan 23, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jan 24, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jan 25, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jan 26, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jan 27, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jan 28, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jan 29, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jan 30, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jan 31, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Feb 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Feb 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Feb 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Feb 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Feb 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Feb 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Feb 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Feb 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Feb 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Feb 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Feb 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Feb 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Feb 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Feb 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Feb 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Feb 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Feb 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Feb 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Feb 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Feb 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Feb 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Feb 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Feb 23, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Feb 24, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Feb 25, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Feb 26, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Feb 27, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Feb 28, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Mar 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Mar 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Mar 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Mar 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Mar 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Mar 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Mar 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Mar 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Mar 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Mar 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Mar 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Mar 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Mar 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Mar 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Mar 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Mar 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Mar 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Mar 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Mar 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Mar 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Mar 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Mar 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Mar 23, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Mar 24, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Mar 25, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Mar 26, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Mar 27, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Mar 28, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Mar 29, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Mar 30, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Mar 31, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Apr 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Apr 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Apr 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Apr 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Apr 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Apr 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Apr 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Apr 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Apr 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Apr 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Apr 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Apr 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Apr 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Apr 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Apr 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Apr 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Apr 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Apr 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Apr 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Apr 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Apr 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Apr 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Apr 23, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Apr 24, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Apr 25, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Apr 26, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Apr 27, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Apr 28, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Apr 29, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Apr 30, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, May 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, May 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, May 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, May 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, May 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, May 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, May 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, May 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, May 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, May 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, May 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, May 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, May 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, May 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, May 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, May 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, May 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, May 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, May 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, May 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, May 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, May 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, May 23, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, May 24, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, May 25, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, May 26, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, May 27, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, May 28, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, May 29, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, May 30, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, May 31, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jun 1, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jun 2, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jun 3, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jun 4, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jun 5, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jun 6, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jun 7, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jun 8, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jun 9, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jun 10, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jun 11, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jun 12, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jun 13, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jun 14, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jun 15, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Tue, Jun 16, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Wed, Jun 17, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Thu, Jun 18, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Fri, Jun 19, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sat, Jun 20, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Sun, Jun 21, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "Usage for Mon, Jun 22, 2026",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": ""
+    },
+    {
+      "aria": "",
+      "role": "",
+      "text": "Standard"
+    }
+  ],
+  "text": "Back\nACCOUNT\nProfile\nPreferences\nConnections\nTOOLS\nAgents\nModels\nComposio\nMCP servers\nSkills\nBackground agents\nLoops\nRuntime profiles\nINSIGHTS\nUsage\nLeaderboard\nSign out\nUsage\n\nSee how much you've used Open Agents — tokens, cost, and your busiest repos.\n\nUsage\nToken consumption and activity over the past 39 weeks. Click the chart to filter.\nTotal tokens\n26.7m\nEstimated cost\n$15.61\nEstimated from 95% of tokens with known pricing\nMessages\n128\nTool calls\n902\nLess\nMore\nAgent split\nMain agent\n24.5m\n(92%)\nSubagents\n2.3m\n(8%)\nUsage by model\ngpt-5.4\n24.2m\n(90%)\nglm-5.2\n1.3m\n(5%)\ngpt-5.5\n538.5k\n(2%)\ngemini-3.5-flash\n354.3k\n(1%)\nclaude-opus-4.6\n199.9k\n(1%)\nOther\n208.5k\n(1%)\nInsights · last 40 weeks\nTracked PRs\n5\n0 merged · 0 open\nMerge rate\n0%\n5 sessions with PRs\nLargest turn\n5.0m\nTokens · main agent\nAvg tokens / turn\n191.0k\n128 assistant turns\nTool calls / turn\n7.0\nAcross all tool calls\nCache hit ratio\n87%\nCached / total input tokens\n\nv3.0.2\n\nOutput Detail\nStandard\nReact Components\nHide Until Restart\nMarker Color\nClear on copy/send\nBlock page interactions\nManage MCP & Webhooks\nManage MCP & Webhooks\nMCP Connection\n\nMCP connection allows agents to receive and act on annotations. Learn more\n\nWebhooks\nAuto-Send\n\nThe webhook URL will receive live annotation changes and annotation data.",
+  "title": "Open Agents"
+}

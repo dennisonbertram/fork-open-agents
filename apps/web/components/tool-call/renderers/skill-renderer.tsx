@@ -19,6 +19,7 @@ export const SkillRenderer = memo(function SkillRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-skill">) {
   const input = part.input;
   const skillName = getDisplayString(input?.skill);
@@ -49,6 +50,7 @@ export const SkillRenderer = memo(function SkillRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

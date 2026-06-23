@@ -1,0 +1,193 @@
+- complementary:
+  - link:
+    - /url: /sessions
+    - text: Back
+  - navigation:
+    - generic: Account
+    - list:
+      - link:
+        - /url: /settings/profile
+        - text: Profile
+      - link:
+        - /url: /settings/preferences
+        - text: Preferences
+      - link:
+        - /url: /settings/connections
+        - text: Connections
+    - generic: Tools
+    - list:
+      - link:
+        - /url: /settings/agents
+        - text: Agents
+      - link:
+        - /url: /settings/models
+        - text: Models
+      - link:
+        - /url: /settings/composio
+        - text: Composio
+      - link:
+        - /url: /settings/mcp
+        - text: MCP servers
+      - link:
+        - /url: /settings/skills
+        - text: Skills
+      - link:
+        - /url: /settings/background-agents
+        - text: Background agents
+      - link:
+        - /url: /loops
+        - text: Loops
+      - link:
+        - /url: /settings/runtime-profiles
+        - text: Runtime profiles
+    - generic: Insights
+    - list:
+      - link:
+        - /url: /settings/usage
+        - text: Usage
+      - link:
+        - /url: /settings/leaderboard
+        - text: Leaderboard
+  - button:
+    - text: Sign out
+- main:
+  - heading [level=1]: Models
+  - paragraph: Pick the models your agents use and create named setups for specific jobs.
+  - heading [level=3]: Model preferences
+  - generic: Default model
+  - button:
+    - generic: GPT 5.5
+  - paragraph: The AI model used for new chats.
+  - generic: Subagent model
+  - button:
+    - generic: 3.5 Flash
+  - paragraph: For explorer and executor subagents.
+  - generic: Custom model set
+  - paragraph: By default, every available model is shown in the model selector. Add models here to create a shortlist of just the ones you use.
+  - textbox:
+    - /placeholder: Search to add a model...
+  - heading [level=3]: Inference Profiles
+  - paragraph: Add user-paid Anthropic-compatible or OpenAI-compatible credentials. Saved profiles appear under their provider in the chat model selector.
+  - button:
+    - text: New Profile
+  - heading [level=3]: Fireworks
+  - generic: Fireworks key ending F39E
+  - generic: https://api.fireworks.ai/inference/v1
+  - text: Verified Jun 21, 9:11 PM
+  - generic: Fireworks profile test passed.
+  - button: Test
+  - button:
+  - button:
+  - heading [level=3]: ZAI (GLM)
+  - generic: ZAI key ending XWgX
+  - generic: https://api.z.ai/api/anthropic/v1
+  - text: Verified Jun 21, 8:51 PM
+  - generic: Anthropic profile test passed.
+  - button: Test
+  - button:
+  - button:
+  - heading [level=3]: Model Variants
+  - paragraph: Named presets that combine a base model with custom provider options. Variants appear alongside regular models in selectors across the app.
+  - button:
+    - text: New Variant
+  - heading [level=3]: GPT-5.4 (XHigh)
+  - generic: GPT 5.4
+  - generic: ·
+  - text: 2 options
+  - text: reasoningEffort
+  - generic: xhigh
+  - text: reasoningSummary
+  - generic: auto
+  - generic: Built-in
+  - heading [level=3]: Claude Opus 4.6 (High)
+  - generic: Claude Opus 4.6
+  - generic: ·
+  - text: 1 option
+  - text: effort
+  - generic: high
+  - generic: Built-in
+  - heading [level=3]: UX Walker Temp Variant
+  - generic: Qwen3-14B
+  - generic: ·
+  - text: 1 option
+  - text: temperature
+  - generic: "0.2"
+  - button:
+  - button:
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- alert
+- button:
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button:
+  - text: Output Detail
+  - button:
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - button
+  - checkbox [checked]
+  - generic: Clear on copy/send
+  - checkbox [checked]
+  - generic: Block page interactions
+  - button:
+    - generic: Manage MCP & Webhooks
+  - button:
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link:
+      - /url: https://agentation.dev/mcp
+      - text: Learn more
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox:
+    - /placeholder: Webhook URL
+- dialog "New Variant" [active]:
+  - heading "New Variant" [level=2]
+  - paragraph: Configure a base model with custom provider options.
+  - generic: Name
+  - textbox "Name":
+    - /placeholder: e.g. Claude Adaptive Thinking
+    - text: UX Walker Temp Variant
+  - generic: Base Model
+  - button "Qwen3-14B":
+    - generic: Qwen3-14B
+  - generic: Provider Options
+  - textbox "Provider Options":
+    - /placeholder: "{\"reasoningEffort\": \"medium\"}"
+    - text: "{\"temperature\":0.2}"
+  - paragraph:
+    - text: JSON object passed to the provider. e.g.
+    - code: reasoningEffort
+    - text: ","
+    - code: reasoningSummary
+  - link "View provider options docs":
+    - /url: https://ai-sdk.dev/docs/foundations/provider-options
+    - text: View provider options docs
+  - button "Cancel"
+  - button "Create Variant"
+  - button "Close":
+    - generic: Close

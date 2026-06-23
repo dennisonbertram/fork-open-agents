@@ -1,0 +1,301 @@
+- button "Collapse panel":
+- button "New session":
+  - text: New session
+- button "Quick chat (no repo)":
+- button "Active14"
+- button "Archive 55":
+  - text: Archive
+  - generic: "55"
+- button "Chats" [expanded]:
+  - generic: Chats
+- button "Github Testing":
+  - paragraph: Github Testing
+- button "dennisonbertram/synthetix" [expanded]:
+  - generic: dennisonbertram/synthetix
+- button "Agents 1":
+  - generic: Agents
+  - generic: "1"
+- link "Create agent for dennisonbertram/synthetix":
+  - /url: /repos/dennisonbertram/synthetix/agents
+- link:
+  - /url: /repos/dennisonbertram/synthetix/agents/baas-dproof-1781743759
+  - generic: D Proof — synthetix execution test
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/synthetix":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=synthetix
+- button "Chicago":
+  - paragraph: Chicago
+- button "Repo and Branch Verification":
+  - paragraph: Repo and Branch Verification
+- button "Testing Provider Implementation":
+  - paragraph: Testing Provider Implementation
+- button "Backlog Issues Review":
+  - paragraph: Backlog Issues Review
+- button "GitHub Issue 262 Review":
+  - paragraph: GitHub Issue 262 Review
+- button "Model Runtime Identification":
+  - paragraph: Model Runtime Identification
+- button "Casual Coding Session":
+  - paragraph: Casual Coding Session
+- button "Reykjavik":
+  - paragraph: Reykjavik
+- button "Getting Started":
+  - paragraph: Getting Started
+- button "dennisonbertram/partyline" [expanded]:
+  - generic: dennisonbertram/partyline
+- button "Agents":
+  - generic: Agents
+- link "Create agent for dennisonbertram/partyline":
+  - /url: /repos/dennisonbertram/partyline/agents
+- paragraph: No agents yet
+- button "Loops":
+  - generic: Loops
+- link "Create loop for dennisonbertram/partyline":
+  - /url: /loops/new?repoOwner=dennisonbertram&repoName=partyline
+- button "New Coding Session Started":
+  - paragraph: New Coding Session Started
+- button "Documentation Review Session":
+  - paragraph: Documentation Review Session
+- button "Architecture Overview Discussion":
+  - paragraph: Architecture Overview Discussion
+- button "Issue Status Overview Check +11 -3":
+  - paragraph: Issue Status Overview Check
+  - generic: "+11"
+  - generic: "-3"
+- img "dennison-9116"
+- paragraph: dennison-9116
+- paragraph: dennison@withtally.com
+- button "Open settings":
+- main:
+  - button:
+  - link "synthetix":
+    - /url: https://github.com/dennisonbertram/synthetix
+    - text: synthetix
+  - generic: /
+  - generic: d/881fa842
+  - generic: /
+  - generic: Repo and Branch Verification
+  - button:
+  - generic: Direct
+  - button "Runtime mode":
+  - button "Open Editor" [disabled]:
+  - button "Start dev server":
+  - button "Open latest preview deployment" [disabled]:
+  - button "Close files and changes panel" [active]:
+  - button "Verified Build":
+  - button "Runtime inspector":
+  - button "Hello, please briefly confirm the repo name and current branch.":
+    - generic: Hello, please briefly confirm the repo name and current branch.
+  - button "Rename chat":
+  - button:
+  - paragraph: Hello, please briefly confirm the repo name and current branch.
+  - button "Resend this message and delete everything after it":
+  - button "Delete this message and everything after it":
+  - button "Philosophised · 18s · 2 tool calls · 6.22 tok/s · cost $0.06":
+    - text: Philosophised
+    - generic: · 18s
+    - generic: · 2 tool calls
+    - generic: · 6.22 tok/s
+    - generic: · cost $0.06
+  - paragraph:
+    - text: "Repo:"
+    - code: sandbox
+    - text: "Current branch:"
+    - code: d/881fa842
+  - button "Copy assistant response":
+  - button "Fork conversation from this response":
+  - generic: GPT 5.5
+  - generic: ·
+  - generic: $0.0587
+  - paragraph: Please answer again with only the connected repository and current branch.
+  - button "Resend this message and delete everything after it":
+  - button "Delete this message and everything after it":
+  - paragraph: dennisonbertram/synthetix — d/881fa842
+  - button "Copy assistant response":
+  - button "Fork conversation from this response":
+  - generic: GPT 5.5
+  - generic: ·
+  - generic: $0.0497
+  - textbox "Request changes or ask a question..."
+  - button "Attach files":
+  - button "Change model":
+    - generic: GPT 5.5
+  - button "Select external tools":
+    - 'generic "Active tools: GitHub (native)"':
+      - generic "GitHub (native)":
+  - 'button "Runtime: Direct"':
+    - generic: Direct
+  - button "Select workflow":
+    - generic: Workflow
+  - generic: 1%
+  - button "Record voice input":
+  - button "Send message" [disabled]:
+  - button "Create PR":
+    - text: Create PR
+  - button "Files"
+  - button "Changes"
+  - button "PR"
+  - tree:
+    - treeitem "synthetix" [expanded] [level=1]:
+      - generic: synth
+      - generic: …
+      - generic: …
+      - generic: etix
+      - text: etix
+    - treeitem ".claude" [level=2]:
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: claude
+      - text: claude
+    - treeitem ".codex / environments" [level=2]:
+      - generic: .codex
+      - generic: …
+      - text: /
+      - generic: environments
+      - generic: …
+    - treeitem ".github" [level=2]:
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: github
+      - text: github
+    - treeitem ".hallmark" [level=2]:
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: hallmark
+      - text: hallmark
+    - treeitem "apps" [level=2]:
+      - generic: …
+      - generic: apps
+      - text: apps
+    - treeitem "docs" [level=2]:
+      - generic: …
+      - generic: docs
+      - text: docs
+    - treeitem "packages" [level=2]:
+      - generic: pack
+      - generic: …
+      - generic: …
+      - generic: ages
+      - text: ages
+    - treeitem "pocs" [level=2]:
+      - generic: …
+      - generic: pocs
+      - text: pocs
+    - treeitem ".env.example" [level=2]:
+      - generic: .env.
+      - generic: …
+      - generic: …
+      - generic: example
+      - text: example
+    - treeitem ".gitignore" [level=2]:
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: gitignore
+      - text: gitignore
+    - treeitem ".prettierignore" [level=2]:
+      - generic: .prettie
+      - generic: …
+      - generic: …
+      - generic: rignore
+      - text: rignore
+    - treeitem ".prettierrc" [level=2]:
+      - generic: .
+      - generic: …
+      - generic: …
+      - generic: prettierrc
+      - text: prettierrc
+    - treeitem "AGENTS.md" [level=2]:
+      - generic: AGENTS.
+      - generic: …
+      - generic: …
+      - generic: md
+      - text: md
+    - treeitem "CLAUDE.md" [level=2]:
+      - generic: CLAUDE.
+      - generic: …
+      - generic: …
+      - generic: md
+      - text: md
+    - treeitem "components.json" [level=2]:
+      - generic: components.
+      - generic: …
+      - generic: …
+      - generic: json
+      - text: json
+    - treeitem "package.json" [level=2]:
+      - generic: package.
+      - generic: …
+      - generic: …
+      - generic: json
+      - text: json
+    - treeitem "pnpm-lock.yaml" [level=2]:
+      - generic: pnpm-lock.
+      - generic: …
+      - generic: …
+      - generic: yaml
+      - text: yaml
+    - treeitem "pnpm-workspace.yaml" [level=2]:
+      - generic: pnpm-workspace.
+      - generic: …
+      - generic: …
+      - generic: yaml
+      - text: yaml
+- region "Notifications alt+T"
+- button "Open Next.js Dev Tools":
+- button "Open issues overlay":
+  - generic: "0"
+  - generic: "1"
+  - generic: Issue
+- button "Collapse issues badge":
+- alert
+- button "v3.0.2 Output Detail Standard React Components Hide Until Restart Marker Color Clear on copy/send Block page interactions Manage MCP & Webhooks Manage MCP & Webhooks MCP Connection MCP connection allows agents to receive and act on annotations. Learn more Webhooks Auto-Send The webhook URL will receive live annotation changes and annotation data.":
+  - button:
+  - button:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button [disabled]:
+  - button:
+  - button:
+  - link:
+    - /url: https://agentation.com
+  - paragraph: v3.0.2
+  - button "Switch to light mode":
+  - text: Output Detail
+  - button "Standard":
+    - generic: Standard
+  - text: React Components
+  - checkbox [checked]
+  - text: Hide Until Restart
+  - checkbox
+  - generic: Marker Color
+  - button "Indigo"
+  - button "Blue"
+  - button "Cyan"
+  - button "Green"
+  - button "Yellow"
+  - button "Orange"
+  - button "Red"
+  - checkbox "Clear on copy/send" [checked]
+  - generic: Clear on copy/send
+  - checkbox "Block page interactions" [checked]
+  - generic: Block page interactions
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - button "Manage MCP & Webhooks":
+    - generic: Manage MCP & Webhooks
+  - text: MCP Connection
+  - paragraph:
+    - text: MCP connection allows agents to receive and act on annotations.
+    - link "Learn more":
+      - /url: https://agentation.dev/mcp
+  - text: Webhooks
+  - generic: Auto-Send
+  - checkbox "Auto-Send" [checked] [disabled]
+  - paragraph: The webhook URL will receive live annotation changes and annotation data.
+  - textbox "Webhook URL"

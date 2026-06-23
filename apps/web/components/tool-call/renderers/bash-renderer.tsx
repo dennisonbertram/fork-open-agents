@@ -10,6 +10,7 @@ export const BashRenderer = memo(function BashRenderer({
   state,
   onApprove,
   onDeny,
+  onApproveAllForSession,
 }: ToolRendererProps<"tool-bash">) {
   const input = part.input;
   const command = String(input?.command ?? "");
@@ -72,6 +73,7 @@ export const BashRenderer = memo(function BashRenderer({
       expandedContent={expandedContent}
       onApprove={onApprove}
       onDeny={onDeny}
+      onApproveAllForSession={onApproveAllForSession}
     />
   );
 });

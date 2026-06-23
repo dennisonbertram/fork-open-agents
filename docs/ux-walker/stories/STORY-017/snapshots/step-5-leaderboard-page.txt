@@ -1,0 +1,17 @@
+<a node_id=1 href="/sessions">Back</a>
+<a node_id=2 href="/settings/profile">Profile</a>
+<a node_id=3 href="/settings/preferences">Preferences</a>
+<a node_id=4 href="/settings/connections">Connections</a>
+<a node_id=5 href="/settings/agents">Agents</a>
+<a node_id=6 href="/settings/models">Models</a>
+<a node_id=7 href="/settings/composio">Composio</a>
+<a node_id=8 href="/settings/mcp">MCP servers</a>
+<a node_id=9 href="/settings/skills">Skills</a>
+<a node_id=10 href="/settings/background-agents">Background agents</a>
+<a node_id=11 href="/loops">Loops</a>
+<a node_id=12 href="/settings/runtime-profiles">Runtime profiles</a>
+<a node_id=13 href="/settings/usage">Usage</a>
+<a node_id=14 href="/settings/leaderboard">Leaderboard</a>
+<button node_id=15 type="button">Sign out</button>
+<button node_id=16 aria-label="Open Next.js Dev Tools" />
+<div node_id=17 role="button" title="Start feedback mode">Pause animations P Layout mode L Hide markers H Copy feedback C Send Annotations S Clear all X Settings Exit Esc v 3.0.2 Output Detail Standard React Components</div>
