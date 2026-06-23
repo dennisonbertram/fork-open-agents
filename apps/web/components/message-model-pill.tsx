@@ -6,6 +6,7 @@ import type {
   WebAgentResponseTimelineCategory,
 } from "@/app/types";
 import type { ModelOption } from "@/lib/model-options";
+import { estimateModelUsageCost } from "@/lib/models";
 import {
   ProviderIcon,
   getProviderFromModelId,
@@ -75,6 +76,7 @@ function getMetadataInferenceDurationMs(
 
 function getMetadataResponseStats(
   metadata: WebAgentMessageMetadata,
+  modelCost: ModelOption["cost"] | undefined,
 ): ToolCallsSummaryResponseStats | null {
   const usage = metadata.totalMessageUsage ?? metadata.lastStepUsage;
   const outputTokens = usage?.outputTokens ?? 0;
@@ -95,15 +97,35 @@ function getMetadataResponseStats(
     metadata.totalMessageCost >= 0
       ? metadata.totalMessageCost
       : null;
+  const estimatedCostUsd =
+    costUsd === null && usage
+      ? (estimateModelUsageCost(
+          {
+            inputTokens: usage.inputTokens ?? 0,
+            cachedInputTokens:
+              usage.inputTokenDetails?.cacheReadTokens ??
+              usage.cachedInputTokens ??
+              0,
+            outputTokens: usage.outputTokens ?? 0,
+          },
+          modelCost,
+        ) ?? null)
+      : null;
+  const displayCostUsd = costUsd ?? estimatedCostUsd;
 
-  if (tokensPerSecond === null && costUsd === null) {
+  if (tokensPerSecond === null && displayCostUsd === null) {
     return null;
   }
 
   return {
     tokensPerSecond,
-    costUsd,
-    costSource: costUsd === null ? null : "gateway",
+    costUsd: displayCostUsd,
+    costSource:
+      displayCostUsd === null
+        ? null
+        : costUsd === null
+          ? "estimate"
+          : "gateway",
   };
 }
 
@@ -232,7 +254,10 @@ export function MessageModelPill({
     : displayLabel;
 
   const isVariant = selectedOption?.isVariant ?? false;
-  const metadataResponseStats = getMetadataResponseStats(metadata);
+  const metadataResponseStats = getMetadataResponseStats(
+    metadata,
+    option?.cost,
+  );
   const mergedResponseStats: ToolCallsSummaryResponseStats | null =
     responseStats || metadataResponseStats
       ? {
