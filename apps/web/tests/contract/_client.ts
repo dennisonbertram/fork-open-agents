@@ -1,4 +1,4 @@
-import { TEST_AUTH_COOKIE, TEST_AUTH_USER_ID } from "@/lib/session/test-auth";
+import { getTestAuthUserId, TEST_AUTH_COOKIE } from "@/lib/session/test-auth";
 
 /**
  * Shared client for the HTTP API contract tests. These run against a REAL
@@ -20,7 +20,7 @@ export const CONTRACT_BASE_URL = (process.env.CONTRACT_BASE_URL ?? "").replace(
 );
 export const contractEnabled = CONTRACT_BASE_URL.length > 0;
 
-const authCookie = `${TEST_AUTH_COOKIE}=${encodeURIComponent(TEST_AUTH_USER_ID)}`;
+const authCookie = `${TEST_AUTH_COOKIE}=${encodeURIComponent(getTestAuthUserId())}`;
 // Bypasses Vercel deployment protection on protected previews. Sent on every
 // request (it gates the platform, not the app session) when configured.
 const bypassSecret = process.env.VERCEL_AUTOMATION_BYPASS_SECRET?.trim();

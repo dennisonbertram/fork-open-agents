@@ -16,6 +16,17 @@ type MockReadinessData = {
   enabled: boolean;
   ready: boolean;
   missing: string[];
+  repoAccess?: {
+    ready: boolean;
+    repoOwner: string;
+    repoName: string;
+    requiredUserPermission: "read" | "write";
+    reason: string | null;
+    message: string;
+    installationId: number | null;
+    repositoryId: number | null;
+    defaultBranch: string | null;
+  };
   checks: {
     id: string;
     label: string;
@@ -189,5 +200,31 @@ describe("NewAgentBuilder", () => {
     expect(html).toContain("/settings/background-agents");
     expect(html).toContain("Operator details");
     expect(html).not.toContain("GITHUB_APP_ID");
+  });
+
+  test("turns repo readiness failures into an action blocker", async () => {
+    const { repoAccessActionBlockReason } = await builderPromise;
+
+    const reason = repoAccessActionBlockReason({
+      enabled: true,
+      ready: false,
+      missing: [],
+      checks: [],
+      repoAccess: {
+        ready: false,
+        repoOwner: "dennisonbertram",
+        repoName: "open-agents",
+        requiredUserPermission: "write",
+        reason: "user_no_access",
+        message: "You don't have access to this repository",
+        installationId: null,
+        repositoryId: null,
+        defaultBranch: null,
+      },
+    });
+
+    expect(reason).toBe(
+      "Repository access is not ready: You don't have access to this repository",
+    );
   });
 });

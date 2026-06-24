@@ -185,6 +185,16 @@ function buildCombinedReadiness(
   };
 }
 
+export function repoAccessActionBlockReason(
+  readinessData: NewAgentReadinessResponse | undefined,
+): string | null {
+  if (!readinessData?.repoAccess || readinessData.repoAccess.ready) {
+    return null;
+  }
+
+  return `Repository access is not ready: ${readinessData.repoAccess.message}`;
+}
+
 type Step = "pick-template" | "edit-spec";
 
 type NewAgentBuilderProps = {
@@ -228,6 +238,7 @@ export function NewAgentBuilder({
     buildReadinessUrl(owner, repo),
     fetchJson,
   );
+  const repoAccessBlockReason = repoAccessActionBlockReason(readinessData);
 
   function handleSelectTemplate(template: AgentTemplate | BlankTemplate) {
     userSelectedTemplateRef.current = true;
@@ -305,6 +316,11 @@ export function NewAgentBuilder({
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
+    if (repoAccessBlockReason) {
+      setMessage({ kind: "error", text: repoAccessBlockReason });
+      return;
+    }
+
     if (createdAgentId) {
       const result = await updateCreatedAgent(createdAgentId, payload);
       setMessage(
@@ -333,6 +349,11 @@ export function NewAgentBuilder({
   }
 
   async function handleRunTest() {
+    if (repoAccessBlockReason) {
+      setMessage({ kind: "error", text: repoAccessBlockReason });
+      return;
+    }
+
     if (!createdAgentId) {
       setMessage({
         kind: "error",
@@ -456,6 +477,7 @@ export function NewAgentBuilder({
             : null
         }
         statusMessage={message}
+        actionDisabledReason={repoAccessBlockReason}
         onSave={handleSave}
         onRunTest={handleRunTest}
       />

@@ -74,6 +74,12 @@ describe("AgentSpecEditor", () => {
     return html.slice(openIdx, labelIdx);
   }
 
+  function saveButtonTag(html: string): string {
+    const labelIdx = html.indexOf("Save");
+    const openIdx = html.lastIndexOf("<button", labelIdx);
+    return html.slice(openIdx, labelIdx);
+  }
+
   test("(C1) with createdAgentId=null the Run a test button is disabled and helper text is present", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
@@ -97,6 +103,24 @@ describe("AgentSpecEditor", () => {
     );
 
     expect(runTestButtonTag(html)).not.toContain('disabled=""');
+  });
+
+  test("repo access blocker disables Save and Run a test with inline reason", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        createdAgentId="agent-123"
+        actionDisabledReason="Repository access is not ready: You don't have access to this repository"
+      />,
+    );
+
+    expect(saveButtonTag(html)).toContain('disabled=""');
+    expect(runTestButtonTag(html)).toContain('disabled=""');
+    expect(html).toContain(
+      "Repository access is not ready: You don&#x27;t have access to this repository",
+    );
   });
 
   test("(C1) action feedback appears near Save and Run a test", async () => {

@@ -44,6 +44,10 @@ describe("resolveSessionFromHeaders", () => {
     getSessionCalls = 0;
     authSession = undefined;
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
+    delete process.env.OPEN_AGENTS_TEST_AUTH_EMAIL;
+    delete process.env.OPEN_AGENTS_TEST_AUTH_NAME;
+    delete process.env.OPEN_AGENTS_TEST_AUTH_USER_ID;
+    delete process.env.OPEN_AGENTS_TEST_AUTH_USERNAME;
   });
 
   test("skips Better Auth when no session credential headers are present", async () => {
@@ -64,6 +68,45 @@ describe("resolveSessionFromHeaders", () => {
 
     expect(session?.user.id).toBe("dev-managed-runtime-user");
     expect(getSessionCalls).toBe(0);
+  });
+
+  test("uses configured test auth user for local connected-account smoke", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.OPEN_AGENTS_TEST_AUTH_USER_ID = "real-linked-user";
+    process.env.OPEN_AGENTS_TEST_AUTH_USERNAME = "dennison";
+    process.env.OPEN_AGENTS_TEST_AUTH_EMAIL = "dennison@example.com";
+    process.env.OPEN_AGENTS_TEST_AUTH_NAME = "Dennison";
+
+    const session = await resolveSessionFromHeaders(
+      headers({
+        cookie: "open_agents_test_user_id=real-linked-user",
+      }),
+    );
+
+    expect(session).toMatchObject({
+      authProvider: "vercel",
+      user: {
+        id: "real-linked-user",
+        username: "dennison",
+        email: "dennison@example.com",
+        name: "Dennison",
+      },
+    });
+    expect(getSessionCalls).toBe(0);
+  });
+
+  test("ignores stale test auth cookie when a different user is configured", async () => {
+    process.env.OPEN_AGENTS_ENABLE_TEST_AUTH = "1";
+    process.env.OPEN_AGENTS_TEST_AUTH_USER_ID = "real-linked-user";
+
+    const session = await resolveSessionFromHeaders(
+      headers({
+        cookie: "open_agents_test_user_id=dev-managed-runtime-user",
+      }),
+    );
+
+    expect(session).toBeUndefined();
+    expect(getSessionCalls).toBe(1);
   });
 
   test("delegates to Better Auth when cookie credentials are present", async () => {

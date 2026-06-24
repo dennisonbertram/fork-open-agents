@@ -68,6 +68,8 @@ type AgentSpecEditorProps = {
   savedAgentHref?: string | null;
   /** Action feedback shown next to Save/Run controls. */
   statusMessage?: { kind: "success" | "error"; text: string } | null;
+  /** Disables Save and Run a test when an external prerequisite is missing. */
+  actionDisabledReason?: string | null;
   onSave: (
     payload: ReturnType<typeof buildAgentPayload>,
   ) => void | Promise<void>;
@@ -110,6 +112,7 @@ export function AgentSpecEditor({
   saveLabel = "Save",
   savedAgentHref = null,
   statusMessage = null,
+  actionDisabledReason = null,
   onSave,
   onRunTest,
 }: AgentSpecEditorProps) {
@@ -202,7 +205,7 @@ export function AgentSpecEditor({
   }
 
   async function handleSave() {
-    if (!canSave) return;
+    if (!canSave || actionDisabledReason) return;
     setSaving(true);
     try {
       await onSave(buildCurrentPayload());
@@ -242,7 +245,23 @@ export function AgentSpecEditor({
     }
   }
 
-  const runTestDisabled = running || !createdAgentId;
+  const actionsDisabled = Boolean(actionDisabledReason);
+  const runTestDisabled = running || !createdAgentId || actionsDisabled;
+  const saveDisabled = !canSave || saving || actionsDisabled;
+  const runTestTitle = actionDisabledReason
+    ? actionDisabledReason
+    : !createdAgentId
+      ? "Save first to run a test."
+      : undefined;
+  const actionHelperText =
+    actionDisabledReason ??
+    (!createdAgentId
+      ? "Save first to run a test."
+      : mode === "edit"
+        ? enabled
+          ? "This agent is on — it runs when its trigger fires."
+          : "This agent is off — it won't run until you turn it on."
+        : "Agent saved. Run a test, keep editing, or turn it on when ready.");
 
   return (
     <div className="space-y-6">
@@ -250,13 +269,11 @@ export function AgentSpecEditor({
       <div className="space-y-2 border-b border-border pb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
-            <Button disabled={!canSave || saving} onClick={handleSave}>
+            <Button disabled={saveDisabled} onClick={handleSave}>
               <Save className="h-4 w-4" />
               {saving ? "Saving" : saveLabel}
             </Button>
-            <span
-              title={!createdAgentId ? "Save first to run a test." : undefined}
-            >
+            <span title={runTestTitle}>
               <Button
                 variant="outline"
                 disabled={runTestDisabled}
@@ -309,14 +326,13 @@ export function AgentSpecEditor({
             </div>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {!createdAgentId
-            ? "Save first to run a test."
-            : mode === "edit"
-              ? enabled
-                ? "This agent is on — it runs when its trigger fires."
-                : "This agent is off — it won't run until you turn it on."
-              : "Agent saved. Run a test, keep editing, or turn it on when ready."}
+        <p
+          className={cn(
+            "text-xs",
+            actionDisabledReason ? "text-destructive" : "text-muted-foreground",
+          )}
+        >
+          {actionHelperText}
         </p>
         {statusMessage ? (
           <p
