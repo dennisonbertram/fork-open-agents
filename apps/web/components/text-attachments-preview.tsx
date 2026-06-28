@@ -12,6 +12,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Attachment,
+  AttachmentAction,
+  AttachmentActions,
+  AttachmentContent,
+  AttachmentDescription,
+  AttachmentGroup,
+  AttachmentMedia,
+  AttachmentTitle,
+  AttachmentTrigger,
+} from "@/components/ui/attachment";
 
 interface TextAttachmentChipProps {
   attachment: TextAttachment;
@@ -27,36 +38,31 @@ function TextAttachmentChip({
   const meta = `${attachment.lineCount} lines · ${formatByteSize(attachment.byteSize)}`;
 
   return (
-    <div className="group relative min-w-0 max-w-full p-1">
-      <button
+    <Attachment className="w-64 max-w-full pr-8 font-mono">
+      <AttachmentMedia>
+        <FileText />
+      </AttachmentMedia>
+      <AttachmentContent>
+        <AttachmentTitle>{attachment.filename}</AttachmentTitle>
+        <AttachmentDescription>{meta}</AttachmentDescription>
+      </AttachmentContent>
+      <AttachmentActions className="absolute right-1.5 top-1.5">
+        <AttachmentAction
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          aria-label="Remove text attachment"
+        >
+          <X />
+        </AttachmentAction>
+      </AttachmentActions>
+      <AttachmentTrigger
         type="button"
         onClick={onPreview}
-        className={cn(
-          "flex max-w-full items-center gap-2 rounded-lg border border-border/60 bg-muted/60 px-3 py-2",
-          "text-left font-mono text-sm leading-tight text-foreground",
-          "transition-colors hover:border-foreground/20 hover:bg-muted",
-        )}
-      >
-        <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <span className="truncate">{attachment.filename}</span>
-          <span className="truncate text-[11px] text-muted-foreground">
-            {meta}
-          </span>
-        </div>
-      </button>
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation();
-          onRemove();
-        }}
-        className="absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-700 text-neutral-300 opacity-0 transition-opacity hover:bg-neutral-600 group-hover:opacity-100"
-        aria-label="Remove text attachment"
-      >
-        <X className="h-3 w-3" />
-      </button>
-    </div>
+        aria-label={`Preview ${attachment.filename}`}
+      />
+    </Attachment>
   );
 }
 
@@ -118,7 +124,7 @@ export function TextAttachmentsPreview({
 
   return (
     <>
-      <div className={cn("flex min-w-0 flex-wrap gap-1", className)}>
+      <AttachmentGroup className={cn("py-1", className)}>
         {attachments.map((attachment) => (
           <TextAttachmentChip
             key={attachment.id}
@@ -127,7 +133,7 @@ export function TextAttachmentsPreview({
             onPreview={() => setPreviewAttachment(attachment)}
           />
         ))}
-      </div>
+      </AttachmentGroup>
       <TextAttachmentPreviewDialog
         attachment={previewAttachment}
         open={previewAttachment !== null}

@@ -449,10 +449,180 @@
   animation: wrapped-bar-fill 800ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
 }
 
+.shimmer,
+.status-text-shimmer {
+  --shimmer-duration: 1800ms;
+  --shimmer-spread: 35%;
+  --shimmer-angle: 110deg;
+  background-image: linear-gradient(
+    var(--shimmer-angle),
+    currentColor 0%,
+    currentColor 38%,
+    color-mix(in oklch, currentColor var(--shimmer-spread), transparent) 50%,
+    currentColor 62%,
+    currentColor 100%
+  );
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer var(--shimmer-duration) ease-in-out infinite;
+}
+
+.shimmer-once {
+  animation-iteration-count: 1;
+}
+
+.shimmer-reverse {
+  animation-direction: reverse;
+}
+
+.shimmer-none {
+  animation: none;
+  background-image: none;
+  -webkit-text-fill-color: currentColor;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 120% 0;
+  }
+  to {
+    background-position: -120% 0;
+  }
+}
+
+.scroll-fade,
+.scroll-fade-y {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
+.scroll-fade-x {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-size),
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
+.scroll-fade-t {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+}
+
+.scroll-fade-b {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
+.scroll-fade-l,
+.scroll-fade-s {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+}
+
+.scroll-fade-r,
+.scroll-fade-e {
+  --scroll-fade-size: 24px;
+  -webkit-mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to right,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
+[dir="rtl"] .scroll-fade-s {
+  -webkit-mask-image: linear-gradient(
+    to left,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+  mask-image: linear-gradient(
+    to left,
+    transparent,
+    black var(--scroll-fade-size)
+  );
+}
+
+[dir="rtl"] .scroll-fade-e {
+  -webkit-mask-image: linear-gradient(
+    to left,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+  mask-image: linear-gradient(
+    to left,
+    black calc(100% - var(--scroll-fade-size)),
+    transparent
+  );
+}
+
 @media (prefers-reduced-motion: reduce) {
   .wrapped-bar-fill {
     animation: none;
     transform: scaleX(1);
+  }
+
+  .shimmer,
+  .status-text-shimmer {
+    animation: none;
+    -webkit-text-fill-color: currentColor;
   }
 }
 

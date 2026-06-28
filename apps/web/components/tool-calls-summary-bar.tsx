@@ -2,6 +2,7 @@
 
 import { ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { cn } from "@/lib/utils";
 
 type StatusWordPair = {
@@ -240,56 +241,60 @@ export function ToolCallsSummaryBar({
   return (
     <div className="my-1.5 border border-transparent py-0.5">
       <div className="group/timing flex max-w-full items-center gap-1 sm:inline-flex">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={fullSummary}
-          title={fullSummary}
+        <Marker
+          asChild
           className={cn(
-            "group flex min-w-0 max-w-full items-center gap-2 rounded-md py-px text-left text-sm text-muted-foreground tabular-nums transition-colors hover:text-foreground sm:inline-flex sm:w-auto",
+            "group text-left tabular-nums transition-colors hover:text-foreground sm:inline-flex sm:w-auto",
             isStreaming && "text-foreground/90",
           )}
         >
-          <span className="flex size-3.5 shrink-0 items-center justify-center">
-            <span
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={fullSummary}
+            title={fullSummary}
+          >
+            <MarkerIcon>
+              <span
+                className={cn(
+                  "inline-block size-2 rounded-full",
+                  isStreaming
+                    ? "animate-pulse bg-muted-foreground"
+                    : "bg-muted-foreground/50",
+                )}
+              />
+            </MarkerIcon>
+            <MarkerContent
               className={cn(
-                "inline-block size-2 rounded-full",
-                isStreaming
-                  ? "animate-pulse bg-muted-foreground"
-                  : "bg-muted-foreground/50",
+                "flex-1 overflow-hidden whitespace-nowrap sm:flex-none sm:overflow-visible sm:whitespace-normal",
+                isStreaming && "shimmer status-text-shimmer",
+              )}
+            >
+              {statusLabel}
+              {mobileSegments.length > 0 && (
+                <span className="inline-block max-w-full truncate align-bottom sm:hidden">
+                  {renderSegments(mobileSegments)}
+                </span>
+              )}
+              {desktopSegments.length > 0 && (
+                <span className="hidden sm:inline">
+                  {renderSegments(desktopSegments)}
+                </span>
+              )}
+              {responseStatSegments.length > 0 && (
+                <span className="hidden opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 sm:inline">
+                  {renderSegments(responseStatSegments)}
+                </span>
+              )}
+            </MarkerContent>
+            <ChevronRight
+              className={cn(
+                "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-200 ease-out motion-reduce:transition-none",
+                isExpanded && "rotate-90",
               )}
             />
-          </span>
-          <span
-            className={cn(
-              "min-w-0 flex-1 overflow-hidden whitespace-nowrap leading-none sm:flex-none sm:overflow-visible sm:whitespace-normal",
-              isStreaming && "animate-pulse motion-reduce:animate-none",
-            )}
-          >
-            {statusLabel}
-            {mobileSegments.length > 0 && (
-              <span className="inline-block max-w-full truncate align-bottom sm:hidden">
-                {renderSegments(mobileSegments)}
-              </span>
-            )}
-            {desktopSegments.length > 0 && (
-              <span className="hidden sm:inline">
-                {renderSegments(desktopSegments)}
-              </span>
-            )}
-            {responseStatSegments.length > 0 && (
-              <span className="hidden opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100 sm:inline">
-                {renderSegments(responseStatSegments)}
-              </span>
-            )}
-          </span>
-          <ChevronRight
-            className={cn(
-              "size-3 shrink-0 text-muted-foreground/50 transition-transform duration-200 ease-out motion-reduce:transition-none",
-              isExpanded && "rotate-90",
-            )}
-          />
-        </button>
+          </button>
+        </Marker>
       </div>
     </div>
   );

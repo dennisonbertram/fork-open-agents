@@ -2,6 +2,8 @@
 
 import type { FileUIPart } from "ai";
 import type { WebAgentUIMessage } from "@/app/types";
+import { BubbleContent, BubbleGroup } from "@/components/ui/bubble";
+import { Message, MessageContent } from "@/components/ui/message";
 
 export interface MobileUserBubbleProps {
   /** The user-role message whose parts to render */
@@ -40,29 +42,33 @@ export function MobileUserBubble({ message }: MobileUserBubbleProps) {
   }
 
   return (
-    <div className="flex justify-end px-4 py-1">
-      <div className="flex max-w-[85%] flex-col items-end gap-1.5">
-        {/* Image thumbnails */}
-        {imageParts.map((part, i) => (
-          /* eslint-disable-next-line @next/next/no-img-element -- data URLs not supported by next/image */
-          <img
-            key={`img-${i}`}
-            src={part.url}
-            alt={part.filename ?? "Attached image"}
-            className="max-h-48 max-w-full rounded-2xl object-contain"
-          />
-        ))}
+    <Message align="end" variant="user" className="px-4 py-1">
+      <MessageContent align="end" variant="user" className="max-w-[85%]">
+        <BubbleGroup className="items-end">
+          {/* Image thumbnails */}
+          {imageParts.map((part, i) => (
+            /* eslint-disable-next-line @next/next/no-img-element -- data URLs not supported by next/image */
+            <img
+              key={`img-${i}`}
+              src={part.url}
+              alt={part.filename ?? "Attached image"}
+              className="max-h-48 max-w-full rounded-2xl object-contain"
+            />
+          ))}
 
-        {/* Text bubble(s) */}
-        {textParts.map((part, i) => (
-          <div
-            key={`text-${i}`}
-            className="rounded-2xl rounded-tr-sm bg-primary px-4 py-2.5 text-sm text-primary-foreground"
-          >
-            <p className="whitespace-pre-wrap break-words">{part.text}</p>
-          </div>
-        ))}
-      </div>
-    </div>
+          {/* Text bubble(s) */}
+          {textParts.map((part, i) => (
+            <BubbleContent
+              key={`text-${i}`}
+              align="end"
+              variant="user"
+              className="rounded-2xl bg-primary py-2.5 text-primary-foreground"
+            >
+              <p className="whitespace-pre-wrap break-words">{part.text}</p>
+            </BubbleContent>
+          ))}
+        </BubbleGroup>
+      </MessageContent>
+    </Message>
   );
 }

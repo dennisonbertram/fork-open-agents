@@ -20,6 +20,10 @@ describe("WorkspaceStartupStatus", () => {
     );
 
     expect(html).toContain("Setting up the workspace...");
+    expect(html).toContain('data-slot="marker"');
+    expect(html).toContain('data-slot="marker-icon"');
+    expect(html).toContain('data-slot="marker-content"');
+    expect(html).toContain("status-text-shimmer");
     expect(html).toContain("Preparing sandbox workspace");
     expect(html).toContain("$ bun install");
     expect(html).toContain("Packages: +976");

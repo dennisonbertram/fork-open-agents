@@ -14,7 +14,6 @@ import {
 } from "ai";
 import {
   Archive,
-  ArrowDown,
   ArrowUp,
   Box,
   Check,
@@ -96,6 +95,16 @@ import { ThinkingBlock } from "@/components/thinking-block";
 import { ToolCall } from "@/components/tool-call";
 import { OpenFileProvider } from "@/components/tool-call/open-file-context";
 import { Button } from "@/components/ui/button";
+import { Bubble, BubbleContent } from "@/components/ui/bubble";
+import { Message, MessageContent } from "@/components/ui/message";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { VerifiedBuildStatusBadge } from "@/components/verified-build/status-badge";
 import {
   Dialog,
@@ -126,7 +135,6 @@ import { useAudioRecording } from "@/hooks/use-audio-recording";
 import { useFileSuggestions } from "@/hooks/use-file-suggestions";
 import { useImageAttachments } from "@/hooks/use-image-attachments";
 import { useTextAttachments } from "@/hooks/use-text-attachments";
-import { useScrollToBottom } from "@/hooks/use-scroll-to-bottom";
 import { useSessionChats } from "@/hooks/use-session-chats";
 import { useSlashCommands } from "@/hooks/use-slash-commands";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
@@ -1403,10 +1411,16 @@ const MessageRow = memo(function MessageRow({
             )}
           >
             {m.role === "user" ? (
-              <div className="group relative w-fit min-w-0 max-w-[80%]">
-                <div className="rounded-3xl bg-secondary px-4 py-2">
-                  <p className="whitespace-pre-wrap break-words">{p.text}</p>
-                </div>
+              <Message
+                align="end"
+                variant="user"
+                className="group relative w-fit min-w-0 max-w-[80%]"
+              >
+                <MessageContent align="end" variant="user">
+                  <BubbleContent align="end" variant="user">
+                    <p className="whitespace-pre-wrap break-words">{p.text}</p>
+                  </BubbleContent>
+                </MessageContent>
                 {group.index === 0 && (
                   <div className="absolute -left-20 top-1/2 flex -translate-y-1/2 items-center gap-1 rounded-md bg-background/80 p-1 text-muted-foreground opacity-0 transition group-hover:opacity-100">
                     <button
@@ -1437,7 +1451,7 @@ const MessageRow = memo(function MessageRow({
                     </button>
                   </div>
                 )}
-              </div>
+              </Message>
             ) : (
               <div className="group min-w-0 w-full overflow-hidden">
                 <AssistantMarkdown
@@ -1568,16 +1582,27 @@ const MessageRow = memo(function MessageRow({
 
       if (p.type === "file" && p.mediaType?.startsWith("image/")) {
         if (!isToolCallsExpanded && m.role === "assistant") return null;
-        return (
-          <div key={`${m.id}-${group.renderKey}`} className="flex justify-end">
-            <div className="group relative w-fit max-w-[80%]">
-              {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
-              <img
-                src={p.url}
-                alt={p.filename ?? "Attached image"}
-                className="max-h-64 rounded-lg"
-              />
-              {m.role === "user" && group.index === 0 && (
+        if (m.role === "user") {
+          return (
+            <Message
+              key={`${m.id}-${group.renderKey}`}
+              align="end"
+              variant="user"
+              className="group relative justify-end"
+            >
+              <MessageContent align="end" variant="user">
+                <Bubble align="end" variant="user">
+                  <div className="relative w-fit max-w-[80%]">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
+                    <img
+                      src={p.url}
+                      alt={p.filename ?? "Attached image"}
+                      className="max-h-64 rounded-lg"
+                    />
+                  </div>
+                </Bubble>
+              </MessageContent>
+              {group.index === 0 && (
                 <button
                   type="button"
                   onClick={() => void onDeleteUserMessage(m.id)}
@@ -1592,6 +1617,19 @@ const MessageRow = memo(function MessageRow({
                   )}
                 </button>
               )}
+            </Message>
+          );
+        }
+
+        return (
+          <div key={`${m.id}-${group.renderKey}`} className="flex justify-end">
+            <div className="group relative w-fit max-w-[80%]">
+              {/* eslint-disable-next-line @next/next/no-img-element -- Data URLs not supported by next/image */}
+              <img
+                src={p.url}
+                alt={p.filename ?? "Attached image"}
+                className="max-h-64 rounded-lg"
+              />
             </div>
           </div>
         );
@@ -1847,8 +1885,6 @@ export function SessionChatContent({
     },
     [addImage, addTextAttachment],
   );
-  const { containerRef, isAtBottom, scrollToBottom } =
-    useScrollToBottom<HTMLDivElement>();
   const {
     session,
     chatInfo,
@@ -3173,12 +3209,6 @@ export function SessionChatContent({
   ]);
 
   useEffect(() => {
-    if (isAtBottom) {
-      scrollToBottom();
-    }
-  }, [messages, isAtBottom, scrollToBottom]);
-
-  useEffect(() => {
     if (!isChatInFlight) {
       inputRef.current?.focus();
     }
@@ -4409,94 +4439,98 @@ export function SessionChatContent({
               )}
 
               {/* Messages */}
-              <div className="relative flex-1 overflow-hidden">
-                <div ref={containerRef} className="h-full overflow-y-auto">
-                  <div className="mx-auto max-w-4xl overflow-hidden px-4 py-8">
-                    <OpenFileProvider
-                      onOpenFile={(fp) => setSelectedWorkspaceFile(fp)}
-                    >
-                      <div className="space-y-6">
-                        {groupedRenderMessages.length === 0 &&
-                          !hasPendingResponse && (
-                            <div className="flex h-full min-h-[40vh] items-center justify-center">
-                              <p className="text-sm text-muted-foreground">
-                                Send a message to get started
-                              </p>
-                            </div>
+              <MessageScrollerProvider
+                defaultScrollPosition="last-anchor"
+                scrollPreviousItemPeek={56}
+              >
+                <MessageScroller>
+                  <MessageScrollerViewport>
+                    <MessageScrollerContent className="mx-auto max-w-4xl overflow-hidden px-4 py-8">
+                      <OpenFileProvider
+                        onOpenFile={(fp) => setSelectedWorkspaceFile(fp)}
+                      >
+                        <div className="space-y-6">
+                          {groupedRenderMessages.length === 0 &&
+                            !hasPendingResponse && (
+                              <div className="flex h-full min-h-[40vh] items-center justify-center">
+                                <p className="text-sm text-muted-foreground">
+                                  Send a message to get started
+                                </p>
+                              </div>
+                            )}
+                          {groupedRenderMessages.map((groupedMessage) => {
+                            const { message, isStreaming } = groupedMessage;
+                            return (
+                              <MessageScrollerItem
+                                key={message.id}
+                                messageId={message.id}
+                                role={message.role}
+                                scrollAnchor={message.role === "user"}
+                              >
+                                <MessageRow
+                                  groupedMessage={groupedMessage}
+                                  sessionId={session.id}
+                                  chatId={chatInfo.id}
+                                  durationMs={
+                                    messageDurationMap[message.id] ?? null
+                                  }
+                                  startedAt={
+                                    messageStartedAtMap[message.id] ??
+                                    (isStreaming
+                                      ? lastSendTimestampRef.current
+                                        ? new Date(
+                                            lastSendTimestampRef.current,
+                                          ).toISOString()
+                                        : lastUserMessageSentAt
+                                      : null)
+                                  }
+                                  streamdownComponents={streamdownComponents}
+                                  hasMessageActionInFlight={
+                                    hasMessageActionInFlight
+                                  }
+                                  resendingMessageId={resendingMessageId}
+                                  deletingMessageId={deletingMessageId}
+                                  copiedAssistantMessageId={
+                                    copiedAssistantMessageId
+                                  }
+                                  forkingAssistantMessageId={
+                                    forkingAssistantMessageId
+                                  }
+                                  modelOptions={modelOptions}
+                                  onResendUserMessage={handleResendUserMessage}
+                                  onDeleteUserMessage={handleDeleteUserMessage}
+                                  onCopyAssistantMessage={
+                                    handleCopyAssistantMessage
+                                  }
+                                  onForkAssistantMessage={
+                                    handleForkAssistantMessage
+                                  }
+                                  onApproveTool={handleApproveTool}
+                                  onDenyTool={handleDenyTool}
+                                  onApproveAllToolsForSession={
+                                    handleApproveAllToolsForSession
+                                  }
+                                  onManagedRuntimeProfileOutput={
+                                    handleManagedRuntimeProfileOutput
+                                  }
+                                  onOpenVerifiedBuildPanel={
+                                    openVerifiedBuildPanel
+                                  }
+                                  onOpenRuntimePanel={openRuntimePanel}
+                                />
+                              </MessageScrollerItem>
+                            );
+                          })}
+                          {showThinkingIndicator && (
+                            <WorkspaceStartupStatus status={workspaceStatus} />
                           )}
-                        {groupedRenderMessages.map((groupedMessage) => {
-                          const { message, isStreaming } = groupedMessage;
-                          return (
-                            <MessageRow
-                              key={message.id}
-                              groupedMessage={groupedMessage}
-                              sessionId={session.id}
-                              chatId={chatInfo.id}
-                              durationMs={
-                                messageDurationMap[message.id] ?? null
-                              }
-                              startedAt={
-                                messageStartedAtMap[message.id] ??
-                                (isStreaming
-                                  ? lastSendTimestampRef.current
-                                    ? new Date(
-                                        lastSendTimestampRef.current,
-                                      ).toISOString()
-                                    : lastUserMessageSentAt
-                                  : null)
-                              }
-                              streamdownComponents={streamdownComponents}
-                              hasMessageActionInFlight={
-                                hasMessageActionInFlight
-                              }
-                              resendingMessageId={resendingMessageId}
-                              deletingMessageId={deletingMessageId}
-                              copiedAssistantMessageId={
-                                copiedAssistantMessageId
-                              }
-                              forkingAssistantMessageId={
-                                forkingAssistantMessageId
-                              }
-                              modelOptions={modelOptions}
-                              onResendUserMessage={handleResendUserMessage}
-                              onDeleteUserMessage={handleDeleteUserMessage}
-                              onCopyAssistantMessage={
-                                handleCopyAssistantMessage
-                              }
-                              onForkAssistantMessage={
-                                handleForkAssistantMessage
-                              }
-                              onApproveTool={handleApproveTool}
-                              onDenyTool={handleDenyTool}
-                              onApproveAllToolsForSession={
-                                handleApproveAllToolsForSession
-                              }
-                              onManagedRuntimeProfileOutput={
-                                handleManagedRuntimeProfileOutput
-                              }
-                              onOpenVerifiedBuildPanel={openVerifiedBuildPanel}
-                              onOpenRuntimePanel={openRuntimePanel}
-                            />
-                          );
-                        })}
-                        {showThinkingIndicator && (
-                          <WorkspaceStartupStatus status={workspaceStatus} />
-                        )}
-                      </div>
-                    </OpenFileProvider>
-                  </div>
-                </div>
-                {!isAtBottom && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-secondary text-secondary-foreground hover:bg-accent"
-                    onClick={scrollToBottom}
-                  >
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
+                        </div>
+                      </OpenFileProvider>
+                    </MessageScrollerContent>
+                  </MessageScrollerViewport>
+                  <MessageScrollerButton />
+                </MessageScroller>
+              </MessageScrollerProvider>
 
               {/* Input */}
               <div className="p-4 pb-2 sm:pb-8">

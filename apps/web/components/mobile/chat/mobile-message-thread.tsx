@@ -3,7 +3,6 @@
 import { isReasoningUIPart, isToolUIPart } from "ai";
 import { Loader2 } from "lucide-react";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef } from "react";
 import type {
   WebAgentUIMessage,
   WebAgentUIToolPart,
@@ -23,6 +22,14 @@ import {
   hasLikelyCodeBlock,
   useStreamdownPlugins,
 } from "@/lib/use-streamdown-plugins";
+import {
+  MessageScroller,
+  MessageScrollerButton,
+  MessageScrollerContent,
+  MessageScrollerItem,
+  MessageScrollerProvider,
+  MessageScrollerViewport,
+} from "@/components/ui/message-scroller";
 import { MobileUserBubble } from "./mobile-user-bubble";
 
 // Markdown renderer for assistant text — same package/plugins the desktop chat
@@ -82,41 +89,7 @@ export function MobileMessageThread({
   onApprove,
   onDeny,
 }: MobileMessageThreadProps) {
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const stickToBottomRef = useRef(true);
   const inFlight = isChatInFlight(status);
-
-  // Track whether the user is near the bottom so streaming auto-scroll never
-  // fights a deliberate scroll-up.
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) {
-      return;
-    }
-    stickToBottomRef.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 96;
-  }, []);
-
-  // A signature that also changes while the LAST message streams in (text
-  // growth, tool-state transitions). messages.length alone is constant during
-  // streaming, so depending on it stops the view following a long reply.
-  const tail = messages.at(-1);
-  const scrollSignature = tail
-    ? `${messages.length}:${tail.id}:${tail.parts
-        .map(
-          (p) =>
-            `${p.type}:${"text" in p ? p.text.length : ""}:${"state" in p ? p.state : ""}`,
-        )
-        .join("|")}`
-    : `${messages.length}`;
-
-  // Auto-scroll to bottom as content arrives, unless the user scrolled up.
-  useEffect(() => {
-    if (stickToBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }
-  }, [scrollSignature, status]);
 
   const lastMessage = messages.at(-1);
   const lastMessageRole = lastMessage?.role as
@@ -147,117 +120,142 @@ export function MobileMessageThread({
   }
 
   return (
-    <div
-      ref={scrollRef}
-      onScroll={handleScroll}
-      className="flex min-h-0 flex-1 flex-col overflow-y-auto py-4"
+    <MessageScrollerProvider
+      defaultScrollPosition="last-anchor"
+      scrollPreviousItemPeek={40}
     >
-      {messages.map((message, messageIndex) => {
-        if (message.role === "user") {
-          return <MobileUserBubble key={message.id} message={message} />;
-        }
+      <MessageScroller>
+        <MessageScrollerViewport>
+          <MessageScrollerContent className="flex min-h-full flex-col py-4">
+            {messages.map((message, messageIndex) => {
+              if (message.role === "user") {
+                return (
+                  <MessageScrollerItem
+                    key={message.id}
+                    messageId={message.id}
+                    role={message.role}
+                    scrollAnchor
+                  >
+                    <MobileUserBubble message={message} />
+                  </MessageScrollerItem>
+                );
+              }
 
-        if (message.role === "assistant") {
-          const isMessageStreaming =
-            inFlight && messageIndex === messages.length - 1;
+              if (message.role === "assistant") {
+                const isMessageStreaming =
+                  inFlight && messageIndex === messages.length - 1;
 
-          // UIMessage does not carry a createdAt timestamp — pass null
-          // so AssistantMessageGroups falls back to its own internal timer.
-          const durationMs: number | null = null;
-          const startedAt: string | null = null;
+                // UIMessage does not carry a createdAt timestamp — pass null
+                // so AssistantMessageGroups falls back to its own internal timer.
+                const durationMs: number | null = null;
+                const startedAt: string | null = null;
 
-          return (
-            <div key={message.id} className="flex flex-col gap-1 px-4 py-1">
-              <AssistantMessageGroups
-                message={message}
-                isStreaming={isMessageStreaming}
-                durationMs={durationMs}
-                startedAt={startedAt}
-              >
-                {(isExpanded) =>
-                  message.parts.map((part, partIndex) => {
-                    // Reasoning (thinking) blocks
-                    if (isReasoningUIPart(part)) {
-                      if (!isExpanded) return null;
-                      return (
-                        <div
-                          key={`${message.id}-r${partIndex}`}
-                          className="pl-[22px]"
-                        >
-                          <ThinkingBlock
-                            text={part.text}
-                            isStreaming={
-                              isMessageStreaming && part.state === "streaming"
+                return (
+                  <MessageScrollerItem
+                    key={message.id}
+                    messageId={message.id}
+                    role={message.role}
+                    scrollAnchor={false}
+                  >
+                    <div className="flex flex-col gap-1 px-4 py-1">
+                      <AssistantMessageGroups
+                        message={message}
+                        isStreaming={isMessageStreaming}
+                        durationMs={durationMs}
+                        startedAt={startedAt}
+                      >
+                        {(isExpanded) =>
+                          message.parts.map((part, partIndex) => {
+                            // Reasoning (thinking) blocks
+                            if (isReasoningUIPart(part)) {
+                              if (!isExpanded) return null;
+                              return (
+                                <div
+                                  key={`${message.id}-r${partIndex}`}
+                                  className="pl-[22px]"
+                                >
+                                  <ThinkingBlock
+                                    text={part.text}
+                                    isStreaming={
+                                      isMessageStreaming &&
+                                      part.state === "streaming"
+                                    }
+                                  />
+                                </div>
+                              );
                             }
-                          />
-                        </div>
-                      );
-                    }
 
-                    // Tool calls — reuse the full desktop ToolCall renderer
-                    if (isToolUIPart(part)) {
-                      if (!isExpanded) return null;
-                      return (
-                        <div
-                          key={`${message.id}-t${partIndex}`}
-                          className="pl-[22px]"
-                        >
-                          <ToolCall
-                            part={part as WebAgentUIToolPart}
-                            activeApprovalId={activeApprovalId}
-                            isStreaming={isMessageStreaming}
-                            onApprove={onApprove}
-                            onDeny={onDeny}
-                          />
-                        </div>
-                      );
-                    }
+                            // Tool calls — reuse the full desktop ToolCall renderer
+                            if (isToolUIPart(part)) {
+                              if (!isExpanded) return null;
+                              return (
+                                <div
+                                  key={`${message.id}-t${partIndex}`}
+                                  className="pl-[22px]"
+                                >
+                                  <ToolCall
+                                    part={part as WebAgentUIToolPart}
+                                    activeApprovalId={activeApprovalId}
+                                    isStreaming={isMessageStreaming}
+                                    onApprove={onApprove}
+                                    onDeny={onDeny}
+                                  />
+                                </div>
+                              );
+                            }
 
-                    // Text parts — render markdown via Streamdown (matches the
-                    // desktop renderer) instead of raw text.
-                    if (part.type === "text" && part.text.length > 0) {
-                      return (
-                        <div
-                          key={`${message.id}-tx${partIndex}`}
-                          className="min-w-0 break-words text-sm leading-relaxed text-foreground"
-                        >
-                          <MobileMarkdown isStreaming={isMessageStreaming}>
-                            {part.text}
-                          </MobileMarkdown>
-                        </div>
-                      );
-                    }
+                            // Text parts — render markdown via Streamdown (matches the
+                            // desktop renderer) instead of raw text.
+                            if (part.type === "text" && part.text.length > 0) {
+                              return (
+                                <div
+                                  key={`${message.id}-tx${partIndex}`}
+                                  className="min-w-0 break-words text-sm leading-relaxed text-foreground"
+                                >
+                                  <MobileMarkdown
+                                    isStreaming={isMessageStreaming}
+                                  >
+                                    {part.text}
+                                  </MobileMarkdown>
+                                </div>
+                              );
+                            }
 
-                    return null;
-                  })
-                }
-              </AssistantMessageGroups>
-            </div>
-          );
-        }
+                            return null;
+                          })
+                        }
+                      </AssistantMessageGroups>
+                    </div>
+                  </MessageScrollerItem>
+                );
+              }
 
-        return null;
-      })}
+              return null;
+            })}
 
-      {/* Workspace startup status — shown while sandbox is initialising */}
-      {workspaceStatus ? (
-        <div className="px-4 py-1">
-          <WorkspaceStartupStatus status={workspaceStatus} />
-        </div>
-      ) : null}
+            {/* Workspace startup status — shown while sandbox is initialising */}
+            {workspaceStatus ? (
+              <div className="px-4 py-1">
+                <WorkspaceStartupStatus status={workspaceStatus} />
+              </div>
+            ) : null}
 
-      {/* Thinking indicator: shown when in-flight and no assistant content yet */}
-      {showThinking ? (
-        <div
-          className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
-          aria-live="polite"
-        >
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          <span>Thinking…</span>
-        </div>
-      ) : null}
+            {/* Thinking indicator: shown when in-flight and no assistant content yet */}
+            {showThinking ? (
+              <div
+                className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground"
+                aria-live="polite"
+              >
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                <span>Thinking…</span>
+              </div>
+            ) : null}
 
-      <div ref={bottomRef} className="h-4" aria-hidden="true" />
-    </div>
+            <div className="h-4" aria-hidden="true" />
+          </MessageScrollerContent>
+        </MessageScrollerViewport>
+        <MessageScrollerButton className="bottom-3" />
+      </MessageScroller>
+    </MessageScrollerProvider>
   );
 }

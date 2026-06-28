@@ -2,6 +2,7 @@
 
 import { Loader2, Terminal } from "lucide-react";
 import type { WebAgentWorkspaceStatusData } from "@/app/types";
+import { Marker, MarkerContent, MarkerIcon } from "@/components/ui/marker";
 import { cn } from "@/lib/utils";
 
 export function WorkspaceStartupStatus({
@@ -17,14 +18,14 @@ export function WorkspaceStartupStatus({
       className="my-1.5 max-w-full border border-transparent py-0.5"
     >
       <div className="inline-flex max-w-full flex-col gap-2">
-        <div className="inline-flex min-w-0 items-center gap-2 rounded-md py-px text-sm text-muted-foreground">
-          <span className="flex size-3.5 shrink-0 items-center justify-center">
+        <Marker>
+          <MarkerIcon>
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          </span>
-          <span className="min-w-0 truncate leading-none">
+          </MarkerIcon>
+          <MarkerContent className="shimmer status-text-shimmer">
             {status?.message ?? "Thinking…"}
-          </span>
-        </div>
+          </MarkerContent>
+        </Marker>
 
         {logLines.length > 0 ? (
           <div className="w-[min(760px,calc(100vw-2rem))] overflow-hidden rounded-md border border-border/70 bg-zinc-950 text-zinc-200 shadow-sm dark:bg-zinc-950">
