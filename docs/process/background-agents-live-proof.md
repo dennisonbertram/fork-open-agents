@@ -181,6 +181,44 @@ disposable repository:
 Capture the agent ID, trigger ID, webhook public ID if applicable, and the first
 manual-test run ID.
 
+## Manual Test Trigger Proof (automated)
+
+The cheapest first proof is the manual test trigger driven end-to-end against
+the deployed (or local) target. The `background-agents:test-proof` harness posts
+the manual test trigger for an existing agent, then polls the run detail API
+until a terminal status (or timeout) and prints run id, final status, errorKind,
+event count, output PR URL, and elapsed time. It never prints the cookie or any
+secret. A run that terminates with a typed failure is still proof success (the
+path ran end-to-end and recorded a typed failure) unless
+`BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` is set.
+
+```bash
+BACKGROUND_AGENT_PROOF_BASE_URL=https://<target-host> \
+BACKGROUND_AGENT_PROOF_AGENT_ID=<agent-id> \
+BACKGROUND_AGENT_PROOF_COOKIE='<authenticated-session-cookie>' \
+bun run --cwd apps/web background-agents:test-proof
+```
+
+Optional variables:
+
+- `BACKGROUND_AGENT_PROOF_TIMEOUT_MS` — run-completion timeout (default 120000)
+- `BACKGROUND_AGENT_PROOF_POLL_MS` — poll interval (default 2000)
+- `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` — fail unless the run succeeded
+- `VERCEL_AUTOMATION_BYPASS_SECRET` — preview protection bypass
+
+Expected result:
+
+- dispatch reports `matched>=1 created>=1` and a run id;
+- the harness polls the run detail API until a terminal status;
+- the summary line shows the final status, event count, and (for failures) the
+  typed errorKind;
+- a typed failure (e.g. `permission_missing`, `sandbox_unavailable`) is proof
+  the durable path ran end-to-end — inspect the run timeline at
+  `/background-runs/<runId>` for the event chain.
+
+This complements the webhook-proof and github-webhook-proof harnesses, which
+prove trigger delivery and idempotency but do not wait for the run to complete.
+
 ## Generic Signed Webhook Proof
 
 Run the generic `webhook.error` fixture against the configured hosted target:
@@ -333,6 +371,49 @@ Exercise:
 
 Capture screenshots only after checking that no secret, auth header, full
 payload, or unredacted artifact appears on screen.
+
+## Local Manual-Test Proof (captured 2026-06-28)
+
+A local end-to-end proof was run against `next dev` on `http://localhost:3010`
+with `OPEN_AGENTS_ENABLE_TEST_AUTH=1` and a migrated local database. This is a
+**local, typed-failure** proof — it proves the durable path runs end-to-end to a
+typed terminal status, not that a `succeeded`/ready-PR run completed. It is
+recorded here so the gap to close is explicit.
+
+- Target: `http://localhost:3010` (local `next dev`, Next.js 16.2.1 / Turbopack)
+- Proof agent: `XP8HyGwMhSSfAfh746Pt2` ("Local proof sentinel"),
+  `outputMode:none`, `github.issue` trigger, repo
+  `dennisonbertram/fork-open-agents` (allowlisted locally)
+- Harness: `bun run --cwd apps/web background-agents:test-proof` (built,
+  unit-tested, typechecked — see `apps/web/scripts/background-agent-test-proof.ts`)
+- Runs captured (both via the manual test trigger, `dev-managed-runtime-user`):
+  - `r8WS_WOAblU-MWMXgTCsm` (curl-driven) — `failed`, `errorKind=permission_missing`
+  - `3MrkObjYcPJgOR01xnnwB` (harness-driven) — `failed`, `errorKind=permission_missing`,
+    `events=4`, `elapsedMs=2387`
+- Event timeline (both runs): `background-agent.run.created` →
+  `background-agent.trigger.received` → `background-agent.workflow.started` →
+  `background-agent.run.failed`
+- Sandbox attribution recorded: `sandboxName=background_agent_<runId>`
+
+Proven locally (real, not mocked):
+
+- manual test trigger dispatches and creates a durable run;
+- the Vercel Workflow runtime **starts** under `next dev` (`workflow.started`
+  event — the workflow is not deferred to a deployed env only);
+- sandbox attribution is recorded on the run row;
+- failures are typed and observable (`permission_missing` /
+  "Connect GitHub to access repositories") with a full event timeline;
+- the run reaches a terminal status within seconds, so the path is
+  end-to-end-complete to a typed terminal state.
+
+NOT proven locally (remaining gap):
+
+- a `succeeded` run. The `permission_missing` failure is because the test-auth
+  user (`dev-managed-runtime-user`) has no connected GitHub token or
+  installation for the repo — a **config/credential gap, not a code defect**.
+  A local `succeeded` run needs the proof user to have GitHub access; the
+  hosted `succeeded`/ready-PR run against a disposable repo remains the #26
+  step. When that is captured, fill the "Evidence To Post" template below.
 
 ## Evidence To Post
 
