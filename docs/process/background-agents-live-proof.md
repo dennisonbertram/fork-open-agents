@@ -181,6 +181,44 @@ disposable repository:
 Capture the agent ID, trigger ID, webhook public ID if applicable, and the first
 manual-test run ID.
 
+## Manual Test Trigger Proof (automated)
+
+The cheapest first proof is the manual test trigger driven end-to-end against
+the deployed (or local) target. The `background-agents:test-proof` harness posts
+the manual test trigger for an existing agent, then polls the run detail API
+until a terminal status (or timeout) and prints run id, final status, errorKind,
+event count, output PR URL, and elapsed time. It never prints the cookie or any
+secret. A run that terminates with a typed failure is still proof success (the
+path ran end-to-end and recorded a typed failure) unless
+`BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` is set.
+
+```bash
+BACKGROUND_AGENT_PROOF_BASE_URL=https://<target-host> \
+BACKGROUND_AGENT_PROOF_AGENT_ID=<agent-id> \
+BACKGROUND_AGENT_PROOF_COOKIE='<authenticated-session-cookie>' \
+bun run --cwd apps/web background-agents:test-proof
+```
+
+Optional variables:
+
+- `BACKGROUND_AGENT_PROOF_TIMEOUT_MS` — run-completion timeout (default 120000)
+- `BACKGROUND_AGENT_PROOF_POLL_MS` — poll interval (default 2000)
+- `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` — fail unless the run succeeded
+- `VERCEL_AUTOMATION_BYPASS_SECRET` — preview protection bypass
+
+Expected result:
+
+- dispatch reports `matched>=1 created>=1` and a run id;
+- the harness polls the run detail API until a terminal status;
+- the summary line shows the final status, event count, and (for failures) the
+  typed errorKind;
+- a typed failure (e.g. `permission_missing`, `sandbox_unavailable`) is proof
+  the durable path ran end-to-end — inspect the run timeline at
+  `/background-runs/<runId>` for the event chain.
+
+This complements the webhook-proof and github-webhook-proof harnesses, which
+prove trigger delivery and idempotency but do not wait for the run to complete.
+
 ## Generic Signed Webhook Proof
 
 Run the generic `webhook.error` fixture against the configured hosted target:
@@ -333,6 +371,111 @@ Exercise:
 
 Capture screenshots only after checking that no secret, auth header, full
 payload, or unredacted artifact appears on screen.
+
+## Local Manual-Test Proof (captured 2026-06-28 / 2026-06-29)
+
+A local end-to-end proof was run against `next dev` on `http://localhost:3002`
+with a migrated local database and a real signed-in operator user (test-auth
+OFF, so Better Auth sessions resolve). Two stages were captured:
+
+### Stage 1 — typed-failure proof (2026-06-28, test-auth user)
+
+First pass used the test-auth stub (`OPEN_AGENTS_ENABLE_TEST_AUTH=1`,
+`dev-managed-runtime-user`) on `:3010`. It proved the durable path runs
+end-to-end to a typed terminal status, but failed at `permission_missing`
+because the test-auth user has no linked GitHub account — a config gap, not a
+code defect. Runs: `r8WS_WOAblU-MWMXgTCsm`, `3MrkObjYcPJgOR01xnnwB`.
+
+### Stage 2 — succeeded proof (2026-06-29, real operator user)
+
+After fixing local GitHub + sandbox auth (see "Local prerequisites" below), a
+real signed-in operator user ran a `none`-mode agent and the run reached
+**`succeeded`** — a real Vercel Sandbox was provisioned, the repo cloned into
+it, and git-context evidence recorded.
+
+- Target: `http://localhost:3002` (local `next dev`, Next.js 16.2.1 / Turbopack)
+- Proof agent: `f4RrAQ3wgQ4XEzgQ7-tpj` ("Local succeeded-proof sentinel"),
+  `outputMode:none`, `github.issue` trigger, repo
+  `dennisonbertram/fork-open-agents` (allowlisted locally). Deleted after capture.
+- Harness: `bun run --cwd apps/web background-agents:test-proof`
+- Succeeded run: `up3e1-2yg-ZdgGS9DKqFy` — `status=succeeded`, `events=9`,
+  `elapsedMs=9179`, `sandboxName=background_agent_up3e1-2yg-ZdgGS9DKqFy`,
+  `workflowRunId=wrun_01KWAN1WHX24Z8X8YWH41B6M98`
+- Full event timeline (chronological):
+  1. `background-agent.run.created` — Queued
+  2. `background-agent.trigger.received` — manual test trigger
+  3. `background-agent.workflow.started` — Vercel Workflow runtime started
+  4. `background-agent.github.installation.resolved` — repo-scoped App
+     installation access resolved (gates 1-3 of `verifyRepoAccess` all passed)
+  5. `background-agent.sandbox.started` — **"Background sandbox is ready"**
+     (real Vercel Sandbox provisioned)
+  6. `background-agent.git.context.started` — running git commands in sandbox
+  7. `background-agent.git.context.completed` —
+     `git status --short && git rev-parse --short HEAD` passed
+  8. `background-agent.check.completed` — skipped (no check command, by design)
+  9. `background-agent.run.completed` — **succeeded**
+
+Proven locally (real, not mocked):
+
+- manual test trigger dispatches and creates a durable run;
+- the Vercel Workflow runtime **starts and completes** under `next dev`;
+- a real Vercel Sandbox is provisioned and attributed on the run row;
+- repo-scoped GitHub App installation access is resolved;
+- git context commands run inside the sandbox and are observed;
+- the run reaches `succeeded` with a full 9-event timeline.
+
+NOT proven locally (still the hosted #26 step):
+
+- a `ready_pr` run (PR creation + output URL). The local proof used
+  `outputMode:none` to avoid needing an inference gateway key and to keep the
+  proof repo-mutation-free. A `ready_pr`/ready-PR run against a disposable
+  hosted repo remains the #26 step, but every gate before it is now proven
+  locally.
+
+### Local prerequisites (what it took to get a local succeeded run)
+
+These are local-dev setup gaps, not code defects. Documented so the proof is
+reproducible and so future operators don't hit the same dead-ends.
+
+1. **Run on the port matching `BETTER_AUTH_URL`** (`.env.local` →
+   `http://localhost:3002`). The OAuth redirect URI is built from that env, so
+   the server must listen there. Start with `PORT=3002 bun run --cwd apps/web dev`
+   and **do not** set `OPEN_AGENTS_ENABLE_TEST_AUTH` (test-auth short-circuits
+   real Better Auth sessions — `resolve-session.ts` checks the test cookie
+   first).
+2. **Own the GitHub OAuth app.** The client id configured in `.env.local` must
+   be an OAuth App you own, with Authorization callback URL
+   `http://localhost:3002/api/auth/callback/github`. Create one at
+   https://github.com/settings/developers and set `NEXT_PUBLIC_GITHUB_CLIENT_ID`
+   + `GITHUB_CLIENT_SECRET`. (A separate production OAuth app with the prod
+   callback URL should be used for deployed environments.)
+3. **Sign in and Connect GitHub.** Browse `http://localhost:3002`, sign in with
+   Vercel, then Connect GitHub in the get-started flow. This links a GitHub
+   account row (gate 1: `getUserGitHubToken`).
+4. **Seed the `githubInstallations` row.** GitHub cannot deliver the App
+   `installation` webhook to localhost, and `syncUserInstallations` 403s with a
+   standalone OAuth App token ("You must authenticate with an access token
+   authorized to a GitHub App"). The dev-only
+   `background-agents:seed-installation` script authenticates as the GitHub App
+   itself (App JWT, no user token) and upserts the real installation row the
+   webhook would have written:
+   ```bash
+   SEED_INSTALL_LOGIN=<your-login> \
+   bun run --cwd apps/web background-agents:seed-installation
+   ```
+   This populates gate 3 (`getInstallationByAccountLogin`). The GitHub App must
+   be installed on the target repo (install at
+   `https://github.com/apps/<slug>/installations/new` if missing).
+5. **Authenticate the Vercel CLI** (`vercel login`). The `@vercel/sandbox` SDK
+   v2.x resolves Vercel credentials from the linked project + CLI auth state
+   (the project is already linked at `.vercel/project.json`); a stale
+   `VERCEL_OIDC_TOKEN` in `.env.local` does NOT work (OIDC tokens are
+   short-lived and deployment-scoped). Without a current `vercel login`, sandbox
+   provisioning 401s with `sandbox_unavailable` / "Could not get credentials
+   from OIDC context."
+
+Once all five are satisfied, `background-agents:test-proof` against a
+`none`-mode agent reaches `succeeded` in ~9s.
 
 ## Evidence To Post
 
