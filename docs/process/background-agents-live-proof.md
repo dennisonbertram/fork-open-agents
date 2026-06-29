@@ -372,48 +372,110 @@ Exercise:
 Capture screenshots only after checking that no secret, auth header, full
 payload, or unredacted artifact appears on screen.
 
-## Local Manual-Test Proof (captured 2026-06-28)
+## Local Manual-Test Proof (captured 2026-06-28 / 2026-06-29)
 
-A local end-to-end proof was run against `next dev` on `http://localhost:3010`
-with `OPEN_AGENTS_ENABLE_TEST_AUTH=1` and a migrated local database. This is a
-**local, typed-failure** proof — it proves the durable path runs end-to-end to a
-typed terminal status, not that a `succeeded`/ready-PR run completed. It is
-recorded here so the gap to close is explicit.
+A local end-to-end proof was run against `next dev` on `http://localhost:3002`
+with a migrated local database and a real signed-in operator user (test-auth
+OFF, so Better Auth sessions resolve). Two stages were captured:
 
-- Target: `http://localhost:3010` (local `next dev`, Next.js 16.2.1 / Turbopack)
-- Proof agent: `XP8HyGwMhSSfAfh746Pt2` ("Local proof sentinel"),
+### Stage 1 — typed-failure proof (2026-06-28, test-auth user)
+
+First pass used the test-auth stub (`OPEN_AGENTS_ENABLE_TEST_AUTH=1`,
+`dev-managed-runtime-user`) on `:3010`. It proved the durable path runs
+end-to-end to a typed terminal status, but failed at `permission_missing`
+because the test-auth user has no linked GitHub account — a config gap, not a
+code defect. Runs: `r8WS_WOAblU-MWMXgTCsm`, `3MrkObjYcPJgOR01xnnwB`.
+
+### Stage 2 — succeeded proof (2026-06-29, real operator user)
+
+After fixing local GitHub + sandbox auth (see "Local prerequisites" below), a
+real signed-in operator user ran a `none`-mode agent and the run reached
+**`succeeded`** — a real Vercel Sandbox was provisioned, the repo cloned into
+it, and git-context evidence recorded.
+
+- Target: `http://localhost:3002` (local `next dev`, Next.js 16.2.1 / Turbopack)
+- Proof agent: `f4RrAQ3wgQ4XEzgQ7-tpj` ("Local succeeded-proof sentinel"),
   `outputMode:none`, `github.issue` trigger, repo
-  `dennisonbertram/fork-open-agents` (allowlisted locally)
-- Harness: `bun run --cwd apps/web background-agents:test-proof` (built,
-  unit-tested, typechecked — see `apps/web/scripts/background-agent-test-proof.ts`)
-- Runs captured (both via the manual test trigger, `dev-managed-runtime-user`):
-  - `r8WS_WOAblU-MWMXgTCsm` (curl-driven) — `failed`, `errorKind=permission_missing`
-  - `3MrkObjYcPJgOR01xnnwB` (harness-driven) — `failed`, `errorKind=permission_missing`,
-    `events=4`, `elapsedMs=2387`
-- Event timeline (both runs): `background-agent.run.created` →
-  `background-agent.trigger.received` → `background-agent.workflow.started` →
-  `background-agent.run.failed`
-- Sandbox attribution recorded: `sandboxName=background_agent_<runId>`
+  `dennisonbertram/fork-open-agents` (allowlisted locally). Deleted after capture.
+- Harness: `bun run --cwd apps/web background-agents:test-proof`
+- Succeeded run: `up3e1-2yg-ZdgGS9DKqFy` — `status=succeeded`, `events=9`,
+  `elapsedMs=9179`, `sandboxName=background_agent_up3e1-2yg-ZdgGS9DKqFy`,
+  `workflowRunId=wrun_01KWAN1WHX24Z8X8YWH41B6M98`
+- Full event timeline (chronological):
+  1. `background-agent.run.created` — Queued
+  2. `background-agent.trigger.received` — manual test trigger
+  3. `background-agent.workflow.started` — Vercel Workflow runtime started
+  4. `background-agent.github.installation.resolved` — repo-scoped App
+     installation access resolved (gates 1-3 of `verifyRepoAccess` all passed)
+  5. `background-agent.sandbox.started` — **"Background sandbox is ready"**
+     (real Vercel Sandbox provisioned)
+  6. `background-agent.git.context.started` — running git commands in sandbox
+  7. `background-agent.git.context.completed` —
+     `git status --short && git rev-parse --short HEAD` passed
+  8. `background-agent.check.completed` — skipped (no check command, by design)
+  9. `background-agent.run.completed` — **succeeded**
 
 Proven locally (real, not mocked):
 
 - manual test trigger dispatches and creates a durable run;
-- the Vercel Workflow runtime **starts** under `next dev` (`workflow.started`
-  event — the workflow is not deferred to a deployed env only);
-- sandbox attribution is recorded on the run row;
-- failures are typed and observable (`permission_missing` /
-  "Connect GitHub to access repositories") with a full event timeline;
-- the run reaches a terminal status within seconds, so the path is
-  end-to-end-complete to a typed terminal state.
+- the Vercel Workflow runtime **starts and completes** under `next dev`;
+- a real Vercel Sandbox is provisioned and attributed on the run row;
+- repo-scoped GitHub App installation access is resolved;
+- git context commands run inside the sandbox and are observed;
+- the run reaches `succeeded` with a full 9-event timeline.
 
-NOT proven locally (remaining gap):
+NOT proven locally (still the hosted #26 step):
 
-- a `succeeded` run. The `permission_missing` failure is because the test-auth
-  user (`dev-managed-runtime-user`) has no connected GitHub token or
-  installation for the repo — a **config/credential gap, not a code defect**.
-  A local `succeeded` run needs the proof user to have GitHub access; the
-  hosted `succeeded`/ready-PR run against a disposable repo remains the #26
-  step. When that is captured, fill the "Evidence To Post" template below.
+- a `ready_pr` run (PR creation + output URL). The local proof used
+  `outputMode:none` to avoid needing an inference gateway key and to keep the
+  proof repo-mutation-free. A `ready_pr`/ready-PR run against a disposable
+  hosted repo remains the #26 step, but every gate before it is now proven
+  locally.
+
+### Local prerequisites (what it took to get a local succeeded run)
+
+These are local-dev setup gaps, not code defects. Documented so the proof is
+reproducible and so future operators don't hit the same dead-ends.
+
+1. **Run on the port matching `BETTER_AUTH_URL`** (`.env.local` →
+   `http://localhost:3002`). The OAuth redirect URI is built from that env, so
+   the server must listen there. Start with `PORT=3002 bun run --cwd apps/web dev`
+   and **do not** set `OPEN_AGENTS_ENABLE_TEST_AUTH` (test-auth short-circuits
+   real Better Auth sessions — `resolve-session.ts` checks the test cookie
+   first).
+2. **Own the GitHub OAuth app.** The client id configured in `.env.local` must
+   be an OAuth App you own, with Authorization callback URL
+   `http://localhost:3002/api/auth/callback/github`. Create one at
+   https://github.com/settings/developers and set `NEXT_PUBLIC_GITHUB_CLIENT_ID`
+   + `GITHUB_CLIENT_SECRET`. (A separate production OAuth app with the prod
+   callback URL should be used for deployed environments.)
+3. **Sign in and Connect GitHub.** Browse `http://localhost:3002`, sign in with
+   Vercel, then Connect GitHub in the get-started flow. This links a GitHub
+   account row (gate 1: `getUserGitHubToken`).
+4. **Seed the `githubInstallations` row.** GitHub cannot deliver the App
+   `installation` webhook to localhost, and `syncUserInstallations` 403s with a
+   standalone OAuth App token ("You must authenticate with an access token
+   authorized to a GitHub App"). The dev-only
+   `background-agents:seed-installation` script authenticates as the GitHub App
+   itself (App JWT, no user token) and upserts the real installation row the
+   webhook would have written:
+   ```bash
+   SEED_INSTALL_LOGIN=<your-login> \
+   bun run --cwd apps/web background-agents:seed-installation
+   ```
+   This populates gate 3 (`getInstallationByAccountLogin`). The GitHub App must
+   be installed on the target repo (install at
+   `https://github.com/apps/<slug>/installations/new` if missing).
+5. **Authenticate the Vercel CLI** (`vercel login`). The `@vercel/sandbox` SDK
+   v2.x resolves Vercel credentials from the linked project + CLI auth state
+   (the project is already linked at `.vercel/project.json`); a stale
+   `VERCEL_OIDC_TOKEN` in `.env.local` does NOT work (OIDC tokens are
+   short-lived and deployment-scoped). Without a current `vercel login`, sandbox
+   provisioning 401s with `sandbox_unavailable` / "Could not get credentials
+   from OIDC context."
+
+Once all five are satisfied, `background-agents:test-proof` against a
+`none`-mode agent reaches `succeeded` in ~9s.
 
 ## Evidence To Post
 

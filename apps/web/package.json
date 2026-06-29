@@ -22,6 +22,7 @@
     "background-agents:github-webhook-proof": "bun run scripts/background-agent-github-webhook-proof.ts",
     "background-agents:live-proof-preflight": "bun run scripts/background-agent-live-proof-preflight.ts",
     "background-agents:test-proof": "bun run scripts/background-agent-test-proof.ts",
+    "background-agents:seed-installation": "bun run scripts/background-agent-seed-installation.ts",
     "background-agents:webhook-proof": "bun run scripts/background-agent-webhook-proof.ts",
     "composio:smoke": "bun run scripts/composio-smoke.ts",
     "preview:smoke": "bun run scripts/preview-smoke.ts"
