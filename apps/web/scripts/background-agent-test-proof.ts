@@ -76,6 +76,10 @@ export interface RunSnapshot {
     outputUrl?: string | null;
   };
   events: unknown[];
+  /** Event names extracted from `events[*].eventName`, in order. Exposed so
+   * proof assertions can require execution-path evidence (e.g. that the
+   * workflow actually started) without callers re-parsing the raw events. */
+  eventNames: string[];
   outputs: unknown[];
 }
 
@@ -276,6 +280,15 @@ export function parseRunSnapshot(value: unknown): RunSnapshot {
   }
   const events = Array.isArray(body.events) ? body.events : [];
   const outputs = Array.isArray(body.outputs) ? body.outputs : [];
+  const eventNames = events
+    .map((event) => {
+      if (event && typeof event === "object" && !Array.isArray(event)) {
+        const record = event as Record<string, unknown>;
+        return typeof record.eventName === "string" ? record.eventName : null;
+      }
+      return null;
+    })
+    .filter((name): name is string => name !== null);
   return {
     run: {
       id: runRecord.id,
@@ -286,6 +299,7 @@ export function parseRunSnapshot(value: unknown): RunSnapshot {
         typeof runRecord.outputUrl === "string" ? runRecord.outputUrl : null,
     },
     events,
+    eventNames,
     outputs,
   };
 }
@@ -305,6 +319,49 @@ export function summarizeRun(snapshot: RunSnapshot, elapsedMs: number): string {
     parts.push(`outputUrl=${snapshot.run.outputUrl}`);
   }
   return parts.join(" ");
+}
+
+/** The event the dispatcher records when `start(runBackgroundAgentWorkflow)`
+ * succeeds. Its presence is the evidence that the workflow actually started —
+ * the execution-path behavior this smoke is meant to prove. */
+export const WORKFLOW_STARTED_EVENT = "background-agent.workflow.started";
+
+/**
+ * Assert the terminal run is real proof, not a false positive.
+ *
+ * A `workflow_failed` run means `start(runBackgroundAgentWorkflow, ...)` never
+ * started the durable workflow — the exact execution-path regression this smoke
+ * exists to catch. Reject it unconditionally, even with the default
+ * `REQUIRE_SUCCEEDED=false`, so a broken workflow-start cannot print "proof
+ * passed". Also require the `background-agent.workflow.started` event when the
+ * timeline is populated, so a target that records a terminal status without
+ * ever starting the workflow cannot pass either.
+ */
+export function assertProofRun(
+  snapshot: RunSnapshot,
+  options?: { requireSucceeded?: boolean },
+): void {
+  if (
+    snapshot.run.status === "failed" &&
+    snapshot.run.errorKind === "workflow_failed"
+  ) {
+    throw new BackgroundAgentTestProofError(
+      `Run ${snapshot.run.id} failed to start the background agent workflow (errorKind=workflow_failed). The execution path is broken — this is not proof.`,
+    );
+  }
+  if (
+    snapshot.eventNames.length > 0 &&
+    !snapshot.eventNames.includes(WORKFLOW_STARTED_EVENT)
+  ) {
+    throw new BackgroundAgentTestProofError(
+      `Run ${snapshot.run.id} reached terminal status without a ${WORKFLOW_STARTED_EVENT} event. The workflow did not start — this is not proof.`,
+    );
+  }
+  if (options?.requireSucceeded && snapshot.run.status !== "succeeded") {
+    throw new BackgroundAgentTestProofError(
+      `Run ${snapshot.run.id} terminated with status ${snapshot.run.status} (REQUIRE_SUCCEEDED was set).`,
+    );
+  }
 }
 
 async function fetchJson(
@@ -429,11 +486,10 @@ async function main(): Promise<void> {
   const snapshot = await pollRunUntilTerminal(config, runId);
   console.log(summarizeRun(snapshot, Date.now() - startedAt));
 
-  if (config.requireSucceeded && snapshot.run.status !== "succeeded") {
-    throw new BackgroundAgentTestProofError(
-      `Run ${runId} terminated with status ${snapshot.run.status} (REQUIRE_SUCCEEDED was set).`,
-    );
-  }
+  // Assert the run is real proof, not a false positive: a workflow_failed run
+  // or a terminal run with no workflow.started event means the execution path
+  // is broken and the smoke must not print "proof passed".
+  assertProofRun(snapshot, { requireSucceeded: config.requireSucceeded });
 
   console.log(
     `Background agent test proof passed. Inspect run ${runId} at /background-runs/${runId}.`,
