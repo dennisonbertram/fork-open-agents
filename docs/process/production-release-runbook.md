@@ -140,7 +140,88 @@ agent-browser console
 For high-risk changes, inspect recent production errors:
 
 ```bash
-vercel logs --environment production --status-code 5xx --since 5m
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
+```
+
+## Production Ops Snapshot
+
+Use the read-only snapshot before and after high-risk deploys, and when an
+agent needs a single starting point for production diagnosis:
+
+```bash
+bun run ops:status -- --since 30m
+```
+
+The report includes live deployment metadata when Vercel access is available,
+public smoke status, recent 5xx log samples, open PR blockers, latest
+Production Smoke check state, explicit source gaps, and the next safe action.
+It does not print env values, cookies, auth headers, prompts, or provider
+tokens. Add `--strict` when a degraded public smoke or 5xx signal should fail
+the command.
+
+## Recurring Production Monitors
+
+`Scheduled Production Smoke` runs every 30 minutes and can also be dispatched
+manually. It checks `/`, `/api/auth/info`, and `/api/models` against the stable
+production URL. Failures call the alert sink and then fail the workflow.
+
+`Authenticated Production Canary` runs every six hours and can also be
+dispatched manually. It is blocked by configuration until these values are set
+for a disposable production test identity:
+
+```env
+PRODUCTION_CANARY_REPO=owner/repo
+PRODUCTION_CANARY_IDENTITY=label-for-test-user
+PRODUCTION_CANARY_AUTH_COOKIE=<GitHub Actions secret>
+```
+
+The canary first proves the authenticated account status route, then the account
+diagnosis route. It reports `blocked_by_configuration` instead of partially
+mutating production when the disposable identity or repo is missing.
+
+## Alert Sink
+
+Production monitors write owner-visible alerts to GitHub Issues in this fork.
+The helper dedupes by `production-ops:<source>:<environment>`:
+
+```bash
+bun run ops:alert -- \
+  --source public-smoke \
+  --environment production \
+  --status failing \
+  --run-url "$RUN_URL" \
+  --commit-sha "$SHA" \
+  --summary "route /api/models failed"
+```
+
+Repeated failures comment on the existing open alert. Recovery runs add a
+recovery comment. The helper redacts secret-like text before issue bodies or
+comments are printed.
+
+## Branch Safety Gates
+
+Current branch protection requires these stable CI contexts for `develop` and
+`main`:
+
+1. `build`
+2. `guards`
+3. `lint-and-typecheck`
+
+The deployment-status and scheduled checks below remain advisory until their
+recent run history is stable enough to avoid blocking solo-founder velocity:
+
+1. `Preview Smoke`
+2. `API Contract Tests`
+3. `Production Smoke`
+4. `Scheduled Production Smoke`
+5. `Authenticated Production Canary`
+
+Record the before/after branch protection readback when changing GitHub
+required checks.
+
+```bash
+gh api repos/dennisonbertram/fork-open-agents/branches/main/protection --jq '.required_status_checks'
+gh api repos/dennisonbertram/fork-open-agents/branches/develop/protection --jq '.required_status_checks'
 ```
 
 ## Rollback
@@ -151,7 +232,7 @@ back first and debug second.
 ```bash
 vercel rollback
 vercel rollback status
-vercel logs --environment production --status-code 5xx --since 5m
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
 ```
 
 On plans that support rolling back to a specific deployment:

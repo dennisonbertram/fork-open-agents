@@ -97,6 +97,7 @@ mock.module("./store", () => ({
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId: async () => null,
   listEnabledScheduleTriggers: mock(async () => scheduleRows),
+  listStaleBackgroundAgentRuns: mock(async () => []),
   listMatchingTriggersForEvent: async () => [],
   recordBackgroundAgentEvent: recordBackgroundAgentEventMock,
   recordTriggerSkipReason: recordTriggerSkipReasonMock,
