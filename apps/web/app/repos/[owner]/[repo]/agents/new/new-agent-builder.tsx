@@ -260,8 +260,8 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
-      {message && (
-        isSuccess ? (
+      {message &&
+        (isSuccess ? (
           <div
             role="status"
             className="rounded-md border border-emerald-500/30 bg-emerald-50/50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400"
@@ -270,8 +270,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
           </div>
         ) : (
           <p className="text-xs text-destructive">{message}</p>
-        )
-      )}
+        ))}
       {notReadyPanel}
     </div>
   );

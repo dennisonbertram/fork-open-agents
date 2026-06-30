@@ -291,15 +291,40 @@ export function AgentSpecEditor({
       <div className="space-y-2 border-b border-border pb-4">
         {/* 3-step progression: ① Save → ② Run a test → ③ Enable */}
         <ol className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground mb-2">
-          <li className={cn("flex items-center gap-1", createdAgentId ? "text-emerald-600 dark:text-emerald-400" : "font-medium text-foreground")}>
+          <li
+            className={cn(
+              "flex items-center gap-1",
+              createdAgentId
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "font-medium text-foreground",
+            )}
+          >
             {createdAgentId ? <span aria-label="done">✓</span> : <span>①</span>}
             Save
           </li>
-          <li className={cn("flex items-center gap-1", testRunId ? "text-emerald-600 dark:text-emerald-400" : createdAgentId ? "font-medium text-foreground" : "opacity-40")}>
+          <li
+            className={cn(
+              "flex items-center gap-1",
+              testRunId
+                ? "text-emerald-600 dark:text-emerald-400"
+                : createdAgentId
+                  ? "font-medium text-foreground"
+                  : "opacity-40",
+            )}
+          >
             {testRunId ? <span aria-label="done">✓</span> : <span>②</span>}
             Run a test
           </li>
-          <li className={cn("flex items-center gap-1", enabled ? "text-emerald-600 dark:text-emerald-400" : testRunId ? "font-medium text-foreground" : "opacity-40")}>
+          <li
+            className={cn(
+              "flex items-center gap-1",
+              enabled
+                ? "text-emerald-600 dark:text-emerald-400"
+                : testRunId
+                  ? "font-medium text-foreground"
+                  : "opacity-40",
+            )}
+          >
             {enabled ? <span aria-label="done">✓</span> : <span>③</span>}
             Enable
           </li>
@@ -486,8 +511,12 @@ export function AgentSpecEditor({
       >
         {/* AND IT WILL… output summary */}
         {(() => {
-          const githubAccess = permissionContents === "write" ? "write" : "read";
-          const { will, wont } = describeAgentOutput({ outputMode, githubAccess });
+          const githubAccess =
+            permissionContents === "write" ? "write" : "read";
+          const { will, wont } = describeAgentOutput({
+            outputMode,
+            githubAccess,
+          });
           return (
             <div className="mb-3 rounded-md border border-border bg-muted/10 px-3 py-2 text-xs space-y-0.5">
               <p>
