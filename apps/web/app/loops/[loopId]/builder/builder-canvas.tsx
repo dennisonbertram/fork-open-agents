@@ -35,7 +35,18 @@ import {
   type EdgeMouseHandler,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { Bot, ChevronRight, Flag, Github, GitBranch, Save } from "lucide-react";
+import {
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  Circle,
+  Flag,
+  Github,
+  GitBranch,
+  ListChecks,
+  Lock,
+  Save,
+} from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useStore } from "zustand";
@@ -54,6 +65,7 @@ import { nodeErrorsById } from "./node-config-panel";
 import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
 import { computeLoopFrames, type FrameNode } from "./loop-frames";
+import { buildBuilderGuidance } from "./builder-guidance";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { LoopFlowEdge } from "./definition-mapping";
 
@@ -77,6 +89,37 @@ const kindMiniMapColor: Record<string, string> = {
   condition: "#f59e0b",
   end: "#a3a3a3",
 };
+
+const addNodeActions = [
+  {
+    kind: "agent_step" as const,
+    label: "Agent step",
+    description: "Ask an agent to do work",
+    icon: Bot,
+    className: "text-violet-700 dark:text-violet-300",
+  },
+  {
+    kind: "github_check" as const,
+    label: "GitHub check",
+    description: "Read issues, PRs, CI, or deploys",
+    icon: Github,
+    className: "text-slate-600 dark:text-slate-300",
+  },
+  {
+    kind: "condition" as const,
+    label: "Condition",
+    description: "Branch on a value",
+    icon: GitBranch,
+    className: "text-amber-700 dark:text-amber-300",
+  },
+  {
+    kind: "end" as const,
+    label: "End",
+    description: "Finish a success or failure path",
+    icon: Flag,
+    className: "text-neutral-600 dark:text-neutral-300",
+  },
+];
 
 type PendingConnection = {
   source: string;
@@ -148,6 +191,16 @@ function BuilderCanvasInner({
   const errorsById = useMemo(
     () => nodeErrorsById(validationErrors),
     [validationErrors],
+  );
+  const guidance = useMemo(
+    () =>
+      buildBuilderGuidance({
+        nodes,
+        edges,
+        validationErrors,
+        isDirty,
+      }),
+    [nodes, edges, validationErrors, isDirty],
   );
 
   // Loop regions (cycles) → drawn as labelled frames so a loop reads as a loop.
@@ -376,7 +429,7 @@ function BuilderCanvasInner({
     <BuilderErrorContext.Provider value={errorsById}>
       <div className="flex min-h-0 flex-1 flex-col bg-background">
         {/* Top bar */}
-        <div className="relative flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+        <div className="relative flex min-h-14 shrink-0 items-center gap-3 border-b border-border px-4">
           <nav
             aria-label="Loop breadcrumb"
             className="flex min-w-0 items-center gap-1.5 text-sm"
@@ -397,6 +450,18 @@ function BuilderCanvasInner({
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="shrink-0 font-medium">Builder</span>
           </nav>
+
+          <div className="hidden min-w-0 flex-1 items-center gap-2 border-l border-border pl-3 lg:flex">
+            <ListChecks className="size-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0">
+              <p className="truncate text-xs font-medium text-foreground">
+                {guidance.headline}
+              </p>
+              <p className="truncate text-[11px] text-muted-foreground">
+                {guidance.detail}
+              </p>
+            </div>
+          </div>
 
           {isDirty && (
             <span className="rounded-sm bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
@@ -429,58 +494,98 @@ function BuilderCanvasInner({
         {/* Canvas + panels */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {/* Node palette */}
-          <div className="flex w-48 shrink-0 flex-col gap-1 border-r border-border p-3">
-            <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              Add node
-            </p>
-            {(() => {
-              const selected = nodes.find(
-                (n) => n.selected && n.data.kind !== "end",
-              );
-              return (
-                <p className="mb-1 text-[11px] leading-snug text-muted-foreground">
-                  {selected
-                    ? `Inserts after “${selected.data.label}”`
-                    : "Select a node first to insert connected"}
-                </p>
-              );
-            })()}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start gap-2 text-xs text-violet-700 dark:text-violet-300"
-              onClick={() => handleAddNode("agent_step")}
-            >
-              <Bot className="size-4" />
-              Agent step
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start gap-2 text-xs text-slate-600 dark:text-slate-300"
-              onClick={() => handleAddNode("github_check")}
-            >
-              <Github className="size-4" />
-              GitHub check
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start gap-2 text-xs text-amber-700 dark:text-amber-300"
-              onClick={() => handleAddNode("condition")}
-            >
-              <GitBranch className="size-4" />
-              Condition
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="justify-start gap-2 text-xs text-neutral-600 dark:text-neutral-300"
-              onClick={() => handleAddNode("end")}
-            >
-              <Flag className="size-4" />
-              End
-            </Button>
+          <div className="flex w-64 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-muted/20 p-3">
+            <section className="rounded-md border border-border bg-background p-3">
+              <div className="flex items-start gap-2">
+                <div className="rounded-md bg-emerald-500/10 p-1.5 text-emerald-700 dark:text-emerald-300">
+                  <ListChecks className="size-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium leading-5">
+                    {guidance.headline}
+                  </p>
+                  <p className="mt-1 text-[11px] leading-4 text-muted-foreground">
+                    {guidance.detail}
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {guidance.steps.map((step) => {
+                  const Icon =
+                    step.state === "done"
+                      ? CheckCircle2
+                      : step.state === "blocked"
+                        ? Lock
+                        : Circle;
+                  return (
+                    <div
+                      key={step.id}
+                      className="grid grid-cols-[18px_1fr] gap-2 text-xs"
+                    >
+                      <Icon
+                        className={
+                          step.state === "done"
+                            ? "mt-0.5 size-3.5 text-emerald-600"
+                            : step.state === "blocked"
+                              ? "mt-0.5 size-3.5 text-muted-foreground/60"
+                              : "mt-0.5 size-3.5 fill-amber-500/20 text-amber-600"
+                        }
+                      />
+                      <div className="min-w-0">
+                        <p className="font-medium leading-4 text-foreground">
+                          {step.title}
+                        </p>
+                        <p className="mt-0.5 leading-4 text-muted-foreground">
+                          {step.detail}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section>
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Add next card
+              </p>
+              {(() => {
+                const selected = nodes.find(
+                  (n) => n.selected && n.data.kind !== "end",
+                );
+                return (
+                  <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
+                    {selected
+                      ? `Adds after "${selected.data.label}" and connects automatically.`
+                      : "Click a card first so the next card connects automatically."}
+                  </p>
+                );
+              })()}
+              <div className="space-y-1">
+                {addNodeActions.map((action) => {
+                  const Icon = action.icon;
+                  return (
+                    <Button
+                      key={action.kind}
+                      variant="ghost"
+                      size="sm"
+                      className="h-auto w-full justify-start gap-2 px-2 py-2 text-left"
+                      onClick={() => handleAddNode(action.kind)}
+                    >
+                      <Icon className={`size-4 shrink-0 ${action.className}`} />
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium leading-4">
+                          {action.label}
+                        </span>
+                        <span className="block truncate text-[11px] font-normal leading-4 text-muted-foreground">
+                          {action.description}
+                        </span>
+                      </span>
+                    </Button>
+                  );
+                })}
+              </div>
+            </section>
           </div>
 
           {/* React Flow canvas — role="application" + tabIndex={-1} makes this
@@ -554,9 +659,15 @@ function BuilderCanvasInner({
               {/* Empty state hint */}
               {nodes.length === 0 && (
                 <Panel position="top-center">
-                  <p className="rounded-md border border-dashed border-border bg-background/80 px-4 py-3 text-sm text-muted-foreground backdrop-blur-sm">
-                    Add steps from the palette, connect them, then Save
-                  </p>
+                  <div className="rounded-md border border-dashed border-border bg-background/90 px-4 py-3 text-center shadow-sm backdrop-blur-sm">
+                    <p className="text-sm font-medium text-foreground">
+                      Start with one agent step
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Select Start, click Agent step, then describe the work in
+                      the right panel.
+                    </p>
+                  </div>
                 </Panel>
               )}
             </ReactFlow>
