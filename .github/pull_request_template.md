@@ -1,5 +1,11 @@
 ## Summary
 
+Why this change exists:
+
+-
+
+What changed:
+
 -
 
 Base branch:
@@ -11,11 +17,17 @@ Base branch:
 
 In scope:
 
-- ...
+-
 
 Out of scope:
 
-- ...
+-
+
+Reviewer guide:
+
+- Start with:
+- Mechanical/low-risk files:
+- Highest-risk behavior or edge cases:
 
 ## Product / UX
 
@@ -23,6 +35,7 @@ Out of scope:
 - User-visible behavior:
 - States covered:
 - Accessibility/usability notes:
+- Browser evidence or blocker:
 
 ## Integration
 
@@ -32,6 +45,8 @@ Out of scope:
 - External services/config:
 - Observability:
 - Backward compatibility:
+- New logs/events/status visible to users or operators:
+- Compatibility with existing data/runs/sessions:
 
 ## Test Evidence
 
@@ -44,10 +59,13 @@ Out of scope:
 - [ ] Adjacent suite:
 - [ ] `git diff --check`
 - [ ] `bun --bun run ci`
+- Blocked or skipped proof with reason:
+- Evidence quality: deterministic test / local integration / browser smoke / Vercel preview / dev smoke / production smoke / approved exception
 
 ## Preview / Release Safety
 
 - Risk tier: Low / Medium / High
+- Risk rationale:
 - Vercel Preview URL:
 - [ ] Preview smoke passed, or not applicable because:
 - [ ] Agent Browser Preview review completed, or not applicable because:
@@ -56,10 +74,12 @@ Out of scope:
 - Dev evidence, or reason deferred:
 - Production smoke plan:
 - Rollback plan:
+- Fix-forward plan if rollback is unsafe:
 
 ## Docs
 
 - [ ] Docs updated, or not needed because:
+- Docs/processes affected:
 
 ## Deploy / Migration Notes
 
@@ -68,6 +88,8 @@ Out of scope:
 - Upstash/Redis/KV:
 - GitHub App/OAuth:
 - Sandbox/runtime profiles:
+- Background agents/workflows:
+- Feature flags/env vars:
 - Rollback:
 
 ## Linked Issue

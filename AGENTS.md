@@ -91,6 +91,41 @@ request before calling the task complete. Stage only the files that belong to
 the implementation, keep unrelated dirty files out of the commit, and report any
 blocker that prevents committing, pushing, or opening the PR.
 
+## Pull Request Descriptions
+
+PR descriptions must be detailed enough that a reviewer, release operator, or
+future agent can understand and safely operate the change without reading the
+chat transcript. Do not open or update a PR with a sparse body, placeholder
+bullets, or generic "tests pass" language.
+
+Every non-trivial PR body must include:
+
+- **Why:** the user/operator problem, linked issue or explicit reason no issue is
+  needed, and the protected path.
+- **What changed:** the important files, components, APIs, data flows,
+  permissions, and user-visible behavior changed by the PR.
+- **Out of scope:** adjacent work intentionally left out, especially when the
+  change touches a larger epic or follow-up plan.
+- **How it was verified:** exact commands run, focused tests, full-suite checks,
+  browser or service smoke evidence, preview/dev/prod URLs when relevant, and
+  any local smoke that was blocked with the concrete blocker.
+- **Evidence quality:** note whether the proof is deterministic test coverage,
+  local integration proof, Agent Browser/Playwright smoke, Vercel preview/dev
+  smoke, production smoke, or an approved exception.
+- **Risk and rollback:** deploy or migration impact, external services involved,
+  operator observability, compatibility concerns, and the rollback or fix-forward
+  path.
+- **Reviewer guide:** where to start reviewing, which files are mechanical, and
+  which behavior or edge cases deserve extra attention.
+
+If a PR is docs-only, say that explicitly and still describe the affected
+process, the reason tests were not run, and the command used to check formatting
+or links when practical. If a PR touches UI, include browser evidence or the
+specific reason browser QA was blocked. If it touches managed runtime, sandbox,
+workflow, browser, deploy, auth, GitHub App, database, or background-agent
+behavior, include the observability and deployment evidence required by the
+process docs.
+
 ## Authentication
 
 Authentication uses [Better Auth](https://www.better-auth.com/) with Vercel OAuth (sign-in) and GitHub OAuth (repo access). Config lives in `apps/web/lib/auth/config.ts`. Sessions are managed by better-auth's built-in session system — there is no manual JWE/encryption layer.
