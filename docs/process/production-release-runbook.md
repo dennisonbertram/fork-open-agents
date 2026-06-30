@@ -140,7 +140,7 @@ agent-browser console
 For high-risk changes, inspect recent production errors:
 
 ```bash
-vercel logs --environment production --status-code 5xx --since 5m
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
 ```
 
 ## Production Ops Snapshot
@@ -232,7 +232,7 @@ back first and debug second.
 ```bash
 vercel rollback
 vercel rollback status
-vercel logs --environment production --status-code 5xx --since 5m
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 5m
 ```
 
 On plans that support rolling back to a specific deployment:
