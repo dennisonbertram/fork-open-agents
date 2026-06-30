@@ -6,6 +6,7 @@
  * BT-006: Failed run → schedule state still advances (no wedge).
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { BackgroundAgentRun } from "@/lib/db/schema";
 import type { BackgroundAgentWithTriggers } from "./store";
 
 mock.module("server-only", () => ({}));
@@ -22,6 +23,9 @@ const createRunForTriggerMock = mock(async () => ({
 }));
 const recordBackgroundAgentEventMock = mock(async () => undefined);
 const listEnabledScheduleTriggersMock = mock(async () => scheduleRows);
+const listStaleBackgroundAgentRunsMock = mock(
+  async (): Promise<BackgroundAgentRun[]> => [],
+);
 const updateBackgroundAgentRunStatusMock = mock(async () => undefined);
 
 let scheduleRows: Array<{
@@ -45,6 +49,7 @@ mock.module("./store", () => ({
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId: async () => null,
   listEnabledScheduleTriggers: listEnabledScheduleTriggersMock,
+  listStaleBackgroundAgentRuns: listStaleBackgroundAgentRunsMock,
   listMatchingTriggersForEvent: async () => [],
   recordBackgroundAgentEvent: recordBackgroundAgentEventMock,
   updateBackgroundAgentRunStatus: updateBackgroundAgentRunStatusMock,
@@ -108,6 +113,8 @@ function resetMocks() {
   updateBackgroundAgentRunStatusMock.mockClear();
   listEnabledScheduleTriggersMock.mockClear();
   listEnabledScheduleTriggersMock.mockImplementation(async () => scheduleRows);
+  listStaleBackgroundAgentRunsMock.mockClear();
+  listStaleBackgroundAgentRunsMock.mockImplementation(async () => []);
   advanceTriggerScheduleState.mockClear();
   recordTriggerSkipReason.mockClear();
 }
@@ -229,6 +236,98 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
       expect.objectContaining({
         triggerId: "trigger-sched-1",
         lastRunAt: now,
+      }),
+    );
+  });
+
+  test("catches up a missed schedule window using the persisted next_run_at", async () => {
+    const missedDueAt = new Date("2026-06-01T08:59:00.000Z");
+    scheduleRows = [
+      {
+        agent: baseAgent,
+        trigger: { ...scheduleTrigger, nextRunAt: missedDueAt },
+      },
+    ];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:02:00.000Z"),
+      requestId: "req-catch-up",
+    });
+
+    expect(createRunForTriggerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: expect.objectContaining({
+          externalId: "trigger-sched-1:2026-06-01T08:59",
+          occurredAt: "2026-06-01T08:59:00.000Z",
+        }),
+      }),
+    );
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-sched-1",
+        lastRunAt: missedDueAt,
+      }),
+    );
+  });
+
+  test("terminalizes stale queued or running background-agent runs", async () => {
+    const staleRun: BackgroundAgentRun = {
+      id: "run-stale",
+      agentId: "agent-sched",
+      triggerId: "trigger-sched-1",
+      userId: "user-sched",
+      status: "running",
+      source: "schedule",
+      triggerKind: "schedule.cron",
+      externalId: "trigger-sched-1:2026-06-01T06:00",
+      idempotencyKey: "key",
+      repoOwner: "acme",
+      repoName: "scheduler",
+      ref: null,
+      sha: null,
+      branch: null,
+      prNumber: null,
+      issueNumber: null,
+      deploymentUrl: null,
+      sandboxName: "sandbox-stale",
+      outputKind: "none",
+      outputUrl: null,
+      errorKind: null,
+      errorMessage: null,
+      payloadSummary: {},
+      resultSummary: null,
+      workflowRunId: "workflow-stale",
+      requestId: "req-old",
+      startedAt: new Date("2026-06-01T06:00:00.000Z"),
+      finishedAt: null,
+      createdAt: new Date("2026-06-01T06:00:00.000Z"),
+      updatedAt: new Date("2026-06-01T06:00:00.000Z"),
+    };
+    listStaleBackgroundAgentRunsMock.mockImplementationOnce(async () => [
+      staleRun,
+    ]);
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-sweep",
+    });
+
+    expect(updateBackgroundAgentRunStatusMock).toHaveBeenCalledWith({
+      runId: "run-stale",
+      status: "failed",
+      errorKind: "stuck_running",
+      errorMessage:
+        "Background agent run exceeded the stale threshold and was swept by cron.",
+    });
+    expect(recordBackgroundAgentEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run-stale",
+        eventName: "background-agent.run.swept_stale",
+        errorKind: "stuck_running",
+        workflowRunId: "workflow-stale",
+        sandboxName: "sandbox-stale",
       }),
     );
   });

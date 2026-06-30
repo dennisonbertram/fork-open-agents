@@ -161,6 +161,7 @@ let matchingRows: Array<{
 const listMatchingTriggersForEvent = mock(async () => matchingRows);
 const getWebhookTriggerByPublicId = mock(async () => null);
 const listEnabledScheduleTriggers = mock(async () => []);
+const listStaleBackgroundAgentRuns = mock(async () => []);
 const advanceTriggerScheduleState = mock(async () => undefined);
 const recordTriggerSkipReason = mock(async () => undefined);
 
@@ -180,6 +181,7 @@ mock.module("./store", () => ({
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
+  listStaleBackgroundAgentRuns,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
   recordTriggerSkipReason,
