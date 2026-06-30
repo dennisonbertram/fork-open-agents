@@ -51,6 +51,8 @@ Use the process docs for non-trivial work:
 - [Regression Discipline](docs/process/regression-discipline.md) defines the
   bug-to-regression workflow.
 - [Formatting Gate](docs/process/formatting-gate.md) defines completion checks.
+- [GTM Operating System](docs/process/gtm-operating-system.md) defines the
+  agent-first GTM state, ledger, redaction, and approval boundary.
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
   defines the database-backed local browser QA gate for settings, sessions,
   repositories, and other persisted UI paths.

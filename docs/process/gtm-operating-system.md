@@ -1,0 +1,63 @@
+# GTM Operating System
+
+The GTM operating-system foundation is intentionally agent-first and
+approval-gated. Open-Agents owns durable GTM state and treats CRM, email,
+analytics, and GitHub as bounded integrations behind explicit approval policy.
+
+## Current Surfaces
+
+- `apps/web/lib/db/schema.ts` defines user-scoped GTM tables for accounts,
+  contacts, signals, experiments, touchpoints, insights, GTM agent runs,
+  approvals, and append-only events.
+- `apps/web/lib/gtm/*` contains the typed event vocabulary, redaction helpers,
+  and transaction-scoped store helpers.
+- `GET /api/gtm/brief?window=24h` returns the read-only daily GTM brief.
+- `GET /api/gtm/diagnosis?source=account_work&id=...` returns bounded evidence
+  for a single GTM item.
+
+## Event Vocabulary
+
+Initial `gtm_events.event_name` values:
+
+- `gtm.account.created`
+- `gtm.contact.upserted`
+- `gtm.signal.recorded`
+- `gtm.experiment.created`
+- `gtm.touchpoint.recorded`
+- `gtm.insight.recorded`
+- `gtm.agent_run.started`
+- `gtm.agent_run.completed`
+- `gtm.agent_run.failed`
+- `gtm.approval.requested`
+- `gtm.approval.decided`
+
+Each event must include `userId`, `requestId`, `entityKind`, `entityId`,
+`status`, `level`, and `redactionStatus`. Optional correlation fields are
+`sessionId`, `chatId`, `workflowRunId`, and `gtmAgentRunId`.
+
+## Redaction
+
+Do not persist raw tokens, prompt/session content, full email bodies, full call
+transcripts, private CRM notes, or customer contact details in event payloads.
+Use stable entity IDs, hashes, bounded summaries, and evidence references.
+
+The `gtm` module redacts sensitive payload keys such as `email`, `phone`,
+`body`, `note`, `prompt`, `transcript`, `token`, `secret`, `stdout`, and
+`stderr` before ledger persistence.
+
+## Approval Boundary
+
+GTM rows may store local drafts and proposed changes. Any external mutation,
+including email sends, CRM writes, sequence enrollment, or GitHub issue filing,
+must create a pending GTM approval first. A denied or expired approval must not
+call the external tool.
+
+## Debug Recipes
+
+- Reconstruct one operation: query `gtm_events` by `request_id`.
+- Reconstruct one GTM run: query `gtm_events` by `gtm_agent_run_id`.
+- Reconstruct one entity timeline: query `gtm_events` by
+  `user_id`, `entity_kind`, and `entity_id`.
+- Explain an incomplete daily brief: inspect `sourceStatus` in
+  `/api/gtm/brief`, then inspect source-specific events by `requestId`.
+

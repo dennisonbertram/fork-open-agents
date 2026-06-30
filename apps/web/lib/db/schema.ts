@@ -1822,6 +1822,448 @@ export const workflowArtifacts = pgTable(
 export type WorkflowArtifact = typeof workflowArtifacts.$inferSelect;
 export type NewWorkflowArtifact = typeof workflowArtifacts.$inferInsert;
 
+// ── GTM operating system foundation (#708/#709) ─────────────────────────────
+
+export type GtmEvidenceRef = {
+  sourceType: "manual" | "crm" | "public_url" | "product" | "github" | "call";
+  url?: string;
+  recordId?: string;
+  retrievedAt?: string;
+  excerpt?: string;
+};
+
+export type GtmRedactedPayload = Record<string, unknown>;
+
+export const gtmAccounts = pgTable(
+  "gtm_accounts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    domain: text("domain"),
+    status: text("status", {
+      enum: ["target", "active", "customer", "archived"],
+    })
+      .notNull()
+      .default("target"),
+    sourceKind: text("source_kind", {
+      enum: ["manual", "crm", "public_research", "product_signal", "import"],
+    })
+      .notNull()
+      .default("manual"),
+    externalSource: text("external_source"),
+    externalId: text("external_id"),
+    provenance: jsonb("provenance")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_accounts_user_updated_idx").on(table.userId, table.updatedAt),
+    uniqueIndex("gtm_accounts_user_external_idx").on(
+      table.userId,
+      table.externalSource,
+      table.externalId,
+    ),
+  ],
+);
+
+export const gtmContacts = pgTable(
+  "gtm_contacts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").references(() => gtmAccounts.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+    role: text("role"),
+    emailHash: text("email_hash"),
+    status: text("status", {
+      enum: ["draft", "active", "archived"],
+    })
+      .notNull()
+      .default("draft"),
+    sourceKind: text("source_kind", {
+      enum: ["manual", "crm", "public_research", "call", "import"],
+    })
+      .notNull()
+      .default("manual"),
+    externalSource: text("external_source"),
+    externalId: text("external_id"),
+    provenance: jsonb("provenance")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_contacts_user_account_idx").on(table.userId, table.accountId),
+    uniqueIndex("gtm_contacts_user_external_idx").on(
+      table.userId,
+      table.externalSource,
+      table.externalId,
+    ),
+  ],
+);
+
+export const gtmSignals = pgTable(
+  "gtm_signals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").references(() => gtmAccounts.id, {
+      onDelete: "set null",
+    }),
+    contactId: text("contact_id").references(() => gtmContacts.id, {
+      onDelete: "set null",
+    }),
+    kind: text("kind", {
+      enum: [
+        "fit",
+        "pain",
+        "trigger",
+        "tech_stack",
+        "hiring",
+        "funding",
+        "contact_role",
+        "objection",
+        "timing",
+        "activation",
+        "product_request",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: ["draft", "active", "rejected", "archived"],
+    })
+      .notNull()
+      .default("draft"),
+    confidence: text("confidence", {
+      enum: ["high", "medium", "low", "unknown"],
+    })
+      .notNull()
+      .default("medium"),
+    summary: text("summary").notNull(),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    dedupSignature: text("dedup_signature"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_signals_user_status_idx").on(table.userId, table.status),
+    index("gtm_signals_account_idx").on(table.accountId, table.updatedAt),
+    index("gtm_signals_contact_idx").on(table.contactId, table.updatedAt),
+  ],
+);
+
+export const gtmExperiments = pgTable(
+  "gtm_experiments",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    hypothesis: text("hypothesis").notNull(),
+    channel: text("channel").notNull(),
+    owner: text("owner"),
+    status: text("status", {
+      enum: ["planned", "running", "completed", "stopped", "archived"],
+    })
+      .notNull()
+      .default("planned"),
+    startedAt: timestamp("started_at"),
+    endedAt: timestamp("ended_at"),
+    expectedSignal: text("expected_signal"),
+    outcomeSummary: text("outcome_summary"),
+    metrics: jsonb("metrics")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_experiments_user_status_idx").on(table.userId, table.status),
+    index("gtm_experiments_user_updated_idx").on(table.userId, table.updatedAt),
+  ],
+);
+
+export const gtmTouchpoints = pgTable(
+  "gtm_touchpoints",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    accountId: text("account_id").references(() => gtmAccounts.id, {
+      onDelete: "set null",
+    }),
+    contactId: text("contact_id").references(() => gtmContacts.id, {
+      onDelete: "set null",
+    }),
+    channel: text("channel", {
+      enum: ["email", "call", "meeting", "social", "product", "manual"],
+    }).notNull(),
+    direction: text("direction", {
+      enum: ["inbound", "outbound", "internal"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["draft", "pending_approval", "approved", "sent", "completed"],
+    })
+      .notNull()
+      .default("draft"),
+    occurredAt: timestamp("occurred_at"),
+    summary: text("summary").notNull(),
+    bodyPreview: text("body_preview"),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_touchpoints_user_status_idx").on(table.userId, table.status),
+    index("gtm_touchpoints_account_idx").on(table.accountId, table.updatedAt),
+  ],
+);
+
+export const gtmInsights = pgTable(
+  "gtm_insights",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind", {
+      enum: ["account", "market", "product", "objection", "experiment"],
+    }).notNull(),
+    status: text("status", {
+      enum: ["draft", "active", "rejected", "merged", "archived"],
+    })
+      .notNull()
+      .default("draft"),
+    title: text("title").notNull(),
+    summary: text("summary").notNull(),
+    confidence: text("confidence", {
+      enum: ["high", "medium", "low", "unknown"],
+    })
+      .notNull()
+      .default("medium"),
+    dedupSignature: text("dedup_signature"),
+    sourceKind: text("source_kind").notNull(),
+    sourceId: text("source_id"),
+    evidenceRefs: jsonb("evidence_refs")
+      .$type<GtmEvidenceRef[]>()
+      .notNull()
+      .default([]),
+    createdBy: text("created_by").notNull().default("gtm_agent"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_insights_user_status_idx").on(table.userId, table.status),
+    uniqueIndex("gtm_insights_user_dedup_idx").on(
+      table.userId,
+      table.dedupSignature,
+    ),
+  ],
+);
+
+export const gtmAgentRuns = pgTable(
+  "gtm_agent_runs",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    runKind: text("run_kind", {
+      enum: [
+        "daily_brief",
+        "research",
+        "outbound",
+        "call_prep",
+        "call_debrief",
+        "activation_watcher",
+        "weekly_review",
+      ],
+    }).notNull(),
+    status: text("status", {
+      enum: ["queued", "running", "partial", "completed", "failed", "blocked"],
+    })
+      .notNull()
+      .default("queued"),
+    requestId: text("request_id").notNull(),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    errorKind: text("error_kind"),
+    summary: text("summary"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_agent_runs_user_kind_idx").on(table.userId, table.runKind),
+    index("gtm_agent_runs_request_idx").on(table.requestId),
+  ],
+);
+
+export const gtmApprovals = pgTable(
+  "gtm_approvals",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    actionKind: text("action_kind").notNull(),
+    targetKind: text("target_kind").notNull(),
+    targetId: text("target_id").notNull(),
+    status: text("status", {
+      enum: ["pending", "approved", "denied", "expired"],
+    })
+      .notNull()
+      .default("pending"),
+    requestId: text("request_id").notNull(),
+    workflowApprovalId: text("workflow_approval_id").references(
+      () => workflowToolApprovals.approvalId,
+      { onDelete: "set null" },
+    ),
+    requestedBy: text("requested_by").notNull(),
+    decidedBy: text("decided_by"),
+    decidedAt: timestamp("decided_at"),
+    policySnapshot: jsonb("policy_snapshot")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    redactedPreview: jsonb("redacted_preview")
+      .$type<GtmRedactedPayload>()
+      .notNull()
+      .default({}),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_approvals_user_status_idx").on(table.userId, table.status),
+    index("gtm_approvals_target_idx").on(table.targetKind, table.targetId),
+  ],
+);
+
+export const gtmEvents = pgTable(
+  "gtm_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    eventName: text("event_name").notNull(),
+    entityKind: text("entity_kind").notNull(),
+    entityId: text("entity_id").notNull(),
+    status: text("status", {
+      enum: ["started", "succeeded", "failed", "blocked", "info"],
+    }).notNull(),
+    level: text("level", {
+      enum: ["info", "warn", "error"],
+    })
+      .notNull()
+      .default("info"),
+    requestId: text("request_id").notNull(),
+    sessionId: text("session_id").references(() => sessions.id, {
+      onDelete: "set null",
+    }),
+    chatId: text("chat_id").references(() => chats.id, {
+      onDelete: "set null",
+    }),
+    workflowRunId: text("workflow_run_id").references(() => workflowRuns.id, {
+      onDelete: "set null",
+    }),
+    gtmAgentRunId: text("gtm_agent_run_id").references(() => gtmAgentRuns.id, {
+      onDelete: "set null",
+    }),
+    errorKind: text("error_kind"),
+    payload: jsonb("payload").$type<GtmRedactedPayload>().notNull().default({}),
+    redactionStatus: text("redaction_status", {
+      enum: ["redacted", "not_required", "blocked"],
+    })
+      .notNull()
+      .default("redacted"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("gtm_events_request_idx").on(table.requestId),
+    index("gtm_events_entity_idx").on(
+      table.userId,
+      table.entityKind,
+      table.entityId,
+      table.createdAt,
+    ),
+    index("gtm_events_agent_run_idx").on(table.gtmAgentRunId, table.createdAt),
+  ],
+);
+
+export type GtmAccount = typeof gtmAccounts.$inferSelect;
+export type NewGtmAccount = typeof gtmAccounts.$inferInsert;
+export type GtmContact = typeof gtmContacts.$inferSelect;
+export type NewGtmContact = typeof gtmContacts.$inferInsert;
+export type GtmSignal = typeof gtmSignals.$inferSelect;
+export type NewGtmSignal = typeof gtmSignals.$inferInsert;
+export type GtmExperiment = typeof gtmExperiments.$inferSelect;
+export type NewGtmExperiment = typeof gtmExperiments.$inferInsert;
+export type GtmTouchpoint = typeof gtmTouchpoints.$inferSelect;
+export type NewGtmTouchpoint = typeof gtmTouchpoints.$inferInsert;
+export type GtmInsight = typeof gtmInsights.$inferSelect;
+export type NewGtmInsight = typeof gtmInsights.$inferInsert;
+export type GtmAgentRun = typeof gtmAgentRuns.$inferSelect;
+export type NewGtmAgentRun = typeof gtmAgentRuns.$inferInsert;
+export type GtmApproval = typeof gtmApprovals.$inferSelect;
+export type NewGtmApproval = typeof gtmApprovals.$inferInsert;
+export type GtmEvent = typeof gtmEvents.$inferSelect;
+export type NewGtmEvent = typeof gtmEvents.$inferInsert;
+
 export const workflowRunSteps = pgTable(
   "workflow_run_steps",
   {
