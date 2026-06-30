@@ -6,7 +6,9 @@ import { toast } from "sonner";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  createTriggerDraft,
   type FormState,
+  type TriggerDraft,
 } from "@/lib/background-agents/agent-spec";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import { AgentSpecEditor } from "../../agent-spec-editor";
@@ -62,6 +64,33 @@ export function AgentEditForm({
 
   const form = buildFormFromAgent(agent);
   const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
+
+  // Map saved triggers to TriggerDraft[] for the multi-trigger editor.
+  // Each saved trigger has id + kind + schedule + conditions — project them into
+  // the flat TriggerDraft shape the editor expects.
+  const initialTriggers: TriggerDraft[] = agent.triggers.map((t) => {
+    const conds = t.conditions ?? {};
+    // For deployment_status, conditions.actions holds the deployment state
+    // (routed from conditionSeverities on save). Restore it to conditionSeverities
+    // so the UI shows it in the right field.
+    const conditionSeverities =
+      t.kind === "github.deployment_status"
+        ? (conds.actions?.join(", ") ?? "")
+        : (conds.severities?.join(", ") ?? "");
+    const conditionActions =
+      t.kind === "github.deployment_status"
+        ? ""
+        : (conds.actions?.join(", ") ?? "");
+    return {
+      ...createTriggerDraft(t.id, t.kind),
+      schedule: t.schedule ?? "",
+      conditionActions,
+      conditionBranches: conds.branches?.join(", ") ?? "",
+      conditionLabels: conds.labels?.join(", ") ?? "",
+      conditionEnvironments: conds.environments?.join(", ") ?? "",
+      conditionSeverities,
+    };
+  });
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setSaveError(null);
@@ -140,6 +169,9 @@ export function AgentEditForm({
         initialPermissionContents={form.permissionContents}
         initialPermissionPullRequests={form.permissionPullRequests}
         initialComposioToolkitSlugs={form.composioToolkitSlugs}
+        initialTriggers={
+          initialTriggers.length > 0 ? initialTriggers : undefined
+        }
         createdAgentId={agent.id}
         testRunId={testRunId}
         onSave={handleSave}

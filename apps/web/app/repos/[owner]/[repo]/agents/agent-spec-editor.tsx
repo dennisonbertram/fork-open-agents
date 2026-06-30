@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Play, Save } from "lucide-react";
+import { ChevronDown, Play, Save, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,11 +17,14 @@ import { SettingsSection } from "@/components/ui/settings-section";
 import { cn } from "@/lib/utils";
 import {
   buildAgentPayload,
+  createTriggerDraft,
+  deriveAgentName,
   supportedOutputModes,
   triggerLabels,
   type FormState,
   type GitHubAccessLevel,
   type OutputMode,
+  type TriggerDraft,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
@@ -57,6 +60,11 @@ type AgentSpecEditorProps = {
   initialPermissionPullRequests?: GitHubAccessLevel;
   /** Composio toolkit slugs to pre-select. Defaults to none. */
   initialComposioToolkitSlugs?: string[];
+  /**
+   * Multi-trigger drafts to seed the trigger list. When provided and non-empty,
+   * takes priority over the scalar initialTriggerKind/initialSchedule/initialCondition* props.
+   */
+  initialTriggers?: TriggerDraft[];
   /** The ID of the agent once saved — enables the Run a test button. Defaults to null (disabled). */
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
@@ -67,6 +75,9 @@ type AgentSpecEditorProps = {
   onRunTest: () => void | Promise<void>;
 };
 
+/** Builds condition open/close state per trigger index. */
+type ConditionsOpenState = Record<number, boolean>;
+
 /**
  * Reviewed/editable spec form for creating a GitHub project agent.
  *
@@ -76,7 +87,8 @@ type AgentSpecEditorProps = {
  * - ready_pr output makes GitHub write/PR permissions explicit.
  * - schedule.cron trigger mounts the schedule components visibly.
  * - Actions (Save + Run a test) are at the TOP of the editor.
- * - Tools section keeps existing permission selects (contents + pull_requests).
+ * - Sentence ordering: Instructions → Triggers → Tools → Result.
+ * - Multiple triggers supported via "Add a trigger" button.
  */
 export function AgentSpecEditor({
   mode = "create",
@@ -98,30 +110,13 @@ export function AgentSpecEditor({
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
   initialComposioToolkitSlugs = [],
+  initialTriggers,
   createdAgentId = null,
   testRunId = null,
   onSave,
   onRunTest,
 }: AgentSpecEditorProps) {
   const [name, setName] = useState(initialName);
-  const [triggerKind, setTriggerKind] =
-    useState<TriggerKind>(initialTriggerKind);
-  const [schedule, setSchedule] = useState(initialSchedule);
-  const [conditionActions, setConditionActions] = useState(
-    initialConditionActions,
-  );
-  const [conditionBranches, setConditionBranches] = useState(
-    initialConditionBranches,
-  );
-  const [conditionLabels, setConditionLabels] = useState(
-    initialConditionLabels,
-  );
-  const [conditionEnvironments, setConditionEnvironments] = useState(
-    initialConditionEnvironments,
-  );
-  const [conditionSeverities, setConditionSeverities] = useState(
-    initialConditionSeverities,
-  );
   // Merge goal into instructions once, as the initial value: prepend the goal as
   // the first sentence when present. Computed in a lazy useState initializer so
   // later edits live entirely in `instructions` state (no deps to track).
@@ -130,12 +125,32 @@ export function AgentSpecEditor({
     if (initialInstructions.startsWith(initialGoal)) return initialInstructions;
     return `${initialGoal}\n\n${initialInstructions}`.trim();
   });
+
+  // Multi-trigger state: seed from initialTriggers if provided, else from
+  // scalar props (back-compat).
+  const [triggers, setTriggers] = useState<TriggerDraft[]>(() => {
+    if (initialTriggers && initialTriggers.length > 0) return initialTriggers;
+    const seed = createTriggerDraft("trigger-0", initialTriggerKind);
+    return [
+      {
+        ...seed,
+        schedule: initialSchedule,
+        conditionActions: initialConditionActions,
+        conditionBranches: initialConditionBranches,
+        conditionLabels: initialConditionLabels,
+        conditionEnvironments: initialConditionEnvironments,
+        conditionSeverities: initialConditionSeverities,
+      },
+    ];
+  });
+
+  const [conditionsOpen, setConditionsOpen] = useState<ConditionsOpenState>({});
+
   const [outputMode, setOutputMode] = useState<OutputMode>(initialOutputMode);
   const [checkCommand, setCheckCommand] = useState(initialCheckCommand);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [conditionsOpen, setConditionsOpen] = useState(false);
   // Normalize any mixed initial GitHub access (e.g. a legacy agent saved with
   // contents:write + pullRequests:read) to what the tool card can represent, so
   // the card never displays "Read-only" while the form silently holds a write
@@ -155,31 +170,64 @@ export function AgentSpecEditor({
     initialComposioToolkitSlugs,
   );
 
-  const isScheduleValid = useMemo(() => {
-    if (triggerKind !== "schedule.cron") return true;
-    return validateSchedule(schedule).valid;
-  }, [triggerKind, schedule]);
+  const allCronSchedulesValid = useMemo(() => {
+    return triggers.every(
+      (t) =>
+        t.triggerKind !== "schedule.cron" || validateSchedule(t.schedule).valid,
+    );
+  }, [triggers]);
 
   const canSave = useMemo(
     () =>
-      name.trim().length > 0 &&
+      (name.trim().length > 0 || instructions.trim().length > 0) &&
       instructions.trim().length > 0 &&
-      isScheduleValid,
-    [name, instructions, isScheduleValid],
+      triggers.length > 0 &&
+      allCronSchedulesValid,
+    [name, instructions, triggers, allCronSchedulesValid],
   );
 
+  // --- Trigger list mutators ---
+
+  function updateTrigger(index: number, patch: Partial<TriggerDraft>) {
+    setTriggers((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, ...patch } : t)),
+    );
+  }
+
+  function addTrigger() {
+    const newId = `trigger-${Date.now()}`;
+    setTriggers((prev) => [...prev, createTriggerDraft(newId)]);
+  }
+
+  function removeTrigger(index: number) {
+    if (triggers.length <= 1) return;
+    setTriggers((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function toggleConditionsOpen(index: number) {
+    setConditionsOpen((prev) => ({ ...prev, [index]: !prev[index] }));
+  }
+
+  // --- Payload builder ---
+
   function buildCurrentPayload() {
+    // Auto-derive name from instructions when name is empty at save time.
+    const effectiveName =
+      name.trim().length > 0 ? name.trim() : deriveAgentName(instructions);
+
     const form: FormState = {
-      name,
+      name: effectiveName,
       repoOwner,
       repoName,
-      triggerKind,
-      schedule,
-      conditionActions,
-      conditionBranches,
-      conditionLabels,
-      conditionEnvironments,
-      conditionSeverities,
+      // Scalar fields are still required by FormState for back-compat with
+      // the settings form path. Use first trigger's values.
+      triggerKind: triggers[0]?.triggerKind ?? "github.pull_request",
+      schedule: triggers[0]?.schedule ?? "",
+      conditionActions: triggers[0]?.conditionActions ?? "",
+      conditionBranches: triggers[0]?.conditionBranches ?? "",
+      conditionLabels: triggers[0]?.conditionLabels ?? "",
+      conditionEnvironments: triggers[0]?.conditionEnvironments ?? "",
+      conditionSeverities: triggers[0]?.conditionSeverities ?? "",
       instructions,
       outputMode,
       checkCommand,
@@ -187,6 +235,8 @@ export function AgentSpecEditor({
       permissionContents,
       permissionPullRequests,
       composioToolkitSlugs,
+      // Multi-trigger path: always emit triggers array when length > 0.
+      triggers,
     };
     return buildAgentPayload(form);
   }
@@ -307,21 +357,22 @@ export function AgentSpecEditor({
       {/* Inline run test console — mounts below action bar when a test run is active */}
       {testRunId && <RunTestConsole runId={testRunId} />}
 
-      {/* 1 — Name */}
-      <SettingsSection
-        title="Name"
-        description="A short name you'll recognize in the agents list."
-      >
+      {/* Name — small/secondary at top */}
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="spec-name" className="text-xs text-muted-foreground">
+          Name
+        </Label>
         <Input
           id="spec-name"
           aria-label="Agent name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. PR Backlog Maintainer"
+          placeholder="e.g. PR Backlog Maintainer (auto-derived from instructions if left blank)"
+          className="text-sm"
         />
-      </SettingsSection>
+      </div>
 
-      {/* 2 — What should this agent do? (merged goal + instructions) */}
+      {/* 1 — What should this agent do? (merged goal + instructions) */}
       <SettingsSection
         title="What should this agent do?"
         description="Describe the job in plain language — what to look at, what to do, and what to leave alone."
@@ -337,70 +388,36 @@ export function AgentSpecEditor({
         </div>
       </SettingsSection>
 
-      {/* 3 — When should it run? */}
+      {/* 2 — When should it run? (trigger list) */}
       <SettingsSection
         title="When should it run?"
-        description="Pick what wakes this agent up."
+        description="Pick what wakes this agent up. Add multiple triggers if it should respond to different events."
       >
-        <div className="space-y-3">
-          <Select
-            value={triggerKind}
-            onValueChange={(v) => setTriggerKind(v as TriggerKind)}
+        <div className="space-y-4">
+          {triggers.map((trigger, index) => (
+            <TriggerBlock
+              key={trigger.id}
+              trigger={trigger}
+              index={index}
+              canRemove={triggers.length > 1}
+              conditionsOpen={!!conditionsOpen[index]}
+              onUpdate={(patch) => updateTrigger(index, patch)}
+              onRemove={() => removeTrigger(index)}
+              onToggleConditions={() => toggleConditionsOpen(index)}
+            />
+          ))}
+          {/* Add a trigger */}
+          <button
+            type="button"
+            onClick={addTrigger}
+            className="text-xs font-medium text-primary hover:underline"
           >
-            <SelectTrigger id="spec-trigger">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.entries(triggerLabels) as [TriggerKind, string][]).map(
-                ([value, label]) => (
-                  <SelectItem key={value} value={value}>
-                    {label}
-                  </SelectItem>
-                ),
-              )}
-            </SelectContent>
-          </Select>
-          {triggerKind === "schedule.cron" && (
-            <SchedulePicker schedule={schedule} onChange={setSchedule} />
-          )}
-          {/* "Refine when it runs" disclosure — keeps children in DOM (CSS hidden)
-              so EventTriggerConditions labels stay in SSR markup for tests. */}
-          <div className="border-t border-border/60 pt-3">
-            <button
-              type="button"
-              onClick={() => setConditionsOpen((v) => !v)}
-              aria-expanded={conditionsOpen}
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
-            >
-              <ChevronDown
-                className={cn(
-                  "h-3.5 w-3.5 transition-transform",
-                  conditionsOpen && "rotate-180",
-                )}
-              />
-              Refine when it runs
-            </button>
-            {/* Always render children — use CSS visibility so labels remain in markup */}
-            <div className={cn("mt-3", conditionsOpen ? "" : "hidden")}>
-              <EventTriggerConditions
-                triggerKind={triggerKind}
-                conditionActions={conditionActions}
-                conditionBranches={conditionBranches}
-                conditionLabels={conditionLabels}
-                conditionEnvironments={conditionEnvironments}
-                conditionSeverities={conditionSeverities}
-                onConditionActionsChange={setConditionActions}
-                onConditionBranchesChange={setConditionBranches}
-                onConditionLabelsChange={setConditionLabels}
-                onConditionEnvironmentsChange={setConditionEnvironments}
-                onConditionSeveritiesChange={setConditionSeverities}
-              />
-            </div>
-          </div>
+            + Add a trigger
+          </button>
         </div>
       </SettingsSection>
 
-      {/* 4 — Tools */}
+      {/* 3 — Tools */}
       <SettingsSection
         title="Tools"
         description="The apps and abilities this agent can use."
@@ -424,7 +441,7 @@ export function AgentSpecEditor({
         </div>
       </SettingsSection>
 
-      {/* 5 — Result (output mode) */}
+      {/* 4 — Result (output mode) */}
       <SettingsSection
         title="Result"
         description="Choose what the agent leaves behind after a run."
@@ -496,6 +513,105 @@ export function AgentSpecEditor({
           })}
         </div>
       </SettingsSection>
+    </div>
+  );
+}
+
+/** One trigger block in the list — kind select + optional schedule/conditions. */
+function TriggerBlock({
+  trigger,
+  index,
+  canRemove,
+  conditionsOpen,
+  onUpdate,
+  onRemove,
+  onToggleConditions,
+}: {
+  trigger: TriggerDraft;
+  index: number;
+  canRemove: boolean;
+  conditionsOpen: boolean;
+  onUpdate: (patch: Partial<TriggerDraft>) => void;
+  onRemove: () => void;
+  onToggleConditions: () => void;
+}) {
+  return (
+    <div className="rounded-md border border-border p-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <Select
+          value={trigger.triggerKind}
+          onValueChange={(v) => onUpdate({ triggerKind: v as TriggerKind })}
+        >
+          <SelectTrigger id={`spec-trigger-${index}`} className="flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {(Object.entries(triggerLabels) as [TriggerKind, string][]).map(
+              ([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ),
+            )}
+          </SelectContent>
+        </Select>
+        {canRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label="Remove trigger"
+            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted/50"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      {trigger.triggerKind === "schedule.cron" && (
+        <SchedulePicker
+          schedule={trigger.schedule}
+          onChange={(s) => onUpdate({ schedule: s })}
+        />
+      )}
+
+      {/* Conditions disclosure — always rendered (CSS hidden) so labels appear in SSR */}
+      <div className="border-t border-border/60 pt-3">
+        <button
+          type="button"
+          onClick={onToggleConditions}
+          aria-expanded={conditionsOpen}
+          className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+        >
+          <ChevronDown
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              conditionsOpen && "rotate-180",
+            )}
+          />
+          Refine when it runs
+        </button>
+        <div className={cn("mt-3", conditionsOpen ? "" : "hidden")}>
+          <EventTriggerConditions
+            triggerKind={trigger.triggerKind}
+            conditionActions={trigger.conditionActions}
+            conditionBranches={trigger.conditionBranches}
+            conditionLabels={trigger.conditionLabels}
+            conditionEnvironments={trigger.conditionEnvironments}
+            conditionSeverities={trigger.conditionSeverities}
+            onConditionActionsChange={(v) => onUpdate({ conditionActions: v })}
+            onConditionBranchesChange={(v) =>
+              onUpdate({ conditionBranches: v })
+            }
+            onConditionLabelsChange={(v) => onUpdate({ conditionLabels: v })}
+            onConditionEnvironmentsChange={(v) =>
+              onUpdate({ conditionEnvironments: v })
+            }
+            onConditionSeveritiesChange={(v) =>
+              onUpdate({ conditionSeverities: v })
+            }
+          />
+        </div>
+      </div>
     </div>
   );
 }

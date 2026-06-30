@@ -219,4 +219,73 @@ describe("AgentSpecEditor", () => {
       "This agent can propose changes as pull requests",
     );
   });
+
+  // ---------------------------------------------------------------------------
+  // Phase 1 — multi-trigger + sentence ordering
+  // ---------------------------------------------------------------------------
+
+  test("(P1) editor renders 'Add a trigger' affordance", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+    expect(html.toLowerCase()).toContain("add a trigger");
+  });
+
+  test("(P1) with initialTriggers containing 2 entries, 2 trigger blocks are rendered", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const { createTriggerDraft } =
+      await import("@/lib/background-agents/agent-spec");
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialTriggers={[
+          createTriggerDraft("t-1", "github.pull_request"),
+          createTriggerDraft("t-2", "github.issue"),
+        ]}
+      />,
+    );
+    // Each trigger block renders a select with a unique id (spec-trigger-0, spec-trigger-1)
+    expect(html).toContain("spec-trigger-0");
+    expect(html).toContain("spec-trigger-1");
+    // "Refine when it runs" button appears once per trigger block
+    const refineCount = (html.match(/Refine when it runs/g) ?? []).length;
+    expect(refineCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test("(P1) sentence ordering: 'What should this agent do?' appears before 'When should it run?'", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+    const instructionsIdx = html.indexOf("What should this agent do?");
+    const triggerIdx = html.indexOf("When should it run?");
+    expect(instructionsIdx).toBeGreaterThanOrEqual(0);
+    expect(triggerIdx).toBeGreaterThanOrEqual(0);
+    expect(instructionsIdx).toBeLessThan(triggerIdx);
+  });
+
+  test("(P1) sentence ordering: 'When should it run?' appears before 'Tools'", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+    const triggerIdx = html.indexOf("When should it run?");
+    const toolsIdx = html.indexOf("Tools");
+    expect(triggerIdx).toBeGreaterThanOrEqual(0);
+    expect(toolsIdx).toBeGreaterThanOrEqual(0);
+    expect(triggerIdx).toBeLessThan(toolsIdx);
+  });
+
+  test("(P1) sentence ordering: 'Tools' appears before 'Result'", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+    const toolsIdx = html.indexOf("Tools");
+    const resultIdx = html.indexOf("Result");
+    expect(toolsIdx).toBeGreaterThanOrEqual(0);
+    expect(resultIdx).toBeGreaterThanOrEqual(0);
+    expect(toolsIdx).toBeLessThan(resultIdx);
+  });
 });
