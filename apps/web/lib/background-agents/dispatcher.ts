@@ -7,6 +7,7 @@ import {
   createRunForTrigger,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
+  listStaleBackgroundAgentRuns,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
   recordTriggerSkipReason,
@@ -477,9 +478,60 @@ export async function dispatchManualBackgroundAgentTest(params: {
   };
 }
 
-function getScheduleExternalId(triggerId: string, now: Date): string {
-  const minuteBucket = now.toISOString().slice(0, 16);
+function getScheduleExternalId(triggerId: string, dueAt: Date): string {
+  const minuteBucket = dueAt.toISOString().slice(0, 16);
   return `${triggerId}:${minuteBucket}`;
+}
+
+function getDueScheduleTime(
+  trigger: { nextRunAt?: Date | null },
+  now: Date,
+): Date {
+  return trigger.nextRunAt && trigger.nextRunAt <= now
+    ? trigger.nextRunAt
+    : now;
+}
+
+async function sweepStaleBackgroundRuns(params: {
+  now: Date;
+  requestId?: string | null;
+}) {
+  const staleAfterMs = Number(
+    process.env.BACKGROUND_AGENTS_STALE_RUN_MS ?? 2 * 60 * 60 * 1000,
+  );
+  const staleBefore = new Date(params.now.getTime() - staleAfterMs);
+  const staleRuns = await listStaleBackgroundAgentRuns({
+    staleBefore,
+    limit: 50,
+  });
+
+  for (const run of staleRuns) {
+    await updateBackgroundAgentRunStatus({
+      runId: run.id,
+      status: "failed",
+      errorKind: "stuck_running",
+      errorMessage:
+        "Background agent run exceeded the stale threshold and was swept by cron.",
+    });
+    await recordBackgroundAgentEvent({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+      eventName: "background-agent.run.swept_stale",
+      status: "failed",
+      level: "warn",
+      summary:
+        "Background agent run was terminalized by the stale-run sweeper.",
+      requestId: params.requestId ?? null,
+      workflowRunId: run.workflowRunId,
+      sandboxName: run.sandboxName,
+      errorKind: "stuck_running",
+      payload: {
+        staleAfterMs,
+        lastEventAt: run.updatedAt.toISOString(),
+      },
+    });
+  }
 }
 
 export async function dispatchScheduledBackgroundAgents(params?: {
@@ -498,6 +550,10 @@ export async function dispatchScheduledBackgroundAgents(params?: {
   }
 
   const now = params?.now ?? new Date();
+  await sweepStaleBackgroundRuns({
+    now,
+    requestId: params?.requestId ?? null,
+  });
   const allRows = await listEnabledScheduleTriggers();
   let created = 0;
   let duplicates = 0;
@@ -532,7 +588,9 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     }
     // Loop-bound rows: allowlist check deferred to dispatchLoopRunForTrigger.
 
-    const scheduleMatches = scheduleMatchesNow(row.trigger.schedule, now);
+    const dueAt = getDueScheduleTime(row.trigger, now);
+    const scheduleMatches =
+      dueAt < now || scheduleMatchesNow(row.trigger.schedule, now);
     if (!scheduleMatches) {
       await recordTriggerSkipReason({
         triggerId: row.trigger.id,
@@ -549,10 +607,11 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     if (row.trigger.loopId) {
       // Advance schedule state unconditionally (same wedge-prevention semantics
       // as agent triggers — loop runs must not wedge the cron schedule).
-      const nextRuns = computeNextRuns(row.trigger.schedule, now, 1);
+      const dueAt = getDueScheduleTime(row.trigger, now);
+      const nextRuns = computeNextRuns(row.trigger.schedule, dueAt, 1);
       await advanceTriggerScheduleState({
         triggerId: row.trigger.id,
-        lastRunAt: now,
+        lastRunAt: dueAt,
         nextRunAt: nextRuns[0] ?? null,
       });
       const loop = await getAgentLoopById(row.trigger.loopId);
@@ -561,11 +620,11 @@ export async function dispatchScheduledBackgroundAgents(params?: {
       const event = {
         source: "schedule" as const,
         kind: "schedule.cron",
-        externalId: getScheduleExternalId(row.trigger.id, now),
+        externalId: getScheduleExternalId(row.trigger.id, dueAt),
         repoOwner: loop.repoOwner,
         repoName: loop.repoName,
         action: "scheduled",
-        occurredAt: now.toISOString(),
+        occurredAt: dueAt.toISOString(),
       };
 
       const loopResult = await dispatchLoopRunForTrigger({
@@ -588,14 +647,15 @@ export async function dispatchScheduledBackgroundAgents(params?: {
       // Defensive guard: should not happen — row has neither loopId nor agent.
       continue;
     }
+    const dueAt = getDueScheduleTime(row.trigger, now);
     const event: NormalizedBackgroundTriggerEvent = {
       source: "schedule" satisfies BackgroundAgentRunSource,
       kind: "schedule.cron",
-      externalId: getScheduleExternalId(row.trigger.id, now),
+      externalId: getScheduleExternalId(row.trigger.id, dueAt),
       repoOwner: agent.repoOwner,
       repoName: agent.repoName,
       action: "scheduled",
-      occurredAt: now.toISOString(),
+      occurredAt: dueAt.toISOString(),
     };
     const result = await createRunForTrigger({
       agent,
@@ -607,10 +667,10 @@ export async function dispatchScheduledBackgroundAgents(params?: {
 
     // Advance schedule state regardless of whether this was a duplicate.
     // BT-006: a failed run must not wedge the schedule — advance unconditionally.
-    const nextRuns = computeNextRuns(row.trigger.schedule, now, 1);
+    const nextRuns = computeNextRuns(row.trigger.schedule, dueAt, 1);
     await advanceTriggerScheduleState({
       triggerId: row.trigger.id,
-      lastRunAt: now,
+      lastRunAt: dueAt,
       nextRunAt: nextRuns[0] ?? null,
     });
 

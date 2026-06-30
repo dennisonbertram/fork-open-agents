@@ -625,6 +625,20 @@ export async function listBackgroundAgentRuns(params: {
   });
 }
 
+export async function listStaleBackgroundAgentRuns(params: {
+  staleBefore: Date;
+  limit?: number;
+}): Promise<BackgroundAgentRun[]> {
+  return db.query.backgroundAgentRuns.findMany({
+    where: and(
+      inArray(backgroundAgentRuns.status, ["queued", "running"]),
+      sql`${backgroundAgentRuns.updatedAt} < ${params.staleBefore}`,
+    ),
+    orderBy: [backgroundAgentRuns.updatedAt],
+    limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
+  });
+}
+
 export async function listBackgroundAgentEvents(
   runId: string,
 ): Promise<BackgroundAgentEvent[]> {
