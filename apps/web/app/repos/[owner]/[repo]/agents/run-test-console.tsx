@@ -84,6 +84,7 @@ export function RunTestConsole({ runId }: RunTestConsoleProps) {
 
   const { run, events } = data;
   const isActive = !TERMINAL_STATUSES.has(run.status);
+  const hasError = run.status === "failed" && Boolean(run.errorMessage);
 
   return (
     <div className="mt-3 rounded-md border border-border bg-muted/10">
@@ -102,6 +103,16 @@ export function RunTestConsole({ runId }: RunTestConsoleProps) {
           Open full run
         </Link>
       </div>
+
+      {/* Error banner — shown when run failed with a message */}
+      {hasError && (
+        <div
+          role="alert"
+          className="border-b border-red-500/30 bg-red-50/50 px-3 py-2 text-xs font-medium text-red-700 dark:bg-red-950/30 dark:text-red-400"
+        >
+          Test failed — {run.errorMessage}
+        </div>
+      )}
 
       {/* Console body */}
       <div className="max-h-64 overflow-y-auto p-3 font-mono text-[11px]">

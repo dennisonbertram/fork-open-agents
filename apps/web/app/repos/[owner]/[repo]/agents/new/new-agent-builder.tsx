@@ -186,41 +186,46 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   }
 
   const template = selectedTemplate ?? getBlankTemplate();
-  const readinessPanel = readinessData ? (
-    <ReadinessVerdict
-      {...mapReadinessToVerdict(buildCombinedReadiness(readinessData))}
-      action={
-        <div className="flex flex-wrap gap-2">
-          <Button asChild size="sm" variant="outline">
-            <Link href="/settings/background-agents">
-              <Settings2 className="h-3.5 w-3.5" />
-              Open background agent settings
-            </Link>
-          </Button>
-          {readinessData.repoAccess?.ready === false ? (
-            <Button asChild size="sm" variant="ghost">
-              <Link href="/settings/connections">
-                <PlugZap className="h-3.5 w-3.5" />
-                Manage GitHub connection
+
+  // Only show the readiness panel when prerequisites are NOT ready.
+  // When ready, it would just be noise above the editor.
+  const combinedReadiness = readinessData
+    ? buildCombinedReadiness(readinessData)
+    : null;
+  const prerequisitesReady = combinedReadiness?.ready ?? true;
+
+  const notReadyPanel =
+    !prerequisitesReady && combinedReadiness ? (
+      <ReadinessVerdict
+        {...mapReadinessToVerdict(combinedReadiness)}
+        action={
+          <div className="flex flex-wrap gap-2">
+            <Button asChild size="sm" variant="outline">
+              <Link href="/settings/background-agents">
+                <Settings2 className="h-3.5 w-3.5" />
+                Open background agent settings
               </Link>
             </Button>
-          ) : null}
-        </div>
-      }
-      onRefresh={() => void mutateReadiness()}
-      refreshing={readinessLoading}
-    />
-  ) : (
-    <div className="rounded-lg border border-border bg-muted/20 p-4 text-sm text-muted-foreground">
-      Checking background agent prerequisites.
-    </div>
-  );
+            {readinessData?.repoAccess?.ready === false ? (
+              <Button asChild size="sm" variant="ghost">
+                <Link href="/settings/connections">
+                  <PlugZap className="h-3.5 w-3.5" />
+                  Manage GitHub connection
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+        }
+        onRefresh={() => void mutateReadiness()}
+        refreshing={readinessLoading}
+      />
+    ) : null;
 
   if (step === "pick-template") {
     return (
       <div className="space-y-4">
-        {readinessPanel}
         <TemplatePicker onSelect={handleSelectTemplate} />
+        {notReadyPanel}
       </div>
     );
   }
@@ -229,9 +234,11 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const initialAccessLevel: GitHubAccessLevel =
     template.outputMode === "ready_pr" ? "write" : "read";
 
+  // Separate success banner from error messages for clarity.
+  const isSuccess = message === "Agent created successfully.";
+
   return (
     <div className="space-y-4">
-      {readinessPanel}
       <AgentSpecEditor
         repoOwner={owner}
         repoName={repo}
@@ -253,7 +260,19 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
-      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+      {message && (
+        isSuccess ? (
+          <div
+            role="status"
+            className="rounded-md border border-emerald-500/30 bg-emerald-50/50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400"
+          >
+            ✓ Agent saved — run a test, then turn it on.
+          </div>
+        ) : (
+          <p className="text-xs text-destructive">{message}</p>
+        )
+      )}
+      {notReadyPanel}
     </div>
   );
 }

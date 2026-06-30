@@ -417,6 +417,33 @@ export function describeOutputModePermissions(mode: OutputMode): string {
 }
 
 /**
+ * Returns a plain-language summary of what the agent WILL do and what it
+ * will NOT do, based on its output mode and GitHub access level.
+ *
+ * Intended for the "AND IT WILL…" output summary rendered below the Result
+ * section in the spec editor.
+ */
+export function describeAgentOutput(args: {
+  outputMode: OutputMode;
+  githubAccess: "read" | "write";
+}): { will: string; wont: string } {
+  const { outputMode } = args;
+
+  if (outputMode === "ready_pr") {
+    return {
+      will: "Open a draft pull request with its changes for you to review.",
+      wont: "It will NOT merge or push directly to your default branch.",
+    };
+  }
+
+  // report-only / none
+  return {
+    will: "Leave a written summary on the run.",
+    wont: "It will NOT comment on, close, merge, edit, or push code to the repo.",
+  };
+}
+
+/**
  * Returns the user-facing label for an output mode.
  * Centralizes the inline ternary used in background-agents-section.tsx.
  */

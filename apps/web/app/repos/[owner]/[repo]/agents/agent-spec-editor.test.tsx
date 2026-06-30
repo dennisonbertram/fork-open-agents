@@ -68,8 +68,10 @@ describe("AgentSpecEditor", () => {
 
   // Extract just the opening tag of the <button> that wraps the "Run a test"
   // label so we can assert its disabled binding without matching the Save button.
+  // The progression list also contains "Run a test" text, so we use the LAST
+  // occurrence which is the actual action button (not the progression label).
   function runTestButtonTag(html: string): string {
-    const labelIdx = html.indexOf("Run a test");
+    const labelIdx = html.lastIndexOf("Run a test");
     const openIdx = html.lastIndexOf("<button", labelIdx);
     return html.slice(openIdx, labelIdx);
   }
