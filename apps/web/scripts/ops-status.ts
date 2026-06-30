@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { join } from "node:path";
 import { redactOpsText } from "./ops-redaction";
 
 type SourceStatus = "healthy" | "degraded" | "blocked" | "unknown";
@@ -42,9 +43,11 @@ export interface OpsStatusSnapshot {
 }
 
 const defaultProductionUrl = "https://open-agents-azure-xi.vercel.app";
+const repoRoot = join(import.meta.dirname, "../../..");
 
 function runCommand(command: string, args: string[]): CommandResult {
   const result = spawnSync(command, args, {
+    cwd: repoRoot,
     encoding: "utf8",
     timeout: 20_000,
   });
@@ -118,7 +121,11 @@ export function parseGhRuns(output: string): string | undefined {
   if (!Array.isArray(payload)) {
     return undefined;
   }
-  const first = payload.find((entry) => asRecord(entry));
+  const first =
+    payload.find((entry) => {
+      const record = asRecord(entry);
+      return record && record.conclusion !== "skipped";
+    }) ?? payload.find((entry) => asRecord(entry));
   const record = asRecord(first);
   if (!record) {
     return undefined;
@@ -218,10 +225,12 @@ export async function collectOpsStatusSnapshot(params?: {
 
   const logsResult = run("vercel", [
     "logs",
+    "--project",
+    "open-agents",
     "--environment",
     "production",
     "--status-code",
-    "5xx",
+    "500,502,503,504",
     "--since",
     since,
   ]);
@@ -264,7 +273,7 @@ export async function collectOpsStatusSnapshot(params?: {
     "--workflow",
     "Production Smoke",
     "--limit",
-    "1",
+    "5",
     "--json",
     "status,conclusion,url",
   ]);
@@ -306,7 +315,7 @@ export async function collectOpsStatusSnapshot(params?: {
     logs,
     github,
     nextAction: degraded
-      ? "Inspect the named source gap, then run vercel logs --environment production --status-code 5xx --since 30m."
+      ? "Inspect the named source gap, then run vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m."
       : "Production public status looks healthy; run ops:authenticated-canary for product-path proof.",
   };
 }
@@ -331,6 +340,7 @@ async function runPreviewSmoke(productionUrl: string): Promise<CommandResult> {
     "bun",
     ["run", "--cwd", "apps/web", "preview:smoke"],
     {
+      cwd: repoRoot,
       encoding: "utf8",
       env: { ...process.env, DEPLOYMENT_URL: productionUrl },
       timeout: 30_000,
