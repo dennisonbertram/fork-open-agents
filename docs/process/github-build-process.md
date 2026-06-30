@@ -222,16 +222,38 @@ develop, or deferred.
 
 ## PR Expectations
 
-Every PR should answer:
+Every PR should be detailed enough for a reviewer, release operator, or future
+agent to understand and safely operate the change without the chat transcript.
+Do not merge sparse PR bodies, placeholder bullets, or generic "tests pass"
+summaries.
 
-1. What changed?
-2. What is out of scope?
-3. What test failed first?
-4. What tests are now green?
-5. What docs changed?
-6. What user/operator observability proves it works?
-7. What deploy or migration steps are required?
-8. What rollback path exists?
+Every non-trivial PR must answer:
+
+1. Why does this change exist? Link the issue, name the protected path, and
+   explain the user or operator problem.
+2. What changed? Name the important files, components, APIs, data flows,
+   permissions, and user-visible behavior.
+3. What is out of scope? Call out adjacent work intentionally left for a later
+   issue, especially around epics or architectural follow-ups.
+4. What should reviewers inspect first? Separate high-risk behavior from
+   mechanical or generated changes.
+5. What test or proof failed first? If no red state was practical, explain why.
+6. What tests and checks are now green? Include exact commands, not summaries.
+7. What browser, preview, dev, service, or production smoke was run? Include
+   URLs, deployment ids, screenshots/log links, or a concrete blocker.
+8. What docs changed? If none changed, explain why docs are still accurate.
+9. What observability proves this works for users or operators? Name logs,
+   events, statuses, dashboard fields, or visible UI states.
+10. What deploy, migration, env var, external service, or compatibility impact
+    exists?
+11. What rollback or fix-forward path exists if the change fails after merge?
+
+Docs-only PRs may be shorter, but must still describe the affected process,
+the reason tests were not run, and the formatter/link check used when
+practical. UI PRs must include browser evidence or a concrete browser-QA
+blocker. Managed runtime, sandbox, workflow, browser, deploy, auth, GitHub App,
+database, and background-agent PRs must include observability and deployment
+evidence matching the relevant process docs.
 
 ## Merge Gate
 
