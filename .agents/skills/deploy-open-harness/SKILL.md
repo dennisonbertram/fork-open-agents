@@ -7,6 +7,10 @@ You are helping a user deploy or repair a self-hosted Open Agents install on Ver
 
 The skill name is legacy. Treat the current project as Open Agents unless the user explicitly says they are working on the older Open Harness app.
 
+For production status, incidents, release promotion, scheduled production
+smoke, authenticated canary, env isolation, alert sink, or branch gates, also
+read `.agents/skills/production-ops/SKILL.md`.
+
 ## First Rule
 
 Verify current requirements from the repo before giving setup advice:
@@ -184,6 +188,9 @@ Store the private key as escaped PEM contents or base64-encoded PEM in `GITHUB_A
 ## Verification Commands
 
 ```bash
+bun run ops:status -- --since 30m
+bun run ops:env-isolation -- --compare dev
+bun run ops:authenticated-canary
 vercel env ls --scope <team>
 vercel inspect <deployment-url> --scope <team>
 vercel logs <deployment-url> --scope <team>
