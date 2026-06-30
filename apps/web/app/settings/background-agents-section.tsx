@@ -17,7 +17,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import useSWR from "swr";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -395,7 +395,7 @@ export function BackgroundAgentsSection() {
 
   async function testAgent(agentId: string) {
     setTestingAgentId(agentId);
-    setMessage(null);
+    setMessage("Starting background agent test...");
     try {
       const response = await fetch(`/api/background-agents/${agentId}/test`, {
         method: "POST",
@@ -408,9 +408,9 @@ export function BackgroundAgentsSection() {
       if (!runId) {
         throw new Error("No background run was created for this test");
       }
-      setMessage("Background agent test started.");
-      await Promise.all([mutate(), mutateRuns()]);
+      setMessage("Background agent test started. Opening run details...");
       router.push(`/background-runs/${runId}`);
+      void Promise.all([mutate(), mutateRuns()]).catch(() => undefined);
     } catch (testError) {
       setMessage(
         testError instanceof Error
@@ -766,10 +766,12 @@ export function BackgroundAgentsSection() {
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
             <p className="text-xs text-muted-foreground">
-              Tool providers coming later. Composio is planned for v1.5.
+              Composio tools are supported for connected toolkit slugs; use the
+              repo-scoped builder to add external tools to an agent.
             </p>
             <Button
               disabled={!canSave || saving}
+              type="button"
               onClick={saveAgent}
               title={readinessReason ?? undefined}
             >
@@ -794,6 +796,7 @@ export function BackgroundAgentsSection() {
             aria-label="Refresh background agents"
             variant="ghost"
             size="icon"
+            type="button"
             onClick={() => void mutate()}
           >
             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
@@ -853,6 +856,7 @@ export function BackgroundAgentsSection() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          type="button"
                           className="h-6 w-6 shrink-0"
                           aria-label="Copy webhook URL"
                           onClick={() =>
@@ -873,6 +877,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    type="button"
                     onClick={() => startEditing(agent)}
                   >
                     <Pencil className="h-3.5 w-3.5" />
@@ -881,6 +886,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="outline"
                     size="sm"
+                    type="button"
                     disabled={
                       testingAgentId === agent.id || Boolean(readinessReason)
                     }
@@ -901,6 +907,7 @@ export function BackgroundAgentsSection() {
                   <Button
                     variant="destructive"
                     size="sm"
+                    type="button"
                     aria-label="Delete agent"
                     disabled={deletingAgentId === agent.id}
                     onClick={() => setDeleteConfirmAgentId(agent.id)}
@@ -927,10 +934,13 @@ export function BackgroundAgentsSection() {
                       </DialogHeader>
                       <DialogFooter>
                         <DialogClose asChild>
-                          <Button variant="outline">Cancel</Button>
+                          <Button type="button" variant="outline">
+                            Cancel
+                          </Button>
                         </DialogClose>
                         <Button
                           variant="destructive"
+                          type="button"
                           disabled={deletingAgentId === agent.id}
                           onClick={() => void deleteAgent(agent.id)}
                         >
@@ -953,6 +963,7 @@ export function BackgroundAgentsSection() {
             aria-label="Refresh background runs"
             variant="ghost"
             size="icon"
+            type="button"
             onClick={() => void mutateRuns()}
           >
             <RefreshCw
@@ -1008,12 +1019,16 @@ export function BackgroundAgentsSection() {
                       </Link>
                     </Button>
                   )}
-                  <Button asChild variant="outline" size="sm">
-                    <Link href={`/background-runs/${run.id}`}>
-                      <ExternalLink className="h-3.5 w-3.5" />
-                      Details
-                    </Link>
-                  </Button>
+                  <Link
+                    aria-label={`Open details for background run ${run.repoOwner}/${run.repoName} ${formatRunTarget(run)}`}
+                    className={cn(
+                      buttonVariants({ variant: "outline", size: "sm" }),
+                    )}
+                    href={`/background-runs/${run.id}`}
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    Details
+                  </Link>
                 </div>
               </div>
             ))}
