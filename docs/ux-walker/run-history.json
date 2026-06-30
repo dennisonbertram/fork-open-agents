@@ -1,17 +1,28 @@
 {
   "runs": [
     {
-      "timestamp": "2026-06-21T23:20:00-04:00",
-      "url": "http://localhost:3002",
-      "stories_walked": 18,
+      "timestamp": "2026-06-29T19:40:00-04:00",
+      "url": "https://open-agents-dennisons-projects.vercel.app",
+      "stories_walked": 1,
       "stories_skipped": 0,
-      "stories_partial": 2,
       "stories_re_verified": 0,
-      "findings_total": 17,
-      "quick_fixes_applied": 12,
+      "findings_total": 2,
+      "quick_fixes_applied": 0,
       "issues_filed": 0,
-      "stories_passed": 16,
-      "stories_failed": 0
+      "stories_passed": 0,
+      "stories_failed": 1
+    },
+    {
+      "timestamp": "2026-06-29T20:58:00-04:00",
+      "url": "https://open-agents-dennisons-projects.vercel.app",
+      "stories_walked": 1,
+      "stories_skipped": 0,
+      "stories_re_verified": 0,
+      "findings_total": 7,
+      "quick_fixes_applied": 0,
+      "issues_filed": 3,
+      "stories_passed": 1,
+      "stories_failed": 1
     }
   ],
   "stories": {
@@ -115,12 +126,12 @@
       "fixes_merged_since": false
     },
     "STORY-015": {
-      "last_walked": "2026-06-22T02:24:00-04:00",
+      "last_walked": "2026-06-29T20:58:00-04:00",
       "status": "partial",
-      "findings_count": 1,
-      "source_files_hash": "initial",
+      "findings_count": 7,
+      "source_files_hash": "post-pr-680-prod",
       "fixes_merged_since": false,
-      "blocked_on": "Local deployment reports background agents disabled; create-and-test flow needs BACKGROUND_AGENTS_ENABLED=true and runtime/gateway secrets."
+      "blocked_on": "3 UX findings filed (#681 stale Composio messaging, #682 silent Test button, #683 broken Details link). Feature works end-to-end in prod (real succeeded ready_pr runs + fresh manual-test run with full LLM agent loop)."
     },
     "STORY-016": {
       "last_walked": "2026-06-22T00:45:00-04:00",

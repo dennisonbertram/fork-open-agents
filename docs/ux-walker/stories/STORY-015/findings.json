@@ -1,18 +1,111 @@
 [
   {
-    "id": "F-STORY-015-001",
+    "id": "F-015-001",
+    "story_id": "STORY-015",
+    "severity": "info",
+    "category": "happy-path",
+    "criterion": "Unauthenticated gate behavior",
+    "score": "pass",
+    "description": "The /settings/background-agents page correctly gates anonymous visitors with a clean 'Please sign in to continue' prompt. No background-agent config or run data leaks. No console errors.",
+    "expected": "Anonymous visitors are prompted to sign in; no feature content is exposed.",
+    "actual": "Clean sign-in gate, no leaked content, no errors.",
+    "screenshot": "screenshots/step-02-settings-bg-unauth.png",
+    "suggested_fix": null,
+    "files_likely_involved": [
+      "apps/web/app/settings/background-agents/page.tsx"
+    ]
+  },
+  {
+    "id": "F-015-002",
+    "story_id": "STORY-015",
+    "severity": "info",
+    "category": "happy-path",
+    "criterion": "Readiness panel + prod configuration",
+    "score": "pass",
+    "description": "Prod readiness reports 'Hosted prerequisites are configured' with all 11 categories ready (feature flag, auth, Vercel sign-in, GitHub OAuth, GitHub App, sandbox runtime, inference gateway, repo allowlist, cron secret, webhook secret, GitHub App webhooks). Background agents are fully configured in production.",
+    "expected": "Readiness panel shows prod is configured for background agents.",
+    "actual": "All categories ready; prod has been running real succeeded runs.",
+    "screenshot": "screenshots/step-04-readiness-operator-details.png",
+    "suggested_fix": null,
+    "files_likely_involved": []
+  },
+  {
+    "id": "F-015-003",
+    "story_id": "STORY-015",
+    "severity": "info",
+    "category": "happy-path",
+    "criterion": "Real prod runs succeed (ready_pr path)",
+    "score": "pass",
+    "description": "Prod run history shows multiple real Succeeded runs including ready_pr runs that created actual PRs (e.g. run VBbFB_81wtz-SLTTBcawB created PR #960 on dennisonbertram/synthetix, 49s duration, sandbox attributed, redaction passed). A fresh manual-test run (WJGH-zftPM4pr4N2Fx_hP) fired during the walk executed the full ready_pr path: sandbox provisioned, git context, branch prepared, mutation agent ran 3 LLM steps with tool-calls, then checks_failed intentionally (Live Proof Failure Agent). This is the strongest evidence the feature works end-to-end in prod, including the LLM agent loop.",
+    "expected": "Background agents run end-to-end in prod including ready_pr output and LLM work.",
+    "actual": "Multiple succeeded ready_pr runs created real PRs; fresh run did full LLM agent loop.",
+    "screenshot": "screenshots/step-07-run-detail-succeeded.png",
+    "suggested_fix": null,
+    "files_likely_involved": []
+  },
+  {
+    "id": "F-015-004",
+    "story_id": "STORY-015",
+    "severity": "info",
+    "category": "happy-path",
+    "criterion": "Run detail page renders typed failures with actionable guidance",
+    "score": "pass",
+    "description": "The run detail page (/background-runs/{runId}) renders a proof strip (STATUS/TRIGGER/REPOSITORY/SANDBOX/PERMISSIONS/CHECKS/OUTPUT/DURATION), event context, run summary, and a live timeline. For the failed run it showed 'Run failed — checks_failed' with 'Fix CI and re-trigger' actionable guidance. No console errors.",
+    "expected": "Run detail surfaces status, evidence, and next actions clearly.",
+    "actual": "Clean proof strip + timeline + actionable failure guidance.",
+    "screenshot": "screenshots/step-09-fresh-run-detail.png",
+    "suggested_fix": null,
+    "files_likely_involved": ["apps/web/app/background-runs/[runId]/page.tsx"]
+  },
+  {
+    "id": "F-015-005",
     "story_id": "STORY-015",
     "severity": "medium",
-    "category": "accessibility",
-    "criterion": "Repeated row actions identify their target",
-    "score": "warn",
-    "description": "Background agent and run-history rows exposed repeated Edit, Test, Repo, Delete, Output, and Details controls without target-specific accessible names.",
-    "expected": "Repeated row actions should include the agent, repository, or run target, such as `Test background agent Live Proof Background Agent` and `Open details for background run dennisonbertram/synthetix ...`.",
-    "actual": "Multiple rows exposed identical `Edit`, `Test`, `Repo`, `Delete agent`, `Output`, and `Details` controls.",
-    "screenshot": null,
-    "suggested_fix": "Add target-specific accessible labels to background agent actions, webhook copy controls, and run output/details links.",
+    "category": "disclosure",
+    "criterion": "Create-form Composio messaging accuracy",
+    "score": "fail",
+    "description": "The Create-agent wizard Output tab shows 'Tool providers coming later. Composio is planned for v1.5.' but Composio is actually live (executor.ts Phase 5 resolves and injects Composio tools; COMPOSIO_API_KEY configured). The UI contradicts the actual capability.",
+    "expected": "UI reflects that Composio tool selection is available.",
+    "actual": "UI tells operators a working feature is unavailable.",
+    "screenshot": "screenshots/step-06-create-form-review-tab.png",
+    "suggested_fix": "Update Output-tab copy; surface Composio toolkit selection (schema supports composioToolkitSlugs).",
     "files_likely_involved": [
-      "apps/web/app/settings/background-agents-section.tsx"
-    ]
+      "apps/web/app/settings/background-agents/create-agent-form.tsx"
+    ],
+    "issue": "https://github.com/dennisonbertram/fork-open-agents/issues/681"
+  },
+  {
+    "id": "F-015-006",
+    "story_id": "STORY-015",
+    "severity": "high",
+    "category": "happy-path",
+    "criterion": "Test button dispatches and navigates",
+    "score": "fail",
+    "description": "Clicking the Test button on an enabled agent in /settings/background-agents produced no visible feedback (no toast, no navigation, no new run). The underlying API works (curl POST /test created a run that executed end-to-end). The epic spec says successful test dispatches navigate to /background-runs/[runId].",
+    "expected": "Clicking Test navigates to the new run's detail page or shows a clear toast with the run link.",
+    "actual": "Silent no-op from the UI; no run created via the button.",
+    "screenshot": "screenshots/step-08b-after-test.png",
+    "suggested_fix": "Fix the Test button onClick to call the test endpoint and navigate to the returned runId.",
+    "files_likely_involved": [
+      "apps/web/app/settings/background-agents/agent-list.tsx"
+    ],
+    "issue": "https://github.com/dennisonbertram/fork-open-agents/issues/682"
+  },
+  {
+    "id": "F-015-007",
+    "story_id": "STORY-015",
+    "severity": "high",
+    "category": "happy-path",
+    "criterion": "Details link in run history navigates to run detail",
+    "score": "fail",
+    "description": "Clicking a 'Details' link in the Run history section of /settings/background-agents does not navigate — the page stays on the settings page. Direct URL navigation to /background-runs/{runId} works correctly, so the run detail page is healthy; the Details link click handler is broken.",
+    "expected": "Clicking Details opens /background-runs/{runId}.",
+    "actual": "No navigation; stays on settings page.",
+    "screenshot": "screenshots/step-05-agents-and-run-history.png",
+    "suggested_fix": "Fix the Details link's navigation (likely a Next.js Link onClick/routing issue).",
+    "files_likely_involved": [
+      "apps/web/app/settings/background-agents/run-history.tsx"
+    ],
+    "issue": "https://github.com/dennisonbertram/fork-open-agents/issues/683"
   }
 ]
