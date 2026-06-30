@@ -147,6 +147,74 @@ describe("NewAgentBuilder", () => {
     );
   });
 
+  test("(P2D) when prerequisites are ready, the readiness panel is NOT rendered", async () => {
+    // ready: true is the default in beforeEach
+    const { NewAgentBuilder } = await builderPromise;
+
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+
+    // When ready, ReadinessVerdict should not mount — the "Hosted prerequisites"
+    // headline from mapReadinessToVerdict(ready:true) must not appear.
+    expect(html).not.toContain("Hosted prerequisites are configured");
+    // The alarm panel should not appear at all
+    expect(html).not.toContain("Background agents need a bit more setup");
+  });
+
+  test("(P2D) when prerequisites are not ready, the panel appears (somewhere in the page)", async () => {
+    readinessData = {
+      enabled: true,
+      ready: false,
+      missing: ["GITHUB_APP_ID"],
+      checks: [
+        {
+          id: "github_app",
+          label: "GitHub App",
+          status: "missing",
+          detail: "Required for webhook trust.",
+          missing: ["GITHUB_APP_ID"],
+        },
+      ],
+    };
+    const { NewAgentBuilder } = await builderPromise;
+
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+
+    expect(html).toContain("Background agents need a bit more setup");
+  });
+
+  test("(P2D) when not ready, the panel does not appear before the template picker in markup", async () => {
+    readinessData = {
+      enabled: true,
+      ready: false,
+      missing: ["GITHUB_APP_ID"],
+      checks: [
+        {
+          id: "github_app",
+          label: "GitHub App",
+          status: "missing",
+          detail: "Required for webhook trust.",
+          missing: ["GITHUB_APP_ID"],
+        },
+      ],
+    };
+    const { NewAgentBuilder } = await builderPromise;
+
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+
+    const templatePickerIdx = html.indexOf("TemplatePicker");
+    const panelIdx = html.indexOf("Background agents need a bit more setup");
+    // Template picker must appear before the not-ready panel
+    expect(templatePickerIdx).toBeGreaterThanOrEqual(0);
+    expect(panelIdx).toBeGreaterThanOrEqual(0);
+    expect(templatePickerIdx).toBeLessThan(panelIdx);
+  });
+
   test("shows setup details and a configuration link when prerequisites are missing", async () => {
     readinessData = {
       enabled: true,

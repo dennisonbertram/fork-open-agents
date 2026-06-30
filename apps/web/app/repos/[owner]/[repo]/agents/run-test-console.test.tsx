@@ -50,6 +50,33 @@ mock.module("./use-background-run-polling", () => ({
         isLoading: false,
       };
     }
+    if (runId === "run-failed") {
+      return {
+        data: {
+          run: {
+            id: "run-failed",
+            status: "failed",
+            repoOwner: "acme",
+            repoName: "widgets",
+            createdAt: "2026-06-17T10:00:00.000Z",
+            startedAt: "2026-06-17T10:00:01.000Z",
+            finishedAt: "2026-06-17T10:00:15.000Z",
+            errorKind: "sandbox_quota",
+            errorMessage: "Sandbox quota exceeded",
+            outputKind: null,
+            outputUrl: null,
+            sandboxName: null,
+            requestId: null,
+            workflowRunId: null,
+          },
+          agent: null,
+          events: [],
+          outputs: [],
+        },
+        error: undefined,
+        isLoading: false,
+      };
+    }
     // Default: non-terminal (running)
     return {
       data: {
@@ -102,6 +129,17 @@ describe("RunTestConsole", () => {
 
     expect(html).toContain("/background-runs/run-terminal");
     expect(html.toLowerCase()).toContain("open full run");
+  });
+
+  test("#688 — failed run with errorMessage renders prominent error banner containing the message", async () => {
+    const { RunTestConsole } = await modulePromise;
+
+    const html = renderToStaticMarkup(<RunTestConsole runId="run-failed" />);
+
+    // Must show a prominent "Test failed" label
+    expect(html.toLowerCase()).toContain("test failed");
+    // Must include the specific error message
+    expect(html).toContain("Sandbox quota exceeded");
   });
 
   test("non-terminal running status renders waiting/refreshing affordance and no success state", async () => {

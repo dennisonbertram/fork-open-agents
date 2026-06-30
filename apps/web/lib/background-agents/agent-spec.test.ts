@@ -673,6 +673,61 @@ describe("buildAgentPayload — triggers array path", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phase 2A — describeAgentOutput
+// ---------------------------------------------------------------------------
+
+describe("describeAgentOutput", () => {
+  // Lazily import so this test file compiles even before the export exists
+  async function getHelper() {
+    const mod = await import("./agent-spec");
+    // @ts-expect-error — function added in Phase 2; absent until GREEN
+    return mod.describeAgentOutput as (args: {
+      outputMode: import("./agent-spec").OutputMode;
+      githubAccess: "read" | "write";
+    }) => { will: string; wont: string };
+  }
+
+  test("P2A-001: report-only + read → will mentions summary, wont mentions NOT", async () => {
+    const describeAgentOutput = await getHelper();
+    const result = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    expect(result.will.toLowerCase()).toMatch(/summar|written|report/);
+    expect(result.wont).toContain("NOT");
+  });
+
+  test("P2A-002: ready_pr + write → will mentions pull request, wont mentions NOT merge", async () => {
+    const describeAgentOutput = await getHelper();
+    const result = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    expect(result.will.toLowerCase()).toContain("pull request");
+    expect(result.wont.toLowerCase()).toContain("not");
+    expect(result.wont.toLowerCase()).toContain("merge");
+  });
+
+  test("P2A-003: will and wont are both non-empty strings", async () => {
+    const describeAgentOutput = await getHelper();
+    const r1 = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    const r2 = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    expect(r1.will.length).toBeGreaterThan(0);
+    expect(r1.wont.length).toBeGreaterThan(0);
+    expect(r2.will.length).toBeGreaterThan(0);
+    expect(r2.wont.length).toBeGreaterThan(0);
+  });
+
+  test("P2A-004: none mode wont mentions comment/close/merge/edit/push are prohibited", async () => {
+    const describeAgentOutput = await getHelper();
+    const result = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    const wontLower = result.wont.toLowerCase();
+    // Must mention that it won't write to the repo in some way
+    expect(wontLower).toMatch(/comment|close|merge|edit|push/);
+  });
+
+  test("P2A-005: ready_pr wont should NOT say it will push directly to default branch", async () => {
+    const describeAgentOutput = await getHelper();
+    const result = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    expect(result.wont.toLowerCase()).toContain("default branch");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 1 — deriveAgentName
 // ---------------------------------------------------------------------------
 

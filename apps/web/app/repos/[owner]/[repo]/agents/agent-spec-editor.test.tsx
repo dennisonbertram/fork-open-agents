@@ -221,6 +221,73 @@ describe("AgentSpecEditor", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Phase 2C — Save → Test → Enable progression steps
+  // ---------------------------------------------------------------------------
+
+  test("(P2C) action bar shows 3-step progression labels: Save, Run a test, Enable", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} createdAgentId={null} />,
+    );
+    // All three step labels must be present
+    expect(html).toContain("Save");
+    expect(html).toContain("Run a test");
+    expect(html).toContain("Enable");
+    // Step numbers or visual markers should appear
+    expect(html).toMatch(/[①1]|step.?1/i);
+  });
+
+  test("(P2C) when createdAgentId is set, step 1 (Save) shows a ✓ checkmark character", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} createdAgentId="agent-123" />,
+    );
+    // A literal checkmark character must appear (✓ U+2713 or ✔ U+2714)
+    expect(html).toMatch(/✓|✔/);
+  });
+
+  test("(P2C) when testRunId is set, step 2 (Run a test) shows a done/checkmark indicator", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        createdAgentId="agent-123"
+        testRunId="run-abc"
+      />,
+    );
+    // Two done indicators: one for step 1, one for step 2
+    const checkMatches = html.match(/✓|✔/g) ?? [];
+    expect(checkMatches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Phase 2A — "It will…" / "It will NOT…" output summary in Result section
+  // ---------------------------------------------------------------------------
+
+  test("(P2A) Result section renders 'It will' and 'It will NOT' lines for report-only mode", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} initialOutputMode="none" />,
+    );
+    expect(html).toContain("It will");
+    expect(html).toContain("It will NOT");
+  });
+
+  test("(P2A) Result section 'It will NOT' for ready_pr mentions merge/push restriction", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialOutputMode="ready_pr"
+        initialPermissionContents="write"
+        initialPermissionPullRequests="write"
+      />,
+    );
+    expect(html).toContain("It will NOT");
+    expect(html.toLowerCase()).toMatch(/merge|push/);
+  });
+
+  // ---------------------------------------------------------------------------
   // Phase 1 — multi-trigger + sentence ordering
   // ---------------------------------------------------------------------------
 
