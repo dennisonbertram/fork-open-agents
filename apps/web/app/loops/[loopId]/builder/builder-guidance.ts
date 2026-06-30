@@ -25,6 +25,12 @@ function hasNodeKind(
   return nodes.some((node) => node.data.kind === kind);
 }
 
+function hasWorkCard(nodes: LoopFlowNode[]) {
+  return nodes.some(
+    (node) => node.data.kind !== "start" && node.data.kind !== "end",
+  );
+}
+
 function nodeHasOutgoingEdge(edges: LoopFlowEdge[], nodeId: string) {
   return edges.some((edge) => edge.source === nodeId);
 }
@@ -56,7 +62,7 @@ export function buildBuilderGuidance({
 }): BuilderGuidance {
   const selected = selectedNodeLabel(nodes);
   const hasStart = hasNodeKind(nodes, "start");
-  const hasAgentStep = hasNodeKind(nodes, "agent_step");
+  const hasRunnableCard = hasWorkCard(nodes);
   const hasEnd = hasNodeKind(nodes, "end");
   const startNode = nodes.find((node) => node.data.kind === "start");
   const startIsConnected = startNode
@@ -68,11 +74,11 @@ export function buildBuilderGuidance({
   const steps: BuilderGuidanceStep[] = [
     {
       id: "start",
-      title: "Start with one agent step",
-      detail: hasAgentStep
-        ? "You have a runnable step on the canvas."
+      title: "Start with one work card",
+      detail: hasRunnableCard
+        ? "You have a runnable card on the canvas."
         : "Select Start, then click Agent step. It will connect itself.",
-      state: hasAgentStep ? "done" : "current",
+      state: hasRunnableCard ? "done" : "current",
     },
     {
       id: "connect",
@@ -80,7 +86,11 @@ export function buildBuilderGuidance({
       detail: startIsConnected
         ? "The flow has a path out of Start."
         : "Select Start before adding so the next card lands in the chain.",
-      state: startIsConnected ? "done" : hasAgentStep ? "current" : "blocked",
+      state: startIsConnected
+        ? "done"
+        : hasRunnableCard
+          ? "current"
+          : "blocked",
     },
     {
       id: "configure",
@@ -88,7 +98,7 @@ export function buildBuilderGuidance({
       detail: selected
         ? "Use the right panel. Labels, instructions, tools, and conditions save with this loop."
         : "Click any card to open its settings panel.",
-      state: selected ? "current" : hasAgentStep ? "current" : "blocked",
+      state: selected ? "current" : hasRunnableCard ? "current" : "blocked",
     },
     {
       id: "save",
@@ -103,7 +113,7 @@ export function buildBuilderGuidance({
     },
   ];
 
-  if (!hasAgentStep) {
+  if (!hasRunnableCard) {
     return {
       headline: "Build the loop one card at a time",
       detail:
