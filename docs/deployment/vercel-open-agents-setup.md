@@ -83,6 +83,18 @@ Before declaring dev isolated, compare value fingerprints without printing
 secrets. `POSTGRES_URL`, `DATABASE_URL`, `REDIS_URL`, `KV_URL`, and
 `KV_REST_API_URL` must differ between `dev` and `production`.
 
+Use the fingerprint audit when Vercel env pull access is available:
+
+```bash
+bun run ops:env-isolation -- --compare dev
+```
+
+The audit pulls production and the compared environment into temporary files,
+hashes critical values, deletes the files, and prints only equality/fingerprint
+evidence. `isolation_violation` means a backing service that must differ from
+production has the same fingerprint. `unverified_sensitive_value` means a shared
+or unreadable value needs manual confirmation before destructive testing.
+
 ## Vercel Project
 
 Import the fork into Vercel and verify these project settings:

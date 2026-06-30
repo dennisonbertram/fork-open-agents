@@ -5,6 +5,10 @@ description: Captures the current self-hosted Open Agents Vercel setup workflow.
 
 Use this skill for Open Agents self-hosting on Vercel.
 
+If the request is about production status, release promotion, incidents,
+scheduled smoke, env isolation, alerting, or branch safety gates, also read
+`.agents/skills/production-ops/SKILL.md` and follow its operator loop.
+
 First read current repo files, especially:
 
 - `docs/deployment/vercel-open-agents-setup.md`
@@ -25,6 +29,10 @@ Core facts:
 
 When diagnosing failures:
 
+- First run `bun run ops:status -- --since 30m` when the repo checkout and
+  Vercel/GitHub CLI access are available.
+- Use `bun run ops:env-isolation -- --compare dev` before treating dev or
+  preview as safe for destructive production-shaped testing.
 - `invalid_scope`: remove unsupported Vercel OAuth scopes such as `offline_access`.
 - `Rate limit unavailable`: verify Upstash Redis/KV env exists in Production and redeploy.
 - Model errors: check AI Gateway project access/OIDC or add `AI_GATEWAY_API_KEY`.

@@ -20,6 +20,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
 - [Observability Discipline](docs/process/observability-discipline.md)
 - [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
+- [Production Release Runbook](docs/process/production-release-runbook.md)
 
 ## Repository Ownership And Upstream Policy
 
@@ -165,6 +166,34 @@ bun run test:verbose path/to/file.test.ts             # Same verbose output for 
 - Local Vercel sign-in requires the Vercel OAuth app to include `http://localhost:3000/api/auth/callback/vercel` alongside the production callback.
 - Railway CLI auth and install state are separate from project linking. Use `railway whoami --json` to verify auth; `railway status --json` only works after this repo is linked to the correct Railway project.
 - Do not link or deploy to Railway based on a guessed project name. Confirm the project URL or project ID first, then use `railway link <project-id>` or explicit `--project`/`--environment` flags.
+
+## Production Operations
+
+For production deploys, incidents, release promotion, or agent-ready ops
+questions, use the repo-bundled `production-ops` skill first:
+`.agents/skills/production-ops/SKILL.md`.
+
+Primary commands:
+
+```bash
+bun run ops:status -- --since 30m
+bun run ops:env-isolation -- --compare dev
+bun run ops:authenticated-canary
+bun run ops:alert -- --source public-smoke --environment production --status failing --summary "..."
+```
+
+Use [Production Release Runbook](docs/process/production-release-runbook.md)
+for the full operator loop. `ops:status` is read-only and should be the first
+live check before or after risky deploy work. `ops:env-isolation` prints only
+fingerprints, never raw env values. The authenticated canary must stay
+`blocked_by_configuration` until the disposable production test identity,
+allowlisted repo, and GitHub Actions cookie secret are configured. Production
+monitor failures should create/update one deduped GitHub issue through
+`ops:alert`.
+
+The background-agent cron path also acts as the scheduler resilience point: it
+catches up a missed persisted `nextRunAt` window once and sweeps stale queued or
+running background-agent runs with `background-agent.run.swept_stale` evidence.
 
 ## Git Commands
 
