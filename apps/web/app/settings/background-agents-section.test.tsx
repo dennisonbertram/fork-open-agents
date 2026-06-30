@@ -297,10 +297,13 @@ describe("BackgroundAgentsSection", () => {
     expect(configuredHtml).toContain("acme/widgets");
     expect(configuredHtml).toContain("PR #42");
     expect(configuredHtml).toContain("/background-runs/run-1");
+    expect(configuredHtml).toContain(
+      "Open details for background run acme/widgets PR #42",
+    );
     expect(configuredHtml).toContain("https://github.com/acme/widgets/pull/42");
   });
 
-  test("renders configure, future tools, test, and repo inspection paths", async () => {
+  test("renders configure, Composio support, test, and repo inspection paths", async () => {
     agentsSwrState = {
       data: {
         agents: [
@@ -348,12 +351,21 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("acme/widgets");
     expect(html).toContain("A pull request changes");
     expect(html).toContain("An error is reported (webhook)");
-    expect(html).toContain("Tool providers coming later");
-    expect(html).toContain("Composio is planned for v1.5");
+    expect(html).toContain("Composio tools are supported");
+    expect(html).toContain("repo-scoped builder");
+    expect(html).not.toContain("Tool providers coming later");
+    expect(html).not.toContain("Composio is planned for v1.5");
     expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
     expect(html).toContain("Edit");
     expect(html).toContain("Test");
     expect(html).toContain("/repos/acme/widgets/agents");
+
+    const testButtonText = html.indexOf(">Test<");
+    const testButtonStart = html.lastIndexOf("<button", testButtonText);
+    const testButtonEnd = html.indexOf(">", testButtonStart);
+    expect(html.slice(testButtonStart, testButtonEnd)).toContain(
+      'type="button"',
+    );
   });
 
   test("BT-001: renders webhook URL for webhook.error trigger with webhookPublicId", async () => {
