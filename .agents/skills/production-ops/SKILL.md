@@ -94,6 +94,7 @@ the production deployment, then run:
 ```bash
 bun run ops:status -- --since 30m
 DEPLOYMENT_URL=https://open-agents-azure-xi.vercel.app bun run --cwd apps/web preview:smoke
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m
 ```
 
 Do not claim production is agent-ready unless public smoke, authenticated canary

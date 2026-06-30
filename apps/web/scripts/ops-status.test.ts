@@ -58,6 +58,11 @@ describe("ops status", () => {
         JSON.stringify([
           {
             status: "completed",
+            conclusion: "skipped",
+            url: "https://github.com/skipped",
+          },
+          {
+            status: "completed",
             conclusion: "success",
             url: "https://github.com/run",
           },

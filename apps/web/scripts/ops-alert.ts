@@ -44,7 +44,7 @@ ${input.summary}
 
 \`\`\`bash
 bun run ops:status -- --since 30m
-vercel logs --environment production --status-code 5xx --since 30m
+vercel logs --project open-agents --environment production --status-code 500,502,503,504 --since 30m
 \`\`\`
 `);
 }
