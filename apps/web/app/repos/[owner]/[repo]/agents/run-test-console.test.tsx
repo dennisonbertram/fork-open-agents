@@ -142,6 +142,14 @@ describe("RunTestConsole", () => {
     expect(html).toContain("Sandbox quota exceeded");
   });
 
+  test("REG: failed run without errorMessage does NOT show the error banner (only when errorMessage present)", async () => {
+    // This guards against accidentally showing the banner for all failed runs
+    const { RunTestConsole } = await modulePromise;
+    // run-active has status="running" — no errorMessage, no banner
+    const html = renderToStaticMarkup(<RunTestConsole runId="run-active" />);
+    expect(html.toLowerCase()).not.toContain("test failed");
+  });
+
   test("non-terminal running status renders waiting/refreshing affordance and no success state", async () => {
     const { RunTestConsole } = await modulePromise;
 

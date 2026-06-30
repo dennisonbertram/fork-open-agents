@@ -215,6 +215,19 @@ describe("NewAgentBuilder", () => {
     expect(templatePickerIdx).toBeLessThan(panelIdx);
   });
 
+  test("REG: ready state — template picker appears without a readiness panel above it", async () => {
+    // Guards against accidentally adding the panel back before the picker when ready
+    const { NewAgentBuilder } = await builderPromise;
+    const html = renderToStaticMarkup(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    // Template picker must appear
+    expect(html).toContain("TemplatePicker");
+    // No readiness headline should appear for ready state
+    expect(html).not.toContain("Hosted prerequisites are configured");
+    expect(html).not.toContain("Background agents need");
+  });
+
   test("shows setup details and a configuration link when prerequisites are missing", async () => {
     readinessData = {
       enabled: true,

@@ -547,6 +547,46 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
   });
 });
 
+describe("REG: describeAgentOutput — reversion catches", () => {
+  test("REG-020: none mode will/wont are distinct strings (not copy-pasted)", async () => {
+    const { describeAgentOutput } = await import("./agent-spec");
+    const r = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    expect(r.will).not.toBe(r.wont);
+  });
+
+  test("REG-021: ready_pr and none modes produce different will strings", async () => {
+    const { describeAgentOutput } = await import("./agent-spec");
+    const pr = describeAgentOutput({
+      outputMode: "ready_pr",
+      githubAccess: "write",
+    });
+    const none = describeAgentOutput({
+      outputMode: "none",
+      githubAccess: "read",
+    });
+    expect(pr.will).not.toBe(none.will);
+    expect(pr.wont).not.toBe(none.wont);
+  });
+
+  test("REG-022: none wont explicitly mentions NOT to catch softening the copy", async () => {
+    const { describeAgentOutput } = await import("./agent-spec");
+    const r = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    expect(r.wont).toContain("NOT");
+  });
+
+  test("REG-023: ready_pr wont must not say it will push directly (regression guard)", async () => {
+    const { describeAgentOutput } = await import("./agent-spec");
+    const r = describeAgentOutput({
+      outputMode: "ready_pr",
+      githubAccess: "write",
+    });
+    // Must not imply the agent pushes directly to the main branch
+    expect(r.wont.toLowerCase()).not.toContain("it will push directly");
+    // Must mention the default branch restriction
+    expect(r.wont.toLowerCase()).toContain("default branch");
+  });
+});
+
 describe("REG: describeOutputModePermissions — both modes produce distinct summaries", () => {
   test("REG-018: none and ready_pr summaries are different strings", () => {
     const noneDesc = describeOutputModePermissions("none");
@@ -677,26 +717,28 @@ describe("buildAgentPayload — triggers array path", () => {
 // ---------------------------------------------------------------------------
 
 describe("describeAgentOutput", () => {
-  // Lazily import so this test file compiles even before the export exists
+  // Lazily import so test assertions are explicit about what they test
   async function getHelper() {
     const mod = await import("./agent-spec");
-    // @ts-expect-error — function added in Phase 2; absent until GREEN
-    return mod.describeAgentOutput as (args: {
-      outputMode: import("./agent-spec").OutputMode;
-      githubAccess: "read" | "write";
-    }) => { will: string; wont: string };
+    return mod.describeAgentOutput;
   }
 
   test("P2A-001: report-only + read → will mentions summary, wont mentions NOT", async () => {
     const describeAgentOutput = await getHelper();
-    const result = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    const result = describeAgentOutput({
+      outputMode: "none",
+      githubAccess: "read",
+    });
     expect(result.will.toLowerCase()).toMatch(/summar|written|report/);
     expect(result.wont).toContain("NOT");
   });
 
   test("P2A-002: ready_pr + write → will mentions pull request, wont mentions NOT merge", async () => {
     const describeAgentOutput = await getHelper();
-    const result = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    const result = describeAgentOutput({
+      outputMode: "ready_pr",
+      githubAccess: "write",
+    });
     expect(result.will.toLowerCase()).toContain("pull request");
     expect(result.wont.toLowerCase()).toContain("not");
     expect(result.wont.toLowerCase()).toContain("merge");
@@ -704,8 +746,14 @@ describe("describeAgentOutput", () => {
 
   test("P2A-003: will and wont are both non-empty strings", async () => {
     const describeAgentOutput = await getHelper();
-    const r1 = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
-    const r2 = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    const r1 = describeAgentOutput({
+      outputMode: "none",
+      githubAccess: "read",
+    });
+    const r2 = describeAgentOutput({
+      outputMode: "ready_pr",
+      githubAccess: "write",
+    });
     expect(r1.will.length).toBeGreaterThan(0);
     expect(r1.wont.length).toBeGreaterThan(0);
     expect(r2.will.length).toBeGreaterThan(0);
@@ -714,7 +762,10 @@ describe("describeAgentOutput", () => {
 
   test("P2A-004: none mode wont mentions comment/close/merge/edit/push are prohibited", async () => {
     const describeAgentOutput = await getHelper();
-    const result = describeAgentOutput({ outputMode: "none", githubAccess: "read" });
+    const result = describeAgentOutput({
+      outputMode: "none",
+      githubAccess: "read",
+    });
     const wontLower = result.wont.toLowerCase();
     // Must mention that it won't write to the repo in some way
     expect(wontLower).toMatch(/comment|close|merge|edit|push/);
@@ -722,7 +773,10 @@ describe("describeAgentOutput", () => {
 
   test("P2A-005: ready_pr wont should NOT say it will push directly to default branch", async () => {
     const describeAgentOutput = await getHelper();
-    const result = describeAgentOutput({ outputMode: "ready_pr", githubAccess: "write" });
+    const result = describeAgentOutput({
+      outputMode: "ready_pr",
+      githubAccess: "write",
+    });
     expect(result.wont.toLowerCase()).toContain("default branch");
   });
 });
