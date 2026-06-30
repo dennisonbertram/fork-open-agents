@@ -8,7 +8,10 @@ import {
   buildAgentPayload,
   buildFormFromAgent,
   buildRepoScopedDefaultForm,
+  buildTriggerDraftsPayload,
   conditionFieldLabel,
+  createTriggerDraft,
+  deriveAgentName,
   describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
@@ -17,6 +20,7 @@ import {
   type BackgroundAgent,
   type FormState,
   type StepId,
+  type TriggerDraft,
 } from "./agent-spec";
 
 describe("buildRepoScopedDefaultForm", () => {
@@ -549,5 +553,153 @@ describe("REG: describeOutputModePermissions — both modes produce distinct sum
     const prDesc = describeOutputModePermissions("ready_pr");
     // If someone accidentally returns the same string for both, this catches it
     expect(noneDesc).not.toBe(prDesc);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1 — TriggerDraft + createTriggerDraft + buildTriggerDraftsPayload
+// ---------------------------------------------------------------------------
+
+describe("createTriggerDraft", () => {
+  test("P1-001: creates a draft with the given id and default kind", () => {
+    const draft: TriggerDraft = createTriggerDraft("t-1");
+    expect(draft.id).toBe("t-1");
+    expect(draft.triggerKind).toBe("github.pull_request");
+    expect(draft.schedule).toBe("");
+    expect(draft.conditionActions).toBe("");
+  });
+
+  test("P1-002: respects an explicit kind arg", () => {
+    const draft = createTriggerDraft("t-2", "schedule.cron");
+    expect(draft.triggerKind).toBe("schedule.cron");
+  });
+
+  test("P1-003: id is deterministic (no Math.random)", () => {
+    const a = createTriggerDraft("same-id");
+    const b = createTriggerDraft("same-id");
+    expect(a.id).toBe(b.id);
+  });
+});
+
+describe("buildTriggerDraftsPayload", () => {
+  test("P1-004: returns one payload trigger per draft", () => {
+    const drafts: TriggerDraft[] = [
+      createTriggerDraft("t-1", "github.pull_request"),
+      createTriggerDraft("t-2", "github.issue"),
+    ];
+    const result = buildTriggerDraftsPayload(drafts);
+    expect(result).toHaveLength(2);
+    expect(result[0]?.kind).toBe("github.pull_request");
+    expect(result[1]?.kind).toBe("github.issue");
+  });
+
+  test("P1-005: cron draft sets schedule field; non-cron draft sets null", () => {
+    const cronDraft = {
+      ...createTriggerDraft("t-cron", "schedule.cron"),
+      schedule: "@hourly",
+    };
+    const prDraft = createTriggerDraft("t-pr", "github.pull_request");
+    const result = buildTriggerDraftsPayload([cronDraft, prDraft]);
+    expect(result[0]?.schedule).toBe("@hourly");
+    expect(result[1]?.schedule).toBeNull();
+  });
+
+  test("P1-006: deployment_status draft routes conditionSeverities into conditions.actions", () => {
+    const draft: TriggerDraft = {
+      ...createTriggerDraft("t-ds", "github.deployment_status"),
+      conditionSeverities: "success, failure",
+      conditionEnvironments: "production",
+    };
+    const result = buildTriggerDraftsPayload([draft]);
+    expect(result[0]?.conditions?.actions).toEqual(["success", "failure"]);
+    expect(result[0]?.conditions?.environments).toEqual(["production"]);
+  });
+});
+
+describe("buildAgentPayload — triggers array path", () => {
+  function makeForm(overrides: Partial<FormState> = {}): FormState {
+    return {
+      name: "Test Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Do something.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+      ...overrides,
+    };
+  }
+
+  test("P1-007: with 2 drafts in form.triggers emits 2 triggers with correct kinds", () => {
+    const drafts: TriggerDraft[] = [
+      createTriggerDraft("t-1", "github.pull_request"),
+      createTriggerDraft("t-2", "schedule.cron"),
+    ];
+    const payload = buildAgentPayload(makeForm({ triggers: drafts }));
+    expect(payload.triggers).toHaveLength(2);
+    expect(payload.triggers[0]?.kind).toBe("github.pull_request");
+    expect(payload.triggers[1]?.kind).toBe("schedule.cron");
+  });
+
+  test("P1-008: scalar back-compat — no triggers in form still emits exactly one trigger", () => {
+    const payload = buildAgentPayload(makeForm());
+    expect(payload.triggers).toHaveLength(1);
+    expect(payload.triggers[0]?.kind).toBe("github.pull_request");
+  });
+
+  test("P1-009: empty triggers array in form falls back to scalar path (one trigger)", () => {
+    const payload = buildAgentPayload(makeForm({ triggers: [] }));
+    expect(payload.triggers).toHaveLength(1);
+  });
+
+  test("P1-010: deployment_status draft condition routing via triggers array", () => {
+    const draft: TriggerDraft = {
+      ...createTriggerDraft("t-ds", "github.deployment_status"),
+      conditionSeverities: "failure",
+    };
+    const payload = buildAgentPayload(makeForm({ triggers: [draft] }));
+    expect(payload.triggers[0]?.conditions?.actions).toEqual(["failure"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1 — deriveAgentName
+// ---------------------------------------------------------------------------
+
+describe("deriveAgentName", () => {
+  test("P1-011: empty string returns empty string", () => {
+    expect(deriveAgentName("")).toBe("");
+  });
+
+  test("P1-012: whitespace-only returns empty string", () => {
+    expect(deriveAgentName("   ")).toBe("");
+  });
+
+  test("P1-013: short instruction returns all words capitalized at start", () => {
+    const name = deriveAgentName("review pull requests daily");
+    expect(name).toBe("Review pull requests daily");
+  });
+
+  test("P1-014: long instruction is capped at ~6 words", () => {
+    const name = deriveAgentName(
+      "when a pull request is opened review the diff and add a comment",
+    );
+    const wordCount = name.split(/\s+/).length;
+    expect(wordCount).toBeLessThanOrEqual(6);
+  });
+
+  test("P1-015: first character is uppercased", () => {
+    const name = deriveAgentName("summarize pull requests");
+    expect(name[0]).toBe(name[0]?.toUpperCase());
   });
 });

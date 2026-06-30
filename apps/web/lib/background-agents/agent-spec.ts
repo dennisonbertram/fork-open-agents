@@ -69,6 +69,21 @@ export type BackgroundAgent = {
   composioToolkitSlugs?: string[];
 };
 
+/**
+ * A draft trigger for the multi-trigger editor UI.
+ * Each TriggerDraft maps 1:1 to a trigger in the final payload.
+ */
+export type TriggerDraft = {
+  id: string;
+  triggerKind: TriggerKind;
+  schedule: string;
+  conditionActions: string;
+  conditionBranches: string;
+  conditionLabels: string;
+  conditionEnvironments: string;
+  conditionSeverities: string;
+};
+
 export type FormState = {
   name: string;
   repoOwner: string;
@@ -88,6 +103,12 @@ export type FormState = {
   permissionPullRequests: GitHubAccessLevel;
   /** Composio toolkit slugs selected for this agent. */
   composioToolkitSlugs: string[];
+  /**
+   * Multi-trigger drafts. When present and non-empty, buildAgentPayload emits
+   * one trigger per draft instead of the scalar triggerKind/schedule/condition*
+   * fields. The scalar path is preserved for back-compat.
+   */
+  triggers?: TriggerDraft[];
 };
 
 export const defaultForm: FormState = {
@@ -187,8 +208,77 @@ function buildConditions(form: FormState): TriggerConditions {
   };
 }
 
+/**
+ * Creates a blank TriggerDraft with the given deterministic id and optional kind.
+ */
+export function createTriggerDraft(
+  id: string,
+  kind: TriggerKind = "github.pull_request",
+): TriggerDraft {
+  return {
+    id,
+    triggerKind: kind,
+    schedule: "",
+    conditionActions: "",
+    conditionBranches: "",
+    conditionLabels: "",
+    conditionEnvironments: "",
+    conditionSeverities: "",
+  };
+}
+
+function buildConditionsFromDraft(draft: TriggerDraft): TriggerConditions {
+  const actions = splitConditionList(draft.conditionActions);
+  const branches = splitConditionList(draft.conditionBranches);
+  const labels = splitConditionList(draft.conditionLabels);
+  const environments = splitConditionList(draft.conditionEnvironments);
+  const severities = splitConditionList(draft.conditionSeverities);
+
+  // Mirror the same deployment_status routing logic from buildConditions:
+  // severities UI field goes into conditions.actions for deployment_status.
+  if (draft.triggerKind === "github.deployment_status") {
+    return {
+      ...(severities ? { actions: severities } : {}),
+      ...(environments ? { environments } : {}),
+    };
+  }
+
+  return {
+    ...(actions ? { actions } : {}),
+    ...(branches ? { branches } : {}),
+    ...(labels ? { labels } : {}),
+    ...(environments ? { environments } : {}),
+    ...(severities ? { severities } : {}),
+  };
+}
+
+/**
+ * Converts an array of TriggerDraft objects into the payload triggers array
+ * (one entry per draft), reusing the same condition routing as buildConditions.
+ */
+export function buildTriggerDraftsPayload(drafts: TriggerDraft[]) {
+  return drafts.map((draft) => ({
+    name: triggerLabels[draft.triggerKind],
+    kind: draft.triggerKind,
+    status: "enabled" as const,
+    conditions: buildConditionsFromDraft(draft),
+    schedule: draft.triggerKind === "schedule.cron" ? draft.schedule : null,
+  }));
+}
+
+/**
+ * Derives a short name from agent instructions — first ~6 words, title-cased.
+ * Returns "" when instructions are blank.
+ */
+export function deriveAgentName(instructions: string): string {
+  const trimmed = instructions.trim();
+  if (!trimmed) return "";
+  const words = trimmed.split(/\s+/).slice(0, 6);
+  const raw = words.join(" ");
+  return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
 export function buildAgentPayload(form: FormState) {
-  const conditions = buildConditions(form);
   // Ready PR is non-functional without write access — the agent must push a
   // branch and open a PR — so floor contents + pull_requests to "write" for
   // ready_pr regardless of the calling surface (the settings form has no
@@ -197,6 +287,25 @@ export function buildAgentPayload(form: FormState) {
   const requiresWrite = form.outputMode === "ready_pr";
   const contents = requiresWrite ? "write" : form.permissionContents;
   const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
+
+  // Multi-trigger path: use drafts array when present and non-empty.
+  const triggers =
+    form.triggers && form.triggers.length > 0
+      ? buildTriggerDraftsPayload(form.triggers)
+      : (() => {
+          const conditions = buildConditions(form);
+          return [
+            {
+              name: triggerLabels[form.triggerKind],
+              kind: form.triggerKind,
+              status: "enabled" as const,
+              conditions,
+              schedule:
+                form.triggerKind === "schedule.cron" ? form.schedule : null,
+            },
+          ];
+        })();
+
   return {
     name: form.name,
     repoOwner: form.repoOwner,
@@ -216,15 +325,7 @@ export function buildAgentPayload(form: FormState) {
       },
     },
     composioToolkitSlugs: form.composioToolkitSlugs,
-    triggers: [
-      {
-        name: triggerLabels[form.triggerKind],
-        kind: form.triggerKind,
-        status: "enabled",
-        conditions,
-        schedule: form.triggerKind === "schedule.cron" ? form.schedule : null,
-      },
-    ],
+    triggers,
   };
 }
 
