@@ -409,8 +409,8 @@ describe("#750 store scheduling: seeding + preservation on update", () => {
     // the REPLACED row's id (URL stability) or mint a fresh one.
     expect(gamma?.webhookPublicId).toBeTruthy();
     expect(gamma?.webhookPublicId).not.toBe(alphaId);
-    const ids = updated?.triggers.map((t) => t.webhookPublicId);
-    expect(new Set(ids).size).toBe(ids?.length);
+    const ids = updated?.triggers.map((t) => t.webhookPublicId) ?? [];
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   test("BT-750-D: updateBackgroundAgent replaces trigger identity when schedule changes", async () => {
