@@ -181,4 +181,44 @@ describe("ComposioOtherToolsSection", () => {
     expect(html).toContain("unattended");
     expect(html).toContain("auto-approved");
   });
+
+  test("REGRESSION: distinguishing copy still renders when github is already selected, and the picker still receives it (opt-in remains functional, not just documented)", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={["github", "linear"]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    // The distinguishing copy must not be gated on an empty selection —
+    // an agent that has already opted GitHub in still needs the warning
+    // visible so it isn't mistaken for the built-in scoped capability.
+    expect(html).toContain("broader GitHub access");
+    // And the opt-in itself must remain functional: the picker still
+    // receives "github" in its selected slugs. This guards against a
+    // regression where a future "distinguish the two mechanisms" change
+    // accidentally filters github out of selectedSlugs instead of just
+    // adding warning copy.
+    expect(html).toContain('data-slugs="github,linear"');
+  });
+
+  test("REGRESSION: distinguishing copy appears exactly once (no duplicated warning block)", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    const occurrences = html.split("broader GitHub access").length - 1;
+    expect(occurrences).toBe(1);
+  });
 });

@@ -49,9 +49,9 @@ export function ComposioOtherToolsSection({
         <p className="text-xs text-muted-foreground mt-1.5">
           Adding GitHub here grants live, broader GitHub access across your
           whole connected account (not scoped to this repo) and runs mid-turn
-          during unattended, auto-approved runs. The built-in GitHub
-          capability in the Standard toolpack above is scoped to this
-          repository and only opens a pull request after the run.
+          during unattended, auto-approved runs. The built-in GitHub capability
+          in the Standard toolpack above is scoped to this repository and only
+          opens a pull request after the run.
         </p>
       </div>
       <ComposioToolkitPicker
