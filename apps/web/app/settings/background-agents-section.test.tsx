@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildAgentPayload,
   buildFormFromAgent,
+  defaultForm,
   supportedOutputModes,
   type FormState,
 } from "./background-agents-form";
@@ -554,19 +555,33 @@ describe("BackgroundAgentsSection", () => {
     expect(html).not.toContain("github.deployment_status");
   });
 
-  test("REG-004: output mode permissions summary renders below the output mode select (regression guard)", async () => {
-    // Radix Select portals dropdown content so SelectItem text is not in static markup.
-    // Instead assert that the derived permissions summary is present — this relies on
-    // describeOutputModePermissions being wired to the rendered form.
+  test("REG-004 (SEC-740): permissions summary is derived from enabledActions, matches the default GitHub action toggles, and the misleading Output Mode select is gone", async () => {
+    // Security regression guard: this page used to gate write access behind
+    // a separate "Output mode" radio (form.outputMode) that buildAgentPayload
+    // never read — write access was actually derived from form.enabledActions,
+    // which defaultForm seeds to [open_pull_request, comment_on_pr_or_issue].
+    // Selecting "None" therefore silently kept write access while the summary
+    // claimed "Read-only". The fix removes the separate control entirely and
+    // binds the GitHub action toggles directly to enabledActions, so the
+    // rendered summary can never diverge from what's actually granted.
     const { BackgroundAgentsSection } = await componentModulePromise;
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
-    // Default outputMode is "none" → read-only summary must appear
-    expect(html.toLowerCase()).toContain("read-only");
-    // Raw enum "ready_pr" must not appear as visible element content
-    expect(html).not.toContain(">ready_pr<");
-    // The output mode label field heading must be present
-    expect(html).toContain("Output mode");
+    // The old "Output mode" select/heading must never come back.
+    expect(html).not.toContain("Output mode");
+    expect(html).not.toContain("agent-output");
+
+    // The GitHub action toggle list (shared with the repo-scoped builder)
+    // replaces it, bound directly to enabledActions.
+    expect(html).toContain("GitHub actions");
+    expect(html).toContain("Open a pull request");
+    expect(html).toContain("Merge a pull request");
+
+    // defaultForm.enabledActions defaults to [open_pull_request,
+    // comment_on_pr_or_issue] — visible, opt-out toggles — so the summary
+    // must show write access, never a "Read-only" claim that contradicts
+    // what's actually enabled.
+    expect(html).toContain("write access");
   });
 
   test("REG-005: condition fields section renders only fields valid for pull_request trigger (regression guard)", async () => {
@@ -643,11 +658,11 @@ describe("BackgroundAgentsSection", () => {
     expect(webhookHtml).not.toContain("Branches");
   });
 
-  test("ISSUE-229: permissions summary renders derived grants by output mode", async () => {
+  test("ISSUE-229/SEC-740: permissions summary renders derived grants from enabledActions, not outputMode", async () => {
     const { PermissionsSummary } = await componentModulePromise;
 
     const readOnlyHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="none" />,
+      <PermissionsSummary enabledActions={[]} />,
     );
     expect(readOnlyHtml).toContain("Permissions summary");
     expect(readOnlyHtml).toContain("GitHub contents: ");
@@ -656,7 +671,7 @@ describe("BackgroundAgentsSection", () => {
     expect(readOnlyHtml).not.toContain("write access");
 
     const readyPrHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="ready_pr" />,
+      <PermissionsSummary enabledActions={["open_pull_request"]} />,
     );
     expect(readyPrHtml).toContain("write access");
     expect(readyPrHtml).toContain("GitHub contents: ");
@@ -796,5 +811,37 @@ describe("BackgroundAgentsSection", () => {
         environments: ["production"],
       },
     });
+  });
+
+  test("SEC-740 regression: a report-only agent created from this page (enabledActions: []) never persists write access, and the rendered summary matches", async () => {
+    // This is the exact scenario the security finding described: a user on
+    // /settings/background-agents building a report-only agent. Before the
+    // fix, this page's Output Mode radio only touched form.outputMode, which
+    // buildAgentPayload never reads — write access came from
+    // form.enabledActions, which defaultForm seeded to
+    // [open_pull_request, comment_on_pr_or_issue] regardless of the radio.
+    // The fix removes the radio; the only way to grant an action now is the
+    // enabledActions toggle list itself, so an explicitly empty
+    // enabledActions array must yield a read-only payload with no drift
+    // between the saved permissions and the rendered summary.
+    const { PermissionsSummary } = await componentModulePromise;
+
+    const reportOnlyForm = { ...defaultForm, enabledActions: [] };
+    const payload = buildAgentPayload(reportOnlyForm);
+
+    expect(payload.permissions.github.enabledActions).toEqual([]);
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
+    // The legacy outputMode mirror must also downgrade to "none" — no
+    // github_open_pull_request/github_comment_on_pr_or_issue tool would ever
+    // be wired in for this agent (resolveGitHubActionToolsForBackgroundAgent
+    // iterates ctx.enabledActions, which is now empty).
+    expect(payload.outputMode).toBe("none");
+
+    const html = renderToStaticMarkup(
+      <PermissionsSummary enabledActions={[]} />,
+    );
+    expect(html).toContain("read-only");
+    expect(html).not.toContain("write access");
   });
 });
