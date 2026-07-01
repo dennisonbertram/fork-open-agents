@@ -1156,6 +1156,27 @@ describe("github_merge_pull_request tool", () => {
     expect(revokedTokens).toEqual(["merge-scoped-token"]);
   });
 
+  test("SEC-740-nit: merge token includes checks:read and statuses:read so getMergeReadiness's check-run/status lookups don't 403 (CI attribution isn't silently empty)", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    expect(capturedMergeMintArgs?.permissions).toEqual({
+      pull_requests: "write",
+      contents: "write",
+      checks: "read",
+      statuses: "read",
+    });
+  });
+
   test("records a background-agent.github.merge_pull_request event with rich attribution on success", async () => {
     resetMergeTokenMocks();
     resetMergeApiMocks();
@@ -1294,6 +1315,81 @@ describe("github_merge_pull_request tool", () => {
       commitMessage: "Applies the widgets update.",
       token: "merge-scoped-token",
     });
+  });
+
+  test("SEC-740-nit: pins the merge to the head sha observed at readiness-check time, closing the TOCTOU window between the check and the merge call", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    getMergeReadiness.mockImplementation(async () => ({
+      success: true,
+      canMerge: true,
+      reasons: [],
+      allowedMethods: ["squash"],
+      defaultMethod: "squash",
+      checks: { requiredTotal: 1, passed: 1, pending: 0, failed: 0 },
+      checkRuns: [],
+      pr: {
+        number: 12,
+        state: "open",
+        isDraft: false,
+        title: "Fix bug",
+        body: null,
+        baseBranch: "main",
+        headBranch: "fix-bug",
+        headSha: "readiness-checked-sha",
+        headOwner: null,
+        mergeable: true,
+        mergeableState: "clean",
+        additions: 1,
+        deletions: 1,
+        changedFiles: 1,
+        commits: 1,
+      },
+    }));
+    let capturedMergeParams: Record<string, unknown> | null = null;
+    mergePullRequest.mockImplementation(async (params) => {
+      capturedMergeParams = params;
+      return { success: true, sha: "merged-sha-1" };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    // A commit landing between the readiness check and this merge call must
+    // never be merged un-vetted: pinning expectedHeadSha means GitHub's API
+    // itself rejects the merge (409, surfaced as merge_conflict) if the head
+    // moved in between.
+    expect(capturedMergeParams).toMatchObject({
+      expectedHeadSha: "readiness-checked-sha",
+    });
+  });
+
+  test("SEC-740-nit regression: when the CI-gate is off (no readiness check performed), no expectedHeadSha is fabricated", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    let capturedMergeParams: Record<string, unknown> | null = null;
+    mergePullRequest.mockImplementation(async (params) => {
+      capturedMergeParams = params;
+      return { success: true, sha: "merged-sha-1" };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: false,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    expect(getMergeReadiness).not.toHaveBeenCalled();
+    expect(capturedMergeParams).not.toHaveProperty("expectedHeadSha");
   });
 
   test("regression: if mintInstallationToken itself throws, returns a typed access_error without calling getMergeReadiness/mergePullRequest and never attempts to revoke a token that was never minted", async () => {
