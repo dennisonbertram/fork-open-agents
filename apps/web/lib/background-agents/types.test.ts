@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  backgroundAgentErrorKinds,
   buildBackgroundRunIdempotencyKey,
   createBackgroundAgentSchema,
+  permissionsSchema,
   updateBackgroundAgentSchema,
 } from "./types";
 
@@ -127,5 +129,71 @@ describe("background agent contract types", () => {
     });
 
     expect(parsed.builtinToolNames).toEqual(["bash", "web_fetch"]);
+  });
+
+  test("BT-A3-01: permissionsSchema accepts writeScopeMode and writeScopeRepos on github", () => {
+    const parsed = permissionsSchema.parse({
+      github: {
+        contents: "write",
+        writeScopeMode: "repo_list",
+        writeScopeRepos: ["acme/a", "acme/b"],
+      },
+    });
+
+    expect(parsed.github?.writeScopeMode).toBe("repo_list");
+    expect(parsed.github?.writeScopeRepos).toEqual(["acme/a", "acme/b"]);
+  });
+
+  test("BT-A3-02: permissionsSchema rejects an invalid writeScopeMode value", () => {
+    expect(() =>
+      permissionsSchema.parse({
+        github: {
+          contents: "write",
+          writeScopeMode: "every_repo_ever",
+        },
+      }),
+    ).toThrow();
+  });
+
+  test("BT-A3-03: permissionsSchema.github writeScopeMode/writeScopeRepos are both optional (backward compatible)", () => {
+    const parsed = permissionsSchema.parse({
+      github: { contents: "write" },
+    });
+
+    expect(parsed.github?.writeScopeMode).toBeUndefined();
+    expect(parsed.github?.writeScopeRepos).toBeUndefined();
+  });
+
+  test("BT-A3-04: backgroundAgentErrorKinds includes write_scope_denied", () => {
+    expect(backgroundAgentErrorKinds).toContain("write_scope_denied");
+  });
+
+  test("REGRESSION: createBackgroundAgentSchema round-trips writeScopeMode/writeScopeRepos through its permissions field", () => {
+    // If permissionsSchema's .strict() object were ever left without these
+    // fields declared, an agent-create payload carrying a repo_list write
+    // scope would 400 outright instead of persisting the scope.
+    const parsed = createBackgroundAgentSchema.parse({
+      name: "PR reviewer",
+      repoOwner: "dennisonbertram",
+      repoName: "fork-open-agents",
+      instructions: "Review new pull requests.",
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          writeScopeMode: "all_repos",
+        },
+      },
+      triggers: [
+        {
+          name: "Pull request",
+          kind: "github.pull_request",
+          conditions: { actions: ["opened"] },
+        },
+      ],
+    });
+
+    expect(parsed.permissions.github?.writeScopeMode).toBe("all_repos");
   });
 });

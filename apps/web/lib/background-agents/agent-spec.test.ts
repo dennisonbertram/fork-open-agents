@@ -66,6 +66,8 @@ describe("buildAgentPayload", () => {
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
       builtinToolNames: null,
+      writeScopeMode: "this_repo",
+      writeScopeRepos: [],
       ...overrides,
     };
   }
@@ -180,6 +182,35 @@ describe("buildAgentPayload", () => {
 
     expect(payload.builtinToolNames).toEqual(["read", "bash", "web_fetch"]);
   });
+
+  test("BT-A3-05: buildAgentPayload emits writeScopeMode/writeScopeRepos from the form when outputMode is ready_pr", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        writeScopeMode: "repo_list",
+        writeScopeRepos: ["acme/widgets", "acme/other"],
+      }),
+    );
+
+    expect(payload.permissions.github.writeScopeMode).toBe("repo_list");
+    expect(payload.permissions.github.writeScopeRepos).toEqual([
+      "acme/widgets",
+      "acme/other",
+    ]);
+  });
+
+  test("BT-A3-06: buildAgentPayload forces writeScopeMode to this_repo and writeScopeRepos to [] for every non-ready_pr outputMode, regardless of form input", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        writeScopeMode: "all_repos",
+        writeScopeRepos: ["acme/widgets"],
+      }),
+    );
+
+    expect(payload.permissions.github.writeScopeMode).toBe("this_repo");
+    expect(payload.permissions.github.writeScopeRepos).toEqual([]);
+  });
 });
 
 describe("buildFormFromAgent", () => {
@@ -270,6 +301,8 @@ describe("isStepValid", () => {
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
       builtinToolNames: null,
+      writeScopeMode: "this_repo",
+      writeScopeRepos: [],
       ...overrides,
     };
   }
@@ -549,6 +582,8 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
       builtinToolNames: null,
+      writeScopeMode: "this_repo",
+      writeScopeRepos: [],
       ...overrides,
     };
   }
@@ -606,6 +641,8 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
       builtinToolNames: null,
+      writeScopeMode: "this_repo",
+      writeScopeRepos: [],
       ...overrides,
     };
   }
@@ -748,6 +785,8 @@ function makeFormForBuiltinToolNamesRegression(
     permissionPullRequests: "read",
     composioToolkitSlugs: [],
     builtinToolNames: null,
+    writeScopeMode: "this_repo",
+    writeScopeRepos: [],
     ...overrides,
   };
 }
