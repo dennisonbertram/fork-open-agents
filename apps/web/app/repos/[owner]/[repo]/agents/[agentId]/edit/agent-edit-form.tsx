@@ -140,6 +140,7 @@ export function AgentEditForm({
         initialPermissionContents={form.permissionContents}
         initialPermissionPullRequests={form.permissionPullRequests}
         initialComposioToolkitSlugs={form.composioToolkitSlugs}
+        initialBuiltinToolNames={form.builtinToolNames}
         createdAgentId={agent.id}
         testRunId={testRunId}
         onSave={handleSave}

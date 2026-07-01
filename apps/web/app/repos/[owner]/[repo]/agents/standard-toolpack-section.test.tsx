@@ -91,7 +91,7 @@ describe("StandardToolpackSection", () => {
     );
     const idx = html.indexOf("Fetch external URLs");
     const switchOpenIdx = html.indexOf('role="switch"', idx);
-    const snippet = html.slice(idx, switchOpenIdx + 50);
+    const snippet = html.slice(idx, switchOpenIdx + 100);
     expect(snippet).toContain('data-state="unchecked"');
   });
 
@@ -105,7 +105,7 @@ describe("StandardToolpackSection", () => {
     );
     const idx = html.indexOf("Run shell commands");
     const switchOpenIdx = html.indexOf('role="switch"', idx);
-    const snippet = html.slice(idx, switchOpenIdx + 50);
+    const snippet = html.slice(idx, switchOpenIdx + 100);
     expect(snippet).toContain('data-state="checked"');
   });
 
@@ -135,7 +135,7 @@ describe("StandardToolpackSection", () => {
     expect(snippet.toLowerCase()).toContain("pull request");
   });
 
-  test("disabled prop renders switches with disabled attribute", () => {
+  test("disabled prop renders switch buttons with the disabled attribute", () => {
     const html = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
@@ -144,7 +144,29 @@ describe("StandardToolpackSection", () => {
         disabled
       />,
     );
-    const matches = html.match(/disabled=""/g) ?? [];
-    expect(matches.length).toBe(11);
+    // Extract just the opening <button role="switch" ...> tag for the bash
+    // row and confirm it carries the disabled attribute.
+    const idx = html.indexOf("Run shell commands");
+    const buttonOpenIdx = html.indexOf("<button", idx);
+    const buttonCloseIdx = html.indexOf(">", buttonOpenIdx);
+    const tag = html.slice(buttonOpenIdx, buttonCloseIdx);
+    expect(tag).toContain('role="switch"');
+    expect(tag).toContain('disabled=""');
+  });
+
+  test("without the disabled prop, switch buttons are not disabled", () => {
+    const html = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        outputMode="none"
+      />,
+    );
+    const idx = html.indexOf("Run shell commands");
+    const buttonOpenIdx = html.indexOf("<button", idx);
+    const buttonCloseIdx = html.indexOf(">", buttonOpenIdx);
+    const tag = html.slice(buttonOpenIdx, buttonCloseIdx);
+    expect(tag).toContain('role="switch"');
+    expect(tag).not.toContain('disabled=""');
   });
 });

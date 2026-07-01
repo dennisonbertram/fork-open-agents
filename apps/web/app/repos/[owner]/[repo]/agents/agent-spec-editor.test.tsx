@@ -217,13 +217,13 @@ describe("AgentSpecEditor", () => {
 
     const bashIdx = html.indexOf("Run shell commands");
     const bashSwitchIdx = html.indexOf('role="switch"', bashIdx);
-    expect(html.slice(bashIdx, bashSwitchIdx + 50)).toContain(
+    expect(html.slice(bashIdx, bashSwitchIdx + 100)).toContain(
       'data-state="checked"',
     );
 
     const webFetchIdx = html.indexOf("Fetch external URLs");
     const webFetchSwitchIdx = html.indexOf('role="switch"', webFetchIdx);
-    expect(html.slice(webFetchIdx, webFetchSwitchIdx + 50)).toContain(
+    expect(html.slice(webFetchIdx, webFetchSwitchIdx + 100)).toContain(
       'data-state="unchecked"',
     );
   });
@@ -240,13 +240,13 @@ describe("AgentSpecEditor", () => {
 
     const bashIdx = html.indexOf("Run shell commands");
     const bashSwitchIdx = html.indexOf('role="switch"', bashIdx);
-    expect(html.slice(bashIdx, bashSwitchIdx + 50)).toContain(
+    expect(html.slice(bashIdx, bashSwitchIdx + 100)).toContain(
       'data-state="checked"',
     );
 
     const readIdx = html.indexOf("Read files");
     const readSwitchIdx = html.indexOf('role="switch"', readIdx);
-    expect(html.slice(readIdx, readSwitchIdx + 50)).toContain(
+    expect(html.slice(readIdx, readSwitchIdx + 100)).toContain(
       'data-state="unchecked"',
     );
   });

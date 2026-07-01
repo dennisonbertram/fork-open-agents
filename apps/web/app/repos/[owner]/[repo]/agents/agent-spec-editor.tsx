@@ -24,11 +24,13 @@ import {
   type OutputMode,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
+import { DEFAULT_ON_TOOL_NAMES } from "@/lib/background-agents/builtin-toolpack";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePicker } from "./schedule-picker";
 import { EventTriggerConditions } from "./event-trigger-conditions";
 import { RunTestConsole } from "./run-test-console";
 import { ComposioOtherToolsSection } from "./composio-other-tools-section";
+import { StandardToolpackSection } from "./standard-toolpack-section";
 
 type AgentSpecEditorProps = {
   /** "create" (default) shows creation-oriented copy; "edit" shows update-oriented copy. */
@@ -52,6 +54,11 @@ type AgentSpecEditorProps = {
   initialPermissionPullRequests?: GitHubAccessLevel;
   /** Composio toolkit slugs to pre-select. Defaults to none. */
   initialComposioToolkitSlugs?: string[];
+  /**
+   * Built-in tool allowlist ("Standard toolpack"). null/undefined means "use
+   * the default preset" (all built-ins except web_fetch).
+   */
+  initialBuiltinToolNames?: string[] | null;
   /** The ID of the agent once saved — enables the Run a test button. Defaults to null (disabled). */
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
@@ -94,6 +101,7 @@ export function AgentSpecEditor({
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
   initialComposioToolkitSlugs = [],
+  initialBuiltinToolNames = null,
   createdAgentId = null,
   testRunId = null,
   onSave,
@@ -145,6 +153,9 @@ export function AgentSpecEditor({
   const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
     initialComposioToolkitSlugs,
   );
+  const [enabledBuiltins, setEnabledBuiltins] = useState<string[]>(
+    initialBuiltinToolNames ?? [...DEFAULT_ON_TOOL_NAMES],
+  );
 
   const isScheduleValid = useMemo(() => {
     if (triggerKind !== "schedule.cron") return true;
@@ -178,6 +189,7 @@ export function AgentSpecEditor({
       permissionContents,
       permissionPullRequests,
       composioToolkitSlugs,
+      builtinToolNames: enabledBuiltins,
     };
     return buildAgentPayload(form);
   }
@@ -379,6 +391,12 @@ export function AgentSpecEditor({
         description="The apps and abilities this agent can use."
       >
         <div className="space-y-4">
+          <StandardToolpackSection
+            enabledToolNames={enabledBuiltins}
+            onChange={setEnabledBuiltins}
+            disabled={saving}
+            outputMode={outputMode}
+          />
           <ComposioOtherToolsSection
             selectedSlugs={composioToolkitSlugs}
             onChange={setComposioToolkitSlugs}
