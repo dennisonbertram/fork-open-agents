@@ -657,4 +657,30 @@ describe("executeBackgroundAgentRun", () => {
     };
     expect(call?.options?.allowedBuiltinToolNames).toBeNull();
   });
+
+  test("records a workflow_failed failure (not a silent success) when the mutation agent throws for a Report-only run", async () => {
+    // currentAgent/currentRun use defaults from beforeEach: outputMode "none".
+    generate.mockImplementationOnce(() => {
+      throw new Error("model provider unavailable");
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "workflow_failed",
+      summary: "model provider unavailable",
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "workflow_failed",
+    });
+    // No fall-through to the deterministic no-model success path.
+    expect(recordedEvent("background-agent.run.completed")).toBeUndefined();
+  });
 });
