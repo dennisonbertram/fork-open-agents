@@ -835,6 +835,26 @@ export async function advanceTriggerScheduleState(params: {
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
 }
 
+/**
+ * Seeds nextRunAt for a legacy schedule trigger row created before #750
+ * (nextRunAt was never set at creation back then). Unlike
+ * advanceTriggerScheduleState this does NOT touch lastRunAt/lastSkipReason —
+ * the trigger has not fired; it is only being given a real due time so the
+ * due-window dispatch can reach it.
+ */
+export async function seedTriggerNextRunAt(params: {
+  triggerId: string;
+  nextRunAt: Date | null;
+}): Promise<void> {
+  await db
+    .update(backgroundAgentTriggers)
+    .set({
+      nextRunAt: params.nextRunAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
 export async function recordTriggerSkipReason(params: {
   triggerId: string;
   skipReason: string;

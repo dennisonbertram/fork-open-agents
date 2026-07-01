@@ -8,6 +8,7 @@ import {
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
   listStaleBackgroundAgentRuns,
+  seedTriggerNextRunAt,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
   recordTriggerSkipReason,
@@ -596,9 +597,23 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     if (!validateSchedule(row.trigger.schedule).valid) {
       await recordTriggerSkipReason({
         triggerId: row.trigger.id,
-        skipReason: "schedule did not match current time",
+        skipReason: "invalid schedule expression",
       });
       continue;
+    }
+
+    // Legacy rows created before #750 have nextRunAt null and would only
+    // ever fire on an exact-minute coincidence with the */5 platform tick —
+    // off-grid schedules (e.g. '7 * * * *') would never fire at all. Seed
+    // the persisted nextRunAt once so the due-window path below reaches
+    // them on the first sweep after their next matching minute.
+    if (row.trigger.nextRunAt == null) {
+      const seeded = computeNextRuns(row.trigger.schedule, now, 1)[0] ?? null;
+      await seedTriggerNextRunAt({
+        triggerId: row.trigger.id,
+        nextRunAt: seeded,
+      });
+      row.trigger.nextRunAt = seeded;
     }
 
     const dueAt = getDueScheduleTime(row.trigger, now);
