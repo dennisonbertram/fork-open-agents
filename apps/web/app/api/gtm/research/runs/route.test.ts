@@ -108,6 +108,7 @@ describe("POST /api/gtm/research/runs", () => {
       claims: [
         {
           text: "Acme has a pain around approval-safe agents",
+          privateFact: false,
           evidenceRefs: [{ sourceType: "manual", recordId: "note-1" }],
         },
       ],
@@ -135,5 +136,21 @@ describe("POST /api/gtm/research/runs", () => {
 
     expect(response.status).toBe(403);
     expect(body.errorKind).toBe("cross_user_reference");
+  });
+
+  test("rejects malformed claim objects with a typed 400", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/gtm/research/runs", {
+        method: "POST",
+        body: JSON.stringify({ claims: [{ text: 123 }] }),
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("invalid_research_input");
+    expect(createGtmResearchRun).not.toHaveBeenCalled();
   });
 });

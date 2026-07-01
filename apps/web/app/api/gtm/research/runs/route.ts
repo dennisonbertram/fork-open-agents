@@ -1,9 +1,47 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { createGtmResearchRun } from "@/lib/gtm-research/store";
-import { GtmResearchError } from "@/lib/gtm-research/types";
+import {
+  type GtmResearchClaimInput,
+  GtmResearchError,
+} from "@/lib/gtm-research/types";
+import type { GtmEvidenceRef } from "@/lib/gtm/types";
 
 function requestIdFromHeaders(req: Request): string {
   return req.headers.get("x-request-id") ?? crypto.randomUUID();
+}
+
+function parseEvidenceRefs(value: unknown): GtmEvidenceRef[] {
+  return Array.isArray(value)
+    ? (value.filter(
+        (item): item is GtmEvidenceRef =>
+          Boolean(item) && typeof item === "object",
+      ) as GtmEvidenceRef[])
+    : [];
+}
+
+function parseClaims(value: unknown): GtmResearchClaimInput[] | null {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const claims: GtmResearchClaimInput[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") {
+      return null;
+    }
+    const claim = item as Record<string, unknown>;
+    if (typeof claim.text !== "string") {
+      return null;
+    }
+    claims.push({
+      text: claim.text,
+      privateFact:
+        typeof claim.privateFact === "boolean" ? claim.privateFact : false,
+      evidenceRefs: parseEvidenceRefs(claim.evidenceRefs),
+    });
+  }
+
+  return claims;
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -25,6 +63,17 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  const claims = parseClaims(body.claims);
+  if (!claims) {
+    return Response.json(
+      {
+        error: "Research claims must include string text fields.",
+        errorKind: "invalid_research_input",
+      },
+      { status: 400 },
+    );
+  }
+
   try {
     const result = await createGtmResearchRun({
       userId: authResult.userId,
@@ -35,7 +84,7 @@ export async function POST(req: Request): Promise<Response> {
         typeof body.accountName === "string" ? body.accountName : null,
       contactName:
         typeof body.contactName === "string" ? body.contactName : null,
-      claims: Array.isArray(body.claims) ? body.claims : [],
+      claims,
       openQuestions: Array.isArray(body.openQuestions)
         ? body.openQuestions.filter(
             (item): item is string => typeof item === "string",

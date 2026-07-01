@@ -67,6 +67,34 @@ describe("GTM research brief", () => {
     ]);
   });
 
+  test("does not count malformed evidence refs as citations", () => {
+    const brief = buildAccountBriefDraft({
+      claims: [
+        {
+          text: "Acme wants a product-led rollout",
+          evidenceRefs: [{} as never],
+        },
+        {
+          text: "Acme uses GitHub",
+          evidenceRefs: [{ sourceType: "github", recordId: "repo-1" }],
+        },
+      ],
+    });
+
+    expect(brief.citedFacts).toEqual([
+      expect.objectContaining({
+        text: "Acme uses GitHub",
+        evidenceRefs: [{ sourceType: "github", recordId: "repo-1" }],
+      }),
+    ]);
+    expect(brief.unknownClaims).toEqual([
+      {
+        text: "Acme wants a product-led rollout",
+        reason: "missing_required_citation",
+      },
+    ]);
+  });
+
   test("redacts secret-looking research text", () => {
     const brief = buildAccountBriefDraft({
       claims: [

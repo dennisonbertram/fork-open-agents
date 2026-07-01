@@ -1,4 +1,5 @@
 import { redactGtmText } from "@/lib/gtm/redaction";
+import type { GtmEvidenceRef } from "@/lib/gtm/types";
 import type {
   AccountBriefDraft,
   GtmCitedClaim,
@@ -23,12 +24,47 @@ function sanitizeList(
   return redacted;
 }
 
+const VALID_EVIDENCE_SOURCE_TYPES = new Set<GtmEvidenceRef["sourceType"]>([
+  "manual",
+  "crm",
+  "public_url",
+  "product",
+  "github",
+  "call",
+]);
+
+function isValidEvidenceRef(value: unknown): value is GtmEvidenceRef {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const ref = value as Partial<GtmEvidenceRef>;
+  if (
+    typeof ref.sourceType !== "string" ||
+    !VALID_EVIDENCE_SOURCE_TYPES.has(
+      ref.sourceType as GtmEvidenceRef["sourceType"],
+    )
+  ) {
+    return false;
+  }
+
+  return Boolean(
+    (typeof ref.url === "string" && ref.url.trim()) ||
+    (typeof ref.recordId === "string" && ref.recordId.trim()) ||
+    (typeof ref.excerpt === "string" && ref.excerpt.trim()),
+  );
+}
+
+function validEvidenceRefs(claim: GtmResearchClaimInput): GtmEvidenceRef[] {
+  return (claim.evidenceRefs ?? []).filter(isValidEvidenceRef);
+}
+
 function hasCitation(claim: GtmResearchClaimInput): boolean {
-  return (claim.evidenceRefs ?? []).length > 0;
+  return validEvidenceRefs(claim).length > 0;
 }
 
 function allowsPrivateFact(claim: GtmResearchClaimInput): boolean {
-  return (claim.evidenceRefs ?? []).some((ref) =>
+  return validEvidenceRefs(claim).some((ref) =>
     ["crm", "manual", "call"].includes(ref.sourceType),
   );
 }
@@ -83,6 +119,7 @@ export function buildAccountBriefDraft(
     if (!text) {
       continue;
     }
+    const evidenceRefs = validEvidenceRefs(claim);
 
     if (!hasCitation(claim)) {
       unknownClaims.push({ text, reason: "missing_required_citation" });
@@ -96,7 +133,7 @@ export function buildAccountBriefDraft(
 
     citedFacts.push({
       text,
-      evidenceRefs: claim.evidenceRefs ?? [],
+      evidenceRefs,
     });
   }
 
