@@ -260,9 +260,22 @@ async function runGitHubAction(params: RunActionParams): Promise<ActionResult> {
         installationId: ctx.installationId,
         repositoryId: ctx.repositoryId,
         permissions,
-        operation,
+        // Wrap operation-phase errors so the outer catch can tell them apart
+        // from mint-phase failures: a throw AFTER a successful mint is a
+        // GitHub API/network failure and must be audited as github_api_error,
+        // never token_mint_failed (the mint demonstrably succeeded).
+        operation: async (octokit) => {
+          try {
+            return await operation(octokit);
+          } catch (error) {
+            throw markOperationPhaseError(error);
+          }
+        },
       });
     } catch (error) {
+      if (error instanceof Error && operationPhaseErrors.has(error)) {
+        throw error;
+      }
       throw new TokenMintError(
         error instanceof Error ? error.message : "Failed to mint token",
       );
@@ -340,6 +353,20 @@ class TokenMintError extends Error {
   }
 }
 
+/**
+ * Marks errors thrown by the operation callback (after a successful token
+ * mint) so withOctokit's catch can tell them apart from mint-phase failures.
+ * WeakSet-based so no extra error class or property mutation is needed.
+ */
+const operationPhaseErrors = new WeakSet<Error>();
+
+function markOperationPhaseError(error: unknown): Error {
+  const normalized =
+    error instanceof Error ? error : new Error("GitHub API error");
+  operationPhaseErrors.add(normalized);
+  return normalized;
+}
+
 async function failAction(params: {
   ctx: GitHubActionToolsContext;
   action: GitHubActionName;
@@ -386,8 +413,9 @@ const openPullRequestInputSchema = z.object({
   baseBranch: z
     .string()
     .optional()
-    .default("main")
-    .describe("Base branch to merge into. Defaults to 'main'."),
+    .describe(
+      "Base branch to merge into. Defaults to the repository's default branch.",
+    ),
   isDraft: z.boolean().optional().describe("Open as a draft PR."),
 });
 
@@ -409,7 +437,7 @@ function buildOpenPullRequestTool(ctx: GitHubActionToolsContext) {
               headRef: input.headRef,
               title: input.title,
               body: input.body,
-              baseBranch: input.baseBranch ?? "main",
+              baseBranch: input.baseBranch ?? ctx.defaultBranch,
               isDraft: input.isDraft,
               // biome-ignore lint: octokit is typed as unknown at this boundary
               octokit: octokit as never,
@@ -486,9 +514,22 @@ function buildCommentTool(ctx: GitHubActionToolsContext) {
 
 // ── github_approve_pull_request / github_request_changes ──────────────────
 
-const reviewInputSchema = z.object({
+// GitHub rejects REQUEST_CHANGES reviews without a body (422), so the
+// request-changes variant requires a non-empty body at the schema level —
+// guiding the model up front instead of failing after token mint + audit.
+const approveInputSchema = z.object({
   prNumber: z.number().int().positive().describe("Pull request number."),
   body: z.string().optional().describe("Review comment body."),
+});
+
+const requestChangesInputSchema = z.object({
+  prNumber: z.number().int().positive().describe("Pull request number."),
+  body: z
+    .string()
+    .min(1)
+    .describe(
+      "Review comment body explaining the requested changes (required by GitHub).",
+    ),
 });
 
 function buildReviewTool(
@@ -504,7 +545,8 @@ function buildReviewTool(
 
   return tool({
     description,
-    inputSchema: reviewInputSchema,
+    inputSchema:
+      event === "APPROVE" ? approveInputSchema : requestChangesInputSchema,
     execute: async (input): Promise<ActionResult> =>
       runGitHubAction({
         ctx,
