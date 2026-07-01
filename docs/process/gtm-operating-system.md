@@ -42,6 +42,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `GET /api/gtm/activation/signals` returns the private activation signal queue.
 - `POST /api/gtm/activation/signals` runs the activation watcher on supplied
   source snapshots and creates draft signals plus pending issue approvals.
+- `/gtm/activation` renders the private activation queue with stuck-user
+  signals, suggested interventions, evidence counts, draft issue previews, and
+  approval-gated filing state.
 - `GET /api/gtm/weekly-review` returns active, approved GTM learnings for
   future GTM agent context.
 - `POST /api/gtm/weekly-review` reviews completed experiments in a supplied
