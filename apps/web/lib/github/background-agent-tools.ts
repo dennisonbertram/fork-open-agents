@@ -16,8 +16,15 @@ import { buildBackgroundBranchName } from "@/lib/background-agents/ready-pr";
 import type { BackgroundAgentTriggerKind } from "@/lib/background-agents/types";
 import {
   type GitHubInstallationTokenPermissions,
+  mintInstallationToken,
+  revokeInstallationToken,
   withScopedInstallationOctokit,
 } from "@/lib/github/app";
+import {
+  getMergeReadiness,
+  type MergeReadiness,
+  mergePullRequest,
+} from "@/lib/github/pulls";
 
 const DEFAULT_OPEN_PR_CHECK_TIMEOUT_MS = 120_000;
 
@@ -45,6 +52,7 @@ const DEFAULT_OPEN_PR_CHECK_TIMEOUT_MS = 120_000;
  */
 export type GitHubActionErrorKind =
   | "merge_blocked_ci_not_green"
+  | "merge_conflict"
   | "check_command_failed"
   | "not_fast_forward"
   | "pr_not_found"
@@ -481,6 +489,164 @@ Note: GitHub does not allow an App installation to review its own pull requests 
   });
 }
 
+// ── merge_pull_request action (STEP-7) ───────────────────────────────────────
+
+const mergeInputSchema = z.object({
+  prNumber: z
+    .number()
+    .int()
+    .positive()
+    .describe("The pull request number to merge."),
+  mergeMethod: z
+    .enum(["merge", "squash", "rebase"])
+    .optional()
+    .describe("Merge strategy. Defaults to squash."),
+  commitTitle: z
+    .string()
+    .optional()
+    .describe("Optional merge commit title override."),
+  commitMessage: z
+    .string()
+    .optional()
+    .describe("Optional merge commit message override."),
+});
+
+type MergeToolFailure = GitHubActionErrorResult & {
+  checks?: MergeReadiness["checks"];
+};
+
+type MergePullRequestOutput = { ok: true; sha: string } | MergeToolFailure;
+
+/**
+ * Merges a pull request. Unlike every other action tool in this module, this
+ * does NOT go through withPerCallInstallationOctokit — it manually mints a
+ * SINGLE installation token that spans both the CI-readiness check and the
+ * merge call itself, so only one token is minted (and revoked) per merge,
+ * not two. The require-CI-green gate is enforced INSIDE this execute(): when
+ * ctx.requireCiGreenToMerge is true, getMergeReadiness (pulls.ts, the
+ * existing combined-status + check-runs + mergeable_state computation) is
+ * consulted first and the merge is refused outright if it reports
+ * `canMerge:false` — this never relies on the model to self-police. When the
+ * gate is off, getMergeReadiness is never called and the merge proceeds
+ * regardless of check state.
+ */
+function buildMergeTool(ctx: BackgroundAgentGitHubToolContext) {
+  return tool({
+    description: `Merge a pull request in ${ctx.repoOwner}/${ctx.repoName}. ${
+      ctx.requireCiGreenToMerge
+        ? "Required CI checks must be green before this call succeeds; the merge is blocked otherwise."
+        : "CI checks are NOT required by this agent's configuration; the merge proceeds regardless of check state."
+    }
+This tool acts as the GitHub App via a single per-call installation token scoped to pull_requests:write and contents:write, bounded to the agent's write scope.`,
+    inputSchema: mergeInputSchema,
+    execute: async ({
+      prNumber,
+      mergeMethod,
+      commitTitle,
+      commitMessage,
+    }): Promise<MergePullRequestOutput> => {
+      let scoped: Awaited<ReturnType<typeof mintInstallationToken>>;
+      try {
+        scoped = await mintInstallationToken({
+          installationId: ctx.installationId,
+          repositoryIds: ctx.repositoryIds,
+          permissions: { pull_requests: "write", contents: "write" },
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, "merge_pull_request", "failed", {
+          prNumber,
+          mergeMethod: mergeMethod ?? null,
+          requireCiGreenToMerge: ctx.requireCiGreenToMerge,
+          error: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      }
+
+      try {
+        const repoUrl = `https://github.com/${ctx.repoOwner}/${ctx.repoName}`;
+        let ciChecksSummary: MergeReadiness["checks"] | null = null;
+
+        if (ctx.requireCiGreenToMerge) {
+          const readiness = await getMergeReadiness({
+            repoUrl,
+            prNumber,
+            token: scoped.token,
+          });
+          ciChecksSummary = readiness.checks;
+
+          if (!readiness.canMerge) {
+            const reason =
+              readiness.reasons.join("; ") ||
+              "Pull request is not ready to merge.";
+            await recordActionEvent(ctx, "merge_pull_request", "blocked", {
+              prNumber,
+              mergeMethod: mergeMethod ?? null,
+              requireCiGreenToMerge: ctx.requireCiGreenToMerge,
+              ciChecksSummary,
+              mergedSha: null,
+              reason,
+            });
+            return {
+              ok: false,
+              errorKind: "merge_blocked_ci_not_green",
+              error: reason,
+              checks: readiness.checks,
+            };
+          }
+        }
+
+        const merged = await mergePullRequest({
+          repoUrl,
+          prNumber,
+          mergeMethod,
+          commitTitle,
+          commitMessage,
+          token: scoped.token,
+        });
+
+        if (!(merged.success && merged.sha)) {
+          const errorKind: GitHubActionErrorKind =
+            merged.statusCode === 409 ? "merge_conflict" : "access_error";
+          const message = merged.error ?? "Failed to merge pull request.";
+          await recordActionEvent(ctx, "merge_pull_request", "failed", {
+            prNumber,
+            mergeMethod: mergeMethod ?? null,
+            requireCiGreenToMerge: ctx.requireCiGreenToMerge,
+            ciChecksSummary,
+            mergedSha: null,
+            error: message,
+          });
+          return buildGitHubActionError(errorKind, message);
+        }
+
+        await recordActionEvent(ctx, "merge_pull_request", "succeeded", {
+          prNumber,
+          mergeMethod: mergeMethod ?? null,
+          requireCiGreenToMerge: ctx.requireCiGreenToMerge,
+          ciChecksSummary,
+          mergedSha: merged.sha,
+        });
+
+        return { ok: true, sha: merged.sha };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, "merge_pull_request", "failed", {
+          prNumber,
+          mergeMethod: mergeMethod ?? null,
+          requireCiGreenToMerge: ctx.requireCiGreenToMerge,
+          error: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      } finally {
+        await revokeInstallationToken(scoped.token);
+      }
+    },
+  });
+}
+
 // ── Resolver ───────────────────────────────────────────────────────────────────
 
 /**
@@ -517,8 +683,10 @@ export function resolveGitHubActionToolsForBackgroundAgent(
           "REQUEST_CHANGES",
         );
         break;
-      // Remaining tool builders are added incrementally in STEP-7/8:
-      //   "merge_pull_request"     -> github_merge_pull_request (STEP-7)
+      case "merge_pull_request":
+        tools.github_merge_pull_request = buildMergeTool(ctx);
+        break;
+      // Remaining tool builders are added incrementally in STEP-8:
       //   "push"                   -> github_push (STEP-8)
       //   "delete_branch"          -> github_delete_branch (STEP-8)
       default:

@@ -136,6 +136,10 @@ const getMergeReadiness = mock(
   }),
 );
 
+type FakeMergePullRequestResult =
+  | { success: true; sha: string }
+  | { success: false; error: string; statusCode?: number };
+
 const mergePullRequest = mock(
   async (_params: {
     repoUrl: string;
@@ -144,7 +148,7 @@ const mergePullRequest = mock(
     commitTitle?: string;
     commitMessage?: string;
     token?: string;
-  }) => ({
+  }): Promise<FakeMergePullRequestResult> => ({
     success: true,
     sha: "merged-sha-1",
   }),
