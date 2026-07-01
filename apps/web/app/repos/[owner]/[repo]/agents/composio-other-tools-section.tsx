@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
+import { ComposioConnectPopover } from "./composio-connect-popover";
 
 export interface ComposioOtherToolsSectionProps {
   /** Currently selected toolkit slugs. */
@@ -63,6 +64,9 @@ export function ComposioOtherToolsSection({
         repoName={repoName}
         connectHint="Settings → Background agents"
       />
+      <div>
+        <ComposioConnectPopover disabled={disabled} />
+      </div>
     </div>
   );
 }

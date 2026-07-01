@@ -175,14 +175,19 @@ describe("ComposioConnectPopover", () => {
   test("REGRESSION: trigger reflects disabled=true", async () => {
     const { ComposioConnectPopover } = await modulePromise;
     const html = renderToStaticMarkup(<ComposioConnectPopover disabled />);
-    expect(html).toContain("disabled");
+    expect(html).toContain("<button");
+    // React renders a boolean `disabled` prop as the bare attribute
+    // `disabled=""` — check that exact HTML attribute, not just the
+    // substring "disabled" (which also appears inside Tailwind's
+    // `disabled:pointer-events-none` variant classes on every render).
+    expect(html).toContain('disabled=""');
   });
 
   test("REGRESSION: trigger is not disabled by default", async () => {
     const { ComposioConnectPopover } = await modulePromise;
     const html = renderToStaticMarkup(<ComposioConnectPopover />);
-    // Radix omits the `disabled` attribute entirely rather than rendering
-    // disabled="false" — assert it never leaks in accidentally.
-    expect(html).not.toContain("disabled");
+    // The trigger button itself must not carry the `disabled` attribute when
+    // disabled=false — guards against it leaking in regardless of the prop.
+    expect(html).not.toContain('disabled=""');
   });
 });
