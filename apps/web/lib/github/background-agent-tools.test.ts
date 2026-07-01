@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import type { Sandbox } from "@open-agents/sandbox";
+import type { ExecResult, Sandbox } from "@open-agents/sandbox";
 import type { BackgroundAgentGitHubEventInput } from "./background-agent-tools";
 
 mock.module("server-only", () => ({}));
@@ -62,6 +62,124 @@ mock.module("@/lib/github/app", () => ({
   },
 }));
 
+// ── open_pull_request (STEP-5) fixtures ─────────────────────────────────────
+//
+// Mirrors the low-level mocking pattern established in executor.test.ts:
+// performReadyPullRequest (ready-pr-runner.ts) is exercised for real, only
+// its underlying sandbox/GitHub calls are mocked — so these tests prove the
+// tool's real integration with the extracted commit+PR logic, not a mocked
+// stand-in for it.
+
+const successfulExec: ExecResult = {
+  success: true,
+  stdout: "ok",
+  stderr: "",
+  exitCode: 0,
+  truncated: false,
+};
+
+let sandboxCommandResults = new Map<string, ExecResult>();
+
+const sandboxExec = mock(async (command: string): Promise<ExecResult> => {
+  if (sandboxCommandResults.has(command)) {
+    return sandboxCommandResults.get(command) ?? successfulExec;
+  }
+  if (command.includes("git checkout")) {
+    return sandboxCommandResults.get("git checkout") ?? successfulExec;
+  }
+  return successfulExec;
+});
+
+const fakeReadyPrSandbox = {
+  workingDirectory: "/workspace/widgets",
+  exec: sandboxExec,
+} as unknown as Sandbox;
+
+const hasUncommittedChanges = mock(async () => true);
+const stageAll = mock(async () => undefined);
+const getStagedDiff = mock(async () => "diff --git a/README.md b/README.md");
+
+const buildCoAuthor = mock(async () => ({
+  name: "mona",
+  email: "1+mona@users.noreply.github.com",
+}));
+const createCommit = mock(async () => ({
+  ok: true,
+  commitSha: "commit-sha-1",
+}));
+const buildCommitIntentFromSandbox = mock(async () => ({
+  ok: true,
+  intent: {
+    owner: "acme",
+    repo: "my-repo",
+    repositoryId: 99,
+    installationId: 42,
+    branch: "background-agent/review-agent/run-1",
+    baseBranch: "main",
+    expectedHeadSha: "base-sha",
+    message: "chore: apply Review Agent background changes",
+    files: [{ path: "README.md", content: "Updated", mode: "100644" }],
+    coAuthor: { name: "mona", email: "1+mona@users.noreply.github.com" },
+  },
+}));
+const openPullRequest = mock(
+  async (_input: {
+    repoUrl: string;
+    branchName: string;
+    title: string;
+    body?: string;
+    baseBranch?: string;
+    token?: string;
+  }) => ({
+    success: true,
+    prUrl: "https://github.com/acme/my-repo/pull/7",
+    prNumber: 7,
+  }),
+);
+const getGitHubAppUserToken = mock(async () => "user-token");
+
+function resetReadyPrMocks() {
+  sandboxCommandResults = new Map<string, ExecResult>();
+  sandboxExec.mockClear();
+  hasUncommittedChanges.mockClear();
+  hasUncommittedChanges.mockImplementation(async () => true);
+  stageAll.mockClear();
+  getStagedDiff.mockClear();
+  buildCoAuthor.mockClear();
+  createCommit.mockClear();
+  buildCommitIntentFromSandbox.mockClear();
+  openPullRequest.mockClear();
+  openPullRequest.mockImplementation(async () => ({
+    success: true,
+    prUrl: "https://github.com/acme/my-repo/pull/7",
+    prNumber: 7,
+  }));
+  getGitHubAppUserToken.mockClear();
+}
+
+mock.module("@open-agents/sandbox", () => ({
+  hasUncommittedChanges,
+  stageAll,
+  getStagedDiff,
+}));
+
+mock.module("@/lib/github/commit", () => ({
+  buildCoAuthor,
+  createCommit,
+}));
+
+mock.module("@/lib/github/commit-intent", () => ({
+  buildCommitIntentFromSandbox,
+}));
+
+mock.module("@/lib/github/pulls", () => ({
+  openPullRequest,
+}));
+
+mock.module("@/lib/github/token", () => ({
+  getGitHubAppUserToken,
+}));
+
 const {
   resolveGitHubActionToolsForBackgroundAgent,
   withPerCallInstallationOctokit,
@@ -90,6 +208,7 @@ function getCommentToolExecute(
 function buildCtx(overrides: Partial<Ctx> = {}): Ctx {
   return {
     installationId: 42,
+    repositoryId: 99,
     repositoryIds: [99],
     repoOwner: "acme",
     repoName: "my-repo",
@@ -138,9 +257,14 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
       }),
     );
 
-    // Only comment_on_pr_or_issue is implemented as of STEP-4; the rest
-    // remain absent until their STEP-5..8 tool builders ship.
-    expect(Object.keys(tools)).toEqual(["github_comment_on_pr_or_issue"]);
+    // comment_on_pr_or_issue (STEP-4) and open_pull_request (STEP-5) are
+    // implemented; the rest remain absent until their STEP-6..8 tool
+    // builders ship. Order follows GITHUB_TOOL_ACTIONS, not enabledActions
+    // input order (the resolver iterates enabledActions directly).
+    expect(Object.keys(tools)).toEqual([
+      "github_open_pull_request",
+      "github_comment_on_pr_or_issue",
+    ]);
   });
 });
 
@@ -265,6 +389,140 @@ describe("github_comment_on_pr_or_issue tool", () => {
     // alongside issues:write) would needlessly broaden the minted token
     // beyond what commenting requires.
     expect(capturedMintArgs?.permissions).toEqual({ issues: "write" });
+  });
+});
+
+// AI SDK tool() results type execute() loosely for provider-option
+// inference; tests only need to call it directly, so narrow via `unknown`
+// (never `any`) to the concrete signature under test.
+type OpenPullRequestToolExecute = (
+  input: { title?: string; body?: string },
+  options: unknown,
+) => Promise<unknown>;
+
+function getOpenPullRequestToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): OpenPullRequestToolExecute {
+  const openPrTool = tools.github_open_pull_request as unknown as {
+    execute: OpenPullRequestToolExecute;
+  };
+  return openPrTool.execute;
+}
+
+describe("github_open_pull_request tool", () => {
+  test("is absent from the tool set when open_pull_request is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_open_pull_request).toBeUndefined();
+  });
+
+  test("checkCommand gate: returns check_command_failed and never opens a PR when the check command fails", async () => {
+    resetReadyPrMocks();
+    sandboxCommandResults.set("exit 1", {
+      success: false,
+      stdout: "",
+      stderr: "tests failed",
+      exitCode: 1,
+      truncated: false,
+    });
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      checkCommand: "exit 1",
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    const result = await execute({}, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "check_command_failed",
+      error: expect.stringContaining("exit 1"),
+    });
+    // The gate must short-circuit BEFORE any commit/PR work — proves the
+    // checkCommand enforcement lives inside the tool's execute(), not just
+    // as a prompt instruction.
+    expect(hasUncommittedChanges).not.toHaveBeenCalled();
+    expect(openPullRequest).not.toHaveBeenCalled();
+  });
+
+  test("happy path: commits staged changes and opens a pull request when the check command passes", async () => {
+    resetReadyPrMocks();
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      checkCommand: "bun test",
+      sandbox: fakeReadyPrSandbox,
+      repositoryId: 99,
+      repositoryIds: [99],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    const result = await execute({}, {});
+
+    expect(result).toEqual({
+      ok: true,
+      prUrl: "https://github.com/acme/my-repo/pull/7",
+      prNumber: 7,
+    });
+    expect(openPullRequest).toHaveBeenCalledTimes(1);
+    const prCall = openPullRequest.mock.calls[0]?.[0] as {
+      baseBranch?: string;
+      token?: string;
+    };
+    expect(prCall?.baseBranch).toBe("main");
+    expect(prCall?.token).toBe("user-token");
+  });
+
+  test("records a background-agent.github.open_pull_request event with rich attribution on success", async () => {
+    resetReadyPrMocks();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      sandbox: fakeReadyPrSandbox,
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    await execute({}, {});
+
+    const openPrEvent = recorded.find(
+      (event) => event.eventName === "background-agent.github.open_pull_request",
+    );
+    expect(openPrEvent).toBeDefined();
+    expect(openPrEvent?.status).toBe("succeeded");
+    expect(openPrEvent?.payload?.severity).toBe("low");
+    expect(openPrEvent?.payload?.prNumber).toBe(7);
+  });
+
+  test("returns no_changes when the sandbox has no uncommitted changes, without calling openPullRequest", async () => {
+    resetReadyPrMocks();
+    hasUncommittedChanges.mockImplementation(async () => false);
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    const result = await execute({}, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "no_changes",
+      error: "Background agent completed without file changes.",
+    });
+    expect(openPullRequest).not.toHaveBeenCalled();
   });
 });
 
