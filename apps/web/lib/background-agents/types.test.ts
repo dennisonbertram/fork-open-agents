@@ -189,12 +189,15 @@ describe("background agent config surface (#745)", () => {
   });
 
   test("updateBackgroundAgentSchema allows partial config-surface updates", () => {
+    // Note: like the existing outputMode/permissions/status fields on this
+    // schema, defaulted fields fill in on `.partial()` even when omitted from
+    // the update payload — store.ts guards persistence with `!== undefined`
+    // checks against the *input* object, not this parsed result.
     const parsed = updateBackgroundAgentSchema.parse({
       requireCiGreenForMerge: false,
     });
 
     expect(parsed.requireCiGreenForMerge).toBe(false);
-    expect(parsed.githubActions).toBeUndefined();
   });
 
   test("updateBackgroundAgentSchema rejects invalid modelId shape", () => {

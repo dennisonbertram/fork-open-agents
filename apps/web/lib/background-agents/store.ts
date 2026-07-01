@@ -92,6 +92,10 @@ export async function createBackgroundAgent(
         outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
         composioToolkitSlugs: input.composioToolkitSlugs,
+        githubActions: input.githubActions,
+        writeScope: input.writeScope,
+        requireCiGreenForMerge: input.requireCiGreenForMerge,
+        modelId: input.modelId,
       })
       .returning();
 
@@ -163,6 +167,16 @@ export async function updateBackgroundAgent(
         ...(input.composioToolkitSlugs !== undefined
           ? { composioToolkitSlugs: input.composioToolkitSlugs }
           : {}),
+        ...(input.githubActions !== undefined
+          ? { githubActions: input.githubActions }
+          : {}),
+        ...(input.writeScope !== undefined
+          ? { writeScope: input.writeScope }
+          : {}),
+        ...(input.requireCiGreenForMerge !== undefined
+          ? { requireCiGreenForMerge: input.requireCiGreenForMerge }
+          : {}),
+        ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
         updatedAt: new Date(),
       })
       .where(

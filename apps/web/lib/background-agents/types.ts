@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { USER_INFERENCE_OPTION_PREFIX } from "@/lib/inference/model-option-id";
 import { validateSchedule } from "./schedule-presets";
 
 export const backgroundAgentTriggerKinds = [
@@ -93,6 +94,74 @@ export const permissionsSchema = z
   })
   .strict();
 
+/**
+ * Per-action GitHub automation toggles (#745). Replaces `outputMode` as the
+ * behavior driver; `outputMode` remains accepted (deprecated) until #C7.
+ */
+export const githubActionsSchema = z
+  .object({
+    open_pull_request: z.boolean().optional(),
+    comment_on_pr_or_issue: z.boolean().optional(),
+    approve_pull_request: z.boolean().optional(),
+    request_changes: z.boolean().optional(),
+    merge_pull_request: z.boolean().optional(),
+    push: z.boolean().optional(),
+    delete_branch: z.boolean().optional(),
+  })
+  .strict();
+
+export const defaultGithubActions = {
+  open_pull_request: true,
+  comment_on_pr_or_issue: true,
+} as const;
+
+/**
+ * Which repositories a background agent's write actions may target,
+ * independent of the trigger-binding repoOwner/repoName pair.
+ */
+export const writeScopeSchema = z
+  .object({
+    mode: z.enum(["this_repo", "all_repos", "specific_repos"]),
+    repos: z
+      .array(
+        z
+          .object({
+            owner: z.string().trim().min(1).max(120),
+            name: z.string().trim().min(1).max(120),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+  })
+  .strict();
+
+export const defaultWriteScope = { mode: "this_repo" } as const;
+
+const gatewayModelIdPattern = /^[a-z0-9._-]+\/[a-z0-9._:-]+$/i;
+
+/**
+ * modelId must be either a gateway `provider/model` id or a
+ * `user-profile:`-prefixed inference profile selection (see
+ * lib/inference/model-option-id.ts). Null/omitted means inherit the
+ * default model.
+ */
+export const modelIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine(
+    (value) =>
+      value.startsWith(USER_INFERENCE_OPTION_PREFIX) ||
+      gatewayModelIdPattern.test(value),
+    {
+      message:
+        "modelId must be a gateway 'provider/model' id or a 'user-profile:'-prefixed selection.",
+    },
+  )
+  .nullable();
+
 export const createBackgroundAgentSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -102,9 +171,15 @@ export const createBackgroundAgentSchema = z
     repoName: z.string().trim().min(1).max(120),
     instructions: z.string().trim().min(1).max(8000),
     permissions: permissionsSchema.default({}),
+    // Deprecated: retained for backward compatibility until the column-drop
+    // ticket (#748/#C7). Prefer githubActions for new behavior.
     outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
     composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
+    githubActions: githubActionsSchema.default(defaultGithubActions),
+    writeScope: writeScopeSchema.default(defaultWriteScope),
+    requireCiGreenForMerge: z.boolean().default(true),
+    modelId: modelIdSchema.optional().default(null),
     triggers: z
       .array(
         z
