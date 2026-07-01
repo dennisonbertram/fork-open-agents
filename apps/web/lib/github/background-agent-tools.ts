@@ -552,7 +552,18 @@ This tool acts as the GitHub App via a single per-call installation token scoped
         scoped = await mintInstallationToken({
           installationId: ctx.installationId,
           repositoryIds: ctx.repositoryIds,
-          permissions: { pull_requests: "write", contents: "write" },
+          // checks:read/statuses:read let getMergeReadiness's
+          // checks.listForRef/getCombinedStatusForRef calls succeed instead
+          // of 403ing (and being silently swallowed) — without these, the
+          // CI-status-at-merge attribution in ciChecksSummary is always
+          // zeroed out even though the mergeable_state gate itself still
+          // works correctly off pulls.get.
+          permissions: {
+            pull_requests: "write",
+            contents: "write",
+            checks: "read",
+            statuses: "read",
+          },
         });
       } catch (error) {
         const message =
@@ -569,6 +580,13 @@ This tool acts as the GitHub App via a single per-call installation token scoped
       try {
         const repoUrl = `https://github.com/${ctx.repoOwner}/${ctx.repoName}`;
         let ciChecksSummary: MergeReadiness["checks"] | null = null;
+        // Pins the merge to the exact head sha observed by the readiness
+        // check (when one was performed), closing the TOCTOU window where a
+        // commit landing between the check and the merge call below would
+        // otherwise be merged un-vetted even with the CI-gate on. GitHub's
+        // API itself rejects the merge (409, surfaced as merge_conflict) if
+        // the branch has moved since.
+        let expectedHeadSha: string | undefined;
 
         if (ctx.requireCiGreenToMerge) {
           const readiness = await getMergeReadiness({
@@ -577,6 +595,7 @@ This tool acts as the GitHub App via a single per-call installation token scoped
             token: scoped.token,
           });
           ciChecksSummary = readiness.checks;
+          expectedHeadSha = readiness.pr?.headSha;
 
           if (!readiness.canMerge) {
             const reason =
@@ -606,6 +625,7 @@ This tool acts as the GitHub App via a single per-call installation token scoped
           commitTitle,
           commitMessage,
           token: scoped.token,
+          ...(expectedHeadSha ? { expectedHeadSha } : {}),
         });
 
         if (!(merged.success && merged.sha)) {

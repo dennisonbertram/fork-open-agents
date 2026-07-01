@@ -1151,7 +1151,14 @@ describe("github_merge_pull_request tool", () => {
     expect(capturedMergeMintArgs).toEqual({
       installationId: ctx.installationId,
       repositoryIds: [11, 22, 33],
-      permissions: { pull_requests: "write", contents: "write" },
+      // checks:read/statuses:read (SEC-740-nit) let the readiness check's
+      // check-run/status lookups succeed instead of silently 403ing.
+      permissions: {
+        pull_requests: "write",
+        contents: "write",
+        checks: "read",
+        statuses: "read",
+      },
     });
     expect(revokedTokens).toEqual(["merge-scoped-token"]);
   });
