@@ -163,10 +163,13 @@ describe("AgentSpecEditor", () => {
     );
 
     // Neither Result radio is disabled — there is no permission gate left.
-    const prLabelIdx = html.indexOf("Open a pull request");
-    expect(prLabelIdx).toBeGreaterThanOrEqual(0);
-    const radioIdx = html.lastIndexOf("<input", prLabelIdx);
-    const radioSnippet = html.slice(radioIdx, prLabelIdx);
+    // Anchor on the stable value="ready_pr" attribute, since "Open a pull
+    // request" also appears earlier in that input's aria-label.
+    const valueIdx = html.indexOf('value="ready_pr"');
+    expect(valueIdx).toBeGreaterThanOrEqual(0);
+    const radioOpenIdx = html.lastIndexOf("<input", valueIdx);
+    const radioCloseIdx = html.indexOf("/>", valueIdx);
+    const radioSnippet = html.slice(radioOpenIdx, radioCloseIdx);
     expect(radioSnippet).not.toContain('disabled=""');
 
     // The old gating helper text is gone.

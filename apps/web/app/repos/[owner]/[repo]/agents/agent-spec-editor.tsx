@@ -434,6 +434,9 @@ export function AgentSpecEditor({
                   checked={outputMode === m}
                   onChange={() => handleOutputModeChange(m)}
                   className="mt-0.5 shrink-0"
+                  aria-label={
+                    m === "ready_pr" ? "Open a pull request" : "Report only"
+                  }
                 />
                 <div>
                   <p className="text-sm font-medium">

@@ -554,3 +554,111 @@ describe("REG: describeOutputModePermissions — both modes produce distinct sum
     expect(noneDesc).not.toBe(prDesc);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression — GitHub write permission has exactly one source of truth
+// (Result / outputMode). Catches any future reintroduction of a second
+// control (e.g. a standalone GitHub Access-level toggle) that could grant or
+// withhold write independently of outputMode.
+// ---------------------------------------------------------------------------
+
+describe("REG: buildAgentPayload — outputMode is the ONLY input to github write permission", () => {
+  function makeForm(overrides: Partial<FormState> = {}): FormState {
+    return {
+      name: "Test Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Run smoke checks.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+      ...overrides,
+    };
+  }
+
+  test("REG-020: every combination of permissionContents/permissionPullRequests is ignored for a non-ready_pr outputMode", () => {
+    // If buildAgentPayload is ever changed to read these fields again (even
+    // partially — e.g. only for pullRequests), this exhaustive sweep across
+    // both fields x both values catches it, unlike a single-value test.
+    const levels = ["read", "write"] as const;
+    for (const permissionContents of levels) {
+      for (const permissionPullRequests of levels) {
+        const payload = buildAgentPayload(
+          makeForm({
+            outputMode: "none",
+            permissionContents,
+            permissionPullRequests,
+          }),
+        );
+        expect(payload.permissions.github.contents).toBe("read");
+        expect(payload.permissions.github.pullRequests).toBe("read");
+      }
+    }
+  });
+
+  test("REG-021: every combination of permissionContents/permissionPullRequests still yields write for ready_pr", () => {
+    const levels = ["read", "write"] as const;
+    for (const permissionContents of levels) {
+      for (const permissionPullRequests of levels) {
+        const payload = buildAgentPayload(
+          makeForm({
+            outputMode: "ready_pr",
+            permissionContents,
+            permissionPullRequests,
+          }),
+        );
+        expect(payload.permissions.github.contents).toBe("write");
+        expect(payload.permissions.github.pullRequests).toBe("write");
+      }
+    }
+  });
+
+  test("REG-022: a legacy agent saved with write access under outputMode 'none' is downgraded to read the next time it is saved unchanged", () => {
+    // Simulates the real edit flow: buildFormFromAgent -> (no edits) ->
+    // buildAgentPayload. Before this change, editing an unrelated field on a
+    // legacy write-permission report-only agent silently kept the write
+    // permission on save. This is the exact scenario the fix closes.
+    const legacyAgent: BackgroundAgent = {
+      id: "agent-legacy",
+      name: "Legacy Reporter",
+      description: null,
+      status: "enabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize PRs.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: {
+        github: { contents: "write", pullRequests: "write" },
+      },
+      composioToolkitSlugs: [],
+      triggers: [
+        {
+          id: "trig-legacy",
+          name: "A pull request changes",
+          kind: "github.pull_request",
+          status: "enabled",
+          conditions: {},
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+    };
+
+    const form = buildFormFromAgent(legacyAgent);
+    const resavedPayload = buildAgentPayload(form);
+
+    expect(resavedPayload.permissions.github.contents).toBe("read");
+    expect(resavedPayload.permissions.github.pullRequests).toBe("read");
+  });
+});

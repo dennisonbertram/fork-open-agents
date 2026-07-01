@@ -179,11 +179,14 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // "Open a pull request" is selected (checked) and its copy is visible.
-    const prIdx = html.indexOf("Open a pull request");
-    expect(prIdx).toBeGreaterThanOrEqual(0);
-    const radioIdx = html.lastIndexOf("<input", prIdx);
-    expect(html.slice(radioIdx, prIdx)).toContain('checked=""');
+    // "Open a pull request" copy is visible, and its radio input (anchored
+    // by its stable value="ready_pr" attribute, since "Open a pull request"
+    // also appears earlier in that input's aria-label) is checked.
+    const valueIdx = html.indexOf('value="ready_pr"');
+    expect(valueIdx).toBeGreaterThanOrEqual(0);
+    const radioOpenIdx = html.lastIndexOf("<input", valueIdx);
+    const radioCloseIdx = html.indexOf("/>", valueIdx);
+    expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('checked=""');
     const lowerHtml = html.toLowerCase();
     expect(lowerHtml.includes("pull request")).toBe(true);
 
