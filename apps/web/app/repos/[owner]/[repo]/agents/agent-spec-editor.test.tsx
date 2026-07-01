@@ -191,4 +191,63 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("Open a pull request");
     expect(html).not.toContain("Give the GitHub tool pull-request access");
   });
+
+  test("(F1) Standard toolpack section renders inside Tools, above Other tools", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+
+    const toolsIdx = html.indexOf("Tools");
+    const toolpackIdx = html.indexOf("Standard toolpack");
+    const composioIdx = html.indexOf("composio-other-tools-section");
+    expect(toolsIdx).toBeGreaterThanOrEqual(0);
+    expect(toolpackIdx).toBeGreaterThan(toolsIdx);
+    expect(composioIdx).toBeGreaterThan(toolpackIdx);
+    expect(html).toContain("GitHub (scoped to this repo)");
+  });
+
+  test("(F2) with no initialBuiltinToolNames, built-ins default on except web_fetch which defaults off", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+
+    const bashIdx = html.indexOf("Run shell commands");
+    const bashSwitchIdx = html.indexOf('role="switch"', bashIdx);
+    expect(html.slice(bashIdx, bashSwitchIdx + 50)).toContain(
+      'data-state="checked"',
+    );
+
+    const webFetchIdx = html.indexOf("Fetch external URLs");
+    const webFetchSwitchIdx = html.indexOf('role="switch"', webFetchIdx);
+    expect(html.slice(webFetchIdx, webFetchSwitchIdx + 50)).toContain(
+      'data-state="unchecked"',
+    );
+  });
+
+  test("(F3) initialBuiltinToolNames threads through as the enabled set", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialBuiltinToolNames={["bash"]}
+      />,
+    );
+
+    const bashIdx = html.indexOf("Run shell commands");
+    const bashSwitchIdx = html.indexOf('role="switch"', bashIdx);
+    expect(html.slice(bashIdx, bashSwitchIdx + 50)).toContain(
+      'data-state="checked"',
+    );
+
+    const readIdx = html.indexOf("Read files");
+    const readSwitchIdx = html.indexOf('role="switch"', readIdx);
+    expect(html.slice(readIdx, readSwitchIdx + 50)).toContain(
+      'data-state="unchecked"',
+    );
+  });
 });
