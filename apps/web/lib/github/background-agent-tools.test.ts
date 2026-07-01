@@ -1506,6 +1506,55 @@ describe("github_push tool", () => {
     expect(recorded[0]?.payload?.sha).toBe("event-sha-1");
     expect(recorded[0]?.payload?.severity).toBe("high");
   });
+
+  test("regression: a non-staleness createCommit failure is never misclassified as not_fast_forward, even with force:true", async () => {
+    resetReadyPrMocks();
+    createCommit.mockImplementationOnce(async () => ({
+      ok: false,
+      error: "Base branch 'main' not found on remote",
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    const result = await execute(
+      { branch: "feature/widgets", force: true },
+      {},
+    );
+
+    // Regression guard: if the not_fast_forward mapping were loosened to a
+    // substring/prefix match instead of an exact comparison against
+    // REMOTE_BRANCH_CHANGED_ERROR, an unrelated commit failure like this one
+    // would be silently (and incorrectly) reported as a staleness conflict.
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "access_error",
+      error: "Base branch 'main' not found on remote",
+    });
+  });
+
+  test("regression: push performs exactly one per-call token mint (no double-mint across stageAll/buildCommitIntentFromSandbox/createCommit)", async () => {
+    resetReadyPrMocks();
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    await execute({ branch: "feature/widgets" }, {});
+
+    // Regression guard: only createCommit's ref update should mint a
+    // token — stageAll/buildCommitIntentFromSandbox run against the sandbox,
+    // not GitHub, and must never trigger a second mint/revoke cycle.
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
+  });
 });
 
 describe("github_delete_branch tool", () => {
@@ -1604,6 +1653,48 @@ describe("github_delete_branch tool", () => {
     });
     expect(recorded[0]?.status).toBe("failed");
     expect(recorded[0]?.payload?.severity).toBe("high");
+  });
+
+  test("regression: base-branch protection is an exact match, not a prefix — a similarly named branch is not blocked", async () => {
+    resetDeleteRefMock();
+    const ctx = buildCtx({
+      baseBranch: "main",
+      repoOwner: "acme",
+      repoName: "my-repo",
+      enabledActions: ["delete_branch"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    const result = await execute({ branch: "main-archive" }, {});
+
+    // Regression guard: if the base-branch guard were loosened to
+    // branch.startsWith(ctx.baseBranch) instead of an exact comparison, a
+    // legitimately deletable branch like "main-archive" would be silently
+    // (and incorrectly) refused.
+    expect(result).toEqual({ ok: true, branch: "main-archive" });
+    expect(capturedDeleteRefArgs).toEqual({
+      owner: "acme",
+      repo: "my-repo",
+      ref: "heads/main-archive",
+    });
+  });
+
+  test("regression: delete_branch performs exactly one per-call token mint", async () => {
+    resetDeleteRefMock();
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      baseBranch: "main",
+      enabledActions: ["delete_branch"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    await execute({ branch: "feature/stale" }, {});
+
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
   });
 });
 
