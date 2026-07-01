@@ -5,18 +5,17 @@ import { useState } from "react";
 import useSWR from "swr";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type {
-  OutputMode,
-  WriteScopeMode,
-} from "@/lib/background-agents/agent-spec";
+import type { WriteScopeMode } from "@/lib/background-agents/agent-spec";
 
 export interface GitHubWriteScopeSectionProps {
   /**
-   * Only rendered when outputMode === "ready_pr" — write scope is
-   * meaningless for read-only agents (buildAgentPayload forces
-   * "this_repo"/[] for every other output mode).
+   * Only rendered when true — write scope is meaningless for an agent with
+   * zero enabled GitHub write actions (buildAgentPayload forces
+   * "this_repo"/[] whenever no write action is enabled). Derived from
+   * enabledActions.length > 0 (#740) — previously gated on
+   * outputMode === "ready_pr" only, before per-action GitHub tools existed.
    */
-  outputMode: OutputMode;
+  hasWriteAction: boolean;
   /**
    * The agent's GitHub App installation's repositorySelection, re-fetched by
    * the caller on every render — "all_repos" can only be offered when this is
@@ -77,8 +76,8 @@ export function describeWriteScope(
 /**
  * Three-way write-scope selector for a ready_pr agent's GitHub row:
  * "This repo" (default) / "All repos" / "Specific repos". Rendered
- * inside/adjacent to StandardToolpackSection's fixed GitHub row, visible
- * only when outputMode === "ready_pr".
+ * inside/adjacent to StandardToolpackSection's GitHub actions list, visible
+ * whenever any GitHub write action is enabled (hasWriteAction).
  *
  * "All repos" is disabled with an explanatory caption unless the
  * installation's repositorySelection is "all" — a user can never request
@@ -87,7 +86,7 @@ export function describeWriteScope(
  * write-scope.ts's resolveWriteScopeRepositoryIds, re-checked on every run.
  */
 export function GitHubWriteScopeSection({
-  outputMode,
+  hasWriteAction,
   repositorySelection,
   installationId,
   repoOwner,
@@ -113,7 +112,7 @@ export function GitHubWriteScopeSection({
     jsonFetcher,
   );
 
-  if (outputMode !== "ready_pr") {
+  if (!hasWriteAction) {
     return null;
   }
 

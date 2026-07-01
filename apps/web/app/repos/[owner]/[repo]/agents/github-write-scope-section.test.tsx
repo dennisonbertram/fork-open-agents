@@ -17,7 +17,7 @@ import {
 const noop = () => {};
 
 const baseProps = {
-  outputMode: "ready_pr" as const,
+  hasWriteAction: true,
   repositorySelection: "all" as const,
   installationId: 123,
   repoOwner: "acme",
@@ -48,16 +48,16 @@ describe("describeWriteScope (pure helper)", () => {
 });
 
 describe("GitHubWriteScopeSection", () => {
-  test("when outputMode is not 'ready_pr' the control is absent", () => {
+  test("when hasWriteAction is false the control is absent", () => {
     const html = renderToStaticMarkup(
-      <GitHubWriteScopeSection {...baseProps} outputMode="none" />,
+      <GitHubWriteScopeSection {...baseProps} hasWriteAction={false} />,
     );
     expect(html).not.toContain("Write scope");
     expect(html).not.toContain("All repos");
     expect(html).not.toContain("Specific repos");
   });
 
-  test("when outputMode is 'ready_pr' the three-way scope choice renders", () => {
+  test("when hasWriteAction is true the three-way scope choice renders", () => {
     const html = renderToStaticMarkup(
       <GitHubWriteScopeSection {...baseProps} />,
     );

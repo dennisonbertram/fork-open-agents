@@ -257,12 +257,10 @@ describe("StandardToolpackSection", () => {
     // Sanity: the GitHub actions list DID change (proves the two renders
     // aren't identical for an unrelated reason, e.g. a broken enabledActions
     // prop wire-up).
-    const noneCheckedCount = (
-      noneHtml.match(/data-state="checked"/g) ?? []
-    ).length;
-    const prCheckedCount = (
-      readyPrHtml.match(/data-state="checked"/g) ?? []
-    ).length;
+    const noneCheckedCount = (noneHtml.match(/data-state="checked"/g) ?? [])
+      .length;
+    const prCheckedCount = (readyPrHtml.match(/data-state="checked"/g) ?? [])
+      .length;
     expect(prCheckedCount).toBeGreaterThan(noneCheckedCount);
   });
 

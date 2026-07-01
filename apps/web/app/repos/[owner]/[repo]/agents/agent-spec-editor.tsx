@@ -17,15 +17,18 @@ import { SettingsSection } from "@/components/ui/settings-section";
 import { cn } from "@/lib/utils";
 import {
   buildAgentPayload,
-  supportedOutputModes,
-  triggerLabels,
   type FormState,
   type GitHubAccessLevel,
   type OutputMode,
   type TriggerKind,
   type WriteScopeMode,
+  triggerLabels,
 } from "@/lib/background-agents/agent-spec";
 import { DEFAULT_ON_TOOL_NAMES } from "@/lib/background-agents/builtin-toolpack";
+import {
+  type GitHubToolAction,
+  resolveGitHubToolConfig,
+} from "@/lib/background-agents/github-actions";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePicker } from "./schedule-picker";
 import { EventTriggerConditions } from "./event-trigger-conditions";
@@ -60,6 +63,16 @@ type AgentSpecEditorProps = {
   initialWriteScopeMode?: WriteScopeMode;
   /** owner/repo full names selected when initialWriteScopeMode is "repo_list". */
   initialWriteScopeRepos?: string[];
+  /**
+   * Canonical GitHub tool-action allowlist (#740). Optional — when absent,
+   * the editor derives the initial value from initialOutputMode via
+   * resolveGitHubToolConfig, so legacy agents (and every existing caller
+   * that hasn't been updated to pass this yet) render byte-identical
+   * capability to what they had before this control existed.
+   */
+  initialEnabledActions?: GitHubToolAction[];
+  /** Gates merge_pull_request on CI-green before merging. Defaults to true. */
+  initialRequireCiGreenToMerge?: boolean;
   /**
    * The agent owner's GitHub App installation ID and repositorySelection,
    * used to gate "All repos" in the write-scope selector and to query the
@@ -120,6 +133,8 @@ export function AgentSpecEditor({
   initialPermissionPullRequests = "read",
   initialWriteScopeMode = "this_repo",
   initialWriteScopeRepos = [],
+  initialEnabledActions,
+  initialRequireCiGreenToMerge,
   installationId = null,
   repositorySelection = null,
   initialComposioToolkitSlugs = [],
@@ -156,7 +171,24 @@ export function AgentSpecEditor({
     if (initialInstructions.startsWith(initialGoal)) return initialInstructions;
     return `${initialGoal}\n\n${initialInstructions}`.trim();
   });
-  const [outputMode, setOutputMode] = useState<OutputMode>(initialOutputMode);
+  // Result (outputMode) is replaced by a per-action GitHub tool allowlist
+  // (#740). enabledActions/requireCiGreenToMerge are the new sources of
+  // truth; when the caller hasn't been updated to pass
+  // initialEnabledActions/initialRequireCiGreenToMerge yet (STEP-11/12),
+  // derive the initial value from the legacy initialOutputMode via
+  // resolveGitHubToolConfig so every existing agent renders byte-identical
+  // capability.
+  const [enabledActions, setEnabledActions] = useState<GitHubToolAction[]>(
+    () =>
+      initialEnabledActions ??
+      resolveGitHubToolConfig({ outputMode: initialOutputMode }).enabledActions,
+  );
+  const [requireCiGreenToMerge, setRequireCiGreenToMerge] = useState<boolean>(
+    () =>
+      initialRequireCiGreenToMerge ??
+      resolveGitHubToolConfig({ outputMode: initialOutputMode })
+        .requireCiGreenToMerge,
+  );
   const [checkCommand, setCheckCommand] = useState(initialCheckCommand);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
@@ -199,6 +231,15 @@ export function AgentSpecEditor({
   );
 
   function buildCurrentPayload() {
+    // buildAgentPayload (agent-spec.ts) still derives GitHub write access
+    // from FormState.outputMode — deriving enabledActions-driven persistence
+    // there is STEP-12's job. Bridge the two here: mirror the exact legacy
+    // mapping STEP-12 will move into buildAgentPayload itself
+    // (open_pull_request enabled -> "ready_pr", otherwise -> "none") so
+    // saving from this enabledActions-only UI keeps working today.
+    const outputMode: OutputMode = enabledActions.includes("open_pull_request")
+      ? "ready_pr"
+      : "none";
     const form: FormState = {
       name,
       repoOwner,
@@ -218,6 +259,8 @@ export function AgentSpecEditor({
       permissionPullRequests,
       writeScopeMode,
       writeScopeRepos,
+      enabledActions,
+      requireCiGreenToMerge,
       composioToolkitSlugs,
       builtinToolNames: enabledBuiltins,
     };
@@ -241,10 +284,6 @@ export function AgentSpecEditor({
     } finally {
       setRunning(false);
     }
-  }
-
-  function handleOutputModeChange(v: string) {
-    setOutputMode(v as OutputMode);
   }
 
   const runTestDisabled = running || !createdAgentId;
@@ -418,39 +457,7 @@ export function AgentSpecEditor({
       {/* 4 — Tools */}
       <SettingsSection
         title="Tools"
-        description="The apps and abilities this agent can use."
-      >
-        <div className="space-y-4">
-          <StandardToolpackSection
-            enabledToolNames={enabledBuiltins}
-            onChange={setEnabledBuiltins}
-            disabled={saving}
-            outputMode={outputMode}
-            repoOwner={repoOwner}
-            repoName={repoName}
-            installationId={installationId}
-            repositorySelection={repositorySelection}
-            writeScopeMode={writeScopeMode}
-            writeScopeRepos={writeScopeRepos}
-            onWriteScopeChange={(next) => {
-              setWriteScopeMode(next.writeScopeMode);
-              setWriteScopeRepos(next.writeScopeRepos);
-            }}
-          />
-          <ComposioOtherToolsSection
-            selectedSlugs={composioToolkitSlugs}
-            onChange={setComposioToolkitSlugs}
-            disabled={saving}
-            repoOwner={repoOwner}
-            repoName={repoName}
-          />
-        </div>
-      </SettingsSection>
-
-      {/* 5 — Result (output mode) */}
-      <SettingsSection
-        title="Result"
-        description="Choose what the agent leaves behind after a run."
+        description="The apps and abilities this agent can use, including what it may do on GitHub."
         advanced={{
           label: "Advanced",
           children: (
@@ -474,41 +481,33 @@ export function AgentSpecEditor({
           ),
         }}
       >
-        <div className="space-y-2">
-          {supportedOutputModes.map((m) => {
-            return (
-              <label
-                key={m}
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
-                  outputMode === m
-                    ? "border-primary bg-primary/5"
-                    : "border-border"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="output-mode"
-                  value={m}
-                  checked={outputMode === m}
-                  onChange={() => handleOutputModeChange(m)}
-                  className="mt-0.5 shrink-0"
-                  aria-label={
-                    m === "ready_pr" ? "Open a pull request" : "Report only"
-                  }
-                />
-                <div>
-                  <p className="text-sm font-medium">
-                    {m === "ready_pr" ? "Open a pull request" : "Report only"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {m === "ready_pr"
-                      ? "Open a draft pull request with its changes for you to review and merge."
-                      : "Leave a written summary on the run — you'll find it in this agent's run history. Doesn't open a PR or change the repo."}
-                  </p>
-                </div>
-              </label>
-            );
-          })}
+        <div className="space-y-4">
+          <StandardToolpackSection
+            enabledToolNames={enabledBuiltins}
+            onChange={setEnabledBuiltins}
+            disabled={saving}
+            enabledActions={enabledActions}
+            onEnabledActionsChange={setEnabledActions}
+            requireCiGreenToMerge={requireCiGreenToMerge}
+            onRequireCiGreenToMergeChange={setRequireCiGreenToMerge}
+            repoOwner={repoOwner}
+            repoName={repoName}
+            installationId={installationId}
+            repositorySelection={repositorySelection}
+            writeScopeMode={writeScopeMode}
+            writeScopeRepos={writeScopeRepos}
+            onWriteScopeChange={(next) => {
+              setWriteScopeMode(next.writeScopeMode);
+              setWriteScopeRepos(next.writeScopeRepos);
+            }}
+          />
+          <ComposioOtherToolsSection
+            selectedSlugs={composioToolkitSlugs}
+            onChange={setComposioToolkitSlugs}
+            disabled={saving}
+            repoOwner={repoOwner}
+            repoName={repoName}
+          />
         </div>
       </SettingsSection>
     </div>

@@ -145,9 +145,7 @@ describe("GitHubActionsSection", () => {
         onRequireCiGreenChange={noop}
       />,
     );
-    const offIdx = offHtml.indexOf(
-      "Require CI checks to pass before merging",
-    );
+    const offIdx = offHtml.indexOf("Require CI checks to pass before merging");
     const offSwitchIdx = offHtml.indexOf('role="switch"', offIdx);
     expect(offHtml.slice(offIdx, offSwitchIdx + 100)).toContain(
       'data-state="unchecked"',
@@ -225,9 +223,7 @@ describe("GitHubActionsSection", () => {
     const idx = html.indexOf("Open a pull request");
     const buttonOpenIdx = html.indexOf("<button", idx);
     const buttonCloseIdx = html.indexOf(">", buttonOpenIdx);
-    expect(html.slice(buttonOpenIdx, buttonCloseIdx)).toContain(
-      'disabled=""',
-    );
+    expect(html.slice(buttonOpenIdx, buttonCloseIdx)).toContain('disabled=""');
   });
 
   // --- Regression coverage -------------------------------------------------
@@ -236,7 +232,10 @@ describe("GitHubActionsSection", () => {
     // Guards against a bug where the sub-toggle's checked state is computed
     // from some derived/local default instead of reading requireCiGreenToMerge
     // straight from props.
-    const next = toggleGitHubAction(["open_pull_request"], "merge_pull_request");
+    const next = toggleGitHubAction(
+      ["open_pull_request"],
+      "merge_pull_request",
+    );
     expect(next).toEqual(["open_pull_request", "merge_pull_request"]);
 
     const html = renderToStaticMarkup(
