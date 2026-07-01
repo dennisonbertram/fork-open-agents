@@ -1218,6 +1218,78 @@ describe("github_merge_pull_request tool", () => {
     // The token must still be revoked even though the merge itself failed.
     expect(revokeInstallationTokenCallCount).toBe(1);
   });
+
+  test("regression: forwards mergeMethod, commitTitle, and commitMessage through to mergePullRequest unchanged", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    let capturedMergeParams: Record<string, unknown> | null = null;
+    mergePullRequest.mockImplementation(async (params) => {
+      capturedMergeParams = params;
+      return { success: true, sha: "merged-sha-1" };
+    });
+    const ctx = buildCtx({
+      repoOwner: "acme",
+      repoName: "my-repo",
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute(
+      {
+        prNumber: 12,
+        mergeMethod: "rebase",
+        commitTitle: "chore: merge widgets",
+        commitMessage: "Applies the widgets update.",
+      },
+      {},
+    );
+
+    // Regression guard: if a future edit drops or hardcodes any of these
+    // fields when calling mergePullRequest, this assertion fails even
+    // though the happy-path "returns { ok:true, sha }" test above would
+    // still pass (mergePullRequest's fake ignores its input params).
+    expect(capturedMergeParams).toMatchObject({
+      repoUrl: "https://github.com/acme/my-repo",
+      prNumber: 12,
+      mergeMethod: "rebase",
+      commitTitle: "chore: merge widgets",
+      commitMessage: "Applies the widgets update.",
+      token: "merge-scoped-token",
+    });
+  });
+
+  test("regression: if mintInstallationToken itself throws, returns a typed access_error without calling getMergeReadiness/mergePullRequest and never attempts to revoke a token that was never minted", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    mintInstallationToken.mockImplementationOnce(async () => {
+      throw new Error("installation suspended");
+    });
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    const result = await execute({ prNumber: 12 }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "access_error",
+      error: "installation suspended",
+    });
+    expect(getMergeReadiness).not.toHaveBeenCalled();
+    expect(mergePullRequest).not.toHaveBeenCalled();
+    // Regression guard: a `finally { await revokeInstallationToken(scoped.token) }`
+    // that isn't scoped to AFTER a successful mint would throw on
+    // `scoped` being undefined, or would call revoke with an undefined
+    // token — this proves revoke is never invoked when mint itself fails.
+    expect(revokeInstallationTokenCallCount).toBe(0);
+  });
 });
 
 describe("withPerCallInstallationOctokit", () => {
