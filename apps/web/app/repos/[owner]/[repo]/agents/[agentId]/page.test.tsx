@@ -330,6 +330,56 @@ describe("AgentDetailPage", () => {
     expect(html.toLowerCase()).not.toContain("open pull requests");
   });
 
+  test("REG-167-001: GitHub scope stays derived from outputMode alone, even when a legacy saved permission says write for a Report-only agent", async () => {
+    // Guards against re-introducing the agent-spec.ts:190-199-style
+    // two-control coupling bug (fixed in step-2) at the display layer: a
+    // legacy agent.permissions.github.contents of "write" must NOT make
+    // the detail page claim PR-opening access for a Report-only agent.
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      permissions: { github: { contents: "write", pullRequests: "write" } },
+      builtinToolNames: null,
+      composioToolkitSlugs: [],
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html.toLowerCase()).toContain("read-only");
+    expect(html.toLowerCase()).not.toContain("open pull requests");
+  });
+
+  test("REG-167-002: does not render an 'Other tools (Composio)' line when composioToolkitSlugs is empty", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      builtinToolNames: null,
+      composioToolkitSlugs: [],
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html).not.toContain("Other tools (Composio)");
+  });
+
   test("renders a 'Runs' section header (not 'Chat history')", async () => {
     const { default: AgentDetailPage } = await pageModulePromise;
 

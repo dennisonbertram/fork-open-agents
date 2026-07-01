@@ -31,6 +31,13 @@ The v1 trust boundary is intentionally narrow:
   grants for background agents.
 - https://github.com/dennisonbertram/fork-open-agents/issues/26 - hosted live
   proof for real webhook delivery, sandbox execution, and ready PR creation.
+- https://github.com/dennisonbertram/fork-open-agents/issues/721 - reclassify
+  scoped GitHub as a default built-in tool, surface the Standard toolpack
+  (`builtinToolNames`, `web_fetch` off by default), make Result the single
+  source of truth for GitHub write permission, and fix the Report-only
+  no-op. See
+  [Background Agent Tools Model](../agents/architecture.md#background-agent-tools-model)
+  for the resulting tool tiers and the unchanged credential invariant.
 - `docs/process/background-agents-live-proof.md` - operational runbook for the
   #26 hosted proof checklist.
 
