@@ -656,6 +656,62 @@ describe("executeBackgroundAgentRun", () => {
     });
   });
 
+  test("regression: checkCommand still runs and blocks the run on failure for a write-enabled agent that does NOT have open_pull_request enabled", async () => {
+    // Guards the exact boundary of the "avoid double-running checkCommand"
+    // change: the executor-level check step must only be skipped when
+    // open_pull_request specifically is enabled, never merely because the
+    // agent needs write access (needsWrite) for some OTHER action. If this
+    // were mis-gated on needsWrite instead, this agent's failing check would
+    // be silently skipped and the run would wrongly succeed.
+    currentAgent = buildAgent({
+      outputMode: "none",
+      checkCommand: "bun test",
+      permissions: { github: { enabledActions: ["merge_pull_request"] } },
+    });
+    commandResults.set("bun test", {
+      success: false,
+      stdout: "",
+      stderr: "tests failed",
+      exitCode: 1,
+      truncated: false,
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    // Write scope WAS resolved and the merge_pull_request tool WAS injected
+    // (needsWrite is true for this agent) — only the checkCommand-skip
+    // behavior is scoped to open_pull_request specifically.
+    expect(capturedGitHubToolContexts[0]).toMatchObject({
+      enabledActions: ["merge_pull_request"],
+    });
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      tools?: Record<string, unknown>;
+    };
+    expect(call?.tools).toHaveProperty("github_stub_merge_pull_request");
+
+    // The executor-level check actually ran (not skipped) and blocked the
+    // run, exactly as it did before #740 for any non-open_pull_request run.
+    expect(
+      sandboxExec.mock.calls.some((c) => (c[0] as string) === "bun test"),
+    ).toBe(true);
+    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
+      status: "failed",
+      errorKind: "checks_failed",
+    });
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "checks_failed",
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "checks_failed",
+    });
+  });
+
   test("BT-A4-01: resolves an all_repos write scope to the installation's full accessible repo set and passes it to the GitHub tool context when repositorySelection is 'all'", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
