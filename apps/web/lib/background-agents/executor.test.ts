@@ -9,6 +9,7 @@ import {
 } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
+import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
 
 mock.module("server-only", () => ({}));
 
@@ -619,7 +620,7 @@ describe("executeBackgroundAgentRun", () => {
     ]);
   });
 
-  test("defaults builtinToolNames to null (no restriction) when the agent has none", async () => {
+  test("BT-721-017: resolves a null builtinToolNames agent to the default toolpack (web_fetch OFF) at runtime, matching the detail page's 'default toolpack (web_fetch off)' claim", async () => {
     currentAgent = buildAgent({ outputMode: "ready_pr" });
     currentRun = buildRun({ outputKind: "ready_pr" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -632,7 +633,18 @@ describe("executeBackgroundAgentRun", () => {
     const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
       options?: { allowedBuiltinToolNames?: unknown };
     };
-    expect(call?.options?.allowedBuiltinToolNames).toBeNull();
+    // Must NOT be null (null = fully unrestricted, including web_fetch).
+    // Must resolve to the same DEFAULT_ON_TOOL_NAMES preset the detail page
+    // and the new-agent default both use, so runtime, UI defaults, and the
+    // detail page's "web_fetch off" claim never drift apart.
+    expect(call?.options?.allowedBuiltinToolNames).toEqual([
+      ...DEFAULT_ON_TOOL_NAMES,
+    ]);
+    expect(
+      (call?.options?.allowedBuiltinToolNames as string[]).includes(
+        "web_fetch",
+      ),
+    ).toBe(false);
   });
 
   test("invokes the mutation agent for Report-only (outputMode none) runs", async () => {
@@ -655,7 +667,9 @@ describe("executeBackgroundAgentRun", () => {
     const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
       options?: { allowedBuiltinToolNames?: unknown };
     };
-    expect(call?.options?.allowedBuiltinToolNames).toBeNull();
+    expect(call?.options?.allowedBuiltinToolNames).toEqual([
+      ...DEFAULT_ON_TOOL_NAMES,
+    ]);
   });
 
   test("records a workflow_failed failure (not a silent success) when the mutation agent throws for a Report-only run", async () => {
