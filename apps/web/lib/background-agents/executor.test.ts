@@ -634,4 +634,27 @@ describe("executeBackgroundAgentRun", () => {
     };
     expect(call?.options?.allowedBuiltinToolNames).toBeNull();
   });
+
+  test("invokes the mutation agent for Report-only (outputMode none) runs", async () => {
+    // currentAgent/currentRun use defaults from beforeEach: outputMode "none".
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(recordedEvent("background-agent.agent.started")).toBeDefined();
+    expect(openPullRequest).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentOutput).not.toHaveBeenCalled();
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "succeeded",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { allowedBuiltinToolNames?: unknown };
+    };
+    expect(call?.options?.allowedBuiltinToolNames).toBeNull();
+  });
 });
