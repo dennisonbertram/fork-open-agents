@@ -6,6 +6,7 @@
  * The settings form still imports from background-agents-form.ts which
  * re-exports from here.
  */
+import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
 import { validateSchedule } from "./schedule-presets";
 
 export type TriggerKind =
@@ -67,6 +68,12 @@ export type BackgroundAgent = {
   };
   /** Composio toolkit slugs this agent is authorized to use. */
   composioToolkitSlugs?: string[];
+  /**
+   * Built-in tool allowlist ("Standard toolpack"). null/undefined means the
+   * default preset (all built-ins except web_fetch — see
+   * DEFAULT_ON_TOOL_NAMES in builtin-toolpack.ts).
+   */
+  builtinToolNames?: string[] | null;
 };
 
 export type FormState = {
@@ -88,6 +95,14 @@ export type FormState = {
   permissionPullRequests: GitHubAccessLevel;
   /** Composio toolkit slugs selected for this agent. */
   composioToolkitSlugs: string[];
+  /**
+   * Built-in tool allowlist ("Standard toolpack"). null/undefined means
+   * "use the default preset" (rendered by the Standard toolpack UI as
+   * DEFAULT_ON_TOOL_NAMES, all built-ins except web_fetch). Optional so
+   * existing FormState literals across the agent builder/edit flows keep
+   * compiling until they're wired up to the Standard toolpack UI.
+   */
+  builtinToolNames?: string[] | null;
 };
 
 export const defaultForm: FormState = {
@@ -108,6 +123,7 @@ export const defaultForm: FormState = {
   permissionContents: "read",
   permissionPullRequests: "read",
   composioToolkitSlugs: [],
+  builtinToolNames: null,
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
@@ -217,6 +233,10 @@ export function buildAgentPayload(form: FormState) {
       },
     },
     composioToolkitSlugs: form.composioToolkitSlugs,
+    // null means "use the default preset" — persist it explicitly as the
+    // web_fetch-off allowlist so execution (executor.ts) always has a
+    // concrete allowlist to read off the agent row.
+    builtinToolNames: form.builtinToolNames ?? [...DEFAULT_ON_TOOL_NAMES],
     triggers: [
       {
         name: triggerLabels[form.triggerKind],
@@ -415,5 +435,6 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     permissionContents,
     permissionPullRequests,
     composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
+    builtinToolNames: agent.builtinToolNames ?? null,
   };
 }

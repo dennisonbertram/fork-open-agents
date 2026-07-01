@@ -92,6 +92,7 @@ export async function createBackgroundAgent(
         outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
         composioToolkitSlugs: input.composioToolkitSlugs,
+        builtinToolNames: input.builtinToolNames ?? null,
       })
       .returning();
 
@@ -162,6 +163,9 @@ export async function updateBackgroundAgent(
           : {}),
         ...(input.composioToolkitSlugs !== undefined
           ? { composioToolkitSlugs: input.composioToolkitSlugs }
+          : {}),
+        ...(input.builtinToolNames !== undefined
+          ? { builtinToolNames: input.builtinToolNames }
           : {}),
         updatedAt: new Date(),
       })

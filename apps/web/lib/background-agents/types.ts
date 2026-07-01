@@ -105,6 +105,11 @@ export const createBackgroundAgentSchema = z
     outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
     composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
+    // Built-in tool allowlist ("Standard toolpack"). null = default preset
+    // (all built-ins except web_fetch, resolved via DEFAULT_ON_TOOL_NAMES).
+    // Stored as JSONB (schema.ts builtinToolNames column), no migration
+    // needed — the column already exists.
+    builtinToolNames: z.array(z.string().trim().min(1)).nullish(),
     triggers: z
       .array(
         z
