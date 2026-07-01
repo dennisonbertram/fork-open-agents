@@ -49,7 +49,7 @@ function makeTx() {
             if (table === "backgroundAgents_table") {
               lastAgentUpdateValues = vals as Record<string, unknown>;
               updatedAgentRow = {
-                ...(existingAgentRow ?? {}),
+                ...existingAgentRow,
                 ...(vals as Record<string, unknown>),
               };
               return [updatedAgentRow];
@@ -75,9 +75,8 @@ function makeTx() {
 
 mock.module("@/lib/db/client", () => ({
   db: {
-    transaction: async (
-      callback: (tx: ReturnType<typeof makeTx>) => unknown,
-    ) => callback(makeTx()),
+    transaction: async (callback: (tx: ReturnType<typeof makeTx>) => unknown) =>
+      callback(makeTx()),
   },
 }));
 
@@ -106,9 +105,8 @@ mock.module("./trigger-public-ids", () => ({
   getWebhookPublicIdForUpdatedTrigger: () => null,
 }));
 
-const { createBackgroundAgent, updateBackgroundAgent } = await import(
-  "./store"
-);
+const { createBackgroundAgent, updateBackgroundAgent } =
+  await import("./store");
 
 const baseTrigger = {
   name: "Pull request",

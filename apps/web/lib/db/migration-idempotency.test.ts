@@ -14,7 +14,7 @@ import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const migrationsDir = join(__dirname, "migrations");
+const migrationsDir = join(import.meta.dir, "migrations");
 
 function findGithubActionsMigrationFile(): string {
   const files = readdirSync(migrationsDir).filter((f) => f.endsWith(".sql"));
