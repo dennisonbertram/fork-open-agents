@@ -1,0 +1,140 @@
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+
+mock.module("server-only", () => ({}));
+
+// listAppInstallationRepositories mints an installation-scoped READ token via
+// @octokit/auth-app (type: "installation") — never the write-scoped token
+// used for commits/PRs. Stub the JWT/installation-token minting so we can
+// drive the fetch layer directly, mirroring app.test.ts's pattern.
+mock.module("@octokit/auth-app", () => ({
+  createAppAuth: (_config: { appId: number; privateKey: string }) => {
+    return async (params: { type: string; installationId?: number }) => {
+      expect(params.type).toBe("installation");
+      return { token: "fake-installation-read-token" };
+    };
+  },
+}));
+
+process.env.GITHUB_APP_ID = "12345";
+process.env.GITHUB_APP_PRIVATE_KEY =
+  "-----BEGIN PRIVATE KEY-----\nFAKEKEY\n-----END PRIVATE KEY-----";
+
+const { listAppInstallationRepositories } = await import("./repos");
+
+const originalFetch = globalThis.fetch;
+
+function createRepo(id: number, name: string, isPrivate = false) {
+  return {
+    id,
+    name,
+    full_name: `acme/${name}`,
+    private: isPrivate,
+  };
+}
+
+function createPage(repos: ReturnType<typeof createRepo>[], page: number) {
+  return [
+    ...repos,
+    ...Array.from({ length: 50 - repos.length }, (_, index) =>
+      createRepo(10_000 + page * 100 + index, `filler-${page}-${index}`),
+    ),
+  ];
+}
+
+describe("listAppInstallationRepositories", () => {
+  beforeEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test("returns numeric ids for repos accessible to the installation", async () => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      expect(url.pathname).toBe("/installation/repositories");
+      return Response.json({
+        repositories: [createRepo(11, "alpha"), createRepo(12, "beta", true)],
+      });
+    }) as unknown as typeof fetch;
+
+    const repos = await listAppInstallationRepositories({
+      installationId: 42,
+    });
+
+    expect(repos).toEqual([
+      { id: 11, name: "alpha", full_name: "acme/alpha", private: false },
+      { id: 12, name: "beta", full_name: "acme/beta", private: true },
+    ]);
+  });
+
+  test("authenticates with the installation-scoped read token, not a raw app JWT", async () => {
+    let capturedAuth: string | null = null;
+    globalThis.fetch = mock(async (_input: RequestInfo | URL, init) => {
+      capturedAuth = (init?.headers as Record<string, string>).Authorization;
+      return Response.json({ repositories: [] });
+    }) as unknown as typeof fetch;
+
+    await listAppInstallationRepositories({ installationId: 42 });
+
+    expect(capturedAuth).toBe("Bearer fake-installation-read-token");
+  });
+
+  test("filters results by query (case-insensitive, substring match)", async () => {
+    globalThis.fetch = mock(async () =>
+      Response.json({
+        repositories: [createRepo(1, "docs"), createRepo(2, "frontend")],
+      }),
+    ) as unknown as typeof fetch;
+
+    const repos = await listAppInstallationRepositories({
+      installationId: 42,
+      query: "DOC",
+    });
+
+    expect(repos.map((repo) => repo.name)).toEqual(["docs"]);
+  });
+
+  test("caps results at the requested limit", async () => {
+    globalThis.fetch = mock(async () =>
+      Response.json({
+        repositories: [
+          createRepo(1, "a"),
+          createRepo(2, "b"),
+          createRepo(3, "c"),
+        ],
+      }),
+    ) as unknown as typeof fetch;
+
+    const repos = await listAppInstallationRepositories({
+      installationId: 42,
+      limit: 2,
+    });
+
+    expect(repos).toHaveLength(2);
+  });
+
+  test("stops paging once a page returns fewer repos than a full page", async () => {
+    const fetchMock = mock(async (input: RequestInfo | URL) => {
+      const url = new URL(input.toString());
+      const page = url.searchParams.get("page");
+
+      if (page === "1") {
+        return Response.json({
+          repositories: createPage([createRepo(1, "alpha")], 1),
+        });
+      }
+
+      return Response.json({
+        repositories: [createRepo(999, "omega")],
+      });
+    });
+
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const repos = await listAppInstallationRepositories({
+      installationId: 42,
+      limit: 100,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(repos.some((repo) => repo.name === "omega")).toBe(true);
+  });
+});

@@ -27,8 +27,11 @@ let mockUserOctokit: {
 
 // The installation row returned by getInstallationByAccountLogin.
 // Set to undefined to simulate missing installation.
-let mockInstallationRow: { installationId: number } | undefined = {
+let mockInstallationRow:
+  | { installationId: number; repositorySelection: "all" | "selected" }
+  | undefined = {
   installationId: 42,
+  repositorySelection: "selected",
 };
 
 // Controls whether the installation-scoped octokit check succeeds or throws.
@@ -125,7 +128,7 @@ function makeReadOnlyOctokit() {
 
 function resetToDefaults() {
   mockUserOctokit = makeWriteOctokit();
-  mockInstallationRow = { installationId: 42 };
+  mockInstallationRow = { installationId: 42, repositorySelection: "selected" };
   mockScopedOctokitShouldFail = false;
   mockScopedOctokitFailStatus = 404;
 }
@@ -151,6 +154,7 @@ describe("verifyRepoAccess — userPermission resolution", () => {
       expect(result.installationId).toBe(42);
       expect(result.repositoryId).toBe(99);
       expect(result.defaultBranch).toBe("main");
+      expect(result.repositorySelection).toBe("selected");
     }
   });
 
@@ -184,6 +188,22 @@ describe("verifyRepoAccess — userPermission resolution", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.userPermission).toBe("write");
+    }
+  });
+
+  test("installation with repositorySelection:'all' surfaces that on the ok result (needed by the all_repos runtime gate)", async () => {
+    mockInstallationRow = { installationId: 42, repositorySelection: "all" };
+
+    const result = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+      requiredUserPermission: "read",
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repositorySelection).toBe("all");
     }
   });
 
