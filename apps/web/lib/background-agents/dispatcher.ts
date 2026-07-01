@@ -40,6 +40,12 @@ export type BackgroundDispatchResult = {
   runIds: string[];
   /** Run ids for loop runs dispatched in this invocation (M1-07). */
   loopRunIds: string[];
+  /**
+   * Set when nothing ran because the request was refused before matching —
+   * e.g. a manual test against a disabled agent (#743). Callers (the test
+   * API route) surface this so the operator sees WHY nothing ran.
+   */
+  skipReason?: "agent_disabled" | "no_enabled_trigger";
 };
 
 type WorkflowStartFailureInput = {
@@ -392,9 +398,25 @@ export async function dispatchManualBackgroundAgentTest(params: {
     };
   }
 
-  const trigger =
-    params.agent.triggers.find((item) => item.status === "enabled") ??
-    params.agent.triggers[0];
+  // #743: a disabled agent must never run, even via the manual Test button —
+  // it can trigger real GitHub/PR mutations if it slips through.
+  if (params.agent.status !== "enabled") {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "agent_disabled",
+    };
+  }
+
+  // Only an enabled trigger counts — never fall back to a disabled trigger
+  // just because it's the only one configured on the agent.
+  const trigger = params.agent.triggers.find(
+    (item) => item.status === "enabled",
+  );
   if (!trigger) {
     return {
       enabled: true,
@@ -403,6 +425,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "no_enabled_trigger",
     };
   }
   if (
@@ -507,12 +530,19 @@ async function sweepStaleBackgroundRuns(params: {
   });
 
   for (const run of staleRuns) {
+    // #743: force:true — a stale/stuck run may have already reached a
+    // terminal status via a race with its own executor. The sweeper's job is
+    // to terminalize genuinely stuck runs, so it must bypass the
+    // terminal-status guard rather than have its own update silently refused.
     await updateBackgroundAgentRunStatus({
       runId: run.id,
       status: "failed",
       errorKind: "stuck_running",
       errorMessage:
         "Background agent run exceeded the stale threshold and was swept by cron.",
+      force: true,
+      agentId: run.agentId,
+      userId: run.userId,
     });
     await recordBackgroundAgentEvent({
       runId: run.id,

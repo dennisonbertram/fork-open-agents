@@ -38,8 +38,23 @@ mock.module("nanoid", () => ({
   },
 }));
 
-const runsTableSymbol = Symbol("backgroundAgentRuns");
-const eventsTableSymbol = Symbol("backgroundAgentEvents");
+// Table references are plain marker objects (not Symbols) so we can attach
+// column-reference properties to them — the drizzle-orm condition mock below
+// needs distinct identities per column to tell which column an eq()/
+// notInArray() call targets.
+const runsIdColumn = "runId.id";
+const runsStatusColumn = "runId.status";
+const eventsRunIdColumn = "eventId.runId";
+const eventsSequenceColumn = "eventId.sequence";
+
+const runsTableSymbol: { id: string; status: string } = {
+  id: runsIdColumn,
+  status: runsStatusColumn,
+};
+const eventsTableSymbol: { runId: string; sequence: string } = {
+  runId: eventsRunIdColumn,
+  sequence: eventsSequenceColumn,
+};
 
 mock.module("@/lib/db/schema", () => ({
   backgroundAgentRuns: runsTableSymbol,
@@ -100,16 +115,6 @@ mock.module("drizzle-orm", () => ({
   ),
 }));
 
-/**
- * Simulates the runId/status columns used in `_eq`/`_notInArray` conditions.
- * Since the drizzle-orm mock above returns opaque objects for column refs
- * (e.g. `backgroundAgentRuns.id`), we tag them with string markers via a
- * Proxy so `evalCond` can recognize which column each condition targets.
- */
-function col(name: string) {
-  return `runId.${name}`;
-}
-
 let sequenceSelectQueue: number[] = [];
 
 const db = {
@@ -151,6 +156,11 @@ const db = {
       }),
     }),
   })),
+  query: {
+    backgroundAgentRuns: {
+      findFirst: async () => runsTable[0] ?? undefined,
+    },
+  },
 };
 
 mock.module("@/lib/db/client", () => ({ db }));

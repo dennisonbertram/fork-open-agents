@@ -1,6 +1,15 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -510,47 +519,62 @@ export async function createRunForTrigger(params: {
   return { run: existing, created: false };
 }
 
+const RECORD_EVENT_MAX_ATTEMPTS = 5;
+
 export async function recordBackgroundAgentEvent(
   input: RecordEventInput,
 ): Promise<BackgroundAgentEvent> {
-  // Assign a monotonic per-run sequence in application code.
-  // We compute max(sequence) for the run and add 1, using raw SQL
-  // coalesce so the first event starts at 1.
-  const [seqRow] = await db
-    .select({
-      nextSeq: sql<number>`coalesce(max(${backgroundAgentEvents.sequence}), 0) + 1`,
-    })
-    .from(backgroundAgentEvents)
-    .where(eq(backgroundAgentEvents.runId, input.runId));
+  // Assign a monotonic per-run sequence in application code: compute
+  // max(sequence) for the run and add 1, using raw SQL coalesce so the first
+  // event starts at 1. This computation is not atomic with the insert, so two
+  // concurrent callers can compute the same next sequence — the UNIQUE index
+  // on (run_id, sequence) then rejects the second writer's insert instead of
+  // silently overwriting/dropping it (#743). We retry with a fresh max+1 on
+  // that conflict rather than surface the drop to the caller.
+  for (let attempt = 0; attempt < RECORD_EVENT_MAX_ATTEMPTS; attempt++) {
+    const [seqRow] = await db
+      .select({
+        nextSeq: sql<number>`coalesce(max(${backgroundAgentEvents.sequence}), 0) + 1`,
+      })
+      .from(backgroundAgentEvents)
+      .where(eq(backgroundAgentEvents.runId, input.runId));
 
-  const sequence = Number(seqRow?.nextSeq ?? 1);
+    const sequence = Number(seqRow?.nextSeq ?? 1);
 
-  const [event] = await db
-    .insert(backgroundAgentEvents)
-    .values({
-      id: nanoid(),
-      runId: input.runId,
-      agentId: input.agentId ?? null,
-      userId: input.userId,
-      eventName: input.eventName,
-      status: input.status,
-      level: input.level ?? "info",
-      summary: input.summary ?? null,
-      requestId: input.requestId ?? null,
-      workflowRunId: input.workflowRunId ?? null,
-      sandboxName: input.sandboxName ?? null,
-      errorKind: input.errorKind ?? null,
-      payload: redactBackgroundAgentPayload(input.payload),
-      redactionStatus: "passed",
-      sequence,
-    })
-    .returning();
+    const [event] = await db
+      .insert(backgroundAgentEvents)
+      .values({
+        id: nanoid(),
+        runId: input.runId,
+        agentId: input.agentId ?? null,
+        userId: input.userId,
+        eventName: input.eventName,
+        status: input.status,
+        level: input.level ?? "info",
+        summary: input.summary ?? null,
+        requestId: input.requestId ?? null,
+        workflowRunId: input.workflowRunId ?? null,
+        sandboxName: input.sandboxName ?? null,
+        errorKind: input.errorKind ?? null,
+        payload: redactBackgroundAgentPayload(input.payload),
+        redactionStatus: "passed",
+        sequence,
+      })
+      .onConflictDoNothing({
+        target: [backgroundAgentEvents.runId, backgroundAgentEvents.sequence],
+      })
+      .returning();
 
-  if (!event) {
-    throw new Error("Failed to record background agent event");
+    if (event) {
+      return event;
+    }
+    // Sequence collided with a concurrent writer for this run — retry with a
+    // freshly computed max+1 on the next loop iteration.
   }
 
-  return event;
+  throw new Error(
+    `Failed to record background agent event for run ${input.runId} after ${RECORD_EVENT_MAX_ATTEMPTS} sequence-conflict retries`,
+  );
 }
 
 export async function recordBackgroundAgentOutput(
@@ -577,6 +601,16 @@ export async function recordBackgroundAgentOutput(
   return output;
 }
 
+const TERMINAL_RUN_STATUSES: BackgroundAgentRunStatus[] = [
+  "succeeded",
+  "failed",
+  "skipped",
+  "cancelled",
+];
+const terminalRunStatusSet = new Set<BackgroundAgentRunStatus>(
+  TERMINAL_RUN_STATUSES,
+);
+
 export async function updateBackgroundAgentRunStatus(params: {
   runId: string;
   status: BackgroundAgentRunStatus;
@@ -585,41 +619,84 @@ export async function updateBackgroundAgentRunStatus(params: {
   errorKind?: string | null;
   errorMessage?: string | null;
   outputUrl?: string | null;
+  /**
+   * Bypasses the terminal-status guard below. Only the stale-run sweeper
+   * (dispatcher.ts) should pass this — it must be able to terminalize a run
+   * that is legitimately stuck, even if the run already reached a terminal
+   * status through a race with its own executor (#743).
+   */
+  force?: boolean;
+  /**
+   * Needed only to emit a background-agent.run.status_conflict event when a
+   * non-forced transition is refused. Callers that don't have these on hand
+   * simply won't get a conflict event recorded (best-effort observability).
+   */
+  agentId?: string | null;
+  userId?: string;
 }): Promise<BackgroundAgentRun | null> {
-  const terminalStatuses = new Set<BackgroundAgentRunStatus>([
-    "succeeded",
-    "failed",
-    "skipped",
-    "cancelled",
-  ]);
   const now = new Date();
+  const setValues = {
+    status: params.status,
+    ...(params.workflowRunId !== undefined
+      ? { workflowRunId: params.workflowRunId }
+      : {}),
+    ...(params.sandboxName !== undefined
+      ? { sandboxName: params.sandboxName }
+      : {}),
+    ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+    ...(params.errorMessage !== undefined
+      ? { errorMessage: params.errorMessage }
+      : {}),
+    ...(params.outputUrl !== undefined ? { outputUrl: params.outputUrl } : {}),
+    ...(params.status === "running" ? { startedAt: now } : {}),
+    ...(terminalRunStatusSet.has(params.status) ? { finishedAt: now } : {}),
+    updatedAt: now,
+  };
+
+  const whereCondition = params.force
+    ? eq(backgroundAgentRuns.id, params.runId)
+    : and(
+        eq(backgroundAgentRuns.id, params.runId),
+        notInArray(backgroundAgentRuns.status, TERMINAL_RUN_STATUSES),
+      );
+
   const [run] = await db
     .update(backgroundAgentRuns)
-    .set({
-      status: params.status,
-      ...(params.workflowRunId !== undefined
-        ? { workflowRunId: params.workflowRunId }
-        : {}),
-      ...(params.sandboxName !== undefined
-        ? { sandboxName: params.sandboxName }
-        : {}),
-      ...(params.errorKind !== undefined
-        ? { errorKind: params.errorKind }
-        : {}),
-      ...(params.errorMessage !== undefined
-        ? { errorMessage: params.errorMessage }
-        : {}),
-      ...(params.outputUrl !== undefined
-        ? { outputUrl: params.outputUrl }
-        : {}),
-      ...(params.status === "running" ? { startedAt: now } : {}),
-      ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),
-      updatedAt: now,
-    })
-    .where(eq(backgroundAgentRuns.id, params.runId))
+    .set(setValues)
+    .where(whereCondition)
     .returning();
 
-  return run ?? null;
+  if (run) {
+    return run;
+  }
+
+  // The UPDATE matched no row. Distinguish "run doesn't exist" from "refused
+  // a non-forced transition out of a terminal status" so we only emit a
+  // status_conflict event for the latter.
+  if (!params.force) {
+    const existing = await getBackgroundAgentRun(params.runId);
+    if (existing && terminalRunStatusSet.has(existing.status)) {
+      if (params.userId) {
+        await recordBackgroundAgentEvent({
+          runId: params.runId,
+          agentId: params.agentId ?? existing.agentId ?? null,
+          userId: params.userId,
+          eventName: "background-agent.run.status_conflict",
+          status: "info",
+          level: "warn",
+          summary: `Refused non-forced transition from ${existing.status} to ${params.status}.`,
+          payload: {
+            runId: params.runId,
+            from: existing.status,
+            to: params.status,
+          },
+        });
+      }
+      return null;
+    }
+  }
+
+  return null;
 }
 
 export async function getBackgroundAgentRun(

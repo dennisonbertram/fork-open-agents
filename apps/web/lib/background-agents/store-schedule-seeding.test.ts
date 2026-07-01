@@ -56,6 +56,7 @@ mock.module("drizzle-orm", () => ({
   isNull: (a: unknown) => ({ _isNull: a }),
   desc: (a: unknown) => ({ _desc: a }),
   inArray: (a: unknown, b: unknown) => ({ _inArray: [a, b] }),
+  notInArray: (a: unknown, b: unknown) => ({ _notInArray: [a, b] }),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({
       _sql: { strings: Array.from(strings), values },

@@ -435,12 +435,19 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
       requestId: "req-sweep",
     });
 
+    // #743: the sweeper must pass force:true — a swept "stuck" run may have
+    // already reached a terminal status via a race with its own executor,
+    // and the sweeper's terminalization must not be silently refused by the
+    // new terminal-status guard.
     expect(updateBackgroundAgentRunStatusMock).toHaveBeenCalledWith({
       runId: "run-stale",
       status: "failed",
       errorKind: "stuck_running",
       errorMessage:
         "Background agent run exceeded the stale threshold and was swept by cron.",
+      force: true,
+      agentId: "agent-sched",
+      userId: "user-sched",
     });
     expect(recordBackgroundAgentEventMock).toHaveBeenCalledWith(
       expect.objectContaining({

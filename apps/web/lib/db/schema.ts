@@ -1539,7 +1539,13 @@ export const backgroundAgentEvents = pgTable(
       table.createdAt,
     ),
     index("background_agent_events_request_idx").on(table.requestId),
-    index("background_agent_events_run_seq_idx").on(
+    // #743: was a plain index — recordBackgroundAgentEvent computes
+    // max(sequence)+1 non-atomically, so two concurrent writers for the
+    // same run could compute the same sequence. A UNIQUE index makes the
+    // second writer's insert fail instead of silently colliding, and
+    // recordBackgroundAgentEvent retries with a fresh max+1 on that
+    // conflict (see migration 0081 for the idempotent upgrade + dedup).
+    uniqueIndex("background_agent_events_run_seq_idx").on(
       table.runId,
       table.sequence,
     ),

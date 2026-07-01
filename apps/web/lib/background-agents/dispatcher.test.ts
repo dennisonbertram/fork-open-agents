@@ -612,7 +612,9 @@ describe("dispatchManualBackgroundAgentTest", () => {
     const result = await dispatchManualBackgroundAgentTest({
       agent: {
         ...agent,
-        triggers: [agent.triggers[0] as BackgroundAgentWithTriggers["triggers"][number]],
+        triggers: [
+          agent.triggers[0] as BackgroundAgentWithTriggers["triggers"][number],
+        ],
       },
       requestId: "req-1",
     });
