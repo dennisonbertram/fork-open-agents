@@ -561,6 +561,13 @@
       "when": 1782084161465,
       "tag": "0078_jazzy_true_believers",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1782823665033,
+      "tag": "0079_fearless_spyke",
+      "breakpoints": true
     }
   ]
 }
