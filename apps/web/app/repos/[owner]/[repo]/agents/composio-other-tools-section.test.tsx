@@ -143,4 +143,42 @@ describe("ComposioOtherToolsSection", () => {
 
     expect(html).toContain("/settings/background-agents");
   });
+
+  test("distinguishes the opt-in Composio GitHub toolkit from the built-in scoped GitHub capability", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    // Distinguishing copy must call out: (1) the Composio "github" toolkit is
+    // live/broader/account-wide, (2) it is not scoped to just this repo, and
+    // (3) it runs mid-turn during unattended, auto-approved runs — as opposed
+    // to the built-in scoped GitHub capability from the Standard toolpack
+    // section, which only opens a pull request after the run.
+    expect(html).toContain("broader GitHub access");
+    expect(html).toContain("not scoped to this repo");
+    expect(html).toContain("scoped to this repository");
+  });
+
+  test("distinguishing copy warns the opt-in GitHub toolkit runs mid-turn during unattended runs", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    expect(html).toContain("unattended");
+    expect(html).toContain("auto-approved");
+  });
 });
