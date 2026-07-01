@@ -150,6 +150,19 @@ describe("background agent config surface (#745)", () => {
     expect(parsed.modelId).toBe("anthropic/claude-opus-4");
   });
 
+  test("createBackgroundAgentSchema accepts nested gateway model ids (multi-slash paths)", () => {
+    for (const modelId of [
+      "fireworks/zai/glm-5.2",
+      "fireworks/accounts/fireworks/models/llama-v3p1-405b-instruct",
+    ]) {
+      const parsed = createBackgroundAgentSchema.parse({
+        ...baseInput,
+        modelId,
+      });
+      expect(parsed.modelId).toBe(modelId);
+    }
+  });
+
   test("createBackgroundAgentSchema accepts a user-profile: prefixed modelId", () => {
     const parsed = createBackgroundAgentSchema.parse({
       ...baseInput,

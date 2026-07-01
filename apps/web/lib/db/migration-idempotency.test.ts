@@ -65,14 +65,27 @@ describe("background_agents config-surface migration (#745) is idempotent", () =
     expect(readyPrBackfill).toContain("push");
   });
 
-  test("backfills output_mode='comment' rows with comment_on_pr_or_issue", () => {
+  test("legacy non-ready_pr rows are backfilled WITHOUT open_pull_request (behavior preserving)", () => {
     const sql = readFileSync(findGithubActionsMigrationFile(), "utf-8");
 
-    const commentBackfillMatch = sql.match(
-      /UPDATE "background_agents"[\s\S]*?WHERE[\s\S]*?output_mode[\s\S]*?'comment'[\s\S]*?;/,
+    // Pre-migration, only outputMode='ready_pr' agents could perform GitHub
+    // writes. The column default (open_pull_request:true) is the NEW-agent
+    // product default; applying it to legacy non-ready_pr rows would let
+    // existing report-only agents open PRs once githubActions drives
+    // behavior. Those rows must be backfilled to comment-only.
+    const nonReadyPrBackfillMatch = sql.match(
+      /UPDATE "background_agents"[\s\S]*?WHERE[\s\S]*?output_mode[\s\S]*?IN[\s\S]*?'comment'[\s\S]*?'none'[\s\S]*?;/,
     );
-    expect(commentBackfillMatch).not.toBeNull();
-    expect(commentBackfillMatch?.[0]).toContain("comment_on_pr_or_issue");
+    expect(nonReadyPrBackfillMatch).not.toBeNull();
+    const nonReadyPrBackfill = nonReadyPrBackfillMatch?.[0] ?? "";
+    const setClause = nonReadyPrBackfill.slice(
+      0,
+      nonReadyPrBackfill.indexOf("WHERE"),
+    );
+    expect(setClause).toContain("comment_on_pr_or_issue");
+    expect(setClause).not.toContain('"open_pull_request":true');
+    expect(nonReadyPrBackfill).toContain("'issue'");
+    expect(nonReadyPrBackfill).toContain("'notification'");
   });
 
   test("backfill UPDATEs are guarded to only touch rows still at the column default", () => {
