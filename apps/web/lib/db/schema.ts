@@ -60,6 +60,13 @@ export type BackgroundAgentPermissions = {
     deployments?: "read";
     statuses?: "read";
     checks?: "read";
+    // Write-scope shape for ready_pr agents — how many repos the minted
+    // installation token is allowed to touch. Absent/"this_repo" is the
+    // backward-compatible default (byte-identical to pre-#736 behavior).
+    // writeScopeRepos holds owner/repo full names, NOT cached numeric ids —
+    // ids are re-resolved fresh at run time (see write-scope resolver).
+    writeScopeMode?: "this_repo" | "all_repos" | "repo_list";
+    writeScopeRepos?: string[];
   };
 };
 

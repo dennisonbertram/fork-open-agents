@@ -59,6 +59,7 @@ export const backgroundAgentErrorKinds = [
   "checks_failed",
   "pr_creation_failed",
   "webhook_signature_invalid",
+  "write_scope_denied",
 ] as const;
 
 export type BackgroundAgentErrorKind =
@@ -87,6 +88,10 @@ export const permissionsSchema = z
         deployments: z.literal("read").optional(),
         statuses: z.literal("read").optional(),
         checks: z.literal("read").optional(),
+        writeScopeMode: z
+          .enum(["this_repo", "all_repos", "repo_list"])
+          .optional(),
+        writeScopeRepos: z.array(z.string().trim().min(1)).max(100).optional(),
       })
       .strict()
       .optional(),

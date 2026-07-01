@@ -44,6 +44,14 @@ export type BackgroundAgentTrigger = {
 
 export type GitHubAccessLevel = "read" | "write";
 
+/**
+ * How many repos a ready_pr agent's minted write token is scoped to.
+ * "this_repo" (the default) is byte-for-byte identical to pre-#736 behavior.
+ * writeScopeRepos (when mode is "repo_list") holds owner/repo full names,
+ * not cached numeric ids — ids are re-resolved fresh at run time.
+ */
+export type WriteScopeMode = "this_repo" | "all_repos" | "repo_list";
+
 export type BackgroundAgent = {
   id: string;
   name: string;
@@ -64,6 +72,8 @@ export type BackgroundAgent = {
       deployments?: "read";
       statuses?: "read";
       checks?: "read";
+      writeScopeMode?: WriteScopeMode;
+      writeScopeRepos?: string[];
     };
   };
   /** Composio toolkit slugs this agent is authorized to use. */
@@ -103,6 +113,17 @@ export type FormState = {
    * compiling until they're wired up to the Standard toolpack UI.
    */
   builtinToolNames?: string[] | null;
+  /**
+   * How many repos a ready_pr agent's write token is scoped to. Only
+   * meaningful when outputMode is "ready_pr" — buildAgentPayload forces
+   * "this_repo"/[] for every other outputMode so a report-only agent can
+   * never carry broad write scope. Optional (defaults to "this_repo") so
+   * existing FormState literals across the agent builder/edit flows keep
+   * compiling until they're wired up to the write-scope selector UI.
+   */
+  writeScopeMode?: WriteScopeMode;
+  /** owner/repo full names selected when writeScopeMode is "repo_list". */
+  writeScopeRepos?: string[];
 };
 
 export const defaultForm: FormState = {
@@ -124,6 +145,8 @@ export const defaultForm: FormState = {
   permissionPullRequests: "read",
   composioToolkitSlugs: [],
   builtinToolNames: null,
+  writeScopeMode: "this_repo",
+  writeScopeRepos: [],
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
@@ -214,6 +237,15 @@ export function buildAgentPayload(form: FormState) {
   const requiresWrite = form.outputMode === "ready_pr";
   const contents = requiresWrite ? "write" : "read";
   const pullRequests = requiresWrite ? "write" : "read";
+  // Write scope (how many repos the minted write token can touch) is only
+  // meaningful for ready_pr agents. Every other output mode is forced back
+  // to this_repo/[] so a report-only agent can never carry broad scope,
+  // mirroring the same outputMode-is-the-only-source-of-truth rule used for
+  // contents/pullRequests above.
+  const writeScopeMode = requiresWrite
+    ? (form.writeScopeMode ?? "this_repo")
+    : "this_repo";
+  const writeScopeRepos = requiresWrite ? (form.writeScopeRepos ?? []) : [];
   return {
     name: form.name,
     repoOwner: form.repoOwner,
@@ -230,6 +262,8 @@ export function buildAgentPayload(form: FormState) {
         deployments: "read",
         statuses: "read",
         checks: "read",
+        writeScopeMode,
+        writeScopeRepos,
       },
     },
     composioToolkitSlugs: form.composioToolkitSlugs,
@@ -416,6 +450,8 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
   const permissionContents: GitHubAccessLevel = savedGh?.contents ?? "read";
   const permissionPullRequests: GitHubAccessLevel =
     savedGh?.pullRequests ?? "read";
+  const writeScopeMode: WriteScopeMode = savedGh?.writeScopeMode ?? "this_repo";
+  const writeScopeRepos = savedGh?.writeScopeRepos ?? [];
 
   return {
     name: agent.name,
@@ -436,5 +472,7 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     permissionPullRequests,
     composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
     builtinToolNames: agent.builtinToolNames ?? null,
+    writeScopeMode,
+    writeScopeRepos,
   };
 }
