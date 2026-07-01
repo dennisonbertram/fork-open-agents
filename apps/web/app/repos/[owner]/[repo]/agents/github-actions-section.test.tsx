@@ -167,6 +167,30 @@ describe("GitHubActionsSection", () => {
     expect(html.slice(deleteIdx, deleteIdx + 400)).toContain("Irreversible");
   });
 
+  test("SEC-740-nit: push action's label/caption never claims history-rewriting force-push, since the tool only bypasses the staleness check and commits forward on the current tip", () => {
+    // Adversarial-review finding: the tool's own description (see
+    // buildPushTool in background-agent-tools.ts) is accurate — this UI
+    // copy previously said "Force-push overwrites remote history", which
+    // describes `git push --force` (ref reset, history rewrite). The push
+    // tool never does that; "force" here only skips the fast-forward
+    // staleness check so the commit lands on top of the branch's current
+    // remote tip. Mislabeling this as history-rewriting force-push could
+    // lead an operator to over- or under-estimate the actual blast radius.
+    const html = renderToStaticMarkup(
+      <GitHubActionsSection
+        enabledActions={["push"]}
+        onChange={noop}
+        requireCiGreenToMerge={true}
+        onRequireCiGreenChange={noop}
+      />,
+    );
+
+    expect(html).not.toContain("Force-push overwrites remote history");
+    expect(html).not.toContain("(including force-push)");
+    // The copy must still convey what "force" actually does.
+    expect(html).toContain("staleness check");
+  });
+
   test("merge_pull_request shows 'Irreversible' only when the CI gate is off", () => {
     const gateOn = renderToStaticMarkup(
       <GitHubActionsSection
