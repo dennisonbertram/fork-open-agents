@@ -196,4 +196,25 @@ describe("background agent contract types", () => {
 
     expect(parsed.permissions.github?.writeScopeMode).toBe("all_repos");
   });
+
+  test("REGRESSION: permissionsSchema rejects a writeScopeRepos array over 100 entries (bounded repo-list invariant)", () => {
+    // The write-scope resolver (A4) must always mint a token against an
+    // explicit, bounded repo-ID list. If the max(100) cap on writeScopeRepos
+    // were ever dropped here, an unbounded repo_list could be persisted and
+    // later resolved into an unbounded token mint.
+    const tooMany = Array.from({ length: 101 }, (_, i) => `acme/repo-${i}`);
+
+    expect(() =>
+      permissionsSchema.parse({
+        github: { contents: "write", writeScopeRepos: tooMany },
+      }),
+    ).toThrow();
+
+    const exactlyMax = tooMany.slice(0, 100);
+    expect(() =>
+      permissionsSchema.parse({
+        github: { contents: "write", writeScopeRepos: exactlyMax },
+      }),
+    ).not.toThrow();
+  });
 });

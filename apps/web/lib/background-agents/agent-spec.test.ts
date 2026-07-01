@@ -274,6 +274,51 @@ describe("buildFormFromAgent", () => {
     expect(form.permissionContents).toBe("read");
     expect(form.permissionPullRequests).toBe("read");
   });
+
+  test("REGRESSION: a legacy agent saved before write-scope existed (writeScopeMode/writeScopeRepos absent) defaults the form to this_repo/[]", () => {
+    // If the ?? "this_repo" / ?? [] defaulting in buildFormFromAgent were
+    // ever dropped, every agent saved before this feature existed would
+    // load into the edit form with an undefined write scope instead of the
+    // safe default.
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "ready_pr",
+        permissions: { github: { contents: "write", pullRequests: "write" } },
+      }),
+    );
+
+    expect(form.writeScopeMode).toBe("this_repo");
+    expect(form.writeScopeRepos).toEqual([]);
+  });
+
+  test("REGRESSION: a saved repo_list write scope round-trips unchanged through buildFormFromAgent -> buildAgentPayload", () => {
+    // Simulates the real edit flow for a ready_pr agent with a persisted
+    // multi-repo write scope: opening the editor and re-saving without
+    // touching the write-scope fields must not silently narrow or drop the
+    // persisted repo list.
+    const agent = makeAgent({
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          writeScopeMode: "repo_list",
+          writeScopeRepos: ["acme/widgets", "acme/gadgets"],
+        },
+      },
+    });
+
+    const form = buildFormFromAgent(agent);
+    expect(form.writeScopeMode).toBe("repo_list");
+    expect(form.writeScopeRepos).toEqual(["acme/widgets", "acme/gadgets"]);
+
+    const resavedPayload = buildAgentPayload(form);
+    expect(resavedPayload.permissions.github.writeScopeMode).toBe("repo_list");
+    expect(resavedPayload.permissions.github.writeScopeRepos).toEqual([
+      "acme/widgets",
+      "acme/gadgets",
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
