@@ -380,6 +380,107 @@ Call this only after your work is complete and verified. ${
   });
 }
 
+// ── approve_pull_request / request_changes actions (STEP-6) ─────────────────────
+
+const approveInputSchema = z.object({
+  prNumber: z
+    .number()
+    .int()
+    .positive()
+    .describe("The pull request number to review."),
+  body: z
+    .string()
+    .optional()
+    .describe("Optional review comment explaining the approval."),
+});
+
+const requestChangesInputSchema = z.object({
+  prNumber: z
+    .number()
+    .int()
+    .positive()
+    .describe("The pull request number to review."),
+  body: z
+    .string()
+    .min(1)
+    .describe(
+      "Required review comment explaining what changes are needed (GitHub rejects REQUEST_CHANGES reviews without a body).",
+    ),
+});
+
+type ReviewToolOutput =
+  | { ok: true; reviewId: number; state: string }
+  | GitHubActionErrorResult;
+
+/**
+ * Builds either the approve_pull_request or request_changes tool. Both wrap
+ * octokit.rest.pulls.createReview with a per-call installation token scoped
+ * to pull_requests:write (never issues:write — this is a PR review action,
+ * not a comment). Note: the GitHub App installation cannot approve/request
+ * changes on its OWN pull requests (a PR opened by the same App identity) —
+ * this is a GitHub platform limitation, surfaced here only as an
+ * observability/description note for operators to configure a distinct
+ * reviewer identity when needed, never as a hard block in this tool.
+ */
+function buildReviewTool(
+  ctx: BackgroundAgentGitHubToolContext,
+  action: Extract<GitHubToolAction, "approve_pull_request" | "request_changes">,
+  event: "APPROVE" | "REQUEST_CHANGES",
+) {
+  const inputSchema =
+    event === "APPROVE" ? approveInputSchema : requestChangesInputSchema;
+
+  return tool({
+    description: `${
+      event === "APPROVE" ? "Approve" : "Request changes on"
+    } a pull request in ${ctx.repoOwner}/${ctx.repoName}.
+This tool acts as the GitHub App via a per-call installation token scoped to pull_requests:write, bounded to the agent's write scope.
+Note: GitHub does not allow an App installation to review its own pull requests — if this run opened the PR, this call will fail.`,
+    inputSchema,
+    execute: async ({
+      prNumber,
+      body,
+    }: {
+      prNumber: number;
+      body?: string;
+    }): Promise<ReviewToolOutput> => {
+      try {
+        const data = await withPerCallInstallationOctokit(
+          ctx,
+          { pull_requests: "write" },
+          async (octokit) => {
+            const response = await octokit.rest.pulls.createReview({
+              owner: ctx.repoOwner,
+              repo: ctx.repoName,
+              pull_number: prNumber,
+              event,
+              body,
+            });
+            return response.data;
+          },
+        );
+
+        await recordActionEvent(ctx, action, "succeeded", {
+          prNumber,
+          reviewId: data.id,
+          event,
+        });
+
+        return { ok: true, reviewId: data.id, state: data.state };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, action, "failed", {
+          prNumber,
+          event,
+          error: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      }
+    },
+  });
+}
+
 // ── Resolver ───────────────────────────────────────────────────────────────────
 
 /**
@@ -402,9 +503,21 @@ export function resolveGitHubActionToolsForBackgroundAgent(
       case "comment_on_pr_or_issue":
         tools.github_comment_on_pr_or_issue = buildCommentTool(ctx);
         break;
-      // Remaining tool builders are added incrementally in STEPs 6-8:
-      //   "approve_pull_request"   -> github_approve_pull_request (STEP-6)
-      //   "request_changes"        -> github_request_changes (STEP-6)
+      case "approve_pull_request":
+        tools.github_approve_pull_request = buildReviewTool(
+          ctx,
+          "approve_pull_request",
+          "APPROVE",
+        );
+        break;
+      case "request_changes":
+        tools.github_request_changes = buildReviewTool(
+          ctx,
+          "request_changes",
+          "REQUEST_CHANGES",
+        );
+        break;
+      // Remaining tool builders are added incrementally in STEP-7/8:
       //   "merge_pull_request"     -> github_merge_pull_request (STEP-7)
       //   "push"                   -> github_push (STEP-8)
       //   "delete_branch"          -> github_delete_branch (STEP-8)
