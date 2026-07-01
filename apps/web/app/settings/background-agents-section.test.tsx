@@ -112,6 +112,22 @@ mock.module("swr", () => ({
 
 const componentModulePromise = import("./background-agents-section");
 
+/**
+ * Finds the rendered Switch button with the given aria-label and returns
+ * whether it's checked. Used to prove GitHub action toggles reflect
+ * form.enabledActions per-action, not just the derived summary text.
+ */
+function switchCheckedFor(html: string, label: string): boolean {
+  const labelIndex = html.indexOf(`aria-label="${label}"`);
+  if (labelIndex === -1) {
+    throw new Error(`switch not found for aria-label: ${label}`);
+  }
+  const tagStart = html.lastIndexOf("<button", labelIndex);
+  const tagEnd = html.indexOf(">", labelIndex);
+  const tag = html.slice(tagStart, tagEnd);
+  return tag.includes('aria-checked="true"');
+}
+
 describe("BackgroundAgentsSection", () => {
   beforeEach(() => {
     agentsSwrState = {};
@@ -582,6 +598,27 @@ describe("BackgroundAgentsSection", () => {
     // must show write access, never a "Read-only" claim that contradicts
     // what's actually enabled.
     expect(html).toContain("write access");
+  });
+
+  test("SEC-740 regression: GitHub action toggles are actually wired to enabledActions state, not cosmetic (checked/unchecked matches the default action set)", async () => {
+    // Distinct from the tests above (which only check that write-access COPY
+    // is consistent): this proves the individual toggle switches themselves
+    // reflect form.enabledActions per-action, so a future edit that renders
+    // GitHubActionsSection with a hardcoded or stale enabledActions value
+    // (e.g. always [] or always the full set) is caught even though the
+    // summary text might still happen to look right.
+    const { BackgroundAgentsSection } = await componentModulePromise;
+    const html = renderToStaticMarkup(<BackgroundAgentsSection />);
+
+    // defaultForm.enabledActions = [open_pull_request, comment_on_pr_or_issue]
+    expect(switchCheckedFor(html, "Open a pull request")).toBe(true);
+    expect(switchCheckedFor(html, "Comment on a PR or issue")).toBe(true);
+    // Every destructive/off-by-default action must render unchecked.
+    expect(switchCheckedFor(html, "Merge a pull request")).toBe(false);
+    expect(switchCheckedFor(html, "Push commits (including force-push)")).toBe(
+      false,
+    );
+    expect(switchCheckedFor(html, "Delete a branch")).toBe(false);
   });
 
   test("REG-005: condition fields section renders only fields valid for pull_request trigger (regression guard)", async () => {
