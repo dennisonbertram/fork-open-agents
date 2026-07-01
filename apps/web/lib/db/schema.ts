@@ -63,6 +63,41 @@ export type BackgroundAgentPermissions = {
   };
 };
 
+/**
+ * Per-action toggles describing what a background agent's GitHub-facing
+ * automation is allowed to do. Replaces `outputMode` as the behavior driver
+ * (#742/#745). `outputMode` remains stored and accepted (deprecated) until
+ * the column-drop ticket (#748/#C7).
+ */
+export type BackgroundAgentGithubActions = {
+  open_pull_request?: boolean;
+  comment_on_pr_or_issue?: boolean;
+  approve_pull_request?: boolean;
+  request_changes?: boolean;
+  merge_pull_request?: boolean;
+  push?: boolean;
+  delete_branch?: boolean;
+};
+
+export const defaultBackgroundAgentGithubActions: BackgroundAgentGithubActions =
+  {
+    open_pull_request: true,
+    comment_on_pr_or_issue: true,
+  };
+
+/**
+ * Which repositories a background agent's write actions may target,
+ * independent of the trigger-binding repoOwner/repoName pair.
+ */
+export type BackgroundAgentWriteScope = {
+  mode: "this_repo" | "all_repos" | "specific_repos";
+  repos?: Array<{ owner: string; name: string }>;
+};
+
+export const defaultBackgroundAgentWriteScope: BackgroundAgentWriteScope = {
+  mode: "this_repo",
+};
+
 export type BackgroundAgentPayloadSummary = {
   title?: string;
   url?: string;
@@ -1114,6 +1149,34 @@ export const backgroundAgents = pgTable(
      * separately and always pass.
      */
     builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
+    /**
+     * Per-action GitHub automation toggles (#745). Replaces outputMode as
+     * the behavior driver; outputMode remains for backward compatibility
+     * until the column-drop ticket (#748/#C7).
+     */
+    githubActions: jsonb("github_actions")
+      .$type<BackgroundAgentGithubActions>()
+      .notNull()
+      .default(defaultBackgroundAgentGithubActions),
+    /**
+     * Which repositories this agent's write actions may target. Independent
+     * of repoOwner/repoName, which remain the trigger-binding repo.
+     */
+    writeScope: jsonb("write_scope")
+      .$type<BackgroundAgentWriteScope>()
+      .notNull()
+      .default(defaultBackgroundAgentWriteScope),
+    /** When true, merge automation must wait for CI to report green. */
+    requireCiGreenForMerge: boolean("require_ci_green_for_merge")
+      .notNull()
+      .default(true),
+    /**
+     * Optional explicit model selection for this agent's runs, either a
+     * gateway `provider/model` id or a `user-profile:`-prefixed inference
+     * profile selection (see lib/inference/model-option-id.ts). Null means
+     * inherit the default model.
+     */
+    modelId: text("model_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1494,7 +1557,22 @@ export const backgroundAgentOutputs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
+      // Additive extension (#745): pr_comment/pr_review/merge/push/branch_delete
+      // cover the new per-action github_actions toggles. This is a plain
+      // `text` column at the DB level (Drizzle enums are TS-only, no CHECK
+      // constraint), so widening this union requires no migration DDL.
+      enum: [
+        "comment",
+        "ready_pr",
+        "issue",
+        "notification",
+        "none",
+        "pr_comment",
+        "pr_review",
+        "merge",
+        "push",
+        "branch_delete",
+      ],
     }).notNull(),
     status: text("status", {
       enum: ["pending", "created", "failed", "skipped"],

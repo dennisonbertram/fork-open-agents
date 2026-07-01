@@ -76,6 +76,13 @@ const baseAgent: BackgroundAgentWithTriggers = {
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,
+  githubActions: {
+    open_pull_request: true,
+    comment_on_pr_or_issue: true,
+  },
+  writeScope: { mode: "this_repo" },
+  requireCiGreenForMerge: true,
+  modelId: null,
   createdAt: new Date(),
   updatedAt: new Date(),
   triggers: [],

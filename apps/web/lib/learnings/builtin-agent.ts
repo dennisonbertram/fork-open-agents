@@ -114,6 +114,13 @@ export async function ensureRepoLearningsAgent(
     },
     outputMode: "none",
     composioToolkitSlugs: [],
+    githubActions: {
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    },
+    writeScope: { mode: "this_repo" },
+    requireCiGreenForMerge: true,
+    modelId: null,
     triggers: [
       {
         name: "Merged PR",

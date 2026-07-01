@@ -195,6 +195,10 @@ const baseCreateInput = {
   outputMode: "none" as const,
   checkCommand: null,
   composioToolkitSlugs: [],
+  githubActions: { comment_on_pr_or_issue: true },
+  writeScope: { mode: "this_repo" as const },
+  requireCiGreenForMerge: true,
+  modelId: null,
 };
 
 describe("#750 store scheduling: seeding on create", () => {

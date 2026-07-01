@@ -568,6 +568,13 @@
       "when": 1782823665033,
       "tag": "0079_fearless_spyke",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1782942084949,
+      "tag": "0080_slippery_longshot",
+      "breakpoints": true
     }
   ]
 }
