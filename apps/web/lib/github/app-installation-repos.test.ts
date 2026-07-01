@@ -139,4 +139,33 @@ describe("listAppInstallationRepositories", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(repos.some((repo) => repo.name === "omega")).toBe(true);
   });
+
+  test("regression: enumeration only ever issues GET requests and never touches the write-mint access_tokens endpoint", async () => {
+    const requests: { url: string; method: string | undefined }[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init) => {
+      requests.push({ url: input.toString(), method: init?.method });
+      return Response.json({
+        repositories: [createRepo(1, "alpha")],
+      });
+    }) as unknown as typeof fetch;
+
+    await listAppInstallationRepositories({ installationId: 42 });
+
+    expect(requests).toHaveLength(1);
+    expect(
+      requests[0]?.method === undefined || requests[0]?.method === "GET",
+    ).toBe(true);
+    expect(requests[0]?.url).toContain("/installation/repositories");
+    expect(requests[0]?.url).not.toContain("access_tokens");
+  });
+
+  test("regression: a non-ok GitHub response is surfaced as a thrown error, not swallowed as an empty list", async () => {
+    globalThis.fetch = mock(
+      async () => new Response("installation suspended", { status: 403 }),
+    ) as unknown as typeof fetch;
+
+    await expect(
+      listAppInstallationRepositories({ installationId: 42 }),
+    ).rejects.toThrow(/403/);
+  });
 });

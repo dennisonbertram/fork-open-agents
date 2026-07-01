@@ -241,6 +241,43 @@ describe("verifyRepoAccess — userPermission resolution", () => {
   });
 });
 
+describe("verifyRepoAccess — repositorySelection regression", () => {
+  test("re-resolves repositorySelection on every call instead of caching a stale value (required for the A4 runtime write-scope gate)", async () => {
+    mockInstallationRow = { installationId: 42, repositorySelection: "all" };
+
+    const firstResult = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+      requiredUserPermission: "read",
+    });
+
+    expect(firstResult.ok).toBe(true);
+    if (firstResult.ok) {
+      expect(firstResult.repositorySelection).toBe("all");
+    }
+
+    // Simulate the installer narrowing the installation's repo selection on
+    // GitHub in between two runs of the same agent.
+    mockInstallationRow = {
+      installationId: 42,
+      repositorySelection: "selected",
+    };
+
+    const secondResult = await verifyRepoAccess({
+      userId: "user-1",
+      owner: "acme",
+      repo: "my-repo",
+      requiredUserPermission: "read",
+    });
+
+    expect(secondResult.ok).toBe(true);
+    if (secondResult.ok) {
+      expect(secondResult.repositorySelection).toBe("selected");
+    }
+  });
+});
+
 describe("verifyRepoAccess — denial paths", () => {
   test("missing user token (getUserOctokit returns null) → ok:false reason:'no_user_token'", async () => {
     mockUserOctokit = null;
