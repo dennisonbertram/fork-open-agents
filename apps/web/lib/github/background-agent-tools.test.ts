@@ -36,6 +36,15 @@ const fakeOctokit = {
         );
       },
     },
+    pulls: {
+      createReview: async (_params: {
+        owner: string;
+        repo: string;
+        pull_number: number;
+        event: "APPROVE" | "REQUEST_CHANGES";
+        body?: string;
+      }) => ({ data: { id: 888, state: "APPROVED" } }),
+    },
   },
 };
 
@@ -263,13 +272,16 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
       }),
     );
 
-    // comment_on_pr_or_issue (STEP-4) and open_pull_request (STEP-5) are
-    // implemented; the rest remain absent until their STEP-6..8 tool
-    // builders ship. Order follows GITHUB_TOOL_ACTIONS, not enabledActions
-    // input order (the resolver iterates enabledActions directly).
+    // comment_on_pr_or_issue (STEP-4), open_pull_request (STEP-5), and
+    // approve_pull_request/request_changes (STEP-6) are implemented; the
+    // rest remain absent until their STEP-7..8 tool builders ship. Order
+    // follows enabledActions input order (the resolver iterates
+    // enabledActions directly).
     expect(Object.keys(tools)).toEqual([
       "github_open_pull_request",
       "github_comment_on_pr_or_issue",
+      "github_approve_pull_request",
+      "github_request_changes",
     ]);
   });
 });
@@ -594,6 +606,252 @@ describe("github_open_pull_request tool", () => {
     expect(capturedMintArgs?.permissions).toEqual({ contents: "write" });
     const prCall = openPullRequest.mock.calls[0]?.[0] as { token?: string };
     expect(prCall?.token).toBe("distinct-user-token");
+  });
+});
+
+// AI SDK tool() results type execute() loosely for provider-option
+// inference; tests only need to call it directly, so narrow via `unknown`
+// (never `any`) to the concrete signature under test.
+type ApproveToolExecute = (
+  input: { prNumber: number; body?: string },
+  options: unknown,
+) => Promise<unknown>;
+
+type RequestChangesToolExecute = (
+  input: { prNumber: number; body: string },
+  options: unknown,
+) => Promise<unknown>;
+
+function getApproveToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): ApproveToolExecute {
+  const approveTool = tools.github_approve_pull_request as unknown as {
+    execute: ApproveToolExecute;
+  };
+  return approveTool.execute;
+}
+
+function getRequestChangesToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): RequestChangesToolExecute {
+  const requestChangesTool = tools.github_request_changes as unknown as {
+    execute: RequestChangesToolExecute;
+  };
+  return requestChangesTool.execute;
+}
+
+describe("github_approve_pull_request tool", () => {
+  test("is absent from the tool set when approve_pull_request is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_approve_pull_request).toBeUndefined();
+  });
+
+  test("approves a pull request via pulls.createReview scoped to pull_requests:write and the full write-scope repositoryIds", async () => {
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      repositoryIds: [11, 22, 33],
+      repoOwner: "acme",
+      repoName: "my-repo",
+      enabledActions: ["approve_pull_request"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    expect(tools.github_approve_pull_request).toBeDefined();
+
+    const execute = getApproveToolExecute(tools);
+    const result = await execute({ prNumber: 12 }, {});
+
+    expect(result).toEqual({ ok: true, reviewId: 888, state: "APPROVED" });
+    expect(capturedMintArgs).toEqual({
+      installationId: ctx.installationId,
+      repositoryIds: [11, 22, 33],
+      permissions: { pull_requests: "write" },
+    });
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
+  });
+
+  test("accepts an optional body for an approval", async () => {
+    resetCapturedMintArgs();
+    let capturedCreateReviewParams: Record<string, unknown> | null = null;
+    const originalCreateReview = fakeOctokit.rest.pulls.createReview;
+    fakeOctokit.rest.pulls.createReview = async (params) => {
+      capturedCreateReviewParams = params;
+      return { data: { id: 888, state: "APPROVED" } };
+    };
+
+    try {
+      const ctx = buildCtx({ enabledActions: ["approve_pull_request"] });
+      const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+      const execute = getApproveToolExecute(tools);
+
+      await execute({ prNumber: 12, body: "Looks great" }, {});
+
+      expect(capturedCreateReviewParams).toMatchObject({
+        pull_number: 12,
+        event: "APPROVE",
+        body: "Looks great",
+      });
+    } finally {
+      fakeOctokit.rest.pulls.createReview = originalCreateReview;
+    }
+  });
+
+  test("records a background-agent.github.approve_pull_request event with attribution on success", async () => {
+    resetCapturedMintArgs();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["approve_pull_request"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getApproveToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.eventName).toBe(
+      "background-agent.github.approve_pull_request",
+    );
+    expect(recorded[0]?.status).toBe("succeeded");
+    expect(recorded[0]?.payload?.prNumber).toBe(12);
+    expect(recorded[0]?.payload?.reviewId).toBe(888);
+    expect(recorded[0]?.payload?.event).toBe("APPROVE");
+  });
+
+  test("returns a typed access_error result and records a failed event when the API call throws", async () => {
+    resetCapturedMintArgs();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["approve_pull_request"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+    const originalCreateReview = fakeOctokit.rest.pulls.createReview;
+    fakeOctokit.rest.pulls.createReview = async () => {
+      throw new Error(
+        "boom: Review cannot be approved by the app that opened the pull request",
+      );
+    };
+
+    try {
+      const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+      const execute = getApproveToolExecute(tools);
+
+      const result = await execute({ prNumber: 12 }, {});
+
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "access_error",
+        error:
+          "boom: Review cannot be approved by the app that opened the pull request",
+      });
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.status).toBe("failed");
+    } finally {
+      fakeOctokit.rest.pulls.createReview = originalCreateReview;
+    }
+  });
+});
+
+describe("github_request_changes tool", () => {
+  test("is absent from the tool set when request_changes is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_request_changes).toBeUndefined();
+  });
+
+  test("requests changes via pulls.createReview scoped to pull_requests:write with a required body", async () => {
+    resetCapturedMintArgs();
+    let capturedCreateReviewParams: Record<string, unknown> | null = null;
+    const originalCreateReview = fakeOctokit.rest.pulls.createReview;
+    fakeOctokit.rest.pulls.createReview = async (params) => {
+      capturedCreateReviewParams = params;
+      return { data: { id: 999, state: "CHANGES_REQUESTED" } };
+    };
+
+    try {
+      const ctx = buildCtx({
+        repositoryIds: [11, 22, 33],
+        enabledActions: ["request_changes"],
+      });
+
+      const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+      expect(tools.github_request_changes).toBeDefined();
+
+      const execute = getRequestChangesToolExecute(tools);
+      const result = await execute(
+        { prNumber: 12, body: "Please add tests." },
+        {},
+      );
+
+      expect(result).toEqual({
+        ok: true,
+        reviewId: 999,
+        state: "CHANGES_REQUESTED",
+      });
+      expect(capturedCreateReviewParams).toMatchObject({
+        pull_number: 12,
+        event: "REQUEST_CHANGES",
+        body: "Please add tests.",
+      });
+      expect(capturedMintArgs).toEqual({
+        installationId: ctx.installationId,
+        repositoryIds: [11, 22, 33],
+        permissions: { pull_requests: "write" },
+      });
+    } finally {
+      fakeOctokit.rest.pulls.createReview = originalCreateReview;
+    }
+  });
+
+  test("regression: rejects an empty body via the input schema before calling createReview (GitHub 422s REQUEST_CHANGES without a body)", async () => {
+    resetCapturedMintArgs();
+    const ctx = buildCtx({ enabledActions: ["request_changes"] });
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const requestChangesTool = tools.github_request_changes as unknown as {
+      inputSchema: { safeParse: (value: unknown) => { success: boolean } };
+    };
+
+    const parsed = requestChangesTool.inputSchema.safeParse({
+      prNumber: 12,
+      body: "",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(withScopedInstallationOctokitCallCount).toBe(0);
+  });
+
+  test("records a background-agent.github.request_changes event with attribution on success", async () => {
+    resetCapturedMintArgs();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["request_changes"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getRequestChangesToolExecute(tools);
+
+    await execute({ prNumber: 12, body: "Please add tests." }, {});
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.eventName).toBe(
+      "background-agent.github.request_changes",
+    );
+    expect(recorded[0]?.status).toBe("succeeded");
+    expect(recorded[0]?.payload?.prNumber).toBe(12);
+    expect(recorded[0]?.payload?.event).toBe("REQUEST_CHANGES");
   });
 });
 
