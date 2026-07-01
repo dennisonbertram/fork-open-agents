@@ -421,10 +421,33 @@ export async function getMergeReadiness(params: {
   prNumber: number;
   token?: string;
 }): Promise<MergeReadiness> {
-  const { repoUrl, prNumber, token } = params;
+  return getMergeReadinessWithOctokit({ ...params });
+}
+
+/**
+ * Scoped-installation variant of getMergeReadiness for callers (e.g.
+ * background-agent GitHub action tools) that already hold a scoped
+ * installation Octokit and must not fall back to user OAuth.
+ */
+export async function getMergeReadinessViaInstallation(params: {
+  repoUrl: string;
+  prNumber: number;
+  octokit: Octokit;
+}): Promise<MergeReadiness> {
+  const { repoUrl, prNumber, octokit } = params;
+  return getMergeReadinessWithOctokit({ repoUrl, prNumber, octokit });
+}
+
+async function getMergeReadinessWithOctokit(params: {
+  repoUrl: string;
+  prNumber: number;
+  token?: string;
+  octokit?: Octokit;
+}): Promise<MergeReadiness> {
+  const { repoUrl, prNumber, token, octokit } = params;
 
   try {
-    const result = await getOctokit(token);
+    const result = await resolveOctokit({ token, octokit });
 
     if (!result.authenticated) {
       return {
@@ -1077,6 +1100,92 @@ export async function mergePullRequest(params: {
     return {
       success: false,
       error: "Failed to merge pull request",
+      statusCode: 502,
+    };
+  }
+}
+
+export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES";
+
+type SubmitPullRequestReviewResult =
+  | { success: true; reviewId: number }
+  | { success: false; error: string; statusCode?: number };
+
+/**
+ * Submit a pull request review (approve or request changes) as the acting
+ * identity behind the injected octokit. GitHub rejects self-approval of a
+ * PR authored by the same identity submitting the review — callers must
+ * inject a scoped installation octokit, never the user's own OAuth token,
+ * when the PR was opened by the same GitHub App installation.
+ */
+export async function submitPullRequestReview(params: {
+  repoUrl: string;
+  prNumber: number;
+  event: ReviewEvent;
+  body?: string;
+  token?: string;
+  octokit?: Octokit;
+}): Promise<SubmitPullRequestReviewResult> {
+  const { repoUrl, prNumber, event, body, token, octokit } = params;
+
+  try {
+    const result = await resolveOctokit({ token, octokit });
+
+    if (!result.authenticated) {
+      return {
+        success: false,
+        error: "GitHub account not connected",
+        statusCode: 401,
+      };
+    }
+
+    const parsed = parseGitHubUrl(repoUrl);
+    if (!parsed) {
+      return {
+        success: false,
+        error: "Invalid GitHub repository URL",
+        statusCode: 400,
+      };
+    }
+
+    const { owner, repo } = parsed;
+
+    const response = await result.octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: prNumber,
+      event,
+      ...(body?.trim() ? { body: body.trim() } : {}),
+    });
+
+    return { success: true, reviewId: response.data.id };
+  } catch (error: unknown) {
+    console.error("Error submitting pull request review:", error);
+
+    const statusCode = getGitHubHttpStatus(error);
+    if (statusCode === 403) {
+      return { success: false, error: "Permission denied", statusCode };
+    }
+    if (statusCode === 404) {
+      return {
+        success: false,
+        error: "Pull request not found",
+        statusCode,
+      };
+    }
+    if (statusCode === 422) {
+      return {
+        success: false,
+        error:
+          getGitHubErrorMessage(error) ??
+          "Cannot submit review (e.g. self-approval is not allowed)",
+        statusCode,
+      };
+    }
+
+    return {
+      success: false,
+      error: "Failed to submit pull request review",
       statusCode: 502,
     };
   }
