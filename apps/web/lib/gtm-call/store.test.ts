@@ -108,6 +108,7 @@ describe("GTM call store", () => {
 
   test("creates debrief insights and pending approvals without applying updates", async () => {
     const { createGtmCallDebrief } = await storePromise;
+    selectResults = [[{ id: "account-1" }]];
     insertResults = [
       [{ id: "run-1" }],
       [{ id: "call-1" }],
@@ -125,6 +126,8 @@ describe("GTM call store", () => {
       {
         userId: "user-1",
         requestId: "req-1",
+        accountId: "account-1",
+        callId: "prep-call-1",
         notes:
           "Concern is legal review. Product request: GitHub issue drafting. Next we will send a pilot plan.",
         attendees: ["Morgan"],
@@ -134,8 +137,10 @@ describe("GTM call store", () => {
 
     expect(result.insightIds).toEqual(["insight-1", "insight-2"]);
     expect(result.approvalIds).toEqual(["approval-1", "approval-2"]);
+    expect(result.callId).toBe("call-1");
     expect(insertCalls.map((call) => call.values)).toContainEqual(
       expect.objectContaining({
+        id: expect.not.stringMatching("prep-call-1"),
         status: "pending_approval",
         channel: "call",
       }),
@@ -149,6 +154,8 @@ describe("GTM call store", () => {
     expect(insertCalls.map((call) => call.values)).toContainEqual(
       expect.objectContaining({
         actionKind: "call_gtm_record_update",
+        targetKind: "account",
+        targetId: "account-1",
         status: "pending",
       }),
     );

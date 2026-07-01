@@ -237,7 +237,8 @@ export async function createGtmCallDebrief(
 
     const now = new Date();
     const runId = crypto.randomUUID();
-    const callId = input.callId ?? crypto.randomUUID();
+    const debriefId = crypto.randomUUID();
+    const linkedCallId = input.callId ?? null;
     const [run] = await tx
       .insert(gtmAgentRuns)
       .values({
@@ -248,7 +249,8 @@ export async function createGtmCallDebrief(
         requestId: input.requestId,
         summary: debrief.summary,
         metadata: redactGtmPayload({
-          callId,
+          callId: debriefId,
+          linkedCallId,
           notesHash: stableHash(input.notes),
           debrief,
         }),
@@ -269,7 +271,7 @@ export async function createGtmCallDebrief(
     const [touchpoint] = await tx
       .insert(gtmTouchpoints)
       .values({
-        id: callId,
+        id: debriefId,
         userId: input.userId,
         accountId: input.accountId ?? null,
         contactId: input.contactId ?? null,
@@ -281,6 +283,7 @@ export async function createGtmCallDebrief(
         evidenceRefs: input.evidenceRefs ?? [],
         metadata: redactGtmPayload({
           runId,
+          linkedCallId,
           notesHash: stableHash(input.notes),
           debrief,
         }),
@@ -309,6 +312,7 @@ export async function createGtmCallDebrief(
           gtmAgentRunId: run.id,
           payload: {
             callId: touchpoint.id,
+            linkedCallId,
             inputKind: "manual_notes",
             notesHash: stableHash(input.notes),
           },
@@ -360,22 +364,35 @@ export async function createGtmCallDebrief(
     const approvalIds: string[] = [];
     for (const proposedAction of debrief.proposedActions) {
       const approvalId = crypto.randomUUID();
+      const targetKind =
+        proposedAction.actionKind === "gtm_record_update" && input.accountId
+          ? "account"
+          : proposedAction.actionKind === "gtm_record_update" && input.contactId
+            ? "contact"
+            : "touchpoint";
+      const targetId =
+        targetKind === "account"
+          ? input.accountId
+          : targetKind === "contact"
+            ? input.contactId
+            : touchpoint.id;
       const [approval] = await tx
         .insert(gtmApprovals)
         .values({
           id: approvalId,
           userId: input.userId,
           actionKind: `call_${proposedAction.actionKind}`,
-          targetKind: proposedAction.targetKind,
-          targetId: touchpoint.id,
+          targetKind,
+          targetId: targetId ?? touchpoint.id,
           status: "pending",
           requestId: input.requestId,
           requestedBy: "gtm_call_debrief_agent",
           policySnapshot: {
             requiresApproval: true,
             callId: touchpoint.id,
+            linkedCallId,
             actionKind: proposedAction.actionKind,
-            targetKind: proposedAction.targetKind,
+            targetKind,
           },
           redactedPreview: redactGtmPayload({
             summary: proposedAction.summary,
@@ -408,8 +425,9 @@ export async function createGtmCallDebrief(
             gtmAgentRunId: run.id,
             payload: {
               callId: touchpoint.id,
+              linkedCallId,
               actionKind: proposedAction.actionKind,
-              targetKind: proposedAction.targetKind,
+              targetKind,
             },
           }),
         )
