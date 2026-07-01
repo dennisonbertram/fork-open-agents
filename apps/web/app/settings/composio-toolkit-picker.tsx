@@ -77,8 +77,11 @@ export function ComposioToolkitPicker({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [query]);
 
-  const { toolkits: allToolkits, toolkitsLoading, connectedSlugs } =
-    useComposioCatalog();
+  const {
+    toolkits: allToolkits,
+    toolkitsLoading,
+    connectedSlugs,
+  } = useComposioCatalog();
   const toolkitBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
 
   /**

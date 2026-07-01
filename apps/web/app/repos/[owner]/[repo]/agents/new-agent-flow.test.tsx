@@ -40,6 +40,12 @@ mock.module("swr", () => ({
       mutate,
     };
   },
+  // Global mutate export — required because composio-shared-hooks.ts
+  // (transitively imported via AgentSpecEditor -> ComposioOtherToolsSection
+  // -> ComposioToolkitPicker) does `import { mutate as globalMutate } from
+  // "swr"`. This file's own agent/readiness SWR mock above is unaffected;
+  // this test suite never triggers a Composio connect, so it's a no-op stub.
+  mutate: async () => undefined,
 }));
 
 const fetchMock = mock(async (_url: string, _opts?: unknown) => ({

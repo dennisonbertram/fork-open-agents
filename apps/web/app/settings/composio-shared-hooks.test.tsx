@@ -91,7 +91,9 @@ const SAMPLE_TOOLKITS: ComposioToolkitsResponse = {
 };
 
 const SAMPLE_ACCOUNTS: ComposioConnectedAccountsResponse = {
-  accounts: [{ id: "acc_1", toolkitSlug: "slack", status: "ACTIVE", alias: null }],
+  accounts: [
+    { id: "acc_1", toolkitSlug: "slack", status: "ACTIVE", alias: null },
+  ],
 };
 
 describe("useComposioCatalog", () => {
@@ -160,8 +162,10 @@ describe("useComposioConnect", () => {
         { status: 200 },
       );
     }) as unknown as typeof fetch;
-    globalThis.window = { ...globalThis.window, open: mock(() => null) } as unknown as Window &
-      typeof globalThis;
+    globalThis.window = {
+      ...globalThis.window,
+      open: mock(() => null),
+    } as unknown as Window & typeof globalThis;
 
     const { connect } = await renderConnect();
     await connect("gmail");
@@ -174,54 +178,142 @@ describe("useComposioConnect", () => {
   });
 
   test("BT-B1-06: connect() opens the returned redirectUrl in a new tab", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(
-        JSON.stringify({ redirectUrl: "https://composio.dev/oauth/xyz" }),
-        { status: 200 },
-      ),
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({ redirectUrl: "https://composio.dev/oauth/xyz" }),
+          { status: 200 },
+        ),
     ) as unknown as typeof fetch;
     const openSpy = mock(() => null);
-    globalThis.window = { ...globalThis.window, open: openSpy } as unknown as Window &
-      typeof globalThis;
+    globalThis.window = {
+      ...globalThis.window,
+      open: openSpy,
+    } as unknown as Window & typeof globalThis;
 
     const { connect } = await renderConnect();
     await connect("slack");
 
-    expect(openSpy).toHaveBeenCalledWith("https://composio.dev/oauth/xyz", "_blank");
+    expect(openSpy).toHaveBeenCalledWith(
+      "https://composio.dev/oauth/xyz",
+      "_blank",
+    );
   });
 
   test("BT-B1-07: connect() success toasts and revalidates the shared connected-accounts key", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(JSON.stringify({ redirectUrl: "https://composio.dev/x" }), {
-        status: 200,
-      }),
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({ redirectUrl: "https://composio.dev/x" }),
+          {
+            status: 200,
+          },
+        ),
     ) as unknown as typeof fetch;
-    globalThis.window = { ...globalThis.window, open: mock(() => null) } as unknown as Window &
-      typeof globalThis;
+    globalThis.window = {
+      ...globalThis.window,
+      open: mock(() => null),
+    } as unknown as Window & typeof globalThis;
 
     const { connect } = await renderConnect();
     await connect("notion");
 
     expect(toastCalls).toEqual([
-      { level: "success", message: "Finish connecting in the new tab, then refresh" },
+      {
+        level: "success",
+        message: "Finish connecting in the new tab, then refresh",
+      },
     ]);
     expect(mutateCalls).toContain("global:/api/composio/connected-accounts");
   });
 
   test("BT-B1-08: connect() failure (non-ok response) toasts an error and never opens a tab", async () => {
-    globalThis.fetch = mock(async () =>
-      new Response(JSON.stringify({ error: "Toolkit not found" }), {
-        status: 400,
-      }),
+    globalThis.fetch = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "Toolkit not found" }), {
+          status: 400,
+        }),
     ) as unknown as typeof fetch;
     const openSpy = mock(() => null);
-    globalThis.window = { ...globalThis.window, open: openSpy } as unknown as Window &
-      typeof globalThis;
+    globalThis.window = {
+      ...globalThis.window,
+      open: openSpy,
+    } as unknown as Window & typeof globalThis;
 
     const { connect } = await renderConnect();
     await connect("bad-slug");
 
     expect(openSpy).not.toHaveBeenCalled();
-    expect(toastCalls).toEqual([{ level: "error", message: "Toolkit not found" }]);
+    expect(toastCalls).toEqual([
+      { level: "error", message: "Toolkit not found" },
+    ]);
+  });
+
+  // ── Regression tests ───────────────────────────────────────────────────────
+  // These pin behaviors that would silently break the cross-component cache
+  // propagation the task explicitly calls out as a risk: "SWR cache keys must
+  // stay exactly '/api/composio/toolkits' and '/api/composio/connected-accounts'
+  // so mutate propagates across components."
+
+  test("regression: connect() never revalidates the connected-accounts cache on failure", async () => {
+    globalThis.fetch = mock(
+      async () =>
+        new Response(JSON.stringify({ error: "boom" }), { status: 500 }),
+    ) as unknown as typeof fetch;
+    globalThis.window = {
+      ...globalThis.window,
+      open: mock(() => null),
+    } as unknown as Window & typeof globalThis;
+
+    const { connect } = await renderConnect();
+    await connect("gmail");
+
+    // If a future edit moved the mutateAccounts() call outside the try block
+    // (or ahead of the res.ok check), this would start firing on error paths
+    // too, causing every consumer of useComposioCatalog() to spuriously
+    // revalidate on a failed connect attempt.
+    expect(mutateCalls).toEqual([]);
+  });
+
+  test("regression: useComposioConnect revalidates the exact same key useComposioCatalog subscribes to", async () => {
+    const { COMPOSIO_CONNECTED_ACCOUNTS_KEY } = await modulePromise;
+    globalThis.fetch = mock(
+      async () =>
+        new Response(
+          JSON.stringify({ redirectUrl: "https://composio.dev/y" }),
+          {
+            status: 200,
+          },
+        ),
+    ) as unknown as typeof fetch;
+    globalThis.window = {
+      ...globalThis.window,
+      open: mock(() => null),
+    } as unknown as Window & typeof globalThis;
+
+    const { connect } = await renderConnect();
+    await connect("linear");
+
+    // Pins the literal key string: if useComposioConnect's revalidation
+    // target ever drifts from the constant useComposioCatalog subscribes
+    // with, connecting a tool would stop updating the picker/catalog's
+    // connectedSlugs across components without any type error to catch it.
+    expect(mutateCalls).toContain(`global:${COMPOSIO_CONNECTED_ACCOUNTS_KEY}`);
+    expect(COMPOSIO_CONNECTED_ACCOUNTS_KEY).toBe(
+      "/api/composio/connected-accounts",
+    );
+  });
+});
+
+describe("regression: jsonFetcher error shape is preserved across the extraction", () => {
+  test("throws the exact 'Failed to load <url>' message on a non-ok response, matching the two prior duplicated implementations", async () => {
+    const { jsonFetcher } = await modulePromise;
+    globalThis.fetch = mock(
+      async () => new Response("", { status: 404 }),
+    ) as unknown as typeof fetch;
+
+    await expect(jsonFetcher("/api/composio/toolkits")).rejects.toThrow(
+      "Failed to load /api/composio/toolkits",
+    );
   });
 });

@@ -10,7 +10,10 @@ import {
   POPULAR_TOOLKIT_SLUGS,
   selectSuggestedToolkits,
 } from "./composio-catalog-suggested";
-import { useComposioCatalog, useComposioConnect } from "./composio-shared-hooks";
+import {
+  useComposioCatalog,
+  useComposioConnect,
+} from "./composio-shared-hooks";
 
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
@@ -170,8 +173,11 @@ function ToolkitGroup({
 
 export function ComposioToolCatalog() {
   const [query, setQuery] = useState("");
-  const { toolkits: allToolkits, toolkitsLoading, connectedSlugs } =
-    useComposioCatalog();
+  const {
+    toolkits: allToolkits,
+    toolkitsLoading,
+    connectedSlugs,
+  } = useComposioCatalog();
   const { connectingSlug, connect: handleConnect } = useComposioConnect();
 
   // Don't render anything if catalog is empty (Composio not configured)
