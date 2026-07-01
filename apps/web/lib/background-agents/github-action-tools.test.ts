@@ -9,14 +9,8 @@
  *  - audit events + output rows on success and failure
  *  - token minted/revoked per call
  */
-import {
-  afterAll,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
+import type { Sandbox } from "@open-agents/sandbox";
 
 mock.module("server-only", () => ({}));
 
@@ -190,7 +184,9 @@ let mergePullRequestResult: {
   error?: string;
   statusCode?: number;
 } = { success: true, sha: "merged-sha" };
-const mergePullRequest = mock(async (_params: unknown) => mergePullRequestResult);
+const mergePullRequest = mock(
+  async (_params: unknown) => mergePullRequestResult,
+);
 
 let deleteBranchRefResult: {
   success: boolean;
@@ -205,7 +201,12 @@ let mergeReadinessResult: {
   reasons: string[];
   allowedMethods: string[];
   defaultMethod: string;
-  checks: { requiredTotal: number; passed: number; pending: number; failed: number };
+  checks: {
+    requiredTotal: number;
+    passed: number;
+    pending: number;
+    failed: number;
+  };
 } = {
   success: true,
   canMerge: true,
@@ -224,10 +225,12 @@ let submitPullRequestReviewResult: {
   reviewId?: number;
   error?: string;
 } = { success: true, reviewId: 555 };
-const submitPullRequestReview = mock(async (params: Record<string, unknown>) => {
-  createReviewCapturedArgs = params;
-  return submitPullRequestReviewResult;
-});
+const submitPullRequestReview = mock(
+  async (params: Record<string, unknown>) => {
+    createReviewCapturedArgs = params;
+    return submitPullRequestReviewResult;
+  },
+);
 
 mock.module("@/lib/github/pulls", () => ({
   openPullRequest,
@@ -274,11 +277,12 @@ const buildCommitIntentFromSandbox = mock(
   async (_params: unknown) => buildCommitIntentResult,
 );
 
-let createCommitResult: { ok: true; commitSha: string } | { ok: false; error: string } =
-  {
-    ok: true,
-    commitSha: "new-commit-sha",
-  };
+let createCommitResult:
+  | { ok: true; commitSha: string }
+  | { ok: false; error: string } = {
+  ok: true,
+  commitSha: "new-commit-sha",
+};
 const createCommit = mock(async (_params: unknown) => createCommitResult);
 
 mock.module("@/lib/github/commit-intent", () => ({
@@ -294,15 +298,15 @@ mock.module("@/lib/github/commit", () => ({
 const fakeSandbox = {
   workingDirectory: "/workspace/widgets",
   currentBranch: "feature-branch",
-} as unknown;
+} as unknown as Sandbox;
 
 // ---------------------------------------------------------------------------
 // Module under test (imported after all mocks are wired)
 // ---------------------------------------------------------------------------
-const {
-  resolveGitHubActionTools,
-} = await import("./github-action-tools");
-type ResolveGitHubActionToolsCtx = Parameters<typeof resolveGitHubActionTools>[0];
+const { resolveGitHubActionTools } = await import("./github-action-tools");
+type ResolveGitHubActionToolsCtx = Parameters<
+  typeof resolveGitHubActionTools
+>[0];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -480,7 +484,7 @@ describe("github_open_pull_request execute", () => {
   test("happy path: calls openPullRequest with injected scoped octokit, records started/completed events + output row", async () => {
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = await tool.execute({
       branchName: "feature-branch",
@@ -513,20 +517,24 @@ describe("github_open_pull_request execute", () => {
     ]);
 
     expect(recordBackgroundAgentOutput).toHaveBeenCalledTimes(1);
-    const outputCall = recordBackgroundAgentOutput.mock.calls[0]?.[0] as OutputInput;
+    const outputCall = recordBackgroundAgentOutput.mock
+      .calls[0]?.[0] as OutputInput;
     expect(outputCall.status).toBe("created");
     expect(outputCall.url).toBe("https://github.com/acme/widgets/pull/42");
     expect(outputCall.prNumber).toBe(42);
   });
 
-  test("write-scope refusal: target repo outside this_repo scope → refuses with write_scope_denied, no token minted", async () => {
+  test("write-scope refusal: specific_repos scope excludes the run's own bound repo → refuses with write_scope_denied, no token minted", async () => {
     const ctx = buildCtx({
       repoOwner: "acme",
-      repoName: "other-repo",
-      writeScope: { mode: "this_repo" },
+      repoName: "widgets",
+      writeScope: {
+        mode: "specific_repos",
+        repos: [{ owner: "acme", name: "some-other-repo" }],
+      },
     });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -545,7 +553,8 @@ describe("github_open_pull_request execute", () => {
 
     // failure output row is recorded too
     expect(recordBackgroundAgentOutput).toHaveBeenCalledTimes(1);
-    const outputCall = recordBackgroundAgentOutput.mock.calls[0]?.[0] as OutputInput;
+    const outputCall = recordBackgroundAgentOutput.mock
+      .calls[0]?.[0] as OutputInput;
     expect(outputCall.status).toBe("failed");
   });
 
@@ -553,7 +562,7 @@ describe("github_open_pull_request execute", () => {
     mockAccessResult = { ok: false, reason: "app_no_access" };
     const ctx = buildCtx({ writeScope: { mode: "all_repos" } });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -578,7 +587,7 @@ describe("github_open_pull_request execute", () => {
       },
     });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -597,7 +606,7 @@ describe("github_open_pull_request execute", () => {
       },
     });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -616,7 +625,7 @@ describe("github_open_pull_request execute", () => {
     mintTokenShouldFail = true;
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -634,7 +643,7 @@ describe("github_open_pull_request execute", () => {
     openPullRequestResult = { success: false, error: "PR already exists" };
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branchName: "feature-branch",
@@ -654,7 +663,8 @@ describe("github_open_pull_request execute", () => {
       "background-agent.github.open_pull_request.failed",
     ]);
 
-    const outputCall = recordBackgroundAgentOutput.mock.calls[0]?.[0] as OutputInput;
+    const outputCall = recordBackgroundAgentOutput.mock
+      .calls[0]?.[0] as OutputInput;
     expect(outputCall.status).toBe("failed");
 
     // token still minted + revoked even on failure
@@ -700,7 +710,7 @@ describe("github_comment_on_pr_or_issue execute", () => {
 
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_comment_on_pr_or_issue as ToolExecutor;
+    const tool = tools.github_comment_on_pr_or_issue as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       issueOrPrNumber: 42,
@@ -725,7 +735,10 @@ describe("github_comment_on_pr_or_issue execute", () => {
         issues: {
           get: issuesGet,
           createComment: mock(async () => ({
-            data: { id: 1, html_url: "https://github.com/acme/widgets/pull/9#issuecomment-1" },
+            data: {
+              id: 1,
+              html_url: "https://github.com/acme/widgets/pull/9#issuecomment-1",
+            },
           })),
         },
       },
@@ -733,7 +746,7 @@ describe("github_comment_on_pr_or_issue execute", () => {
 
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_comment_on_pr_or_issue as ToolExecutor;
+    const tool = tools.github_comment_on_pr_or_issue as unknown as ToolExecutor;
 
     await tool.execute({ issueOrPrNumber: 9, body: "PR comment" });
 
@@ -748,7 +761,7 @@ describe("github_approve_pull_request execute", () => {
   test("happy path: submits an APPROVE review with pull_requests:write scope", async () => {
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_approve_pull_request as ToolExecutor;
+    const tool = tools.github_approve_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       prNumber: 42,
@@ -772,7 +785,7 @@ describe("github_request_changes execute", () => {
   test("happy path: submits a REQUEST_CHANGES review", async () => {
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_request_changes as ToolExecutor;
+    const tool = tools.github_request_changes as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       prNumber: 42,
@@ -795,7 +808,7 @@ describe("github_merge_pull_request execute", () => {
   test("happy path (requireCiGreen=false): merges without checking readiness", async () => {
     const ctx = buildCtx({ requireCiGreen: false });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_merge_pull_request as ToolExecutor;
+    const tool = tools.github_merge_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({ prNumber: 42 })) as {
       ok: true;
@@ -819,7 +832,7 @@ describe("github_merge_pull_request execute", () => {
     };
     const ctx = buildCtx({ requireCiGreen: true });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_merge_pull_request as ToolExecutor;
+    const tool = tools.github_merge_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({ prNumber: 42 })) as { ok: true };
 
@@ -839,7 +852,7 @@ describe("github_merge_pull_request execute", () => {
     };
     const ctx = buildCtx({ requireCiGreen: true });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_merge_pull_request as ToolExecutor;
+    const tool = tools.github_merge_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({ prNumber: 42 })) as {
       ok: false;
@@ -866,7 +879,7 @@ describe("github_merge_pull_request execute", () => {
     };
     const ctx = buildCtx({ requireCiGreen: true });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_merge_pull_request as ToolExecutor;
+    const tool = tools.github_merge_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({ prNumber: 42 })) as { ok: false };
 
@@ -880,10 +893,13 @@ describe("github_merge_pull_request execute", () => {
 
   test("write-scope refusal for merge", async () => {
     const ctx = buildCtx({
-      writeScope: { mode: "specific_repos", repos: [{ owner: "acme", name: "nope" }] },
+      writeScope: {
+        mode: "specific_repos",
+        repos: [{ owner: "acme", name: "nope" }],
+      },
     });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_merge_pull_request as ToolExecutor;
+    const tool = tools.github_merge_pull_request as unknown as ToolExecutor;
 
     const result = (await tool.execute({ prNumber: 42 })) as { ok: false };
     expect(result.ok).toBe(false);
@@ -902,7 +918,7 @@ describe("github_push execute", () => {
   test("happy path: builds commit intent from sandbox and creates a verified commit", async () => {
     const ctx = buildCtx({ sandbox: fakeSandbox });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_push as ToolExecutor;
+    const tool = tools.github_push as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branch: "feature-branch",
@@ -921,7 +937,7 @@ describe("github_push execute", () => {
   test("no sandbox provided → github_api_error refusal without minting a token", async () => {
     const ctx = buildCtx({ sandbox: undefined });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_push as ToolExecutor;
+    const tool = tools.github_push as unknown as ToolExecutor;
 
     const result = (await tool.execute({
       branch: "feature-branch",
@@ -944,7 +960,7 @@ describe("github_delete_branch execute", () => {
   test("happy path: deletes a non-default branch", async () => {
     const ctx = buildCtx({ defaultBranch: "main" });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_delete_branch as ToolExecutor;
+    const tool = tools.github_delete_branch as unknown as ToolExecutor;
 
     const result = (await tool.execute({ branch: "feature-branch" })) as {
       ok: true;
@@ -960,7 +976,7 @@ describe("github_delete_branch execute", () => {
   test("refuses to delete the repo default branch", async () => {
     const ctx = buildCtx({ defaultBranch: "main" });
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_delete_branch as ToolExecutor;
+    const tool = tools.github_delete_branch as unknown as ToolExecutor;
 
     const result = (await tool.execute({ branch: "main" })) as {
       ok: false;
@@ -985,7 +1001,7 @@ describe("audit trail", () => {
   test("every event payload includes runId, agentId, targetRepo", async () => {
     const ctx = buildCtx();
     const tools = resolveGitHubActionTools(ctx);
-    const tool = tools.github_open_pull_request as ToolExecutor;
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
 
     await tool.execute({ branchName: "feature-branch", title: "Add widget" });
 
