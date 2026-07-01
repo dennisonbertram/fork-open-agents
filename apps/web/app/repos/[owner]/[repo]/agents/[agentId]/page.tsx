@@ -15,6 +15,7 @@ import {
   describeOutputModePermissions,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
+import { describeWriteScope } from "../github-write-scope-section";
 import { ScheduleVisual } from "../schedule-visual";
 
 // ---- Types ------------------------------------------------------------------
@@ -132,7 +133,20 @@ export default async function AgentDetailPage({
       : builtinToolNames.length === 0
         ? "no built-in tools enabled"
         : builtinToolNames.join(", ");
-  const githubScopeSummary = describeOutputModePermissions(agent.outputMode);
+  // Write scope (how many repos the ready_pr agent's minted token can touch)
+  // is only meaningful for ready_pr agents — buildAgentPayload (TASK-A3)
+  // forces writeScopeMode back to "this_repo" on save for every other
+  // outputMode, and this display must not surface a stale persisted value
+  // for a report-only agent as if it were still in effect.
+  const savedGithubPermissions = agent.permissions?.github;
+  const writeScopeMode = savedGithubPermissions?.writeScopeMode ?? "this_repo";
+  const writeScopeRepos = savedGithubPermissions?.writeScopeRepos ?? [];
+  // repoCount includes the home repo itself plus any additional selected repos.
+  const writeScopeRepoCount = writeScopeRepos.length + 1;
+  const githubScopeSummary =
+    agent.outputMode === "ready_pr"
+      ? `${describeOutputModePermissions(agent.outputMode)} Repo scope: ${describeWriteScope(writeScopeMode, writeScopeRepoCount)}.`
+      : describeOutputModePermissions(agent.outputMode);
   const composioToolkitSlugs = agent.composioToolkitSlugs ?? [];
 
   return (
