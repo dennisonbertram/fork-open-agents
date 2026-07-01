@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CheckCircle2, Search, X } from "lucide-react";
-import useSWR from "swr";
-import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
-import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { prettifyToolkitSlug } from "@/lib/composio/chat-tool-summary";
 import { filterToolkits } from "./composio-catalog-filter";
+import { useComposioCatalog } from "./composio-shared-hooks";
 import {
   mergeSelectedWithCatalog,
   toggleSlug,
@@ -42,14 +40,6 @@ export interface ComposioToolkitPickerProps {
    * builder) can override with a location that makes sense in their context.
    */
   connectHint?: string;
-}
-
-async function jsonFetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to load ${url}`);
-  }
-  return res.json() as Promise<T>;
 }
 
 function ToolkitRowSkeleton() {
@@ -87,21 +77,8 @@ export function ComposioToolkitPicker({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [query]);
 
-  const { data: toolkitsData, isLoading: toolkitsLoading } =
-    useSWR<ComposioToolkitsResponse>(
-      "/api/composio/toolkits",
-      jsonFetcher<ComposioToolkitsResponse>,
-    );
-
-  const { data: accountsData } = useSWR<ComposioConnectedAccountsResponse>(
-    "/api/composio/connected-accounts",
-    jsonFetcher<ComposioConnectedAccountsResponse>,
-  );
-
-  const allToolkits = toolkitsData?.toolkits ?? [];
-  const connectedSlugs = new Set(
-    (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
-  );
+  const { toolkits: allToolkits, toolkitsLoading, connectedSlugs } =
+    useComposioCatalog();
   const toolkitBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
 
   /**

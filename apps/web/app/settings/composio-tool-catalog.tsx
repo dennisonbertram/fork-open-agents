@@ -2,10 +2,6 @@
 
 import { CheckCircle2, Search } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
-import useSWR from "swr";
-import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
-import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,6 +10,7 @@ import {
   POPULAR_TOOLKIT_SLUGS,
   selectSuggestedToolkits,
 } from "./composio-catalog-suggested";
+import { useComposioCatalog, useComposioConnect } from "./composio-shared-hooks";
 
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
@@ -22,14 +19,6 @@ const FILTERED_LIMIT = 30;
 
 /** Maximum suggested (not-yet-connected popular) toolkits to show. */
 const SUGGESTED_LIMIT = 4;
-
-async function jsonFetcher<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Failed to load ${url}`);
-  }
-  return res.json() as Promise<T>;
-}
 
 function ToolkitCardSkeleton() {
   return (
@@ -181,61 +170,16 @@ function ToolkitGroup({
 
 export function ComposioToolCatalog() {
   const [query, setQuery] = useState("");
-  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
-
-  const { data: toolkitsData, isLoading: toolkitsLoading } =
-    useSWR<ComposioToolkitsResponse>(
-      "/api/composio/toolkits",
-      jsonFetcher<ComposioToolkitsResponse>,
-    );
-
-  const { data: accountsData, mutate: mutateAccounts } =
-    useSWR<ComposioConnectedAccountsResponse>(
-      "/api/composio/connected-accounts",
-      jsonFetcher<ComposioConnectedAccountsResponse>,
-    );
-
-  const allToolkits = toolkitsData?.toolkits ?? [];
+  const { toolkits: allToolkits, toolkitsLoading, connectedSlugs } =
+    useComposioCatalog();
+  const { connectingSlug, connect: handleConnect } = useComposioConnect();
 
   // Don't render anything if catalog is empty (Composio not configured)
   if (!toolkitsLoading && allToolkits.length === 0) {
     return null;
   }
 
-  const connectedSlugs = new Set(
-    (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
-  );
-
   const isSearching = query.trim().length > 0;
-
-  async function handleConnect(slug: string) {
-    setConnectingSlug(slug);
-    try {
-      const res = await fetch("/api/composio/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toolkitSlug: slug }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        redirectUrl?: string;
-        error?: string;
-      } | null;
-
-      if (!res.ok || !body?.redirectUrl) {
-        throw new Error(body?.error ?? "Failed to start connection");
-      }
-
-      window.open(body.redirectUrl, "_blank");
-      toast.success("Finish connecting in the new tab, then refresh");
-      await mutateAccounts();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to start connection",
-      );
-    } finally {
-      setConnectingSlug(null);
-    }
-  }
 
   // Build the "connected" (pinned) group: cross-reference catalog by slug
   const catalogBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
