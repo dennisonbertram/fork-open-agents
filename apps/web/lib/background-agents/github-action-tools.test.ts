@@ -524,6 +524,44 @@ describe("github_open_pull_request execute", () => {
     expect(outputCall.prNumber).toBe(42);
   });
 
+  test("omitted baseBranch defaults to the repository default branch, not 'main'", async () => {
+    const ctx = buildCtx({ defaultBranch: "develop" });
+    const tools = resolveGitHubActionTools(ctx);
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
+
+    const result = await tool.execute({
+      branchName: "feature-branch",
+      title: "Add widget",
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    const call = openPullRequest.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(call.baseBranch).toBe("develop");
+  });
+
+  test("operation failure after a successful mint is github_api_error, never token_mint_failed", async () => {
+    openPullRequest.mockImplementationOnce(async () => {
+      throw new Error("ECONNRESET while calling GitHub");
+    });
+    const ctx = buildCtx();
+    const tools = resolveGitHubActionTools(ctx);
+    const tool = tools.github_open_pull_request as unknown as ToolExecutor;
+
+    const result = (await tool.execute({
+      branchName: "feature-branch",
+      title: "Add widget",
+    })) as { ok: false; error: string };
+
+    expect(result.ok).toBe(false);
+    // The token WAS minted (and revoked) — the failure is the GitHub call.
+    expect(mintInstallationToken).toHaveBeenCalledTimes(1);
+    expect(revokeInstallationToken).toHaveBeenCalledTimes(1);
+    const failedEvent = recordedEvents().find((event) =>
+      event.eventName.endsWith(".failed"),
+    );
+    expect(failedEvent?.errorKind).toBe("github_api_error");
+  });
+
   test("write-scope refusal: specific_repos scope excludes the run's own bound repo → refuses with write_scope_denied, no token minted", async () => {
     const ctx = buildCtx({
       repoOwner: "acme",
@@ -798,6 +836,29 @@ describe("github_request_changes execute", () => {
       event: "REQUEST_CHANGES",
       body: "Please fix X",
     });
+  });
+
+  test("input schema requires a non-empty body (GitHub 422s REQUEST_CHANGES without one); approve stays optional", () => {
+    const ctx = buildCtx();
+    const tools = resolveGitHubActionTools(ctx);
+    const requestChanges = tools.github_request_changes as unknown as {
+      inputSchema: { safeParse: (v: unknown) => { success: boolean } };
+    };
+    const approve = tools.github_approve_pull_request as unknown as {
+      inputSchema: { safeParse: (v: unknown) => { success: boolean } };
+    };
+
+    expect(requestChanges.inputSchema.safeParse({ prNumber: 1 }).success).toBe(
+      false,
+    );
+    expect(
+      requestChanges.inputSchema.safeParse({ prNumber: 1, body: "" }).success,
+    ).toBe(false);
+    expect(
+      requestChanges.inputSchema.safeParse({ prNumber: 1, body: "Fix X" })
+        .success,
+    ).toBe(true);
+    expect(approve.inputSchema.safeParse({ prNumber: 1 }).success).toBe(true);
   });
 });
 
