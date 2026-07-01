@@ -131,6 +131,25 @@ describe("resolveWriteScopeRepositoryIds", () => {
     });
   });
 
+  test("regression: repo_list requesting the home repo's own full_name again does not duplicate it in the resolved list", async () => {
+    listAppInstallationRepositories.mockImplementation(async () => [
+      repo(42, "acme/widgets"),
+      repo(43, "acme/beta"),
+    ]);
+
+    const result = await resolveWriteScopeRepositoryIds({
+      github: {
+        writeScopeMode: "repo_list",
+        writeScopeRepos: ["acme/widgets", "acme/beta"],
+      },
+      homeRepositoryId: 42,
+      installationId: 99,
+      repositorySelection: "selected",
+    });
+
+    expect(result).toEqual({ ok: true, repositoryIds: [42, 43] });
+  });
+
   test("regression: repo_list with no writeScopeRepos still returns a non-empty list scoped to just the home repo", async () => {
     const result = await resolveWriteScopeRepositoryIds({
       github: { writeScopeMode: "repo_list", writeScopeRepos: [] },

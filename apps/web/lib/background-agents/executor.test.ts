@@ -713,6 +713,102 @@ describe("executeBackgroundAgentRun", () => {
     });
   });
 
+  test("regression: re-checks repositorySelection fresh on every run — an installer narrowing the installation after an agent was configured with all_repos denies the very next run, and a later widening allows the run after it", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+      permissions: { github: { writeScopeMode: "all_repos" } },
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    // Run 1: installation is currently "selected" — must deny, not proceed.
+    verifyRepoAccess.mockImplementation(async () => ({
+      ...successfulAccess,
+      repositorySelection: "selected",
+    }));
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      errorKind: "write_scope_denied",
+    });
+    expect(openPullRequest).not.toHaveBeenCalled();
+
+    // Reset per-run recorders but keep the same persisted agent config —
+    // nothing about the agent's own saved scope changed between runs.
+    recordBackgroundAgentEvent.mockClear();
+    updateBackgroundAgentRunStatus.mockClear();
+    openPullRequest.mockClear();
+    listAppInstallationRepositories.mockImplementation(async () => [
+      { id: 42, name: "widgets", full_name: "acme/widgets", private: false },
+      { id: 100, name: "gadgets", full_name: "acme/gadgets", private: false },
+    ]);
+
+    // Run 2: installation is now "all" — the SAME agent config must now
+    // succeed, proving the gate reads the installation's current state on
+    // every run rather than a value cached from the first run or from save
+    // time.
+    verifyRepoAccess.mockImplementation(async () => ({
+      ...successfulAccess,
+      repositorySelection: "all",
+    }));
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-2",
+    });
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+    expect(openPullRequest).toHaveBeenCalledTimes(1);
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "succeeded",
+    });
+  });
+
+  test("regression: every installation token mint in the ready_pr flow always carries a non-empty repositoryIds array, never an omitted/unbounded scope", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+      permissions: { github: { writeScopeMode: "all_repos" } },
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    verifyRepoAccess.mockImplementation(async () => ({
+      ...successfulAccess,
+      repositorySelection: "all",
+    }));
+    listAppInstallationRepositories.mockImplementation(async () => [
+      { id: 42, name: "widgets", full_name: "acme/widgets", private: false },
+      { id: 100, name: "gadgets", full_name: "acme/gadgets", private: false },
+    ]);
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    // mintInstallationToken (the read-only sandbox setup mint) always scopes
+    // to exactly the home repo.
+    expect(mintInstallationToken).toHaveBeenCalledWith({
+      installationId: 99,
+      repositoryIds: [42],
+      permissions: { contents: "read" },
+    });
+
+    // Every withScopedInstallationOctokit call (the write-scoped commit mint)
+    // must carry a defined, non-empty repositoryIds array — never undefined,
+    // never empty, never a bare repositoryId.
+    for (const call of withScopedInstallationOctokit.mock.calls) {
+      const input = call[0] as {
+        repositoryIds?: number[];
+        repositoryId?: number;
+      };
+      expect(Array.isArray(input.repositoryIds)).toBe(true);
+      expect((input.repositoryIds as number[]).length).toBeGreaterThan(0);
+      expect(input.repositoryId).toBeUndefined();
+    }
+  });
+
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
