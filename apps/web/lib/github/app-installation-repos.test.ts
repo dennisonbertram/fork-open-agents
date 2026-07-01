@@ -66,15 +66,17 @@ describe("listAppInstallationRepositories", () => {
   });
 
   test("authenticates with the installation-scoped read token, not a raw app JWT", async () => {
-    let capturedAuth: string | null = null;
+    const captured: { auth: string | null | undefined } = { auth: null };
     globalThis.fetch = mock(async (_input: RequestInfo | URL, init) => {
-      capturedAuth = (init?.headers as Record<string, string>).Authorization;
+      captured.auth = (
+        init?.headers as Record<string, string> | undefined
+      )?.Authorization;
       return Response.json({ repositories: [] });
     }) as unknown as typeof fetch;
 
     await listAppInstallationRepositories({ installationId: 42 });
 
-    expect(capturedAuth).toBe("Bearer fake-installation-read-token");
+    expect(captured.auth).toBe("Bearer fake-installation-read-token");
   });
 
   test("filters results by query (case-insensitive, substring match)", async () => {

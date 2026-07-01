@@ -22,6 +22,10 @@ export type RepoAccessResult =
        * this to conditionally include write-grade tools without a second
        * round-trip. */
       userPermission: "read" | "write";
+      /** The installation's current repository_selection ("all" | "selected").
+       * Must be re-checked at RUN TIME (this call), not cached, because an
+       * installer can narrow this on GitHub after an agent was configured. */
+      repositorySelection: "all" | "selected";
     }
   | { ok: false; reason: RepoAccessDeniedReason };
 
@@ -143,6 +147,7 @@ export async function verifyRepoAccess(params: {
     repositoryId,
     defaultBranch,
     userPermission: resolvedUserPermission,
+    repositorySelection: installation.repositorySelection,
   };
 }
 

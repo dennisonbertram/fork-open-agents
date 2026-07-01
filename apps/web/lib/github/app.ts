@@ -139,6 +139,28 @@ export async function mintInstallationToken(params: {
   };
 }
 
+/**
+ * Mint a READ-ONLY, installation-scoped token covering every repo the
+ * installation can currently see. This is used ONLY to enumerate repos
+ * (e.g. for the "all repos"/"specific repos" write-scope pickers) and is
+ * never passed to a write operation — the real write-scoped token is always
+ * minted separately via mintInstallationToken with an explicit, bounded
+ * repositoryIds list.
+ */
+export async function mintInstallationReadToken(
+  installationId: number,
+): Promise<string> {
+  const { appId, privateKey } = getGitHubAppConfig();
+
+  const auth = createAppAuth({
+    appId,
+    privateKey,
+  });
+
+  const authResult = await auth({ type: "installation", installationId });
+  return authResult.token;
+}
+
 export async function revokeInstallationToken(token: string): Promise<void> {
   const response = await fetch("https://api.github.com/installation/token", {
     method: "DELETE",
