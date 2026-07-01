@@ -37,14 +37,17 @@ export type StandardToolpackItem = {
   caption?: string;
 };
 
+const SANDBOX_ONLY_CAPTION =
+  "Only affects this run's temporary sandbox — never persists to the real repo unless Result = Open a pull request.";
+
 export const STANDARD_TOOLPACK_ITEMS: StandardToolpackItem[] = [
   { name: "todo_write", label: "Todo tracking" },
   { name: "read", label: "Read files" },
-  { name: "write", label: "Write files" },
-  { name: "edit", label: "Edit files" },
+  { name: "write", label: "Write files", caption: SANDBOX_ONLY_CAPTION },
+  { name: "edit", label: "Edit files", caption: SANDBOX_ONLY_CAPTION },
   { name: "grep", label: "Search file contents (grep)" },
   { name: "glob", label: "Find files (glob)" },
-  { name: "bash", label: "Run shell commands" },
+  { name: "bash", label: "Run shell commands", caption: SANDBOX_ONLY_CAPTION },
   { name: "task", label: "Delegate to subagents" },
   { name: "ask_user_question", label: "Ask a clarifying question" },
   { name: "skill", label: "Load skills" },

@@ -3,6 +3,7 @@
 import { PlugZap, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
@@ -153,7 +154,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage("Agent created successfully.");
+      toast.success("Agent created successfully.");
     } else {
       setMessage(result.error);
     }

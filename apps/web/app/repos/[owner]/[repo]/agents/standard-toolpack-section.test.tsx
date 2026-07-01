@@ -84,6 +84,32 @@ describe("StandardToolpackSection", () => {
     }
   });
 
+  test("write/edit/bash captions clarify sandbox-only scope, distinct from real repo writes", () => {
+    // Naive-user finding: "Report only... doesn't change the repo" reads as
+    // if write/edit/bash are disabled too, when they're actually on by
+    // default and just never get committed anywhere for that output mode.
+    // These captions must make that relationship explicit on every render,
+    // not just for ready_pr, so a Report-only agent's Tools panel doesn't
+    // look like it contradicts the Result section above it.
+    const html = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        outputMode="none"
+      />,
+    );
+    expect(html).toContain("Only affects this run&#x27;s temporary sandbox");
+    const writeIdx = html.indexOf("Write files");
+    const editIdx = html.indexOf("Edit files");
+    const bashIdx = html.indexOf("Run shell commands");
+    const captionCount =
+      html.split("Only affects this run&#x27;s temporary sandbox").length - 1;
+    expect(captionCount).toBe(3);
+    expect(writeIdx).toBeGreaterThan(-1);
+    expect(editIdx).toBeGreaterThan(-1);
+    expect(bashIdx).toBeGreaterThan(-1);
+  });
+
   test("web_fetch toggle is unchecked when enabledToolNames omits it", () => {
     const html = renderToStaticMarkup(
       <StandardToolpackSection
