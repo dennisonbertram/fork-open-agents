@@ -150,4 +150,30 @@ describe("POST /api/background-agents/[agentId]/test", () => {
     expect(response.status).toBe(403);
     expect(body.error).toBe("Background agents are disabled");
   });
+
+  // #743: manual-test guard — the API must surface WHY nothing ran when the
+  // agent itself is disabled (not just when the rollout flag is off).
+  test("surfaces the skip reason when the agent is disabled", async () => {
+    dispatchManualBackgroundAgentTest.mockImplementationOnce(async () => ({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "agent_disabled",
+    }));
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/agent-1/test", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.skipReason).toBe("agent_disabled");
+  });
 });
