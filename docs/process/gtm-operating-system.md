@@ -30,6 +30,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
   next steps, and the approval boundary before CRM/outbound mutations.
 - `POST /api/gtm/outbound/drafts` creates a local outbound touchpoint and a
   pending approval request for the requested external action.
+- `/gtm/outbound` renders a review card for approval-gated outbound: recipient
+  policy, subject/body preview, personalization evidence, and the pending
+  approval state before Gmail, CRM, sequence, or send tools can run.
 - `POST /api/gtm/calls/prep` creates a local call-prep brief artifact.
 - `POST /api/gtm/calls/debrief` ingests notes into a redacted debrief, draft
   insights, and pending approvals for follow-up or GTM record updates.
