@@ -28,11 +28,6 @@ import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePicker } from "./schedule-picker";
 import { EventTriggerConditions } from "./event-trigger-conditions";
 import { RunTestConsole } from "./run-test-console";
-import {
-  GitHubToolCard,
-  permissionsToAccess,
-  type GitHubToolAccess,
-} from "./github-tool-card";
 import { ComposioOtherToolsSection } from "./composio-other-tools-section";
 
 type AgentSpecEditorProps = {
@@ -73,10 +68,11 @@ type AgentSpecEditorProps = {
  * - Repo owner/name are shown in the breadcrumb, NOT as a field here.
  * - Agent starts disabled by default.
  * - No auto-merge controls (v1 autonomy = draft PR / report only).
- * - ready_pr output makes GitHub write/PR permissions explicit.
+ * - Result (outputMode) is the single source of truth for GitHub write
+ *   access — there is no separate GitHub Access-level control. Choosing
+ *   "Open a pull request" is what grants write; "Report only" is read-only.
  * - schedule.cron trigger mounts the schedule components visibly.
  * - Actions (Save + Run a test) are at the TOP of the editor.
- * - Tools section keeps existing permission selects (contents + pull_requests).
  */
 export function AgentSpecEditor({
   mode = "create",
@@ -136,21 +132,16 @@ export function AgentSpecEditor({
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   const [conditionsOpen, setConditionsOpen] = useState(false);
-  // Normalize any mixed initial GitHub access (e.g. a legacy agent saved with
-  // contents:write + pullRequests:read) to what the tool card can represent, so
-  // the card never displays "Read-only" while the form silently holds a write
-  // that would persist unchanged on the next save.
-  const normalizedAccess: GitHubAccessLevel =
-    permissionsToAccess(
-      initialPermissionContents,
-      initialPermissionPullRequests,
-    ) === "pr"
-      ? "write"
-      : "read";
-  const [permissionContents, setPermissionContents] =
-    useState<GitHubAccessLevel>(normalizedAccess);
-  const [permissionPullRequests, setPermissionPullRequests] =
-    useState<GitHubAccessLevel>(normalizedAccess);
+  // Result (outputMode) is the single source of truth for GitHub write
+  // access (see buildAgentPayload) — these fields are retained on FormState
+  // for saved-value display/round-tripping only and are no longer editable
+  // or read on save.
+  const [permissionContents] = useState<GitHubAccessLevel>(
+    initialPermissionContents,
+  );
+  const [permissionPullRequests] = useState<GitHubAccessLevel>(
+    initialPermissionPullRequests,
+  );
   const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
     initialComposioToolkitSlugs,
   );
@@ -211,25 +202,7 @@ export function AgentSpecEditor({
   }
 
   function handleOutputModeChange(v: string) {
-    const newMode = v as OutputMode;
-    setOutputMode(newMode);
-    // Auto-coerce permissions to write when transitioning to ready_pr.
-    // Only on the transition (handler), not an effect — so user can override
-    // back to read after the initial coerce without losing their choice.
-    if (newMode === "ready_pr") {
-      setPermissionContents("write");
-      setPermissionPullRequests("write");
-    }
-  }
-
-  function handleGitHubAccessChange(level: GitHubToolAccess) {
-    if (level === "pr") {
-      setPermissionContents("write");
-      setPermissionPullRequests("write");
-    } else {
-      setPermissionContents("read");
-      setPermissionPullRequests("read");
-    }
+    setOutputMode(v as OutputMode);
   }
 
   const runTestDisabled = running || !createdAgentId;
@@ -406,14 +379,6 @@ export function AgentSpecEditor({
         description="The apps and abilities this agent can use."
       >
         <div className="space-y-4">
-          <GitHubToolCard
-            access={permissionsToAccess(
-              permissionContents,
-              permissionPullRequests,
-            )}
-            onChange={handleGitHubAccessChange}
-            disabled={saving}
-          />
           <ComposioOtherToolsSection
             selectedSlugs={composioToolkitSlugs}
             onChange={setComposioToolkitSlugs}
@@ -453,11 +418,6 @@ export function AgentSpecEditor({
       >
         <div className="space-y-2">
           {supportedOutputModes.map((m) => {
-            const isReadyPr = m === "ready_pr";
-            const isDisabled =
-              isReadyPr &&
-              permissionPullRequests === "read" &&
-              permissionContents === "read";
             return (
               <label
                 key={m}
@@ -465,14 +425,13 @@ export function AgentSpecEditor({
                   outputMode === m
                     ? "border-primary bg-primary/5"
                     : "border-border"
-                } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                }`}
               >
                 <input
                   type="radio"
                   name="output-mode"
                   value={m}
                   checked={outputMode === m}
-                  disabled={isDisabled}
                   onChange={() => handleOutputModeChange(m)}
                   className="mt-0.5 shrink-0"
                 />
@@ -485,11 +444,6 @@ export function AgentSpecEditor({
                       ? "Open a draft pull request with its changes for you to review and merge."
                       : "Leave a written summary on the run — you'll find it in this agent's run history. Doesn't open a PR or change the repo."}
                   </p>
-                  {isDisabled && (
-                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                      Give the GitHub tool pull-request access to use this.
-                    </p>
-                  )}
                 </div>
               </label>
             );

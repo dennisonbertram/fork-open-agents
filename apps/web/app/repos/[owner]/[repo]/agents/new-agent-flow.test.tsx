@@ -158,8 +158,10 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("disabled");
   });
 
-  test("BT-026: ready_pr output surfaces explicit write/PR permission copy", async () => {
+  test("BT-026: ready_pr output selects the 'Open a pull request' Result option and its PR-specific copy", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
+    const { buildAgentPayload } =
+      await import("@/lib/background-agents/agent-spec");
 
     const html = renderToStaticMarkup(
       <AgentSpecEditor
@@ -177,13 +179,38 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // When ready_pr is selected, the permissions section must show write access is needed
-    expect(html).toContain("write");
-    // Should mention PR creation or pull requests
+    // "Open a pull request" is selected (checked) and its copy is visible.
+    const prIdx = html.indexOf("Open a pull request");
+    expect(prIdx).toBeGreaterThanOrEqual(0);
+    const radioIdx = html.lastIndexOf("<input", prIdx);
+    expect(html.slice(radioIdx, prIdx)).toContain('checked=""');
     const lowerHtml = html.toLowerCase();
-    expect(lowerHtml.includes("pull request") || lowerHtml.includes("pr")).toBe(
-      true,
-    );
+    expect(lowerHtml.includes("pull request")).toBe(true);
+
+    // Result (outputMode) is the single source of truth for write access —
+    // there is no separate permission copy in the editor anymore, but the
+    // payload it would save does carry github write for ready_pr.
+    const payload = buildAgentPayload({
+      name: "PR Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Create PRs for issues.",
+      outputMode: "ready_pr",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+    });
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
   test("BT-027: no auto-merge controls anywhere in the spec editor", async () => {

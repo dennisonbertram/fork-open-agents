@@ -189,14 +189,15 @@ function buildConditions(form: FormState): TriggerConditions {
 
 export function buildAgentPayload(form: FormState) {
   const conditions = buildConditions(form);
-  // Ready PR is non-functional without write access — the agent must push a
-  // branch and open a PR — so floor contents + pull_requests to "write" for
-  // ready_pr regardless of the calling surface (the settings form has no
-  // permission controls and would otherwise send read/read). Report-only agents
-  // keep the user's chosen access so least-privilege selections are preserved.
+  // Result (outputMode) is the single source of truth for GitHub write
+  // access — form.permissionContents/permissionPullRequests are intentionally
+  // NOT read here. Ready PR is non-functional without write access (the
+  // agent must push a branch and open a PR), so it always gets write.
+  // Every other output mode is read-only: there is no separate GitHub
+  // Access-level control that can escalate a Report-only agent to write.
   const requiresWrite = form.outputMode === "ready_pr";
-  const contents = requiresWrite ? "write" : form.permissionContents;
-  const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
+  const contents = requiresWrite ? "write" : "read";
+  const pullRequests = requiresWrite ? "write" : "read";
   return {
     name: form.name,
     repoOwner: form.repoOwner,
@@ -386,9 +387,11 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
       ? ""
       : joinConditionList(conditions.actions);
 
-  // Edit mode must reflect what was actually saved, not re-derive GitHub access
-  // from outputMode. That keeps downgraded agents from silently re-escalating
-  // when reopened.
+  // Display-only: show what was actually saved for this agent. Note that
+  // buildAgentPayload no longer reads these fields on save — GitHub write
+  // access is derived purely from outputMode there, so a saved write value
+  // shown here for a legacy "none" agent will be downgraded to read the next
+  // time this form is saved.
   const savedGh = agent.permissions?.github;
   const permissionContents: GitHubAccessLevel = savedGh?.contents ?? "read";
   const permissionPullRequests: GitHubAccessLevel =

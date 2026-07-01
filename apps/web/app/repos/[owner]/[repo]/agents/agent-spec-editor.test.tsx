@@ -129,7 +129,7 @@ describe("AgentSpecEditor", () => {
     expect(html).not.toContain("run-test-console");
   });
 
-  test("(E4) Tools section renders GitHub tool card with segmented control and Composio sub-section", async () => {
+  test("(E4) Tools section renders the Composio 'Other tools' sub-section and no standalone GitHub access card", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -139,43 +139,18 @@ describe("AgentSpecEditor", () => {
     // The Tools section heading is present
     expect(html).toContain("Tools");
 
-    // GitHub card identity (name + icon title attribute from lucide)
-    expect(html).toContain("GitHub");
-
-    // Segmented control options
-    expect(html).toContain("Read-only");
-    expect(html).toContain("Open pull requests");
-
-    // Access level description copy present for default read-only state
-    expect(html).toContain("change anything");
-    expect(html).toContain("This agent can look but not touch");
-
-    // Static read-only permissions still shown inside the card
-    expect(html).toContain("issues");
-    expect(html).toContain("deployments");
-    expect(html).toContain("checks");
-
     // Composio sub-section mock renders
     expect(html).toContain("composio-other-tools-section");
     expect(html).toContain("Other tools");
+
+    // The standalone GitHub Access-level card (segmented Read-only / Open
+    // pull requests control + "Required" badge) is gone — Result is the
+    // single source of truth for GitHub write access now.
+    expect(html).not.toContain("Read-only");
+    expect(html).not.toContain("GitHub access level");
   });
 
-  test("(E4b) GitHub card in PR-access state shows PR-specific copy", async () => {
-    const { AgentSpecEditor } = await modulePromise;
-
-    const html = renderToStaticMarkup(
-      <AgentSpecEditor
-        {...defaultEditorProps}
-        initialPermissionContents="write"
-        initialPermissionPullRequests="write"
-      />,
-    );
-
-    expect(html).toContain("Never merges");
-    expect(html).toContain("This agent can propose changes as pull requests");
-  });
-
-  test("(E4c) Result 'Open a pull request' is disabled when GitHub access is Read-only", async () => {
+  test("(E4c) both Result options are always selectable regardless of legacy saved GitHub permissions", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -187,36 +162,30 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // The ready_pr radio must be disabled
+    // Neither Result radio is disabled — there is no permission gate left.
     const prLabelIdx = html.indexOf("Open a pull request");
     expect(prLabelIdx).toBeGreaterThanOrEqual(0);
-    // Find the radio input before the label text
     const radioIdx = html.lastIndexOf("<input", prLabelIdx);
     const radioSnippet = html.slice(radioIdx, prLabelIdx);
-    expect(radioSnippet).toContain('disabled=""');
+    expect(radioSnippet).not.toContain('disabled=""');
 
-    // The gating helper text is shown
-    expect(html).toContain("Give the GitHub tool pull-request access");
+    // The old gating helper text is gone.
+    expect(html).not.toContain("Give the GitHub tool pull-request access");
   });
 
-  test("(E4d) mixed initial permissions normalize to Read-only (no silent write)", async () => {
+  test("(E4d) Result section never renders the old permission-gating helper text, even for a ready_pr agent with legacy read permissions", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
-    // Legacy/mismatched state: contents=write but pullRequests=read can't open
-    // a PR, so the card must present Read-only — not PR access — and must not
-    // silently keep the write on save.
     const html = renderToStaticMarkup(
       <AgentSpecEditor
         {...defaultEditorProps}
-        initialPermissionContents="write"
+        initialOutputMode="ready_pr"
+        initialPermissionContents="read"
         initialPermissionPullRequests="read"
-        initialOutputMode="none"
       />,
     );
 
-    expect(html).toContain("This agent can look but not touch");
-    expect(html).not.toContain(
-      "This agent can propose changes as pull requests",
-    );
+    expect(html).toContain("Open a pull request");
+    expect(html).not.toContain("Give the GitHub tool pull-request access");
   });
 });
