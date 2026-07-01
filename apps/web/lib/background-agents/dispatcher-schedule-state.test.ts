@@ -44,6 +44,8 @@ mock.module("@/app/workflows/background-agent", () => ({
 // Do NOT register mock.module calls for agent-loops paths in this file —
 // doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
 
+const seedTriggerNextRunAt = mock(async () => undefined);
+
 mock.module("./store", () => ({
   createRunForTrigger: createRunForTriggerMock,
   getOwnedBackgroundAgentWithTriggers: async () => null,
@@ -55,6 +57,7 @@ mock.module("./store", () => ({
   updateBackgroundAgentRunStatus: updateBackgroundAgentRunStatusMock,
   advanceTriggerScheduleState,
   recordTriggerSkipReason,
+  seedTriggerNextRunAt,
 }));
 
 const dispatcherModulePromise = import("./dispatcher");
@@ -111,6 +114,7 @@ function resetMocks() {
   }));
   recordBackgroundAgentEventMock.mockClear();
   updateBackgroundAgentRunStatusMock.mockClear();
+  seedTriggerNextRunAt.mockClear();
   listEnabledScheduleTriggersMock.mockClear();
   listEnabledScheduleTriggersMock.mockImplementation(async () => scheduleRows);
   listStaleBackgroundAgentRunsMock.mockClear();
@@ -195,6 +199,62 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
         skipReason: expect.stringContaining("schedule"),
       }),
     );
+  });
+
+  test("BT-750-E: legacy null-nextRunAt off-grid trigger is seeded on sweep instead of never firing", async () => {
+    // Pre-#750 rows have nextRunAt null. An off-grid schedule ('7 * * * *')
+    // can never exact-minute match a */5 tick, so without seeding it would
+    // never fire. The sweep must persist a seeded nextRunAt so the NEXT
+    // sweep after that time fires it via the due-window path.
+    const legacyTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-legacy-offgrid",
+      schedule: "7 * * * *",
+      nextRunAt: null,
+    };
+    scheduleRows = [{ agent: baseAgent, trigger: legacyTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    // Tick at 09:12 UTC — minute 12 does not match minute 7, no run yet.
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:12:00.000Z"),
+      requestId: "req-legacy-seed",
+    });
+
+    expect(createRunForTriggerMock).not.toHaveBeenCalled();
+    // Seeded to the next matching minute after 09:12 → 10:07 UTC.
+    expect(seedTriggerNextRunAt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-legacy-offgrid",
+        nextRunAt: new Date("2026-06-01T10:07:00.000Z"),
+      }),
+    );
+    // Not-due is NOT a skip reason.
+    expect(recordTriggerSkipReason).not.toHaveBeenCalled();
+  });
+
+  test("BT-750-F: invalid schedule records an actionable skip reason, not the not-due message", async () => {
+    const invalidTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-invalid-msg",
+      schedule: "not a cron expression",
+    };
+    scheduleRows = [{ agent: baseAgent, trigger: invalidTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-invalid-msg",
+    });
+
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-invalid-msg",
+        skipReason: "invalid schedule expression",
+      }),
+    );
+    // Invalid schedules are never seeded.
+    expect(seedTriggerNextRunAt).not.toHaveBeenCalled();
   });
 
   test("BT-005: records skip reason when repo is not in allowlist", async () => {
