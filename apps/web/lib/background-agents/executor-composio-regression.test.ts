@@ -108,6 +108,7 @@ const listBackgroundAgentOutputs = mock(async () => []);
 const listEnabledToolGrantsForAgent = mock(async (_agentId: string) => []);
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput,
