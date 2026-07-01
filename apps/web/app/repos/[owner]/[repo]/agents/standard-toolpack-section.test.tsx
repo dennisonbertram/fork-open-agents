@@ -10,7 +10,10 @@ import {
   StandardToolpackSection,
   toggleBuiltinToolName,
 } from "./standard-toolpack-section";
-import { DEFAULT_ON_TOOL_NAMES } from "@/lib/background-agents/builtin-toolpack";
+import {
+  DEFAULT_ON_TOOL_NAMES,
+  STANDARD_TOOLPACK_ITEMS,
+} from "@/lib/background-agents/builtin-toolpack";
 
 describe("toggleBuiltinToolName (pure helper)", () => {
   test("removes a name that is present", () => {
@@ -168,5 +171,84 @@ describe("StandardToolpackSection", () => {
     const tag = html.slice(buttonOpenIdx, buttonCloseIdx);
     expect(tag).toContain('role="switch"');
     expect(tag).not.toContain('disabled=""');
+  });
+
+  // --- Regression coverage -------------------------------------------------
+
+  test("REG: built-in switch states are independent of outputMode — only the GitHub row caption changes", () => {
+    const enabledToolNames = ["bash"];
+    const noneHtml = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={enabledToolNames}
+        onChange={noop}
+        outputMode="none"
+      />,
+    );
+    const readyPrHtml = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={enabledToolNames}
+        onChange={noop}
+        outputMode="ready_pr"
+      />,
+    );
+
+    // This would fail if a future change accidentally re-coupled outputMode
+    // to the built-in toggle states (the exact two-control coupling bug this
+    // issue's step-2 already fixed for GitHub write permission — a regression
+    // here would silently reintroduce a similar coupling for the toolpack).
+    for (const label of [
+      "Run shell commands",
+      "Read files",
+      "Fetch external URLs",
+    ]) {
+      const noneIdx = noneHtml.indexOf(label);
+      const noneButtonIdx = noneHtml.indexOf("<button", noneIdx);
+      const noneTag = noneHtml.slice(
+        noneButtonIdx,
+        noneHtml.indexOf(">", noneButtonIdx),
+      );
+
+      const prIdx = readyPrHtml.indexOf(label);
+      const prButtonIdx = readyPrHtml.indexOf("<button", prIdx);
+      const prTag = readyPrHtml.slice(
+        prButtonIdx,
+        readyPrHtml.indexOf(">", prButtonIdx),
+      );
+
+      const noneChecked = noneTag.includes('data-state="checked"');
+      const prChecked = prTag.includes('data-state="checked"');
+      expect(prChecked).toBe(noneChecked);
+    }
+
+    // Sanity: the caption DID change (proves the two renders aren't identical
+    // for an unrelated reason, e.g. a broken outputMode prop wire-up).
+    const noneGhIdx = noneHtml.indexOf("GitHub (scoped to this repo)");
+    const prGhIdx = readyPrHtml.indexOf("GitHub (scoped to this repo)");
+    expect(noneHtml.slice(noneGhIdx, noneGhIdx + 400).toLowerCase()).toContain(
+      "read-only",
+    );
+    expect(readyPrHtml.slice(prGhIdx, prGhIdx + 400).toLowerCase()).toContain(
+      "pull request",
+    );
+  });
+
+  test("REG: the fixed GitHub row can never become a toggleable entry — STANDARD_TOOLPACK_ITEMS has no github-like name and total switches always equals its length", () => {
+    // Guards against a future edit that accidentally adds a "github" (or
+    // similarly named) entry to STANDARD_TOOLPACK_ITEMS, which would let it
+    // render as a Switch and get serialized into builtinToolNames — breaking
+    // the "always present, cannot be removed" contract from issue #721.
+    for (const item of STANDARD_TOOLPACK_ITEMS) {
+      expect(item.name.toLowerCase()).not.toContain("github");
+    }
+
+    const html = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        outputMode="none"
+      />,
+    );
+    const switchMatches = html.match(/role="switch"/g) ?? [];
+    expect(switchMatches.length).toBe(STANDARD_TOOLPACK_ITEMS.length);
   });
 });

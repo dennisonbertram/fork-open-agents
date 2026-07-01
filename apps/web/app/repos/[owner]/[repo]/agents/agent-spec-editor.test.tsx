@@ -250,4 +250,40 @@ describe("AgentSpecEditor", () => {
       'data-state="unchecked"',
     );
   });
+
+  // --- Regression coverage -------------------------------------------------
+
+  test("REG: an explicit empty builtinToolNames array (agent with everything disabled) is NOT treated as 'use the default preset'", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    // Guards against a plausible regression where someone "helpfully"
+    // rewrites `initialBuiltinToolNames ?? [...DEFAULT_ON_TOOL_NAMES]` as an
+    // emptiness check (e.g. `names && names.length > 0 ? names : DEFAULT`),
+    // which would silently re-enable every built-in — including web_fetch —
+    // for an agent whose owner explicitly disabled all of them.
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} initialBuiltinToolNames={[]} />,
+    );
+
+    const bashIdx = html.indexOf("Run shell commands");
+    const bashSwitchIdx = html.indexOf('role="switch"', bashIdx);
+    expect(html.slice(bashIdx, bashSwitchIdx + 100)).toContain(
+      'data-state="unchecked"',
+    );
+  });
+
+  test("REG: the Standard toolpack section renders exactly one switch per built-in and none for the GitHub row, even embedded inside the full editor", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} />,
+    );
+
+    const switchMatches = html.match(/role="switch"/g) ?? [];
+    // 11 built-ins from STANDARD_TOOLPACK_ITEMS; the fixed GitHub row and
+    // the mocked ComposioOtherToolsSection contribute none. This would fail
+    // if a future edit accidentally made the GitHub row toggleable or
+    // duplicated the toolpack section.
+    expect(switchMatches.length).toBe(11);
+  });
 });
