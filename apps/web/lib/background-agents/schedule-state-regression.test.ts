@@ -92,6 +92,7 @@ mock.module("@/app/workflows/background-agent", () => ({
 // Do NOT register mock.module calls for agent-loops paths in this file —
 // doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   advanceTriggerScheduleState: advanceTriggerScheduleStateMock,
   createRunForTrigger: createRunForTriggerMock,
   getOwnedBackgroundAgentWithTriggers: async () => null,

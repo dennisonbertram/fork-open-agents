@@ -101,6 +101,7 @@ const listBackgroundAgentEvents = mock(async () => []);
 const listBackgroundAgentOutputs = mock(async () => []);
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput: mock(async (input: unknown) => input),
