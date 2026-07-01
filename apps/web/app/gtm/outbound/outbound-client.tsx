@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ApprovalDecisionControls } from "../_components/approval-decision-controls";
 
 const ACTION_LABELS: Record<GtmOutboundActionKind, string> = {
   email_create_draft: "Create email draft",
@@ -85,6 +86,9 @@ export function OutboundApprovalResult({
           <div className="rounded-md border border-border p-3 text-sm">
             <div className="text-muted-foreground">Approval</div>
             <div className="mt-1 font-medium">{result.approvalId}</div>
+            <div className="mt-3">
+              <ApprovalDecisionControls approvalId={result.approvalId} />
+            </div>
           </div>
           <div className="rounded-md border border-border p-3 text-sm">
             <div className="text-muted-foreground">Recipient domain</div>

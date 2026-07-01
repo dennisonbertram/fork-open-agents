@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   gtmAgentRuns,
@@ -260,8 +260,33 @@ export async function listGtmActivationSignals(
     .where(and(eq(gtmSignals.userId, userId), eq(gtmSignals.status, "draft")))
     .orderBy(desc(gtmSignals.updatedAt));
 
+  if (rows.length === 0) {
+    return [];
+  }
+
+  const approvalRows = await database
+    .select({ id: gtmApprovals.id, targetId: gtmApprovals.targetId })
+    .from(gtmApprovals)
+    .where(
+      and(
+        eq(gtmApprovals.userId, userId),
+        eq(gtmApprovals.targetKind, "signal"),
+        inArray(
+          gtmApprovals.targetId,
+          rows.map((row) => row.signalId),
+        ),
+        eq(gtmApprovals.status, "pending"),
+      ),
+    );
+  const approvalIdsBySignalId = new Map(
+    approvalRows.map((approval) => [approval.targetId, approval.id]),
+  );
+
   return rows.map((row) => ({
     signalId: row.signalId,
+    ...(approvalIdsBySignalId.has(row.signalId)
+      ? { approvalId: approvalIdsBySignalId.get(row.signalId) }
+      : {}),
     signalType: row.signalType,
     severity: row.severity,
     summary: row.summary,

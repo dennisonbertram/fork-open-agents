@@ -65,6 +65,7 @@ export interface RunGtmActivationWatcherResult {
 
 export interface GtmActivationQueueItem {
   signalId: string;
+  approvalId?: string;
   signalType: string;
   severity: string;
   summary: string;

@@ -53,6 +53,7 @@ describe("GtmActivationClient", () => {
         signals={[
           {
             signalId: "signal-1",
+            approvalId: "approval-1",
             signalType: "activation",
             severity: "high",
             summary: "3 session failures suggest activation is blocked.",
@@ -76,6 +77,8 @@ describe("GtmActivationClient", () => {
     expect(html).toContain("Review failed sessions");
     expect(html).toContain("[Activation] repeated session failure");
     expect(html).toContain("pending approval");
+    expect(html).toContain("Approve");
+    expect(html).toContain("Deny");
   });
 
   test("renders watcher run summary", async () => {
