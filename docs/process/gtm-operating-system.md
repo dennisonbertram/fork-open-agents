@@ -14,6 +14,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `GET /api/gtm/brief?window=24h` returns the read-only daily GTM brief.
 - `GET /api/gtm/diagnosis?source=account_work&id=...` returns bounded evidence
   for a single GTM item.
+- `POST /api/gtm/research/runs` creates a deterministic, draft-first account
+  research run from cited manual, CRM, or public evidence. It persists draft GTM
+  signals and rejects uncited or unverified private claims instead of guessing.
 
 ## Event Vocabulary
 
@@ -52,6 +55,10 @@ including email sends, CRM writes, sequence enrollment, or GitHub issue filing,
 must create a pending GTM approval first. A denied or expired approval must not
 call the external tool.
 
+Research runs create local draft signals only. Promoting a research finding to
+active, writing to CRM, sending outbound, or filing a public issue remains a
+separate approval-gated action.
+
 ## Debug Recipes
 
 - Reconstruct one operation: query `gtm_events` by `request_id`.
@@ -60,4 +67,3 @@ call the external tool.
   `user_id`, `entity_kind`, and `entity_id`.
 - Explain an incomplete daily brief: inspect `sourceStatus` in
   `/api/gtm/brief`, then inspect source-specific events by `requestId`.
-

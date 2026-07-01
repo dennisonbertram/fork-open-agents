@@ -1,0 +1,65 @@
+import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
+import { createGtmResearchRun } from "@/lib/gtm-research/store";
+import { GtmResearchError } from "@/lib/gtm-research/types";
+
+function requestIdFromHeaders(req: Request): string {
+  return req.headers.get("x-request-id") ?? crypto.randomUUID();
+}
+
+export async function POST(req: Request): Promise<Response> {
+  const authResult = await requireAuthenticatedUser();
+  if (!authResult.ok) {
+    return authResult.response;
+  }
+
+  let body: Record<string, unknown>;
+  try {
+    body = (await req.json()) as Record<string, unknown>;
+  } catch {
+    return Response.json(
+      {
+        error: "Invalid JSON",
+        errorKind: "invalid_research_input",
+      },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const result = await createGtmResearchRun({
+      userId: authResult.userId,
+      requestId: requestIdFromHeaders(req),
+      accountId: typeof body.accountId === "string" ? body.accountId : null,
+      contactId: typeof body.contactId === "string" ? body.contactId : null,
+      accountName:
+        typeof body.accountName === "string" ? body.accountName : null,
+      contactName:
+        typeof body.contactName === "string" ? body.contactName : null,
+      claims: Array.isArray(body.claims) ? body.claims : [],
+      openQuestions: Array.isArray(body.openQuestions)
+        ? body.openQuestions.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [],
+      nextSteps: Array.isArray(body.nextSteps)
+        ? body.nextSteps.filter(
+            (item): item is string => typeof item === "string",
+          )
+        : [],
+    });
+
+    return Response.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof GtmResearchError) {
+      return Response.json(
+        {
+          error: error.message,
+          errorKind: error.kind,
+        },
+        { status: error.kind === "cross_user_reference" ? 403 : 400 },
+      );
+    }
+
+    throw error;
+  }
+}
