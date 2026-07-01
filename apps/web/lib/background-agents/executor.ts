@@ -1011,13 +1011,13 @@ export async function executeBackgroundAgentRun(params: {
   }
 
   let readyPrBranchName: string | null = null;
-  if (agent.outputMode === "ready_pr") {
-    readyPrBranchName = buildBackgroundBranchName({
-      agentName: agent.name,
-      runId: run.id,
-    });
+  try {
+    if (agent.outputMode === "ready_pr") {
+      readyPrBranchName = buildBackgroundBranchName({
+        agentName: agent.name,
+        runId: run.id,
+      });
 
-    try {
       await prepareReadyPullRequestBranch({
         runId: run.id,
         agentId: run.agentId,
@@ -1028,32 +1028,36 @@ export async function executeBackgroundAgentRun(params: {
         sandbox,
         branchName: readyPrBranchName,
       });
-      await runMutationAgent({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        sandbox,
-        prompt: buildBackgroundAgentMutationPrompt({
-          agentName: agent.name,
-          instructions: agent.instructions,
-          triggerKind: run.triggerKind,
-          repoOwner: run.repoOwner,
-          repoName: run.repoName,
-          ref: run.ref,
-          sha: run.sha,
-          branch: run.branch,
-          prNumber: run.prNumber,
-          issueNumber: run.issueNumber,
-          deploymentUrl: run.deploymentUrl,
-          payloadSummary: run.payloadSummary,
-          checkCommand: agent.checkCommand,
-        }),
-        composioTools: resolvedComposioTools,
-        allowedBuiltinToolNames: agent.builtinToolNames ?? null,
-      });
+    }
+
+    await runMutationAgent({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      sandbox,
+      prompt: buildBackgroundAgentMutationPrompt({
+        agentName: agent.name,
+        instructions: agent.instructions,
+        triggerKind: run.triggerKind,
+        repoOwner: run.repoOwner,
+        repoName: run.repoName,
+        ref: run.ref,
+        sha: run.sha,
+        branch: run.branch,
+        prNumber: run.prNumber,
+        issueNumber: run.issueNumber,
+        deploymentUrl: run.deploymentUrl,
+        payloadSummary: run.payloadSummary,
+        checkCommand: agent.checkCommand,
+      }),
+      composioTools: resolvedComposioTools,
+      allowedBuiltinToolNames: agent.builtinToolNames ?? null,
+    });
+
+    if (agent.outputMode === "ready_pr") {
       await recordBackgroundAgentEvent({
         runId: run.id,
         agentId: run.agentId,
@@ -1068,22 +1072,22 @@ export async function executeBackgroundAgentRun(params: {
           branchName: await getCurrentBranch(sandbox),
         },
       });
-    } catch (error) {
-      await recordFailure({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        errorKind: "workflow_failed",
-        summary:
-          error instanceof Error
-            ? error.message
-            : "Background mutation agent failed.",
-      });
-      return;
     }
+  } catch (error) {
+    await recordFailure({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+      errorKind: "workflow_failed",
+      summary:
+        error instanceof Error
+          ? error.message
+          : "Background mutation agent failed.",
+    });
+    return;
   }
 
   if (agent.checkCommand?.trim()) {
