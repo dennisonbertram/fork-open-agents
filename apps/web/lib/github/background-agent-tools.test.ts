@@ -3,9 +3,8 @@ import type { Sandbox } from "@open-agents/sandbox";
 
 mock.module("server-only", () => ({}));
 
-const { resolveGitHubActionToolsForBackgroundAgent } = await import(
-  "./background-agent-tools"
-);
+const { resolveGitHubActionToolsForBackgroundAgent } =
+  await import("./background-agent-tools");
 
 type Ctx = Parameters<typeof resolveGitHubActionToolsForBackgroundAgent>[0];
 
