@@ -701,7 +701,56 @@ describe("REG: builtin-toolpack — the product toolpack list cannot drift from 
       STANDARD_TOOLPACK_TOOL_NAMES.length - 1,
     );
   });
+
+  test("REGRESSION: buildAgentPayload's default builtinToolNames is a fresh copy, not a shared reference to DEFAULT_ON_TOOL_NAMES", () => {
+    // If buildAgentPayload were ever changed from `[...DEFAULT_ON_TOOL_NAMES]`
+    // to `DEFAULT_ON_TOOL_NAMES` directly, mutating one saved agent's
+    // payload.builtinToolNames array (e.g. downstream JSON round-tripping,
+    // or a future feature that edits the array in place) would silently
+    // corrupt the shared module-level constant for every other agent that
+    // saves afterward. This guards that every payload gets its own array.
+    const payloadA = buildAgentPayload(
+      makeFormForBuiltinToolNamesRegression({ builtinToolNames: null }),
+    );
+    const payloadB = buildAgentPayload(
+      makeFormForBuiltinToolNamesRegression({ builtinToolNames: null }),
+    );
+
+    expect(payloadA.builtinToolNames).not.toBe(payloadB.builtinToolNames);
+    expect(payloadA.builtinToolNames).not.toBe(DEFAULT_ON_TOOL_NAMES);
+
+    payloadA.builtinToolNames.push("mutated");
+
+    expect(DEFAULT_ON_TOOL_NAMES).not.toContain("mutated");
+    expect(payloadB.builtinToolNames).not.toContain("mutated");
+  });
 });
+
+function makeFormForBuiltinToolNamesRegression(
+  overrides: Partial<FormState> = {},
+): FormState {
+  return {
+    name: "Test Agent",
+    repoOwner: "acme",
+    repoName: "widgets",
+    triggerKind: "github.pull_request",
+    schedule: "",
+    conditionActions: "",
+    conditionBranches: "",
+    conditionLabels: "",
+    conditionEnvironments: "",
+    conditionSeverities: "",
+    instructions: "Run smoke checks.",
+    outputMode: "none",
+    checkCommand: "",
+    enabled: false,
+    permissionContents: "read",
+    permissionPullRequests: "read",
+    composioToolkitSlugs: [],
+    builtinToolNames: null,
+    ...overrides,
+  };
+}
 
 describe("buildFormFromAgent — builtinToolNames", () => {
   test("REG-025: a null builtinToolNames on the saved agent round-trips to null on the form (Standard toolpack UI renders the default preset)", () => {

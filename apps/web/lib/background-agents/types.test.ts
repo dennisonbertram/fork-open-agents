@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildBackgroundRunIdempotencyKey,
   createBackgroundAgentSchema,
+  updateBackgroundAgentSchema,
 } from "./types";
 
 describe("background agent contract types", () => {
@@ -90,5 +91,41 @@ describe("background agent contract types", () => {
     });
 
     expect(parsed.builtinToolNames).toBeNull();
+  });
+
+  test("REGRESSION: omitting builtinToolNames entirely still validates (backward-compatible with pre-toolpack API clients)", () => {
+    // If builtinToolNames were ever changed from nullish() to a required
+    // field, every existing agent-create/update client that doesn't send
+    // this new key would start getting 400s. This guards that the field
+    // stays optional.
+    const parsed = createBackgroundAgentSchema.parse({
+      name: "PR reviewer",
+      repoOwner: "dennisonbertram",
+      repoName: "fork-open-agents",
+      instructions: "Review new pull requests.",
+      outputMode: "comment",
+      triggers: [
+        {
+          name: "Pull request",
+          kind: "github.pull_request",
+          conditions: { actions: ["opened"] },
+        },
+      ],
+    });
+
+    expect(parsed.builtinToolNames).toBeUndefined();
+  });
+
+  test("REGRESSION: updateBackgroundAgentSchema (PATCH) accepts builtinToolNames via its createBackgroundAgentSchema.partial() inheritance", () => {
+    // updateBackgroundAgentSchema is derived from createBackgroundAgentSchema
+    // via .omit({triggers:true}).partial().extend(...). This test guards
+    // that derivation actually carries builtinToolNames through — a
+    // .strict() PATCH route would 400 on it otherwise, exactly like the
+    // .strict() bug this step fixes for POST.
+    const parsed = updateBackgroundAgentSchema.parse({
+      builtinToolNames: ["bash", "web_fetch"],
+    });
+
+    expect(parsed.builtinToolNames).toEqual(["bash", "web_fetch"]);
   });
 });
