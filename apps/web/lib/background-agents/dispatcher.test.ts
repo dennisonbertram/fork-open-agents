@@ -580,4 +580,53 @@ describe("dispatchManualBackgroundAgentTest", () => {
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
+
+  // #743: manual-test guard — a disabled agent must never run, even via the
+  // manual Test button (which could mutate a real PR if it slipped through).
+  test("does not create a manual test run when the agent is disabled", async () => {
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent: { ...agent, status: "disabled" },
+      requestId: "req-1",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "agent_disabled",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  // #743: only an enabled trigger counts — the dispatcher must not fall back
+  // to a disabled trigger just because it's the only one on the agent.
+  test("does not fall back to a disabled trigger when no trigger is enabled", async () => {
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent: {
+        ...agent,
+        triggers: [agent.triggers[0] as BackgroundAgentWithTriggers["triggers"][number]],
+      },
+      requestId: "req-1",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "no_enabled_trigger",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
 });
