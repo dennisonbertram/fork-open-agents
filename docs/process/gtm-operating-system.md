@@ -38,6 +38,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `POST /api/gtm/weekly-review` reviews completed experiments in a supplied
   week, reports source gaps, proposes next bets, extracts learning candidates,
   requests approvals, and persists only approved/deduped GTM learnings.
+- `/gtm/weekly-review` provides the founder-facing weekly review surface for
+  the same experiment table, metric summary, source gaps, next bets, learning
+  candidates, and approved-learning context.
 
 ## Event Vocabulary
 
