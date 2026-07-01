@@ -531,6 +531,70 @@ describe("github_open_pull_request tool", () => {
     });
     expect(openPullRequest).not.toHaveBeenCalled();
   });
+
+  test("regression: checks out the agent branch before building the commit intent, so the commit lands on the agent branch rather than the base checkout", async () => {
+    resetReadyPrMocks();
+    const callOrder: string[] = [];
+    sandboxExec.mockImplementation(async (command: string) => {
+      if (command.includes("git checkout")) {
+        callOrder.push("git checkout");
+      }
+      return successfulExec;
+    });
+    buildCommitIntentFromSandbox.mockImplementation(async () => {
+      callOrder.push("buildCommitIntentFromSandbox");
+      return {
+        ok: true,
+        intent: {
+          owner: "acme",
+          repo: "my-repo",
+          repositoryId: 99,
+          installationId: 42,
+          branch: "background-agent/review-agent/run-1",
+          baseBranch: "main",
+          expectedHeadSha: "base-sha",
+          message: "chore: apply Review Agent background changes",
+          files: [{ path: "README.md", content: "Updated", mode: "100644" }],
+          coAuthor: { name: "mona", email: "1+mona@users.noreply.github.com" },
+        },
+      };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    await execute({}, {});
+
+    expect(callOrder).toEqual(["git checkout", "buildCommitIntentFromSandbox"]);
+  });
+
+  test("regression: opens the pull request with the user's OAuth token (getGitHubAppUserToken), never the installation token used for the commit", async () => {
+    resetReadyPrMocks();
+    resetCapturedMintArgs();
+    getGitHubAppUserToken.mockImplementation(async () => "distinct-user-token");
+    const ctx = buildCtx({
+      enabledActions: ["open_pull_request"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getOpenPullRequestToolExecute(tools);
+
+    await execute({}, {});
+
+    // The commit uses a per-call installation token (via
+    // withScopedInstallationOctokit, minted with contents:write); the PR
+    // itself must use the separate user OAuth token instead — this
+    // asymmetry is preserved from the pre-extraction behavior and must
+    // never collapse into a single installation-token call.
+    expect(capturedMintArgs?.permissions).toEqual({ contents: "write" });
+    const prCall = openPullRequest.mock.calls[0]?.[0] as { token?: string };
+    expect(prCall?.token).toBe("distinct-user-token");
+  });
 });
 
 describe("withPerCallInstallationOctokit", () => {

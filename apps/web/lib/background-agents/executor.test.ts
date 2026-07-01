@@ -168,10 +168,14 @@ const buildCoAuthor = mock(async () => ({
   name: "mona",
   email: "1+mona@users.noreply.github.com",
 }));
-const createCommit = mock(async () => ({
-  ok: true,
-  commitSha: "commit-sha-1",
-}));
+const createCommit = mock(
+  async (): Promise<
+    { ok: true; commitSha: string } | { ok: false; error: string }
+  > => ({
+    ok: true,
+    commitSha: "commit-sha-1",
+  }),
+);
 const buildCommitIntentFromSandbox = mock(async () => ({
   ok: true,
   intent: {
@@ -637,6 +641,45 @@ describe("executeBackgroundAgentRun", () => {
     expect(writeMintCall).toBeDefined();
     expect(writeMintCall?.repositoryIds).toEqual([42]);
     expect(writeMintCall?.repositoryId).toBeUndefined();
+  });
+
+  test("regression: after the ready-pr-runner extraction (STEP-5), a commit API failure still records a failed ready_pr output and a pr_creation_failed run failure — performReadyPullRequest returning { success:false } must not be silently swallowed", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+    });
+    currentRun = buildRun({
+      outputKind: "ready_pr",
+    });
+    createCommit.mockImplementationOnce(async () => ({
+      ok: false,
+      error: "commit conflict: base branch moved",
+    }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(openPullRequest).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentOutput).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: "run_1234567890abcdef",
+        kind: "ready_pr",
+        status: "failed",
+        payload: { reason: "commit conflict: base branch moved" },
+      }),
+    );
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "pr_creation_failed",
+      summary: "commit conflict: base branch moved",
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "pr_creation_failed",
+    });
   });
 
   test("BT-A4-01: resolves an all_repos write scope to the installation's full accessible repo set when repositorySelection is 'all'", async () => {
