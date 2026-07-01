@@ -20,7 +20,7 @@ describe("background agent ready PR helpers", () => {
     expect(isSafeBranchName(branchName)).toBe(true);
   });
 
-  it("builds an unattended mutation prompt with the trigger and no-PR constraint", () => {
+  it("builds an unattended mutation prompt with the trigger and no enabled GitHub tools", () => {
     const prompt = buildBackgroundAgentMutationPrompt({
       agentName: "PR reviewer",
       instructions: "Fix obvious type errors.",
@@ -33,14 +33,41 @@ describe("background agent ready PR helpers", () => {
       prNumber: 5,
       payloadSummary: { title: "Fix widgets", actor: "mona" },
       checkCommand: "bun test",
+      enabledActions: [],
     });
 
     expect(prompt).toContain('background agent named "PR reviewer"');
     expect(prompt).toContain("Trigger: github.pull_request");
     expect(prompt).toContain("Fix obvious type errors.");
     expect(prompt).toContain("Do not ask the user questions.");
-    expect(prompt).toContain("Do not create, push, or open a pull request");
+    expect(prompt).toContain(
+      "You do not have any GitHub write/comment tools enabled for this run.",
+    );
+    expect(prompt).toContain("Do not attempt to create, push, or open a pull request");
     expect(prompt).toContain("bun test");
+  });
+
+  it("instructs the model to call only the enabled github_* tools", () => {
+    const prompt = buildBackgroundAgentMutationPrompt({
+      agentName: "PR reviewer",
+      instructions: "Fix obvious type errors.",
+      triggerKind: "github.pull_request",
+      repoOwner: "acme",
+      repoName: "widgets",
+      payloadSummary: { title: "Fix widgets", actor: "mona" },
+      checkCommand: "bun test",
+      enabledActions: ["open_pull_request", "comment_on_pr_or_issue"],
+    });
+
+    expect(prompt).toContain('call the "github_open_pull_request" tool');
+    expect(prompt).toContain('call the "github_comment_on_pr_or_issue" tool');
+    // Only the enabled actions' guidance is present — merge/push/delete are not.
+    expect(prompt).not.toContain("github_merge_pull_request");
+    expect(prompt).not.toContain("github_push");
+    expect(prompt).not.toContain("github_delete_branch");
+    expect(prompt).not.toContain(
+      "You do not have any GitHub write/comment tools enabled",
+    );
   });
 
   it("builds a bounded PR title and evidence-heavy body", () => {

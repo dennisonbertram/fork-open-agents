@@ -232,6 +232,53 @@ const generate = mock(async () => ({
 const listBackgroundAgentEvents = mock(async () => []);
 const listBackgroundAgentOutputs = mock(async () => []);
 
+// ── Native GitHub action tool resolver (STEP-9 wiring) ──────────────────────
+//
+// The resolver's own behavior (which tools get built per action, per-call
+// token minting, checkCommand gate inside github_open_pull_request, etc.) is
+// already exhaustively tested in apps/web/lib/github/background-agent-tools.test.ts
+// (STEPs 3-8). This module is mocked wholesale here so executor.test.ts can
+// focus purely on STEP-9's wiring contract: is the resolver called with the
+// right context (bounded repositoryIds, enabledActions, requireCiGreenToMerge,
+// etc.) BEFORE the agent loop, and are the resulting tools actually merged
+// into the tools object passed to openAgent.generate.
+type CapturedGitHubToolContext = {
+  installationId: number;
+  repositoryId: number;
+  repositoryIds: number[];
+  repoOwner: string;
+  repoName: string;
+  baseBranch: string;
+  userId: string;
+  agentName: string;
+  runId: string;
+  agentId: string | null;
+  workflowRunId: string;
+  requestId: string | null;
+  sandboxName: string;
+  triggerKind: string;
+  checkCommand: string | null;
+  enabledActions: string[];
+  requireCiGreenToMerge: boolean;
+};
+
+let capturedGitHubToolContexts: CapturedGitHubToolContext[] = [];
+
+const resolveGitHubActionToolsForBackgroundAgent = mock(
+  (ctx: CapturedGitHubToolContext) => {
+    capturedGitHubToolContexts.push(ctx);
+    const tools: Record<string, unknown> = {};
+    for (const action of ctx.enabledActions) {
+      tools[`github_stub_${action}`] = { stub: true };
+    }
+    return tools;
+  },
+);
+
+mock.module("@/lib/github/background-agent-tools", () => ({
+  resolveGitHubActionToolsForBackgroundAgent,
+}));
+
 mock.module("./store", () => ({
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
@@ -430,6 +477,8 @@ beforeEach(() => {
   getGitHubAppUserToken.mockClear();
   getGitHubUserProfile.mockClear();
   generate.mockClear();
+  resolveGitHubActionToolsForBackgroundAgent.mockClear();
+  capturedGitHubToolContexts = [];
 });
 
 afterEach(() => {
@@ -506,20 +555,10 @@ describe("executeBackgroundAgentRun", () => {
     ]);
   });
 
-  test("stops before ready PR creation when required checks fail", async () => {
+  test("skips write-scope resolution and injects no GitHub tools for an agent with no enabled GitHub actions, even when writeScopeMode is all_repos", async () => {
     currentAgent = buildAgent({
-      outputMode: "ready_pr",
-      checkCommand: "bun test",
-    });
-    currentRun = buildRun({
-      outputKind: "ready_pr",
-    });
-    commandResults.set("bun test", {
-      success: false,
-      stdout: "",
-      stderr: "tests failed",
-      exitCode: 1,
-      truncated: false,
+      outputMode: "none",
+      permissions: { github: { writeScopeMode: "all_repos", enabledActions: [] } },
     });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
@@ -528,27 +567,29 @@ describe("executeBackgroundAgentRun", () => {
       workflowRunId: "workflow-1",
     });
 
-    expect(generate).toHaveBeenCalledTimes(1);
-    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
-      status: "failed",
-      errorKind: "checks_failed",
+    expect(verifyRepoAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredUserPermission: "read" }),
+    );
+    // needsWrite is false, so resolveWriteScopeRepositoryIds (and its
+    // listAppInstallationRepositories call for all_repos) is never reached —
+    // even though writeScopeMode is "all_repos" on the persisted agent.
+    expect(listAppInstallationRepositories).not.toHaveBeenCalled();
+
+    expect(resolveGitHubActionToolsForBackgroundAgent).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(capturedGitHubToolContexts[0]).toMatchObject({
+      enabledActions: [],
+      repositoryIds: [42],
     });
-    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
-      status: "failed",
-      errorKind: "checks_failed",
-      summary: "Required background-agent check failed.",
-    });
-    expect(hasUncommittedChanges).not.toHaveBeenCalled();
-    expect(createCommit).not.toHaveBeenCalled();
-    expect(openPullRequest).not.toHaveBeenCalled();
-    expect(recordBackgroundAgentOutput).not.toHaveBeenCalled();
-    expect(recordedStatusUpdates().at(-1)).toMatchObject({
-      status: "failed",
-      errorKind: "checks_failed",
-    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      tools?: Record<string, unknown>;
+    };
+    expect(call?.tools).toBeUndefined();
   });
 
-  test("creates a ready PR output only after checks pass", async () => {
+  test("resolves write scope once before the agent loop and injects github_open_pull_request + comment tools for a legacy outputMode 'ready_pr' agent (byte-identical migration)", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
       checkCommand: "bun test",
@@ -563,126 +604,59 @@ describe("executeBackgroundAgentRun", () => {
       workflowRunId: "workflow-1",
     });
 
-    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
-      status: "succeeded",
-    });
-    expect(stageAll).toHaveBeenCalledWith(fakeSandbox);
-    expect(buildCommitIntentFromSandbox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "acme",
-        repo: "widgets",
-        branch: "background-agent/smoke-fixer/run_12345678",
-        baseBranch: "main",
-      }),
+    expect(verifyRepoAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ requiredUserPermission: "write" }),
     );
-    expect(createCommit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "acme",
-        repo: "widgets",
-        branch: "background-agent/smoke-fixer/run_12345678",
-      }),
-    );
-
-    const prCall = openPullRequest.mock.calls[0]?.[0] as
-      | OpenPullRequestInput
-      | undefined;
-    expect(prCall).toMatchObject({
-      repoUrl: "https://github.com/acme/widgets",
-      branchName: "background-agent/smoke-fixer/run_12345678",
+    expect(capturedGitHubToolContexts).toHaveLength(1);
+    expect(capturedGitHubToolContexts[0]).toMatchObject({
+      installationId: 99,
+      repositoryId: 42,
+      repositoryIds: [42],
+      repoOwner: "acme",
+      repoName: "widgets",
       baseBranch: "main",
-      token: "user-token",
+      checkCommand: "bun test",
+      enabledActions: ["open_pull_request", "comment_on_pr_or_issue"],
+      requireCiGreenToMerge: true,
     });
-    expect(prCall?.body).toContain(
-      "https://open-agents.example/background-runs/run_1234567890abcdef",
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      tools?: Record<string, unknown>;
+    };
+    expect(Object.keys(call?.tools ?? {})).toEqual(
+      expect.arrayContaining([
+        "github_stub_open_pull_request",
+        "github_stub_comment_on_pr_or_issue",
+      ]),
     );
-    expect(recordBackgroundAgentOutput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: "run_1234567890abcdef",
-        kind: "ready_pr",
-        status: "created",
-        url: "https://github.com/acme/widgets/pull/42",
-        prNumber: 42,
-      }),
-    );
-    expect(recordedEvent("background-agent.output.created")).toMatchObject({
+
+    // The checkCommand gate for opening a PR now lives inside the
+    // github_open_pull_request tool itself — running it again here would
+    // double-run the command, so the executor-level check step is skipped
+    // (never actually executed) and only records an observability event.
+    expect(
+      sandboxExec.mock.calls.some(
+        (call2) => (call2[0] as string) === "bun test",
+      ),
+    ).toBe(false);
+    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
+      status: "skipped",
+      summary:
+        "Check command is enforced inside the github_open_pull_request tool.",
+    });
+
+    // No post-hoc PR creation — the mocked model never calls a tool, so the
+    // run completes via the generic sandbox-evidence success path.
+    expect(recordedEvent("background-agent.run.completed")).toMatchObject({
       status: "succeeded",
-      payload: expect.objectContaining({
-        outputKind: "ready_pr",
-        prNumber: 42,
-      }),
+      summary: "Background agent run completed with sandbox evidence.",
     });
     expect(recordedStatusUpdates().at(-1)).toMatchObject({
       status: "succeeded",
-      outputUrl: "https://github.com/acme/widgets/pull/42",
     });
   });
 
-  test("regression: mints the write-scoped commit token with repositoryIds, never a lone repositoryId", async () => {
-    currentAgent = buildAgent({
-      outputMode: "ready_pr",
-      checkCommand: "bun test",
-    });
-    currentRun = buildRun({
-      outputKind: "ready_pr",
-    });
-    const { executeBackgroundAgentRun } = await executorModulePromise;
-
-    await executeBackgroundAgentRun({
-      runId: currentRun.id,
-      workflowRunId: "workflow-1",
-    });
-
-    const writeMintCall = withScopedInstallationOctokit.mock.calls.find(
-      (call) =>
-        (call[0] as { permissions?: { contents?: string } }).permissions
-          ?.contents === "write",
-    )?.[0] as { repositoryIds?: number[]; repositoryId?: number } | undefined;
-
-    expect(writeMintCall).toBeDefined();
-    expect(writeMintCall?.repositoryIds).toEqual([42]);
-    expect(writeMintCall?.repositoryId).toBeUndefined();
-  });
-
-  test("regression: after the ready-pr-runner extraction (STEP-5), a commit API failure still records a failed ready_pr output and a pr_creation_failed run failure — performReadyPullRequest returning { success:false } must not be silently swallowed", async () => {
-    currentAgent = buildAgent({
-      outputMode: "ready_pr",
-      checkCommand: "bun test",
-    });
-    currentRun = buildRun({
-      outputKind: "ready_pr",
-    });
-    createCommit.mockImplementationOnce(async () => ({
-      ok: false,
-      error: "commit conflict: base branch moved",
-    }));
-    const { executeBackgroundAgentRun } = await executorModulePromise;
-
-    await executeBackgroundAgentRun({
-      runId: currentRun.id,
-      workflowRunId: "workflow-1",
-    });
-
-    expect(openPullRequest).not.toHaveBeenCalled();
-    expect(recordBackgroundAgentOutput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: "run_1234567890abcdef",
-        kind: "ready_pr",
-        status: "failed",
-        payload: { reason: "commit conflict: base branch moved" },
-      }),
-    );
-    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
-      status: "failed",
-      errorKind: "pr_creation_failed",
-      summary: "commit conflict: base branch moved",
-    });
-    expect(recordedStatusUpdates().at(-1)).toMatchObject({
-      status: "failed",
-      errorKind: "pr_creation_failed",
-    });
-  });
-
-  test("BT-A4-01: resolves an all_repos write scope to the installation's full accessible repo set when repositorySelection is 'all'", async () => {
+  test("BT-A4-01: resolves an all_repos write scope to the installation's full accessible repo set and passes it to the GitHub tool context when repositorySelection is 'all'", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
       checkCommand: "bun test",
@@ -705,26 +679,19 @@ describe("executeBackgroundAgentRun", () => {
       workflowRunId: "workflow-1",
     });
 
-    const writeMintCall = withScopedInstallationOctokit.mock.calls.find(
-      (call) =>
-        (call[0] as { permissions?: { contents?: string } }).permissions
-          ?.contents === "write",
-    )?.[0] as { repositoryIds?: number[] } | undefined;
-
-    expect(writeMintCall?.repositoryIds).toEqual([7, 42, 100]);
-    expect(openPullRequest).toHaveBeenCalledTimes(1);
-    expect(recordedEvent("background-agent.commit.started")).toMatchObject({
-      payload: expect.objectContaining({ repositoryIds: [7, 42, 100] }),
-    });
-    expect(recordedEvent("background-agent.commit.completed")).toMatchObject({
-      payload: expect.objectContaining({ repositoryIds: [7, 42, 100] }),
-    });
+    expect(capturedGitHubToolContexts[0]?.repositoryIds).toEqual([
+      7, 42, 100,
+    ]);
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      tools?: Record<string, unknown>;
+    };
+    expect(call?.tools).toHaveProperty("github_stub_open_pull_request");
     expect(recordedStatusUpdates().at(-1)).toMatchObject({
       status: "succeeded",
     });
   });
 
-  test("BT-A4-02: denies an all_repos-scoped run with write_scope_denied when the installation is only 'selected', without opening a PR", async () => {
+  test("BT-A4-02: denies an all_repos-scoped run with write_scope_denied BEFORE the agent loop starts, when the installation is only 'selected'", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
       checkCommand: "bun test",
@@ -743,8 +710,11 @@ describe("executeBackgroundAgentRun", () => {
     });
 
     expect(listAppInstallationRepositories).not.toHaveBeenCalled();
-    expect(createCommit).not.toHaveBeenCalled();
-    expect(openPullRequest).not.toHaveBeenCalled();
+    // Write-scope resolution happens BEFORE the agent loop — a denial means
+    // the mutation agent (and the GitHub tool context/resolver) is never
+    // reached at all.
+    expect(generate).not.toHaveBeenCalled();
+    expect(resolveGitHubActionToolsForBackgroundAgent).not.toHaveBeenCalled();
     expect(recordBackgroundAgentOutput).not.toHaveBeenCalled();
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       status: "failed",
@@ -777,13 +747,13 @@ describe("executeBackgroundAgentRun", () => {
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       errorKind: "write_scope_denied",
     });
-    expect(openPullRequest).not.toHaveBeenCalled();
+    expect(generate).not.toHaveBeenCalled();
 
     // Reset per-run recorders but keep the same persisted agent config —
     // nothing about the agent's own saved scope changed between runs.
     recordBackgroundAgentEvent.mockClear();
     updateBackgroundAgentRunStatus.mockClear();
-    openPullRequest.mockClear();
+    generate.mockClear();
     listAppInstallationRepositories.mockImplementation(async () => [
       { id: 42, name: "widgets", full_name: "acme/widgets", private: false },
       { id: 100, name: "gadgets", full_name: "acme/gadgets", private: false },
@@ -802,13 +772,13 @@ describe("executeBackgroundAgentRun", () => {
       workflowRunId: "workflow-2",
     });
     expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
-    expect(openPullRequest).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(1);
     expect(recordedStatusUpdates().at(-1)).toMatchObject({
       status: "succeeded",
     });
   });
 
-  test("regression: every installation token mint in the ready_pr flow always carries a non-empty repositoryIds array, never an omitted/unbounded scope", async () => {
+  test("regression: every write-scope-eligible run passes a bounded, non-empty repositoryIds list into the GitHub tool context, never an empty/omitted scope", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
       checkCommand: "bun test",
@@ -838,18 +808,11 @@ describe("executeBackgroundAgentRun", () => {
       permissions: { contents: "read" },
     });
 
-    // Every withScopedInstallationOctokit call (the write-scoped commit mint)
-    // must carry a defined, non-empty repositoryIds array — never undefined,
-    // never empty, never a bare repositoryId.
-    for (const call of withScopedInstallationOctokit.mock.calls) {
-      const input = call[0] as {
-        repositoryIds?: number[];
-        repositoryId?: number;
-      };
-      expect(Array.isArray(input.repositoryIds)).toBe(true);
-      expect((input.repositoryIds as number[]).length).toBeGreaterThan(0);
-      expect(input.repositoryId).toBeUndefined();
-    }
+    expect(capturedGitHubToolContexts).toHaveLength(1);
+    const ctx = capturedGitHubToolContexts[0];
+    expect(Array.isArray(ctx?.repositoryIds)).toBe(true);
+    expect((ctx?.repositoryIds as number[]).length).toBeGreaterThan(0);
+    expect(ctx?.repositoryIds).toEqual([42, 100]);
   });
 
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
