@@ -1,4 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
+import * as realSandbox from "@open-agents/sandbox";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
 import type { BackgroundAgentGitHubEventInput } from "./background-agent-tools";
 
@@ -157,7 +158,12 @@ function resetReadyPrMocks() {
   getGitHubAppUserToken.mockClear();
 }
 
+// Spread the REAL module's other exports (connectSandbox, etc.) rather than
+// replacing the module wholesale — ready-pr.ts's transitive import of
+// "@open-agents/agent" (via lib/git/helpers.ts) pulls in a real value import
+// of connectSandbox from this same module, which a partial mock would break.
 mock.module("@open-agents/sandbox", () => ({
+  ...realSandbox,
   hasUncommittedChanges,
   stageAll,
   getStagedDiff,
@@ -496,7 +502,8 @@ describe("github_open_pull_request tool", () => {
     await execute({}, {});
 
     const openPrEvent = recorded.find(
-      (event) => event.eventName === "background-agent.github.open_pull_request",
+      (event) =>
+        event.eventName === "background-agent.github.open_pull_request",
     );
     expect(openPrEvent).toBeDefined();
     expect(openPrEvent?.status).toBe("succeeded");

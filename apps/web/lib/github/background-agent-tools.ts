@@ -8,11 +8,18 @@ import {
   DESTRUCTIVE_ACTIONS,
   type GitHubToolAction,
 } from "@/lib/background-agents/github-actions";
+import {
+  performReadyPullRequest,
+  prepareReadyPullRequestBranch,
+} from "@/lib/background-agents/ready-pr-runner";
+import { buildBackgroundBranchName } from "@/lib/background-agents/ready-pr";
 import type { BackgroundAgentTriggerKind } from "@/lib/background-agents/types";
 import {
   type GitHubInstallationTokenPermissions,
   withScopedInstallationOctokit,
 } from "@/lib/github/app";
+
+const DEFAULT_OPEN_PR_CHECK_TIMEOUT_MS = 120_000;
 
 /**
  * Native GitHub tool set for BACKGROUND AGENTS (#740).
@@ -103,6 +110,8 @@ export type BackgroundAgentGitHubOutputInput = {
  */
 export type BackgroundAgentGitHubToolContext = {
   installationId: number;
+  /** Home repo ID — the commit/PR target. Always a member of repositoryIds. */
+  repositoryId: number;
   repositoryIds: number[];
   repoOwner: string;
   repoName: string;
@@ -240,6 +249,137 @@ This tool acts as the GitHub App via a per-call installation token scoped to iss
   });
 }
 
+// ── open_pull_request action (STEP-5) ───────────────────────────────────────────
+
+const openPullRequestInputSchema = z.object({
+  title: z
+    .string()
+    .optional()
+    .describe(
+      "Optional pull request title override. Defaults to a generated title based on the agent name.",
+    ),
+  body: z
+    .string()
+    .optional()
+    .describe(
+      "Optional pull request body override. Defaults to a generated body with run evidence.",
+    ),
+});
+
+type OpenPullRequestOutput =
+  | { ok: true; prUrl: string; prNumber: number | null }
+  | GitHubActionErrorResult;
+
+/**
+ * Opens a pull request for the sandbox's currently staged/uncommitted
+ * changes: checks out the agent's branch, commits via the verified GitHub
+ * App commit path (performReadyPullRequest, ready-pr-runner.ts), and opens
+ * the PR with the user's OAuth token. If ctx.checkCommand is configured, it
+ * is run and enforced INSIDE this execute() — a failing check blocks PR
+ * creation entirely, matching today's deterministic executor-level gate
+ * (never downgraded to a prompt-only instruction).
+ */
+function buildOpenPullRequestTool(ctx: BackgroundAgentGitHubToolContext) {
+  return tool({
+    description: `Commit the current sandbox changes and open a pull request against ${ctx.baseBranch} in ${ctx.repoOwner}/${ctx.repoName}.
+Call this only after your work is complete and verified. ${
+      ctx.checkCommand?.trim()
+        ? `The required check command "${ctx.checkCommand.trim()}" is run and must pass before the PR is opened.`
+        : "No required check command is configured."
+    }`,
+    inputSchema: openPullRequestInputSchema,
+    execute: async ({ title, body }): Promise<OpenPullRequestOutput> => {
+      const checkCommand = ctx.checkCommand?.trim();
+      if (checkCommand) {
+        const checkResult = await ctx.sandbox.exec(
+          checkCommand,
+          ctx.sandbox.workingDirectory,
+          DEFAULT_OPEN_PR_CHECK_TIMEOUT_MS,
+        );
+        if (!checkResult.success) {
+          await recordActionEvent(ctx, "open_pull_request", "failed", {
+            reason: "check_command_failed",
+            checkCommand,
+          });
+          return buildGitHubActionError(
+            "check_command_failed",
+            `Required check command failed: ${checkCommand}`,
+          );
+        }
+      }
+
+      const branchName = buildBackgroundBranchName({
+        agentName: ctx.agentName,
+        runId: ctx.runId,
+      });
+
+      try {
+        await prepareReadyPullRequestBranch({
+          sandbox: ctx.sandbox,
+          branchName,
+          recordEvent: ctx.recordEvent,
+        });
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, "open_pull_request", "failed", {
+          reason: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      }
+
+      const result = await performReadyPullRequest({
+        runId: ctx.runId,
+        agentId: ctx.agentId,
+        userId: ctx.userId,
+        workflowRunId: ctx.workflowRunId,
+        requestId: ctx.requestId,
+        sandboxName: ctx.sandboxName,
+        sandbox: ctx.sandbox,
+        agentName: ctx.agentName,
+        repoOwner: ctx.repoOwner,
+        repoName: ctx.repoName,
+        branchName,
+        baseBranch: ctx.baseBranch,
+        installationId: ctx.installationId,
+        repositoryId: ctx.repositoryId,
+        repositoryIds: ctx.repositoryIds,
+        checkCommand: ctx.checkCommand,
+        triggerKind: ctx.triggerKind,
+        title,
+        body,
+        recordEvent: ctx.recordEvent,
+        recordOutput: ctx.recordOutput,
+      });
+
+      if (!result.success) {
+        const errorKind: GitHubActionErrorKind =
+          result.error === "Background agent completed without file changes."
+            ? "no_changes"
+            : "access_error";
+        await recordActionEvent(ctx, "open_pull_request", "failed", {
+          reason: result.error,
+        });
+        return buildGitHubActionError(
+          errorKind,
+          result.error ?? "Failed to open pull request.",
+        );
+      }
+
+      await recordActionEvent(ctx, "open_pull_request", "succeeded", {
+        prNumber: result.prNumber ?? null,
+        url: result.prUrl,
+      });
+
+      return {
+        ok: true,
+        prUrl: result.prUrl as string,
+        prNumber: result.prNumber ?? null,
+      };
+    },
+  });
+}
+
 // ── Resolver ───────────────────────────────────────────────────────────────────
 
 /**
@@ -256,11 +396,13 @@ export function resolveGitHubActionToolsForBackgroundAgent(
 
   for (const action of ctx.enabledActions) {
     switch (action) {
+      case "open_pull_request":
+        tools.github_open_pull_request = buildOpenPullRequestTool(ctx);
+        break;
       case "comment_on_pr_or_issue":
         tools.github_comment_on_pr_or_issue = buildCommentTool(ctx);
         break;
-      // Remaining tool builders are added incrementally in STEPs 5-8:
-      //   "open_pull_request"      -> github_open_pull_request (STEP-5)
+      // Remaining tool builders are added incrementally in STEPs 6-8:
       //   "approve_pull_request"   -> github_approve_pull_request (STEP-6)
       //   "request_changes"        -> github_request_changes (STEP-6)
       //   "merge_pull_request"     -> github_merge_pull_request (STEP-7)
