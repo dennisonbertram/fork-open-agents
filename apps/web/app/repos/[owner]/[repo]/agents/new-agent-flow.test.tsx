@@ -102,7 +102,7 @@ describe("TemplatePicker", () => {
 });
 
 describe("AgentSpecEditor", () => {
-  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, Result, and a top-level Enable control", async () => {
+  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools (with a GitHub actions sub-section), and a top-level Enable control (no Result section)", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -125,7 +125,9 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("What should this agent do?");
     expect(html).toContain("When should it run?");
     expect(html).toContain("Tools");
-    expect(html).toContain("Result");
+    // Result (outputMode) is gone (#740) — replaced by the per-action
+    // "GitHub actions" toggle list embedded in the Tools section.
+    expect(html).toContain("GitHub actions");
     // Enable moved to a top-level Enabled/Disabled control (no "Turn it on" section)
     expect(html).toContain("Enabled");
     expect(html).toContain("Disabled");
@@ -164,7 +166,7 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("disabled");
   });
 
-  test("BT-026: ready_pr output selects the 'Open a pull request' Result option and its PR-specific copy", async () => {
+  test("BT-026: legacy ready_pr output migrates to the 'Open a pull request' GitHub action toggle (checked) with its PR-specific copy", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
     const { buildAgentPayload } =
       await import("@/lib/background-agents/agent-spec");
@@ -185,20 +187,22 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // "Open a pull request" copy is visible, and its radio input (anchored
-    // by its stable value="ready_pr" attribute, since "Open a pull request"
-    // also appears earlier in that input's aria-label) is checked.
-    const valueIdx = html.indexOf('value="ready_pr"');
-    expect(valueIdx).toBeGreaterThanOrEqual(0);
-    const radioOpenIdx = html.lastIndexOf("<input", valueIdx);
-    const radioCloseIdx = html.indexOf("/>", valueIdx);
-    expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('checked=""');
+    // Result/outputMode is gone (#740) — a legacy ready_pr agent (no
+    // persisted enabledActions) migrates via resolveGitHubToolConfig to the
+    // "Open a pull request" GitHub action switch being checked.
+    const labelIdx = html.indexOf('aria-label="Open a pull request"');
+    expect(labelIdx).toBeGreaterThanOrEqual(0);
+    const switchOpenIdx = html.lastIndexOf("<button", labelIdx);
+    const switchCloseIdx = html.indexOf(">", labelIdx);
+    expect(html.slice(switchOpenIdx, switchCloseIdx)).toContain(
+      'aria-checked="true"',
+    );
     const lowerHtml = html.toLowerCase();
     expect(lowerHtml.includes("pull request")).toBe(true);
 
-    // Result (outputMode) is the single source of truth for write access —
-    // there is no separate permission copy in the editor anymore, but the
-    // payload it would save does carry github write for ready_pr.
+    // The GitHub actions list is the single source of truth for write
+    // access now — there is no separate permission copy in the editor, but
+    // the payload it would save does carry github write for ready_pr.
     const payload = buildAgentPayload({
       name: "PR Agent",
       repoOwner: "acme",

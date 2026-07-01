@@ -150,7 +150,7 @@ describe("AgentSpecEditor", () => {
     expect(html).not.toContain("GitHub access level");
   });
 
-  test("(E4c) both Result options are always selectable regardless of legacy saved GitHub permissions", async () => {
+  test("(E4c) the GitHub action toggles are always interactable regardless of legacy saved GitHub permissions", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -162,21 +162,22 @@ describe("AgentSpecEditor", () => {
       />,
     );
 
-    // Neither Result radio is disabled — there is no permission gate left.
-    // Anchor on the stable value="ready_pr" attribute, since "Open a pull
-    // request" also appears earlier in that input's aria-label.
-    const valueIdx = html.indexOf('value="ready_pr"');
-    expect(valueIdx).toBeGreaterThanOrEqual(0);
-    const radioOpenIdx = html.lastIndexOf("<input", valueIdx);
-    const radioCloseIdx = html.indexOf("/>", valueIdx);
-    const radioSnippet = html.slice(radioOpenIdx, radioCloseIdx);
-    expect(radioSnippet).not.toContain('disabled=""');
+    // Result/outputMode is gone — GitHubActionsSection's per-action switches
+    // are the single source of truth now, and none of them are permission
+    // gated (disabled) by legacy saved contents/pullRequests values. Anchor
+    // on the "Open a pull request" switch specifically.
+    const labelIdx = html.indexOf('aria-label="Open a pull request"');
+    expect(labelIdx).toBeGreaterThanOrEqual(0);
+    const switchOpenIdx = html.lastIndexOf("<button", labelIdx);
+    const switchCloseIdx = html.indexOf(">", labelIdx);
+    const switchSnippet = html.slice(switchOpenIdx, switchCloseIdx);
+    expect(switchSnippet).not.toContain('disabled=""');
 
     // The old gating helper text is gone.
     expect(html).not.toContain("Give the GitHub tool pull-request access");
   });
 
-  test("(E4d) Result section never renders the old permission-gating helper text, even for a ready_pr agent with legacy read permissions", async () => {
+  test("(E4d) the GitHub actions list never renders the old permission-gating helper text, even for a ready_pr agent with legacy read permissions", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -192,7 +193,7 @@ describe("AgentSpecEditor", () => {
     expect(html).not.toContain("Give the GitHub tool pull-request access");
   });
 
-  test("(F1) Standard toolpack section renders inside Tools, above Other tools", async () => {
+  test("(F1) Standard toolpack section renders inside Tools, above Other tools, with a GitHub actions sub-section (no fixed 'GitHub (scoped to this repo)' row)", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -201,11 +202,15 @@ describe("AgentSpecEditor", () => {
 
     const toolsIdx = html.indexOf("Tools");
     const toolpackIdx = html.indexOf("Standard toolpack");
+    const githubActionsIdx = html.indexOf("GitHub actions");
     const composioIdx = html.indexOf("composio-other-tools-section");
     expect(toolsIdx).toBeGreaterThanOrEqual(0);
     expect(toolpackIdx).toBeGreaterThan(toolsIdx);
-    expect(composioIdx).toBeGreaterThan(toolpackIdx);
-    expect(html).toContain("GitHub (scoped to this repo)");
+    expect(githubActionsIdx).toBeGreaterThan(toolpackIdx);
+    expect(composioIdx).toBeGreaterThan(githubActionsIdx);
+    // The old fixed, non-toggleable GitHub row is gone — replaced by the
+    // per-action GitHub actions toggle list (#740).
+    expect(html).not.toContain("GitHub (scoped to this repo)");
   });
 
   test("(F2) with no initialBuiltinToolNames, built-ins default on except web_fetch which defaults off", async () => {
@@ -272,7 +277,7 @@ describe("AgentSpecEditor", () => {
     );
   });
 
-  test("REG: the Standard toolpack section renders exactly one switch per built-in and none for the GitHub row, even embedded inside the full editor", async () => {
+  test("REG: the Standard toolpack section renders exactly one switch per built-in plus one per GitHub action, even embedded inside the full editor", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -280,11 +285,14 @@ describe("AgentSpecEditor", () => {
     );
 
     const switchMatches = html.match(/role="switch"/g) ?? [];
-    // 11 built-ins from STANDARD_TOOLPACK_ITEMS; the fixed GitHub row and
-    // the mocked ComposioOtherToolsSection contribute none. This would fail
-    // if a future edit accidentally made the GitHub row toggleable or
-    // duplicated the toolpack section.
-    expect(switchMatches.length).toBe(11);
+    // 11 built-ins from STANDARD_TOOLPACK_ITEMS + 7 GitHub actions from
+    // GITHUB_TOOL_ACTIONS (#740's replacement for the old fixed,
+    // non-toggleable GitHub row); the mocked ComposioOtherToolsSection
+    // contributes none and merge_pull_request's CI-gate sub-toggle is
+    // absent because merge_pull_request defaults off. This would fail if a
+    // future edit accidentally duplicated the toolpack or actions section,
+    // or dropped a GitHub action toggle.
+    expect(switchMatches.length).toBe(18);
   });
 
   // --- (A5) Write-scope selector --------------------------------------------
