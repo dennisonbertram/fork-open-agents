@@ -156,4 +156,53 @@ describe("REGRESSION (#740): legacy outputMode:'ready_pr' agent produces byte-id
     // (see STEP-10's REG coverage for the UI side of this same invariant).
     expect(WRITE_ACTIONS.has("comment_on_pr_or_issue")).toBe(false);
   });
+
+  test("the inverse migration edge: an explicit enabledActions:[] override on a stale outputMode:'ready_pr' + repo_list write-scope row is NOT treated as legacy — write scope collapses to this_repo/[] on resave", () => {
+    // Distinguishes "new-model, deliberately opted out of everything"
+    // (Array.isArray([]) === true) from "legacy, never migrated" (absent
+    // enabledActions -> derive from outputMode). agent-spec.test.ts already
+    // covers this distinction for contents/pullRequests; this test adds the
+    // angle those don't: a REALISTIC stale multi-repo write scope
+    // (writeScopeMode: "repo_list", writeScopeRepos: [...]) left over from
+    // when the agent still had write access must be force-collapsed back
+    // to this_repo/[] once enabledActions is explicitly empty — not just
+    // the default-valued this_repo/[] every other test in this file uses.
+    const agent = makeLegacyReadyPrAgent({
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          issues: "read",
+          deployments: "read",
+          statuses: "read",
+          checks: "read",
+          writeScopeMode: "repo_list",
+          writeScopeRepos: ["acme/other-repo", "acme/third-repo"],
+          enabledActions: [],
+          requireCiGreenToMerge: true,
+        },
+      },
+    });
+
+    const { enabledActions } = resolveGitHubToolConfig(agent);
+    expect(enabledActions).toEqual([]);
+
+    const form = buildFormFromAgent(agent);
+    expect(form.enabledActions).toEqual([]);
+    // buildFormFromAgent itself is display-only and still round-trips the
+    // stale saved writeScopeMode/writeScopeRepos verbatim (for editor
+    // display) — the collapse happens at save time in buildAgentPayload.
+    expect(form.writeScopeMode).toBe("repo_list");
+    expect(form.writeScopeRepos).toEqual([
+      "acme/other-repo",
+      "acme/third-repo",
+    ]);
+
+    const resaved = buildAgentPayload(form);
+    expect(resaved.permissions.github.contents).toBe("read");
+    expect(resaved.permissions.github.pullRequests).toBe("read");
+    expect(resaved.permissions.github.writeScopeMode).toBe("this_repo");
+    expect(resaved.permissions.github.writeScopeRepos).toEqual([]);
+    expect(resaved.outputMode).toBe("none");
+  });
 });
