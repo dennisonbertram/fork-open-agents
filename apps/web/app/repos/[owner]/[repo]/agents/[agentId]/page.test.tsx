@@ -413,6 +413,122 @@ describe("AgentDetailPage", () => {
     expect(defaultOnToolNames.includes("web_fetch")).toBe(false);
   });
 
+  // --- (A5) Write-scope summary ---------------------------------------------
+
+  test("(A5) shows 'this repo' scope for a ready_pr agent with no persisted writeScopeMode (legacy default)", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "ready_pr",
+      permissions: { github: { contents: "write", pullRequests: "write" } },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html.toLowerCase()).toContain("open pull requests");
+    expect(html.toLowerCase()).toContain("repo scope: this repo");
+  });
+
+  test("(A5) shows the resolved repo count for a ready_pr agent with writeScopeMode 'repo_list'", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          writeScopeMode: "repo_list",
+          writeScopeRepos: ["acme/other-a", "acme/other-b"],
+        },
+      },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    // 2 selected repos + the home repo = 3 repos in scope.
+    expect(html).toContain("3 repos");
+  });
+
+  test("(A5) shows 'all repos your installation can reach' for a ready_pr agent with writeScopeMode 'all_repos'", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          writeScopeMode: "all_repos",
+        },
+      },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html.toLowerCase()).toContain(
+      "all repos your installation can reach",
+    );
+  });
+
+  test("REG-A5-001: a Report-only (non ready_pr) agent never shows a write-scope repo count, even with a stale persisted writeScopeMode", async () => {
+    // Guards against re-displaying a legacy/stale writeScopeMode for a
+    // report-only agent — buildAgentPayload (TASK-A3) already forces
+    // writeScopeMode back to "this_repo" on save for non-ready_pr agents, but
+    // a pre-existing DB row saved before that fix could still carry a
+    // broader value; the display layer must not surface it as if it were
+    // still meaningful.
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      permissions: {
+        github: {
+          contents: "read",
+          writeScopeMode: "all_repos",
+          writeScopeRepos: ["acme/other-a"],
+        },
+      },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html.toLowerCase()).not.toContain("all repos your installation");
+    expect(html).not.toContain("2 repos");
+  });
+
   test("renders a 'Runs' section header (not 'Chat history')", async () => {
     const { default: AgentDetailPage } = await pageModulePromise;
 
