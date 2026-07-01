@@ -7,13 +7,28 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
-  StandardToolpackSection,
-  toggleBuiltinToolName,
-} from "./standard-toolpack-section";
-import {
   DEFAULT_ON_TOOL_NAMES,
   STANDARD_TOOLPACK_ITEMS,
 } from "@/lib/background-agents/builtin-toolpack";
+import {
+  DEFAULT_ENABLED_ACTIONS,
+  GITHUB_TOOL_ACTIONS,
+  type GitHubToolAction,
+} from "@/lib/background-agents/github-actions";
+import {
+  StandardToolpackSection,
+  toggleBuiltinToolName,
+} from "./standard-toolpack-section";
+
+const noop = () => {};
+const noopBool = () => {};
+
+const defaultGithubActionsProps = {
+  enabledActions: [...DEFAULT_ENABLED_ACTIONS] as GitHubToolAction[],
+  onEnabledActionsChange: noop,
+  requireCiGreenToMerge: true,
+  onRequireCiGreenToMergeChange: noopBool,
+};
 
 describe("toggleBuiltinToolName (pure helper)", () => {
   test("removes a name that is present", () => {
@@ -32,31 +47,52 @@ describe("toggleBuiltinToolName (pure helper)", () => {
 });
 
 describe("StandardToolpackSection", () => {
-  const noop = () => {};
-
-  test("renders a non-removable 'GitHub (scoped to this repo)' row", () => {
+  test("the old fixed 'GitHub (scoped to this repo)' row and its 'Always on' badge are gone", () => {
     const html = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
-    expect(html).toContain("GitHub (scoped to this repo)");
+    expect(html).not.toContain("GitHub (scoped to this repo)");
+    expect(html).not.toContain("Always on");
   });
 
-  test("the GitHub row has no toggle/checkbox — total switches equal STANDARD_TOOLPACK_ITEMS count only", () => {
+  test("renders the GitHubActionsSection disclosure with a switch for every GitHub action plus one per built-in tool", () => {
     const html = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
+    expect(html).toContain("GitHub actions");
     const switchMatches = html.match(/role="switch"/g) ?? [];
-    // One switch per STANDARD_TOOLPACK_ITEMS entry (11 built-ins), none for
-    // the fixed GitHub row.
-    expect(switchMatches.length).toBe(11);
+    // 11 built-ins + 7 GitHub actions; no merge sub-toggle since
+    // merge_pull_request isn't in the default enabled set.
+    expect(switchMatches.length).toBe(
+      STANDARD_TOOLPACK_ITEMS.length + GITHUB_TOOL_ACTIONS.length,
+    );
+  });
+
+  test("destructive GitHub actions render 'Irreversible' captions in context (push, delete_branch, merge with gate off)", () => {
+    const html = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        enabledActions={["push", "delete_branch", "merge_pull_request"]}
+        onEnabledActionsChange={noop}
+        requireCiGreenToMerge={false}
+        onRequireCiGreenToMergeChange={noopBool}
+      />,
+    );
+    const pushIdx = html.indexOf("Push commits");
+    const deleteIdx = html.indexOf("Delete a branch");
+    const mergeIdx = html.indexOf("Merge a pull request");
+    expect(html.slice(pushIdx, pushIdx + 400)).toContain("Irreversible");
+    expect(html.slice(deleteIdx, deleteIdx + 400)).toContain("Irreversible");
+    expect(html.slice(mergeIdx, mergeIdx + 400)).toContain("Irreversible");
   });
 
   test("renders a toggle for each STANDARD_TOOLPACK_ITEMS name", () => {
@@ -64,7 +100,7 @@ describe("StandardToolpackSection", () => {
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     for (const label of [
@@ -85,17 +121,11 @@ describe("StandardToolpackSection", () => {
   });
 
   test("write/edit/bash captions clarify sandbox-only scope, distinct from real repo writes", () => {
-    // Naive-user finding: "Report only... doesn't change the repo" reads as
-    // if write/edit/bash are disabled too, when they're actually on by
-    // default and just never get committed anywhere for that output mode.
-    // These captions must make that relationship explicit on every render,
-    // not just for ready_pr, so a Report-only agent's Tools panel doesn't
-    // look like it contradicts the Result section above it.
     const html = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     expect(html).toContain("Only affects this run&#x27;s temporary sandbox");
@@ -115,7 +145,7 @@ describe("StandardToolpackSection", () => {
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     const idx = html.indexOf("Fetch external URLs");
@@ -129,7 +159,7 @@ describe("StandardToolpackSection", () => {
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     const idx = html.indexOf("Run shell commands");
@@ -138,38 +168,12 @@ describe("StandardToolpackSection", () => {
     expect(snippet).toContain('data-state="checked"');
   });
 
-  test("GitHub row caption reflects read-only for outputMode 'none'", () => {
-    const html = renderToStaticMarkup(
-      <StandardToolpackSection
-        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
-        onChange={noop}
-        outputMode="none"
-      />,
-    );
-    const idx = html.indexOf("GitHub (scoped to this repo)");
-    const snippet = html.slice(idx, idx + 400);
-    expect(snippet.toLowerCase()).toContain("read-only");
-  });
-
-  test("GitHub row caption reflects PR-opening capability for outputMode 'ready_pr'", () => {
-    const html = renderToStaticMarkup(
-      <StandardToolpackSection
-        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
-        onChange={noop}
-        outputMode="ready_pr"
-      />,
-    );
-    const idx = html.indexOf("GitHub (scoped to this repo)");
-    const snippet = html.slice(idx, idx + 400);
-    expect(snippet.toLowerCase()).toContain("pull request");
-  });
-
   test("disabled prop renders switch buttons with the disabled attribute", () => {
     const html = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
         disabled
       />,
     );
@@ -188,7 +192,7 @@ describe("StandardToolpackSection", () => {
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     const idx = html.indexOf("Run shell commands");
@@ -201,27 +205,31 @@ describe("StandardToolpackSection", () => {
 
   // --- Regression coverage -------------------------------------------------
 
-  test("REG: built-in switch states are independent of outputMode — only the GitHub row caption changes", () => {
+  test("REG: built-in switch states are independent of enabledActions — only the GitHub actions list changes", () => {
     const enabledToolNames = ["bash"];
     const noneHtml = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={enabledToolNames}
         onChange={noop}
-        outputMode="none"
+        enabledActions={[]}
+        onEnabledActionsChange={noop}
+        requireCiGreenToMerge={true}
+        onRequireCiGreenToMergeChange={noopBool}
       />,
     );
     const readyPrHtml = renderToStaticMarkup(
       <StandardToolpackSection
         enabledToolNames={enabledToolNames}
         onChange={noop}
-        outputMode="ready_pr"
+        {...defaultGithubActionsProps}
       />,
     );
 
-    // This would fail if a future change accidentally re-coupled outputMode
-    // to the built-in toggle states (the exact two-control coupling bug this
-    // issue's step-2 already fixed for GitHub write permission — a regression
-    // here would silently reintroduce a similar coupling for the toolpack).
+    // This would fail if a future change accidentally re-coupled
+    // enabledActions to the built-in toggle states (the exact two-control
+    // coupling bug this issue's step-2 already fixed for GitHub write
+    // permission — a regression here would silently reintroduce a similar
+    // coupling for the toolpack).
     for (const label of [
       "Run shell commands",
       "Read files",
@@ -246,23 +254,22 @@ describe("StandardToolpackSection", () => {
       expect(prChecked).toBe(noneChecked);
     }
 
-    // Sanity: the caption DID change (proves the two renders aren't identical
-    // for an unrelated reason, e.g. a broken outputMode prop wire-up).
-    const noneGhIdx = noneHtml.indexOf("GitHub (scoped to this repo)");
-    const prGhIdx = readyPrHtml.indexOf("GitHub (scoped to this repo)");
-    expect(noneHtml.slice(noneGhIdx, noneGhIdx + 400).toLowerCase()).toContain(
-      "read-only",
-    );
-    expect(readyPrHtml.slice(prGhIdx, prGhIdx + 400).toLowerCase()).toContain(
-      "pull request",
-    );
+    // Sanity: the GitHub actions list DID change (proves the two renders
+    // aren't identical for an unrelated reason, e.g. a broken enabledActions
+    // prop wire-up).
+    const noneCheckedCount = (
+      noneHtml.match(/data-state="checked"/g) ?? []
+    ).length;
+    const prCheckedCount = (
+      readyPrHtml.match(/data-state="checked"/g) ?? []
+    ).length;
+    expect(prCheckedCount).toBeGreaterThan(noneCheckedCount);
   });
 
-  test("REG: the fixed GitHub row can never become a toggleable entry — STANDARD_TOOLPACK_ITEMS has no github-like name and total switches always equals its length", () => {
+  test("REG: STANDARD_TOOLPACK_ITEMS has no github-like name — the GitHub action list is a fixed, separate set from the built-in toolpack", () => {
     // Guards against a future edit that accidentally adds a "github" (or
-    // similarly named) entry to STANDARD_TOOLPACK_ITEMS, which would let it
-    // render as a Switch and get serialized into builtinToolNames — breaking
-    // the "always present, cannot be removed" contract from issue #721.
+    // similarly named) entry to STANDARD_TOOLPACK_ITEMS, which would double
+    // up with the dedicated GitHubActionsSection list.
     for (const item of STANDARD_TOOLPACK_ITEMS) {
       expect(item.name.toLowerCase()).not.toContain("github");
     }
@@ -271,10 +278,12 @@ describe("StandardToolpackSection", () => {
       <StandardToolpackSection
         enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
         onChange={noop}
-        outputMode="none"
+        {...defaultGithubActionsProps}
       />,
     );
     const switchMatches = html.match(/role="switch"/g) ?? [];
-    expect(switchMatches.length).toBe(STANDARD_TOOLPACK_ITEMS.length);
+    expect(switchMatches.length).toBe(
+      STANDARD_TOOLPACK_ITEMS.length + GITHUB_TOOL_ACTIONS.length,
+    );
   });
 });
