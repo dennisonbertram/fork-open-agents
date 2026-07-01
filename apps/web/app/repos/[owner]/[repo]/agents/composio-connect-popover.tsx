@@ -27,6 +27,7 @@ interface ConnectCardProps {
   noAuth: boolean;
   onConnect: (slug: string) => Promise<void>;
   isConnecting: boolean;
+  disabled: boolean;
 }
 
 function ConnectCard({
@@ -37,6 +38,7 @@ function ConnectCard({
   noAuth,
   onConnect,
   isConnecting,
+  disabled,
 }: ConnectCardProps) {
   return (
     <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-card p-2.5">
@@ -68,7 +70,7 @@ function ConnectCard({
           variant="outline"
           size="sm"
           onClick={() => void onConnect(slug)}
-          disabled={isConnecting}
+          disabled={disabled || isConnecting}
           className="h-6 text-[11px]"
         >
           Connect
@@ -153,6 +155,7 @@ export function ComposioConnectCards({
                 noAuth={t.noAuth}
                 onConnect={connect}
                 isConnecting={connectingSlug === t.slug}
+                disabled={disabled}
               />
             ))}
           </div>

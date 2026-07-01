@@ -159,6 +159,38 @@ describe("ComposioConnectCards", () => {
     const html = renderToStaticMarkup(<ComposioConnectCards />);
     expect(html.toLowerCase()).toContain("whole account");
   });
+
+  test("REGRESSION: disabled=true propagates to both the search input and every Connect button", async () => {
+    swrState = { toolkits: SAMPLE_TOOLKITS, accounts: SAMPLE_ACCOUNTS };
+    const { ComposioConnectCards } = await modulePromise;
+    const html = renderToStaticMarkup(<ComposioConnectCards disabled />);
+
+    // Search input must be disabled
+    expect(html).toMatch(
+      /<input[^>]*disabled=""[^>]*aria-label="Search tools to connect"/,
+    );
+
+    // Every rendered "Connect" button must be disabled too — guards against
+    // a future change that threads `disabled` to the search box but forgets
+    // the per-card Connect buttons, which would let a user start a new
+    // OAuth connection while the parent form is mid-save.
+    const connectButtonCount = (html.match(/>Connect<\/button>/g) ?? []).length;
+    const disabledConnectButtonCount = (
+      html.match(/disabled=""[^>]*>Connect<\/button>/g) ?? []
+    ).length;
+    expect(connectButtonCount).toBeGreaterThan(0);
+    expect(disabledConnectButtonCount).toBe(connectButtonCount);
+  });
+
+  test("REGRESSION: never renders the full catalog's grouped 'Suggested' heading — this is a flat connect-only list, not ComposioToolCatalog", async () => {
+    swrState = { toolkits: SAMPLE_TOOLKITS, accounts: SAMPLE_ACCOUNTS };
+    const { ComposioConnectCards } = await modulePromise;
+    const html = renderToStaticMarkup(<ComposioConnectCards />);
+    // ComposioToolCatalog groups results under "Connected"/"Suggested"
+    // headings — ComposioConnectCards deliberately does not, per the task's
+    // explicit instruction not to reuse/duplicate that grouped catalog view.
+    expect(html).not.toContain("Suggested");
+  });
 });
 
 describe("ComposioConnectPopover", () => {
