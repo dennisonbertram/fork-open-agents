@@ -4,6 +4,7 @@
  * shared colocated module so the repo-dashboard creation flow can reuse it.
  */
 import { describe, expect, test } from "bun:test";
+import { OPEN_AGENT_TOOL_NAMES } from "@open-agents/agent";
 import {
   buildAgentPayload,
   buildFormFromAgent,
@@ -18,6 +19,10 @@ import {
   type FormState,
   type StepId,
 } from "./agent-spec";
+import {
+  DEFAULT_ON_TOOL_NAMES,
+  STANDARD_TOOLPACK_TOOL_NAMES,
+} from "./builtin-toolpack";
 
 describe("buildRepoScopedDefaultForm", () => {
   test("BT-001: creates a form pre-filled with the given repo owner and name", () => {
@@ -60,6 +65,7 @@ describe("buildAgentPayload", () => {
       permissionContents: "read",
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
+      builtinToolNames: null,
       ...overrides,
     };
   }
@@ -159,6 +165,21 @@ describe("buildAgentPayload", () => {
     );
     expect(prPayload.triggers[0]?.schedule).toBeNull();
   });
+
+  test("BT-038: buildAgentPayload defaults builtinToolNames to the web_fetch-off toolpack when form value is null", () => {
+    const payload = buildAgentPayload(makeForm({ builtinToolNames: null }));
+
+    expect(payload.builtinToolNames).toEqual([...DEFAULT_ON_TOOL_NAMES]);
+    expect(payload.builtinToolNames).not.toContain("web_fetch");
+  });
+
+  test("BT-039: buildAgentPayload passes an explicit builtinToolNames array through verbatim", () => {
+    const payload = buildAgentPayload(
+      makeForm({ builtinToolNames: ["read", "bash", "web_fetch"] }),
+    );
+
+    expect(payload.builtinToolNames).toEqual(["read", "bash", "web_fetch"]);
+  });
 });
 
 describe("buildFormFromAgent", () => {
@@ -248,6 +269,7 @@ describe("isStepValid", () => {
       permissionContents: "read",
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
+      builtinToolNames: null,
       ...overrides,
     };
   }
@@ -526,6 +548,7 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       permissionContents: "read",
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
+      builtinToolNames: null,
       ...overrides,
     };
   }
@@ -582,6 +605,7 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
       permissionContents: "read",
       permissionPullRequests: "read",
       composioToolkitSlugs: [],
+      builtinToolNames: null,
       ...overrides,
     };
   }
@@ -660,5 +684,63 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
 
     expect(resavedPayload.permissions.github.contents).toBe("read");
     expect(resavedPayload.permissions.github.pullRequests).toBe("read");
+  });
+});
+
+describe("REG: builtin-toolpack — the product toolpack list cannot drift from the real tool registry", () => {
+  test("REG-023: every STANDARD_TOOLPACK_TOOL_NAMES entry is a real open-agent tool name", () => {
+    for (const name of STANDARD_TOOLPACK_TOOL_NAMES) {
+      expect(OPEN_AGENT_TOOL_NAMES).toContain(name as never);
+    }
+  });
+
+  test("REG-024: DEFAULT_ON_TOOL_NAMES is the toolpack minus web_fetch (off by default)", () => {
+    expect(DEFAULT_ON_TOOL_NAMES).not.toContain("web_fetch");
+    expect(STANDARD_TOOLPACK_TOOL_NAMES).toContain("web_fetch");
+    expect(DEFAULT_ON_TOOL_NAMES.length).toBe(
+      STANDARD_TOOLPACK_TOOL_NAMES.length - 1,
+    );
+  });
+});
+
+describe("buildFormFromAgent — builtinToolNames", () => {
+  test("REG-025: a null builtinToolNames on the saved agent round-trips to null on the form (Standard toolpack UI renders the default preset)", () => {
+    const form = buildFormFromAgent({
+      id: "agent-1",
+      name: "PR reporter",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize pull requests.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: { github: { contents: "read", pullRequests: "read" } },
+      composioToolkitSlugs: [],
+      builtinToolNames: null,
+      triggers: [],
+    });
+
+    expect(form.builtinToolNames).toBeNull();
+  });
+
+  test("REG-026: a saved builtinToolNames array round-trips onto the form verbatim", () => {
+    const form = buildFormFromAgent({
+      id: "agent-1",
+      name: "PR reporter",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize pull requests.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: { github: { contents: "read", pullRequests: "read" } },
+      composioToolkitSlugs: [],
+      builtinToolNames: ["read", "grep"],
+      triggers: [],
+    });
+
+    expect(form.builtinToolNames).toEqual(["read", "grep"]);
   });
 });

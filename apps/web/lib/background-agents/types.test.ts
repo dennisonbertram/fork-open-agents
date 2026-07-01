@@ -51,4 +51,44 @@ describe("background agent contract types", () => {
     expect(parsed.permissions.github?.pullRequests).toBe("write");
     expect(parsed.triggers[0]?.status).toBe("enabled");
   });
+
+  test("createBackgroundAgentSchema accepts builtinToolNames", () => {
+    const parsed = createBackgroundAgentSchema.parse({
+      name: "PR reviewer",
+      repoOwner: "dennisonbertram",
+      repoName: "fork-open-agents",
+      instructions: "Review new pull requests.",
+      outputMode: "comment",
+      builtinToolNames: ["read", "bash"],
+      triggers: [
+        {
+          name: "Pull request",
+          kind: "github.pull_request",
+          conditions: { actions: ["opened"] },
+        },
+      ],
+    });
+
+    expect(parsed.builtinToolNames).toEqual(["read", "bash"]);
+  });
+
+  test("createBackgroundAgentSchema accepts a null builtinToolNames (falls back to the default toolpack)", () => {
+    const parsed = createBackgroundAgentSchema.parse({
+      name: "PR reviewer",
+      repoOwner: "dennisonbertram",
+      repoName: "fork-open-agents",
+      instructions: "Review new pull requests.",
+      outputMode: "comment",
+      builtinToolNames: null,
+      triggers: [
+        {
+          name: "Pull request",
+          kind: "github.pull_request",
+          conditions: { actions: ["opened"] },
+        },
+      ],
+    });
+
+    expect(parsed.builtinToolNames).toBeNull();
+  });
 });
