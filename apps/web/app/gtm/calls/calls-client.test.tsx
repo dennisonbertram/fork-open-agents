@@ -94,6 +94,8 @@ describe("GtmCallsClient", () => {
     expect(html).toContain("Send pilot plan");
     expect(html).toContain("pending approval");
     expect(html).toContain("approval-1");
+    expect(html).toContain("Approve");
+    expect(html).toContain("Deny");
     expect(html).toContain("GitHub App install status");
   });
 });

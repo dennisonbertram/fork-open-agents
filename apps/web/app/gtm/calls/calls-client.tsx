@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { ApprovalDecisionControls } from "../_components/approval-decision-controls";
 
 function splitLines(value: string) {
   return value
@@ -171,8 +172,13 @@ export function CallDebriefResult({
               </div>
               <p className="mt-2 text-muted-foreground">{action.summary}</p>
               {result.approvalIds[index] ? (
-                <div className="mt-2 text-xs text-muted-foreground">
-                  approval {result.approvalIds[index]}
+                <div className="mt-3 space-y-2">
+                  <div className="text-xs text-muted-foreground">
+                    approval {result.approvalIds[index]}
+                  </div>
+                  <ApprovalDecisionControls
+                    approvalId={result.approvalIds[index]}
+                  />
                 </div>
               ) : null}
             </div>

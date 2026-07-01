@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ApprovalDecisionControls } from "../_components/approval-decision-controls";
 
 type ActivationQueueResponse = {
   signals: Array<
@@ -140,6 +141,11 @@ export function ActivationQueue({
                   </Badge>
                   <Badge variant="outline">{signal.signalId}</Badge>
                 </div>
+                {signal.approvalId ? (
+                  <div className="mt-3">
+                    <ApprovalDecisionControls approvalId={signal.approvalId} />
+                  </div>
+                ) : null}
               </div>
 
               <div className="rounded-md border border-border p-3 text-sm">

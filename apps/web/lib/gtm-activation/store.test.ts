@@ -9,11 +9,14 @@ type InsertCall = {
 
 type SelectResult = Array<Record<string, unknown>>;
 type InsertResult = Array<Record<string, unknown>>;
+type ChainableSelectResult = SelectResult & {
+  orderBy: (_order: unknown) => SelectResult;
+};
 type FakeDb = {
   transaction: <T>(callback: (tx: FakeDb) => T | Promise<T>) => Promise<T>;
   select: (_columns?: unknown) => {
     from: (_table: unknown) => {
-      where: (_condition: unknown) => SelectResult;
+      where: (_condition: unknown) => ChainableSelectResult;
       orderBy: (_order: unknown) => SelectResult;
     };
   };
@@ -25,9 +28,17 @@ type FakeDb = {
 };
 
 const insertCalls: InsertCall[] = [];
+let selectCount = 0;
 let selectResults: SelectResult[] = [];
 let insertResults: InsertResult[] = [];
 let transactionCount = 0;
+
+function nextSelectResult(): ChainableSelectResult {
+  selectCount += 1;
+  const rows = (selectResults.shift() ?? []) as ChainableSelectResult;
+  rows.orderBy = () => rows;
+  return rows;
+}
 
 function buildFakeDb(): FakeDb {
   return {
@@ -37,8 +48,8 @@ function buildFakeDb(): FakeDb {
     },
     select: (_columns?: unknown) => ({
       from: (_table: unknown) => ({
-        where: (_condition: unknown) => selectResults.shift() ?? [],
-        orderBy: (_order: unknown) => selectResults.shift() ?? [],
+        where: (_condition: unknown) => nextSelectResult(),
+        orderBy: (_order: unknown) => nextSelectResult(),
       }),
     }),
     insert: (table: unknown) => ({
@@ -60,6 +71,7 @@ const storePromise = import("./store");
 
 beforeEach(() => {
   insertCalls.length = 0;
+  selectCount = 0;
   selectResults = [];
   insertResults = [];
   transactionCount = 0;
@@ -137,5 +149,46 @@ describe("GTM activation store", () => {
     expect(insertCalls.map((call) => call.values)).not.toContainEqual(
       expect.objectContaining({ actionKind: "activation_issue_draft_file" }),
     );
+  });
+
+  test("lists activation signals with pending approvals in one approval query", async () => {
+    const { listGtmActivationSignals } = await storePromise;
+    selectResults = [
+      [
+        {
+          signalId: "signal-1",
+          signalType: "activation",
+          severity: "high",
+          summary: "Blocked setup",
+          evidenceRefs: ["event-1"],
+          metadata: {},
+          updatedAt: new Date("2026-07-01T00:00:00.000Z"),
+        },
+        {
+          signalId: "signal-2",
+          signalType: "activation",
+          severity: "medium",
+          summary: "Confused setup",
+          evidenceRefs: ["event-2"],
+          metadata: {},
+          updatedAt: new Date("2026-07-01T00:01:00.000Z"),
+        },
+      ],
+      [{ id: "approval-1", targetId: "signal-1" }],
+    ];
+
+    const queue = await listGtmActivationSignals("operator-1", fakeDatabase());
+
+    expect(queue).toEqual([
+      expect.objectContaining({
+        signalId: "signal-1",
+        approvalId: "approval-1",
+      }),
+      expect.objectContaining({
+        signalId: "signal-2",
+      }),
+    ]);
+    expect(queue[1]).not.toHaveProperty("approvalId");
+    expect(selectCount).toBe(2);
   });
 });

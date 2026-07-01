@@ -52,5 +52,7 @@ describe("GtmOutboundClient", () => {
     expect(html).toContain("Following up");
     expect(html).toContain("external mutation");
     expect(html).toContain("false");
+    expect(html).toContain("Approve");
+    expect(html).toContain("Deny");
   });
 });
