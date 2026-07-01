@@ -69,17 +69,23 @@ export function toggleGitHubAction(
 
 /**
  * Returns true when `action` should render the visually-distinct
- * "Irreversible" caption. push and delete_branch always show it. merge_pull_request
- * shows it only when the CI-green gate is off (the gate itself is the safety
- * net; disabling it is what makes the merge action irreversible in the sense
- * that a broken merge can land without a check). This is a label only — it
- * never disables the toggle or narrows the write-scope mechanism.
+ * "Irreversible" caption. Only relevant while the action is actually
+ * enabled — an unchecked row never shows it, even if a stale
+ * requireCiGreenToMerge=false value is left over from a previous
+ * merge_pull_request session (that value is inert once merge_pull_request
+ * itself is disabled). push and delete_branch show it whenever enabled.
+ * merge_pull_request shows it only when enabled AND the CI-green gate is
+ * off (the gate itself is the safety net; disabling it is what makes the
+ * merge action irreversible in the sense that a broken merge can land
+ * without a check). This is a label only — it never disables the toggle or
+ * narrows the write-scope mechanism.
  */
 function isIrreversible(
   action: GitHubToolAction,
+  checked: boolean,
   requireCiGreenToMerge: boolean,
 ): boolean {
-  if (!DESTRUCTIVE_ACTIONS.has(action)) {
+  if (!(checked && DESTRUCTIVE_ACTIONS.has(action))) {
     return false;
   }
   if (action === "merge_pull_request") {
@@ -132,7 +138,11 @@ export function GitHubActionsSection({
       <div className={cn("mt-3 space-y-2", open ? "" : "hidden")}>
         {GITHUB_TOOL_ACTIONS.map((action) => {
           const checked = enabledActions.includes(action);
-          const irreversible = isIrreversible(action, requireCiGreenToMerge);
+          const irreversible = isIrreversible(
+            action,
+            checked,
+            requireCiGreenToMerge,
+          );
           return (
             <div
               key={action}

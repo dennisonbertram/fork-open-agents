@@ -284,4 +284,44 @@ describe("StandardToolpackSection", () => {
       STANDARD_TOOLPACK_ITEMS.length + GITHUB_TOOL_ACTIONS.length,
     );
   });
+
+  test("REG: the write-scope selector renders for a comment-only agent (comment_on_pr_or_issue is not in WRITE_ACTIONS, but hasWriteAction is enabledActions.length > 0, not a WRITE_ACTIONS check) — write scope isn't limited to open_pull_request", () => {
+    // Guards against a future edit that narrows StandardToolpackSection's
+    // hasWriteAction derivation to check WRITE_ACTIONS membership instead of
+    // raw enabledActions.length > 0. Per #740 STEP-10's explicit guidance,
+    // the write-scope selector must show whenever ANY action is enabled,
+    // including a comment-only agent, not just when a "true write" action
+    // (per WRITE_ACTIONS) is present.
+    const commentOnlyHtml = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        enabledActions={["comment_on_pr_or_issue"]}
+        onEnabledActionsChange={noop}
+        requireCiGreenToMerge={true}
+        onRequireCiGreenToMergeChange={noopBool}
+        repoOwner="acme"
+        repoName="widgets"
+        installationId={123}
+        repositorySelection="all"
+      />,
+    );
+    expect(commentOnlyHtml).toContain("Write scope");
+
+    const zeroActionsHtml = renderToStaticMarkup(
+      <StandardToolpackSection
+        enabledToolNames={[...DEFAULT_ON_TOOL_NAMES]}
+        onChange={noop}
+        enabledActions={[]}
+        onEnabledActionsChange={noop}
+        requireCiGreenToMerge={true}
+        onRequireCiGreenToMergeChange={noopBool}
+        repoOwner="acme"
+        repoName="widgets"
+        installationId={123}
+        repositorySelection="all"
+      />,
+    );
+    expect(zeroActionsHtml).not.toContain("Write scope");
+  });
 });

@@ -266,4 +266,30 @@ describe("GitHubActionsSection", () => {
     expect(checkedMatches.length).toBe(0);
     expect(html).not.toContain("Require CI checks to pass before merging");
   });
+
+  test("REG: disabling merge_pull_request (toggling it back off) removes both the CI-gate sub-toggle and the Irreversible caption, even with requireCiGreenToMerge=false left over from before", () => {
+    // Guards against the sub-toggle/caption leaking from a stale
+    // requireCiGreenToMerge value once merge_pull_request itself is turned
+    // off — both must be strictly conditioned on
+    // enabledActions.includes("merge_pull_request"), not on
+    // requireCiGreenToMerge alone.
+    const enabledWithMerge = toggleGitHubAction([], "merge_pull_request");
+    const disabledAgain = toggleGitHubAction(
+      enabledWithMerge,
+      "merge_pull_request",
+    );
+    expect(disabledAgain).toEqual([]);
+
+    const html = renderToStaticMarkup(
+      <GitHubActionsSection
+        enabledActions={disabledAgain}
+        onChange={noop}
+        requireCiGreenToMerge={false}
+        onRequireCiGreenChange={noop}
+      />,
+    );
+    expect(html).not.toContain("Require CI checks to pass before merging");
+    const mergeIdx = html.indexOf("Merge a pull request");
+    expect(html.slice(mergeIdx, mergeIdx + 400)).not.toContain("Irreversible");
+  });
 });
