@@ -79,7 +79,8 @@ const successfulAccess = {
   installationId: 99,
   repositoryId: 42,
   defaultBranch: "main",
-} as const;
+  repositorySelection: "selected" as "all" | "selected",
+};
 
 const successfulCommand: ExecResult = {
   success: true,
@@ -143,6 +144,19 @@ const stageAll = mock(async () => undefined);
 
 const verifyRepoAccess = mock(async () => successfulAccess);
 const getRepoAccessErrorMessage = mock((reason: string) => reason);
+
+type AppInstallationRepository = {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+};
+const listAppInstallationRepositories = mock(
+  async (): Promise<AppInstallationRepository[]> => [],
+);
+mock.module("@/lib/github/repos", () => ({
+  listAppInstallationRepositories,
+}));
 const mintInstallationToken = mock(async () => ({ token: "setup-token" }));
 const revokeInstallationToken = mock(async () => undefined);
 const withScopedInstallationOctokit = mock(
@@ -398,10 +412,13 @@ beforeEach(() => {
   hasUncommittedChanges.mockClear();
   stageAll.mockClear();
   verifyRepoAccess.mockClear();
+  verifyRepoAccess.mockImplementation(async () => successfulAccess);
   getRepoAccessErrorMessage.mockClear();
   mintInstallationToken.mockClear();
   revokeInstallationToken.mockClear();
   withScopedInstallationOctokit.mockClear();
+  listAppInstallationRepositories.mockClear();
+  listAppInstallationRepositories.mockImplementation(async () => []);
   buildCoAuthor.mockClear();
   createCommit.mockClear();
   buildCommitIntentFromSandbox.mockClear();
@@ -620,6 +637,80 @@ describe("executeBackgroundAgentRun", () => {
     expect(writeMintCall).toBeDefined();
     expect(writeMintCall?.repositoryIds).toEqual([42]);
     expect(writeMintCall?.repositoryId).toBeUndefined();
+  });
+
+  test("BT-A4-01: resolves an all_repos write scope to the installation's full accessible repo set when repositorySelection is 'all'", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+      permissions: { github: { writeScopeMode: "all_repos" } },
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    verifyRepoAccess.mockImplementation(async () => ({
+      ...successfulAccess,
+      repositorySelection: "all",
+    }));
+    listAppInstallationRepositories.mockImplementation(async () => [
+      { id: 100, name: "gadgets", full_name: "acme/gadgets", private: false },
+      { id: 42, name: "widgets", full_name: "acme/widgets", private: false },
+      { id: 7, name: "alpha", full_name: "acme/alpha", private: true },
+    ]);
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const writeMintCall = withScopedInstallationOctokit.mock.calls.find(
+      (call) =>
+        (call[0] as { permissions?: { contents?: string } }).permissions
+          ?.contents === "write",
+    )?.[0] as { repositoryIds?: number[] } | undefined;
+
+    expect(writeMintCall?.repositoryIds).toEqual([7, 42, 100]);
+    expect(openPullRequest).toHaveBeenCalledTimes(1);
+    expect(recordedEvent("background-agent.commit.started")).toMatchObject({
+      payload: expect.objectContaining({ repositoryIds: [7, 42, 100] }),
+    });
+    expect(recordedEvent("background-agent.commit.completed")).toMatchObject({
+      payload: expect.objectContaining({ repositoryIds: [7, 42, 100] }),
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "succeeded",
+    });
+  });
+
+  test("BT-A4-02: denies an all_repos-scoped run with write_scope_denied when the installation is only 'selected', without opening a PR", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+      permissions: { github: { writeScopeMode: "all_repos" } },
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    verifyRepoAccess.mockImplementation(async () => ({
+      ...successfulAccess,
+      repositorySelection: "selected",
+    }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(listAppInstallationRepositories).not.toHaveBeenCalled();
+    expect(createCommit).not.toHaveBeenCalled();
+    expect(openPullRequest).not.toHaveBeenCalled();
+    expect(recordBackgroundAgentOutput).not.toHaveBeenCalled();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "write_scope_denied",
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "write_scope_denied",
+    });
   });
 
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
