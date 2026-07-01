@@ -55,6 +55,56 @@ function resetCapturedMintArgs() {
   withScopedInstallationOctokitCallCount = 0;
 }
 
+// ── merge_pull_request (STEP-7) fixtures ────────────────────────────────────
+//
+// The merge tool manually spans mint/revoke across two API calls (readiness
+// check + merge) with a SINGLE token, unlike every other action tool which
+// goes through withPerCallInstallationOctokit/withScopedInstallationOctokit.
+// These mocks track mintInstallationToken/revokeInstallationToken directly
+// so tests can assert exactly one mint + one revoke per merge call.
+let mintInstallationTokenCallCount = 0;
+let revokeInstallationTokenCallCount = 0;
+let capturedMergeMintArgs: {
+  installationId: number;
+  repositoryIds: number[];
+  permissions: Record<string, string>;
+} | null = null;
+let revokedTokens: string[] = [];
+
+function resetMergeTokenMocks() {
+  mintInstallationTokenCallCount = 0;
+  revokeInstallationTokenCallCount = 0;
+  capturedMergeMintArgs = null;
+  revokedTokens = [];
+}
+
+const mintInstallationToken = mock(
+  async (params: {
+    installationId: number;
+    repositoryIds: number[];
+    permissions: Record<string, string>;
+  }) => {
+    mintInstallationTokenCallCount += 1;
+    capturedMergeMintArgs = {
+      installationId: params.installationId,
+      repositoryIds: params.repositoryIds,
+      permissions: params.permissions,
+    };
+    return {
+      token: "merge-scoped-token",
+      expiresAt: null,
+      installationId: params.installationId,
+      repositoryIds: params.repositoryIds,
+      permissions: params.permissions,
+    };
+  },
+);
+
+const revokeInstallationToken = mock(async (token: string) => {
+  revokeInstallationTokenCallCount += 1;
+  revokedTokens.push(token);
+});
+
 mock.module("@/lib/github/app", () => ({
   withScopedInstallationOctokit: async (params: {
     installationId: number;
@@ -70,7 +120,53 @@ mock.module("@/lib/github/app", () => ({
     };
     return params.operation(fakeOctokit);
   },
+  mintInstallationToken,
+  revokeInstallationToken,
 }));
+
+const getMergeReadiness = mock(
+  async (_params: { repoUrl: string; prNumber: number; token?: string }) => ({
+    success: true,
+    canMerge: true,
+    reasons: [] as string[],
+    allowedMethods: ["squash"] as const,
+    defaultMethod: "squash" as const,
+    checks: { requiredTotal: 2, passed: 2, pending: 0, failed: 0 },
+    checkRuns: [],
+  }),
+);
+
+const mergePullRequest = mock(
+  async (_params: {
+    repoUrl: string;
+    prNumber: number;
+    mergeMethod?: string;
+    commitTitle?: string;
+    commitMessage?: string;
+    token?: string;
+  }) => ({
+    success: true,
+    sha: "merged-sha-1",
+  }),
+);
+
+function resetMergeApiMocks() {
+  getMergeReadiness.mockClear();
+  getMergeReadiness.mockImplementation(async () => ({
+    success: true,
+    canMerge: true,
+    reasons: [],
+    allowedMethods: ["squash"],
+    defaultMethod: "squash",
+    checks: { requiredTotal: 2, passed: 2, pending: 0, failed: 0 },
+    checkRuns: [],
+  }));
+  mergePullRequest.mockClear();
+  mergePullRequest.mockImplementation(async () => ({
+    success: true,
+    sha: "merged-sha-1",
+  }));
+}
 
 // ── open_pull_request (STEP-5) fixtures ─────────────────────────────────────
 //
@@ -189,6 +285,8 @@ mock.module("@/lib/github/commit-intent", () => ({
 
 mock.module("@/lib/github/pulls", () => ({
   openPullRequest,
+  getMergeReadiness,
+  mergePullRequest,
 }));
 
 mock.module("@/lib/github/token", () => ({
@@ -272,16 +370,17 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
       }),
     );
 
-    // comment_on_pr_or_issue (STEP-4), open_pull_request (STEP-5), and
-    // approve_pull_request/request_changes (STEP-6) are implemented; the
-    // rest remain absent until their STEP-7..8 tool builders ship. Order
-    // follows enabledActions input order (the resolver iterates
-    // enabledActions directly).
+    // comment_on_pr_or_issue (STEP-4), open_pull_request (STEP-5),
+    // approve_pull_request/request_changes (STEP-6), and merge_pull_request
+    // (STEP-7) are implemented; push/delete_branch remain absent until their
+    // STEP-8 tool builders ship. Order follows enabledActions input order
+    // (the resolver iterates enabledActions directly).
     expect(Object.keys(tools)).toEqual([
       "github_open_pull_request",
       "github_comment_on_pr_or_issue",
       "github_approve_pull_request",
       "github_request_changes",
+      "github_merge_pull_request",
     ]);
   });
 });
@@ -884,6 +983,236 @@ describe("github_request_changes tool", () => {
     // across the two review calls above (each mints and revokes its own
     // token, never reusing a token minted for a prior call).
     expect(withScopedInstallationOctokitCallCount).toBe(1);
+  });
+});
+
+// AI SDK tool() results type execute() loosely for provider-option
+// inference; tests only need to call it directly, so narrow via `unknown`
+// (never `any`) to the concrete signature under test.
+type MergeToolExecute = (
+  input: {
+    prNumber: number;
+    mergeMethod?: "merge" | "squash" | "rebase";
+    commitTitle?: string;
+    commitMessage?: string;
+  },
+  options: unknown,
+) => Promise<unknown>;
+
+function getMergeToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): MergeToolExecute {
+  const mergeTool = tools.github_merge_pull_request as unknown as {
+    execute: MergeToolExecute;
+  };
+  return mergeTool.execute;
+}
+
+describe("github_merge_pull_request tool", () => {
+  test("is absent from the tool set when merge_pull_request is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_merge_pull_request).toBeUndefined();
+  });
+
+  test("gate ON, checks not green: blocks the merge with merge_blocked_ci_not_green and never calls mergePullRequest", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    getMergeReadiness.mockImplementation(async () => ({
+      success: true,
+      canMerge: false,
+      reasons: ["checks pending"],
+      allowedMethods: ["squash"],
+      defaultMethod: "squash",
+      checks: { requiredTotal: 2, passed: 1, pending: 1, failed: 0 },
+      checkRuns: [],
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    const result = await execute({ prNumber: 12 }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "merge_blocked_ci_not_green",
+      error: "checks pending",
+      checks: { requiredTotal: 2, passed: 1, pending: 1, failed: 0 },
+    });
+    expect(mergePullRequest).not.toHaveBeenCalled();
+  });
+
+  test("gate ON, checks green: merges and returns the merged sha", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    const result = await execute({ prNumber: 12, mergeMethod: "squash" }, {});
+
+    expect(result).toEqual({ ok: true, sha: "merged-sha-1" });
+    expect(getMergeReadiness).toHaveBeenCalledTimes(1);
+    expect(mergePullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test("gate OFF: never calls getMergeReadiness and merges regardless of check state", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    getMergeReadiness.mockImplementation(async () => ({
+      success: true,
+      canMerge: false,
+      reasons: ["checks failing"],
+      allowedMethods: ["squash"],
+      defaultMethod: "squash",
+      checks: { requiredTotal: 2, passed: 0, pending: 0, failed: 2 },
+      checkRuns: [],
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: false,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    const result = await execute({ prNumber: 12 }, {});
+
+    expect(result).toEqual({ ok: true, sha: "merged-sha-1" });
+    expect(getMergeReadiness).not.toHaveBeenCalled();
+    expect(mergePullRequest).toHaveBeenCalledTimes(1);
+  });
+
+  test("mints exactly one installation token spanning both the readiness check and the merge, and revokes it exactly once", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    const ctx = buildCtx({
+      repositoryIds: [11, 22, 33],
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    expect(mintInstallationTokenCallCount).toBe(1);
+    expect(revokeInstallationTokenCallCount).toBe(1);
+    expect(capturedMergeMintArgs).toEqual({
+      installationId: ctx.installationId,
+      repositoryIds: [11, 22, 33],
+      permissions: { pull_requests: "write", contents: "write" },
+    });
+    expect(revokedTokens).toEqual(["merge-scoped-token"]);
+  });
+
+  test("records a background-agent.github.merge_pull_request event with rich attribution on success", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12, mergeMethod: "squash" }, {});
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.eventName).toBe(
+      "background-agent.github.merge_pull_request",
+    );
+    expect(recorded[0]?.status).toBe("succeeded");
+    expect(recorded[0]?.payload?.prNumber).toBe(12);
+    expect(recorded[0]?.payload?.mergeMethod).toBe("squash");
+    expect(recorded[0]?.payload?.requireCiGreenToMerge).toBe(true);
+    expect(recorded[0]?.payload?.mergedSha).toBe("merged-sha-1");
+    expect(recorded[0]?.payload?.ciChecksSummary).toEqual({
+      requiredTotal: 2,
+      passed: 2,
+      pending: 0,
+      failed: 0,
+    });
+    expect(recorded[0]?.payload?.severity).toBe("high");
+  });
+
+  test("regression: getMergeReadiness and mergePullRequest are called with the SAME minted token (one token spans both calls, not two separate mints)", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    let readinessToken: string | undefined;
+    let mergeToken: string | undefined;
+    getMergeReadiness.mockImplementation(async (params) => {
+      readinessToken = params.token;
+      return {
+        success: true,
+        canMerge: true,
+        reasons: [],
+        allowedMethods: ["squash"],
+        defaultMethod: "squash",
+        checks: { requiredTotal: 1, passed: 1, pending: 0, failed: 0 },
+        checkRuns: [],
+      };
+    });
+    mergePullRequest.mockImplementation(async (params) => {
+      mergeToken = params.token;
+      return { success: true, sha: "merged-sha-1" };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    await execute({ prNumber: 12 }, {});
+
+    expect(readinessToken).toBe("merge-scoped-token");
+    expect(mergeToken).toBe("merge-scoped-token");
+    expect(mintInstallationTokenCallCount).toBe(1);
+  });
+
+  test("returns merge_conflict when mergePullRequest fails with a 409 status", async () => {
+    resetMergeTokenMocks();
+    resetMergeApiMocks();
+    mergePullRequest.mockImplementation(async () => ({
+      success: false,
+      error: "Pull request has conflicts or is out of date",
+      statusCode: 409,
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["merge_pull_request"],
+      requireCiGreenToMerge: true,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getMergeToolExecute(tools);
+
+    const result = await execute({ prNumber: 12 }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "merge_conflict",
+      error: "Pull request has conflicts or is out of date",
+    });
+    // The token must still be revoked even though the merge itself failed.
+    expect(revokeInstallationTokenCallCount).toBe(1);
   });
 });
 
