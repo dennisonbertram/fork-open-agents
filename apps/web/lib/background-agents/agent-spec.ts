@@ -7,6 +7,10 @@
  * re-exports from here.
  */
 import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
+import {
+  DEFAULT_ENABLED_ACTIONS,
+  type GitHubToolAction,
+} from "./github-actions";
 import { validateSchedule } from "./schedule-presets";
 
 export type TriggerKind =
@@ -74,6 +78,14 @@ export type BackgroundAgent = {
       checks?: "read";
       writeScopeMode?: WriteScopeMode;
       writeScopeRepos?: string[];
+      /**
+       * Canonical GitHub tool-action allowlist (#740). Absent means
+       * "legacy agent" — resolveGitHubToolConfig derives the effective
+       * action set from outputMode for backward compatibility.
+       */
+      enabledActions?: GitHubToolAction[];
+      /** Gates merge_pull_request on CI-green before merging. */
+      requireCiGreenToMerge?: boolean;
     };
   };
   /** Composio toolkit slugs this agent is authorized to use. */
@@ -124,6 +136,17 @@ export type FormState = {
   writeScopeMode?: WriteScopeMode;
   /** owner/repo full names selected when writeScopeMode is "repo_list". */
   writeScopeRepos?: string[];
+  /**
+   * Canonical GitHub tool-action allowlist (#740). Optional so existing
+   * FormState literals across the agent builder/edit flows keep compiling
+   * until they're wired up to the per-action toggle UI (STEP-10).
+   */
+  enabledActions?: GitHubToolAction[];
+  /**
+   * Gates merge_pull_request on CI-green before merging. Optional so
+   * existing FormState literals keep compiling; defaults to true.
+   */
+  requireCiGreenToMerge?: boolean;
 };
 
 export const defaultForm: FormState = {
@@ -147,6 +170,8 @@ export const defaultForm: FormState = {
   builtinToolNames: null,
   writeScopeMode: "this_repo",
   writeScopeRepos: [],
+  enabledActions: [...DEFAULT_ENABLED_ACTIONS],
+  requireCiGreenToMerge: true,
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {

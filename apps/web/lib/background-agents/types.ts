@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GITHUB_TOOL_ACTIONS } from "./github-actions";
 import { validateSchedule } from "./schedule-presets";
 
 export const backgroundAgentTriggerKinds = [
@@ -92,6 +93,14 @@ export const permissionsSchema = z
           .enum(["this_repo", "all_repos", "repo_list"])
           .optional(),
         writeScopeRepos: z.array(z.string().trim().min(1)).max(100).optional(),
+        // Canonical GitHub tool-action allowlist (#740). Absent means
+        // "legacy agent" — resolveGitHubToolConfig derives the effective
+        // action set from outputMode for backward compatibility.
+        enabledActions: z.array(z.enum(GITHUB_TOOL_ACTIONS)).max(7).optional(),
+        // Gates merge_pull_request on combined-status/check-run green
+        // before merging. Defaults to true when enabledActions is present
+        // (see resolveGitHubToolConfig).
+        requireCiGreenToMerge: z.boolean().optional(),
       })
       .strict()
       .optional(),

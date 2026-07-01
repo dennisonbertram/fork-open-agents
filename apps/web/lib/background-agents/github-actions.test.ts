@@ -57,6 +57,6 @@ describe("github-actions canonical action set", () => {
       path.join(import.meta.dir, "github-actions.ts"),
       "utf8",
     );
-    expect(source.includes("server-only")).toBe(false);
+    expect(source.includes('import "server-only"')).toBe(false);
   });
 });

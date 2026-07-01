@@ -5,6 +5,7 @@ import type { ModelVariant } from "@/lib/model-variants";
 import type { InferenceProfileModel } from "@/lib/inference/types";
 import type { GlobalSkillRef } from "@/lib/skills/global-skill-refs";
 import type { ModelSystemPrompts } from "@/lib/model-system-prompts";
+import type { GitHubToolAction } from "@/lib/background-agents/github-actions";
 import {
   type ChatComposioSelection,
   type ComposioAgentDefaults,
@@ -67,6 +68,14 @@ export type BackgroundAgentPermissions = {
     // ids are re-resolved fresh at run time (see write-scope resolver).
     writeScopeMode?: "this_repo" | "all_repos" | "repo_list";
     writeScopeRepos?: string[];
+    // Canonical GitHub tool-action allowlist (#740). Absent means "legacy
+    // agent" — resolveGitHubToolConfig derives the effective action set
+    // from outputMode for backward compatibility (byte-identical
+    // behavior for every pre-#740 agent).
+    enabledActions?: GitHubToolAction[];
+    // Gates merge_pull_request on combined-status/check-run green before
+    // merging. Enforced inside the merge tool itself, not just the prompt.
+    requireCiGreenToMerge?: boolean;
   };
 };
 
