@@ -237,6 +237,12 @@ mock.module("@/lib/github/app", () => ({
   revokeInstallationToken,
   withScopedInstallationOctokit,
 }));
+// Transitively imported by ./write-scope (loaded by executor.ts). This
+// fixture's agent uses the default write scope (this_repo), which never
+// enumerates the installation — an empty stub is sufficient.
+mock.module("@/lib/github/repos", () => ({
+  listAppInstallationRepositories: mock(async () => []),
+}));
 mock.module("@/lib/github/commit", () => ({ buildCoAuthor, createCommit }));
 mock.module("@/lib/github/commit-intent", () => ({
   buildCommitIntentFromSandbox,

@@ -63,6 +63,7 @@ import type {
   BackgroundAgentTriggerKind,
   NormalizedBackgroundTriggerEvent,
 } from "./types";
+import { resolveWriteScopeRepositoryIds } from "./write-scope";
 import { isLearningsAgent } from "@/lib/learnings/builtin-agent";
 import { runLearningsExtraction } from "@/lib/learnings/runner";
 import { createDbLearningsStore } from "@/lib/learnings/store";
@@ -450,6 +451,13 @@ async function createReadyPullRequestOutput(params: {
   baseBranch: string;
   installationId: number;
   repositoryId: number;
+  /**
+   * Explicit, bounded set of repo IDs the write-scoped installation token is
+   * minted against — always includes repositoryId (the commit/PR target).
+   * Resolved by resolveWriteScopeRepositoryIds before this function is
+   * called; never omitted/unrestricted.
+   */
+  repositoryIds: number[];
   checkCommand?: string | null;
   triggerKind: BackgroundAgentTriggerKind;
 }) {
@@ -502,12 +510,13 @@ async function createReadyPullRequestOutput(params: {
     payload: {
       branchName: params.branchName,
       fileCount: intentResult.intent.files.length,
+      repositoryIds: params.repositoryIds,
     },
   });
 
   const commitResult = await withScopedInstallationOctokit({
     installationId: intentResult.intent.installationId,
-    repositoryIds: [intentResult.intent.repositoryId],
+    repositoryIds: params.repositoryIds,
     permissions: { contents: "write" },
     operation: async (octokit) =>
       createCommit({
@@ -544,6 +553,7 @@ async function createReadyPullRequestOutput(params: {
     payload: {
       branchName: params.branchName,
       commitSha: commitResult.commitSha,
+      repositoryIds: params.repositoryIds,
     },
   });
 
@@ -1142,6 +1152,33 @@ export async function executeBackgroundAgentRun(params: {
   }
 
   if (agent.outputMode === "ready_pr") {
+    // Resolve the agent's persisted write-scope selection to an explicit,
+    // bounded repo-ID list BEFORE minting the write-scoped commit token.
+    // Gated at RUN TIME on the installation's CURRENT repositorySelection
+    // (from `access`, re-fetched fresh by verifyRepoAccess above) — an
+    // installer narrowing the installation after this agent was configured
+    // with a broader scope must fail the run, never silently narrow it.
+    const writeScopeResult = await resolveWriteScopeRepositoryIds({
+      github: agent.permissions.github,
+      homeRepositoryId: access.repositoryId,
+      installationId: access.installationId,
+      repositorySelection: access.repositorySelection,
+    });
+
+    if (!writeScopeResult.ok) {
+      await recordFailure({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        errorKind: writeScopeResult.errorKind,
+        summary: writeScopeResult.reason,
+      });
+      return;
+    }
+
     try {
       const prResult = await createReadyPullRequestOutput({
         runId: run.id,
@@ -1158,6 +1195,7 @@ export async function executeBackgroundAgentRun(params: {
         baseBranch: access.defaultBranch,
         installationId: access.installationId,
         repositoryId: access.repositoryId,
+        repositoryIds: writeScopeResult.repositoryIds,
         checkCommand: agent.checkCommand,
         triggerKind: run.triggerKind,
       });

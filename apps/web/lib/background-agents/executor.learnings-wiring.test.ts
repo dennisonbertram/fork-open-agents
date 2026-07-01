@@ -156,6 +156,12 @@ mock.module("@/lib/github/app", () => ({
   withScopedInstallationOctokit,
 }));
 
+// Transitively imported by ./write-scope (loaded by executor.ts) — this
+// learnings-agent path never touches write scope, so an empty stub is fine.
+mock.module("@/lib/github/repos", () => ({
+  listAppInstallationRepositories: mock(async () => []),
+}));
+
 mock.module("@/lib/github/commit", () => ({
   buildCoAuthor: mock(async () => ({
     name: "mona",
