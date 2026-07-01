@@ -350,6 +350,69 @@ describe("#750 store scheduling: seeding + preservation on update", () => {
     );
   });
 
+  test("BT-750-G: replaced webhook trigger never steals a preserved trigger's webhookPublicId", async () => {
+    const { createBackgroundAgent, updateBackgroundAgent } = await storePromise;
+
+    const created = await createBackgroundAgent("user-1", {
+      ...baseCreateInput,
+      triggers: [
+        {
+          name: "Alpha",
+          kind: "webhook.error",
+          status: "enabled",
+          conditions: {},
+          schedule: null,
+        },
+        {
+          name: "Beta",
+          kind: "webhook.error",
+          status: "enabled",
+          conditions: {},
+          schedule: null,
+        },
+      ],
+    });
+    const alphaId = created.triggers.find((t) => t.name === "Alpha")
+      ?.webhookPublicId as string;
+    const betaId = created.triggers.find((t) => t.name === "Beta")
+      ?.webhookPublicId as string;
+    expect(alphaId).toBeTruthy();
+    expect(betaId).toBeTruthy();
+    expect(alphaId).not.toBe(betaId);
+
+    // Alpha is preserved (identical identity); Beta is renamed → replaced.
+    const updated = await updateBackgroundAgent("user-1", created.id, {
+      triggers: [
+        {
+          name: "Alpha",
+          kind: "webhook.error",
+          status: "enabled",
+          conditions: {},
+          schedule: null,
+        },
+        {
+          name: "Gamma",
+          kind: "webhook.error",
+          status: "enabled",
+          conditions: {},
+          schedule: null,
+        },
+      ],
+    });
+
+    const alpha = updated?.triggers.find((t) => t.name === "Alpha");
+    const gamma = updated?.triggers.find((t) => t.name === "Gamma");
+    // Preserved trigger keeps its live webhook URL identity.
+    expect(alpha?.webhookPublicId).toBe(alphaId);
+    // The replacement must NOT take the preserved row's still-live id —
+    // that would violate the unique webhook_public_id index. It may reuse
+    // the REPLACED row's id (URL stability) or mint a fresh one.
+    expect(gamma?.webhookPublicId).toBeTruthy();
+    expect(gamma?.webhookPublicId).not.toBe(alphaId);
+    const ids = updated?.triggers.map((t) => t.webhookPublicId);
+    expect(new Set(ids).size).toBe(ids?.length);
+  });
+
   test("BT-750-D: updateBackgroundAgent replaces trigger identity when schedule changes", async () => {
     const {
       createBackgroundAgent,

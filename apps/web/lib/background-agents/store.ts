@@ -209,9 +209,6 @@ export async function updateBackgroundAgent(
         where: eq(backgroundAgentTriggers.agentId, agent.id),
         orderBy: [desc(backgroundAgentTriggers.createdAt)],
       });
-      const existingWebhookPublicIds =
-        getExistingWebhookPublicIds(existingTriggers);
-
       // Upsert-by-identity: a trigger whose kind/schedule/conditions/name are
       // unchanged is PRESERVED (same row id, lastRunAt, nextRunAt,
       // lastSkipReason, webhookPublicId) instead of being deleted and
@@ -250,6 +247,14 @@ export async function updateBackgroundAgent(
           .delete(backgroundAgentTriggers)
           .where(inArray(backgroundAgentTriggers.id, staleTriggerIds));
       }
+
+      // The webhook-id reuse pool must contain ONLY ids from rows being
+      // replaced (deleted above). A preserved row's id is still live under
+      // the unique webhook_public_id index — handing it to a new row would
+      // fail the insert and abort the whole agent edit.
+      const existingWebhookPublicIds = getExistingWebhookPublicIds(
+        existingTriggers.filter((row) => !preservedIds.has(row.id)),
+      );
 
       const newTriggerValues = input.triggers
         .map((trigger, index) => ({ trigger, matched: matches[index] }))
