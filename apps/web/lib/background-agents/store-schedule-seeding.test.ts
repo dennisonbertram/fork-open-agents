@@ -64,24 +64,32 @@ mock.module("drizzle-orm", () => ({
   ),
 }));
 
+function insertRows(
+  table: unknown,
+  vals: FakeAgentRow | FakeAgentRow[],
+): FakeAgentRow[] {
+  const rows = Array.isArray(vals) ? vals : [vals];
+  if (table === agentsTableSymbol) {
+    agentsTable.push(...(rows as FakeAgentRow[]));
+  } else if (table === triggersTableSymbol) {
+    triggersTable.push(...(rows as FakeTriggerRow[]));
+  }
+  return rows;
+}
+
 function makeTx() {
   return {
     insert: (table: unknown) => ({
-      values: (vals: FakeAgentRow | FakeAgentRow[]) => ({
-        returning: () => {
-          const rows = Array.isArray(vals) ? vals : [vals];
-          if (table === agentsTableSymbol) {
-            agentsTable.push(...(rows as FakeAgentRow[]));
-          } else if (table === triggersTableSymbol) {
-            triggersTable.push(...(rows as FakeTriggerRow[]));
-          }
-          return rows;
-        },
-      }),
+      values: (vals: FakeAgentRow | FakeAgentRow[]) => {
+        const rows = insertRows(table, vals);
+        return Object.assign(Promise.resolve(rows), {
+          returning: () => rows,
+        });
+      },
     }),
     update: (table: unknown) => ({
       set: (setVals: Record<string, unknown>) => ({
-        where: () => ({
+        where: (cond: { _eq?: [unknown, unknown] }) => ({
           returning: () => {
             if (table === agentsTableSymbol) {
               const idx = agentsTable.findIndex(
@@ -93,18 +101,39 @@ function makeTx() {
               }
               return [];
             }
+            if (table === triggersTableSymbol) {
+              const triggerId = cond?._eq?.[1];
+              const idx = triggersTable.findIndex(
+                (row) => row.id === triggerId,
+              );
+              if (idx >= 0) {
+                triggersTable[idx] = { ...triggersTable[idx], ...setVals };
+                return [triggersTable[idx]];
+              }
+              return [];
+            }
             return [];
           },
         }),
       }),
     }),
     delete: (table: unknown) => ({
-      where: (cond: { _eq?: [unknown, unknown] }) => {
+      where: (cond: {
+        _eq?: [unknown, unknown];
+        _inArray?: [unknown, unknown];
+      }) => {
         if (table === triggersTableSymbol) {
-          const agentId = cond?._eq?.[1];
-          triggersTable = triggersTable.filter(
-            (row) => row.agentId !== agentId,
-          );
+          if (cond?._inArray) {
+            const ids = cond._inArray[1] as string[];
+            triggersTable = triggersTable.filter(
+              (row) => !ids.includes(row.id),
+            );
+          } else if (cond?._eq) {
+            const agentId = cond._eq[1];
+            triggersTable = triggersTable.filter(
+              (row) => row.agentId !== agentId,
+            );
+          }
         }
         return Promise.resolve();
       },
@@ -114,9 +143,7 @@ function makeTx() {
         findFirst: async () => agentsTable[0] ?? undefined,
       },
       backgroundAgentTriggers: {
-        findMany: async (opts: {
-          where?: { _eq?: [unknown, unknown] };
-        }) => {
+        findMany: async (opts: { where?: { _eq?: [unknown, unknown] } }) => {
           const agentId = opts?.where?._eq?.[1];
           return triggersTable.filter((row) => row.agentId === agentId);
         },
@@ -135,9 +162,7 @@ mock.module("@/lib/db/client", () => ({
         where: (cond: { _eq?: [unknown, unknown] }) => {
           if (table === triggersTableSymbol) {
             const triggerId = cond?._eq?.[1];
-            const idx = triggersTable.findIndex(
-              (row) => row.id === triggerId,
-            );
+            const idx = triggersTable.findIndex((row) => row.id === triggerId);
             if (idx >= 0) {
               triggersTable[idx] = { ...triggersTable[idx], ...setVals };
             }
@@ -200,9 +225,7 @@ describe("#750 store scheduling: seeding on create", () => {
     const trigger = agent.triggers[0];
     expect(trigger?.nextRunAt).toBeInstanceOf(Date);
     // computeNextRuns("7 * * * *", 09:12, 1) → 10:07 same day
-    expect(trigger?.nextRunAt?.toISOString()).toBe(
-      "2026-06-01T10:07:00.000Z",
-    );
+    expect(trigger?.nextRunAt?.toISOString()).toBe("2026-06-01T10:07:00.000Z");
   });
 
   test("BT-750-A: createBackgroundAgent leaves nextRunAt null for non-schedule triggers", async () => {
@@ -269,8 +292,11 @@ describe("#750 store scheduling: seeding + preservation on update", () => {
   });
 
   test("BT-750-C: updateBackgroundAgent preserves trigger id + schedule state when unchanged", async () => {
-    const { createBackgroundAgent, updateBackgroundAgent, advanceTriggerScheduleState } =
-      await storePromise;
+    const {
+      createBackgroundAgent,
+      updateBackgroundAgent,
+      advanceTriggerScheduleState,
+    } = await storePromise;
 
     const created = await createBackgroundAgent(
       "user-1",
@@ -325,8 +351,11 @@ describe("#750 store scheduling: seeding + preservation on update", () => {
   });
 
   test("BT-750-D: updateBackgroundAgent replaces trigger identity when schedule changes", async () => {
-    const { createBackgroundAgent, updateBackgroundAgent, advanceTriggerScheduleState } =
-      await storePromise;
+    const {
+      createBackgroundAgent,
+      updateBackgroundAgent,
+      advanceTriggerScheduleState,
+    } = await storePromise;
 
     const created = await createBackgroundAgent(
       "user-1",
@@ -375,8 +404,10 @@ describe("#750 store scheduling: seeding + preservation on update", () => {
     // freshly seeded (not carried over from the stale schedule's state).
     expect(replacedTrigger?.id).not.toBe(originalTriggerId as string);
     expect(replacedTrigger?.lastRunAt).toBeNull();
+    // computeNextRuns("0 9 * * *", 09:12 on 06-01, 1) → 09:00 the NEXT day,
+    // since 09:00 has already passed on 06-01.
     expect(replacedTrigger?.nextRunAt?.toISOString()).toBe(
-      "2026-06-01T10:00:00.000Z",
+      "2026-06-02T09:00:00.000Z",
     );
   });
 });

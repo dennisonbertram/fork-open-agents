@@ -23,7 +23,7 @@ import {
   isBackgroundAgentsEnabled,
 } from "./config";
 import { scheduleMatchesNow } from "./schedule";
-import { computeNextRuns } from "./schedule-presets";
+import { computeNextRuns, validateSchedule } from "./schedule-presets";
 import { getAgentLoopById } from "@/lib/agent-loops/store";
 import { dispatchLoopRunForTrigger } from "@/lib/agent-loops/dispatcher-bridge";
 // Note: dispatchLoopRunForTrigger is dynamically imported within the
@@ -588,14 +588,23 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     }
     // Loop-bound rows: allowlist check deferred to dispatchLoopRunForTrigger.
 
-    const dueAt = getDueScheduleTime(row.trigger, now);
-    const scheduleMatches =
-      dueAt < now || scheduleMatchesNow(row.trigger.schedule, now);
-    if (!scheduleMatches) {
+    // An invalid schedule expression is an actionable misconfiguration —
+    // record a skip reason so the user sees it in the schedule card.
+    // An ordinary "not due yet" result is expected on nearly every sweep
+    // (the cron tick runs every 5 minutes) and must NOT record a skip
+    // reason, or the schedule card would show a permanent amber warning.
+    if (!validateSchedule(row.trigger.schedule).valid) {
       await recordTriggerSkipReason({
         triggerId: row.trigger.id,
         skipReason: "schedule did not match current time",
       });
+      continue;
+    }
+
+    const dueAt = getDueScheduleTime(row.trigger, now);
+    const scheduleMatches =
+      dueAt < now || scheduleMatchesNow(row.trigger.schedule, now);
+    if (!scheduleMatches) {
       continue;
     }
 
