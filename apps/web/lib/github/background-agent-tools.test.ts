@@ -853,6 +853,38 @@ describe("github_request_changes tool", () => {
     expect(recorded[0]?.payload?.prNumber).toBe(12);
     expect(recorded[0]?.payload?.event).toBe("REQUEST_CHANGES");
   });
+
+  test("regression: mints pull_requests:write only (never issues:write or contents:write) with exactly one mint-and-revoke per call, for both approve and request_changes", async () => {
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      enabledActions: ["approve_pull_request", "request_changes"],
+    });
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+
+    const approveExecute = getApproveToolExecute(tools);
+    await approveExecute({ prNumber: 12 }, {});
+
+    // Regression guard: a future edit that widens this to issues:write
+    // (mirroring the comment tool) or adds contents:write would needlessly
+    // broaden the minted token beyond what a PR review requires — review
+    // actions must stay on pull_requests:write only.
+    expect(capturedMintArgs?.permissions).toEqual({ pull_requests: "write" });
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
+
+    resetCapturedMintArgs();
+    const requestChangesExecute = getRequestChangesToolExecute(tools);
+    await requestChangesExecute(
+      { prNumber: 12, body: "Please add tests." },
+      {},
+    );
+
+    expect(capturedMintArgs?.permissions).toEqual({ pull_requests: "write" });
+    // Per-call mint-and-revoke: exactly one withScopedInstallationOctokit
+    // call for this single tool invocation — no standing credential exists
+    // across the two review calls above (each mints and revokes its own
+    // token, never reusing a token minted for a prior call).
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
+  });
 });
 
 describe("withPerCallInstallationOctokit", () => {
