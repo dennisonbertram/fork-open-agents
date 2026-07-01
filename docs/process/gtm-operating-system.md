@@ -11,12 +11,17 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
   approvals, and append-only events.
 - `apps/web/lib/gtm/*` contains the typed event vocabulary, redaction helpers,
   and transaction-scoped store helpers.
+- `apps/web/lib/gtm-outbound/*` contains the approval policy and local
+  outbound draft persistence boundary. It may create local touchpoints and
+  pending approval rows, but it must not call email, CRM, or sequence tools.
 - `GET /api/gtm/brief?window=24h` returns the read-only daily GTM brief.
 - `GET /api/gtm/diagnosis?source=account_work&id=...` returns bounded evidence
   for a single GTM item.
 - `POST /api/gtm/research/runs` creates a deterministic, draft-first account
   research run from cited manual, CRM, or public evidence. It persists draft GTM
   signals and rejects uncited or unverified private claims instead of guessing.
+- `POST /api/gtm/outbound/drafts` creates a local outbound touchpoint and a
+  pending approval request for the requested external action.
 
 ## Event Vocabulary
 
@@ -58,6 +63,12 @@ call the external tool.
 Research runs create local draft signals only. Promoting a research finding to
 active, writing to CRM, sending outbound, or filing a public issue remains a
 separate approval-gated action.
+
+Outbound actions covered by the first policy surface are `email_create_draft`,
+`email_send`, `crm_note_create`, `crm_contact_update`, and
+`crm_sequence_enroll`. The outbound API returns `pending_approval` and records
+`gtm.touchpoint.recorded` plus `gtm.approval.requested` events before any
+external system is eligible to mutate.
 
 ## Debug Recipes
 
