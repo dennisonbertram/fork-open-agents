@@ -36,6 +36,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `POST /api/gtm/calls/prep` creates a local call-prep brief artifact.
 - `POST /api/gtm/calls/debrief` ingests notes into a redacted debrief, draft
   insights, and pending approvals for follow-up or GTM record updates.
+- `/gtm/calls` renders the two-phase founder call workspace: prep brief,
+  notes/transcript debrief, next steps, follow-up draft, draft insights, and
+  pending approval records for proposed mutations.
 - `GET /api/gtm/activation/signals` returns the private activation signal queue.
 - `POST /api/gtm/activation/signals` runs the activation watcher on supplied
   source snapshots and creates draft signals plus pending issue approvals.
