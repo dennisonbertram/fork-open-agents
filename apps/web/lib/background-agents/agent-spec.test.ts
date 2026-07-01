@@ -11,6 +11,7 @@ import {
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
   defaultForm,
+  describeEnabledActions,
   describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
@@ -545,6 +546,34 @@ describe("describeOutputModePermissions", () => {
     const desc = describeOutputModePermissions("ready_pr");
     const lower = desc.toLowerCase();
     expect(lower.includes("open") || lower.includes("write")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TASK-740 — describeEnabledActions (replaces describeOutputModePermissions
+// as the source of truth for what a background agent can do on GitHub)
+// ---------------------------------------------------------------------------
+
+describe("describeEnabledActions", () => {
+  test("(TASK-740) empty action set returns the same read-only description as describeOutputModePermissions('none')", () => {
+    expect(describeEnabledActions([])).toBe(
+      describeOutputModePermissions("none"),
+    );
+  });
+
+  test("(TASK-740) lists human labels for each enabled action, joined by comma", () => {
+    const desc = describeEnabledActions([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+    expect(desc).toContain("Open pull request");
+    expect(desc).toContain("Comment on PR or issue");
+  });
+
+  test("(TASK-740) a single destructive action still renders its own human label", () => {
+    expect(describeEnabledActions(["merge_pull_request"])).toBe(
+      "Merge pull request",
+    );
   });
 });
 

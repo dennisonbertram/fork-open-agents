@@ -206,6 +206,30 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
+  test("(TASK-740) summary includes a GitHub actions line derived from resolveGitHubToolConfig, not raw outputMode", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ outputMode: "ready_pr" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // outputMode "ready_pr" with no explicit enabledActions migrates to
+      // the agreed default set (open_pull_request + comment_on_pr_or_issue).
+      expect(result.summary).toContain("**GitHub actions:**");
+      expect(result.summary).toContain("Open pull request");
+      expect(result.summary).toContain("Comment on PR or issue");
+    }
+  });
+
+  test("(TASK-740) summary shows the read-only description when no GitHub actions are enabled", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ outputMode: "none" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary.toLowerCase()).toContain("read-only");
+    }
+  });
+
   test("summary includes trigger details", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
@@ -341,6 +365,7 @@ describe("previewBackgroundAgentSpec — success", () => {
       expect(result.warnings).toEqual([]);
     }
   });
+
 });
 
 // ── previewBackgroundAgentSpec — validation failures ─────────────────────

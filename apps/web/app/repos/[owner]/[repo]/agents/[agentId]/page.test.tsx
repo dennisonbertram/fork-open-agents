@@ -299,8 +299,11 @@ describe("AgentDetailPage", () => {
     // Standard toolpack lists the persisted builtinToolNames verbatim
     expect(html).toContain("Standard toolpack");
     expect(html).toContain("read, bash");
-    // GitHub scope is derived from outputMode (ready_pr => write/PR-capable)
-    expect(html.toLowerCase()).toContain("open pull requests");
+    // GitHub scope is derived via resolveGitHubToolConfig, which migrates a
+    // legacy outputMode:"ready_pr" agent (no persisted enabledActions) to
+    // the agreed default action set — open_pull_request + comment.
+    expect(html).toContain("Open pull request");
+    expect(html).toContain("Comment on PR or issue");
     // Composio toolkit slugs are still shown
     expect(html).toContain("linear");
   });
@@ -433,7 +436,7 @@ describe("AgentDetailPage", () => {
       }),
     );
 
-    expect(html.toLowerCase()).toContain("open pull requests");
+    expect(html).toContain("Open pull request");
     expect(html.toLowerCase()).toContain("repo scope: this repo");
   });
 
@@ -493,6 +496,35 @@ describe("AgentDetailPage", () => {
     expect(html.toLowerCase()).toContain(
       "all repos your installation can reach",
     );
+  });
+
+  test("(TASK-740) new-model agent with enabledActions:['merge_pull_request'] and requireCiGreenToMerge:false renders the action label and an irreversible/CI-gate-off indicator", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      permissions: {
+        github: {
+          enabledActions: ["merge_pull_request"],
+          requireCiGreenToMerge: false,
+        },
+      },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html).toContain("Merge pull request");
+    expect(html.toLowerCase()).toContain("irreversible");
+    // No bare agent.outputMode string should ever be displayed directly.
+    expect(html).not.toMatch(/Output mode/);
   });
 
   test("REG-A5-001: a Report-only (non ready_pr) agent never shows a write-scope repo count, even with a stale persisted writeScopeMode", async () => {
