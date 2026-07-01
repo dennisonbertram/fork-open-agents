@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { BackgroundAgentPermissions } from "@/lib/db/schema";
 import {
   DEFAULT_ENABLED_ACTIONS,
   DESTRUCTIVE_ACTIONS,
@@ -131,5 +132,84 @@ describe("resolveGitHubToolConfig", () => {
     // new-model choice, keyed on Array.isArray, not truthiness.
     expect(result.enabledActions).toEqual([]);
     expect(result.requireCiGreenToMerge).toBe(true);
+  });
+});
+
+describe("resolveGitHubToolConfig regression coverage", () => {
+  test("regression: mutating a ready_pr-derived enabledActions array does not corrupt DEFAULT_ENABLED_ACTIONS for later resolutions", () => {
+    // If resolveGitHubToolConfig ever returned DEFAULT_ENABLED_ACTIONS
+    // directly (instead of a fresh copy) for the legacy ready_pr migration,
+    // a caller mutating the returned array would silently corrupt the
+    // shared default for every subsequent legacy agent resolved in the same
+    // process — a byte-identical-behavior regression that would only show
+    // up in production under specific call ordering, never in a single
+    // isolated assertion.
+    const first = resolveGitHubToolConfig({ outputMode: "ready_pr" });
+    first.enabledActions.push("delete_branch");
+
+    expect(DEFAULT_ENABLED_ACTIONS).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+
+    const second = resolveGitHubToolConfig({ outputMode: "ready_pr" });
+    expect(second.enabledActions).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+  });
+
+  test("regression: accepts the real persisted BackgroundAgentPermissions shape (with sibling fields) unchanged, proving structural compatibility with schema.ts", () => {
+    // Mirrors a realistic pre-#740 ready_pr agent's persisted permissions
+    // JSONB blob: write access + write scope are set, but enabledActions
+    // was never written (it didn't exist yet). If this test compiled
+    // against a narrower/incompatible structural type than the real
+    // BackgroundAgentPermissions, it would fail to typecheck (bun --bun run
+    // ci), catching a drift between the resolver's accepted shape and the
+    // actual schema.
+    const legacyReadyPrPermissions: BackgroundAgentPermissions = {
+      github: {
+        contents: "write",
+        pullRequests: "write",
+        issues: "write",
+        writeScopeMode: "this_repo",
+      },
+    };
+
+    const result = resolveGitHubToolConfig({
+      outputMode: "ready_pr",
+      permissions: legacyReadyPrPermissions,
+    });
+
+    expect(result.enabledActions).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+    expect(result.requireCiGreenToMerge).toBe(true);
+
+    // A new-model agent's real persisted permissions blob (enabledActions
+    // present alongside the same sibling fields) must pass through
+    // verbatim, proving the resolver keys strictly on enabledActions and
+    // ignores the legacy fields once the new field is present.
+    const newModelPermissions: BackgroundAgentPermissions = {
+      github: {
+        contents: "write",
+        pullRequests: "write",
+        writeScopeMode: "all_repos",
+        enabledActions: ["merge_pull_request", "push"],
+        requireCiGreenToMerge: false,
+      },
+    };
+
+    const newModelResult = resolveGitHubToolConfig({
+      outputMode: "none",
+      permissions: newModelPermissions,
+    });
+
+    expect(newModelResult.enabledActions).toEqual([
+      "merge_pull_request",
+      "push",
+    ]);
+    expect(newModelResult.requireCiGreenToMerge).toBe(false);
   });
 });
