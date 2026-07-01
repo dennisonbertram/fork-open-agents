@@ -32,6 +32,16 @@ mock.module("@/app/settings/composio-toolkit-picker", () => ({
   ),
 }));
 
+// Mock the connect popover to avoid SWR/window dependencies
+mock.module("./composio-connect-popover", () => ({
+  ComposioConnectPopover: ({ disabled }: { disabled?: boolean }) => (
+    <div
+      data-testid="composio-connect-popover"
+      data-disabled={String(!!disabled)}
+    />
+  ),
+}));
+
 const modulePromise = import("./composio-other-tools-section");
 
 describe("ComposioOtherToolsSection", () => {
@@ -220,5 +230,58 @@ describe("ComposioOtherToolsSection", () => {
 
     const occurrences = html.split("broader GitHub access").length - 1;
     expect(occurrences).toBe(1);
+  });
+
+  test("renders a 'Connect a new tool' trigger alongside the existing picker", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    expect(html).toContain("composio-connect-popover");
+    expect(html).toContain("composio-toolkit-picker");
+  });
+
+  test("passes disabled=true to the connect popover when the section is disabled", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+        disabled={true}
+      />,
+    );
+
+    expect(html).toContain(
+      'data-testid="composio-connect-popover" data-disabled="true"',
+    );
+  });
+
+  test("REGRESSION: connect trigger still renders alongside the picker when a toolkit is already selected", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={["github", "linear"]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    // Guards against a future refactor that only renders the connect
+    // trigger for an empty-selection state (it should always be available,
+    // since it lets a user connect a tool they haven't picked yet).
+    expect(html).toContain("composio-connect-popover");
+    expect(html).toContain('data-slugs="github,linear"');
   });
 });
