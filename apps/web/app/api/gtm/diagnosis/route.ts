@@ -2,13 +2,23 @@ import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-contex
 import { isGtmDiagnosisSource } from "@/lib/gtm-coordinator/diagnosis";
 import { buildDbBackedGtmDiagnosis } from "@/lib/gtm-coordinator/diagnosis-store";
 
-function parseLimit(value: string | null): number | undefined {
+function parseLimit(
+  value: string | null,
+): { ok: true; value: number | undefined } | { ok: false } {
   if (!value) {
-    return undefined;
+    return { ok: true, value: undefined };
   }
 
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  if (!/^\d+$/.test(value)) {
+    return { ok: false };
+  }
+
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
+    return { ok: false };
+  }
+
+  return { ok: true, value: parsed };
 }
 
 export async function GET(req: Request): Promise<Response> {
@@ -41,11 +51,23 @@ export async function GET(req: Request): Promise<Response> {
     return Response.json({ error: "Missing id" }, { status: 400 });
   }
 
+  const limit = parseLimit(url.searchParams.get("limit"));
+  if (!limit.ok) {
+    return Response.json(
+      {
+        error: "Invalid limit",
+        errorKind: "invalid_diagnosis_limit",
+        supportedRange: "1 through 100",
+      },
+      { status: 400 },
+    );
+  }
+
   const diagnosis = await buildDbBackedGtmDiagnosis({
     userId: authResult.userId,
     source,
     id,
-    limit: parseLimit(url.searchParams.get("limit")),
+    limit: limit.value,
   });
 
   if (!diagnosis) {

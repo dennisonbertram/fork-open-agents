@@ -95,6 +95,20 @@ export function parseGtmSnapshotWindow(
   };
 }
 
+export function isValidGtmSnapshotWindow(rawWindow: string | null): boolean {
+  if (rawWindow === null) {
+    return true;
+  }
+
+  const match = /^(\d{1,3})h$/.exec(rawWindow);
+  if (!match) {
+    return false;
+  }
+
+  const hours = Number(match[1]);
+  return Number.isInteger(hours) && hours > 0 && hours <= MAX_WINDOW_HOURS;
+}
+
 function diagnosisHref(source: GtmSnapshotSource, id: string): string {
   const params = new URLSearchParams({ source, id });
   return `/api/gtm/diagnosis?${params.toString()}`;

@@ -118,4 +118,23 @@ describe("GET /api/gtm/diagnosis", () => {
       limit: 10,
     });
   });
+
+  test("rejects invalid limit values before loading data", async () => {
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/gtm/diagnosis?source=account_work&id=signal-1&limit=ten",
+      ),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: "Invalid limit",
+      errorKind: "invalid_diagnosis_limit",
+      supportedRange: "1 through 100",
+    });
+    expect(buildDbBackedGtmDiagnosis).not.toHaveBeenCalled();
+  });
 });

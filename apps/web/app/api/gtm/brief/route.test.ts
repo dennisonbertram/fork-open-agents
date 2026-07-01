@@ -77,4 +77,21 @@ describe("GET /api/gtm/brief", () => {
       window: "24h",
     });
   });
+
+  test("rejects invalid window values before loading data", async () => {
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/gtm/brief?window=tomorrow"),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(body).toEqual({
+      error: "Invalid window",
+      errorKind: "invalid_window",
+      supportedFormat: "1h through 168h",
+    });
+    expect(buildDbBackedGtmSnapshot).not.toHaveBeenCalled();
+  });
 });

@@ -57,7 +57,7 @@ export async function buildDbBackedGtmDiagnosis(params: {
       item = {
         id: signal.id,
         source: params.source,
-        title: signal.summary,
+        title: redactGtmText(signal.summary, 140) ?? "GTM signal",
         status: signal.status === "draft" ? "draft" : "active",
         needsAttention: signal.status === "draft",
         attentionReasons: signal.status === "draft" ? ["draft_signal"] : [],
@@ -87,7 +87,7 @@ export async function buildDbBackedGtmDiagnosis(params: {
       item = {
         id: experiment.id,
         source: params.source,
-        title: experiment.title,
+        title: redactGtmText(experiment.title, 140) ?? "GTM experiment",
         status: experiment.status === "completed" ? "completed" : "active",
         needsAttention: false,
         attentionReasons: [],
@@ -116,7 +116,9 @@ export async function buildDbBackedGtmDiagnosis(params: {
       item = {
         id: approval.id,
         source: params.source,
-        title: `${approval.actionKind} approval`,
+        title:
+          redactGtmText(`${approval.actionKind} approval`, 140) ??
+          "GTM approval",
         status:
           approval.status === "pending" ? "pending_approval" : "completed",
         needsAttention: approval.status === "pending",

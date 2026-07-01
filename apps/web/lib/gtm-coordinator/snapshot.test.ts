@@ -60,7 +60,7 @@ describe("GTM coordinator snapshot", () => {
   test("keeps partial source failures explicit without dropping healthy sources", async () => {
     const snapshot = await buildGtmSnapshot({
       userId: "user-1",
-      window: "bad",
+      window: "24h",
       now,
       loaders: {
         accounts: async () => [],
@@ -92,5 +92,44 @@ describe("GTM coordinator snapshot", () => {
         errorKind: "gtm_source_schema_mismatch",
       }),
     );
+  });
+
+  test("redacts sensitive item text before returning brief sections", async () => {
+    const snapshot = await buildGtmSnapshot({
+      userId: "user-1",
+      window: "24h",
+      now,
+      loaders: {
+        accounts: async () => [],
+        signals: async () => [
+          {
+            id: "signal-1",
+            kind: "pain",
+            status: "active",
+            confidence: "high",
+            summary: "Token leaked sk-sensitivevalue",
+            accountId: null,
+            contactId: null,
+            updatedAt: new Date("2026-06-30T10:00:00.000Z"),
+            metadata: {},
+          },
+        ],
+        experiments: async () => [
+          {
+            id: "experiment-1",
+            title: "Launch token=secret",
+            status: "completed",
+            channel: "email",
+            outcomeSummary: "api_key=secret",
+            updatedAt: new Date("2026-06-30T09:00:00.000Z"),
+          },
+        ],
+        approvals: async () => [],
+      },
+    });
+
+    expect(snapshot.recentlyCompleted[0]?.title).toMatch("[redacted:");
+    expect(snapshot.recentlyCompleted[0]?.summary).toMatch("[redacted:");
+    expect(snapshot.needsAttention).toEqual([]);
   });
 });
