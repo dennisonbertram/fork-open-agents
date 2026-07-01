@@ -9,11 +9,28 @@ import {
   gtmSignals,
 } from "@/lib/db/schema";
 import { redactGtmPayload, redactGtmText } from "@/lib/gtm/redaction";
+import type { GtmEntityKind } from "@/lib/gtm/types";
 import type {
   GtmBriefItem,
   GtmDiagnosisResponse,
   GtmSnapshotSource,
 } from "./types";
+
+export function gtmEventEntityKindForDiagnosisSource(
+  source: GtmSnapshotSource,
+): GtmEntityKind | null {
+  switch (source) {
+    case "account_work":
+      return "signal";
+    case "distribution":
+      return "experiment";
+    case "inbound":
+      return "approval";
+    case "audience":
+    case "product_shipments":
+      return null;
+  }
+}
 
 function metadata(value: Record<string, unknown>) {
   const redacted = redactGtmPayload(value);
@@ -136,6 +153,10 @@ export async function buildDbBackedGtmDiagnosis(params: {
   if (!item) {
     return null;
   }
+  const entityKind = gtmEventEntityKindForDiagnosisSource(params.source);
+  if (!entityKind) {
+    return null;
+  }
 
   const events = await db
     .select()
@@ -143,6 +164,7 @@ export async function buildDbBackedGtmDiagnosis(params: {
     .where(
       and(
         eq(gtmEvents.userId, params.userId),
+        eq(gtmEvents.entityKind, entityKind),
         eq(gtmEvents.entityId, params.id),
       ),
     )
