@@ -3,6 +3,7 @@ import {
   DEFAULT_ENABLED_ACTIONS,
   DESTRUCTIVE_ACTIONS,
   GITHUB_TOOL_ACTIONS,
+  resolveGitHubToolConfig,
   WRITE_ACTIONS,
 } from "./github-actions";
 
@@ -58,5 +59,77 @@ describe("github-actions canonical action set", () => {
       "utf8",
     );
     expect(source.includes('import "server-only"')).toBe(false);
+  });
+});
+
+describe("resolveGitHubToolConfig", () => {
+  test("legacy outputMode:'ready_pr' with no enabledActions migrates to open_pull_request + comment_on_pr_or_issue", () => {
+    const result = resolveGitHubToolConfig({ outputMode: "ready_pr" });
+    expect(result.enabledActions).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+    expect(result.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("legacy outputMode:'none' with no enabledActions migrates to zero actions", () => {
+    const result = resolveGitHubToolConfig({ outputMode: "none" });
+    expect(result.enabledActions).toEqual([]);
+    expect(result.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("absent outputMode with no enabledActions migrates to zero actions", () => {
+    const result = resolveGitHubToolConfig({});
+    expect(result.enabledActions).toEqual([]);
+    expect(result.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("other legacy report-only outputModes (comment/issue/notification) migrate to zero actions", () => {
+    for (const outputMode of ["comment", "issue", "notification"]) {
+      const result = resolveGitHubToolConfig({ outputMode });
+      expect(result.enabledActions).toEqual([]);
+      expect(result.requireCiGreenToMerge).toBe(true);
+    }
+  });
+
+  test("explicit enabledActions is returned verbatim, ignoring outputMode, with explicit requireCiGreenToMerge preserved", () => {
+    const result = resolveGitHubToolConfig({
+      outputMode: "none",
+      permissions: {
+        github: {
+          enabledActions: ["merge_pull_request"],
+          requireCiGreenToMerge: false,
+        },
+      },
+    });
+    expect(result.enabledActions).toEqual(["merge_pull_request"]);
+    expect(result.requireCiGreenToMerge).toBe(false);
+  });
+
+  test("explicit enabledActions present but requireCiGreenToMerge absent defaults to true", () => {
+    const result = resolveGitHubToolConfig({
+      permissions: {
+        github: {
+          enabledActions: ["push"],
+        },
+      },
+    });
+    expect(result.enabledActions).toEqual(["push"]);
+    expect(result.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("explicit enabledActions of [] is treated as new-model with zero actions, distinct from absent/legacy", () => {
+    const result = resolveGitHubToolConfig({
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          enabledActions: [],
+        },
+      },
+    });
+    // Must NOT fall back to the ready_pr legacy mapping — [] is an explicit
+    // new-model choice, keyed on Array.isArray, not truthiness.
+    expect(result.enabledActions).toEqual([]);
+    expect(result.requireCiGreenToMerge).toBe(true);
   });
 });
