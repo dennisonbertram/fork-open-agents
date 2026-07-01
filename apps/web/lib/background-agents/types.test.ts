@@ -265,4 +265,76 @@ describe("background agent contract types", () => {
     expect(parsed.github?.enabledActions).toBeUndefined();
     expect(parsed.github?.requireCiGreenToMerge).toBeUndefined();
   });
+
+  test("REGRESSION: createBackgroundAgentSchema round-trips enabledActions/requireCiGreenToMerge through its nested permissions.github field", () => {
+    // This proves the wiring survives the FULL create schema (not just the
+    // isolated permissionsSchema). If a future edit re-declared permissions
+    // inline on createBackgroundAgentSchema instead of composing
+    // permissionsSchema, or dropped these two keys from that composition,
+    // a valid #740 agent-create payload would 400 outright.
+    const parsed = createBackgroundAgentSchema.parse({
+      name: "Reviewer",
+      repoOwner: "dennisonbertram",
+      repoName: "fork-open-agents",
+      instructions: "Review and merge clean PRs.",
+      outputMode: "ready_pr",
+      permissions: {
+        github: {
+          contents: "write",
+          pullRequests: "write",
+          enabledActions: [
+            "open_pull_request",
+            "comment_on_pr_or_issue",
+            "merge_pull_request",
+          ],
+          requireCiGreenToMerge: false,
+        },
+      },
+      triggers: [
+        {
+          name: "Pull request",
+          kind: "github.pull_request",
+          conditions: { actions: ["opened"] },
+        },
+      ],
+    });
+
+    expect(parsed.permissions.github?.enabledActions).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+      "merge_pull_request",
+    ]);
+    expect(parsed.permissions.github?.requireCiGreenToMerge).toBe(false);
+  });
+
+  test("REGRESSION: permissionsSchema accepts exactly 7 enabledActions (upper boundary) and a legacy payload omitting both new fields still parses (byte-identical backward compatibility)", () => {
+    const allSeven = [
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+      "approve_pull_request",
+      "request_changes",
+      "merge_pull_request",
+      "push",
+      "delete_branch",
+    ];
+
+    expect(() =>
+      permissionsSchema.parse({ github: { enabledActions: allSeven } }),
+    ).not.toThrow();
+
+    // A pre-#740 legacy payload (no enabledActions, no
+    // requireCiGreenToMerge at all) must still parse unchanged — this is
+    // the hard "byte-identical for every existing agent" requirement.
+    const legacy = permissionsSchema.parse({
+      github: {
+        contents: "write",
+        pullRequests: "write",
+        writeScopeMode: "this_repo",
+      },
+    });
+
+    expect(legacy.github?.enabledActions).toBeUndefined();
+    expect(legacy.github?.requireCiGreenToMerge).toBeUndefined();
+    expect(legacy.github?.writeScopeMode).toBe("this_repo");
+  });
 });

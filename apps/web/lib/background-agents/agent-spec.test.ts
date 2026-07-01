@@ -10,6 +10,7 @@ import {
   buildFormFromAgent,
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
+  defaultForm,
   describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
@@ -23,6 +24,7 @@ import {
   DEFAULT_ON_TOOL_NAMES,
   STANDARD_TOOLPACK_TOOL_NAMES,
 } from "./builtin-toolpack";
+import { DEFAULT_ENABLED_ACTIONS } from "./github-actions";
 
 describe("buildRepoScopedDefaultForm", () => {
   test("BT-001: creates a form pre-filled with the given repo owner and name", () => {
@@ -875,5 +877,27 @@ describe("buildFormFromAgent — builtinToolNames", () => {
     });
 
     expect(form.builtinToolNames).toEqual(["read", "grep"]);
+  });
+});
+
+describe("REGRESSION: defaultForm seeds the #740 GitHub action defaults", () => {
+  test("defaultForm.enabledActions matches DEFAULT_ENABLED_ACTIONS by value but is an independent copy", () => {
+    // If a future edit dropped enabledActions from defaultForm, every new
+    // agent created through the builder would silently start with zero
+    // GitHub actions enabled instead of the agreed open_pull_request +
+    // comment_on_pr_or_issue default.
+    expect(defaultForm.enabledActions).toEqual(DEFAULT_ENABLED_ACTIONS);
+    expect(defaultForm.enabledActions).not.toBe(DEFAULT_ENABLED_ACTIONS);
+  });
+
+  test("defaultForm.requireCiGreenToMerge defaults to true", () => {
+    expect(defaultForm.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("buildRepoScopedDefaultForm inherits the #740 action defaults from defaultForm", () => {
+    const form = buildRepoScopedDefaultForm("acme", "widgets");
+
+    expect(form.enabledActions).toEqual(DEFAULT_ENABLED_ACTIONS);
+    expect(form.requireCiGreenToMerge).toBe(true);
   });
 });
