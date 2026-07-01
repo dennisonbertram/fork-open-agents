@@ -12,6 +12,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { DEFAULT_ON_TOOL_NAMES } from "@/lib/background-agents/builtin-toolpack";
 
 // --- Mocks -------------------------------------------------------------------
 
@@ -378,6 +379,38 @@ describe("AgentDetailPage", () => {
     );
 
     expect(html).not.toContain("Other tools (Composio)");
+  });
+
+  test("REG-721-fix1: the detail page's 'default toolpack (web_fetch off)' claim for a null builtinToolNames agent matches the shared DEFAULT_ON_TOOL_NAMES preset the executor actually runs with", async () => {
+    // Guards the executor/detail-page consistency fixed in the
+    // adversarial-review must-fix finding: the page's null-case copy is a
+    // literal string, not derived from DEFAULT_ON_TOOL_NAMES. This test
+    // pins DEFAULT_ON_TOOL_NAMES to exclude web_fetch so a future change to
+    // the shared preset (e.g. someone adding web_fetch back to the default)
+    // is caught here, not just at the executor layer — see the paired
+    // executor.test.ts REG-721-fix1 test for the runtime-side half of this
+    // invariant.
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      builtinToolNames: null,
+      composioToolkitSlugs: [],
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html).toContain("default toolpack (web_fetch off)");
+    const defaultOnToolNames: readonly string[] = DEFAULT_ON_TOOL_NAMES;
+    expect(defaultOnToolNames.includes("web_fetch")).toBe(false);
   });
 
   test("renders a 'Runs' section header (not 'Chat history')", async () => {

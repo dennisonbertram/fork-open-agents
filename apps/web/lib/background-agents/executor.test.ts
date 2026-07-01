@@ -640,11 +640,9 @@ describe("executeBackgroundAgentRun", () => {
     expect(call?.options?.allowedBuiltinToolNames).toEqual([
       ...DEFAULT_ON_TOOL_NAMES,
     ]);
-    expect(
-      (call?.options?.allowedBuiltinToolNames as string[]).includes(
-        "web_fetch",
-      ),
-    ).toBe(false);
+    const resolvedNames = (call?.options?.allowedBuiltinToolNames ??
+      []) as string[];
+    expect(resolvedNames.includes("web_fetch")).toBe(false);
   });
 
   test("invokes the mutation agent for Report-only (outputMode none) runs", async () => {
@@ -670,6 +668,36 @@ describe("executeBackgroundAgentRun", () => {
     expect(call?.options?.allowedBuiltinToolNames).toEqual([
       ...DEFAULT_ON_TOOL_NAMES,
     ]);
+  });
+
+  test("REG-721-fix1: never resolves a legacy/unset builtinToolNames agent to a toolset that includes web_fetch, regardless of trigger or outputMode", async () => {
+    // Guards against re-introducing the "null = fully unrestricted" bug at
+    // executor.ts:1057 (the adversarial-review must-fix finding). Even if
+    // DEFAULT_ON_TOOL_NAMES gains/loses unrelated tool names in the future,
+    // this test independently asserts the one security-relevant invariant:
+    // an agent that never configured a Standard toolpack must not run with
+    // web_fetch (unauthenticated outbound HTTP, auto-approved, no human gate
+    // in unattended runs) enabled by default.
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      builtinToolNames: null,
+    });
+    currentRun = buildRun({ outputKind: "ready_pr" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      options?: { allowedBuiltinToolNames?: unknown };
+    };
+    const resolved = call?.options?.allowedBuiltinToolNames;
+    // Must not be the "unrestricted" sentinel and must not contain web_fetch.
+    expect(resolved).not.toBeNull();
+    expect(Array.isArray(resolved)).toBe(true);
+    expect((resolved as string[]).includes("web_fetch")).toBe(false);
   });
 
   test("records a workflow_failed failure (not a silent success) when the mutation agent throws for a Report-only run", async () => {
