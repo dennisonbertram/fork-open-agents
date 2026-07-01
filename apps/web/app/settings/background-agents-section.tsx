@@ -40,21 +40,20 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
+import { GitHubActionsSection } from "@/app/repos/[owner]/[repo]/agents/github-actions-section";
 import {
   buildAgentPayload,
   buildFormFromAgent,
   conditionFieldLabel,
   defaultForm,
-  describeOutputModePermissions,
+  describeEnabledActions,
   fieldsForTrigger,
   isStepValid,
-  outputModeLabel,
-  supportedOutputModes,
   triggerLabels,
   type BackgroundAgent,
   type ConditionField,
   type FormState,
-  type OutputMode,
+  type GitHubToolAction,
   type StepId,
   type TriggerKind,
 } from "./background-agents-form";
@@ -258,15 +257,19 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export function PermissionsSummary({ outputMode }: { outputMode: OutputMode }) {
-  const requiresWrite = outputMode === "ready_pr";
+export function PermissionsSummary({
+  enabledActions,
+}: {
+  enabledActions: GitHubToolAction[];
+}) {
+  const requiresWrite = enabledActions.length > 0;
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm font-medium">Permissions summary</p>
           <p className="text-pretty text-xs text-muted-foreground">
-            {describeOutputModePermissions(outputMode)}
+            {describeEnabledActions(enabledActions)}
           </p>
         </div>
         <StatusPill status={requiresWrite ? "write access" : "read-only"} />
@@ -687,10 +690,10 @@ export function BackgroundAgentsSection() {
             hidden={activeStep !== "permissions"}
             className="space-y-4"
           >
-            <PermissionsSummary outputMode={form.outputMode} />
+            <PermissionsSummary enabledActions={form.enabledActions ?? []} />
             <p className="text-xs text-muted-foreground">
-              Permissions are derived from the selected output mode so the agent
-              only gets the access needed to produce that result.
+              Permissions are derived from the GitHub actions enabled below so
+              the agent only gets the access needed to perform them.
             </p>
           </div>
 
@@ -700,28 +703,20 @@ export function BackgroundAgentsSection() {
             className="grid gap-4 md:grid-cols-2"
           >
             <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="agent-output">Output mode</Label>
-              <Select
-                value={form.outputMode}
-                onValueChange={(value) =>
+              <GitHubActionsSection
+                enabledActions={form.enabledActions ?? []}
+                onChange={(next) =>
+                  setForm((current) => ({ ...current, enabledActions: next }))
+                }
+                requireCiGreenToMerge={form.requireCiGreenToMerge ?? true}
+                onRequireCiGreenChange={(next) =>
                   setForm((current) => ({
                     ...current,
-                    outputMode: value as OutputMode,
+                    requireCiGreenToMerge: next,
                   }))
                 }
-              >
-                <SelectTrigger id="agent-output">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {supportedOutputModes.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {outputModeLabel(mode)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <PermissionsSummary outputMode={form.outputMode} />
+              />
+              <PermissionsSummary enabledActions={form.enabledActions ?? []} />
             </div>
             <div className="space-y-2 md:col-span-2">
               <Label htmlFor="agent-check">Check command</Label>
@@ -761,7 +756,7 @@ export function BackgroundAgentsSection() {
                 </p>
               )}
             </div>
-            <PermissionsSummary outputMode={form.outputMode} />
+            <PermissionsSummary enabledActions={form.enabledActions ?? []} />
           </div>
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">

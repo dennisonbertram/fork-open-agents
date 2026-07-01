@@ -14,6 +14,8 @@ import {
 } from "./github-actions";
 import { validateSchedule } from "./schedule-presets";
 
+export type { GitHubToolAction } from "./github-actions";
+
 export type TriggerKind =
   | "github.pull_request"
   | "github.pull_request_review"
