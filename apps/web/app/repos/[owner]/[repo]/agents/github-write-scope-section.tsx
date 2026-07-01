@@ -5,7 +5,10 @@ import { useState } from "react";
 import useSWR from "swr";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { OutputMode, WriteScopeMode } from "@/lib/background-agents/agent-spec";
+import type {
+  OutputMode,
+  WriteScopeMode,
+} from "@/lib/background-agents/agent-spec";
 
 export interface GitHubWriteScopeSectionProps {
   /**
@@ -116,7 +119,8 @@ export function GitHubWriteScopeSection({
 
   const homeFullName = `${repoOwner}/${repoName}`;
   const candidateRepos = (fetchedRepos ?? []).filter(
-    (r) => r.full_name !== homeFullName && !writeScopeRepos.includes(r.full_name),
+    (r) =>
+      r.full_name !== homeFullName && !writeScopeRepos.includes(r.full_name),
   );
 
   function handleModeChange(mode: WriteScopeMode) {
@@ -148,7 +152,7 @@ export function GitHubWriteScopeSection({
     <div className="mt-2 space-y-2 rounded-md border border-border bg-background p-2.5">
       <p className="text-xs font-medium text-foreground">Write scope</p>
       <p className="text-xs text-muted-foreground">
-        Which repos this agent's minted GitHub token can open pull requests
+        Which repos this agent&apos;s minted GitHub token can open pull requests
         on.
       </p>
       <div className="space-y-2">

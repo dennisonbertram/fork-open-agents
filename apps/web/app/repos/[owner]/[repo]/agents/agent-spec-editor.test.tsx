@@ -376,4 +376,31 @@ describe("AgentSpecEditor", () => {
     const radioCloseIdx = html.indexOf("/>", idx);
     expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('disabled=""');
   });
+
+  test("REG: a persisted 'all_repos' writeScopeMode round-trips as checked AND enabled when repositorySelection is 'all'", async () => {
+    // Distinct from the repo_list round-trip test above: guards specifically
+    // against a regression where the "all_repos" radio's checked state and
+    // its repositorySelection-driven disabled state fight each other (e.g. a
+    // future edit that disables every radio whenever writeScopeMode isn't
+    // "this_repo", which would make a legitimately saved all_repos agent look
+    // broken in its own editor).
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialOutputMode="ready_pr"
+        installationId={123}
+        repositorySelection="all"
+        initialWriteScopeMode="all_repos"
+      />,
+    );
+
+    const idx = html.indexOf('value="all_repos"');
+    const radioOpenIdx = html.lastIndexOf("<input", idx);
+    const radioCloseIdx = html.indexOf("/>", idx);
+    const radioTag = html.slice(radioOpenIdx, radioCloseIdx);
+    expect(radioTag).toContain('checked=""');
+    expect(radioTag).not.toContain('disabled=""');
+  });
 });

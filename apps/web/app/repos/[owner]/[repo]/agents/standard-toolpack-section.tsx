@@ -5,7 +5,10 @@ import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { STANDARD_TOOLPACK_ITEMS } from "@/lib/background-agents/builtin-toolpack";
-import type { OutputMode, WriteScopeMode } from "@/lib/background-agents/agent-spec";
+import type {
+  OutputMode,
+  WriteScopeMode,
+} from "@/lib/background-agents/agent-spec";
 import { GitHubWriteScopeSection } from "./github-write-scope-section";
 
 export interface StandardToolpackSectionProps {
