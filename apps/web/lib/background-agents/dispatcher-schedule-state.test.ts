@@ -271,6 +271,60 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
     );
   });
 
+  test("BT-750-off-grid: trigger with nextRunAt in the past fires on an off-grid tick", async () => {
+    // now = 09:12 for a "7 * * * *" schedule (due at :07). The platform cron
+    // tick runs every 5 minutes and will not always land exactly on :07 — the
+    // dispatcher must fire because nextRunAt <= now, not because the current
+    // minute matches the cron expression exactly.
+    const offGridTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-off-grid",
+      schedule: "7 * * * *",
+      nextRunAt: new Date("2026-06-01T09:07:00.000Z"),
+    };
+    scheduleRows = [{ agent: baseAgent, trigger: offGridTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    const now = new Date("2026-06-01T09:12:00.000Z");
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now,
+      requestId: "req-off-grid",
+    });
+
+    expect(result.created).toBe(1);
+    expect(createRunForTriggerMock).toHaveBeenCalledTimes(1);
+    expect(advanceTriggerScheduleState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: "trigger-off-grid",
+        lastRunAt: new Date("2026-06-01T09:07:00.000Z"),
+      }),
+    );
+  });
+
+  test("BT-750-no-skip: an ordinary not-due trigger does not get lastSkipReason recorded", async () => {
+    // A trigger whose nextRunAt is in the future should be silently skipped —
+    // recording a skip reason on nearly every sweep makes the schedule card
+    // render a permanent amber warning even though nothing is wrong.
+    const notDueTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-not-due",
+      schedule: "0 9 * * *",
+      nextRunAt: new Date("2026-06-02T09:00:00.000Z"),
+    };
+    scheduleRows = [{ agent: baseAgent, trigger: notDueTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+    const now = new Date("2026-06-01T09:12:00.000Z");
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now,
+      requestId: "req-not-due",
+    });
+
+    expect(result.created).toBe(0);
+    expect(createRunForTriggerMock).not.toHaveBeenCalled();
+    expect(recordTriggerSkipReason).not.toHaveBeenCalled();
+  });
+
   test("terminalizes stale queued or running background-agent runs", async () => {
     const staleRun: BackgroundAgentRun = {
       id: "run-stale",
