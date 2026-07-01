@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { mintInstallationReadToken } from "./app";
+import { mintInstallationReadToken, revokeInstallationToken } from "./app";
 
 // ---- installation repos listing ----
 
@@ -187,8 +187,10 @@ interface ListAppInstallationRepositoriesOptions {
  * "all repos"/"specific repos" write-scope selections to an explicit,
  * bounded list of numeric repo ids before minting a write-scoped token.
  *
- * Uses a READ-ONLY installation token (mintInstallationReadToken) purely to
- * enumerate repos — never used for write operations.
+ * Uses mintInstallationReadToken purely to enumerate repos — that token is
+ * NOT API-restricted to read-only (see its docstring), so it is always
+ * revoked in a finally block immediately after this call completes,
+ * regardless of success or failure, to minimize its exposure window.
  */
 export async function listAppInstallationRepositories({
   installationId,
@@ -198,65 +200,72 @@ export async function listAppInstallationRepositories({
   AppInstallationRepository[]
 > {
   const token = await mintInstallationReadToken(installationId);
-  const queryFilter = query?.trim().toLowerCase();
-  const normalizedLimit = normalizeLimit(limit);
 
-  const perPage = 50;
-  const maxPages = INSTALLATION_REPOS_MAX_PAGES;
-  const matchedRepos: z.infer<typeof appInstallationRepoSchema>[] = [];
+  try {
+    const queryFilter = query?.trim().toLowerCase();
+    const normalizedLimit = normalizeLimit(limit);
 
-  for (let page = 1; page <= maxPages; page++) {
-    const endpoint = new URL(
-      "https://api.github.com/installation/repositories",
-    );
-    endpoint.searchParams.set("per_page", `${perPage}`);
-    endpoint.searchParams.set("page", `${page}`);
+    const perPage = 50;
+    const maxPages = INSTALLATION_REPOS_MAX_PAGES;
+    const matchedRepos: z.infer<typeof appInstallationRepoSchema>[] = [];
 
-    const response = await fetch(endpoint, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/vnd.github.v3+json",
-      },
-    });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(
-        `Failed to fetch app installation repositories: ${response.status} ${body}`,
+    for (let page = 1; page <= maxPages; page++) {
+      const endpoint = new URL(
+        "https://api.github.com/installation/repositories",
       );
+      endpoint.searchParams.set("per_page", `${perPage}`);
+      endpoint.searchParams.set("page", `${page}`);
+
+      const response = await fetch(endpoint, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github.v3+json",
+        },
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(
+          `Failed to fetch app installation repositories: ${response.status} ${body}`,
+        );
+      }
+
+      const json = await response.json();
+      const parsed = appInstallationReposResponseSchema.safeParse(json);
+      if (!parsed.success) {
+        throw new Error(
+          "Invalid GitHub app installation repositories response",
+        );
+      }
+
+      if (parsed.data.repositories.length === 0) {
+        break;
+      }
+
+      const pageMatches = parsed.data.repositories.filter((repo) =>
+        queryFilter ? repo.name.toLowerCase().includes(queryFilter) : true,
+      );
+
+      matchedRepos.push(...pageMatches);
+
+      if (matchedRepos.length >= normalizedLimit) {
+        break;
+      }
+
+      if (parsed.data.repositories.length < perPage) {
+        break;
+      }
     }
 
-    const json = await response.json();
-    const parsed = appInstallationReposResponseSchema.safeParse(json);
-    if (!parsed.success) {
-      throw new Error("Invalid GitHub app installation repositories response");
-    }
-
-    if (parsed.data.repositories.length === 0) {
-      break;
-    }
-
-    const pageMatches = parsed.data.repositories.filter((repo) =>
-      queryFilter ? repo.name.toLowerCase().includes(queryFilter) : true,
-    );
-
-    matchedRepos.push(...pageMatches);
-
-    if (matchedRepos.length >= normalizedLimit) {
-      break;
-    }
-
-    if (parsed.data.repositories.length < perPage) {
-      break;
-    }
+    return matchedRepos.slice(0, normalizedLimit).map((repo) => ({
+      id: repo.id,
+      name: repo.name,
+      full_name: repo.full_name,
+      private: repo.private,
+    }));
+  } finally {
+    await revokeInstallationToken(token);
   }
-
-  return matchedRepos.slice(0, normalizedLimit).map((repo) => ({
-    id: repo.id,
-    name: repo.name,
-    full_name: repo.full_name,
-    private: repo.private,
-  }));
 }
 
 // ---- branches ----

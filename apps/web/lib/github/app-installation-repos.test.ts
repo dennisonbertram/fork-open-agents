@@ -47,7 +47,10 @@ describe("listAppInstallationRepositories", () => {
   });
 
   test("returns numeric ids for repos accessible to the installation", async () => {
-    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init) => {
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
       const url = new URL(input.toString());
       expect(url.pathname).toBe("/installation/repositories");
       return Response.json({
@@ -136,14 +139,17 @@ describe("listAppInstallationRepositories", () => {
       limit: 100,
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // 2 pages + 1 revoke
     expect(repos.some((repo) => repo.name === "omega")).toBe(true);
   });
 
-  test("regression: enumeration only ever issues GET requests and never touches the write-mint access_tokens endpoint", async () => {
+  test("regression: enumeration issues only GET (repos) + DELETE (revoke) requests and never touches the write-mint access_tokens endpoint", async () => {
     const requests: { url: string; method: string | undefined }[] = [];
     globalThis.fetch = mock(async (input: RequestInfo | URL, init) => {
       requests.push({ url: input.toString(), method: init?.method });
+      if (init?.method === "DELETE") {
+        return new Response(null, { status: 204 });
+      }
       return Response.json({
         repositories: [createRepo(1, "alpha")],
       });
@@ -151,12 +157,55 @@ describe("listAppInstallationRepositories", () => {
 
     await listAppInstallationRepositories({ installationId: 42 });
 
-    expect(requests).toHaveLength(1);
+    expect(requests).toHaveLength(2);
     expect(
       requests[0]?.method === undefined || requests[0]?.method === "GET",
     ).toBe(true);
     expect(requests[0]?.url).toContain("/installation/repositories");
-    expect(requests[0]?.url).not.toContain("access_tokens");
+    expect(requests.every((r) => !r.url.includes("access_tokens"))).toBe(true);
+  });
+
+  test("revokes the installation-scoped read token after enumeration succeeds, since it is not API-restricted to read-only and should not outlive the request", async () => {
+    const revokeCalls: { url: string; auth: string | null | undefined }[] = [];
+    globalThis.fetch = mock(async (input: RequestInfo | URL, init) => {
+      const url = input.toString();
+      if (init?.method === "DELETE") {
+        revokeCalls.push({
+          url,
+          auth: (init?.headers as Record<string, string> | undefined)
+            ?.Authorization,
+        });
+        return new Response(null, { status: 204 });
+      }
+      return Response.json({
+        repositories: [createRepo(1, "alpha")],
+      });
+    }) as unknown as typeof fetch;
+
+    await listAppInstallationRepositories({ installationId: 42 });
+
+    expect(revokeCalls).toHaveLength(1);
+    expect(revokeCalls[0]?.url).toBe(
+      "https://api.github.com/installation/token",
+    );
+    expect(revokeCalls[0]?.auth).toBe("Bearer fake-installation-read-token");
+  });
+
+  test("revokes the installation-scoped read token even when enumeration fails", async () => {
+    const revokeCalls: string[] = [];
+    globalThis.fetch = mock(async (_input: RequestInfo | URL, init) => {
+      if (init?.method === "DELETE") {
+        revokeCalls.push("revoked");
+        return new Response(null, { status: 204 });
+      }
+      return new Response("installation suspended", { status: 403 });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      listAppInstallationRepositories({ installationId: 42 }),
+    ).rejects.toThrow(/403/);
+
+    expect(revokeCalls).toHaveLength(1);
   });
 
   test("regression: a non-ok GitHub response is surfaced as a thrown error, not swallowed as an empty list", async () => {

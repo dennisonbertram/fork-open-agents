@@ -140,12 +140,18 @@ export async function mintInstallationToken(params: {
 }
 
 /**
- * Mint a READ-ONLY, installation-scoped token covering every repo the
- * installation can currently see. This is used ONLY to enumerate repos
- * (e.g. for the "all repos"/"specific repos" write-scope pickers) and is
- * never passed to a write operation — the real write-scoped token is always
- * minted separately via mintInstallationToken with an explicit, bounded
- * repositoryIds list.
+ * Mint an installation-scoped token covering every repo the installation can
+ * currently see, for enumeration only (e.g. resolving the "all repos"/
+ * "specific repos" write-scope pickers to a concrete repo-id list).
+ *
+ * NOTE: unlike mintInstallationToken, this token is NOT API-restricted to
+ * read-only or to a bounded repo list — @octokit/auth-app's "installation"
+ * auth type has no `permissions`/`repository_ids` params, so this token
+ * carries the App's full configured permission ceiling across every repo the
+ * installation can reach. It is read-only only by code discipline (callers
+ * must never pass it to a write operation), not by GitHub API enforcement.
+ * Callers MUST revoke it immediately after use via revokeInstallationToken —
+ * see listAppInstallationRepositories for the only sanctioned caller.
  */
 export async function mintInstallationReadToken(
   installationId: number,
