@@ -24,11 +24,15 @@ UPDATE "background_agents"
 SET "github_actions" = '{"open_pull_request":true,"comment_on_pr_or_issue":true,"push":true}'::jsonb
 WHERE "output_mode" = 'ready_pr'
   AND "github_actions" = '{"open_pull_request":true,"comment_on_pr_or_issue":true}'::jsonb;--> statement-breakpoint
--- Backfill: rows with output_mode='comment' get comment_on_pr_or_issue true.
--- Scoped the same way for idempotency.
+-- Backfill: every legacy NON-ready_pr row is behavior-preserving. Before
+-- this migration only output_mode='ready_pr' agents could perform GitHub
+-- writes — a legacy 'comment'/'none'/'issue'/'notification' agent must NOT
+-- inherit the new-agent default's open_pull_request:true, or existing
+-- report-only agents would gain PR-opening capability once github_actions
+-- drives behavior (#746). They get comment-only (matching the product's
+-- comment-on-by-default) and no write actions. Scoped to rows still at the
+-- column default for idempotency.
 UPDATE "background_agents"
-SET "github_actions" = '{"open_pull_request":true,"comment_on_pr_or_issue":true}'::jsonb
-WHERE "output_mode" = 'comment'
-  AND "github_actions" = '{"open_pull_request":true,"comment_on_pr_or_issue":true}'::jsonb;--> statement-breakpoint
--- output_mode in ('issue', 'notification', 'none') keep the column default
--- (open_pull_request + comment_on_pr_or_issue) — no further backfill needed.
+SET "github_actions" = '{"comment_on_pr_or_issue":true}'::jsonb
+WHERE "output_mode" IN ('comment', 'none', 'issue', 'notification')
+  AND "github_actions" = '{"open_pull_request":true,"comment_on_pr_or_issue":true}'::jsonb;

@@ -138,7 +138,10 @@ export const writeScopeSchema = z
 
 export const defaultWriteScope = { mode: "this_repo" } as const;
 
-const gatewayModelIdPattern = /^[a-z0-9._-]+\/[a-z0-9._:-]+$/i;
+// The model half may itself contain slashes — the catalog carries nested ids
+// like 'fireworks/zai/glm-5.2' and Fireworks-style
+// 'fireworks/accounts/fireworks/models/...' paths.
+const gatewayModelIdPattern = /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i;
 
 /**
  * modelId must be either a gateway `provider/model` id or a

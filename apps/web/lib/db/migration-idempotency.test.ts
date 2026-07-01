@@ -73,11 +73,12 @@ describe("background_agents config-surface migration (#745) is idempotent", () =
     // product default; applying it to legacy non-ready_pr rows would let
     // existing report-only agents open PRs once githubActions drives
     // behavior. Those rows must be backfilled to comment-only.
-    const nonReadyPrBackfillMatch = sql.match(
-      /UPDATE "background_agents"[\s\S]*?WHERE[\s\S]*?output_mode[\s\S]*?IN[\s\S]*?'comment'[\s\S]*?'none'[\s\S]*?;/,
-    );
-    expect(nonReadyPrBackfillMatch).not.toBeNull();
-    const nonReadyPrBackfill = nonReadyPrBackfillMatch?.[0] ?? "";
+    const updates = sql.match(/UPDATE "background_agents"[\s\S]*?;/g) ?? [];
+    const nonReadyPrBackfill =
+      updates.find((update) => /output_mode"?\s+IN\s*\(/.test(update)) ?? "";
+    expect(nonReadyPrBackfill).not.toBe("");
+    expect(nonReadyPrBackfill).toContain("'comment'");
+    expect(nonReadyPrBackfill).toContain("'none'");
     const setClause = nonReadyPrBackfill.slice(
       0,
       nonReadyPrBackfill.indexOf("WHERE"),
