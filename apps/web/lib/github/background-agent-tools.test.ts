@@ -58,7 +58,11 @@ const fakeOctokit = {
       }) => ({ data: { id: 888, state: "APPROVED" } }),
     },
     git: {
-      deleteRef: async (params: { owner: string; repo: string; ref: string }) => {
+      deleteRef: async (params: {
+        owner: string;
+        repo: string;
+        ref: string;
+      }) => {
         capturedDeleteRefArgs = params;
         if (deleteRefShouldThrow) {
           throw deleteRefShouldThrow;
@@ -234,10 +238,18 @@ const buildCoAuthor = mock(async () => ({
   name: "mona",
   email: "1+mona@users.noreply.github.com",
 }));
-const createCommit = mock(async () => ({
-  ok: true,
-  commitSha: "commit-sha-1",
-}));
+type FakeCreateCommitResult =
+  | { ok: true; commitSha: string }
+  | { ok: false; error: string };
+
+const createCommit = mock(
+  async (
+    _params: Record<string, unknown>,
+  ): Promise<FakeCreateCommitResult> => ({
+    ok: true,
+    commitSha: "commit-sha-1",
+  }),
+);
 const buildCommitIntentFromSandbox = mock(async () => ({
   ok: true,
   intent: {
@@ -1367,10 +1379,7 @@ describe("github_push tool", () => {
     resetReadyPrMocks();
     let capturedCreateCommitParams: Record<string, unknown> | null = null;
     createCommit.mockImplementationOnce(async (params) => {
-      capturedCreateCommitParams = params as unknown as Record<
-        string,
-        unknown
-      >;
+      capturedCreateCommitParams = params as unknown as Record<string, unknown>;
       return { ok: true, commitSha: "pushed-sha-1" };
     });
     const ctx = buildCtx({
@@ -1424,10 +1433,7 @@ describe("github_push tool", () => {
     resetReadyPrMocks();
     let capturedCreateCommitParams: Record<string, unknown> | null = null;
     createCommit.mockImplementationOnce(async (params) => {
-      capturedCreateCommitParams = params as unknown as Record<
-        string,
-        unknown
-      >;
+      capturedCreateCommitParams = params as unknown as Record<string, unknown>;
       return { ok: true, commitSha: "forced-sha-1" };
     });
     const ctx = buildCtx({

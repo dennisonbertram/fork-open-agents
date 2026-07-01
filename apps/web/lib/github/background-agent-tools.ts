@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Sandbox } from "@open-agents/sandbox";
+import { stageAll, type Sandbox } from "@open-agents/sandbox";
 import type { Octokit } from "@octokit/rest";
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
@@ -20,6 +20,8 @@ import {
   revokeInstallationToken,
   withScopedInstallationOctokit,
 } from "@/lib/github/app";
+import { buildCoAuthor, createCommit } from "@/lib/github/commit";
+import { buildCommitIntentFromSandbox } from "@/lib/github/commit-intent";
 import {
   getMergeReadiness,
   type MergeReadiness,
@@ -647,6 +649,184 @@ This tool acts as the GitHub App via a single per-call installation token scoped
   });
 }
 
+// ── push action (STEP-8) ──────────────────────────────────────────────────────
+
+const REMOTE_BRANCH_CHANGED_ERROR =
+  "Remote branch changed before commit could be created";
+
+const pushInputSchema = z.object({
+  branch: z
+    .string()
+    .min(1)
+    .describe("The branch ref to push the sandbox's current changes to."),
+  force: z
+    .boolean()
+    .default(false)
+    .describe(
+      "When true, bypasses the fast-forward staleness check and commits on top of the branch's current remote tip even if it moved since the sandbox last synced. Never applied implicitly — must be set explicitly.",
+    ),
+});
+
+type PushToolOutput =
+  | { ok: true; sha: string; forced: boolean }
+  | GitHubActionErrorResult;
+
+/**
+ * Commits the sandbox's current changes onto an arbitrary branch ref via the
+ * SAME verified GitHub App commit path used by open_pull_request
+ * (buildCommitIntentFromSandbox -> createCommit inside a per-call
+ * contents:write installation token), rather than a raw updateRef, so pushes
+ * carry the same verified-commit guarantees.
+ *
+ * Non-force pushes forward the sandbox's captured expectedHeadSha through to
+ * createCommit; if the remote branch has moved since (createCommit's own
+ * staleness check), the push fails closed with 'not_fast_forward' and is
+ * NEVER implicitly retried with force — this resolves the open concern #740
+ * raised about implicit forcing. force:true omits expectedHeadSha so
+ * createCommit proceeds against the branch's current remote tip regardless
+ * of staleness.
+ */
+function buildPushTool(ctx: BackgroundAgentGitHubToolContext) {
+  return tool({
+    description: `Commit the current sandbox changes onto a branch in ${ctx.repoOwner}/${ctx.repoName}. Non-force pushes fail with not_fast_forward if the branch moved since the sandbox last synced; force pushes proceed regardless of remote staleness.`,
+    inputSchema: pushInputSchema,
+    execute: async ({ branch, force: forceInput }): Promise<PushToolOutput> => {
+      // Defensive default: the AI SDK applies inputSchema's zod .default()
+      // before calling execute() in production, but execute() may also be
+      // invoked directly (as tests do), so default here too.
+      const force = forceInput ?? false;
+      await stageAll(ctx.sandbox);
+
+      const coAuthor = await buildCoAuthor(ctx.userId);
+      const intentResult = await buildCommitIntentFromSandbox({
+        sandbox: ctx.sandbox,
+        owner: ctx.repoOwner,
+        repo: ctx.repoName,
+        repositoryId: ctx.repositoryId,
+        installationId: ctx.installationId,
+        branch,
+        baseBranch: ctx.baseBranch,
+        message: `chore: push ${ctx.agentName} background changes`.slice(0, 72),
+        ...(coAuthor ? { coAuthor } : {}),
+      });
+
+      if (!intentResult.ok) {
+        const errorKind: GitHubActionErrorKind = intentResult.empty
+          ? "no_changes"
+          : "access_error";
+        await recordActionEvent(ctx, "push", "failed", {
+          branch,
+          forced: force,
+          error: intentResult.error,
+        });
+        return buildGitHubActionError(errorKind, intentResult.error);
+      }
+
+      const { intent } = intentResult;
+      const commitResult = await withPerCallInstallationOctokit(
+        ctx,
+        { contents: "write" },
+        (octokit) =>
+          createCommit({
+            octokit,
+            owner: intent.owner,
+            repo: intent.repo,
+            branch: intent.branch,
+            message: intent.message,
+            files: intent.files,
+            ...(force ? {} : { expectedHeadSha: intent.expectedHeadSha }),
+            ...(intent.baseBranch ? { baseBranch: intent.baseBranch } : {}),
+            ...(intent.coAuthor ? { coAuthor: intent.coAuthor } : {}),
+          }),
+      );
+
+      if (!commitResult.ok) {
+        const errorKind: GitHubActionErrorKind =
+          commitResult.error === REMOTE_BRANCH_CHANGED_ERROR
+            ? "not_fast_forward"
+            : "access_error";
+        await recordActionEvent(ctx, "push", "failed", {
+          branch,
+          forced: force,
+          error: commitResult.error,
+        });
+        return buildGitHubActionError(errorKind, commitResult.error);
+      }
+
+      await recordActionEvent(ctx, "push", "succeeded", {
+        branch,
+        forced: force,
+        sha: commitResult.commitSha,
+      });
+
+      return { ok: true, sha: commitResult.commitSha, forced: force };
+    },
+  });
+}
+
+// ── delete_branch action (STEP-8) ───────────────────────────────────────────
+
+const deleteBranchInputSchema = z.object({
+  branch: z.string().min(1).describe("The branch to delete."),
+});
+
+type DeleteBranchOutput =
+  | { ok: true; branch: string }
+  | GitHubActionErrorResult;
+
+/**
+ * Deletes a branch ref via octokit.rest.git.deleteRef, wrapped in the
+ * standard per-call contents:write installation token. Refuses to delete
+ * ctx.baseBranch as a minimal safety LABEL on the default branch only — this
+ * is not a broader capability wall; every other branch (including ones this
+ * run didn't create) can be deleted once delete_branch is enabled, per the
+ * agreed scope. Do not extend this into broader gating.
+ */
+function buildDeleteBranchTool(ctx: BackgroundAgentGitHubToolContext) {
+  return tool({
+    description: `Delete a branch in ${ctx.repoOwner}/${ctx.repoName}. Refuses to delete the base branch ("${ctx.baseBranch}").`,
+    inputSchema: deleteBranchInputSchema,
+    execute: async ({ branch }): Promise<DeleteBranchOutput> => {
+      if (branch === ctx.baseBranch) {
+        await recordActionEvent(ctx, "delete_branch", "failed", {
+          branch,
+          reason: "protected_branch",
+        });
+        return buildGitHubActionError(
+          "protected_branch",
+          `Refusing to delete the base branch "${ctx.baseBranch}".`,
+        );
+      }
+
+      try {
+        await withPerCallInstallationOctokit(
+          ctx,
+          { contents: "write" },
+          (octokit) =>
+            octokit.rest.git.deleteRef({
+              owner: ctx.repoOwner,
+              repo: ctx.repoName,
+              ref: `heads/${branch}`,
+            }),
+        );
+
+        await recordActionEvent(ctx, "delete_branch", "succeeded", {
+          branch,
+        });
+        return { ok: true, branch };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, "delete_branch", "failed", {
+          branch,
+          error: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      }
+    },
+  });
+}
+
 // ── Resolver ───────────────────────────────────────────────────────────────────
 
 /**
@@ -686,9 +866,12 @@ export function resolveGitHubActionToolsForBackgroundAgent(
       case "merge_pull_request":
         tools.github_merge_pull_request = buildMergeTool(ctx);
         break;
-      // Remaining tool builders are added incrementally in STEP-8:
-      //   "push"                   -> github_push (STEP-8)
-      //   "delete_branch"          -> github_delete_branch (STEP-8)
+      case "push":
+        tools.github_push = buildPushTool(ctx);
+        break;
+      case "delete_branch":
+        tools.github_delete_branch = buildDeleteBranchTool(ctx);
+        break;
       default:
         break;
     }
