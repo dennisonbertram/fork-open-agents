@@ -45,6 +45,7 @@ import {
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
 } from "./store";
+import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
 import { resolveComposioToolsForBgRun } from "./composio-tools";
 import { buildRunSummary } from "./run-summary";
 import {
@@ -1054,7 +1055,16 @@ export async function executeBackgroundAgentRun(params: {
         checkCommand: agent.checkCommand,
       }),
       composioTools: resolvedComposioTools,
-      allowedBuiltinToolNames: agent.builtinToolNames ?? null,
+      // A null builtinToolNames means the agent predates (or was created
+      // outside) the Standard toolpack UI. Resolve that to the same
+      // DEFAULT_ON_TOOL_NAMES preset the builder defaults new agents to and
+      // the detail page displays as "default toolpack (web_fetch off)" —
+      // never fall through to fully unrestricted (which would silently
+      // enable web_fetch, the one built-in with unattended, auto-approved
+      // outbound HTTP access).
+      allowedBuiltinToolNames: agent.builtinToolNames ?? [
+        ...DEFAULT_ON_TOOL_NAMES,
+      ],
     });
 
     if (agent.outputMode === "ready_pr") {
