@@ -365,6 +365,90 @@ describe("previewBackgroundAgentSpec — success", () => {
       expect(result.warnings).toEqual([]);
     }
   });
+
+  test("(TASK-740) returns no warning when an explicit enabledActions:[] overrides a legacy outputMode:'ready_pr' with read-only permissions", () => {
+    // Proves the warning is keyed on resolveGitHubToolConfig's effective
+    // enabledActions, not the raw outputMode field — a new-model draft that
+    // explicitly zeroes out its action set must never warn about ready_pr's
+    // write requirement, even though outputMode is still "ready_pr" for
+    // legacy-schema compatibility.
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        outputMode: "ready_pr",
+        permissions: {
+          github: {
+            contents: "read",
+            pullRequests: "read",
+            enabledActions: [],
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toEqual([]);
+    }
+  });
+
+  test("(TASK-740) returns a warning when enabledActions explicitly includes a write action but outputMode is 'none' and contents is read", () => {
+    // The inverse of the case above: the warning must fire off the
+    // resolved enabledActions even when outputMode itself gives no hint
+    // that write access is needed.
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        outputMode: "none",
+        permissions: {
+          github: {
+            contents: "read",
+            pullRequests: "read",
+            enabledActions: ["merge_pull_request"],
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings.length).toBe(1);
+      expect(result.warnings[0]).toContain("write");
+    }
+  });
+});
+
+// ── previewBackgroundAgentSpec — update-mode warnings (#740) ─────────────
+
+describe("previewBackgroundAgentSpec — update-mode enabledActions warnings", () => {
+  test("(TASK-740) update draft with outputMode:'ready_pr' and read-only permissions warns", () => {
+    const result = previewBackgroundAgentSpec(
+      validUpdateInput({
+        outputMode: "ready_pr",
+        permissions: { github: { contents: "read", pullRequests: "read" } },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings.length).toBe(1);
+      expect(result.warnings[0]).toContain("write");
+    }
+  });
+
+  test("(TASK-740) update draft with an explicit enabledActions:[] never warns, even with outputMode:'ready_pr' and read-only permissions", () => {
+    const result = previewBackgroundAgentSpec(
+      validUpdateInput({
+        outputMode: "ready_pr",
+        permissions: {
+          github: {
+            contents: "read",
+            pullRequests: "read",
+            enabledActions: [],
+          },
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warnings).toEqual([]);
+    }
+  });
 });
 
 // ── previewBackgroundAgentSpec — validation failures ─────────────────────

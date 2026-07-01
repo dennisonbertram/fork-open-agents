@@ -585,4 +585,59 @@ describe("AgentDetailPage", () => {
     expect(html.toLowerCase()).not.toContain("chat history");
     expect(html.toLowerCase()).not.toContain("conversation");
   });
+
+  test("REG-740-001: a new-model comment-only agent (enabledActions:['comment_on_pr_or_issue'], no write action) still shows the write-scope repo count, matching STEP-10's hasWriteAction = enabledActions.length > 0 gating", async () => {
+    // Guards against narrowing the detail page's write-scope visibility to
+    // WRITE_ACTIONS-set membership only (which would exclude comment) —
+    // the executor resolves write scope whenever enabledActions.length > 0
+    // (STEP-9), and the edit-form UI (STEP-10) already gates the same way;
+    // this test pins the detail page to the same invariant so the three
+    // surfaces never drift.
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      permissions: {
+        github: {
+          enabledActions: ["comment_on_pr_or_issue"],
+          writeScopeMode: "repo_list",
+          writeScopeRepos: ["acme/other-a"],
+        },
+      },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    // 1 selected repo + the home repo = 2 repos in scope.
+    expect(html).toContain("2 repos");
+  });
+
+  test("REG-740-002: a legacy outputMode:'ready_pr' agent's rendered HTML never contains the raw string 'ready_pr' — the display is derived through resolveGitHubToolConfig, not a bare outputMode dump", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "ready_pr",
+      permissions: { github: { contents: "write", pullRequests: "write" } },
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html).not.toContain("ready_pr");
+  });
 });
