@@ -286,4 +286,94 @@ describe("AgentSpecEditor", () => {
     // duplicated the toolpack section.
     expect(switchMatches.length).toBe(11);
   });
+
+  // --- (A5) Write-scope selector --------------------------------------------
+
+  test("(A5) the write-scope selector does NOT render when outputMode is not ready_pr", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} initialOutputMode="none" />,
+    );
+
+    expect(html).not.toContain("Write scope");
+  });
+
+  test("(A5) the write-scope selector renders inside Tools when outputMode is ready_pr", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} initialOutputMode="ready_pr" />,
+    );
+
+    expect(html).toContain("Write scope");
+    expect(html).toContain("This repo");
+    expect(html).toContain("Specific repos");
+  });
+
+  test("(A5) a ready_pr agent's persisted writeScopeMode/writeScopeRepos round-trip into the rendered selector", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialOutputMode="ready_pr"
+        installationId={123}
+        repositorySelection="all"
+        initialWriteScopeMode="repo_list"
+        initialWriteScopeRepos={["acme/other-repo"]}
+      />,
+    );
+
+    // The persisted "Specific repos" mode is reflected in the checked radio.
+    const idx = html.indexOf('value="repo_list"');
+    const radioOpenIdx = html.lastIndexOf("<input", idx);
+    const radioCloseIdx = html.indexOf("/>", idx);
+    expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('checked=""');
+
+    // The persisted repo list round-trips as a selected chip.
+    expect(html).toContain("acme/other-repo");
+  });
+
+  test("(A5) 'All repos' is disabled with a caption when repositorySelection is 'selected'", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        initialOutputMode="ready_pr"
+        installationId={123}
+        repositorySelection="selected"
+      />,
+    );
+
+    const idx = html.indexOf("All repos");
+    const radioOpenIdx = html.lastIndexOf("<input", idx);
+    const radioCloseIdx = html.indexOf("/>", idx);
+    expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('disabled=""');
+    expect(html.slice(idx, idx + 300)).toContain(
+      "Only available because your installation is set to all repos.",
+    );
+  });
+
+  // --- Regression coverage ---------------------------------------------------
+
+  test("REG: without installationId/repositorySelection props (legacy callers), the write-scope selector still renders for ready_pr with 'All repos' disabled by default", async () => {
+    // Guards against a regression where an existing caller of AgentSpecEditor
+    // that hasn't been updated to pass the new optional installationId /
+    // repositorySelection props (e.g. NewAgentBuilder, AgentEditForm at the
+    // time this step landed) would crash, or would default to an unsafe
+    // "All repos enabled" state instead of failing closed.
+    const { AgentSpecEditor } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <AgentSpecEditor {...defaultEditorProps} initialOutputMode="ready_pr" />,
+    );
+
+    expect(html).toContain("Write scope");
+    const idx = html.indexOf("All repos");
+    const radioOpenIdx = html.lastIndexOf("<input", idx);
+    const radioCloseIdx = html.indexOf("/>", idx);
+    expect(html.slice(radioOpenIdx, radioCloseIdx)).toContain('disabled=""');
+  });
 });
