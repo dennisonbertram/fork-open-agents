@@ -19,6 +19,7 @@ import {
   type ConditionField,
   type BackgroundAgent,
   type FormState,
+  type GitHubAccessLevel,
   type StepId,
 } from "./agent-spec";
 import {
@@ -478,7 +479,22 @@ describe("buildFormFromAgent", () => {
       instructions: payload.instructions,
       outputMode: payload.outputMode,
       checkCommand: payload.checkCommand,
-      permissions: payload.permissions,
+      permissions: {
+        github: {
+          contents: payload.permissions.github.contents as GitHubAccessLevel,
+          pullRequests: payload.permissions.github
+            .pullRequests as GitHubAccessLevel,
+          issues: payload.permissions.github.issues as "read",
+          deployments: payload.permissions.github.deployments as "read",
+          statuses: payload.permissions.github.statuses as "read",
+          checks: payload.permissions.github.checks as "read",
+          writeScopeMode: payload.permissions.github.writeScopeMode,
+          writeScopeRepos: payload.permissions.github.writeScopeRepos,
+          enabledActions: payload.permissions.github.enabledActions,
+          requireCiGreenToMerge:
+            payload.permissions.github.requireCiGreenToMerge,
+        },
+      },
       composioToolkitSlugs: payload.composioToolkitSlugs,
       builtinToolNames: payload.builtinToolNames,
       triggers: payload.triggers.map((trigger, index) => ({

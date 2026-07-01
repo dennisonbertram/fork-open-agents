@@ -10,6 +10,7 @@ import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
 import {
   DEFAULT_ENABLED_ACTIONS,
   type GitHubToolAction,
+  resolveGitHubToolConfig,
 } from "./github-actions";
 import { validateSchedule } from "./schedule-presets";
 
@@ -253,31 +254,47 @@ function buildConditions(form: FormState): TriggerConditions {
 
 export function buildAgentPayload(form: FormState) {
   const conditions = buildConditions(form);
-  // Result (outputMode) is the single source of truth for GitHub write
-  // access — form.permissionContents/permissionPullRequests are intentionally
-  // NOT read here. Ready PR is non-functional without write access (the
-  // agent must push a branch and open a PR), so it always gets write.
-  // Every other output mode is read-only: there is no separate GitHub
-  // Access-level control that can escalate a Report-only agent to write.
-  const requiresWrite = form.outputMode === "ready_pr";
-  const contents = requiresWrite ? "write" : "read";
-  const pullRequests = requiresWrite ? "write" : "read";
+  // (#740) The GitHub tool-action allowlist (enabledActions) is the single
+  // source of truth for GitHub write access — form.permissionContents/
+  // permissionPullRequests and form.outputMode are intentionally NOT read
+  // here. Any non-empty enabledActions set requires write (every action
+  // from opening a PR to merging/pushing needs a write-scoped token), while
+  // an empty set is read-only. Falls back to DEFAULT_ENABLED_ACTIONS only
+  // when the form omits enabledActions entirely (defensive default for
+  // legacy FormState object literals that predate this field).
+  const enabledActions = form.enabledActions ?? [...DEFAULT_ENABLED_ACTIONS];
+  const needsWrite = enabledActions.length > 0;
+  const contents = needsWrite ? "write" : "read";
+  const pullRequests = needsWrite ? "write" : "read";
   // Write scope (how many repos the minted write token can touch) is only
-  // meaningful for ready_pr agents. Every other output mode is forced back
-  // to this_repo/[] so a report-only agent can never carry broad scope,
-  // mirroring the same outputMode-is-the-only-source-of-truth rule used for
+  // meaningful for agents with at least one enabled write action. Every
+  // report-only agent (enabledActions: []) is forced back to this_repo/[]
+  // so it can never carry broad scope, mirroring the same
+  // enabledActions-is-the-only-source-of-truth rule used for
   // contents/pullRequests above.
-  const writeScopeMode = requiresWrite
+  const writeScopeMode = needsWrite
     ? (form.writeScopeMode ?? "this_repo")
     : "this_repo";
-  const writeScopeRepos = requiresWrite ? (form.writeScopeRepos ?? []) : [];
+  const writeScopeRepos = needsWrite ? (form.writeScopeRepos ?? []) : [];
+  const requireCiGreenToMerge = form.requireCiGreenToMerge ?? true;
+  // Legacy outputMode mirror (#740): outputMode is no longer authoritative
+  // for anything buildAgentPayload derives, but the column is kept in sync
+  // (derived purely from enabledActions) so any code path that still reads
+  // agent.outputMode directly — before it migrates to
+  // resolveGitHubToolConfig — keeps seeing byte-identical behavior to a
+  // pre-#740 ready_pr/none agent.
+  const legacyOutputMode: OutputMode = enabledActions.includes(
+    "open_pull_request",
+  )
+    ? "ready_pr"
+    : "none";
   return {
     name: form.name,
     repoOwner: form.repoOwner,
     repoName: form.repoName,
     status: form.enabled ? "enabled" : "disabled",
     instructions: form.instructions,
-    outputMode: form.outputMode,
+    outputMode: legacyOutputMode,
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
@@ -289,6 +306,8 @@ export function buildAgentPayload(form: FormState) {
         checks: "read",
         writeScopeMode,
         writeScopeRepos,
+        enabledActions,
+        requireCiGreenToMerge,
       },
     },
     composioToolkitSlugs: form.composioToolkitSlugs,
@@ -510,15 +529,20 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
 
   // Display-only: show what was actually saved for this agent. Note that
   // buildAgentPayload no longer reads these fields on save — GitHub write
-  // access is derived purely from outputMode there, so a saved write value
-  // shown here for a legacy "none" agent will be downgraded to read the next
-  // time this form is saved.
+  // access is derived purely from enabledActions there (#740), so a saved
+  // write value shown here for a legacy "none"/empty-enabledActions agent
+  // will be downgraded to read the next time this form is saved.
   const savedGh = agent.permissions?.github;
   const permissionContents: GitHubAccessLevel = savedGh?.contents ?? "read";
   const permissionPullRequests: GitHubAccessLevel =
     savedGh?.pullRequests ?? "read";
   const writeScopeMode: WriteScopeMode = savedGh?.writeScopeMode ?? "this_repo";
   const writeScopeRepos = savedGh?.writeScopeRepos ?? [];
+  // (#740) Single source of truth for the migrated GitHub tool-action
+  // allowlist — guarantees a legacy outputMode-only agent's edit form shows
+  // the byte-identical migrated action set instead of an empty/undefined one.
+  const { enabledActions, requireCiGreenToMerge } =
+    resolveGitHubToolConfig(agent);
 
   return {
     name: agent.name,
@@ -541,5 +565,7 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     builtinToolNames: agent.builtinToolNames ?? null,
     writeScopeMode,
     writeScopeRepos,
+    enabledActions,
+    requireCiGreenToMerge,
   };
 }
