@@ -132,17 +132,20 @@ describe("buildAgentPayload", () => {
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("BT-E2: permissionPullRequests write with outputMode none => payload pullRequests is write", () => {
+  test("BT-E2: outputMode none derives github read even when form permission fields say write", () => {
+    // Result (outputMode) is the single source of truth for GitHub write
+    // access now — the form's permissionContents/permissionPullRequests
+    // fields are no longer read by buildAgentPayload at all.
     const payload = buildAgentPayload(
       makeForm({
         outputMode: "none",
-        permissionContents: "read",
+        permissionContents: "write",
         permissionPullRequests: "write",
       }),
     );
 
     expect(payload.permissions.github.contents).toBe("read");
-    expect(payload.permissions.github.pullRequests).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
   test("BT-010: schedule trigger sets schedule field; non-schedule trigger omits it", () => {

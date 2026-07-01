@@ -1,12 +1,14 @@
 /**
  * Regression tests for the edit-mode GitHub-permission invariant.
  *
- * The coherent rule across buildFormFromAgent (form display) and
- * buildAgentPayload (save payload):
- *   - Edit display ⟹ the user's saved access, preserved (least-privilege), so
- *     editing an unrelated field never silently re-escalates a read-only agent.
- *   - Save payload for Ready PR ⟹ write (it can't push a branch / open a PR
- *     without it), floored for every calling surface.
+ * Result (outputMode) is the single source of truth for GitHub write access:
+ *   - Edit display (buildFormFromAgent) still shows the user's saved
+ *     permissionContents/permissionPullRequests fields for transparency, but
+ *     those fields are no longer read by buildAgentPayload.
+ *   - Save payload (buildAgentPayload) derives github.contents/pullRequests
+ *     purely from outputMode: "ready_pr" => write, everything else => read.
+ *     A "none" agent can never persist write, regardless of what the form
+ *     fields (or a legacy saved row) say.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -67,7 +69,11 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
-  test("report-only agent with saved write access is preserved", () => {
+  test("report-only agent with a legacy saved write access is downgraded to read on save", () => {
+    // A legacy row could have contents:write from before this was derived
+    // from outputMode. The form still displays what was saved (for
+    // transparency), but saving a "none" agent now always persists read —
+    // outputMode is the single source of truth, not the saved permission.
     const agent = makeSavedAgent({
       outputMode: "none",
       permissions: {
@@ -79,7 +85,8 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(form.permissionContents).toBe("write");
 
     const payload = buildAgentPayload(form);
-    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
   test("ready_pr edit display preserves saved read access instead of re-escalating", () => {
