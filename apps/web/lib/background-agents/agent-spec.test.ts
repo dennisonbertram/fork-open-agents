@@ -71,6 +71,9 @@ describe("buildAgentPayload", () => {
       builtinToolNames: null,
       writeScopeMode: "this_repo",
       writeScopeRepos: [],
+      // (#740) enabledActions is now the sole driver of GitHub write access —
+      // explicit [] here matches the pre-#740 default (outputMode: "none").
+      enabledActions: [],
       ...overrides,
     };
   }
@@ -104,10 +107,10 @@ describe("buildAgentPayload", () => {
     expect(JSON.stringify(payload)).not.toContain("auto_merge");
   });
 
-  test("BT-008: ready_pr output with write permissions in form sets github write permissions on contents and pullRequests", () => {
+  test("BT-008: enabledActions containing open_pull_request sets github write permissions on contents and pullRequests", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "ready_pr",
+        enabledActions: ["open_pull_request"],
         permissionContents: "write",
         permissionPullRequests: "write",
       }),
@@ -117,10 +120,10 @@ describe("buildAgentPayload", () => {
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("BT-009: none output mode with read permissions in form keeps contents and pullRequests as read", () => {
+  test("BT-009: empty enabledActions with read permissions in form keeps contents and pullRequests as read", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
+        enabledActions: [],
         permissionContents: "read",
         permissionPullRequests: "read",
       }),
@@ -130,10 +133,10 @@ describe("buildAgentPayload", () => {
     expect(payload.permissions.github.pullRequests).toBe("read");
   });
 
-  test("BT-E1: ready_pr floors GitHub access to write regardless of form fields (Ready PR is non-functional without write)", () => {
+  test("BT-E1: any non-empty enabledActions floors GitHub access to write regardless of form permission fields", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "ready_pr",
+        enabledActions: ["merge_pull_request"],
         permissionContents: "read",
         permissionPullRequests: "read",
       }),
@@ -143,13 +146,15 @@ describe("buildAgentPayload", () => {
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("BT-E2: outputMode none derives github read even when form permission fields say write", () => {
-    // Result (outputMode) is the single source of truth for GitHub write
+  test("BT-E2: empty enabledActions derives github read even when form permission fields say write and legacy outputMode says ready_pr", () => {
+    // (#740) enabledActions is the single source of truth for GitHub write
     // access now — the form's permissionContents/permissionPullRequests
-    // fields are no longer read by buildAgentPayload at all.
+    // fields, AND the legacy outputMode field, are no longer read by
+    // buildAgentPayload for this decision at all.
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
+        outputMode: "ready_pr",
+        enabledActions: [],
         permissionContents: "write",
         permissionPullRequests: "write",
       }),
@@ -186,10 +191,10 @@ describe("buildAgentPayload", () => {
     expect(payload.builtinToolNames).toEqual(["read", "bash", "web_fetch"]);
   });
 
-  test("BT-A3-05: buildAgentPayload emits writeScopeMode/writeScopeRepos from the form when outputMode is ready_pr", () => {
+  test("BT-A3-05: buildAgentPayload emits writeScopeMode/writeScopeRepos from the form when enabledActions is non-empty", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "ready_pr",
+        enabledActions: ["open_pull_request"],
         writeScopeMode: "repo_list",
         writeScopeRepos: ["acme/widgets", "acme/other"],
       }),
@@ -202,10 +207,10 @@ describe("buildAgentPayload", () => {
     ]);
   });
 
-  test("BT-A3-06: buildAgentPayload forces writeScopeMode to this_repo and writeScopeRepos to [] for every non-ready_pr outputMode, regardless of form input", () => {
+  test("BT-A3-06: buildAgentPayload forces writeScopeMode to this_repo and writeScopeRepos to [] when enabledActions is empty, regardless of form input", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
+        enabledActions: [],
         writeScopeMode: "all_repos",
         writeScopeRepos: ["acme/widgets"],
       }),
@@ -213,6 +218,69 @@ describe("buildAgentPayload", () => {
 
     expect(payload.permissions.github.writeScopeMode).toBe("this_repo");
     expect(payload.permissions.github.writeScopeRepos).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-740 — enabledActions + requireCiGreenToMerge persistence
+  // -------------------------------------------------------------------------
+
+  test("(TASK-740) buildAgentPayload persists form.enabledActions verbatim into permissions.github.enabledActions", () => {
+    const payload = buildAgentPayload(
+      makeForm({ enabledActions: ["merge_pull_request"] }),
+    );
+
+    expect(payload.permissions.github.enabledActions).toEqual([
+      "merge_pull_request",
+    ]);
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("(TASK-740) buildAgentPayload defaults requireCiGreenToMerge to true when the form omits it", () => {
+    // makeForm() does not set requireCiGreenToMerge by default, so this
+    // form's requireCiGreenToMerge is undefined — the exact "omitted" case.
+    const payload = buildAgentPayload(
+      makeForm({ enabledActions: ["merge_pull_request"] }),
+    );
+
+    expect(payload.permissions.github.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("(TASK-740) buildAgentPayload persists an explicit requireCiGreenToMerge:false from the form", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        enabledActions: ["merge_pull_request"],
+        requireCiGreenToMerge: false,
+      }),
+    );
+
+    expect(payload.permissions.github.requireCiGreenToMerge).toBe(false);
+  });
+
+  test("(TASK-740) buildAgentPayload falls back to DEFAULT_ENABLED_ACTIONS when form.enabledActions is undefined (defensive default for legacy FormState literals)", () => {
+    const { enabledActions: _omit, ...formWithoutEnabledActions } = makeForm();
+    const payload = buildAgentPayload(formWithoutEnabledActions as FormState);
+
+    expect(payload.permissions.github.enabledActions).toEqual([
+      ...DEFAULT_ENABLED_ACTIONS,
+    ]);
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("(TASK-740) buildAgentPayload writes outputMode as a derived legacy mirror of enabledActions, not the form's own outputMode field", () => {
+    const withOpenPr = buildAgentPayload(
+      makeForm({ outputMode: "none", enabledActions: ["open_pull_request"] }),
+    );
+    expect(withOpenPr.outputMode).toBe("ready_pr");
+
+    const withoutOpenPr = buildAgentPayload(
+      makeForm({
+        outputMode: "ready_pr",
+        enabledActions: ["merge_pull_request"],
+      }),
+    );
+    expect(withoutOpenPr.outputMode).toBe("none");
   });
 });
 
@@ -321,6 +389,115 @@ describe("buildFormFromAgent", () => {
       "acme/widgets",
       "acme/gadgets",
     ]);
+  });
+
+  // -------------------------------------------------------------------------
+  // TASK-740 — enabledActions + requireCiGreenToMerge migration
+  // -------------------------------------------------------------------------
+
+  test("(TASK-740) buildFormFromAgent for a legacy ready_pr agent (no persisted enabledActions) derives the migrated action set via resolveGitHubToolConfig", () => {
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "ready_pr",
+        permissions: { github: { contents: "write", pullRequests: "write" } },
+      }),
+    );
+
+    expect(form.enabledActions).toEqual([
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+    ]);
+    expect(form.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("(TASK-740) buildFormFromAgent for a legacy report-only agent (outputMode none, no enabledActions) derives an empty action set", () => {
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "none",
+        permissions: { github: { contents: "read", pullRequests: "read" } },
+      }),
+    );
+
+    expect(form.enabledActions).toEqual([]);
+    expect(form.requireCiGreenToMerge).toBe(true);
+  });
+
+  test("(TASK-740) buildFormFromAgent for a new-model agent with explicit enabledActions passes them through verbatim, ignoring outputMode", () => {
+    const form = buildFormFromAgent(
+      makeAgent({
+        outputMode: "none",
+        permissions: {
+          github: {
+            contents: "write",
+            pullRequests: "write",
+            enabledActions: ["merge_pull_request"],
+            requireCiGreenToMerge: false,
+          },
+        },
+      }),
+    );
+
+    expect(form.enabledActions).toEqual(["merge_pull_request"]);
+    expect(form.requireCiGreenToMerge).toBe(false);
+  });
+
+  test("(TASK-740) round-trip: buildFormFromAgent(buildAgentPayload(form) as agent) preserves enabledActions and requireCiGreenToMerge", () => {
+    const originalForm: FormState = {
+      name: "Merge bot",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      instructions: "Merge green PRs.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: true,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+      builtinToolNames: null,
+      writeScopeMode: "this_repo",
+      writeScopeRepos: [],
+      enabledActions: ["merge_pull_request", "push"],
+      requireCiGreenToMerge: false,
+    };
+
+    const payload = buildAgentPayload(originalForm);
+    const agentFromPayload: BackgroundAgent = {
+      id: "agent-round-trip",
+      name: payload.name,
+      description: null,
+      status: payload.status as "enabled" | "disabled",
+      repoOwner: payload.repoOwner,
+      repoName: payload.repoName,
+      instructions: payload.instructions,
+      outputMode: payload.outputMode,
+      checkCommand: payload.checkCommand,
+      permissions: payload.permissions,
+      composioToolkitSlugs: payload.composioToolkitSlugs,
+      builtinToolNames: payload.builtinToolNames,
+      triggers: payload.triggers.map((trigger, index) => ({
+        id: `trigger-${index}`,
+        name: trigger.name,
+        kind: trigger.kind,
+        status: trigger.status as "enabled" | "disabled",
+        conditions: trigger.conditions,
+        schedule: trigger.schedule,
+        webhookPublicId: null,
+      })),
+    };
+
+    const roundTrippedForm = buildFormFromAgent(agentFromPayload);
+    expect(roundTrippedForm.enabledActions).toEqual([
+      "merge_pull_request",
+      "push",
+    ]);
+    expect(roundTrippedForm.requireCiGreenToMerge).toBe(false);
   });
 });
 
@@ -691,12 +868,13 @@ describe("REG: describeOutputModePermissions — both modes produce distinct sum
 
 // ---------------------------------------------------------------------------
 // Regression — GitHub write permission has exactly one source of truth
-// (Result / outputMode). Catches any future reintroduction of a second
-// control (e.g. a standalone GitHub Access-level toggle) that could grant or
-// withhold write independently of outputMode.
+// (#740: enabledActions, not outputMode). Catches any future reintroduction
+// of a second control (e.g. a standalone GitHub Access-level toggle, or a
+// reversion back to reading outputMode) that could grant or withhold write
+// independently of the agent's actual enabledActions allowlist.
 // ---------------------------------------------------------------------------
 
-describe("REG: buildAgentPayload — outputMode is the ONLY input to github write permission", () => {
+describe("REG: buildAgentPayload — enabledActions is the ONLY input to github write permission", () => {
   function makeForm(overrides: Partial<FormState> = {}): FormState {
     return {
       name: "Test Agent",
@@ -719,11 +897,12 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
       builtinToolNames: null,
       writeScopeMode: "this_repo",
       writeScopeRepos: [],
+      enabledActions: [],
       ...overrides,
     };
   }
 
-  test("REG-020: every combination of permissionContents/permissionPullRequests is ignored for a non-ready_pr outputMode", () => {
+  test("REG-020: every combination of permissionContents/permissionPullRequests is ignored when enabledActions is empty", () => {
     // If buildAgentPayload is ever changed to read these fields again (even
     // partially — e.g. only for pullRequests), this exhaustive sweep across
     // both fields x both values catches it, unlike a single-value test.
@@ -732,7 +911,7 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
       for (const permissionPullRequests of levels) {
         const payload = buildAgentPayload(
           makeForm({
-            outputMode: "none",
+            enabledActions: [],
             permissionContents,
             permissionPullRequests,
           }),
@@ -743,13 +922,13 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
     }
   });
 
-  test("REG-021: every combination of permissionContents/permissionPullRequests still yields write for ready_pr", () => {
+  test("REG-021: every combination of permissionContents/permissionPullRequests still yields write when enabledActions is non-empty", () => {
     const levels = ["read", "write"] as const;
     for (const permissionContents of levels) {
       for (const permissionPullRequests of levels) {
         const payload = buildAgentPayload(
           makeForm({
-            outputMode: "ready_pr",
+            enabledActions: ["open_pull_request"],
             permissionContents,
             permissionPullRequests,
           }),
@@ -758,6 +937,20 @@ describe("REG: buildAgentPayload — outputMode is the ONLY input to github writ
         expect(payload.permissions.github.pullRequests).toBe("write");
       }
     }
+  });
+
+  test("(TASK-740) outputMode is fully decoupled from GitHub write derivation: ready_pr + empty enabledActions yields read; none + a write action yields write", () => {
+    const readDespiteReadyPr = buildAgentPayload(
+      makeForm({ outputMode: "ready_pr", enabledActions: [] }),
+    );
+    expect(readDespiteReadyPr.permissions.github.contents).toBe("read");
+    expect(readDespiteReadyPr.permissions.github.pullRequests).toBe("read");
+
+    const writeDespiteNone = buildAgentPayload(
+      makeForm({ outputMode: "none", enabledActions: ["push"] }),
+    );
+    expect(writeDespiteNone.permissions.github.contents).toBe("write");
+    expect(writeDespiteNone.permissions.github.pullRequests).toBe("write");
   });
 
   test("REG-022: a legacy agent saved with write access under outputMode 'none' is downgraded to read the next time it is saved unchanged", () => {
