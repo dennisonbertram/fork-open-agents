@@ -33,7 +33,7 @@ const ACTION_LABELS: Record<GitHubToolAction, string> = {
   approve_pull_request: "Approve a pull request",
   request_changes: "Request changes on a pull request",
   merge_pull_request: "Merge a pull request",
-  push: "Push commits (including force-push)",
+  push: "Push commits to a branch",
   delete_branch: "Delete a branch",
 };
 
@@ -46,7 +46,7 @@ const ACTION_CAPTIONS: Record<GitHubToolAction, string> = {
   request_changes: "Requests changes on a pull request review.",
   merge_pull_request:
     "Merges a pull request using the configured merge method.",
-  push: "Pushes commits to a branch. Force-push overwrites remote history.",
+  push: "Commits the sandbox's changes onto a branch. Its 'force' option skips the fast-forward staleness check and commits on top of the branch's current remote tip even if it moved — it does not rewrite remote history like a git force-push.",
   delete_branch: "Deletes a branch.",
 };
 

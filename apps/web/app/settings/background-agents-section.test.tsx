@@ -615,9 +615,7 @@ describe("BackgroundAgentsSection", () => {
     expect(switchCheckedFor(html, "Comment on a PR or issue")).toBe(true);
     // Every destructive/off-by-default action must render unchecked.
     expect(switchCheckedFor(html, "Merge a pull request")).toBe(false);
-    expect(switchCheckedFor(html, "Push commits (including force-push)")).toBe(
-      false,
-    );
+    expect(switchCheckedFor(html, "Push commits to a branch")).toBe(false);
     expect(switchCheckedFor(html, "Delete a branch")).toBe(false);
   });
 

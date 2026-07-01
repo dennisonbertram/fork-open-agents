@@ -90,7 +90,10 @@ describe("StandardToolpackSection", () => {
     const pushIdx = html.indexOf("Push commits");
     const deleteIdx = html.indexOf("Delete a branch");
     const mergeIdx = html.indexOf("Merge a pull request");
-    expect(html.slice(pushIdx, pushIdx + 400)).toContain("Irreversible");
+    // Push's window is widened from 400: its caption (SEC-740-nit) is longer
+    // now that it accurately describes the staleness-check behavior instead
+    // of a misleading one-liner about force-push rewriting history.
+    expect(html.slice(pushIdx, pushIdx + 600)).toContain("Irreversible");
     expect(html.slice(deleteIdx, deleteIdx + 400)).toContain("Irreversible");
     expect(html.slice(mergeIdx, mergeIdx + 400)).toContain("Irreversible");
   });

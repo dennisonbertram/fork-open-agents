@@ -87,7 +87,7 @@ describe("GitHubActionsSection", () => {
       "Approve a pull request",
       "Request changes on a pull request",
       "Merge a pull request",
-      "Push commits (including force-push)",
+      "Push commits to a branch",
       "Delete a branch",
     ]) {
       const idx = html.indexOf(label);
@@ -163,7 +163,10 @@ describe("GitHubActionsSection", () => {
     );
     const pushIdx = html.indexOf("Push commits");
     const deleteIdx = html.indexOf("Delete a branch");
-    expect(html.slice(pushIdx, pushIdx + 400)).toContain("Irreversible");
+    // Widened from 400: the push caption (SEC-740-nit) is longer now that it
+    // accurately describes the staleness-check behavior instead of a
+    // misleading one-liner about force-push rewriting history.
+    expect(html.slice(pushIdx, pushIdx + 600)).toContain("Irreversible");
     expect(html.slice(deleteIdx, deleteIdx + 400)).toContain("Irreversible");
   });
 
