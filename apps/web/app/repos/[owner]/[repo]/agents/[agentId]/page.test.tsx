@@ -276,6 +276,60 @@ describe("AgentDetailPage", () => {
     expect(redirect).toHaveBeenCalledWith("/repos/acme/widgets/agents");
   });
 
+  test("BT-167-015: renders Standard toolpack summary and derived GitHub scope for outputMode ready_pr", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "ready_pr",
+      builtinToolNames: ["read", "bash"],
+      composioToolkitSlugs: ["linear"],
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    // Standard toolpack lists the persisted builtinToolNames verbatim
+    expect(html).toContain("Standard toolpack");
+    expect(html).toContain("read, bash");
+    // GitHub scope is derived from outputMode (ready_pr => write/PR-capable)
+    expect(html.toLowerCase()).toContain("open pull requests");
+    // Composio toolkit slugs are still shown
+    expect(html).toContain("linear");
+  });
+
+  test("BT-167-016: shows default toolpack copy and read-only GitHub scope when builtinToolNames is null and outputMode is none", async () => {
+    mockAgent = {
+      ...(mockAgent as Record<string, unknown>),
+      outputMode: "none",
+      builtinToolNames: null,
+      composioToolkitSlugs: [],
+    };
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    // Null builtinToolNames means the agent is on the default toolpack
+    expect(html).toContain("default toolpack (web_fetch off)");
+    // outputMode "none" is not ready_pr, so GitHub is read-only, no PR copy
+    expect(html.toLowerCase()).toContain("read-only");
+    expect(html.toLowerCase()).not.toContain("open pull requests");
+  });
+
   test("renders a 'Runs' section header (not 'Chat history')", async () => {
     const { default: AgentDetailPage } = await pageModulePromise;
 
