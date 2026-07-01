@@ -5,7 +5,8 @@ import { useState } from "react";
 import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { STANDARD_TOOLPACK_ITEMS } from "@/lib/background-agents/builtin-toolpack";
-import type { OutputMode } from "@/lib/background-agents/agent-spec";
+import type { OutputMode, WriteScopeMode } from "@/lib/background-agents/agent-spec";
+import { GitHubWriteScopeSection } from "./github-write-scope-section";
 
 export interface StandardToolpackSectionProps {
   /** Currently enabled built-in tool names (excludes the fixed GitHub row). */
@@ -20,6 +21,26 @@ export interface StandardToolpackSectionProps {
    * access. Mirrors describeOutputModePermissions in agent-spec.ts.
    */
   outputMode: OutputMode;
+  /** The agent's repo — used to exclude the home repo from the write-scope repo picker. */
+  repoOwner?: string;
+  repoName?: string;
+  /**
+   * The agent owner's GitHub App installation ID (for the write-scope repo
+   * search) and repositorySelection ("all" | "selected" | null — gates
+   * whether "All repos" can be offered). Both optional so existing callers
+   * that haven't been updated to source these from a server page keep
+   * compiling; absent means the write-scope repo picker fails closed (no
+   * installationId to query, "All repos" disabled).
+   */
+  installationId?: number | null;
+  repositorySelection?: "all" | "selected" | null;
+  /** Write-scope selection state, lifted to the parent editor. */
+  writeScopeMode?: WriteScopeMode;
+  writeScopeRepos?: string[];
+  onWriteScopeChange?: (next: {
+    writeScopeMode: WriteScopeMode;
+    writeScopeRepos: string[];
+  }) => void;
 }
 
 /**
@@ -56,6 +77,13 @@ export function StandardToolpackSection({
   onChange,
   disabled = false,
   outputMode,
+  repoOwner = "",
+  repoName = "",
+  installationId = null,
+  repositorySelection = null,
+  writeScopeMode = "this_repo",
+  writeScopeRepos = [],
+  onWriteScopeChange = () => {},
 }: StandardToolpackSectionProps) {
   const [open, setOpen] = useState(false);
 
@@ -99,6 +127,17 @@ export function StandardToolpackSection({
             Always on
           </span>
         </div>
+        <GitHubWriteScopeSection
+          outputMode={outputMode}
+          repositorySelection={repositorySelection}
+          installationId={installationId}
+          repoOwner={repoOwner}
+          repoName={repoName}
+          writeScopeMode={writeScopeMode}
+          writeScopeRepos={writeScopeRepos}
+          onChange={onWriteScopeChange}
+          disabled={disabled}
+        />
 
         {STANDARD_TOOLPACK_ITEMS.map((item) => {
           const checked = enabledToolNames.includes(item.name);

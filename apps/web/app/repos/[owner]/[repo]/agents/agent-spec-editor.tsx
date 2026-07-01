@@ -23,6 +23,7 @@ import {
   type GitHubAccessLevel,
   type OutputMode,
   type TriggerKind,
+  type WriteScopeMode,
 } from "@/lib/background-agents/agent-spec";
 import { DEFAULT_ON_TOOL_NAMES } from "@/lib/background-agents/builtin-toolpack";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
@@ -52,6 +53,23 @@ type AgentSpecEditorProps = {
   initialConditionSeverities?: string;
   initialPermissionContents?: GitHubAccessLevel;
   initialPermissionPullRequests?: GitHubAccessLevel;
+  /**
+   * How many repos a ready_pr agent's write token is scoped to. Defaults to
+   * "this_repo" — byte-for-byte identical to pre-#736 behavior.
+   */
+  initialWriteScopeMode?: WriteScopeMode;
+  /** owner/repo full names selected when initialWriteScopeMode is "repo_list". */
+  initialWriteScopeRepos?: string[];
+  /**
+   * The agent owner's GitHub App installation ID and repositorySelection,
+   * used to gate "All repos" in the write-scope selector and to query the
+   * repo search for "Specific repos". Both optional/nullable — when absent
+   * (e.g. a caller hasn't been updated to source them yet), the write-scope
+   * selector fails closed: "All repos" stays disabled and the repo search
+   * has nothing to query.
+   */
+  installationId?: number | null;
+  repositorySelection?: "all" | "selected" | null;
   /** Composio toolkit slugs to pre-select. Defaults to none. */
   initialComposioToolkitSlugs?: string[];
   /**
@@ -100,6 +118,10 @@ export function AgentSpecEditor({
   initialConditionSeverities = "",
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
+  initialWriteScopeMode = "this_repo",
+  initialWriteScopeRepos = [],
+  installationId = null,
+  repositorySelection = null,
   initialComposioToolkitSlugs = [],
   initialBuiltinToolNames = null,
   createdAgentId = null,
@@ -150,6 +172,12 @@ export function AgentSpecEditor({
   const [permissionPullRequests] = useState<GitHubAccessLevel>(
     initialPermissionPullRequests,
   );
+  const [writeScopeMode, setWriteScopeMode] = useState<WriteScopeMode>(
+    initialWriteScopeMode,
+  );
+  const [writeScopeRepos, setWriteScopeRepos] = useState<string[]>(
+    initialWriteScopeRepos,
+  );
   const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
     initialComposioToolkitSlugs,
   );
@@ -188,6 +216,8 @@ export function AgentSpecEditor({
       enabled,
       permissionContents,
       permissionPullRequests,
+      writeScopeMode,
+      writeScopeRepos,
       composioToolkitSlugs,
       builtinToolNames: enabledBuiltins,
     };
@@ -396,6 +426,16 @@ export function AgentSpecEditor({
             onChange={setEnabledBuiltins}
             disabled={saving}
             outputMode={outputMode}
+            repoOwner={repoOwner}
+            repoName={repoName}
+            installationId={installationId}
+            repositorySelection={repositorySelection}
+            writeScopeMode={writeScopeMode}
+            writeScopeRepos={writeScopeRepos}
+            onWriteScopeChange={(next) => {
+              setWriteScopeMode(next.writeScopeMode);
+              setWriteScopeRepos(next.writeScopeRepos);
+            }}
           />
           <ComposioOtherToolsSection
             selectedSlugs={composioToolkitSlugs}
