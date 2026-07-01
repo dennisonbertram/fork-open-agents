@@ -244,6 +244,108 @@ repeatable signed fixture path that exercises the deployed webhook route:
 - the script logs only dispatch counts and run IDs, never the webhook secret,
   computed signature, or full payload.
 
+## Native GitHub Action Tool Slice (#740)
+
+GitHub issue: https://github.com/dennisonbertram/fork-open-agents/issues/740
+
+Follow-on to #736 (write-scope) and #721 (Standard toolpack). Output Mode
+(`outputMode: "none" | "ready_pr"`) is replaced entirely by a directly
+model-callable, per-action GitHub tool so background agents can act as
+autonomous team members end-to-end (open PRs, comment, review, merge
+CI-green PRs, push, delete branches) instead of only producing safe drafts a
+human must hand-merge:
+
+- Persisted shape: `permissions.github.enabledActions: GitHubToolAction[]`
+  (subset of `open_pull_request`, `comment_on_pr_or_issue`,
+  `approve_pull_request`, `request_changes`, `merge_pull_request`, `push`,
+  `delete_branch`) plus `permissions.github.requireCiGreenToMerge: boolean`.
+  `writeScopeMode`/`writeScopeRepos` (#736) are unchanged in shape and now
+  bound every enabled action, not just PR creation.
+- Migration is byte-identical and DDL-free: `resolveGitHubToolConfig`
+  (`apps/web/lib/background-agents/github-actions.ts`) derives
+  `enabledActions`/`requireCiGreenToMerge` from legacy `outputMode` at read
+  time whenever `enabledActions` is absent (`ready_pr` ->
+  `["open_pull_request","comment_on_pr_or_issue"]`; everything else -> `[]`).
+  `outputMode` itself is still persisted as a derived legacy mirror
+  (`buildAgentPayload`) so any not-yet-migrated reader stays consistent.
+- Tool set: `apps/web/lib/github/background-agent-tools.ts` builds one AI SDK
+  `tool()` per enabled action (`github_comment_on_pr_or_issue`,
+  `github_open_pull_request`, `github_approve_pull_request`,
+  `github_request_changes`, `github_merge_pull_request`, `github_push`,
+  `github_delete_branch`), resolved once per run
+  (`resolveGitHubActionToolsForBackgroundAgent`) and merged into the same
+  tools object as Composio tools before `runMutationAgent`'s
+  `openAgent.generate` call — the model calls these mid-turn instead of the
+  executor creating a PR post-hoc.
+- Per-call token pattern: every action mints and revokes its own installation
+  token (`withScopedInstallationOctokit` / `mintInstallationToken` +
+  `revokeInstallationToken`) scoped to the run's already-resolved bounded
+  write-scope repo-ID list (`resolveWriteScopeRepositoryIds`, #736, resolved
+  once at run start) — no standing credential exists across the model's turn.
+  `merge_pull_request` is the one exception that manually spans a single
+  mint/revoke across both the CI-readiness check and the merge call, so only
+  one token is minted per merge rather than two.
+- `merge_pull_request`'s "require CI checks to pass before merging" gate is a
+  per-agent toggle (`requireCiGreenToMerge`, default on) enforced inside the
+  tool's own `execute()` via the existing `getMergeReadiness` computation
+  (`apps/web/lib/github/pulls.ts`) — never left to the model to self-police,
+  and never hardcoded either way.
+- `open_pull_request`'s `checkCommand` gate (the existing "run tests before
+  opening a PR" agent config) also runs and is enforced inside the tool's own
+  `execute()`, not just as a prompt instruction — preserved from the pre-#740
+  executor-level gate.
+- UI: the agent builder's fixed "GitHub (scoped to this repo)" row and the
+  "Result"/Output Mode section are replaced by a per-action toggle list
+  (`open_pull_request`/`comment_on_pr_or_issue` on by default, the other 5
+  off) with a merge CI-gate sub-toggle and an "Irreversible" caption on
+  destructive actions (label only, never a blocker) — see
+  `apps/web/app/repos/[owner]/[repo]/agents/github-actions-section.tsx`.
+- Safety model (explicit product decision, not an oversight — see #740's
+  design-constraints note before relitigating): visibility + toggles +
+  observability, not capability withholding. Destructive actions are off by
+  default but fully available one toggle away.
+
+### #740 Live-Proof Checklist (comment + open_pull_request minimum)
+
+Automated tests cover every tool's contract, the per-call mint/revoke
+pattern, the merge CI-gate, the `checkCommand` gate, and the migration
+mapping in isolation, but cannot prove the real GitHub API path end to end.
+The issue's minimum bar is live proof of `comment_on_pr_or_issue` and
+`open_pull_request` against a real, signed-in session and an allowlisted
+repo (unblocks the same live-proof gap #736/#737 left open). This is
+operator work, not automatable in CI:
+
+1. Sign in with a real Vercel/GitHub session against an environment where
+   `BACKGROUND_AGENTS_ALLOWED_REPOS` includes a disposable test repo (see
+   `docs/process/background-agents-live-proof.md` for the readiness
+   preflight — `background-agents:live-proof-preflight`).
+2. Configure a background agent on that repo with
+   `permissions.github.enabledActions` including at least
+   `open_pull_request` and `comment_on_pr_or_issue`, a real `checkCommand`
+   (e.g. a trivial passing script), and default `requireCiGreenToMerge`.
+3. Trigger the agent (manual test dispatch or a real event) and give it
+   instructions that require both actions (e.g. "leave a short comment on
+   the tracking issue, then make a small change and open a PR").
+4. Verify, and capture for the record:
+   - the comment actually appears on the target issue/PR with the expected
+     body, and the PR actually opens against the configured base branch;
+   - `background-agent.github.comment_on_pr_or_issue` and
+     `background-agent.github.open_pull_request` events are recorded on the
+     run timeline with `succeeded` status and correct attribution
+     (`runId`, `agentId`, `number`/`commentId` or `prNumber`/`url`);
+   - no standing installation credential exists across the run — each
+     action's token mint/revoke pair is scoped to exactly that call (no
+     token reuse across the two actions).
+5. Record the run ID, PR URL, and comment URL as the live-proof evidence.
+
+Status as of this consolidation pass: not yet executed in this session — see
+this step's risk notes for the concrete blocker (no real signed-in
+session/allowlisted repo available in this non-interactive worker context).
+This checklist is ready for an operator or a future session with browser/
+session access to execute; do not mark the managed/live GitHub-write path as
+proven until it has been run and its evidence captured here or in
+`docs/process/background-agents-live-proof.md`.
+
 ## Observability Vocabulary
 
 Service name: `background-agents`.
@@ -271,6 +373,30 @@ Initial events:
 - `background-agent.workflow.start_failed`
 - `background-agent.run.completed`
 - `background-agent.run.failed`
+
+Native GitHub action tool events (#740), one per action call, emitted from
+`apps/web/lib/github/background-agent-tools.ts` with the run's standard
+attribution (`runId`, `agentId`, `userId`, `workflowRunId`, `requestId`,
+`sandboxName`) plus a `severity` field (`"high"` for the three destructive
+actions — `merge_pull_request`, `push`, `delete_branch` — `"low"` for the
+rest) and per-action attribution scaled to that severity (comment carries
+only `number`/`commentId`; merge/push/delete carry CI-status-at-merge,
+forced flag, target branch/sha):
+
+- `background-agent.github.comment_on_pr_or_issue`
+- `background-agent.github.open_pull_request`
+- `background-agent.github.approve_pull_request`
+- `background-agent.github.request_changes`
+- `background-agent.github.merge_pull_request`
+- `background-agent.github.push`
+- `background-agent.github.delete_branch`
+
+Typed error kinds returned by these tools' `execute()` (never thrown, always
+a discriminated `{ ok:false; errorKind; error }` result):
+`merge_blocked_ci_not_green`, `merge_conflict`, `check_command_failed`,
+`not_fast_forward`, `protected_branch`, `no_changes`, `access_error` (plus a
+reserved-but-currently-unused `pr_not_found` kind for a future PR-lookup
+action).
 
 Important correlation fields:
 
