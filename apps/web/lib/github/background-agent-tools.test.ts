@@ -60,6 +60,23 @@ const {
 
 type Ctx = Parameters<typeof resolveGitHubActionToolsForBackgroundAgent>[0];
 
+// AI SDK tool() results type execute() loosely for provider-option
+// inference; tests only need to call it directly, so narrow via `unknown`
+// (never `any`) to the concrete signature under test.
+type CommentToolExecute = (
+  input: { number: number; body: string },
+  options: unknown,
+) => Promise<unknown>;
+
+function getCommentToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): CommentToolExecute {
+  const commentTool = tools.github_comment_on_pr_or_issue as unknown as {
+    execute: CommentToolExecute;
+  };
+  return commentTool.execute;
+}
+
 function buildCtx(overrides: Partial<Ctx> = {}): Ctx {
   return {
     installationId: 42,
@@ -136,15 +153,9 @@ describe("github_comment_on_pr_or_issue tool", () => {
     });
 
     const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
-    const commentTool = tools.github_comment_on_pr_or_issue;
-    expect(commentTool).toBeDefined();
+    expect(tools.github_comment_on_pr_or_issue).toBeDefined();
 
-    // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
-    const execute = (commentTool as any).execute as (
-      input: { number: number; body: string },
-      options: unknown,
-    ) => Promise<unknown>;
-
+    const execute = getCommentToolExecute(tools);
     const result = await execute({ number: 12, body: "hi" }, {});
 
     expect(result).toEqual({
@@ -174,12 +185,7 @@ describe("github_comment_on_pr_or_issue tool", () => {
     });
 
     const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
-    // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
-    const execute = (tools.github_comment_on_pr_or_issue as any)
-      .execute as (
-      input: { number: number; body: string },
-      options: unknown,
-    ) => Promise<unknown>;
+    const execute = getCommentToolExecute(tools);
 
     await execute({ number: 12, body: "hi" }, {});
 
@@ -209,12 +215,7 @@ describe("github_comment_on_pr_or_issue tool", () => {
 
     try {
       const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
-      // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
-      const execute = (tools.github_comment_on_pr_or_issue as any)
-        .execute as (
-        input: { number: number; body: string },
-        options: unknown,
-      ) => Promise<unknown>;
+      const execute = getCommentToolExecute(tools);
 
       const result = await execute({ number: 12, body: "hi" }, {});
 

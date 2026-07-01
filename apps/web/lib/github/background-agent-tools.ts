@@ -2,7 +2,8 @@ import "server-only";
 
 import type { Sandbox } from "@open-agents/sandbox";
 import type { Octokit } from "@octokit/rest";
-import type { ToolSet } from "ai";
+import { tool, type ToolSet } from "ai";
+import { z } from "zod";
 import {
   DESTRUCTIVE_ACTIONS,
   type GitHubToolAction,
@@ -176,6 +177,69 @@ async function recordActionEvent(
 // a second module hop.
 export { withPerCallInstallationOctokit, recordActionEvent };
 
+// ── comment_on_pr_or_issue action (STEP-4, closes #738) ────────────────────────
+
+const commentInputSchema = z.object({
+  number: z
+    .number()
+    .int()
+    .positive()
+    .describe("The issue or pull request number to comment on."),
+  body: z.string().min(1).describe("The comment text in Markdown."),
+});
+
+type CommentOnPrOrIssueOutput =
+  | { ok: true; commentId: number; url: string }
+  | GitHubActionErrorResult;
+
+/**
+ * Posts a comment on either an issue OR a pull request via the shared
+ * issues.createComment endpoint (GitHub treats every PR as an issue for
+ * commenting purposes). Deliberately does NOT call assertNotPullRequest
+ * (unlike apps/web/lib/github/tools.ts's issue-only buildCommentOnIssueTool)
+ * — this tool intentionally targets both PRs and issues, so a future reader
+ * should not "fix" this by adding the guard back.
+ */
+function buildCommentTool(ctx: BackgroundAgentGitHubToolContext) {
+  return tool({
+    description: `Post a comment on an issue or pull request in ${ctx.repoOwner}/${ctx.repoName}.
+This tool acts as the GitHub App via a per-call installation token scoped to issues:write, bounded to the agent's write scope.`,
+    inputSchema: commentInputSchema,
+    execute: async ({ number, body }): Promise<CommentOnPrOrIssueOutput> => {
+      try {
+        const data = await withPerCallInstallationOctokit(
+          ctx,
+          { issues: "write" },
+          async (octokit) => {
+            const response = await octokit.rest.issues.createComment({
+              owner: ctx.repoOwner,
+              repo: ctx.repoName,
+              issue_number: number,
+              body,
+            });
+            return response.data;
+          },
+        );
+
+        await recordActionEvent(ctx, "comment_on_pr_or_issue", "succeeded", {
+          number,
+          commentId: data.id,
+        });
+
+        return { ok: true, commentId: data.id, url: data.html_url };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
+        await recordActionEvent(ctx, "comment_on_pr_or_issue", "failed", {
+          number,
+          error: message,
+        });
+        return buildGitHubActionError("access_error", message);
+      }
+    },
+  });
+}
+
 // ── Resolver ───────────────────────────────────────────────────────────────────
 
 /**
@@ -192,8 +256,10 @@ export function resolveGitHubActionToolsForBackgroundAgent(
 
   for (const action of ctx.enabledActions) {
     switch (action) {
-      // Tool builders are added incrementally in STEPs 4-8:
-      //   "comment_on_pr_or_issue" -> github_comment_on_pr_or_issue (STEP-4)
+      case "comment_on_pr_or_issue":
+        tools.github_comment_on_pr_or_issue = buildCommentTool(ctx);
+        break;
+      // Remaining tool builders are added incrementally in STEPs 5-8:
       //   "open_pull_request"      -> github_open_pull_request (STEP-5)
       //   "approve_pull_request"   -> github_approve_pull_request (STEP-6)
       //   "request_changes"        -> github_request_changes (STEP-6)
