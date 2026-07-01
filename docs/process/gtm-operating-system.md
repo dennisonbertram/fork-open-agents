@@ -14,6 +14,8 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `apps/web/lib/gtm-outbound/*` contains the approval policy and local
   outbound draft persistence boundary. It may create local touchpoints and
   pending approval rows, but it must not call email, CRM, or sequence tools.
+- `apps/web/lib/gtm-activation/*` contains the private activation watcher
+  classifier, dedupe logic, issue-draft preview, and approval boundary.
 - `GET /api/gtm/brief?window=24h` returns the read-only daily GTM brief.
 - `GET /api/gtm/diagnosis?source=account_work&id=...` returns bounded evidence
   for a single GTM item.
@@ -22,6 +24,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
   signals and rejects uncited or unverified private claims instead of guessing.
 - `POST /api/gtm/outbound/drafts` creates a local outbound touchpoint and a
   pending approval request for the requested external action.
+- `GET /api/gtm/activation/signals` returns the private activation signal queue.
+- `POST /api/gtm/activation/signals` runs the activation watcher on supplied
+  source snapshots and creates draft signals plus pending issue approvals.
 
 ## Event Vocabulary
 
@@ -38,6 +43,11 @@ Initial `gtm_events.event_name` values:
 - `gtm.agent_run.failed`
 - `gtm.approval.requested`
 - `gtm.approval.decided`
+- `activation.watcher.scanned`
+- `activation.signal.created`
+- `activation.signal.deduped`
+- `activation.issue_draft.created`
+- `activation.issue_file.blocked_without_approval`
 
 Each event must include `userId`, `requestId`, `entityKind`, `entityId`,
 `status`, `level`, and `redactionStatus`. Optional correlation fields are
@@ -69,6 +79,10 @@ Outbound actions covered by the first policy surface are `email_create_draft`,
 `crm_sequence_enroll`. The outbound API returns `pending_approval` and records
 `gtm.touchpoint.recorded` plus `gtm.approval.requested` events before any
 external system is eligible to mutate.
+
+Activation watcher signals are private operator records. GitHub issue bodies are
+stored only as redacted drafts behind `activation_issue_draft_file` approvals;
+no public GitHub issue is created by the watcher path.
 
 ## Debug Recipes
 
