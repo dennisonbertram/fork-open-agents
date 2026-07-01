@@ -13,8 +13,26 @@ let capturedMintArgs: {
   permissions: Record<string, string>;
 } | null = null;
 
+// Fake octokit surface used by withScopedInstallationOctokit's mock —
+// individual test describe blocks overwrite the methods they need.
+const fakeOctokit = {
+  rest: {
+    issues: {
+      createComment: async (_params: {
+        owner: string;
+        repo: string;
+        issue_number: number;
+        body: string;
+      }) => ({ data: { id: 555, html_url: "https://github.com/comment/555" } }),
+    },
+  },
+};
+
+let withScopedInstallationOctokitCallCount = 0;
+
 function resetCapturedMintArgs() {
   capturedMintArgs = null;
+  withScopedInstallationOctokitCallCount = 0;
 }
 
 mock.module("@/lib/github/app", () => ({
@@ -24,12 +42,13 @@ mock.module("@/lib/github/app", () => ({
     permissions: Record<string, string>;
     operation: (octokit: unknown) => Promise<unknown>;
   }) => {
+    withScopedInstallationOctokitCallCount += 1;
     capturedMintArgs = {
       installationId: params.installationId,
       repositoryIds: params.repositoryIds,
       permissions: params.permissions,
     };
-    return params.operation({ fake: "octokit" });
+    return params.operation(fakeOctokit);
   },
 }));
 
@@ -77,7 +96,7 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
     expect(Object.keys(tools)).toEqual([]);
   });
 
-  test("returns an empty tool set for actions that have no implemented tool builder yet (forward-compatible)", () => {
+  test("returns tools only for actions with an implemented tool builder (forward-compatible for unimplemented actions)", () => {
     const tools = resolveGitHubActionToolsForBackgroundAgent(
       buildCtx({
         enabledActions: [
@@ -92,7 +111,123 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
       }),
     );
 
-    expect(Object.keys(tools)).toEqual([]);
+    // Only comment_on_pr_or_issue is implemented as of STEP-4; the rest
+    // remain absent until their STEP-5..8 tool builders ship.
+    expect(Object.keys(tools)).toEqual(["github_comment_on_pr_or_issue"]);
+  });
+});
+
+describe("github_comment_on_pr_or_issue tool", () => {
+  test("is absent from the tool set when comment_on_pr_or_issue is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_comment_on_pr_or_issue).toBeUndefined();
+  });
+
+  test("posts a comment via issues.createComment scoped to issues:write and the full write-scope repositoryIds", async () => {
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      repositoryIds: [11, 22, 33],
+      repoOwner: "acme",
+      repoName: "my-repo",
+      enabledActions: ["comment_on_pr_or_issue"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const commentTool = tools.github_comment_on_pr_or_issue;
+    expect(commentTool).toBeDefined();
+
+    // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
+    const execute = (commentTool as any).execute as (
+      input: { number: number; body: string },
+      options: unknown,
+    ) => Promise<unknown>;
+
+    const result = await execute({ number: 12, body: "hi" }, {});
+
+    expect(result).toEqual({
+      ok: true,
+      commentId: 555,
+      url: "https://github.com/comment/555",
+    });
+    expect(capturedMintArgs).toEqual({
+      installationId: ctx.installationId,
+      repositoryIds: [11, 22, 33],
+      permissions: { issues: "write" },
+    });
+    // Per-call mint-and-revoke: exactly one withScopedInstallationOctokit
+    // call (its real implementation mints once and revokes once in a
+    // finally, see app.ts) for this single tool invocation.
+    expect(withScopedInstallationOctokitCallCount).toBe(1);
+  });
+
+  test("records a background-agent.github.comment_on_pr_or_issue event with minimal attribution on success", async () => {
+    resetCapturedMintArgs();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["comment_on_pr_or_issue"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
+    const execute = (tools.github_comment_on_pr_or_issue as any)
+      .execute as (
+      input: { number: number; body: string },
+      options: unknown,
+    ) => Promise<unknown>;
+
+    await execute({ number: 12, body: "hi" }, {});
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.eventName).toBe(
+      "background-agent.github.comment_on_pr_or_issue",
+    );
+    expect(recorded[0]?.status).toBe("succeeded");
+    expect(recorded[0]?.payload?.number).toBe(12);
+    expect(recorded[0]?.payload?.commentId).toBe(555);
+  });
+
+  test("returns a typed access_error result and records a failed event when the API call throws", async () => {
+    resetCapturedMintArgs();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      enabledActions: ["comment_on_pr_or_issue"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const originalCreateComment = fakeOctokit.rest.issues.createComment;
+    fakeOctokit.rest.issues.createComment = async () => {
+      throw new Error("boom: not found");
+    };
+
+    try {
+      const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+      // biome-ignore lint: test-only cast into the AI SDK tool's execute fn
+      const execute = (tools.github_comment_on_pr_or_issue as any)
+        .execute as (
+        input: { number: number; body: string },
+        options: unknown,
+      ) => Promise<unknown>;
+
+      const result = await execute({ number: 12, body: "hi" }, {});
+
+      expect(result).toEqual({
+        ok: false,
+        errorKind: "access_error",
+        error: "boom: not found",
+      });
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]?.status).toBe("failed");
+    } finally {
+      fakeOctokit.rest.issues.createComment = originalCreateComment;
+    }
   });
 });
 
