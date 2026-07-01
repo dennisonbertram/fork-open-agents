@@ -51,7 +51,7 @@ mock.module("@/lib/db/installations", () => ({
 mock.module("./app", () => ({
   withScopedInstallationOctokit: async (params: {
     installationId: number;
-    repositoryId: number;
+    repositoryIds: number[];
     permissions: Record<string, string>;
     operation: (octokit: {
       rest: { repos: { get: (_args: unknown) => Promise<unknown> } };

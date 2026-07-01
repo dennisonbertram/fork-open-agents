@@ -117,7 +117,7 @@ export async function verifyRepoAccess(params: {
   try {
     await withScopedInstallationOctokit({
       installationId: installation.installationId,
-      repositoryId,
+      repositoryIds: [repositoryId],
       permissions: { contents: "read" },
       operation: async (installationOctokit) => {
         await installationOctokit.rest.repos.get({ owner, repo });

@@ -507,7 +507,7 @@ async function createReadyPullRequestOutput(params: {
 
   const commitResult = await withScopedInstallationOctokit({
     installationId: intentResult.intent.installationId,
-    repositoryId: intentResult.intent.repositoryId,
+    repositoryIds: [intentResult.intent.repositoryId],
     permissions: { contents: "write" },
     operation: async (octokit) =>
       createCommit({

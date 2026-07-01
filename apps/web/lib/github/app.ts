@@ -96,8 +96,8 @@ export async function mintInstallationToken(params: {
 }): Promise<ScopedInstallationToken> {
   const { installationId, repositoryIds, permissions } = params;
 
-  if (repositoryIds.length !== 1) {
-    throw new Error("Installation tokens must be scoped to exactly one repo");
+  if (repositoryIds.length === 0) {
+    throw new Error("Installation tokens must be scoped to at least one repo");
   }
 
   const appJwt = await getAppJwt();
@@ -157,15 +157,19 @@ export async function revokeInstallationToken(token: string): Promise<void> {
   }
 }
 
-export async function withScopedInstallationOctokit<T>(params: {
-  installationId: number;
-  repositoryId: number;
-  permissions: GitHubInstallationTokenPermissions;
-  operation: (octokit: Octokit) => Promise<T>;
-}): Promise<T> {
+export async function withScopedInstallationOctokit<T>(
+  params: {
+    installationId: number;
+    permissions: GitHubInstallationTokenPermissions;
+    operation: (octokit: Octokit) => Promise<T>;
+  } & ({ repositoryId: number } | { repositoryIds: number[] }),
+): Promise<T> {
+  const repositoryIds =
+    "repositoryIds" in params ? params.repositoryIds : [params.repositoryId];
+
   const scopedToken = await mintInstallationToken({
     installationId: params.installationId,
-    repositoryIds: [params.repositoryId],
+    repositoryIds,
     permissions: params.permissions,
   });
 
