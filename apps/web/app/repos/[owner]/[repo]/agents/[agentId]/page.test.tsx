@@ -217,9 +217,14 @@ describe("AgentDetailPage", () => {
       }),
     );
 
-    // Artifacts from the run's resultSummary
-    expect(html.toLowerCase()).toMatch(/artifact|output/);
-    // The comment artifact URL should appear
+    // Artifacts from the run's resultSummary — assert the actual artifact
+    // link URL and label render, rather than a loose "artifact|output"
+    // substring match (which previously passed only coincidentally, via the
+    // unrelated "Output mode" field text — see TASK-740 which removed that
+    // field in favor of a "GitHub actions" summary).
+    expect(html).toContain(
+      "https://github.com/acme/widgets/issues/1#comment-1",
+    );
     expect(html).toContain("comment");
   });
 

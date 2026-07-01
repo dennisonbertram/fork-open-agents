@@ -12,9 +12,10 @@ import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
 import {
-  describeOutputModePermissions,
+  describeEnabledActions,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
+import { resolveGitHubToolConfig } from "@/lib/background-agents/github-actions";
 import { describeWriteScope } from "../github-write-scope-section";
 import { ScheduleVisual } from "../schedule-visual";
 
@@ -122,10 +123,11 @@ export default async function AgentDetailPage({
 
   // Derive the tools model: the built-in "Standard toolpack" (persisted to
   // builtinToolNames, null = the default web_fetch-off preset) and the
-  // scoped GitHub capability, whose write/PR access is derived purely from
-  // outputMode — same derivation buildAgentPayload uses, via the shared
-  // describeOutputModePermissions helper so this display never drifts from
-  // what's actually persisted.
+  // scoped GitHub capability, whose action set is resolved via
+  // resolveGitHubToolConfig (#740) — the single source of truth that
+  // migrates a legacy outputMode-only agent to its equivalent enabledActions
+  // so this display never drifts from what's actually persisted, and never
+  // dumps the raw agent.outputMode string.
   const builtinToolNames = agent.builtinToolNames ?? null;
   const toolpackSummary =
     builtinToolNames === null
@@ -133,20 +135,32 @@ export default async function AgentDetailPage({
       : builtinToolNames.length === 0
         ? "no built-in tools enabled"
         : builtinToolNames.join(", ");
-  // Write scope (how many repos the ready_pr agent's minted token can touch)
-  // is only meaningful for ready_pr agents — buildAgentPayload (TASK-A3)
-  // forces writeScopeMode back to "this_repo" on save for every other
-  // outputMode, and this display must not surface a stale persisted value
-  // for a report-only agent as if it were still in effect.
+  const { enabledActions, requireCiGreenToMerge } =
+    resolveGitHubToolConfig(agent);
+  // Write scope (how many repos the agent's minted GitHub token can touch)
+  // is meaningful whenever ANY GitHub action is enabled — not only
+  // open_pull_request/legacy ready_pr — matching the executor's write-scope
+  // resolution gate (STEP-9) and the edit form's GitHubWriteScopeSection
+  // gating (STEP-10, hasWriteAction = enabledActions.length > 0). When no
+  // action is enabled, buildAgentPayload forces writeScopeMode back to
+  // "this_repo" on save, and this display must not surface a stale
+  // persisted value for a report-only agent as if it were still in effect.
+  const hasWriteAction = enabledActions.length > 0;
   const savedGithubPermissions = agent.permissions?.github;
   const writeScopeMode = savedGithubPermissions?.writeScopeMode ?? "this_repo";
   const writeScopeRepos = savedGithubPermissions?.writeScopeRepos ?? [];
   // repoCount includes the home repo itself plus any additional selected repos.
   const writeScopeRepoCount = writeScopeRepos.length + 1;
-  const githubScopeSummary =
-    agent.outputMode === "ready_pr"
-      ? `${describeOutputModePermissions(agent.outputMode)} Repo scope: ${describeWriteScope(writeScopeMode, writeScopeRepoCount)}.`
-      : describeOutputModePermissions(agent.outputMode);
+  const mergeEnabled = enabledActions.includes("merge_pull_request");
+  const mergeCiGateSummary = mergeEnabled
+    ? ` Merge requires CI checks to pass: ${
+        requireCiGreenToMerge ? "yes" : "no (irreversible)"
+      }.`
+    : "";
+  const githubScopeSummary = hasWriteAction
+    ? `${describeEnabledActions(enabledActions)}. Repo scope: ${describeWriteScope(writeScopeMode, writeScopeRepoCount)}.${mergeCiGateSummary}`
+    : describeEnabledActions(enabledActions);
+  const enabledActionLabels = describeEnabledActions(enabledActions);
   const composioToolkitSlugs = agent.composioToolkitSlugs ?? [];
 
   return (
@@ -203,9 +217,9 @@ export default async function AgentDetailPage({
               </div>
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Output mode
+                  GitHub actions
                 </p>
-                <p className="mt-1 text-sm">{agent.outputMode ?? "none"}</p>
+                <p className="mt-1 text-sm">{enabledActionLabels}</p>
               </div>
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">

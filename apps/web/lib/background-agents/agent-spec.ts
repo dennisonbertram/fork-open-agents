@@ -385,6 +385,14 @@ export function conditionFieldLabel(
 /**
  * Returns a user-facing summary of what the given output mode permits.
  * Derived from the outputMode → permissions map in buildAgentPayload.
+ *
+ * @deprecated Superseded by describeEnabledActions (#740). This function
+ * only understands the legacy single outputMode control and cannot express
+ * the full per-action GitHub tool allowlist — call
+ * describeEnabledActions(resolveGitHubToolConfig(agent).enabledActions)
+ * instead for any new surface. Kept for legacy callers (the settings
+ * background-agents-section.tsx form) that still show a single "Output
+ * mode" control and have not yet migrated to the per-action toggle UI.
  */
 export function describeOutputModePermissions(mode: OutputMode): string {
   switch (mode) {
@@ -393,6 +401,40 @@ export function describeOutputModePermissions(mode: OutputMode): string {
     default:
       return "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything.";
   }
+}
+
+/**
+ * Human-readable label for each canonical GitHub tool action (#740).
+ * Shared by describeEnabledActions and any UI surface that needs to render
+ * a single action's name without the full summary sentence.
+ */
+export const GITHUB_ACTION_LABELS: Record<GitHubToolAction, string> = {
+  open_pull_request: "Open pull request",
+  comment_on_pr_or_issue: "Comment on PR or issue",
+  approve_pull_request: "Approve pull request",
+  request_changes: "Request changes",
+  merge_pull_request: "Merge pull request",
+  push: "Push",
+  delete_branch: "Delete branch",
+};
+
+/**
+ * Returns a user-facing summary of the given enabled GitHub tool-action set
+ * (#740) — the replacement for describeOutputModePermissions as the source
+ * of truth for what a background agent can do on GitHub. Callers should
+ * pass resolveGitHubToolConfig(agent).enabledActions so a legacy
+ * outputMode-only agent renders identically to its migrated equivalent
+ * (byte-identical behavior, not just byte-identical capability).
+ *
+ * An empty action set intentionally returns the exact same read-only
+ * sentence as describeOutputModePermissions("none") — every existing
+ * "no write access" copy site keeps matching without a wording change.
+ */
+export function describeEnabledActions(actions: GitHubToolAction[]): string {
+  if (actions.length === 0) {
+    return "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything.";
+  }
+  return actions.map((action) => GITHUB_ACTION_LABELS[action]).join(", ");
 }
 
 /**

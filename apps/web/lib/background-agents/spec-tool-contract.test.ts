@@ -365,7 +365,6 @@ describe("previewBackgroundAgentSpec — success", () => {
       expect(result.warnings).toEqual([]);
     }
   });
-
 });
 
 // ── previewBackgroundAgentSpec — validation failures ─────────────────────

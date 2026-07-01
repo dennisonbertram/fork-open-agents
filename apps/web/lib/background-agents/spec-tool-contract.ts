@@ -13,6 +13,12 @@
  * entry point on the repo agents dashboard.
  */
 import { z } from "zod";
+import { describeEnabledActions } from "./agent-spec";
+import {
+  resolveGitHubToolConfig,
+  WRITE_ACTIONS,
+  type GitHubToolAction,
+} from "./github-actions";
 import {
   createBackgroundAgentSchema,
   updateBackgroundAgentSchema,
@@ -120,6 +126,21 @@ type SummarizableDraft = {
     conditions?: Record<string, unknown>;
   }>;
   composioToolkitSlugs?: string[];
+  /**
+   * Canonical GitHub tool-action allowlist (#740). Structurally compatible
+   * with ResolvableGitHubToolAgent in github-actions.ts — resolveGitHubToolConfig
+   * is called directly with a SummarizableDraft to derive the effective
+   * action set, migrating legacy outputMode-only drafts the same way the
+   * persisted-agent surfaces (detail page, executor) do.
+   */
+  permissions?: {
+    github?: {
+      contents?: string;
+      pullRequests?: string;
+      enabledActions?: GitHubToolAction[];
+      requireCiGreenToMerge?: boolean;
+    } | null;
+  } | null;
 };
 
 function summarizeTrigger(draft: SummarizableDraft): string {
@@ -169,6 +190,12 @@ function summarizeSpec(draft: SummarizableDraft): string {
   if (draft.outputMode) {
     parts.push(`**Output:** ${formatOutputMode(draft.outputMode)}`);
   }
+
+  // GitHub actions line (#740) — derived via resolveGitHubToolConfig so a
+  // legacy outputMode-only draft (e.g. "ready_pr") summarizes identically to
+  // an explicit enabledActions draft with the same migrated action set.
+  const { enabledActions } = resolveGitHubToolConfig(draft);
+  parts.push(`**GitHub actions:** ${describeEnabledActions(enabledActions)}`);
 
   if (draft.triggers && draft.triggers.length > 0) {
     parts.push("**Triggers:**");
@@ -222,12 +249,14 @@ export function previewBackgroundAgentSpec(
     const summary = summarizeSpec(draft);
 
     const warnings: string[] = [];
-    if (
-      draft.outputMode === "ready_pr" &&
-      draft.permissions.github?.contents !== "write"
-    ) {
+    const { enabledActions: createEnabledActions } =
+      resolveGitHubToolConfig(draft);
+    const createNeedsWrite = createEnabledActions.some((action) =>
+      WRITE_ACTIONS.has(action),
+    );
+    if (createNeedsWrite && draft.permissions.github?.contents !== "write") {
       warnings.push(
-        'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+        `Enabled GitHub actions (${createEnabledActions.join(", ")}) require write access to contents. Set GitHub tool permissions to write.`,
       );
     }
 
@@ -261,12 +290,14 @@ export function previewBackgroundAgentSpec(
   const summary = summarizeSpec(draft as SummarizableDraft);
 
   const warnings: string[] = [];
-  if (
-    draft.outputMode === "ready_pr" &&
-    draft.permissions?.github?.contents !== "write"
-  ) {
+  const { enabledActions: updateEnabledActions } =
+    resolveGitHubToolConfig(draft);
+  const updateNeedsWrite = updateEnabledActions.some((action) =>
+    WRITE_ACTIONS.has(action),
+  );
+  if (updateNeedsWrite && draft.permissions?.github?.contents !== "write") {
     warnings.push(
-      'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+      `Enabled GitHub actions (${updateEnabledActions.join(", ")}) require write access to contents. Set GitHub tool permissions to write.`,
     );
   }
 
