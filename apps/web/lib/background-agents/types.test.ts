@@ -217,4 +217,52 @@ describe("background agent contract types", () => {
       }),
     ).not.toThrow();
   });
+
+  test("TASK-740: permissionsSchema accepts enabledActions and requireCiGreenToMerge on github", () => {
+    const parsed = permissionsSchema.parse({
+      github: {
+        enabledActions: ["merge_pull_request"],
+        requireCiGreenToMerge: false,
+      },
+    });
+
+    expect(parsed.github?.enabledActions).toEqual(["merge_pull_request"]);
+    expect(parsed.github?.requireCiGreenToMerge).toBe(false);
+  });
+
+  test("TASK-740: permissionsSchema rejects an unknown enabledActions member", () => {
+    expect(() =>
+      permissionsSchema.parse({
+        github: { enabledActions: ["bogus"] },
+      }),
+    ).toThrow();
+  });
+
+  test("TASK-740: permissionsSchema rejects enabledActions longer than 7 entries", () => {
+    const tooMany = [
+      "open_pull_request",
+      "comment_on_pr_or_issue",
+      "approve_pull_request",
+      "request_changes",
+      "merge_pull_request",
+      "push",
+      "delete_branch",
+      "open_pull_request",
+    ];
+
+    expect(() =>
+      permissionsSchema.parse({
+        github: { enabledActions: tooMany },
+      }),
+    ).toThrow();
+  });
+
+  test("TASK-740: permissionsSchema.github enabledActions/requireCiGreenToMerge are both optional (backward compatible)", () => {
+    const parsed = permissionsSchema.parse({
+      github: { contents: "write" },
+    });
+
+    expect(parsed.github?.enabledActions).toBeUndefined();
+    expect(parsed.github?.requireCiGreenToMerge).toBeUndefined();
+  });
 });
