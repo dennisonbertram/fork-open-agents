@@ -25,6 +25,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `POST /api/gtm/research/runs` creates a deterministic, draft-first account
   research run from cited manual, CRM, or public evidence. It persists draft GTM
   signals and rejects uncited or unverified private claims instead of guessing.
+- `/gtm/research` renders the founder-facing review surface for those runs:
+  cited account brief, unknown claims, draft signal candidates, open questions,
+  next steps, and the approval boundary before CRM/outbound mutations.
 - `POST /api/gtm/outbound/drafts` creates a local outbound touchpoint and a
   pending approval request for the requested external action.
 - `POST /api/gtm/calls/prep` creates a local call-prep brief artifact.
