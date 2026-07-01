@@ -15,6 +15,10 @@ let capturedMintArgs: {
 
 // Fake octokit surface used by withScopedInstallationOctokit's mock —
 // individual test describe blocks overwrite the methods they need.
+// `issues.get` deliberately rejects: the comment tool must never call it.
+// If a future edit reintroduces the issue-only assertNotPullRequest guard
+// (which pre-flights via issues.get), this fake starts failing every
+// comment call, catching the regression immediately.
 const fakeOctokit = {
   rest: {
     issues: {
@@ -24,6 +28,12 @@ const fakeOctokit = {
         issue_number: number;
         body: string;
       }) => ({ data: { id: 555, html_url: "https://github.com/comment/555" } }),
+      get: async () => {
+        throw new Error(
+          "regression: github_comment_on_pr_or_issue must not call issues.get " +
+            "(no assertNotPullRequest pre-flight — it intentionally targets both PRs and issues)",
+        );
+      },
     },
   },
 };
@@ -229,6 +239,32 @@ describe("github_comment_on_pr_or_issue tool", () => {
     } finally {
       fakeOctokit.rest.issues.createComment = originalCreateComment;
     }
+  });
+
+  test("regression: comments on a PR number without any assertNotPullRequest pre-flight, and mints issues:write only (never pull_requests:write)", async () => {
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      enabledActions: ["comment_on_pr_or_issue"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getCommentToolExecute(tools);
+
+    // 42 stands in for a PR number here — the shared issues.createComment
+    // endpoint works for both issues and PRs, and this tool must not
+    // pre-flight-check the item type (fakeOctokit.rest.issues.get rejects
+    // if called, which would fail this test if a guard were added back).
+    const result = await execute({ number: 42, body: "lgtm" }, {});
+
+    expect(result).toEqual({
+      ok: true,
+      commentId: 555,
+      url: "https://github.com/comment/555",
+    });
+    // Regression guard: widening to pull_requests:write (or adding it
+    // alongside issues:write) would needlessly broaden the minted token
+    // beyond what commenting requires.
+    expect(capturedMintArgs?.permissions).toEqual({ issues: "write" });
   });
 });
 
