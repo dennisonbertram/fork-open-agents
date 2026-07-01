@@ -1,14 +1,19 @@
 /**
  * Regression tests for the edit-mode GitHub-permission invariant.
  *
- * Result (outputMode) is the single source of truth for GitHub write access:
+ * (#740) enabledActions is the single source of truth for GitHub write
+ * access, not outputMode:
  *   - Edit display (buildFormFromAgent) still shows the user's saved
  *     permissionContents/permissionPullRequests fields for transparency, but
- *     those fields are no longer read by buildAgentPayload.
+ *     those fields are no longer read by buildAgentPayload. It also derives
+ *     enabledActions via resolveGitHubToolConfig(agent), so a legacy
+ *     ready_pr row (no persisted enabledActions) migrates to the agreed
+ *     open_pull_request + comment_on_pr_or_issue default.
  *   - Save payload (buildAgentPayload) derives github.contents/pullRequests
- *     purely from outputMode: "ready_pr" => write, everything else => read.
- *     A "none" agent can never persist write, regardless of what the form
- *     fields (or a legacy saved row) say.
+ *     purely from form.enabledActions: any non-empty set => write, an empty
+ *     set => read. A report-only agent (enabledActions: []) can never
+ *     persist write, regardless of what form.outputMode, the form's
+ *     permission fields, or a legacy saved row say.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -108,11 +113,28 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("ready_pr payload is write even when the form somehow carries read", () => {
-    // Guards the buildAgentPayload floor independently of buildFormFromAgent:
-    // the settings form sends defaultForm read/read for a ready_pr agent.
+  test("(#740) buildAgentPayload ignores form.outputMode entirely: overriding it to 'ready_pr' does NOT resurrect write for an agent whose enabledActions is empty", () => {
+    // Before #740, outputMode alone floored GitHub access to write. Now
+    // enabledActions is the only input — setting outputMode:"ready_pr" on a
+    // form built from a report-only agent (enabledActions: [] via
+    // resolveGitHubToolConfig) must NOT re-escalate access.
     const form = buildFormFromAgent(makeSavedAgent({ outputMode: "none" }));
+    expect(form.enabledActions).toEqual([]);
+
     const payload = buildAgentPayload({ ...form, outputMode: "ready_pr" });
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
+  });
+
+  test("(#740) buildAgentPayload floors GitHub access to write when enabledActions is non-empty, even if form.outputMode says 'none'", () => {
+    // The write-side mirror of the test above: enabledActions, not
+    // outputMode, is what actually grants write.
+    const form = buildFormFromAgent(makeSavedAgent({ outputMode: "none" }));
+    const payload = buildAgentPayload({
+      ...form,
+      outputMode: "none",
+      enabledActions: ["open_pull_request"],
+    });
     expect(payload.permissions.github.contents).toBe("write");
     expect(payload.permissions.github.pullRequests).toBe("write");
   });

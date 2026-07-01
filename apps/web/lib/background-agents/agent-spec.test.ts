@@ -1139,3 +1139,51 @@ describe("REGRESSION: defaultForm seeds the #740 GitHub action defaults", () => 
     expect(form.requireCiGreenToMerge).toBe(true);
   });
 });
+
+describe("REGRESSION (#740): full edit-resave pipeline preserves an explicit zero-action opt-out", () => {
+  test("a new-model agent that explicitly disabled every GitHub action (enabledActions: []) stays at zero actions through buildFormFromAgent -> buildAgentPayload, even with a stale legacy outputMode of 'ready_pr' still on the row", () => {
+    // This is the exact invariant that distinguishes "new-model, explicitly
+    // opted out of everything" (Array.isArray([]) === true) from "legacy,
+    // never migrated" (enabledActions absent -> derive from outputMode).
+    // If buildFormFromAgent/buildAgentPayload ever collapsed an explicit []
+    // into "absent" (e.g. via `form.enabledActions?.length ? ... : ...`
+    // instead of the nullish-coalescing/Array.isArray-based checks), a user
+    // who deliberately turned every GitHub action off on an agent whose
+    // outputMode column still says "ready_pr" (stale, pre-migration) would
+    // silently have write access resurrected on their next save.
+    const explicitlyDisabledAgent: BackgroundAgent = {
+      id: "agent-explicit-off",
+      name: "Read-only reviewer",
+      description: null,
+      status: "enabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize PRs only, never open or merge anything.",
+      outputMode: "ready_pr",
+      checkCommand: null,
+      permissions: {
+        github: {
+          contents: "read",
+          pullRequests: "read",
+          enabledActions: [],
+          requireCiGreenToMerge: true,
+        },
+      },
+      composioToolkitSlugs: [],
+      triggers: [],
+    };
+
+    const form = buildFormFromAgent(explicitlyDisabledAgent);
+    expect(form.enabledActions).toEqual([]);
+
+    const resavedPayload = buildAgentPayload(form);
+    expect(resavedPayload.permissions.github.enabledActions).toEqual([]);
+    expect(resavedPayload.permissions.github.contents).toBe("read");
+    expect(resavedPayload.permissions.github.pullRequests).toBe("read");
+    expect(resavedPayload.permissions.github.writeScopeMode).toBe("this_repo");
+    expect(resavedPayload.permissions.github.writeScopeRepos).toEqual([]);
+    // The stale "ready_pr" mirror is also corrected on resave, since the
+    // legacy mirror is now derived purely from enabledActions.
+    expect(resavedPayload.outputMode).toBe("none");
+  });
+});
