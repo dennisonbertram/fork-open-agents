@@ -20,6 +20,18 @@ let capturedMintArgs: {
 // If a future edit reintroduces the issue-only assertNotPullRequest guard
 // (which pre-flights via issues.get), this fake starts failing every
 // comment call, catching the regression immediately.
+let capturedDeleteRefArgs: {
+  owner: string;
+  repo: string;
+  ref: string;
+} | null = null;
+let deleteRefShouldThrow: Error | null = null;
+
+function resetDeleteRefMock() {
+  capturedDeleteRefArgs = null;
+  deleteRefShouldThrow = null;
+}
+
 const fakeOctokit = {
   rest: {
     issues: {
@@ -44,6 +56,15 @@ const fakeOctokit = {
         event: "APPROVE" | "REQUEST_CHANGES";
         body?: string;
       }) => ({ data: { id: 888, state: "APPROVED" } }),
+    },
+    git: {
+      deleteRef: async (params: { owner: string; repo: string; ref: string }) => {
+        capturedDeleteRefArgs = params;
+        if (deleteRefShouldThrow) {
+          throw deleteRefShouldThrow;
+        }
+        return { data: {} };
+      },
     },
   },
 };
@@ -375,16 +396,18 @@ describe("resolveGitHubActionToolsForBackgroundAgent", () => {
     );
 
     // comment_on_pr_or_issue (STEP-4), open_pull_request (STEP-5),
-    // approve_pull_request/request_changes (STEP-6), and merge_pull_request
-    // (STEP-7) are implemented; push/delete_branch remain absent until their
-    // STEP-8 tool builders ship. Order follows enabledActions input order
-    // (the resolver iterates enabledActions directly).
+    // approve_pull_request/request_changes (STEP-6), merge_pull_request
+    // (STEP-7), and push/delete_branch (STEP-8) are all implemented. Order
+    // follows enabledActions input order (the resolver iterates
+    // enabledActions directly).
     expect(Object.keys(tools)).toEqual([
       "github_open_pull_request",
       "github_comment_on_pr_or_issue",
       "github_approve_pull_request",
       "github_request_changes",
       "github_merge_pull_request",
+      "github_push",
+      "github_delete_branch",
     ]);
   });
 });
@@ -1289,6 +1312,292 @@ describe("github_merge_pull_request tool", () => {
     // `scoped` being undefined, or would call revoke with an undefined
     // token — this proves revoke is never invoked when mint itself fails.
     expect(revokeInstallationTokenCallCount).toBe(0);
+  });
+});
+
+// ── push / delete_branch (STEP-8) ───────────────────────────────────────────
+//
+// Both reuse the ready-pr fixtures (stageAll, buildCoAuthor,
+// buildCommitIntentFromSandbox, createCommit) already established above, and
+// fakeOctokit's git.deleteRef for delete_branch — no new module mocks
+// needed, mirroring the "reuse the SAME verified-commit machinery as
+// open_pull_request" requirement.
+
+const REMOTE_BRANCH_CHANGED_ERROR =
+  "Remote branch changed before commit could be created";
+
+type PushToolExecute = (
+  input: { branch: string; force?: boolean },
+  options: unknown,
+) => Promise<unknown>;
+
+function getPushToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): PushToolExecute {
+  const pushTool = tools.github_push as unknown as {
+    execute: PushToolExecute;
+  };
+  return pushTool.execute;
+}
+
+type DeleteBranchToolExecute = (
+  input: { branch: string },
+  options: unknown,
+) => Promise<unknown>;
+
+function getDeleteBranchToolExecute(
+  tools: ReturnType<typeof resolveGitHubActionToolsForBackgroundAgent>,
+): DeleteBranchToolExecute {
+  const deleteBranchTool = tools.github_delete_branch as unknown as {
+    execute: DeleteBranchToolExecute;
+  };
+  return deleteBranchTool.execute;
+}
+
+describe("github_push tool", () => {
+  test("is absent from the tool set when push is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_push).toBeUndefined();
+  });
+
+  test("non-force push commits with the sandbox's expectedHeadSha and returns the new sha", async () => {
+    resetReadyPrMocks();
+    let capturedCreateCommitParams: Record<string, unknown> | null = null;
+    createCommit.mockImplementationOnce(async (params) => {
+      capturedCreateCommitParams = params as unknown as Record<
+        string,
+        unknown
+      >;
+      return { ok: true, commitSha: "pushed-sha-1" };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    const result = await execute({ branch: "feature/widgets" }, {});
+
+    expect(result).toEqual({
+      ok: true,
+      sha: "pushed-sha-1",
+      forced: false,
+    });
+    expect(capturedCreateCommitParams).toMatchObject({
+      expectedHeadSha: "base-sha",
+    });
+  });
+
+  test("non-force push fails closed with not_fast_forward when the branch moved, and never retries with force", async () => {
+    resetReadyPrMocks();
+    createCommit.mockImplementationOnce(async () => ({
+      ok: false,
+      error: REMOTE_BRANCH_CHANGED_ERROR,
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    const result = await execute({ branch: "feature/widgets" }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "not_fast_forward",
+      error: REMOTE_BRANCH_CHANGED_ERROR,
+    });
+    // Regression guard: createCommit must be called exactly once — a future
+    // edit that implicitly retries with force on a moved branch would call
+    // it a second time.
+    expect(createCommit).toHaveBeenCalledTimes(1);
+  });
+
+  test("force push omits expectedHeadSha so createCommit proceeds regardless of remote staleness", async () => {
+    resetReadyPrMocks();
+    let capturedCreateCommitParams: Record<string, unknown> | null = null;
+    createCommit.mockImplementationOnce(async (params) => {
+      capturedCreateCommitParams = params as unknown as Record<
+        string,
+        unknown
+      >;
+      return { ok: true, commitSha: "forced-sha-1" };
+    });
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    const result = await execute(
+      { branch: "feature/widgets", force: true },
+      {},
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      sha: "forced-sha-1",
+      forced: true,
+    });
+    expect(capturedCreateCommitParams).not.toHaveProperty("expectedHeadSha");
+  });
+
+  test("mints a token scoped to contents:write and the full write-scope repositoryIds, not the home repo alone", async () => {
+    resetReadyPrMocks();
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      repositoryIds: [11, 22, 33],
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    await execute({ branch: "feature/widgets" }, {});
+
+    expect(capturedMintArgs).toEqual({
+      installationId: ctx.installationId,
+      repositoryIds: [11, 22, 33],
+      permissions: { contents: "write" },
+    });
+  });
+
+  test("records a background-agent.github.push event with branch/forced/sha attribution", async () => {
+    resetReadyPrMocks();
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    createCommit.mockImplementationOnce(async () => ({
+      ok: true,
+      commitSha: "event-sha-1",
+    }));
+    const ctx = buildCtx({
+      enabledActions: ["push"],
+      sandbox: fakeReadyPrSandbox,
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getPushToolExecute(tools);
+
+    await execute({ branch: "feature/widgets", force: true }, {});
+
+    expect(recorded).toHaveLength(1);
+    expect(recorded[0]?.eventName).toBe("background-agent.github.push");
+    expect(recorded[0]?.status).toBe("succeeded");
+    expect(recorded[0]?.payload?.branch).toBe("feature/widgets");
+    expect(recorded[0]?.payload?.forced).toBe(true);
+    expect(recorded[0]?.payload?.sha).toBe("event-sha-1");
+    expect(recorded[0]?.payload?.severity).toBe("high");
+  });
+});
+
+describe("github_delete_branch tool", () => {
+  test("is absent from the tool set when delete_branch is not enabled", () => {
+    const tools = resolveGitHubActionToolsForBackgroundAgent(
+      buildCtx({ enabledActions: [] }),
+    );
+
+    expect(tools.github_delete_branch).toBeUndefined();
+  });
+
+  test("refuses to delete the base branch and never calls deleteRef", async () => {
+    resetDeleteRefMock();
+    const ctx = buildCtx({
+      baseBranch: "main",
+      enabledActions: ["delete_branch"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    const result = await execute({ branch: "main" }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "protected_branch",
+      error: 'Refusing to delete the base branch "main".',
+    });
+    expect(capturedDeleteRefArgs).toBeNull();
+  });
+
+  test("deletes a feature branch via git.deleteRef with ref heads/<branch>", async () => {
+    resetDeleteRefMock();
+    const ctx = buildCtx({
+      baseBranch: "main",
+      repoOwner: "acme",
+      repoName: "my-repo",
+      enabledActions: ["delete_branch"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    const result = await execute({ branch: "feature/stale" }, {});
+
+    expect(result).toEqual({ ok: true, branch: "feature/stale" });
+    expect(capturedDeleteRefArgs).toEqual({
+      owner: "acme",
+      repo: "my-repo",
+      ref: "heads/feature/stale",
+    });
+  });
+
+  test("mints a token scoped to contents:write and the full write-scope repositoryIds, not the home repo alone", async () => {
+    resetDeleteRefMock();
+    resetCapturedMintArgs();
+    const ctx = buildCtx({
+      baseBranch: "main",
+      repositoryIds: [11, 22, 33],
+      enabledActions: ["delete_branch"],
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    await execute({ branch: "feature/stale" }, {});
+
+    expect(capturedMintArgs).toEqual({
+      installationId: ctx.installationId,
+      repositoryIds: [11, 22, 33],
+      permissions: { contents: "write" },
+    });
+  });
+
+  test("typed access_error when deleteRef throws, and records a failed event", async () => {
+    resetDeleteRefMock();
+    deleteRefShouldThrow = new Error("Reference does not exist");
+    const recorded: BackgroundAgentGitHubEventInput[] = [];
+    const ctx = buildCtx({
+      baseBranch: "main",
+      enabledActions: ["delete_branch"],
+      recordEvent: async (event) => {
+        recorded.push(event);
+      },
+    });
+
+    const tools = resolveGitHubActionToolsForBackgroundAgent(ctx);
+    const execute = getDeleteBranchToolExecute(tools);
+
+    const result = await execute({ branch: "feature/gone" }, {});
+
+    expect(result).toEqual({
+      ok: false,
+      errorKind: "access_error",
+      error: "Reference does not exist",
+    });
+    expect(recorded[0]?.status).toBe("failed");
+    expect(recorded[0]?.payload?.severity).toBe("high");
   });
 });
 
