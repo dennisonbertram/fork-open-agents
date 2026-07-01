@@ -32,6 +32,7 @@ mock.module("drizzle-orm", () => ({
 }));
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   recordBackgroundAgentEvent: recordEventMock,
 }));
 

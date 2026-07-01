@@ -49,6 +49,7 @@ mock.module("@/app/workflows/background-agent", () => ({
   runBackgroundAgentWorkflow: {},
 }));
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   advanceTriggerScheduleState,
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,

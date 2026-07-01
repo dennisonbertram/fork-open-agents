@@ -38,11 +38,11 @@ export function SchedulePreview({
 
   return (
     <div className="space-y-1">
-      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className="text-xs font-medium text-muted-foreground">{label} (UTC)</p>
       <ul className="space-y-0.5">
         {runs.map((run, i) => (
           <li key={i} className="text-xs text-foreground">
-            {formatLocalTime(run)}
+            {formatUtcTime(run)}
           </li>
         ))}
       </ul>
@@ -75,12 +75,19 @@ export function ScheduleValidationMessage({
   );
 }
 
-function formatLocalTime(date: Date): string {
+/**
+ * Formats a date in UTC. Schedule expressions (cron) are evaluated in UTC
+ * (see schedule.ts / schedule-presets.ts), so preview times must be labeled
+ * and rendered in UTC to avoid misleading the user about when a run will
+ * actually fire.
+ */
+function formatUtcTime(date: Date): string {
   return new Intl.DateTimeFormat(undefined, {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
     year: "numeric",
+    timeZone: "UTC",
   }).format(date);
 }

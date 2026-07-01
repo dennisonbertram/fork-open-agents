@@ -22,6 +22,7 @@ import {
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "./redaction";
 import { triggerMatchesEvent } from "./matching";
+import { computeNextRuns } from "./schedule-presets";
 import {
   buildBackgroundRunIdempotencyKey,
   type BackgroundAgentRunStatus,
@@ -33,6 +34,23 @@ import {
   getExistingWebhookPublicIds,
   getWebhookPublicIdForUpdatedTrigger,
 } from "./trigger-public-ids";
+import { matchTriggersByIdentity } from "./trigger-upsert";
+
+/**
+ * Seeds nextRunAt for a schedule.cron trigger at creation/replacement time.
+ * Returns null for non-schedule triggers or invalid/missing schedules
+ * (computeNextRuns already returns [] for those — see schedule-presets.ts).
+ */
+function seedNextRunAt(params: {
+  kind: string;
+  schedule: string | null;
+  now: Date;
+}): Date | null {
+  if (params.kind !== "schedule.cron") {
+    return null;
+  }
+  return computeNextRuns(params.schedule, params.now, 1)[0] ?? null;
+}
 
 export type BackgroundAgentWithTriggers = BackgroundAgent & {
   triggers: BackgroundAgentTrigger[];
@@ -75,7 +93,9 @@ function normalizeOptionalText(value: string | null | undefined) {
 export async function createBackgroundAgent(
   userId: string,
   input: CreateBackgroundAgentInput,
+  options?: { now?: Date },
 ): Promise<BackgroundAgentWithTriggers> {
+  const now = options?.now ?? new Date();
   return db.transaction(async (tx) => {
     const [agent] = await tx
       .insert(backgroundAgents)
@@ -102,17 +122,22 @@ export async function createBackgroundAgent(
     const triggers = await tx
       .insert(backgroundAgentTriggers)
       .values(
-        input.triggers.map((trigger) => ({
-          id: nanoid(),
-          agentId: agent.id,
-          userId,
-          name: trigger.name,
-          kind: trigger.kind,
-          status: trigger.status,
-          conditions: trigger.conditions,
-          schedule: normalizeOptionalText(trigger.schedule),
-          webhookPublicId: trigger.kind === "webhook.error" ? nanoid(16) : null,
-        })),
+        input.triggers.map((trigger) => {
+          const schedule = normalizeOptionalText(trigger.schedule);
+          return {
+            id: nanoid(),
+            agentId: agent.id,
+            userId,
+            name: trigger.name,
+            kind: trigger.kind,
+            status: trigger.status,
+            conditions: trigger.conditions,
+            schedule,
+            webhookPublicId:
+              trigger.kind === "webhook.error" ? nanoid(16) : null,
+            nextRunAt: seedNextRunAt({ kind: trigger.kind, schedule, now }),
+          };
+        }),
       )
       .returning();
 
@@ -124,7 +149,9 @@ export async function updateBackgroundAgent(
   userId: string,
   agentId: string,
   input: UpdateBackgroundAgentInput,
+  options?: { now?: Date },
 ): Promise<BackgroundAgentWithTriggers | null> {
+  const now = options?.now ?? new Date();
   return db.transaction(async (tx) => {
     const existing = await tx.query.backgroundAgents.findFirst({
       where: and(
@@ -182,28 +209,81 @@ export async function updateBackgroundAgent(
         where: eq(backgroundAgentTriggers.agentId, agent.id),
         orderBy: [desc(backgroundAgentTriggers.createdAt)],
       });
-      const existingWebhookPublicIds =
-        getExistingWebhookPublicIds(existingTriggers);
-
-      await tx
-        .delete(backgroundAgentTriggers)
-        .where(eq(backgroundAgentTriggers.agentId, agent.id));
-      await tx.insert(backgroundAgentTriggers).values(
-        input.triggers.map((trigger) => ({
-          id: nanoid(),
-          agentId: agent.id,
-          userId,
+      // Upsert-by-identity: a trigger whose kind/schedule/conditions/name are
+      // unchanged is PRESERVED (same row id, lastRunAt, nextRunAt,
+      // lastSkipReason, webhookPublicId) instead of being deleted and
+      // recreated. This keeps run idempotency identity stable across edits
+      // and prevents a no-op edit from silently resetting a working schedule.
+      const matches = matchTriggersByIdentity({
+        incoming: input.triggers.map((trigger) => ({
           name: trigger.name,
           kind: trigger.kind,
-          status: trigger.status,
           conditions: trigger.conditions,
-          schedule: normalizeOptionalText(trigger.schedule),
-          webhookPublicId: getWebhookPublicIdForUpdatedTrigger({
-            trigger,
-            existingWebhookPublicIds,
-          }),
+          schedule: trigger.schedule,
         })),
+        existing: existingTriggers,
+      });
+
+      const preservedIds = new Set<string>();
+      for (const [index, trigger] of input.triggers.entries()) {
+        const matched = matches[index];
+        if (matched) {
+          preservedIds.add(matched.id);
+          await tx
+            .update(backgroundAgentTriggers)
+            .set({
+              status: trigger.status,
+              updatedAt: new Date(),
+            })
+            .where(eq(backgroundAgentTriggers.id, matched.id));
+        }
+      }
+
+      const staleTriggerIds = existingTriggers
+        .map((row) => row.id)
+        .filter((id) => !preservedIds.has(id));
+      if (staleTriggerIds.length > 0) {
+        await tx
+          .delete(backgroundAgentTriggers)
+          .where(inArray(backgroundAgentTriggers.id, staleTriggerIds));
+      }
+
+      // The webhook-id reuse pool must contain ONLY ids from rows being
+      // replaced (deleted above). A preserved row's id is still live under
+      // the unique webhook_public_id index — handing it to a new row would
+      // fail the insert and abort the whole agent edit.
+      const existingWebhookPublicIds = getExistingWebhookPublicIds(
+        existingTriggers.filter((row) => !preservedIds.has(row.id)),
       );
+
+      const newTriggerValues = input.triggers
+        .map((trigger, index) => ({ trigger, matched: matches[index] }))
+        .filter(({ matched }) => !matched)
+        .map(({ trigger }) => {
+          const schedule = normalizeOptionalText(trigger.schedule);
+          return {
+            id: nanoid(),
+            agentId: agent.id,
+            userId,
+            name: trigger.name,
+            kind: trigger.kind,
+            status: trigger.status,
+            conditions: trigger.conditions,
+            schedule,
+            webhookPublicId: getWebhookPublicIdForUpdatedTrigger({
+              trigger,
+              existingWebhookPublicIds,
+            }),
+            nextRunAt: seedNextRunAt({ kind: trigger.kind, schedule, now }),
+            // A replaced/new trigger identity starts fresh — it must not
+            // inherit lastRunAt/lastSkipReason from the row it replaced.
+            lastRunAt: null,
+            lastSkipReason: null,
+          };
+        });
+      if (newTriggerValues.length > 0) {
+        await tx.insert(backgroundAgentTriggers).values(newTriggerValues);
+      }
     }
 
     const triggers = await tx.query.backgroundAgentTriggers.findMany({
@@ -755,6 +835,26 @@ export async function advanceTriggerScheduleState(params: {
       lastRunAt: params.lastRunAt,
       nextRunAt: params.nextRunAt,
       lastSkipReason: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
+/**
+ * Seeds nextRunAt for a legacy schedule trigger row created before #750
+ * (nextRunAt was never set at creation back then). Unlike
+ * advanceTriggerScheduleState this does NOT touch lastRunAt/lastSkipReason —
+ * the trigger has not fired; it is only being given a real due time so the
+ * due-window dispatch can reach it.
+ */
+export async function seedTriggerNextRunAt(params: {
+  triggerId: string;
+  nextRunAt: Date | null;
+}): Promise<void> {
+  await db
+    .update(backgroundAgentTriggers)
+    .set({
+      nextRunAt: params.nextRunAt,
       updatedAt: new Date(),
     })
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
