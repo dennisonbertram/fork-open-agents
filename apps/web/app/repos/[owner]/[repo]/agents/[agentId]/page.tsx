@@ -11,7 +11,10 @@ import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
-import type { TriggerKind } from "@/lib/background-agents/agent-spec";
+import {
+  describeOutputModePermissions,
+  type TriggerKind,
+} from "@/lib/background-agents/agent-spec";
 import { ScheduleVisual } from "../schedule-visual";
 
 // ---- Types ------------------------------------------------------------------
@@ -115,6 +118,22 @@ export default async function AgentDetailPage({
 
   // Derive permissions display
   const permEntries = Object.entries(agent.permissions?.github ?? {});
+
+  // Derive the tools model: the built-in "Standard toolpack" (persisted to
+  // builtinToolNames, null = the default web_fetch-off preset) and the
+  // scoped GitHub capability, whose write/PR access is derived purely from
+  // outputMode — same derivation buildAgentPayload uses, via the shared
+  // describeOutputModePermissions helper so this display never drifts from
+  // what's actually persisted.
+  const builtinToolNames = agent.builtinToolNames ?? null;
+  const toolpackSummary =
+    builtinToolNames === null
+      ? "default toolpack (web_fetch off)"
+      : builtinToolNames.length === 0
+        ? "no built-in tools enabled"
+        : builtinToolNames.join(", ");
+  const githubScopeSummary = describeOutputModePermissions(agent.outputMode);
+  const composioToolkitSlugs = agent.composioToolkitSlugs ?? [];
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
@@ -309,6 +328,37 @@ export default async function AgentDetailPage({
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Tools */}
+        <section className="rounded-md border border-border">
+          <SectionHeader>Tools</SectionHeader>
+          <div className="px-4 py-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  GitHub (scoped to this repo)
+                </p>
+                <p className="mt-1 text-sm">{githubScopeSummary}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Standard toolpack
+                </p>
+                <p className="mt-1 text-sm">{toolpackSummary}</p>
+              </div>
+            </div>
+            {composioToolkitSlugs.length > 0 && (
+              <div className="mt-3">
+                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Other tools (Composio)
+                </p>
+                <p className="mt-1 text-sm">
+                  {composioToolkitSlugs.join(", ")}
+                </p>
               </div>
             )}
           </div>
