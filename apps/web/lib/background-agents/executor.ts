@@ -8,7 +8,6 @@ import {
 } from "@open-agents/agent";
 import {
   connectSandbox,
-  getCurrentBranch,
   type Sandbox,
   type SandboxState,
 } from "@open-agents/sandbox";
@@ -40,24 +39,21 @@ import {
 } from "./store";
 import { DEFAULT_ON_TOOL_NAMES } from "./builtin-toolpack";
 import { resolveComposioToolsForBgRun } from "./composio-tools";
-import {
-  performReadyPullRequest,
-  prepareReadyPullRequestBranch,
-  type ReadyPrRecordEventInput,
-  type ReadyPrRecordOutputInput,
-} from "./ready-pr-runner";
+import { resolveGitHubToolConfig } from "./github-actions";
 import { buildRunSummary } from "./run-summary";
 import {
   persistRunSummary,
   recordSummaryFailedEvent,
 } from "./run-summary-persist";
 import { buildBackgroundCommandObservation } from "./runtime-observability";
-import {
-  buildBackgroundAgentMutationPrompt,
-  buildBackgroundBranchName,
-} from "./ready-pr";
+import { buildBackgroundAgentMutationPrompt } from "./ready-pr";
 import type { NormalizedBackgroundTriggerEvent } from "./types";
 import { resolveWriteScopeRepositoryIds } from "./write-scope";
+import {
+  resolveGitHubActionToolsForBackgroundAgent,
+  type BackgroundAgentGitHubEventInput,
+  type BackgroundAgentGitHubOutputInput,
+} from "@/lib/github/background-agent-tools";
 import { isLearningsAgent } from "@/lib/learnings/builtin-agent";
 import { runLearningsExtraction } from "@/lib/learnings/runner";
 import { createDbLearningsStore } from "@/lib/learnings/store";
@@ -247,8 +243,12 @@ async function runMutationAgent(params: {
   sandboxName: string;
   sandbox: Sandbox;
   prompt: string;
-  /** Optional Composio tools to inject into the agent loop. */
-  composioTools?: import("ai").ToolSet;
+  /**
+   * Merged tool set injected into the agent loop — Composio tools and native
+   * GitHub action tools (resolveGitHubActionToolsForBackgroundAgent), built
+   * once by the caller before the loop starts.
+   */
+  tools?: import("ai").ToolSet;
   /** Pre-approved built-in tool names. null/absent = default policy. */
   allowedBuiltinToolNames?: string[] | null;
 }) {
@@ -301,7 +301,7 @@ async function runMutationAgent(params: {
     const result = await openAgent.generate({
       messages,
       options,
-      ...(params.composioTools ? { tools: params.composioTools } : {}),
+      ...(params.tools ? { tools: params.tools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
     });
     const durationMs = Date.now() - startedAt;
@@ -581,11 +581,20 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
+  // Single source of truth for the agent's effective GitHub tool-action set
+  // (#740) — replaces the old outputMode-based write/read branch. Legacy
+  // outputMode:"ready_pr" agents (no persisted enabledActions) resolve to the
+  // same open_pull_request + comment_on_pr_or_issue capability they had
+  // before, byte-identical.
+  const { enabledActions, requireCiGreenToMerge } =
+    resolveGitHubToolConfig(agent);
+  const needsWrite = enabledActions.length > 0;
+
   const access = await verifyRepoAccess({
     userId: run.userId,
     owner: run.repoOwner,
     repo: run.repoName,
-    requiredUserPermission: agent.outputMode === "ready_pr" ? "write" : "read",
+    requiredUserPermission: needsWrite ? "write" : "read",
   });
   if (!access.ok) {
     await recordFailure({
@@ -773,12 +782,13 @@ export async function executeBackgroundAgentRun(params: {
     }
   }
 
-  // Pre-bound recordEvent/recordOutput callbacks for the extracted ready-PR
-  // runner (ready-pr-runner.ts), which is also called mid-turn by the
-  // github_open_pull_request tool (STEP-5) — the callback shape lets both
-  // callers supply their own run/agent/user attribution without the runner
-  // depending on the store module directly.
-  const recordReadyPrEvent = (event: ReadyPrRecordEventInput) =>
+  // Pre-bound recordEvent/recordOutput callbacks for the native GitHub action
+  // tool set (apps/web/lib/github/background-agent-tools.ts) — every tool
+  // call (comment, open_pull_request, review, merge, push, delete_branch)
+  // reports through these closures with run/agent/user attribution already
+  // filled in, so the tools module never depends on the store module
+  // directly.
+  const recordGitHubToolEvent = (event: BackgroundAgentGitHubEventInput) =>
     recordBackgroundAgentEvent({
       runId: run.id,
       agentId: run.agentId,
@@ -789,28 +799,81 @@ export async function executeBackgroundAgentRun(params: {
       ...event,
     }).then(() => undefined);
 
-  const recordReadyPrOutput = (output: ReadyPrRecordOutputInput) =>
+  const recordGitHubToolOutput = (output: BackgroundAgentGitHubOutputInput) =>
     recordBackgroundAgentOutput({
       runId: run.id,
       userId: run.userId,
       ...output,
     }).then(() => undefined);
 
-  let readyPrBranchName: string | null = null;
-  try {
-    if (agent.outputMode === "ready_pr") {
-      readyPrBranchName = buildBackgroundBranchName({
-        agentName: agent.name,
+  // Resolve the agent's persisted write-scope selection to an explicit,
+  // bounded repo-ID list ONCE, before the agent loop starts — every native
+  // GitHub write tool (open_pull_request, push, merge, etc.) shares this same
+  // bounded list for the whole run. Gated at RUN TIME on the installation's
+  // CURRENT repositorySelection (from `access`, re-fetched fresh by
+  // verifyRepoAccess above) — an installer narrowing the installation after
+  // this agent was configured with a broader scope must fail the run, never
+  // silently narrow it.
+  let writeScopeRepositoryIds: number[] = [access.repositoryId];
+  if (needsWrite) {
+    const writeScopeResult = await resolveWriteScopeRepositoryIds({
+      github: agent.permissions.github,
+      homeRepositoryId: access.repositoryId,
+      installationId: access.installationId,
+      repositorySelection: access.repositorySelection,
+    });
+
+    if (!writeScopeResult.ok) {
+      await recordFailure({
         runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        errorKind: writeScopeResult.errorKind,
+        summary: writeScopeResult.reason,
       });
-
-      await prepareReadyPullRequestBranch({
-        sandbox,
-        branchName: readyPrBranchName,
-        recordEvent: recordReadyPrEvent,
-      });
+      return;
     }
+    writeScopeRepositoryIds = writeScopeResult.repositoryIds;
+  }
 
+  // Build the native GitHub action tool set for this run (empty ToolSet when
+  // enabledActions is empty) and merge it with the resolved Composio tools
+  // into a single `tools` object passed into the agent loop — the model
+  // calls github_* tools mid-turn (e.g. github_open_pull_request) instead of
+  // the executor creating a PR post-hoc.
+  const githubTools = resolveGitHubActionToolsForBackgroundAgent({
+    installationId: access.installationId,
+    repositoryId: access.repositoryId,
+    repositoryIds: writeScopeRepositoryIds,
+    repoOwner: run.repoOwner,
+    repoName: run.repoName,
+    baseBranch: access.defaultBranch,
+    userId: run.userId,
+    agentName: agent.name,
+    runId: run.id,
+    agentId: run.agentId,
+    workflowRunId: params.workflowRunId,
+    requestId: run.requestId,
+    sandboxName,
+    triggerKind: run.triggerKind,
+    checkCommand: agent.checkCommand,
+    sandbox,
+    enabledActions,
+    requireCiGreenToMerge,
+    recordEvent: recordGitHubToolEvent,
+    recordOutput: recordGitHubToolOutput,
+  });
+  const mergedTools: import("ai").ToolSet = {
+    ...resolvedComposioTools,
+    ...githubTools,
+  };
+  const toolsForAgentLoop =
+    Object.keys(mergedTools).length > 0 ? mergedTools : undefined;
+
+  try {
     await runMutationAgent({
       runId: run.id,
       agentId: run.agentId,
@@ -833,8 +896,9 @@ export async function executeBackgroundAgentRun(params: {
         deploymentUrl: run.deploymentUrl,
         payloadSummary: run.payloadSummary,
         checkCommand: agent.checkCommand,
+        enabledActions,
       }),
-      composioTools: resolvedComposioTools,
+      tools: toolsForAgentLoop,
       // A null builtinToolNames means the agent predates (or was created
       // outside) the Standard toolpack UI. Resolve that to the same
       // DEFAULT_ON_TOOL_NAMES preset the builder defaults new agents to and
@@ -846,23 +910,6 @@ export async function executeBackgroundAgentRun(params: {
         ...DEFAULT_ON_TOOL_NAMES,
       ],
     });
-
-    if (agent.outputMode === "ready_pr") {
-      await recordBackgroundAgentEvent({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        eventName: "background-agent.git.branch.resolved",
-        status: "succeeded",
-        summary: "Prepared background-agent PR branch.",
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        payload: {
-          branchName: await getCurrentBranch(sandbox),
-        },
-      });
-    }
   } catch (error) {
     await recordFailure({
       runId: run.id,
@@ -880,7 +927,29 @@ export async function executeBackgroundAgentRun(params: {
     return;
   }
 
-  if (agent.checkCommand?.trim()) {
+  // The checkCommand gate for opening a PR now lives INSIDE the
+  // github_open_pull_request tool's own execute() (STEP-5), enforced before
+  // every PR-opening call. Running the same command again here would
+  // double-run it, so when open_pull_request is enabled the executor-level
+  // check step is skipped entirely — only an observability event is
+  // recorded. When open_pull_request is NOT enabled, the executor-level
+  // check keeps running (and blocking the run on failure) exactly as before,
+  // since no tool call is available to enforce it.
+  if (enabledActions.includes("open_pull_request")) {
+    await recordBackgroundAgentEvent({
+      runId: run.id,
+      agentId: run.agentId,
+      userId: run.userId,
+      eventName: "background-agent.check.completed",
+      status: "skipped",
+      summary: agent.checkCommand?.trim()
+        ? "Check command is enforced inside the github_open_pull_request tool."
+        : "No check command configured.",
+      workflowRunId: params.workflowRunId,
+      requestId: run.requestId,
+      sandboxName,
+    });
+  } else if (agent.checkCommand?.trim()) {
     const checkResult = await execObservedCommand({
       runId: run.id,
       agentId: run.agentId,
@@ -919,158 +988,6 @@ export async function executeBackgroundAgentRun(params: {
       requestId: run.requestId,
       sandboxName,
     });
-  }
-
-  if (agent.outputMode === "ready_pr") {
-    // Resolve the agent's persisted write-scope selection to an explicit,
-    // bounded repo-ID list BEFORE minting the write-scoped commit token.
-    // Gated at RUN TIME on the installation's CURRENT repositorySelection
-    // (from `access`, re-fetched fresh by verifyRepoAccess above) — an
-    // installer narrowing the installation after this agent was configured
-    // with a broader scope must fail the run, never silently narrow it.
-    const writeScopeResult = await resolveWriteScopeRepositoryIds({
-      github: agent.permissions.github,
-      homeRepositoryId: access.repositoryId,
-      installationId: access.installationId,
-      repositorySelection: access.repositorySelection,
-    });
-
-    if (!writeScopeResult.ok) {
-      await recordFailure({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        errorKind: writeScopeResult.errorKind,
-        summary: writeScopeResult.reason,
-      });
-      return;
-    }
-
-    try {
-      const prResult = await performReadyPullRequest({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        sandbox,
-        agentName: agent.name,
-        repoOwner: run.repoOwner,
-        repoName: run.repoName,
-        branchName: readyPrBranchName ?? (await getCurrentBranch(sandbox)),
-        baseBranch: access.defaultBranch,
-        installationId: access.installationId,
-        repositoryId: access.repositoryId,
-        repositoryIds: writeScopeResult.repositoryIds,
-        checkCommand: agent.checkCommand,
-        triggerKind: run.triggerKind,
-        recordEvent: recordReadyPrEvent,
-        recordOutput: recordReadyPrOutput,
-      });
-
-      if (!prResult.success) {
-        // performReadyPullRequest never throws for expected failure modes
-        // (no changes, commit/API failure, missing user token, PR-open
-        // failure) — it returns { success:false, error } instead so the
-        // same function is directly usable as a tool execute() body
-        // (STEP-5). Replicate the pre-extraction outer failure handling
-        // exactly: a "failed" output record plus recordFailure.
-        await recordBackgroundAgentOutput({
-          runId: run.id,
-          userId: run.userId,
-          kind: "ready_pr",
-          status: "failed",
-          payload: {
-            reason: prResult.error ?? "Ready PR output creation failed.",
-          },
-        });
-        await recordFailure({
-          runId: run.id,
-          agentId: run.agentId,
-          userId: run.userId,
-          workflowRunId: params.workflowRunId,
-          requestId: run.requestId,
-          sandboxName,
-          errorKind: "pr_creation_failed",
-          summary: prResult.error ?? "Ready PR output creation failed.",
-        });
-        return;
-      }
-
-      await updateBackgroundAgentRunStatus({
-        runId: run.id,
-        status: "succeeded",
-        workflowRunId: params.workflowRunId,
-        sandboxName,
-        outputUrl: prResult.prUrl ?? null,
-      });
-      await recordBackgroundAgentEvent({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        eventName: "background-agent.run.completed",
-        status: "succeeded",
-        summary: "Background agent created a ready PR with evidence.",
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-      });
-
-      // Summary must not affect run status on failure.
-      try {
-        await buildAndPersistRunSummary({
-          runId: run.id,
-          agentId: run.agentId,
-          userId: run.userId,
-        });
-      } catch (summaryError) {
-        try {
-          await recordSummaryFailedEvent({
-            runId: run.id,
-            agentId: run.agentId,
-            userId: run.userId,
-            error: summaryError,
-          });
-        } catch {
-          // Best-effort; do not re-throw.
-        }
-      }
-      return;
-    } catch (error) {
-      // Unexpected exception from an underlying call (not one of the
-      // expected failure modes above, which performReadyPullRequest now
-      // returns instead of throwing).
-      await recordBackgroundAgentOutput({
-        runId: run.id,
-        userId: run.userId,
-        kind: "ready_pr",
-        status: "failed",
-        payload: {
-          reason:
-            error instanceof Error
-              ? error.message
-              : "Ready PR output creation failed.",
-        },
-      });
-      await recordFailure({
-        runId: run.id,
-        agentId: run.agentId,
-        userId: run.userId,
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        errorKind: "pr_creation_failed",
-        summary:
-          error instanceof Error
-            ? error.message
-            : "Ready PR output creation failed.",
-      });
-      return;
-    }
   }
 
   await updateBackgroundAgentRunStatus({

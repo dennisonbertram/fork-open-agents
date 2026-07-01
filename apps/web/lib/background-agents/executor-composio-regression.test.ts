@@ -234,6 +234,16 @@ mock.module("@/lib/github/pulls", () => ({
     prNumber: 99,
   })),
 }));
+// This suite exercises Composio tool-injection isolation, not the native
+// GitHub action tool set (#740 STEP-9, tested in
+// apps/web/lib/background-agents/executor.test.ts) — mocked as a no-op so
+// these regression assertions about the `tools` param stay scoped to
+// Composio and don't depend on apps/web/lib/github/pulls.ts's
+// getMergeReadiness/mergePullRequest exports, which this file's minimal
+// pulls mock above doesn't provide.
+mock.module("@/lib/github/background-agent-tools", () => ({
+  resolveGitHubActionToolsForBackgroundAgent: mock(() => ({})),
+}));
 mock.module("@/lib/github/token", () => ({
   getGitHubAppUserToken: mock(async () => "user-token"),
 }));

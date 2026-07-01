@@ -43,7 +43,9 @@ describe("background agent ready PR helpers", () => {
     expect(prompt).toContain(
       "You do not have any GitHub write/comment tools enabled for this run.",
     );
-    expect(prompt).toContain("Do not attempt to create, push, or open a pull request");
+    expect(prompt).toContain(
+      "Do not attempt to create, push, or open a pull request",
+    );
     expect(prompt).toContain("bun test");
   });
 
@@ -60,7 +62,7 @@ describe("background agent ready PR helpers", () => {
     });
 
     expect(prompt).toContain('call the "github_open_pull_request" tool');
-    expect(prompt).toContain('call the "github_comment_on_pr_or_issue" tool');
+    expect(prompt).toContain('"github_comment_on_pr_or_issue" tool');
     // Only the enabled actions' guidance is present — merge/push/delete are not.
     expect(prompt).not.toContain("github_merge_pull_request");
     expect(prompt).not.toContain("github_push");

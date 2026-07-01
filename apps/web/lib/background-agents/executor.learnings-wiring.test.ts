@@ -178,6 +178,15 @@ mock.module("@/lib/github/pulls", () => ({
   openPullRequest: mock(async () => ({ success: false })),
 }));
 
+// This suite tests the learnings-agent branch only (returns before the
+// mutation-agent path), so the native GitHub action tool set (#740 STEP-9)
+// is irrelevant here — mocked as a no-op to avoid pulling in
+// apps/web/lib/github/pulls.ts's getMergeReadiness/mergePullRequest exports,
+// which this file's minimal pulls mock above doesn't provide.
+mock.module("@/lib/github/background-agent-tools", () => ({
+  resolveGitHubActionToolsForBackgroundAgent: mock(() => ({})),
+}));
+
 mock.module("@/lib/github/token", () => ({
   getGitHubAppUserToken: mock(async () => "user-token"),
 }));

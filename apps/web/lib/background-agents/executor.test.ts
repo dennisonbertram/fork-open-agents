@@ -558,7 +558,9 @@ describe("executeBackgroundAgentRun", () => {
   test("skips write-scope resolution and injects no GitHub tools for an agent with no enabled GitHub actions, even when writeScopeMode is all_repos", async () => {
     currentAgent = buildAgent({
       outputMode: "none",
-      permissions: { github: { writeScopeMode: "all_repos", enabledActions: [] } },
+      permissions: {
+        github: { writeScopeMode: "all_repos", enabledActions: [] },
+      },
     });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
@@ -575,9 +577,7 @@ describe("executeBackgroundAgentRun", () => {
     // even though writeScopeMode is "all_repos" on the persisted agent.
     expect(listAppInstallationRepositories).not.toHaveBeenCalled();
 
-    expect(resolveGitHubActionToolsForBackgroundAgent).toHaveBeenCalledTimes(
-      1,
-    );
+    expect(resolveGitHubActionToolsForBackgroundAgent).toHaveBeenCalledTimes(1);
     expect(capturedGitHubToolContexts[0]).toMatchObject({
       enabledActions: [],
       repositoryIds: [42],
@@ -679,9 +679,7 @@ describe("executeBackgroundAgentRun", () => {
       workflowRunId: "workflow-1",
     });
 
-    expect(capturedGitHubToolContexts[0]?.repositoryIds).toEqual([
-      7, 42, 100,
-    ]);
+    expect(capturedGitHubToolContexts[0]?.repositoryIds).toEqual([7, 42, 100]);
     const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
       tools?: Record<string, unknown>;
     };
@@ -810,9 +808,10 @@ describe("executeBackgroundAgentRun", () => {
 
     expect(capturedGitHubToolContexts).toHaveLength(1);
     const ctx = capturedGitHubToolContexts[0];
-    expect(Array.isArray(ctx?.repositoryIds)).toBe(true);
-    expect((ctx?.repositoryIds as number[]).length).toBeGreaterThan(0);
-    expect(ctx?.repositoryIds).toEqual([42, 100]);
+    const repositoryIds = ctx?.repositoryIds;
+    expect(Array.isArray(repositoryIds)).toBe(true);
+    expect((repositoryIds as number[]).length).toBeGreaterThan(0);
+    expect(repositoryIds).toEqual([42, 100]);
   });
 
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {

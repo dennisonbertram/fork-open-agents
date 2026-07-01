@@ -250,6 +250,15 @@ mock.module("@/lib/github/commit-intent", () => ({
 mock.module("@/lib/github/pulls", () => ({ openPullRequest }));
 mock.module("@/lib/github/token", () => ({ getGitHubAppUserToken }));
 mock.module("@/lib/github/users", () => ({ getGitHubUserProfile }));
+// This suite exercises Composio tool-injection, not the native GitHub action
+// tool set (#740 STEP-9, tested in
+// apps/web/lib/background-agents/executor.test.ts) — mocked as a no-op so
+// these assertions about the `tools` param stay scoped to Composio and don't
+// depend on apps/web/lib/github/pulls.ts's getMergeReadiness/mergePullRequest
+// exports, which this file's minimal pulls mock above doesn't provide.
+mock.module("@/lib/github/background-agent-tools", () => ({
+  resolveGitHubActionToolsForBackgroundAgent: mock(() => ({})),
+}));
 
 // ---------------------------------------------------------------------------
 // openAgent mock — captures the generate call options
