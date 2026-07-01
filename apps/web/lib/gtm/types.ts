@@ -8,6 +8,15 @@ export const GTM_ERROR_KINDS = [
   "redaction_failed",
   "ledger_append_failed",
   "persistence_failed",
+  "invalid_review_window",
+  "experiment_source_missing",
+  "metric_source_unavailable",
+  "qualitative_source_unavailable",
+  "source_gap",
+  "approval_required",
+  "approval_denied",
+  "dedup_failed",
+  "learning_persistence_failed",
 ] as const;
 export type GtmErrorKind = (typeof GTM_ERROR_KINDS)[number];
 
@@ -36,6 +45,16 @@ export const GTM_EVENT_NAMES = [
   "activation.signal.deduped",
   "activation.issue_draft.created",
   "activation.issue_file.blocked_without_approval",
+  "weekly_review.started",
+  "weekly_review.experiment_summarized",
+  "weekly_review.source_gap_detected",
+  "weekly_review.learning_candidate_extracted",
+  "weekly_review.learning_redaction_blocked",
+  "weekly_review.learning_deduped",
+  "weekly_review.learning_approval_requested",
+  "weekly_review.learning_persisted",
+  "weekly_review.completed",
+  "weekly_review.failed",
 ] as const;
 export type GtmEventName = (typeof GTM_EVENT_NAMES)[number];
 
