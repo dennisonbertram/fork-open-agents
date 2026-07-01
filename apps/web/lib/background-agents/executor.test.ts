@@ -596,6 +596,32 @@ describe("executeBackgroundAgentRun", () => {
     });
   });
 
+  test("regression: mints the write-scoped commit token with repositoryIds, never a lone repositoryId", async () => {
+    currentAgent = buildAgent({
+      outputMode: "ready_pr",
+      checkCommand: "bun test",
+    });
+    currentRun = buildRun({
+      outputKind: "ready_pr",
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const writeMintCall = withScopedInstallationOctokit.mock.calls.find(
+      (call) =>
+        (call[0] as { permissions?: { contents?: string } }).permissions
+          ?.contents === "write",
+    )?.[0] as { repositoryIds?: number[]; repositoryId?: number } | undefined;
+
+    expect(writeMintCall).toBeDefined();
+    expect(writeMintCall?.repositoryIds).toEqual([42]);
+    expect(writeMintCall?.repositoryId).toBeUndefined();
+  });
+
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
     currentAgent = buildAgent({
       outputMode: "ready_pr",
