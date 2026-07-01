@@ -31,6 +31,11 @@ export const GTM_EVENT_NAMES = [
   "gtm.call_action.rejected",
   "gtm.call_action.applied",
   "gtm.call_action.failed",
+  "activation.watcher.scanned",
+  "activation.signal.created",
+  "activation.signal.deduped",
+  "activation.issue_draft.created",
+  "activation.issue_file.blocked_without_approval",
 ] as const;
 export type GtmEventName = (typeof GTM_EVENT_NAMES)[number];
 

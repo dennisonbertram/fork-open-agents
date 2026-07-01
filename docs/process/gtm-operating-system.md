@@ -17,6 +17,8 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `apps/web/lib/gtm-call/*` contains the call prep/debrief extraction and
   persistence boundary. It creates local call artifacts, draft insights, and
   pending approvals before any record update can be applied.
+- `apps/web/lib/gtm-activation/*` contains the private activation watcher
+  classifier, dedupe logic, issue-draft preview, and approval boundary.
 - `GET /api/gtm/brief?window=24h` returns the read-only daily GTM brief.
 - `GET /api/gtm/diagnosis?source=account_work&id=...` returns bounded evidence
   for a single GTM item.
@@ -25,6 +27,9 @@ analytics, and GitHub as bounded integrations behind explicit approval policy.
 - `POST /api/gtm/calls/prep` creates a local call-prep brief artifact.
 - `POST /api/gtm/calls/debrief` ingests notes into a redacted debrief, draft
   insights, and pending approvals for follow-up or GTM record updates.
+- `GET /api/gtm/activation/signals` returns the private activation signal queue.
+- `POST /api/gtm/activation/signals` runs the activation watcher on supplied
+  source snapshots and creates draft signals plus pending issue approvals.
 
 ## Event Vocabulary
 
@@ -49,6 +54,11 @@ Initial `gtm_events.event_name` values:
 - `gtm.call_action.rejected`
 - `gtm.call_action.applied`
 - `gtm.call_action.failed`
+- `activation.watcher.scanned`
+- `activation.signal.created`
+- `activation.signal.deduped`
+- `activation.issue_draft.created`
+- `activation.issue_file.blocked_without_approval`
 
 Each event must include `userId`, `requestId`, `entityKind`, `entityId`,
 `status`, `level`, and `redactionStatus`. Optional correlation fields are
@@ -80,6 +90,10 @@ external system is eligible to mutate.
 Call prep/debrief actions create local call artifacts and draft insights only.
 Follow-up creation, CRM/GTM record updates, and insight promotion remain pending
 approval until an explicit approval decision is recorded.
+
+Activation watcher signals are private operator records. GitHub issue bodies are
+stored only as redacted drafts behind `activation_issue_draft_file` approvals;
+no public GitHub issue is created by the watcher path.
 
 ## Debug Recipes
 
