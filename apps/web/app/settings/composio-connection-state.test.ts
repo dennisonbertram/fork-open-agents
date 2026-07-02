@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   buildToolkitStatusMap,
   getToolkitConnectionState,
+  isToolkitChipFlagged,
 } from "./composio-connection-state";
 import type { ComposioConnectedAccount } from "@/app/api/composio/connected-accounts/route";
 
@@ -28,6 +29,55 @@ describe("buildToolkitStatusMap", () => {
     expect(map.get("gmail")).toBe("ACTIVE");
     expect(map.get("slack")).toBe("EXPIRED");
     expect(map.has("notion")).toBe(false);
+  });
+
+  // Regression for the core reconnect scenario (Codex review, PR #826 P2-B):
+  // a user reconnects an expired toolkit, so the account list now contains
+  // BOTH the old EXPIRED account and the new ACTIVE one for the same slug.
+  // The map must reflect the usable ACTIVE connection regardless of which
+  // account the SDK happens to list first — response order must never
+  // decide the UI state.
+  test("multiple accounts for one slug: ACTIVE wins regardless of order — [EXPIRED, ACTIVE]", () => {
+    const accounts: ComposioConnectedAccount[] = [
+      account({ id: "ca_old", toolkitSlug: "slack", status: "EXPIRED" }),
+      account({ id: "ca_new", toolkitSlug: "slack", status: "ACTIVE" }),
+    ];
+
+    const map = buildToolkitStatusMap(accounts);
+    expect(map.get("slack")).toBe("ACTIVE");
+  });
+
+  test("multiple accounts for one slug: ACTIVE wins regardless of order — [ACTIVE, EXPIRED]", () => {
+    const accounts: ComposioConnectedAccount[] = [
+      account({ id: "ca_new", toolkitSlug: "slack", status: "ACTIVE" }),
+      account({ id: "ca_old", toolkitSlug: "slack", status: "EXPIRED" }),
+    ];
+
+    const map = buildToolkitStatusMap(accounts);
+    expect(map.get("slack")).toBe("ACTIVE");
+  });
+
+  test("multiple accounts for one slug, all EXPIRED -> 'EXPIRED' (no ACTIVE to prefer)", () => {
+    const accounts: ComposioConnectedAccount[] = [
+      account({ id: "ca_1", toolkitSlug: "slack", status: "EXPIRED" }),
+      account({ id: "ca_2", toolkitSlug: "slack", status: "EXPIRED" }),
+    ];
+
+    const map = buildToolkitStatusMap(accounts);
+    expect(map.get("slack")).toBe("EXPIRED");
+  });
+
+  test("multiple accounts for one slug, no ACTIVE/EXPIRED -> last non-priority status observed", () => {
+    const accounts: ComposioConnectedAccount[] = [
+      account({ id: "ca_1", toolkitSlug: "linear", status: "INITIATED" }),
+      account({ id: "ca_2", toolkitSlug: "linear", status: "FAILED" }),
+    ];
+
+    const map = buildToolkitStatusMap(accounts);
+    // Neither ACTIVE nor EXPIRED is present, so this falls outside the
+    // priority rule — any non-ACTIVE, non-EXPIRED status is acceptable here,
+    // but it must not silently become "ACTIVE" or disappear.
+    expect(["INITIATED", "FAILED"]).toContain(map.get("linear"));
   });
 });
 
@@ -104,5 +154,53 @@ describe("getToolkitConnectionState", () => {
         unavailable: true,
       }),
     ).toBe("active");
+  });
+});
+
+// Regression for Codex review, PR #826 P2-A: a selected chip must only be
+// flagged (amber "problem" styling) when it actually needs attention.
+// "active" is a healthy, working connection and must render unflagged, even
+// though it's still a non-null connection state.
+describe("isToolkitChipFlagged", () => {
+  test("'active' state is NOT flagged", () => {
+    expect(isToolkitChipFlagged({ unknown: false, connectionState: "active" })).toBe(
+      false,
+    );
+  });
+
+  test("'expired' state IS flagged", () => {
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: "expired" }),
+    ).toBe(true);
+  });
+
+  test("'not_connected' state IS flagged", () => {
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: "not_connected" }),
+    ).toBe(true);
+  });
+
+  test("'other' state IS flagged", () => {
+    expect(isToolkitChipFlagged({ unknown: false, connectionState: "other" })).toBe(
+      true,
+    );
+  });
+
+  test("'unavailable' state IS flagged", () => {
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: "unavailable" }),
+    ).toBe(true);
+  });
+
+  test("unknown (legacy) slug IS flagged regardless of connectionState", () => {
+    expect(isToolkitChipFlagged({ unknown: true, connectionState: null })).toBe(
+      true,
+    );
+  });
+
+  test("null connectionState (e.g. noAuth toolkit) is NOT flagged", () => {
+    expect(isToolkitChipFlagged({ unknown: false, connectionState: null })).toBe(
+      false,
+    );
   });
 });
