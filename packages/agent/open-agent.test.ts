@@ -165,6 +165,30 @@ describe("openAgent runtime tool policy", () => {
     expect(Object.keys(filteredTools)).not.toContain("read");
   });
 
+  // Regression: manage_background_agent must NOT leak into managed_runtime
+  // when its flag is off, and coordinator coding-tool enforcement must still
+  // hold even when BOTH new tools are enabled together. Guards against a
+  // future change accidentally enabling the tool unconditionally or widening
+  // the allowlist to include direct code-execution tools.
+  test("regression: manage_background_agent is absent without the flag, and coding tools stay removed even with both flags on", () => {
+    const withoutFlags = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime"),
+    );
+    expect(withoutFlags).not.toContain("manage_background_agent");
+    expect(withoutFlags).not.toContain("propose_composio_tool");
+
+    const withBothFlags = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime", undefined, {
+        toolAuthoringEnabled: true,
+        manageAgentEnabled: true,
+      }),
+    );
+    expect(withBothFlags).not.toContain("bash");
+    expect(withBothFlags).not.toContain("read");
+    expect(withBothFlags).not.toContain("write");
+    expect(withBothFlags).not.toContain("edit");
+  });
+
   test("injects managed runtime coordinator instructions into the system prompt", () => {
     const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
 
