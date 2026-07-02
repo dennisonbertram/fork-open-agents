@@ -668,6 +668,7 @@ function NewProfileForm({
         testResults: [],
         testFailureMessage: null,
         testedAt: null,
+        lastTestScope: null,
         createdAt: new Date(),
         updatedAt: new Date(),
       } as SavedProfileRow);
