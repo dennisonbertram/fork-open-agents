@@ -14,7 +14,10 @@ import { AuthCtaError } from "./auth-cta-error";
 describe("AuthCtaError (#786)", () => {
   test("BT-786-020: renders the message and a Try again control", () => {
     const html = renderToStaticMarkup(
-      <AuthCtaError message="Sign-in didn't start. Try again." onRetry={() => {}} />,
+      <AuthCtaError
+        message="Sign-in didn't start. Try again."
+        onRetry={() => {}}
+      />,
     );
 
     expect(html).toContain("Sign-in didn&#x27;t start. Try again.");
@@ -23,7 +26,10 @@ describe("AuthCtaError (#786)", () => {
 
   test("BT-786-021: renders an aria-live polite alert with a real button control", () => {
     const html = renderToStaticMarkup(
-      <AuthCtaError message="Couldn't connect GitHub. Try again." onRetry={() => {}} />,
+      <AuthCtaError
+        message="Couldn't connect GitHub. Try again."
+        onRetry={() => {}}
+      />,
     );
 
     expect(html).toContain('aria-live="polite"');

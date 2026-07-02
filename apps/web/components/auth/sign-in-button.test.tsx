@@ -127,7 +127,9 @@ describe("SignInButton — pending/error/retry (#786)", () => {
 
   test("BT-786-005: idle button click still calls authClient.signIn.social with the resolved callbackURL", async () => {
     const { SignInButton } = await signInButtonModulePromise;
-    renderToStaticMarkup(<SignInButton callbackUrl="/get-started?next=/sessions" />);
+    renderToStaticMarkup(
+      <SignInButton callbackUrl="/get-started?next=/sessions" />,
+    );
 
     // Behavior contract only (no DOM click simulation available): confirms
     // the module import wires the mocked authClient without throwing, and

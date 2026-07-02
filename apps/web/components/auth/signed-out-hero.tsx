@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { AlertCircle } from "lucide-react";
 import { SignInButton } from "@/components/auth/sign-in-button";
 import { AppMockup } from "@/components/landing/app-mockup";
 import { GitHubLink } from "@/components/landing/github-link";
@@ -10,9 +12,31 @@ import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
 
+/**
+ * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
+ * (set via `errorCallbackURL` in `SignInButton`; the code itself is a
+ * better-auth-internal value like `state_mismatch` or
+ * `please_restart_the_process` — deliberately not surfaced to the user, per
+ * the issue's plain-language copy requirement).
+ */
+function SignInDidNotCompleteBanner() {
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-(--l-fg)"
+    >
+      <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <p>Sign-in didn&apos;t complete. Try again below.</p>
+    </div>
+  );
+}
+
 export function SignedOutHero() {
   const heroButtonsRef = useRef<HTMLDivElement>(null);
   const [heroButtonsVisible, setHeroButtonsVisible] = useState(true);
+  const searchParams = useSearchParams();
+  const signInErrorCode = searchParams.get("error");
 
   useEffect(() => {
     const el = heroButtonsRef.current;
@@ -56,6 +80,7 @@ export function SignedOutHero() {
               />
               <GitHubLink>Open Source</GitHubLink>
             </div>
+            {signInErrorCode ? <SignInDidNotCompleteBanner /> : null}
           </div>
 
           <div className="mx-auto mt-12 max-w-[1320px] px-4 sm:px-6 md:mt-20 md:px-0 overflow-hidden">

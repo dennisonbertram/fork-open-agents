@@ -16,7 +16,10 @@ export type AuthCta =
   | "github_link_settings"
   | "github_link_get_started";
 
-export type AuthCtaErrorKind = "provider_rejected" | "network_error" | "unknown";
+export type AuthCtaErrorKind =
+  | "provider_rejected"
+  | "network_error"
+  | "unknown";
 
 export function generateAuthCtaAttemptId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
