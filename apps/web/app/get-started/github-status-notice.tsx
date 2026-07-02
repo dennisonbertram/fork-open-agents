@@ -76,18 +76,24 @@ function contentFor(
         showRetry: false,
       };
     case "not_linked":
+      // No retry CTA: the "Connect GitHub" button rendered below in the
+      // not-linked branch of GitHubConnectStep owns recovery for this status.
+      // Linking retryHref (`/api/github/app/install`) here would bounce a
+      // never-linked user straight back to `github=not_linked` — a loop.
       return {
         severity: "recoverable",
         title: "GitHub account not connected",
         description: "We couldn't confirm a linked GitHub account.",
-        showRetry: true,
+        showRetry: false,
       };
     case "link_failed":
+      // Same reasoning as not_linked: the Connect GitHub button below owns
+      // recovery, so no separate (looping) retry CTA is rendered here.
       return {
         severity: "recoverable",
         title: "Failed to connect GitHub account",
         description: "Something went wrong while linking your account.",
-        showRetry: true,
+        showRetry: false,
       };
     case "invalid_state":
       return {

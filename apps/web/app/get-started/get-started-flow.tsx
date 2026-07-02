@@ -52,11 +52,16 @@ export function GetStartedFlow() {
   const githubStatus = searchParams.get("github") as GitHubConnectStatus | null;
   const missingInstallationId =
     searchParams.get("missing_installation_id") === "1";
-  const isGitHubReconnect = searchParams.get("step") === "github";
+  // Reconnect intent must be explicit: `step=github` alone only means
+  // "auto-open the GitHub step" (see below) — it does not imply the user's
+  // GitHub connection is broken. Only an explicit `reconnect=1` (set by
+  // `buildGitHubReconnectUrl`) forces the reconnect flow.
+  const isGitHubReconnect = searchParams.get("reconnect") === "1";
+  const isGitHubStepParam = searchParams.get("step") === "github";
   // Any github=<status> param present on load auto-opens step 2, regardless
   // of the `step` param — the user is returning from a connect/install
   // attempt and needs to see the outcome, not land back on step 1.
-  const shouldAutoOpenGitHubStep = isGitHubReconnect || githubStatus !== null;
+  const shouldAutoOpenGitHubStep = isGitHubStepParam || githubStatus !== null;
   const redirectPath = sanitizeInternalRedirect(
     searchParams.get("next"),
     "/sessions",
