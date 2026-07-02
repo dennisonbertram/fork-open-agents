@@ -7,68 +7,81 @@ import { db } from "@/lib/db/client";
 import { backgroundAgentToolSessions } from "@/lib/db/schema";
 import { getComposioConfig } from "@/lib/composio/config";
 import { getComposioClient } from "@/lib/composio/client";
-import { toComposioUserId } from "@/lib/composio/user-id";
 import { resolveComposioToolsForToolkitList } from "@/lib/composio/resolve-toolkit-list";
 import { redactComposioErrorMessage } from "@/lib/composio/errors";
+import {
+  listComposioConnectedAccounts,
+  type ComposioConnectedAccount,
+} from "@/lib/composio/connected-accounts";
 import {
   getRepositoryComposioSettings,
   getRepositoryComposioSettingsValues,
 } from "@/lib/db/composio";
 
 // ---------------------------------------------------------------------------
-// Internal: connected-account fetch (mirrors composio/session.ts)
+// Internal: connected-account state (shared helper — full status, one fetch)
 // ---------------------------------------------------------------------------
 
-async function fetchConnectedAccountsByToolkit(
+/**
+ * Fetches the user's full-status connected accounts once (via the shared
+ * `connected-accounts` helper — the ONE place that calls
+ * `connectedAccounts.list`) and derives both:
+ * - `connectedAccountIdsByToolkit`: ACTIVE-only ids grouped by toolkit slug,
+ *   for session-building (existing behavior — only ACTIVE accounts
+ *   authenticate).
+ * - `accountsByToolkit`: the full-status accounts grouped by toolkit slug,
+ *   used to compute expiredToolkits below.
+ */
+async function resolveConnectedAccountState(
   composio: ReturnType<typeof getComposioClient>,
   userId: string,
-): Promise<Record<string, string[]>> {
-  const response = await composio.connectedAccounts.list({
-    userIds: [toComposioUserId(userId)],
-    statuses: ["ACTIVE"],
-  });
+): Promise<{
+  connectedAccountIdsByToolkit: Record<string, string[]>;
+  accountsByToolkit: Record<string, ComposioConnectedAccount[]>;
+}> {
+  const accounts = await listComposioConnectedAccounts({ composio, userId });
 
-  const items: unknown[] = Array.isArray(
-    (response as { items?: unknown }).items,
-  )
-    ? (response as { items: unknown[] }).items
-    : [];
+  const connectedAccountIdsByToolkit: Record<string, string[]> = {};
+  const accountsByToolkit: Record<string, ComposioConnectedAccount[]> = {};
+  for (const account of accounts) {
+    const existingGroup = accountsByToolkit[account.toolkitSlug];
+    if (existingGroup) {
+      existingGroup.push(account);
+    } else {
+      accountsByToolkit[account.toolkitSlug] = [account];
+    }
 
-  const result: Record<string, string[]> = {};
-  for (const item of items) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      typeof (item as Record<string, unknown>).id !== "string"
-    ) {
+    if (account.status !== "ACTIVE") {
       continue;
     }
-    const record = item as Record<string, unknown>;
-    const id = record.id as string;
-
-    const toolkit = record.toolkit;
-    let slug: string | null = null;
-    if (
-      typeof toolkit === "object" &&
-      toolkit !== null &&
-      typeof (toolkit as Record<string, unknown>).slug === "string"
-    ) {
-      slug = (toolkit as Record<string, unknown>).slug as string;
-    } else if (typeof record.toolkitSlug === "string") {
-      slug = record.toolkitSlug;
-    }
-
-    if (!slug) continue;
-
-    const existing = result[slug];
-    if (existing) {
-      existing.push(id);
+    const existingIds = connectedAccountIdsByToolkit[account.toolkitSlug];
+    if (existingIds) {
+      existingIds.push(account.id);
     } else {
-      result[slug] = [id];
+      connectedAccountIdsByToolkit[account.toolkitSlug] = [account.id];
     }
   }
 
-  return result;
+  return { connectedAccountIdsByToolkit, accountsByToolkit };
+}
+
+/**
+ * Selected toolkit slugs whose accounts exist (at least one) but are ALL
+ * status EXPIRED — distinct from "zero accounts at all" (which
+ * resolveComposioToolsForToolkitList already reports via
+ * disconnectedToolkits). (#800)
+ */
+function computeExpiredToolkits(
+  slugs: string[],
+  accountsByToolkit: Record<string, ComposioConnectedAccount[]>,
+): string[] {
+  return slugs.filter((slug) => {
+    const accountsForSlug = accountsByToolkit[slug];
+    if (!accountsForSlug || accountsForSlug.length === 0) {
+      return false;
+    }
+    return accountsForSlug.every((account) => account.status === "EXPIRED");
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -189,13 +202,19 @@ export type ResolveComposioToolsForBgRunParams = {
 /**
  * errorKind taxonomy this resolver can actually produce today.
  *
- * Scoped intentionally: the full cross-surface taxonomy (e.g.
- * "composio_auth_expired") belongs to the honest-connection-state ticket
- * (#800). This resolver only ever hits "composio_missing_api_key" (config
- * gate) or "composio_unknown" (SDK/network failure in the catch block).
+ * "composio_missing_api_key" (config gate) and "composio_unknown"
+ * (SDK/network failure in the catch block) are the two kinds this resolver's
+ * control flow can currently reach. The full cross-surface taxonomy lives in
+ * `apps/web/lib/composio/errors.ts` (#800); this type is intentionally widened
+ * to admit `composio_auth_expired` too so a future wiring of that path (e.g.
+ * surfacing an auth-expiry failure as a typed "error" outcome rather than a
+ * "ready" outcome with expiredToolkits) has a slot without another type
+ * change — but no code path in this file returns it today. Callers must not
+ * assume this union is exhaustively reachable end-to-end yet.
  */
 export type ResolveComposioToolsForBgRunErrorKind =
   | "composio_missing_api_key"
+  | "composio_auth_expired"
   | "composio_unknown";
 
 /**
@@ -214,10 +233,18 @@ export type ResolveComposioToolsForBgRunResult =
       tools: ToolSet;
       toolkitSlugs: string[];
       /**
-       * Selected toolkits with no ACTIVE connected account, threaded from
+       * Selected toolkits with no connected account at all, threaded from
        * resolveComposioToolsForToolkitList instead of being discarded.
        */
       disconnectedToolkits: string[];
+      /**
+       * Selected toolkits whose connected account(s) exist but are ALL
+       * status EXPIRED (none ACTIVE) — distinct from disconnectedToolkits
+       * (zero accounts at all). Computed from the same shared
+       * connected-accounts fetch as disconnectedToolkits/
+       * connectedAccountIdsByToolkit, not a second SDK round-trip. (#800)
+       */
+      expiredToolkits: string[];
     }
   | {
       status: "off";
@@ -282,9 +309,11 @@ export async function resolveComposioToolsForBgRun(
 
   try {
     const composio = getComposioClient();
-    const connectedAccountIdsByToolkit = await fetchConnectedAccountsByToolkit(
-      composio,
-      userId,
+    const { connectedAccountIdsByToolkit, accountsByToolkit } =
+      await resolveConnectedAccountState(composio, userId);
+    const expiredToolkits = computeExpiredToolkits(
+      gatedSlugs,
+      accountsByToolkit,
     );
 
     const resolved = await resolveComposioToolsForToolkitList({
@@ -317,11 +346,21 @@ export async function resolveComposioToolsForBgRun(
       };
     }
 
+    // A toolkit with only EXPIRED accounts still has SOME account, so it
+    // must not double-count in disconnectedToolkits (zero accounts at all)
+    // — expiredToolkits and disconnectedToolkits are mutually exclusive from
+    // the caller's point of view (#800).
+    const expiredSet = new Set(expiredToolkits);
+    const disconnectedToolkits = (resolved.disconnectedToolkits ?? []).filter(
+      (slug) => !expiredSet.has(slug),
+    );
+
     return {
       status: "ready",
       tools: resolved.tools,
       toolkitSlugs: gatedSlugs,
-      disconnectedToolkits: resolved.disconnectedToolkits ?? [],
+      disconnectedToolkits,
+      expiredToolkits,
     };
   } catch (error) {
     // Redacted, user-safe message — never includes raw SDK error text that
