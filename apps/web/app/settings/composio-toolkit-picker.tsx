@@ -21,6 +21,7 @@ import {
 import {
   buildToolkitStatusMap,
   getToolkitConnectionState,
+  isToolkitChipFlagged,
 } from "./composio-connection-state";
 
 export interface ComposioToolkitPickerProps {
@@ -223,7 +224,10 @@ export function ComposioToolkitPicker({
               entry.slug,
               entry.unknown ?? false,
             );
-            const flagged = entry.unknown || Boolean(connectionState);
+            const flagged = isToolkitChipFlagged({
+              unknown: entry.unknown ?? false,
+              connectionState,
+            });
             const chipLabel =
               connectionState === "expired"
                 ? "expired — reconnect"

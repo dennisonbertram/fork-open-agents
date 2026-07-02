@@ -25,17 +25,53 @@ export type ComposioToolkitConnectionState =
   | "unavailable";
 
 /**
- * Builds a slug -> status lookup from the full connected-accounts list. When
- * a toolkit has multiple accounts, the LAST one wins (matches existing
- * `Set`-based "has a connected account" semantics elsewhere in this file
- * tree, which also don't disambiguate multiple accounts per toolkit).
+ * Priority order used to resolve multiple connected accounts for the same
+ * toolkit slug into a single status. A toolkit with both an ACTIVE and an
+ * EXPIRED account (the core reconnect scenario — the user just reconnected
+ * and the old expired account hasn't been cleaned up yet) must always
+ * report ACTIVE: the connection genuinely works, regardless of what order
+ * the SDK happened to list the accounts in.
+ */
+const STATUS_PRIORITY: readonly string[] = ["ACTIVE", "EXPIRED"];
+
+/**
+ * Builds a slug -> status lookup from the full connected-accounts list.
+ *
+ * When a toolkit has multiple accounts, this aggregates by priority instead
+ * of last-write-wins: any ACTIVE account makes the toolkit ACTIVE; failing
+ * that, any EXPIRED account makes it EXPIRED; otherwise the last-seen status
+ * is kept (there is no meaningful priority among the remaining statuses,
+ * e.g. INITIATED vs FAILED, so this preserves the account exactly as before
+ * for the true single-status-of-that-kind case, rather than dropping it).
+ * This makes the result deterministic regardless of the SDK response's
+ * array order (issue #800 P2-B, Codex review on PR #826).
  */
 export function buildToolkitStatusMap(
   accounts: ComposioConnectedAccount[],
 ): Map<string, string> {
   const map = new Map<string, string>();
   for (const account of accounts) {
-    map.set(account.toolkitSlug, account.status);
+    const existing = map.get(account.toolkitSlug);
+    if (existing === undefined) {
+      map.set(account.toolkitSlug, account.status);
+      continue;
+    }
+
+    const existingPriority = STATUS_PRIORITY.indexOf(existing);
+    const nextPriority = STATUS_PRIORITY.indexOf(account.status);
+
+    // Lower index = higher priority; -1 (not in the priority list) always
+    // loses to a status that IS in the list. Between two non-priority
+    // statuses, keep the later one (unchanged pre-fix behavior for that
+    // case — there's no meaningful ranking among them).
+    const existingRank = existingPriority === -1 ? Infinity : existingPriority;
+    const nextRank = nextPriority === -1 ? Infinity : nextPriority;
+
+    if (nextRank < existingRank) {
+      map.set(account.toolkitSlug, account.status);
+    } else if (nextRank === Infinity && existingRank === Infinity) {
+      map.set(account.toolkitSlug, account.status);
+    }
   }
   return map;
 }
@@ -66,4 +102,22 @@ export function getToolkitConnectionState(params: {
   }
 
   return params.unavailable ? "unavailable" : "not_connected";
+}
+
+/**
+ * Whether a selected toolkit chip should render with "problem" (amber
+ * warning) styling. Only states that actually need the user's attention are
+ * flagged — "active" is a healthy, working connection and must render
+ * unflagged even though it is still a non-null connection state (issue
+ * #800 P2-A, Codex review on PR #826: the previous `Boolean(connectionState)`
+ * check flagged every non-null state, including "active").
+ */
+export function isToolkitChipFlagged(params: {
+  unknown: boolean;
+  connectionState: ComposioToolkitConnectionState | null;
+}): boolean {
+  if (params.unknown) {
+    return true;
+  }
+  return params.connectionState !== null && params.connectionState !== "active";
 }

@@ -77,7 +77,9 @@ describe("buildToolkitStatusMap", () => {
     // Neither ACTIVE nor EXPIRED is present, so this falls outside the
     // priority rule — any non-ACTIVE, non-EXPIRED status is acceptable here,
     // but it must not silently become "ACTIVE" or disappear.
-    expect(["INITIATED", "FAILED"]).toContain(map.get("linear"));
+    const status = map.get("linear");
+    expect(status).toBeDefined();
+    expect(["INITIATED", "FAILED"]).toContain(status as string);
   });
 });
 
@@ -163,9 +165,9 @@ describe("getToolkitConnectionState", () => {
 // though it's still a non-null connection state.
 describe("isToolkitChipFlagged", () => {
   test("'active' state is NOT flagged", () => {
-    expect(isToolkitChipFlagged({ unknown: false, connectionState: "active" })).toBe(
-      false,
-    );
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: "active" }),
+    ).toBe(false);
   });
 
   test("'expired' state IS flagged", () => {
@@ -176,14 +178,17 @@ describe("isToolkitChipFlagged", () => {
 
   test("'not_connected' state IS flagged", () => {
     expect(
-      isToolkitChipFlagged({ unknown: false, connectionState: "not_connected" }),
+      isToolkitChipFlagged({
+        unknown: false,
+        connectionState: "not_connected",
+      }),
     ).toBe(true);
   });
 
   test("'other' state IS flagged", () => {
-    expect(isToolkitChipFlagged({ unknown: false, connectionState: "other" })).toBe(
-      true,
-    );
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: "other" }),
+    ).toBe(true);
   });
 
   test("'unavailable' state IS flagged", () => {
@@ -199,8 +204,8 @@ describe("isToolkitChipFlagged", () => {
   });
 
   test("null connectionState (e.g. noAuth toolkit) is NOT flagged", () => {
-    expect(isToolkitChipFlagged({ unknown: false, connectionState: null })).toBe(
-      false,
-    );
+    expect(
+      isToolkitChipFlagged({ unknown: false, connectionState: null }),
+    ).toBe(false);
   });
 });
