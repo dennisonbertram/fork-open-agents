@@ -1,5 +1,7 @@
+import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { logInstallStateRejected } from "@/app/api/github/app/callback/log";
 import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
@@ -7,6 +9,24 @@ import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
+
+function isMatchingState(
+  cookieValue: string | undefined,
+  paramValue: string | null,
+): boolean {
+  if (!(cookieValue && paramValue)) {
+    return false;
+  }
+
+  const cookieBuffer = Buffer.from(cookieValue);
+  const paramBuffer = Buffer.from(paramValue);
+
+  if (cookieBuffer.length !== paramBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(cookieBuffer, paramBuffer);
+}
 
 function parseInstallationId(value: string | null): number | null {
   if (!value) {
@@ -51,6 +71,25 @@ export async function GET(req: Request): Promise<Response> {
     requestUrl.searchParams.get("installation_id"),
   );
   const setupAction = requestUrl.searchParams.get("setup_action");
+
+  const stateCookieValue = cookieStore.get("github_app_install_state")?.value;
+  const stateParamValue = requestUrl.searchParams.get("state");
+
+  if (!isMatchingState(stateCookieValue, stateParamValue)) {
+    logInstallStateRejected({
+      userId: session.user.id,
+      hasCookie: Boolean(stateCookieValue),
+      hasParam: Boolean(stateParamValue),
+    });
+    // invalid_state is a non-success status: reroute to /get-started (with
+    // step=github + next preserved) so the status notice actually renders.
+    const redirectUrl = resolveGitHubReturnTarget(
+      "invalid_state",
+      redirectTo,
+      req.url,
+    );
+    return redirectAndClearCookies(redirectUrl);
+  }
 
   // get the user's github token from better-auth
   const token = await getUserGitHubToken(session.user.id);

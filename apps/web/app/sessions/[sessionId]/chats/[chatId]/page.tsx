@@ -23,6 +23,7 @@ import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getCodeEditorDisabledReason } from "@/lib/managed-runtime/code-editor-gate";
+import { getManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
 import { SessionChatContent } from "./session-chat-content";
@@ -129,11 +130,16 @@ export default async function SessionChatPage({
     getUserPreferences(session.user.id),
     getChatSummariesBySessionId(sessionId, session.user.id),
     listInferenceProfiles(session.user.id),
+    // MR-1 forward-shim (#808): unwrap the resolution union, preserving the
+    // pre-MR-2 fall-back-to-default behavior. MR-2 (#811) replaces this with
+    // fail-closed handling of an unresolvable profile.
     resolveManagedRuntimeProfile({
       userId: session.user.id,
       sessionId,
       profileId: sessionRecord.managedRuntimeProfileId,
-    }),
+    }).then((resolution) =>
+      resolution.ok ? resolution.profile : getManagedRuntimeProfile(),
+    ),
     getChatResponseTimelineMap(chatId),
   ]);
 
