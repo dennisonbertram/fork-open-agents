@@ -9,7 +9,9 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
 import { authClient } from "@/lib/auth/client";
+import type { GitHubConnectStatus } from "@/lib/github/connect-status";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
+import { GitHubStatusNotice } from "./github-status-notice";
 
 type StepId = 1 | 2;
 
@@ -47,16 +49,23 @@ export function GetStartedFlow() {
     hasGitHubAccount,
     hasGitHubInstallations,
   } = useSession();
+  const githubStatus = searchParams.get("github") as GitHubConnectStatus | null;
+  const missingInstallationId =
+    searchParams.get("missing_installation_id") === "1";
   const isGitHubReconnect = searchParams.get("step") === "github";
+  // Any github=<status> param present on load auto-opens step 2, regardless
+  // of the `step` param — the user is returning from a connect/install
+  // attempt and needs to see the outcome, not land back on step 1.
+  const shouldAutoOpenGitHubStep = isGitHubReconnect || githubStatus !== null;
   const redirectPath = sanitizeInternalRedirect(
     searchParams.get("next"),
     "/sessions",
   );
   const [activeStep, setActiveStep] = useState<StepId>(
-    isGitHubReconnect ? 2 : 1,
+    shouldAutoOpenGitHubStep ? 2 : 1,
   );
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(
-    () => new Set(isGitHubReconnect ? [1] : []),
+    () => new Set(shouldAutoOpenGitHubStep ? [1] : []),
   );
 
   const markComplete = useCallback((step: StepId) => {
@@ -178,6 +187,8 @@ export function GetStartedFlow() {
                             hasGitHubInstallations={hasGitHubInstallations}
                             forceReconnect={isGitHubReconnect}
                             redirectPath={redirectPath}
+                            githubStatus={githubStatus}
+                            missingInstallationId={missingInstallationId}
                             onComplete={() => {
                               markComplete(2);
                               router.push(redirectPath);
@@ -260,6 +271,8 @@ function GitHubConnectStep({
   hasGitHubInstallations,
   forceReconnect,
   redirectPath,
+  githubStatus,
+  missingInstallationId,
   onComplete,
 }: {
   session: ReturnType<typeof useSession>["session"];
@@ -268,6 +281,8 @@ function GitHubConnectStep({
   hasGitHubInstallations: boolean;
   forceReconnect: boolean;
   redirectPath: string;
+  githubStatus: GitHubConnectStatus | null;
+  missingInstallationId: boolean;
   onComplete: () => void;
 }) {
   const [isLinking, setIsLinking] = useState(false);
@@ -278,6 +293,14 @@ function GitHubConnectStep({
   const githubInstallHref = `/api/github/app/install?next=${encodeURIComponent(redirectPath)}`;
   const githubPostLinkCallback = `/api/github/post-link?next=${encodeURIComponent(redirectPath)}`;
 
+  const statusNotice = githubStatus ? (
+    <GitHubStatusNotice
+      status={githubStatus}
+      retryHref={githubInstallHref}
+      missingInstallationId={missingInstallationId}
+    />
+  ) : null;
+
   if (loading) {
     return <Skeleton className="h-10 w-full rounded bg-white/5" />;
   }
@@ -285,6 +308,7 @@ function GitHubConnectStep({
   if (isConnected) {
     return (
       <div className="space-y-3">
+        {statusNotice}
         <div className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2.5">
           <div className="flex items-center gap-3">
             {session?.user?.avatar ? (
@@ -328,6 +352,7 @@ function GitHubConnectStep({
     // linked but no app installed
     return (
       <div className="space-y-3">
+        {statusNotice}
         <p className="text-xs text-zinc-500">
           GitHub account linked. Install the GitHub App to grant repo access.
         </p>
@@ -348,6 +373,7 @@ function GitHubConnectStep({
   // not linked
   return (
     <div className="space-y-3">
+      {statusNotice}
       <p className="text-xs text-zinc-500">
         {forceReconnect
           ? "Reconnect your GitHub account to restore repository and installation access."

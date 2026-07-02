@@ -13,10 +13,6 @@ mock.module("next/navigation", () => ({
   }),
 }));
 
-mock.module("next/image", () => ({
-  default: (props: Record<string, unknown>) => <img alt="" {...props} />,
-}));
-
 mock.module("@/hooks/use-session", () => ({
   useSession: () => ({
     session: { user: { id: "user-1", name: "Alice" } },
@@ -45,16 +41,16 @@ describe("GetStartedFlow - github status auto-open", () => {
     // Step 2's panel must be the one in the expanded (grid-rows-[1fr]) state,
     // not collapsed (grid-rows-[0fr]), even though `step` is absent.
     const lowerHtml = html.toLowerCase();
-    const step2PanelStart = lowerHtml.indexOf(
-      '<span class="text-sm font-medium">connect github',
-    );
+    const step2PanelStart = lowerHtml.indexOf(">connect github<");
     expect(step2PanelStart).toBeGreaterThan(-1);
     const panelStart = lowerHtml.lastIndexOf(
       '<div class="border-b border-white/10">',
       step2PanelStart,
     );
     const panelSection = html.slice(panelStart);
-    const gridDivStart = panelSection.indexOf('<div class="grid transition-all');
+    const gridDivStart = panelSection.indexOf(
+      '<div class="grid transition-all',
+    );
     expect(panelSection.slice(gridDivStart, gridDivStart + 200)).toContain(
       "grid-rows-[1fr]",
     );
