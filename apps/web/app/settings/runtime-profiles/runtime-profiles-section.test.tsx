@@ -7,10 +7,12 @@ import {
   DeleteProfileDialog,
   DeleteProfileDialogContent,
   ProfileFormFields,
+  ProfileTemplatePicker,
   RuntimeProfilesSection,
   RuntimeProfilesSignInPrompt,
 } from "./runtime-profiles-section";
 import type { RuntimeProfileFormState } from "./runtime-profile-payload";
+import { validateCreateForm } from "./runtime-profile-payload";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -217,6 +219,71 @@ describe("RuntimeProfilesSection", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// BT: template chooser
+// ---------------------------------------------------------------------------
+
+describe("ProfileTemplatePicker", () => {
+  test("offers the Python 3.12, Node 20 / Bun web app, and Blank templates", () => {
+    const html = renderToStaticMarkup(
+      <ProfileTemplatePicker onSelect={() => {}} />,
+    );
+
+    expect(html).toContain("Python 3.12");
+    expect(html).toContain("Node 20");
+    expect(html).toContain("Blank");
+  });
+
+  test("each template card carries a naive-friendly description", () => {
+    const html = renderToStaticMarkup(
+      <ProfileTemplatePicker onSelect={() => {}} />,
+    );
+
+    expect(html.toLowerCase()).toContain("verifies");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// BT: inline field-level validation (fixes the silent first-create failure)
+// ---------------------------------------------------------------------------
+
+describe("ProfileFormFields inline validation", () => {
+  // BT: given an invalid field (empty verification commands), the form shows
+  // a field-level message and marks the field aria-invalid.
+  test("shows a field-level error for empty verification commands and marks it aria-invalid", () => {
+    const invalidForm = formState({ verificationCommands: [] });
+    const result = validateCreateForm(invalidForm);
+    expect(result.ok).toBe(false);
+
+    const fieldErrors = !result.ok ? result.fieldErrors : {};
+
+    const html = renderToStaticMarkup(
+      <ProfileFormFields
+        fieldErrors={fieldErrors}
+        formState={invalidForm}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain(
+      "Add at least one verification command — this is how the profile proves setup worked",
+    );
+    expect(html).toContain('aria-invalid="true"');
+  });
+
+  test("shows no inline error text when the form is valid", () => {
+    const html = renderToStaticMarkup(
+      <ProfileFormFields
+        fieldErrors={{}}
+        formState={formState()}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(html).not.toContain("Add at least one verification command");
+  });
+});
+
 // ── Regression tests ────────────────────────────────────────────────────────
 
 describe("runtime-profiles-section regression", () => {
@@ -231,6 +298,39 @@ describe("runtime-profiles-section regression", () => {
   // export disappears / stops rendering copy, and this test fails.
   test("RuntimeProfilesSignInPrompt renders non-empty markup", () => {
     const html = renderToStaticMarkup(<RuntimeProfilesSignInPrompt />);
+    expect(html.length).toBeGreaterThan(0);
+  });
+
+  // Regression: the exact silent-first-create path. A valid-looking form
+  // (displayName/description/setupCommands filled) with an empty
+  // verificationCommands list used to make formToCreatePayload throw inside a
+  // swallowed try/catch, leaving the user with no feedback at all. Pinning
+  // this at the ProfileFormFields level: given fieldErrors computed from
+  // validateCreateForm on that exact walk form, the rendered markup must
+  // explain what's missing rather than staying silent.
+  test("REGRESSION: a valid-looking form with empty verification commands renders a field error instead of nothing", () => {
+    const walkForm = formState({ verificationCommands: [] });
+    const result = validateCreateForm(walkForm);
+    expect(result.ok).toBe(false);
+    const fieldErrors = !result.ok ? result.fieldErrors : {};
+
+    const html = renderToStaticMarkup(
+      <ProfileFormFields
+        fieldErrors={fieldErrors}
+        formState={walkForm}
+        onChange={() => {}}
+      />,
+    );
+
+    expect(html.toLowerCase()).toContain("verification command");
+  });
+
+  // Regression: ProfileTemplatePicker must remain exported and non-empty so a
+  // future refactor cannot silently remove the naive-user template path.
+  test("ProfileTemplatePicker renders non-empty markup", () => {
+    const html = renderToStaticMarkup(
+      <ProfileTemplatePicker onSelect={() => {}} />,
+    );
     expect(html.length).toBeGreaterThan(0);
   });
 });
