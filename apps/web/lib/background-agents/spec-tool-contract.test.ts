@@ -965,3 +965,35 @@ describe("previewBackgroundAgentSpec — edge cases", () => {
     }
   });
 });
+
+describe("normalizeAgentDraft legacy outputMode mapping (#748)", () => {
+  test("maps ready_pr to write-capable githubActions and strips the legacy key", () => {
+    const normalized = normalizeAgentDraft({
+      name: "Legacy",
+      outputMode: "ready_pr",
+    });
+    expect("outputMode" in normalized).toBe(false);
+    expect(normalized.githubActions).toEqual({
+      push: true,
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    });
+  });
+
+  test("strips non-ready_pr legacy modes without injecting actions", () => {
+    for (const mode of ["none", "comment", "issue", "notification"]) {
+      const normalized = normalizeAgentDraft({ name: "L", outputMode: mode });
+      expect("outputMode" in normalized).toBe(false);
+      expect("githubActions" in normalized).toBe(false);
+    }
+  });
+
+  test("never overrides an explicit githubActions draft", () => {
+    const normalized = normalizeAgentDraft({
+      outputMode: "ready_pr",
+      githubActions: { comment_on_pr_or_issue: true },
+    });
+    expect(normalized.githubActions).toEqual({ comment_on_pr_or_issue: true });
+    expect("outputMode" in normalized).toBe(false);
+  });
+});
