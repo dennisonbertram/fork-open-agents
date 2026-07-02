@@ -217,4 +217,39 @@ describe("resolveManagedRuntimeProfile", () => {
     expect(result.source).toBe("session");
     expect(userDefaultCalls).toEqual([]);
   });
+
+  // REGRESSION: a profile id scoped to a DIFFERENT session (or deleted
+  // entirely) must never resolve to the built-in default. This is the exact
+  // defect this ticket fixes (profile-resolution.ts:38 before the fix); if a
+  // future change reintroduces a catch-all fallback at the end of
+  // resolveManagedRuntimeProfile, this test fails because it asserts the
+  // union's failure branch instead of accepting any built-in profile shape.
+  test("regression: a profile id scoped to a different session never silently resolves to the built-in default", async () => {
+    // Neither the session-scope store nor the user_default store has this
+    // id — simulating a profile that belongs to someone else's session (the
+    // store's own WHERE clause already filters by sessionId/userId, so a
+    // cross-session id naturally misses both lookups).
+    savedProfileResult = undefined;
+    userDefaultProfileResult = undefined;
+    const { resolveManagedRuntimeProfile } = await modulePromise;
+
+    const result = await resolveManagedRuntimeProfile({
+      userId: "user-1",
+      sessionId: "session-1",
+      profileId: "session-profile-belonging-to-someone-else",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error(
+        "regression failure: resolution silently fell back to a profile instead of failing closed",
+      );
+    }
+    expect(result.kind).toBe("profile_not_found");
+    // Must NOT be any built-in profile id — the historic bug returned
+    // getManagedRuntimeProfile() (the default built-in) with no id/source
+    // signal that anything went wrong.
+    expect(result).not.toHaveProperty("profile");
+    expect(result).not.toHaveProperty("id", "web-bun-agent-browser");
+  });
 });

@@ -92,6 +92,19 @@ describe("rollupFromObservations", () => {
     const status = rollupFromObservations([]);
     expect(status).toBe("blocked");
   });
+
+  // REGRESSION: "running" must take precedence over a required failure that
+  // already happened earlier in the same run (e.g., a required setup
+  // command failed, but a later verification command is still executing).
+  // If a future change flips the precedence order, this test fails because
+  // "running" would incorrectly report "failed" before the run finishes.
+  test("regression: 'running' takes precedence over an earlier required failure in the same observation list", () => {
+    const status = rollupFromObservations([
+      observation({ commandId: "cmd-1", status: "failed", required: true }),
+      observation({ commandId: "cmd-2", status: "running" }),
+    ]);
+    expect(status).toBe("running");
+  });
 });
 
 describe("nextActionFor", () => {

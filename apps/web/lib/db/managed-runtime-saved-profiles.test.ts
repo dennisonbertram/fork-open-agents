@@ -155,6 +155,40 @@ describe("deleteManagedRuntimeSavedProfile — delete lifecycle (Decision D2)", 
     );
     expect(eventArgs.source).toBe("managed_runtime");
   });
+
+  // REGRESSION: deleting a session-scope profile that is NOT the session's
+  // currently active profile must NOT reset runtimeMode or emit the
+  // deleted_active_reset event. Guards against an over-eager reset that
+  // would flip a session back to classic every time ANY of its saved
+  // profiles is deleted, not just the active one.
+  test("regression: does not reset runtimeMode or emit an event when the deleted profile is not the session's active profile", async () => {
+    deletedSavedProfile = {
+      id: "session-profile-inactive",
+      userId: "user-1",
+      sessionId: "session-1",
+      scope: "session",
+    };
+    sessionRow = {
+      id: "session-1",
+      userId: "user-1",
+      runtimeMode: "managed_runtime",
+      // The session is active on a DIFFERENT profile than the one deleted.
+      managedRuntimeProfileId: "session-profile-currently-active",
+    };
+
+    const { deleteManagedRuntimeSavedProfile } = await storeModulePromise;
+
+    const result = await deleteManagedRuntimeSavedProfile({
+      userId: "user-1",
+      sessionId: "session-1",
+      profileId: "session-profile-inactive",
+      fallbackProfileId: "web-bun-agent-browser",
+    });
+
+    expect(result).toBeDefined();
+    expect(result?.sessionsReset).toBe(false);
+    expect(emitSessionEventMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("deleteUserDefaultProfile — preference reset lifecycle (Decision D2)", () => {
