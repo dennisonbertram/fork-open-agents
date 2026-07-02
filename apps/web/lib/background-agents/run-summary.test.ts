@@ -98,7 +98,12 @@ describe("buildRunSummary", () => {
       },
     ];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.headline).toContain("succeeded");
     expect(summary.artifacts.length).toBe(1);
@@ -121,7 +126,12 @@ describe("buildRunSummary", () => {
     const events: MinimalEvent[] = [makeCheckEvent(false)];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.headline).toContain("failed");
     expect(summary.blocked.length).toBeGreaterThan(0);
@@ -151,7 +161,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.blocked.length).toBeGreaterThan(0);
     expect(summary.artifacts).toHaveLength(0);
@@ -167,7 +182,12 @@ describe("buildRunSummary", () => {
     const events: MinimalEvent[] = [makeCheckEvent(true)];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.headline.length).toBeGreaterThan(0);
     // Headline or checked/changed must explicitly communicate no output
@@ -199,7 +219,12 @@ describe("buildRunSummary", () => {
       },
     ];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.artifacts.length).toBe(1);
     const artifact = summary.artifacts[0]!;
@@ -230,7 +255,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     const allText = JSON.stringify(summary);
     expect(allText).not.toContain("SECRET_PROMPT_CONTENT");
@@ -253,7 +283,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     const allText = JSON.stringify(summary);
     // Summary must never include raw stdout of unbounded length
@@ -290,7 +325,12 @@ describe("buildRunSummary", () => {
     }));
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.checked.length).toBeLessThanOrEqual(20);
     expect(summary.changed.length).toBeLessThanOrEqual(20);
@@ -320,7 +360,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     expect(summary.warnings.length).toBeGreaterThan(0);
     expect(summary.warnings[0]).toBeTruthy();
@@ -341,7 +386,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     expect(summary.warnings.some((w) => w.includes("slack"))).toBe(true);
     expect(summary.warnings.some((w) => w.includes("gmail"))).toBe(true);
@@ -366,7 +416,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     expect(
       summary.warnings.some((w) => w.includes("composio_missing_api_key")),
@@ -388,12 +443,17 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
 
     expect(summary.warnings).toHaveLength(0);
   });
 
-  test("BT-012 (#798): run failed before any Composio event was ever recorded → next[] states tools were never resolved, not that they failed", () => {
+  test("BT-012 (#798): run failed before any Composio event was ever recorded, agent HAS composio toolkits configured → next[] states tools were never resolved, not that they failed", () => {
     const run = makeRun({
       status: "failed",
       errorKind: "sandbox_unavailable",
@@ -402,10 +462,64 @@ describe("buildRunSummary", () => {
     const events: MinimalEvent[] = [];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     // No composio-prefixed event exists, so summary must not claim tools failed.
     const combined = [...summary.warnings, ...summary.next].join(" ");
+    expect(combined.toLowerCase()).toContain("never");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Fable review defect fix: BT-012's original fixture had no composioConfigured
+  // guard at all, so the "never resolved" line fired for EVERY failed run with
+  // zero composio events — including the majority of agents that have no
+  // Composio toolkits configured at all. These two tests pin the guarded
+  // behavior explicitly.
+  // ---------------------------------------------------------------------------
+
+  test("BT-014 (#798 defect fix): failed run, zero composio events, agent has NO composio toolkits configured → next[] contains no composio line", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed to start.",
+    });
+    const events: MinimalEvent[] = [];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: false,
+    });
+
+    const combined = [...summary.warnings, ...summary.next].join(" ");
+    expect(combined.toLowerCase()).not.toContain("composio");
+  });
+
+  test("BT-015 (#798 defect fix): failed run, zero composio events, agent HAS composio toolkits configured → the never-resolved line appears", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed to start.",
+    });
+    const events: MinimalEvent[] = [];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
+
+    const combined = [...summary.warnings, ...summary.next].join(" ");
+    expect(combined.toLowerCase()).toContain("composio");
     expect(combined.toLowerCase()).toContain("never");
   });
 
@@ -422,7 +536,12 @@ describe("buildRunSummary", () => {
     }));
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     expect(summary.warnings.length).toBeLessThanOrEqual(20);
     for (const w of summary.warnings) {
@@ -467,7 +586,12 @@ describe("buildRunSummary", () => {
     ];
     const outputs: MinimalOutput[] = [];
 
-    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
 
     // blocked[] carries the real failure reason, not the composio warning.
     expect(summary.blocked.some((b) => b.includes("checks_failed"))).toBe(true);
