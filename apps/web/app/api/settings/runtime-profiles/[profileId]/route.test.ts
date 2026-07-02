@@ -51,7 +51,9 @@ const savedProfile = {
 
 let getProfileResult: typeof savedProfile | undefined = savedProfile;
 let updateProfileResult: typeof savedProfile | undefined = savedProfile;
-let deleteProfileResult: typeof savedProfile | undefined = savedProfile;
+let deleteProfileResult:
+  | ((typeof savedProfile & { preferenceReset: boolean }) | undefined)
+  | undefined = { ...savedProfile, preferenceReset: false };
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authenticatedUser,
@@ -102,7 +104,7 @@ beforeEach(() => {
   authenticatedUser = { ok: true, userId: "user-1" };
   getProfileResult = { ...savedProfile };
   updateProfileResult = { ...savedProfile, displayName: "Updated Profile" };
-  deleteProfileResult = { ...savedProfile };
+  deleteProfileResult = { ...savedProfile, preferenceReset: false };
 });
 
 describe("PATCH /api/settings/runtime-profiles/[profileId]", () => {
@@ -187,6 +189,29 @@ describe("DELETE /api/settings/runtime-profiles/[profileId]", () => {
 
     expect(response.status).toBe(200);
     expect(body.deletedProfileId).toBe("user-profile-1");
+  });
+
+  // RED: today the DELETE route only reads `deletedProfileId` from the store
+  // result — it never surfaces `preferenceReset`, so a caller can't tell
+  // whether deleting this profile reset the user's Preferences default.
+  test("BT-016c: reports preferenceReset:true when the deleted profile was the user's default", async () => {
+    deleteProfileResult = { ...savedProfile, preferenceReset: true };
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(
+      new Request(
+        "http://localhost/api/settings/runtime-profiles/user-profile-1",
+        { method: "DELETE" },
+      ),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      deletedProfileId: string;
+      preferenceReset: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.preferenceReset).toBe(true);
   });
 
   test("BT-016b: returns 404 when profile not found", async () => {

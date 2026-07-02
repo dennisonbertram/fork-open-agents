@@ -18,10 +18,10 @@ import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import {
   getComposioErrorKind,
-  getComposioUserFacingError,
   redactComposioErrorMessage,
 } from "@/lib/composio/errors";
 import { cn } from "@/lib/utils";
+import { selectLikelyIssueSummary } from "./runtime-observability-likely-issue";
 import {
   type ExternalToolUseJson,
   type ManagedRuntimeDirectToolUseJson,
@@ -539,7 +539,7 @@ function LikelyIssue({ events }: { events: SessionEventJson[] }) {
   const composioEvent = events.find(
     (event) =>
       (event.eventName.startsWith("composio.") && event.status === "failed") ||
-      getComposioErrorKind(event.summary) !== "unknown",
+      getComposioErrorKind(event.summary) !== "composio_unknown",
   );
   const failedEvent = events.find((event) => event.status === "failed");
   const issueEvent = composioEvent ?? failedEvent;
@@ -550,10 +550,8 @@ function LikelyIssue({ events }: { events: SessionEventJson[] }) {
 
   const isComposioIssue =
     issueEvent.eventName.startsWith("composio.") ||
-    getComposioErrorKind(issueEvent.summary) !== "unknown";
-  const summary = isComposioIssue
-    ? getComposioUserFacingError(issueEvent.summary)
-    : normalizeEventSummary(issueEvent);
+    getComposioErrorKind(issueEvent.summary) !== "composio_unknown";
+  const summary = selectLikelyIssueSummary(issueEvent, isComposioIssue);
 
   return (
     <Section title="Likely Issue">

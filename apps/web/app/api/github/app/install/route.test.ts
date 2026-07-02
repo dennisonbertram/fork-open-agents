@@ -96,6 +96,47 @@ describe("GET /api/github/app/install", () => {
     expect(redirectUrl.searchParams.get("next")).toBe("/settings/connections");
   });
 
+  // Issue #781: the not_linked redirect to /get-started must carry
+  // step=github so the GitHub step auto-opens on arrival.
+  test("redirects to get-started with step=github when github not linked", async () => {
+    hasLinkedGitHub = false;
+    installations = [];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest(
+        "http://localhost/api/github/app/install?next=/settings/connections",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBeTruthy();
+    const redirectUrl = new URL(location as string);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("not_linked");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+  });
+
+  // Issue #781: app_not_configured redirect targets /get-started (the
+  // default `next` fallback) and must also carry step=github there.
+  test("redirects to get-started with step=github when app is not configured", async () => {
+    process.env.NEXT_PUBLIC_GITHUB_APP_SLUG = "";
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest("http://localhost/api/github/app/install"),
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBeTruthy();
+    const redirectUrl = new URL(location as string);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("app_not_configured");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+  });
+
   test("redirects to github install when linked but no installations", async () => {
     installations = [];
     const { GET } = await routeModulePromise;
