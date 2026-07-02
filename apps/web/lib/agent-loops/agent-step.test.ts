@@ -260,6 +260,35 @@ mock.module("@open-agents/sandbox", () => ({
   ),
 }));
 
+// ── Composio resolver mock (#798 loop parity) ────────────────────────────────
+// Default: "off"/no_slugs_selected so existing tests (which never set
+// node.composioToolkitSlugs) never touch this mock's return shape.
+
+type FakeComposioResult =
+  | {
+      status: "ready";
+      tools: Record<string, unknown>;
+      toolkitSlugs: string[];
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: "no_slugs_selected" | "repo_policy_blocked";
+      blockedSlugs?: string[];
+    }
+  | { status: "error"; errorKind: string; message: string };
+
+const resolveComposioToolsForBgRunMock = mock(
+  async (_params: unknown): Promise<FakeComposioResult> => ({
+    status: "off",
+    reason: "no_slugs_selected",
+  }),
+);
+
+mock.module("@/lib/background-agents/composio-tools", () => ({
+  resolveComposioToolsForBgRun: resolveComposioToolsForBgRunMock,
+}));
+
 // ── openAgent mock ────────────────────────────────────────────────────────────
 
 type OpenAgentGenerateResult = {
@@ -520,6 +549,15 @@ function resetMocks() {
   buildCommitIntentFromSandboxMock.mockClear();
   createCommitMock.mockClear();
   buildCoAuthorMock.mockClear();
+
+  // mockReset (not mockClear) so a per-test mockImplementation override for
+  // the composio resolver does not leak into later tests that rely on the
+  // default off/no_slugs_selected behavior.
+  resolveComposioToolsForBgRunMock.mockReset();
+  resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+    status: "off",
+    reason: "no_slugs_selected",
+  }));
 }
 
 // Import after mocks
@@ -1654,5 +1692,101 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
     expect(totalMsPerCall[totalMsPerCall.length - 1]).toBeLessThan(
       stepTimeoutMs,
     );
+  });
+});
+
+// ── BT-S26/S27/S28 (#798): loop-parity Composio degradation events ──────────
+// Today (pre-#798) an off/error resolver outcome for a loop step is dropped
+// silently — zero events recorded. These tests assert the loop step emits a
+// structured event matching the background-agent executor's vocabulary
+// (agent-loop.step.composio.* prefix, consistent with the existing
+// agent-loop.step.* event family).
+
+describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S26: off outcome (no_slugs_selected) emits agent-loop.step.composio.off", async () => {
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "off",
+      reason: "no_slugs_selected",
+    }));
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["gmail"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const offEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.composio.off",
+    );
+    expect(offEvent).toBeDefined();
+    expect(offEvent?.payload).toMatchObject({ reason: "no_slugs_selected" });
+  });
+
+  test("BT-S27: error outcome emits agent-loop.step.composio.error with errorKind", async () => {
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "error",
+      errorKind: "composio_missing_api_key",
+      message: "Composio tools selected but COMPOSIO_API_KEY is not configured.",
+    }));
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["gmail"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const errorEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.composio.error",
+    );
+    expect(errorEvent).toBeDefined();
+    const payload = errorEvent?.payload as Record<string, unknown>;
+    expect(payload?.["errorKind"]).toBe("composio_missing_api_key");
+  });
+
+  test("BT-S28: ready outcome with disconnectedToolkits emits agent-loop.step.composio.not_connected", async () => {
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "ready",
+      tools: { github_create_issue: { description: "Create a GitHub issue" } },
+      toolkitSlugs: ["github", "slack"],
+      disconnectedToolkits: ["slack"],
+    }));
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["github", "slack"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const notConnectedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.composio.not_connected",
+    );
+    expect(notConnectedEvent).toBeDefined();
+    const payload = notConnectedEvent?.payload as Record<string, unknown>;
+    expect(payload?.["disconnectedToolkits"]).toEqual(["slack"]);
   });
 });

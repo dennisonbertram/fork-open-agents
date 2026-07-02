@@ -298,4 +298,135 @@ describe("buildRunSummary", () => {
     expect(summary.artifacts.length).toBeLessThanOrEqual(20);
     expect(summary.next.length).toBeLessThanOrEqual(20);
   });
+
+  // ---------------------------------------------------------------------------
+  // #798: warnings[] populated from warn-level Composio events, independent
+  // of run.status — the gap this ticket closes: a succeeded run with a
+  // silently-off Composio tool previously showed no evidence at all.
+  // ---------------------------------------------------------------------------
+
+  test("BT-008 (#798): succeeded run with a warn-level composio.off event → warnings[] non-empty", () => {
+    const run = makeRun({ status: "succeeded" });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-composio-off",
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { reason: "no_slugs_selected" },
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    expect(summary.warnings.length).toBeGreaterThan(0);
+    expect(summary.warnings[0]).toBeTruthy();
+  });
+
+  test("BT-009 (#798): succeeded run with a composio.not_connected event → warning names the disconnected toolkits", () => {
+    const run = makeRun({ status: "succeeded" });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-composio-not-connected",
+        eventName: "background-agent.composio.not_connected",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { disconnectedToolkits: ["slack", "gmail"] },
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    expect(summary.warnings.some((w) => w.includes("slack"))).toBe(true);
+    expect(summary.warnings.some((w) => w.includes("gmail"))).toBe(true);
+  });
+
+  test("BT-010 (#798): failed run with a composio.error event (errorKind) → warnings[] includes the errorKind regardless of run.status", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "checks_failed",
+      errorMessage: "Required background-agent check failed.",
+    });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-composio-error",
+        eventName: "background-agent.composio.error",
+        status: "failed",
+        level: "warn",
+        summary: "Composio tool resolution failed.",
+        errorKind: "composio_missing_api_key",
+        payload: {},
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    expect(
+      summary.warnings.some((w) => w.includes("composio_missing_api_key")),
+    ).toBe(true);
+  });
+
+  test("BT-011 (#798): non-Composio warn-level events do not populate warnings[] (scope guard)", () => {
+    const run = makeRun({ status: "succeeded" });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-unrelated-warn",
+        eventName: "background-agent.git.branch.resolved",
+        status: "succeeded",
+        level: "warn",
+        summary: "Some unrelated warning",
+        errorKind: null,
+        payload: {},
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    expect(summary.warnings).toHaveLength(0);
+  });
+
+  test("BT-012 (#798): run failed before any Composio event was ever recorded → next[] states tools were never resolved, not that they failed", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed to start.",
+    });
+    const events: MinimalEvent[] = [];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    // No composio-prefixed event exists, so summary must not claim tools failed.
+    const combined = [...summary.warnings, ...summary.next].join(" ");
+    expect(combined.toLowerCase()).toContain("never");
+  });
+
+  test("BT-013 (#798): warnings[] respects the 20-item cap and 300-char truncation like every other summary array", () => {
+    const run = makeRun({ status: "succeeded" });
+    const events: MinimalEvent[] = Array.from({ length: 30 }, (_, i) => ({
+      id: `ev-warn-${i}`,
+      eventName: "background-agent.composio.off",
+      status: "succeeded",
+      level: "warn",
+      summary: null,
+      errorKind: null,
+      payload: { reason: "no_slugs_selected" as const },
+    }));
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    expect(summary.warnings.length).toBeLessThanOrEqual(20);
+    for (const w of summary.warnings) {
+      expect(w.length).toBeLessThanOrEqual(300);
+    }
+  });
 });

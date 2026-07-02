@@ -6,6 +6,15 @@
  * BT-003: Repo policy / grant gating — disabled grant => composio excluded.
  * BT-004: v1-block removed — customInstructions no longer hard-excludes Composio.
  * BT-005: Observability event emitted with toolkit names, no secrets.
+ *
+ * Issue #798 — degradation visibility:
+ * BT-007: "off" outcome (no_slugs_selected) emits background-agent.composio.off
+ *   with reason payload.
+ * BT-008: "off" outcome (repo_policy_blocked) emits background-agent.composio.off
+ *   with reason + blockedSlugs payload.
+ * BT-009: "error" outcome now carries an errorKind field on the recorded event.
+ * BT-010: "ready" outcome with non-empty disconnectedToolkits emits
+ *   background-agent.composio.not_connected.
  */
 import {
   afterAll,
@@ -682,5 +691,129 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
       ([input]: [StatusUpdateInput]) => input.status,
     );
     expect(statusCalls).toContain("succeeded");
+  });
+
+  /**
+   * BT-007 (#798): resolver returns off/no_slugs_selected → a named event is
+   * recorded instead of the current silent no-op.
+   */
+  test("BT-007: off outcome (no_slugs_selected) emits background-agent.composio.off", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["gmail"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "off" as const,
+      reason: "no_slugs_selected",
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    expect(offEvent).toBeDefined();
+    expect(offEvent?.payload).toMatchObject({ reason: "no_slugs_selected" });
+    expect(offEvent?.level).toBe("warn");
+    // Non-fatal: the run itself still succeeds.
+    expect(offEvent?.status).toBe("succeeded");
+  });
+
+  /**
+   * BT-008 (#798): resolver returns off/repo_policy_blocked with blockedSlugs
+   * → the event payload includes reason and blockedSlugs.
+   */
+  test("BT-008: off outcome (repo_policy_blocked) emits background-agent.composio.off with blockedSlugs", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["gmail"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["gmail"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    expect(offEvent).toBeDefined();
+    expect(offEvent?.payload).toMatchObject({
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["gmail"],
+    });
+  });
+
+  /**
+   * BT-009 (#798): resolver returns status "error" → the recorded event now
+   * includes a non-null errorKind (previously omitted entirely).
+   */
+  test("BT-009: error outcome includes errorKind on the recorded event", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["gmail"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "error" as const,
+      errorKind: "composio_missing_api_key",
+      message: "Composio tools selected but COMPOSIO_API_KEY is not configured.",
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const errorEvent = recordedEvent("background-agent.composio.error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.errorKind).toBe("composio_missing_api_key");
+  });
+
+  /**
+   * BT-010 (#798): resolver returns ready with non-empty disconnectedToolkits
+   * → a new background-agent.composio.not_connected event is recorded naming
+   * the disconnected toolkits, distinct from the .resolved event.
+   */
+  test("BT-010: ready outcome with disconnectedToolkits emits background-agent.composio.not_connected", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["github", "slack"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "ready" as const,
+      tools: fakeComposioTools,
+      toolkitSlugs: ["github", "slack"],
+      disconnectedToolkits: ["slack"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const notConnectedEvent = recordedEvent(
+      "background-agent.composio.not_connected",
+    );
+    expect(notConnectedEvent).toBeDefined();
+    expect(notConnectedEvent?.payload).toMatchObject({
+      disconnectedToolkits: ["slack"],
+    });
+    expect(notConnectedEvent?.level).toBe("warn");
+
+    // The .resolved event still fires — not_connected is additive, not a replacement.
+    const resolvedEvent = recordedEvent("background-agent.composio.resolved");
+    expect(resolvedEvent).toBeDefined();
   });
 });
