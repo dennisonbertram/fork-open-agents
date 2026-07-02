@@ -735,3 +735,43 @@ describe("(e) ready_pr-equivalent flow: push + open_pr toggles", () => {
     });
   });
 });
+
+describe("collectDeniedToolNames (#746 review fix)", () => {
+  test("reports only denials added this round, not prior-round denials still in history", async () => {
+    const { collectDeniedToolNames } = await import("./executor");
+    const oldDenial = {
+      type: "tool-result",
+      toolName: "bash",
+      output: { type: "execution-denied" },
+    };
+    const newDenial = {
+      type: "tool-result",
+      toolName: "web_fetch",
+      output: { type: "execution-denied" },
+    };
+    const priorToolMessage = { role: "tool" as const, content: [oldDenial] };
+    const before = [priorToolMessage];
+    const after = [
+      priorToolMessage,
+      { role: "tool" as const, content: [newDenial] },
+    ];
+
+    expect(
+      collectDeniedToolNames(
+        before as unknown as Parameters<typeof collectDeniedToolNames>[0],
+        after as unknown as Parameters<typeof collectDeniedToolNames>[1],
+      ),
+    ).toEqual(["web_fetch"]);
+  });
+
+  test("returns empty for identical reference", async () => {
+    const { collectDeniedToolNames } = await import("./executor");
+    const messages: unknown[] = [];
+    expect(
+      collectDeniedToolNames(
+        messages as Parameters<typeof collectDeniedToolNames>[0],
+        messages as Parameters<typeof collectDeniedToolNames>[1],
+      ),
+    ).toEqual([]);
+  });
+});

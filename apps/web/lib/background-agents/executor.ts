@@ -580,12 +580,24 @@ async function runBackgroundAgent(params: {
  * execution-denied tool-result messages when it rewrote history), so this
  * inspects the synthetic `tool` messages the sanitizer appended.
  */
-function collectDeniedToolNames(
+export function collectDeniedToolNames(
   before: ModelMessage[],
   after: ModelMessage[],
 ): string[] {
   if (before === after) {
     return [];
+  }
+  // Only report denials the sanitizer added THIS round. Denials from earlier
+  // rounds remain in the message history (same part object references), so
+  // without this exclusion a later denial round would re-emit audit events
+  // for every prior denial.
+  const priorParts = new Set<unknown>();
+  for (const message of before) {
+    if (message.role === "tool" && Array.isArray(message.content)) {
+      for (const part of message.content) {
+        priorParts.add(part);
+      }
+    }
   }
   const names: string[] = [];
   for (const message of after) {
@@ -593,6 +605,9 @@ function collectDeniedToolNames(
       continue;
     }
     for (const part of message.content as Array<Record<string, unknown>>) {
+      if (priorParts.has(part)) {
+        continue;
+      }
       const output = part.output as { type?: string } | undefined;
       if (
         part.type === "tool-result" &&
