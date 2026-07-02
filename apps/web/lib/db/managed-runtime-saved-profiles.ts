@@ -176,10 +176,11 @@ export async function updateManagedRuntimeSavedProfile(params: {
   return profile;
 }
 
-export type DeleteManagedRuntimeSavedProfileResult = ManagedRuntimeSavedProfile & {
-  /** True when an active session referencing this profile was reset. */
-  sessionsReset: boolean;
-};
+export type DeleteManagedRuntimeSavedProfileResult =
+  ManagedRuntimeSavedProfile & {
+    /** True when an active session referencing this profile was reset. */
+    sessionsReset: boolean;
+  };
 
 /**
  * Deletes a session-scope saved profile. Per Decision D2, if the owning
@@ -557,10 +558,7 @@ export async function deleteUserDefaultProfile(params: {
       .where(
         and(
           eq(userPreferences.userId, params.userId),
-          eq(
-            userPreferences.defaultManagedRuntimeProfileId,
-            params.profileId,
-          ),
+          eq(userPreferences.defaultManagedRuntimeProfileId, params.profileId),
         ),
       )
       .returning();

@@ -11,13 +11,6 @@ let sessionRow: Record<string, unknown> | undefined;
 let userPreferencesRow: Record<string, unknown> | undefined;
 let knownProfileLookupResult: Record<string, unknown> | undefined;
 
-const txDeleteWhereMock = mock(() =>
-  Promise.resolve({
-    returning: mock(() =>
-      deletedSavedProfile ? [deletedSavedProfile] : [],
-    ),
-  }),
-);
 const txDeleteMock = mock((_table: unknown) => ({
   where: mock(() => ({
     returning: mock(() => (deletedSavedProfile ? [deletedSavedProfile] : [])),
@@ -27,7 +20,7 @@ const txDeleteMock = mock((_table: unknown) => ({
 const sessionUpdateSetCalls: Array<Record<string, unknown>> = [];
 const preferencesUpdateSetCalls: Array<Record<string, unknown>> = [];
 
-const txUpdateMock = mock((table: unknown) => ({
+const txUpdateMock = mock((_table: unknown) => ({
   set: mock((setVals: Record<string, unknown>) => {
     // Distinguish sessions vs user_preferences updates by shape of setVals.
     if ("runtimeMode" in setVals || "managedRuntimeProfileId" in setVals) {
@@ -147,7 +140,7 @@ describe("deleteManagedRuntimeSavedProfile — delete lifecycle (Decision D2)", 
       managedRuntimeProfileId: "web-bun-agent-browser",
     });
     expect(emitSessionEventMock).toHaveBeenCalledTimes(1);
-    const [eventArgs] = emitSessionEventMock.mock.calls[0] as [
+    const [eventArgs] = emitSessionEventMock.mock.calls[0] as unknown as [
       Record<string, unknown>,
     ];
     expect(eventArgs.eventName).toBe(
@@ -225,7 +218,7 @@ describe("deleteUserDefaultProfile — preference reset lifecycle (Decision D2)"
     // FK). The API response's preferenceReset:true field is the durable
     // evidence surface for callers.
     expect(consoleInfoMock).toHaveBeenCalledTimes(1);
-    const [, logPayload] = consoleInfoMock.mock.calls[0] as [
+    const [, logPayload] = consoleInfoMock.mock.calls[0] as unknown as [
       string,
       Record<string, unknown>,
     ];
