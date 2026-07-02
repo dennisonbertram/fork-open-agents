@@ -433,9 +433,6 @@ export function AccountsSection() {
   );
 
   const tokenExpired = connectionData?.tokenExpired ?? false;
-  const manageUrl = getGitHubManageUrl(
-    process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
-  );
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([mutateConnection(), refreshConnectionStatus()]);
@@ -518,7 +515,7 @@ export function AccountsSection() {
           <DialogHeader>
             <DialogTitle>Disconnect GitHub?</DialogTitle>
             <DialogDescription>
-              <AccountsDisconnectDialogBody manageUrl={manageUrl} />
+              <AccountsDisconnectDialogBody />
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
