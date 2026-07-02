@@ -651,12 +651,22 @@ describe("BackgroundAgentsSection", () => {
   test("ISSUE-229: permissions summary renders derived grants by enabled githubActions", async () => {
     const { PermissionsSummary } = await componentModulePromise;
 
-    const readOnlyHtml = renderToStaticMarkup(
+    // Comment-only agents are NOT read-only: commenting is a GitHub write
+    // (issues:write token + write-scope gate). The summary must say so.
+    const commentsOnlyHtml = renderToStaticMarkup(
       <PermissionsSummary githubActions={{ comment_on_pr_or_issue: true }} />,
     );
-    expect(readOnlyHtml).toContain("Permissions summary");
-    expect(readOnlyHtml).toContain("GitHub contents: ");
-    expect(readOnlyHtml).toContain("Pull requests: ");
+    expect(commentsOnlyHtml).toContain("Permissions summary");
+    expect(commentsOnlyHtml).toContain("GitHub contents: ");
+    expect(commentsOnlyHtml).toContain("Pull requests: ");
+    expect(commentsOnlyHtml).toContain("comments only");
+    expect(commentsOnlyHtml).toContain("write access to the repo");
+    expect(commentsOnlyHtml).not.toContain("read-only");
+
+    // A truly no-action agent IS read-only.
+    const readOnlyHtml = renderToStaticMarkup(
+      <PermissionsSummary githubActions={{}} />,
+    );
     expect(readOnlyHtml).toContain("read-only");
     expect(readOnlyHtml).not.toContain("write access");
 
