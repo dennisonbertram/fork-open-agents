@@ -39,6 +39,21 @@ describe("AccountsDisconnectDialogBody (#789)", () => {
     expect(html).toContain("Manage installations on GitHub");
   });
 
+  test("links to the Installed GitHub Apps settings page, not the OAuth app authorization page (#828)", () => {
+    // The dialog must send the user to https://github.com/settings/installations
+    // (where uninstalling the GitHub App actually happens), not to
+    // /settings/connections/applications/<client_id> (the OAuth grant review
+    // page returned by getGitHubManageUrl), which does not offer app uninstall.
+    const html = renderToStaticMarkup(
+      <AccountsDisconnectDialogBody manageUrl="https://github.com/settings/connections/applications/abc123" />,
+    );
+
+    expect(html).toContain('href="https://github.com/settings/installations"');
+    expect(html).not.toContain(
+      'href="https://github.com/settings/connections/applications/abc123"',
+    );
+  });
+
   test("gracefully omits the link when manageUrl is unavailable (e.g. missing NEXT_PUBLIC_GITHUB_CLIENT_ID)", () => {
     const html = renderToStaticMarkup(
       <AccountsDisconnectDialogBody manageUrl={null} />,
