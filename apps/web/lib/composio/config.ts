@@ -62,7 +62,12 @@ export function getComposioConfiguredStatus(): ComposioServiceStatus {
     configured: true,
     available: true,
     reason: "ok",
-    message: "Composio is configured.",
+    // "Configured" only means COMPOSIO_API_KEY is present in this
+    // deployment's env — it is NOT a live health check, so this copy must
+    // not read as "verified working" (issue #800). Run a live check
+    // (?live=1) to confirm connectivity.
+    message:
+      "Composio is configured. Run a live check to confirm it's working.",
   };
 }
 
@@ -74,7 +79,8 @@ export function getComposioUnavailableStatus(
   return {
     configured: true,
     available: false,
-    reason: kind === "invalid_api_key" ? "invalid_api_key" : "unreachable",
+    reason:
+      kind === "composio_invalid_api_key" ? "invalid_api_key" : "unreachable",
     message: getComposioUserFacingError(error),
   };
 }
