@@ -16,6 +16,7 @@ import { start } from "workflow/api";
 import { runAgentLoopStepWorkflow } from "@/app/workflows/agent-loop-step";
 import type { AgentLoop, BackgroundAgentTrigger } from "@/lib/db/schema";
 import {
+  conditionallyTransitionRunStatus,
   createAgentLoopRun,
   createAgentLoopStepRun,
   getOwnedAgentLoop,
@@ -43,6 +44,7 @@ export type LoopDispatchResult =
       runId?: undefined;
       created?: undefined;
       activeRunId?: undefined;
+      dispatchFailed?: undefined;
     }
   | {
       skipped: true;
@@ -51,12 +53,30 @@ export type LoopDispatchResult =
       created?: undefined;
       /** The id of the existing active/paused run that caused the skip. */
       activeRunId: string;
+      dispatchFailed?: undefined;
     }
   | {
       skipped?: false;
       reason?: undefined;
       created: boolean;
       runId: string;
+      activeRunId?: undefined;
+      dispatchFailed?: undefined;
+    }
+  | {
+      /**
+       * The run was created but the initial workflow dispatch (`start()`)
+       * threw. The run row has already been transitioned to `failed` with
+       * `errorKind: "dispatch_failed"` — callers MUST NOT report success
+       * (issue #763 — "no false success").
+       */
+      dispatchFailed: true;
+      errorKind: "dispatch_failed";
+      errorMessage: string;
+      runId: string;
+      skipped?: undefined;
+      reason?: undefined;
+      created?: undefined;
       activeRunId?: undefined;
     };
 
@@ -274,7 +294,13 @@ async function dispatchLoopRun(params: {
       requestId: requestId ?? null,
     });
   } catch (err) {
-    // Dispatch failure: run stays queued (recoverable via stall sweep / pause→resume)
+    // Dispatch failure (issue #763 — "no false success"): the run must be
+    // marked failed with a typed errorKind, and the caller must receive a
+    // typed failure result instead of {created: true}. The
+    // agent-loop.chain.dispatch_failed event still fires unconditionally
+    // (audit trail).
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
     await recordAgentLoopEvent({
       loopRunId,
       stepRunId: stepRun.id,
@@ -286,11 +312,27 @@ async function dispatchLoopRun(params: {
       payload: {
         stepRunId: stepRun.id,
         nodeId: startNode.id,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
       },
       requestId: requestId ?? null,
     });
-    // Do NOT fail the run — leave queued so stall sweep can recover.
+
+    const humanErrorMessage = `Couldn't start the run — the execution backend rejected the dispatch: ${errorMessage}`;
+
+    await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running"],
+      errorKind: "dispatch_failed",
+      errorMessage: humanErrorMessage,
+    });
+
+    return {
+      dispatchFailed: true,
+      errorKind: "dispatch_failed",
+      errorMessage: humanErrorMessage,
+      runId: loopRunId,
+    };
   }
 
   return { created: true, runId: loopRunId };

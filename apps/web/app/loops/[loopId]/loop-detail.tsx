@@ -159,6 +159,23 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         return;
       }
 
+      if (res.status === 502) {
+        // Issue #763 — no false success: the execution backend rejected the
+        // dispatch. The run was created but is already marked failed —
+        // surface the real state and point at the run page for details.
+        const body = (await res.json().catch(() => ({}))) as {
+          errorKind?: string;
+          runId?: string;
+        };
+        toast.error(
+          "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.",
+        );
+        if (body.runId) {
+          router.push(`/loops/${loopId}/runs/${body.runId}`);
+        }
+        return;
+      }
+
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
           message?: string;

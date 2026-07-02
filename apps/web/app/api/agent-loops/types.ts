@@ -61,6 +61,19 @@ export type StartAgentLoopRunResponse = {
   created: boolean;
 };
 
+/**
+ * 502 response shape when the initial workflow dispatch throws (issue #763 —
+ * "no false success"). The run row has already been marked `failed` with
+ * `errorKind: "dispatch_failed"`; the client must not treat this as a
+ * successful start.
+ */
+export type StartAgentLoopRunDispatchFailedResponse = {
+  success: false;
+  errorKind: "dispatch_failed";
+  message: string;
+  runId: string;
+};
+
 export type ListAgentLoopRunsResponse = {
   runs: AgentLoopRun[];
 };
@@ -97,9 +110,23 @@ export type GetAgentLoopRunDetailResponse = {
 
 // ── Control plane ─────────────────────────────────────────────────────────────
 
-export type AgentLoopRunControlResponse = {
-  success: true;
-};
+/**
+ * Response shape for pause/cancel/resume/retry control routes.
+ *
+ * The success case is `{ success: true }` (200). resume and retry can also
+ * fail with a typed dispatch failure (issue #763 — "no false success") when
+ * the state transition succeeded but the workflow dispatch itself threw:
+ * the route returns 502 with `{ success: false, errorKind: "dispatch_failed" }`
+ * instead of silently reporting success. The run row is already marked
+ * `failed` with `errorKind: "dispatch_failed"` in this case.
+ */
+export type AgentLoopRunControlResponse =
+  | { success: true }
+  | {
+      success: false;
+      errorKind: "dispatch_failed";
+      message: string;
+    };
 
 // ── Readiness ─────────────────────────────────────────────────────────────────
 

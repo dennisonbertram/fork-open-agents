@@ -8,6 +8,9 @@
  * - REGRESSION-326-002: feature-disabled gate blocks manual start even with valid ownership
  * - REGRESSION-326-003: skipped dispatch does not leak a runId into the caller's result
  * - REGRESSION-326-004: dispatchManualAgentLoopStart active_run check fires before createAgentLoopRun
+ * - REGRESSION-763-001: a dispatch-failed run is marked "failed" (not left "queued"), so
+ *   hasActiveRunForLoop's active-status set (queued/running/paused) no longer counts it —
+ *   a fresh "Run now" is not blocked by the zombie queued run (issue #763).
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -84,6 +87,20 @@ const setInitialStepPointer = mock(
   }),
 );
 
+let runStatusAfterTransition: string | null = null;
+const conditionallyTransitionRunStatus = mock(
+  async (params: {
+    runId: string;
+    toStatus: string;
+    fromStatuses: string[];
+    errorKind?: string | null;
+    errorMessage?: string | null;
+  }) => {
+    runStatusAfterTransition = params.toStatus;
+    return { id: params.runId, status: params.toStatus };
+  },
+);
+
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun,
   hasActiveRunForLoop,
@@ -93,14 +110,20 @@ mock.module("@/lib/agent-loops/store", () => ({
   recordAgentLoopEvent,
   setInitialStepPointer,
   updateAgentLoopRunContext: mock(async () => undefined),
-  conditionallyTransitionRunStatus: mock(async () => null),
+  conditionallyTransitionRunStatus,
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
 }));
 
 // ── Workflow mock ─────────────────────────────────────────────────────────────
 
-const start = mock(async () => ({ runId: "wf-run-1" }));
+let workflowStartShouldThrow = false;
+const start = mock(async () => {
+  if (workflowStartShouldThrow) {
+    throw new Error("Workflow dispatch failed");
+  }
+  return { runId: "wf-run-1" };
+});
 const runAgentLoopStepWorkflow = {};
 mock.module("workflow/api", () => ({ start }));
 mock.module("@/app/workflows/agent-loop-step", () => ({
@@ -198,6 +221,8 @@ function resetMocks() {
   loopsEnabled = true;
   hasActiveRunResult = false;
   createRunCallCount = 0;
+  workflowStartShouldThrow = false;
+  runStatusAfterTransition = null;
   start.mockClear();
   createAgentLoopRun.mockClear();
   hasActiveRunForLoop.mockClear();
@@ -206,6 +231,7 @@ function resetMocks() {
   updateAgentLoopRunStatus.mockClear();
   recordAgentLoopEvent.mockClear();
   setInitialStepPointer.mockClear();
+  conditionallyTransitionRunStatus.mockClear();
 }
 
 describe("REGRESSION-326: loop dispatch gate order and result shape", () => {
@@ -294,5 +320,37 @@ describe("REGRESSION-326: loop dispatch gate order and result shape", () => {
     expect(hasActiveRunForLoop).toHaveBeenCalledWith("loop-1");
     // createAgentLoopRun must NOT have been called
     expect(createAgentLoopRun).not.toHaveBeenCalled();
+  });
+});
+
+describe("REGRESSION-763: dispatch-failed run is marked failed, not left as a zombie queued run", () => {
+  beforeEach(resetMocks);
+
+  test("REGRESSION-763-001: initial dispatch throw transitions the run to 'failed' (not 'queued') — hasActiveRunForLoop's active-status set therefore excludes it, so a fresh Run now is not blocked", async () => {
+    // If this regresses: the run stays "queued" after a dispatch failure (the
+    // pre-#763 behavior), which is one of the three active statuses
+    // (queued/running/paused) hasActiveRunForLoop checks — so a subsequent
+    // "Run now" click would be wrongly blocked by a zombie queued run that
+    // will never progress (its workflow was never dispatched).
+    workflowStartShouldThrow = true;
+    const { dispatchManualAgentLoopStart } = await bridgeModulePromise;
+
+    const result = await dispatchManualAgentLoopStart({
+      userId: "user-1",
+      loopId: "loop-1",
+      requestId: "req-regression-763",
+    });
+
+    // Typed dispatch failure, not {created: true}
+    expect((result as { dispatchFailed?: boolean }).dispatchFailed).toBe(true);
+
+    // The run row's status transition must target "failed" — one of the
+    // terminal statuses hasActiveRunForLoop's activeStatuses set
+    // (queued/running/paused) explicitly excludes.
+    expect(conditionallyTransitionRunStatus).toHaveBeenCalledTimes(1);
+    expect(runStatusAfterTransition).toBe("failed");
+
+    const ACTIVE_STATUSES = new Set(["queued", "running", "paused"]);
+    expect(ACTIVE_STATUSES.has(runStatusAfterTransition as string)).toBe(false);
   });
 });

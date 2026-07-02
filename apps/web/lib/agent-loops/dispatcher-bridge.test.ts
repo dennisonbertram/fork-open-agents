@@ -11,7 +11,8 @@
  * BT-326-08: manual start happy path
  * BT-326-09: manual start ownership fail
  * BT-326-10: manual start active-run signal (409-style)
- * BT-326-11: dispatch-throw leaves run queued (recoverable)
+ * BT-326-11: dispatch-throw marks the run failed with errorKind=dispatch_failed
+ *             and returns a typed dispatchFailed result (issue #763 — no false success)
  * BT-326-12: cron sweep includes due loop trigger + updates nextRunAt
  * BT-326-13: agent-trigger path unchanged (existing suite behavior)
  */
@@ -78,6 +79,15 @@ const setInitialStepPointer = mock(
     id: "loop-run-1",
   }),
 );
+const conditionallyTransitionRunStatus = mock(
+  async (_params: {
+    runId: string;
+    toStatus: string;
+    fromStatuses: string[];
+    errorKind?: string | null;
+    errorMessage?: string | null;
+  }) => ({ id: "loop-run-1", status: _params.toStatus }),
+);
 
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun,
@@ -88,7 +98,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   recordAgentLoopEvent,
   setInitialStepPointer,
   updateAgentLoopRunContext: mock(async () => undefined),
-  conditionallyTransitionRunStatus: mock(async () => null),
+  conditionallyTransitionRunStatus,
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
 }));
@@ -244,6 +254,7 @@ function resetMocks() {
   updateAgentLoopRunStatus.mockClear();
   recordAgentLoopEvent.mockClear();
   setInitialStepPointer.mockClear();
+  conditionallyTransitionRunStatus.mockClear();
 }
 
 // ── BT-326-01: happy path — trigger matches, run created, workflow dispatched ──
@@ -425,8 +436,8 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  // BT-326-11: dispatch-throw leaves run queued (recoverable)
-  test("BT-326-11: workflow dispatch throws — run stays queued, chain_dispatch_failed event recorded", async () => {
+  // BT-326-11: dispatch-throw marks the run failed (no false success)
+  test("BT-326-11: workflow dispatch throws — run marked failed with errorKind=dispatch_failed, typed failure returned", async () => {
     workflowStartShouldThrow = true;
     const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
 
@@ -437,14 +448,35 @@ describe("dispatchLoopRunForTrigger", () => {
       requestId: "req-011",
     });
 
-    // Run was created
-    expect(result.created).toBe(true);
-    expect(result.runId).toBe("loop-run-1");
+    // Result must be a typed dispatch failure, NOT { created: true }
+    expect(result.created).toBeUndefined();
+    expect((result as { dispatchFailed?: boolean }).dispatchFailed).toBe(true);
+    expect((result as { errorKind?: string }).errorKind).toBe(
+      "dispatch_failed",
+    );
+    expect(typeof (result as { errorMessage?: string }).errorMessage).toBe(
+      "string",
+    );
+    expect((result as { runId?: string }).runId).toBe("loop-run-1");
 
-    // Run stays in queued (not failed)
-    expect(updateAgentLoopRunStatus).not.toHaveBeenCalled();
+    // Run row transitioned to failed with errorKind/errorMessage set
+    expect(conditionallyTransitionRunStatus).toHaveBeenCalledTimes(1);
+    const transitionCall = (
+      conditionallyTransitionRunStatus.mock.calls[0] as unknown as [
+        {
+          runId: string;
+          toStatus: string;
+          errorKind?: string | null;
+          errorMessage?: string | null;
+        },
+      ]
+    )[0];
+    expect(transitionCall.runId).toBe("loop-run-1");
+    expect(transitionCall.toStatus).toBe("failed");
+    expect(transitionCall.errorKind).toBe("dispatch_failed");
+    expect(typeof transitionCall.errorMessage).toBe("string");
 
-    // dispatch_failed event recorded
+    // dispatch_failed event still fires unconditionally (audit trail)
     const eventNames = (
       recordAgentLoopEvent.mock.calls as unknown as { eventName: string }[][]
     ).map((c) => c[0]!.eventName);
