@@ -220,6 +220,9 @@ const reviewPrsAndComment: LoopTemplate = {
         position: { x: 260, y: 0 },
         instructions:
           'List the repository\'s open pull requests (`gh pr list`). Write {"prs":[{"number": <n>, "title": "..."}]} to /tmp/loop-step-output.json.',
+        // `gh pr list` needs pull-request read; the default minted token
+        // carries contents-only scopes (lib/agent-loops/token-permissions.ts).
+        permissions: { github: { pullRequests: "read" } },
       },
       {
         id: "review",
@@ -227,7 +230,9 @@ const reviewPrsAndComment: LoopTemplate = {
         label: "Review and comment",
         position: { x: 520, y: 0 },
         instructions:
-          'For each PR in context.list.prs, review the diff and leave a review comment summarizing findings (`gh pr review --comment --body "..."`). Do NOT approve, request changes, merge, or open any PR. Write {"commented": <count>} to /tmp/loop-step-output.json.',
+          'For each PR in context.list.prs, review its diff and leave a review comment summarizing findings, targeting it by number: `gh pr review <number> --comment --body "..."` (without a number, gh reviews the current branch\'s PR — wrong here). Do NOT approve, request changes, merge, or open any PR. Write {"commented": <count>} to /tmp/loop-step-output.json.',
+        // Creating a PR review requires pull-request WRITE on the minted token.
+        permissions: { github: { pullRequests: "write" } },
       },
       { id: "end", kind: "end", label: "Done", position: { x: 780, y: 0 } },
     ],
