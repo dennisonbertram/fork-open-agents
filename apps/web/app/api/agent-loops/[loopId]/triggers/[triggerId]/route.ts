@@ -81,6 +81,26 @@ export async function PATCH(
     );
   }
 
+  // A schedule.cron trigger with no schedule can never fire — reject
+  // clearing it (kind lives on the stored row, so the schema alone cannot
+  // enforce this). Only costs a lookup on the rare clearing path.
+  const clearsSchedule =
+    "schedule" in parsed.data &&
+    (parsed.data.schedule === null || parsed.data.schedule?.trim() === "");
+  if (clearsSchedule) {
+    const existing = await getOwnedLoopTrigger({ loopId, triggerId });
+    if (existing?.kind === "schedule.cron") {
+      return Response.json(
+        {
+          errorKind: "trigger_invalid",
+          message:
+            "A schedule trigger needs a schedule. Provide a new cron expression instead of clearing it, or delete the trigger.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   const trigger = await updateLoopTrigger({
     loopId,
     triggerId,

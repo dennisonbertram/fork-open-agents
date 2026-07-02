@@ -117,6 +117,8 @@ describe("PATCH /api/agent-loops/[loopId]/triggers/[triggerId]", () => {
     getOwnedAgentLoop.mockImplementation(async () => loopFixture);
     updateLoopTrigger.mockClear();
     updateLoopTrigger.mockImplementation(async () => triggerFixture);
+    getOwnedLoopTrigger.mockClear();
+    getOwnedLoopTrigger.mockImplementation(async () => triggerFixture);
   });
 
   test("BT-762-T1: requires authentication", async () => {
@@ -175,6 +177,42 @@ describe("PATCH /api/agent-loops/[loopId]/triggers/[triggerId]", () => {
         input: expect.objectContaining({ status: "disabled" }),
       }),
     );
+  });
+
+  test("BT-762-T8: rejects clearing the schedule on a schedule.cron trigger (400, no update)", async () => {
+    // triggerFixture.kind is "schedule.cron" — clearing its schedule would
+    // persist a schedule trigger with schedule:null / nextRunAt:null that can
+    // never fire (Codex finding on PR #773).
+    const { PATCH } = await routeModulePromise;
+    for (const cleared of [null, ""]) {
+      updateLoopTrigger.mockClear();
+      const response = await PATCH(
+        patchRequest({ schedule: cleared }),
+        context(),
+      );
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.errorKind).toBe("trigger_invalid");
+      expect(updateLoopTrigger).not.toHaveBeenCalled();
+    }
+  });
+
+  test("BT-762-T9: clearing schedule on an event-kind trigger is not blocked by the cron guard", async () => {
+    getOwnedLoopTrigger.mockImplementation(async () => ({
+      ...triggerFixture,
+      kind: "github.pull_request" as const,
+      schedule: null,
+      nextRunAt: null,
+    }));
+    updateLoopTrigger.mockImplementation(async () => ({
+      ...triggerFixture,
+      kind: "github.pull_request" as const,
+      schedule: null,
+      nextRunAt: null,
+    }));
+    const { PATCH } = await routeModulePromise;
+    const response = await PATCH(patchRequest({ schedule: null }), context());
+    expect(response.status).toBe(200);
   });
 
   test("BT-762-T5: returns 404 when the trigger doesn't belong to the loop", async () => {
