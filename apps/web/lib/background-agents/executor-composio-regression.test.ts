@@ -552,4 +552,34 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       expect(instructions).not.toContain("Composio are not available");
     }
   });
+
+  /**
+   * REGRESSION-C-006 (issue #797): the executor reads the typed error
+   * outcome's `message` field for the composio.error event summary, not the
+   * removed untyped `error` field. Catches a revert to the old
+   * `{ status: "error", error: string }` shape at the executor call site —
+   * if the executor read `.error` again it would render "undefined" in the
+   * event summary instead of the resolver's actual message.
+   */
+  test("REGRESSION-C-006: composio.error event summary includes the typed message field", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "error" as const,
+      errorKind: "composio_unknown",
+      message: "distinctive-typed-error-message-marker",
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const errorEvent = recordedEvent("background-agent.composio.error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.summary ?? "").toContain(
+      "distinctive-typed-error-message-marker",
+    );
+    expect(errorEvent?.summary ?? "").not.toContain("undefined");
+  });
 });
