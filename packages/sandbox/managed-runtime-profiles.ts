@@ -7,19 +7,11 @@ export type ManagedRuntimeProfileCommand = {
   required?: boolean;
 };
 
-export type ManagedRuntimeProfileSetupScript = {
-  repoPath: string;
-  sandboxPath: string;
-  command: string;
-  timeoutMs?: number;
-};
-
 export type ManagedRuntimeProfile = {
   id: string;
   version: string;
   displayName: string;
   description: string;
-  setupScript?: ManagedRuntimeProfileSetupScript;
   setupCommands: ManagedRuntimeProfileCommand[];
   verificationCommands: ManagedRuntimeProfileCommand[];
   expectedTools: string[];
@@ -80,12 +72,6 @@ export const MANAGED_RUNTIME_PROFILES = [
     displayName: "Web app with Bun and browser checks",
     description:
       "Baseline Open Agents managed runtime profile for JavaScript/TypeScript web repositories that need Bun scripts, exposed preview ports, and browser smoke checks.",
-    setupScript: {
-      repoPath: "packages/sandbox/profiles/web-bun-agent-browser/setup.sh",
-      sandboxPath: "/tmp/open-agents/profiles/web-bun-agent-browser/setup.sh",
-      command: "bash /tmp/open-agents/profiles/web-bun-agent-browser/setup.sh",
-      timeoutMs: 300_000,
-    },
     setupCommands: [
       {
         id: "install-bun",
@@ -190,9 +176,7 @@ export function getManagedRuntimeSnapshotCommands(
   profile: ManagedRuntimeProfile,
 ): string[] {
   return [
-    ...(profile.setupScript
-      ? [profile.setupScript.command]
-      : profile.setupCommands.map((command) => command.command)),
+    ...profile.setupCommands.map((command) => command.command),
     ...profile.verificationCommands.map((command) => command.command),
   ];
 }
