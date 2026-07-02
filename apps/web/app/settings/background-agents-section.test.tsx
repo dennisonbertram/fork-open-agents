@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildAgentPayload,
   buildFormFromAgent,
-  supportedOutputModes,
   type FormState,
 } from "./background-agents-form";
 
@@ -16,7 +15,6 @@ type AgentListData = {
     repoOwner: string;
     repoName: string;
     instructions: string;
-    outputMode: "comment" | "ready_pr" | "issue" | "notification" | "none";
     checkCommand: string | null;
     triggers: Array<{
       id: string;
@@ -55,7 +53,6 @@ type RunListData = {
     branch: string | null;
     prNumber: number | null;
     issueNumber: number | null;
-    outputKind: string | null;
     outputUrl: string | null;
     errorKind: string | null;
     createdAt: string;
@@ -279,7 +276,6 @@ describe("BackgroundAgentsSection", () => {
             branch: "main",
             prNumber: 42,
             issueNumber: null,
-            outputKind: "ready_pr",
             outputUrl: "https://github.com/acme/widgets/pull/42",
             errorKind: null,
             createdAt: "2026-05-27T12:00:00.000Z",
@@ -315,7 +311,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Run deployment smoke checks.",
-            outputMode: "ready_pr",
             checkCommand: "bun --bun run ci",
             triggers: [
               {
@@ -355,7 +350,6 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("repo-scoped builder");
     expect(html).not.toContain("Tool providers coming later");
     expect(html).not.toContain("Composio is planned for v1.5");
-    expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
     expect(html).toContain("Edit");
     expect(html).toContain("Test");
     expect(html).toContain("/repos/acme/widgets/agents");
@@ -380,7 +374,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "api",
             instructions: "Watch for errors.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -418,7 +411,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Some instructions.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -456,7 +448,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "api",
             instructions: "Watch for PRs.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -513,7 +504,6 @@ describe("BackgroundAgentsSection", () => {
             branch: null,
             prNumber: 7,
             issueNumber: null,
-            outputKind: null,
             outputUrl: null,
             errorKind: null,
             createdAt: "2026-06-01T10:00:00.000Z",
@@ -533,7 +523,6 @@ describe("BackgroundAgentsSection", () => {
             branch: null,
             prNumber: null,
             issueNumber: null,
-            outputKind: null,
             outputUrl: null,
             errorKind: null,
             createdAt: "2026-06-01T11:00:00.000Z",
@@ -603,7 +592,6 @@ describe("BackgroundAgentsSection", () => {
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Review changes.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -727,7 +715,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Run checks.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -763,7 +750,6 @@ describe("BackgroundAgentsSection", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Run deployment smoke checks.",
-      outputMode: "ready_pr",
       checkCommand: "bun --bun run ci",
       triggers: [
         {
@@ -790,7 +776,6 @@ describe("BackgroundAgentsSection", () => {
       conditionActions: "",
       conditionEnvironments: "production",
       conditionSeverities: "success",
-      outputMode: "ready_pr",
     });
 
     // Simulate the user updating the status filter in the editor

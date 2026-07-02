@@ -18,7 +18,6 @@ import {
   backgroundAgentOutputs,
   backgroundAgentRuns,
   backgroundAgents,
-  backgroundAgentToolGrants,
   backgroundAgentTriggers,
   type BackgroundAgent,
   type BackgroundAgentEvent,
@@ -118,7 +117,6 @@ export async function createBackgroundAgent(
         repoName: input.repoName,
         instructions: input.instructions,
         permissions: input.permissions,
-        outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
         composioToolkitSlugs: input.composioToolkitSlugs,
         githubActions: input.githubActions,
@@ -194,9 +192,6 @@ export async function updateBackgroundAgent(
           : {}),
         ...(input.permissions !== undefined
           ? { permissions: input.permissions }
-          : {}),
-        ...(input.outputMode !== undefined
-          ? { outputMode: input.outputMode }
           : {}),
         ...(input.checkCommand !== undefined
           ? { checkCommand: normalizeOptionalText(input.checkCommand) }
@@ -475,10 +470,6 @@ export async function createRunForTrigger(params: {
     prNumber: params.event.prNumber ?? null,
     issueNumber: params.event.issueNumber ?? null,
     deploymentUrl: params.event.deploymentUrl ?? null,
-    // outputKind no longer snapshots agent.outputMode (#746) — the executor
-    // now derives run behavior from agent.githubActions, and outputMode is
-    // deprecated pending the column drop (#748/#C7).
-    outputKind: null,
     payloadSummary: {
       title: params.event.title,
       url: params.event.url,
@@ -1001,51 +992,6 @@ export async function recordTriggerSkipReason(params: {
       updatedAt: new Date(),
     })
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
-}
-
-export { backgroundAgentToolGrants };
-
-/**
- * Returns all enabled Composio tool grants for a given background agent.
- * An enabled grant means the agent is authorized to use the linked Composio
- * profile for that role/phase combination.
- *
- * Used by the executor to gate Composio tool resolution: if no enabled grants
- * exist, the agent gets no Composio tools (pre-Phase-5 behavior).
- */
-export async function listEnabledToolGrantsForAgent(
-  agentId: string,
-): Promise<
-  Array<
-    Pick<
-      typeof backgroundAgentToolGrants.$inferSelect,
-      | "id"
-      | "agentId"
-      | "userId"
-      | "provider"
-      | "profileId"
-      | "agentRole"
-      | "phase"
-      | "status"
-    >
-  >
-> {
-  return db.query.backgroundAgentToolGrants.findMany({
-    where: and(
-      eq(backgroundAgentToolGrants.agentId, agentId),
-      eq(backgroundAgentToolGrants.status, "enabled"),
-    ),
-    columns: {
-      id: true,
-      agentId: true,
-      userId: true,
-      provider: true,
-      profileId: true,
-      agentRole: true,
-      phase: true,
-      status: true,
-    },
-  });
 }
 
 /**

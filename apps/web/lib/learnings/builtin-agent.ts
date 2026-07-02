@@ -112,7 +112,6 @@ export async function ensureRepoLearningsAgent(
         pullRequests: "read",
       },
     },
-    outputMode: "none",
     composioToolkitSlugs: [],
     // The learnings agent is read-only extraction — it never takes GitHub
     // actions, and must not inherit a write-permission requirement (#746).

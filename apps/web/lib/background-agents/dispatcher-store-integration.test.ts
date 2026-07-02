@@ -231,7 +231,6 @@ const agentEventTriggerRow = {
     description: null,
     instructions: "Test agent.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     createdAt: new Date(),

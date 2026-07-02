@@ -69,9 +69,7 @@ export type BackgroundAgentPermissions = {
 
 /**
  * Per-action toggles describing what a background agent's GitHub-facing
- * automation is allowed to do. Replaces `outputMode` as the behavior driver
- * (#742/#745). `outputMode` remains stored and accepted (deprecated) until
- * the column-drop ticket (#748/#C7).
+ * automation is allowed to do — the sole behavior driver (#742/#745/#748).
  */
 export type BackgroundAgentGithubActions = {
   open_pull_request?: boolean;
@@ -1128,17 +1126,12 @@ export const backgroundAgents = pgTable(
       .$type<BackgroundAgentPermissions>()
       .notNull()
       .default({}),
-    outputMode: text("output_mode", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
-    })
-      .notNull()
-      .default("none"),
     checkCommand: text("check_command"),
     /**
      * Composio toolkit slugs this agent is allowed to use.
      * Empty array (default) = no Composio tools = pre-Phase-5 behavior.
      * Populated slugs are resolved at run time via resolveComposioToolsForBgRun,
-     * gated by enabled backgroundAgentToolGrants and repo policy.
+     * gated by repo policy.
      */
     composioToolkitSlugs: jsonb("composio_toolkit_slugs")
       .$type<string[]>()
@@ -1154,9 +1147,8 @@ export const backgroundAgents = pgTable(
      */
     builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
     /**
-     * Per-action GitHub automation toggles (#745). Replaces outputMode as
-     * the behavior driver; outputMode remains for backward compatibility
-     * until the column-drop ticket (#748/#C7).
+     * Per-action GitHub automation toggles (#745) — the sole behavior
+     * driver for GitHub-facing automation (#748).
      */
     githubActions: jsonb("github_actions")
       .$type<BackgroundAgentGithubActions>()
@@ -1291,6 +1283,8 @@ export const backgroundAgentTriggers = pgTable(
       .default({}),
     schedule: text("schedule"),
     webhookPublicId: text("webhook_public_id"),
+    // Reserved for per-trigger webhook secrets (not yet wired up to any
+    // verification path). Explicitly out of scope for #748 — kept as-is.
     webhookSecretHash: text("webhook_secret_hash"),
     lastRunAt: timestamp("last_run_at"),
     nextRunAt: timestamp("next_run_at"),
@@ -1314,40 +1308,6 @@ export const backgroundAgentTriggers = pgTable(
       "background_agent_triggers_owner_check",
       sql`num_nonnulls(agent_id, loop_id) = 1`,
     ),
-  ],
-);
-
-export const backgroundAgentToolGrants = pgTable(
-  "background_agent_tool_grants",
-  {
-    id: text("id").primaryKey(),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    provider: text("provider", {
-      enum: ["composio"],
-    }).notNull(),
-    profileId: text("profile_id"),
-    agentRole: text("agent_role", {
-      enum: ["main", "explorer", "executor", "design"],
-    }).notNull(),
-    phase: text("phase", {
-      enum: ["investigate", "mutate", "notify", "always"],
-    }).notNull(),
-    status: text("status", {
-      enum: ["enabled", "disabled"],
-    })
-      .notNull()
-      .default("disabled"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (table) => [
-    index("background_agent_tool_grants_agent_idx").on(table.agentId),
-    index("background_agent_tool_grants_user_idx").on(table.userId),
   ],
 );
 
@@ -1399,9 +1359,6 @@ export const backgroundAgentRuns = pgTable(
     issueNumber: integer("issue_number"),
     deploymentUrl: text("deployment_url"),
     sandboxName: text("sandbox_name"),
-    outputKind: text("output_kind", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
-    }),
     outputUrl: text("output_url"),
     errorKind: text("error_kind"),
     errorMessage: text("error_message"),
@@ -2582,10 +2539,6 @@ export type BackgroundAgentTrigger =
   typeof backgroundAgentTriggers.$inferSelect;
 export type NewBackgroundAgentTrigger =
   typeof backgroundAgentTriggers.$inferInsert;
-export type BackgroundAgentToolGrant =
-  typeof backgroundAgentToolGrants.$inferSelect;
-export type NewBackgroundAgentToolGrant =
-  typeof backgroundAgentToolGrants.$inferInsert;
 export type BackgroundAgentRun = typeof backgroundAgentRuns.$inferSelect;
 export type NewBackgroundAgentRun = typeof backgroundAgentRuns.$inferInsert;
 export type BackgroundAgentEvent = typeof backgroundAgentEvents.$inferSelect;

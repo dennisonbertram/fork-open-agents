@@ -9,10 +9,8 @@ import {
   buildFormFromAgent,
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
-  describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
-  outputModeLabel,
   type ConditionField,
   type BackgroundAgent,
   type FormState,
@@ -32,12 +30,6 @@ describe("buildRepoScopedDefaultForm", () => {
 
     expect(form.enabled).toBe(false);
   });
-
-  test("BT-003: default output mode is none (safest/draft autonomy)", () => {
-    const form = buildRepoScopedDefaultForm("acme", "widgets");
-
-    expect(form.outputMode).toBe("none");
-  });
 });
 
 describe("buildAgentPayload", () => {
@@ -56,7 +48,6 @@ describe("buildAgentPayload", () => {
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Run smoke checks.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -98,7 +89,6 @@ describe("buildAgentPayload", () => {
   test("BT-008: ready_pr output with write permissions in form sets github write permissions on contents and pullRequests", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "ready_pr",
         permissionContents: "write",
         permissionPullRequests: "write",
       }),
@@ -114,7 +104,6 @@ describe("buildAgentPayload", () => {
     // action-derived flooring.
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "read",
         githubActions: { comment_on_pr_or_issue: true },
@@ -128,7 +117,6 @@ describe("buildAgentPayload", () => {
   test("BT-E1: ready_pr floors GitHub access to write regardless of form fields (Ready PR is non-functional without write)", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "ready_pr",
         permissionContents: "read",
         permissionPullRequests: "read",
       }),
@@ -141,7 +129,6 @@ describe("buildAgentPayload", () => {
   test("BT-E2: permissionPullRequests write with outputMode none => payload pullRequests is write", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "write",
         githubActions: { comment_on_pr_or_issue: true },
@@ -177,7 +164,6 @@ describe("buildFormFromAgent", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Summarize pull requests.",
-      outputMode: "none",
       checkCommand: null,
       permissions: {
         github: {
@@ -205,10 +191,9 @@ describe("buildFormFromAgent", () => {
     };
   }
 
-  test("REG-019: saved GitHub permissions round-trip through edit even when outputMode was ready_pr", () => {
+  test("REG-019: saved GitHub permissions round-trip through edit unchanged", () => {
     const form = buildFormFromAgent(
       makeAgent({
-        outputMode: "ready_pr",
         permissions: {
           github: {
             contents: "read",
@@ -222,7 +207,6 @@ describe("buildFormFromAgent", () => {
       }),
     );
 
-    expect(form.outputMode).toBe("ready_pr");
     expect(form.permissionContents).toBe("read");
     expect(form.permissionPullRequests).toBe("read");
   });
@@ -248,7 +232,6 @@ describe("isStepValid", () => {
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Do something.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -428,51 +411,6 @@ describe("conditionFieldLabel", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Slice 4 — describeOutputModePermissions
-// ---------------------------------------------------------------------------
-
-describe("describeOutputModePermissions", () => {
-  test("BT-032: none mode returns read-only description", () => {
-    const desc = describeOutputModePermissions("none");
-    expect(desc.toLowerCase()).toContain("read-only");
-  });
-
-  test("BT-033: ready_pr mode description mentions pull request", () => {
-    const desc = describeOutputModePermissions("ready_pr");
-    expect(desc.toLowerCase()).toContain("pull request");
-  });
-
-  test("BT-034: none mode description does NOT mention write", () => {
-    const desc = describeOutputModePermissions("none");
-    expect(desc.toLowerCase()).not.toContain("write");
-  });
-
-  test("BT-035: ready_pr mode description mentions open or write (can create PRs)", () => {
-    const desc = describeOutputModePermissions("ready_pr");
-    const lower = desc.toLowerCase();
-    expect(lower.includes("open") || lower.includes("write")).toBe(true);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Slice 5 — outputModeLabel
-// ---------------------------------------------------------------------------
-
-describe("outputModeLabel", () => {
-  test("BT-036: none -> 'None'", () => {
-    expect(outputModeLabel("none")).toBe("None");
-  });
-
-  test("BT-037: ready_pr -> 'Ready PR'", () => {
-    expect(outputModeLabel("ready_pr")).toBe("Ready PR");
-  });
-
-  test("BT-038: comment returns a non-empty string (future-safe)", () => {
-    expect(outputModeLabel("comment").length).toBeGreaterThan(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // Regression tests — catch future breakage from different angles
 // ---------------------------------------------------------------------------
 
@@ -545,7 +483,6 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Run nightly checks.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -571,15 +508,6 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
   });
 });
 
-describe("REG: describeOutputModePermissions — both modes produce distinct summaries", () => {
-  test("REG-018: none and ready_pr summaries are different strings", () => {
-    const noneDesc = describeOutputModePermissions("none");
-    const prDesc = describeOutputModePermissions("ready_pr");
-    // If someone accidentally returns the same string for both, this catches it
-    expect(noneDesc).not.toBe(prDesc);
-  });
-});
-
 // ---------------------------------------------------------------------------
 // #747 — GitHub action toggles, write scope, CI-green, model — mapping tests
 // ---------------------------------------------------------------------------
@@ -600,7 +528,6 @@ describe("buildAgentPayload — githubActions/writeScope/requireCiGreenForMerge/
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Run smoke checks.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -693,7 +620,6 @@ describe("buildAgentPayload — githubActions/writeScope/requireCiGreenForMerge/
   test("permission auto-flooring derives from enabled write actions (push) rather than outputMode", () => {
     const payload = buildAgentPayload(
       makeForm({
-        outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "read",
         githubActions: {
@@ -807,7 +733,6 @@ describe("buildAgentPayload — githubActions/writeScope/requireCiGreenForMerge/
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Run smoke checks.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -837,7 +762,6 @@ describe("buildFormFromAgent — githubActions/writeScope/requireCiGreenForMerge
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Summarize pull requests.",
-      outputMode: "none",
       checkCommand: null,
       permissions: {
         github: {

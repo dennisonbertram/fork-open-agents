@@ -90,23 +90,6 @@ function formatTriggerKind(kind: string): string {
   }
 }
 
-function formatOutputMode(mode: string): string {
-  switch (mode) {
-    case "none":
-      return "Report only";
-    case "ready_pr":
-      return "Open a pull request";
-    case "comment":
-      return "Leave a comment";
-    case "issue":
-      return "Open an issue";
-    case "notification":
-      return "Send a notification";
-    default:
-      return mode;
-  }
-}
-
 type SummarizableGithubActions = {
   open_pull_request?: boolean;
   comment_on_pr_or_issue?: boolean;
@@ -126,7 +109,6 @@ type SummarizableDraft = {
   name?: string;
   description?: string | null;
   instructions?: string;
-  outputMode?: string;
   githubActions?: SummarizableGithubActions;
   writeScope?: SummarizableWriteScope;
   modelId?: string | null;
@@ -238,10 +220,6 @@ function summarizeSpec(draft: SummarizableDraft): string {
         : draft.instructions;
     parts.push(`**Instructions:** ${truncated}`);
   }
-  if (draft.outputMode) {
-    parts.push(`**Output:** ${formatOutputMode(draft.outputMode)}`);
-  }
-
   const actionsSummary = summarizeEnabledActions(draft.githubActions);
   if (actionsSummary) {
     parts.push(`**Actions:** ${actionsSummary}`);
@@ -269,28 +247,6 @@ function summarizeSpec(draft: SummarizableDraft): string {
   }
 
   return parts.join("\n");
-}
-
-/**
- * Warns when a caller supplies the deprecated `outputMode` field with a
- * non-default value (#747/#748). outputMode no longer drives behavior —
- * githubActions does — so surface a suggestion for the equivalent toggle set
- * instead of silently ignoring the input.
- */
-function legacyOutputModeWarning(outputMode: string | undefined): string[] {
-  if (!outputMode || outputMode === "none") {
-    return [];
-  }
-  const suggestion =
-    outputMode === "ready_pr"
-      ? "push, open_pull_request"
-      : outputMode === "comment"
-        ? "comment_on_pr_or_issue"
-        : null;
-  const suggestionText = suggestion
-    ? ` Use githubActions instead — for "${outputMode}", enable: ${suggestion}.`
-    : ` Use githubActions instead of outputMode ("${outputMode}").`;
-  return [`The "outputMode" field is deprecated.${suggestionText}`];
 }
 
 // ── Main function ────────────────────────────────────────────────────────
@@ -338,7 +294,6 @@ export function previewBackgroundAgentSpec(
         "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
       );
     }
-    warnings.push(...legacyOutputModeWarning(draft.outputMode));
 
     return {
       ok: true,
@@ -378,7 +333,6 @@ export function previewBackgroundAgentSpec(
       "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
     );
   }
-  warnings.push(...legacyOutputModeWarning(draft.outputMode));
 
   return {
     ok: true,
@@ -544,6 +498,21 @@ export function normalizeAgentDraft(
     result.permissions = normalizeAgentPermissions(
       draft.permissions as Record<string, unknown>,
     );
+  }
+
+  // Legacy outputMode (#748): the column and schema field are gone, but older
+  // model prompts may still emit it. Map ready_pr to the equivalent action
+  // toggles (unless the draft already declares githubActions) and strip the
+  // key so the strict create/update schema does not reject the draft.
+  if ("outputMode" in result) {
+    if (result.outputMode === "ready_pr" && result.githubActions == null) {
+      result.githubActions = {
+        push: true,
+        open_pull_request: true,
+        comment_on_pr_or_issue: true,
+      };
+    }
+    delete result.outputMode;
   }
 
   return result;

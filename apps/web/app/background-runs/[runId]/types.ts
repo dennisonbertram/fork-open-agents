@@ -15,7 +15,6 @@ export type SerializedBackgroundRun = {
   prNumber: number | null;
   issueNumber: number | null;
   deploymentUrl: string | null;
-  outputKind: string | null;
   outputUrl: string | null;
   sandboxName: string | null;
   requestId: string | null;

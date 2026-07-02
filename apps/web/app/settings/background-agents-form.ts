@@ -12,12 +12,9 @@ export {
   buildRepoScopedDefaultForm,
   conditionFieldLabel,
   defaultForm,
-  describeOutputModePermissions,
   fieldsForTrigger,
   flowSteps,
   isStepValid,
-  outputModeLabel,
-  supportedOutputModes,
   triggerLabels,
 } from "@/lib/background-agents/agent-spec";
 
@@ -28,7 +25,6 @@ export type {
   FormState,
   GitHubAccessLevel,
   GithubActions,
-  OutputMode,
   StepId,
   TriggerConditions,
   TriggerKind,

@@ -20,7 +20,6 @@ type MinimalRun = {
   status: "succeeded" | "failed" | "skipped" | "cancelled";
   repoOwner: string;
   repoName: string;
-  outputKind: string | null;
   outputUrl: string | null;
   prNumber: number | null;
   issueNumber: number | null;
@@ -52,7 +51,6 @@ function makeRun(overrides: Partial<MinimalRun> = {}): MinimalRun {
     status: "succeeded",
     repoOwner: "acme",
     repoName: "widgets",
-    outputKind: null,
     outputUrl: null,
     prNumber: null,
     issueNumber: null,
@@ -86,7 +84,6 @@ describe("buildRunSummary", () => {
   test("BT-001: success run — headline says succeeded, artifacts include PR", () => {
     const run = makeRun({
       status: "succeeded",
-      outputKind: "ready_pr",
       outputUrl: "https://github.com/acme/widgets/pull/42",
       prNumber: null,
     });
@@ -166,7 +163,7 @@ describe("buildRunSummary", () => {
   // ---------------------------------------------------------------------------
 
   test("BT-004: no-output run — summary is not blank and states no output", () => {
-    const run = makeRun({ status: "succeeded", outputKind: "none" });
+    const run = makeRun({ status: "succeeded" });
     const events: MinimalEvent[] = [makeCheckEvent(true)];
     const outputs: MinimalOutput[] = [];
 
@@ -189,7 +186,6 @@ describe("buildRunSummary", () => {
   test("BT-005: artifact-output run — artifacts contain url and label", () => {
     const run = makeRun({
       status: "succeeded",
-      outputKind: "ready_pr",
       outputUrl: "https://github.com/acme/widgets/pull/7",
     });
     const events: MinimalEvent[] = [];

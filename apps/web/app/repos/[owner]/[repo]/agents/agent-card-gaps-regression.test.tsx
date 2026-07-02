@@ -110,7 +110,6 @@ function makeAgent(
     repoName: "widgets",
     instructions: "Watch for regressions.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,

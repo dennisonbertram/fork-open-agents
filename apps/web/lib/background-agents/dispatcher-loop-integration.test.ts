@@ -144,7 +144,6 @@ const baseAgent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Test agent.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,

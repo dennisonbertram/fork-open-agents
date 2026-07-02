@@ -5,7 +5,6 @@
  */
 import type {
   GithubActions,
-  OutputMode,
   TriggerKind,
 } from "@/lib/background-agents/agent-spec";
 
@@ -18,12 +17,6 @@ export type AgentTemplate = {
   triggerKind: TriggerKind;
   /** Prefilled instructions for the agent */
   instructions: string;
-  /**
-   * Deprecated (#748/#C7). Kept only because FormState/BackgroundAgent still
-   * carry it for backward compatibility; githubActions is the real behavior
-   * driver (#747).
-   */
-  outputMode: OutputMode;
   /** Default GitHub action toggles for this template. */
   githubActions: GithubActions;
   /** Default check command (empty means none) */
@@ -41,7 +34,6 @@ export type BlankTemplate = {
   goal: "";
   triggerKind: TriggerKind;
   instructions: "";
-  outputMode: OutputMode;
   githubActions: GithubActions;
   defaultCheckCommand: "";
   defaultEnabled: false;
@@ -57,7 +49,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     triggerKind: "github.pull_request",
     instructions:
       "When a pull request is opened or updated, review the diff and add a brief summary comment. Highlight breaking changes, missing tests, and potential conflicts with the main branch. Do not approve or merge.",
-    outputMode: "none",
     githubActions: { comment_on_pr_or_issue: true },
     defaultCheckCommand: "",
     defaultEnabled: false,
@@ -68,7 +59,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     triggerKind: "github.pull_request",
     instructions:
       "When a pull request is opened or updated, look for an obvious, minimal fix (lint, formatting, small type errors) and push it as a draft PR targeting the same branch, with a comment explaining the change. This agent reacts to pull request events — it does not detect or wait for a specific CI check result. Do not merge.",
-    outputMode: "ready_pr",
     githubActions: {
       push: true,
       open_pull_request: true,
@@ -85,7 +75,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     triggerKind: "github.issue",
     instructions:
       "When a new issue is opened, read the title and body. Apply one or more labels from the repo label set to categorise the issue (bug, enhancement, documentation, question, etc.). Add a short triage comment acknowledging the report and describing next steps. Do not close issues.",
-    outputMode: "none",
     githubActions: { comment_on_pr_or_issue: true },
     defaultCheckCommand: "",
     defaultEnabled: false,
@@ -96,7 +85,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     triggerKind: "schedule.cron",
     instructions:
       "Every Monday morning, query the repository for pull requests merged in the previous 7 days. Group them by type (features, bug fixes, chores). Draft a Markdown release notes document and create a draft PR that adds it to the CHANGELOG or docs/releases directory. Do not publish or tag a release.",
-    outputMode: "ready_pr",
     githubActions: { push: true, open_pull_request: true },
     defaultCheckCommand: "",
     defaultEnabled: false,
@@ -110,7 +98,6 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
     triggerKind: "github.pull_request",
     instructions:
       "When a pull request changes source files, check whether corresponding documentation files are also updated. If source changes are present but no docs update is included, add a comment listing the documentation files that appear to be affected. Do not block the PR; only report the drift.",
-    outputMode: "none",
     githubActions: { comment_on_pr_or_issue: true },
     defaultCheckCommand: "",
     defaultEnabled: false,
@@ -126,7 +113,6 @@ export function getBlankTemplate(): BlankTemplate {
     goal: "",
     triggerKind: "github.pull_request",
     instructions: "",
-    outputMode: "none",
     githubActions: { open_pull_request: true, comment_on_pr_or_issue: true },
     defaultCheckCommand: "",
     defaultEnabled: false,

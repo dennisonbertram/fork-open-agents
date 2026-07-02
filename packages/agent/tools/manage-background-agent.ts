@@ -42,9 +42,20 @@ const backgroundAgentDraftSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(2000).default(""),
   instructions: z.string().max(8000).default(""),
-  outputMode: z
-    .enum(["comment", "ready_pr", "issue", "notification", "none"])
-    .default("ready_pr"),
+  githubActions: z
+    .object({
+      open_pull_request: z.boolean().optional(),
+      comment_on_pr_or_issue: z.boolean().optional(),
+      approve_pull_request: z.boolean().optional(),
+      request_changes: z.boolean().optional(),
+      merge_pull_request: z.boolean().optional(),
+      push: z.boolean().optional(),
+      delete_branch: z.boolean().optional(),
+    })
+    .optional()
+    .describe(
+      "Per-action GitHub toggles. Omit for the default (open PRs + comments enabled). Enable push/merge/delete deliberately.",
+    ),
   repoOwner: z.string().min(1),
   repoName: z.string().min(1),
   composioToolkitSlugs: z.array(z.string().min(1)).max(50).default([]),

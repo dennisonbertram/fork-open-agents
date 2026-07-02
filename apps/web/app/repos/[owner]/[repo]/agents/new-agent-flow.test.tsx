@@ -107,7 +107,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Keep PRs up to date"
         initialTriggerKind="github.pull_request"
         initialInstructions="Check PRs and update them."
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -143,7 +142,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Some goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Do stuff"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -169,7 +167,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Create PRs"
         initialTriggerKind="github.pull_request"
         initialInstructions="Create PRs for issues."
-        initialOutputMode="ready_pr"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -197,7 +194,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="ready_pr"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -222,7 +218,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -246,7 +241,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Run nightly"
         initialTriggerKind="schedule.cron"
         initialInstructions="Check things."
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -293,7 +287,6 @@ describe("RepoAgentsDashboard", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}

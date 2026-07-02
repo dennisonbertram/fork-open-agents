@@ -10,7 +10,6 @@ import {
   buildAgentPayload,
   type GitHubAccessLevel,
   type GithubActions,
-  type OutputMode,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
 import {
@@ -253,7 +252,6 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialGoal={template.goal}
         initialTriggerKind={template.triggerKind as TriggerKind}
         initialInstructions={template.instructions}
-        initialOutputMode={template.outputMode as OutputMode}
         initialCheckCommand={template.defaultCheckCommand}
         initialEnabled={false}
         initialSchedule={

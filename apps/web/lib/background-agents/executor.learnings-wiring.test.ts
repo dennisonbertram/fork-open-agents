@@ -255,7 +255,6 @@ function buildLearningsRun(
     issueNumber: null,
     deploymentUrl: null,
     sandboxName: null,
-    outputKind: "none",
     outputUrl: null,
     errorKind: null,
     errorMessage: null,
@@ -290,7 +289,6 @@ function buildLearningsAgent(
     // The marker identifies this as the built-in learnings agent
     instructions: `${LEARNINGS_AGENT_MARKER} Extract engineering learnings from merged PRs.`,
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,

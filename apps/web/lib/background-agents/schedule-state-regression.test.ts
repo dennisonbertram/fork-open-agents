@@ -118,7 +118,6 @@ const regressionAgent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Regression test.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,

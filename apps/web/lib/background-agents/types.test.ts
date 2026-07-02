@@ -30,7 +30,6 @@ describe("background agent contract types", () => {
       repoOwner: "dennisonbertram",
       repoName: "fork-open-agents",
       instructions: "Review new pull requests.",
-      outputMode: "comment",
       permissions: {
         github: {
           contents: "read",
@@ -190,15 +189,14 @@ describe("background agent config surface (#745)", () => {
     expect(parsed.modelId).toBeNull();
   });
 
-  test("createBackgroundAgentSchema still accepts deprecated outputMode alongside new fields", () => {
-    const parsed = createBackgroundAgentSchema.parse({
+  test("createBackgroundAgentSchema rejects the removed outputMode field (#748)", () => {
+    const result = createBackgroundAgentSchema.safeParse({
       ...baseInput,
       outputMode: "comment",
       githubActions: { comment_on_pr_or_issue: true },
     });
 
-    expect(parsed.outputMode).toBe("comment");
-    expect(parsed.githubActions.comment_on_pr_or_issue).toBe(true);
+    expect(result.success).toBe(false);
   });
 
   test("updateBackgroundAgentSchema allows partial config-surface updates", () => {

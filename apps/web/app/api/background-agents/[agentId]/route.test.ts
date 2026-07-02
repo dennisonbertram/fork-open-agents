@@ -90,7 +90,6 @@ describe("/api/background-agents/[agentId]", () => {
           repoOwner: "acme",
           repoName: "widgets",
           instructions: "Run smoke checks after deployments.",
-          outputMode: "ready_pr",
           checkCommand: "bun --bun run ci",
           permissions: {
             github: {
@@ -126,7 +125,6 @@ describe("/api/background-agents/[agentId]", () => {
       "agent-1",
       expect.objectContaining({
         status: "disabled",
-        outputMode: "ready_pr",
         triggers: [
           expect.objectContaining({
             kind: "github.deployment_status",

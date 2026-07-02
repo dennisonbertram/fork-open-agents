@@ -72,7 +72,6 @@ function makeAgent(
     repoName: "widgets",
     instructions: "Run smoke checks after deployments.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,
