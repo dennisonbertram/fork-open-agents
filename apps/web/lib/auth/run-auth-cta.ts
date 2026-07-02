@@ -44,7 +44,20 @@ export async function runAuthCta({
   setPending(true);
   const attemptId = generateAuthCtaAttemptId();
   try {
-    await action();
+    const result = await action();
+    // better-auth's client resolves API errors as { data, error } instead
+    // of rejecting — a truthy `error` must take the same failure path.
+    const resolvedError = extractResolvedAuthError(result);
+    if (resolvedError !== undefined) {
+      setPending(false);
+      setError(errorMessage);
+      logAuthCtaFailed({
+        cta,
+        errorKind: classifyAuthCtaError(resolvedError),
+        message: describeResolvedAuthError(resolvedError),
+        attemptId,
+      });
+    }
   } catch (thrown) {
     setPending(false);
     setError(errorMessage);
@@ -55,6 +68,25 @@ export async function runAuthCta({
       attemptId,
     });
   }
+}
+
+function extractResolvedAuthError(result: unknown): unknown {
+  if (
+    result &&
+    typeof result === "object" &&
+    "error" in result &&
+    (result as { error: unknown }).error
+  ) {
+    return (result as { error: unknown }).error;
+  }
+  return undefined;
+}
+
+function describeResolvedAuthError(error: unknown): string {
+  if (error && typeof error === "object" && "message" in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
 }
 
 export function retryAuthCta(options: RunAuthCtaOptions): Promise<void> {
