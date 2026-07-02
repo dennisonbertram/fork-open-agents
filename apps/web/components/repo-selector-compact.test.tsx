@@ -125,7 +125,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     const { RepoSelectorCompact } = await modulePromise;
     const html = renderToStaticMarkup(
       <RepoSelectorCompact
-        selectedOwner=""
+        selectedOwner={SELECTED_SCOPE_INSTALLATION.accountLogin}
         selectedRepo=""
         onSelect={() => {}}
       />,
@@ -133,7 +133,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
 
     expect(html).toContain("selected repositories");
     expect(html).toContain("Manage access");
-    expect(html).toContain(SELECTED_SCOPE_INSTALLATION.installationUrl);
+    expect(html).toContain(SELECTED_SCOPE_INSTALLATION.installationUrl ?? "");
     expect(html).not.toContain("No repositories found.");
   });
 
@@ -144,7 +144,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     const { RepoSelectorCompact } = await modulePromise;
     const html = renderToStaticMarkup(
       <RepoSelectorCompact
-        selectedOwner=""
+        selectedOwner={ALL_SCOPE_INSTALLATION.accountLogin}
         selectedRepo=""
         onSelect={() => {}}
       />,
@@ -161,7 +161,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     const { RepoSelectorCompact } = await modulePromise;
     const html = renderToStaticMarkup(
       <RepoSelectorCompact
-        selectedOwner=""
+        selectedOwner={ALL_SCOPE_INSTALLATION.accountLogin}
         selectedRepo=""
         onSelect={() => {}}
       />,
@@ -178,7 +178,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     const { RepoSelectorCompact } = await modulePromise;
     const html = renderToStaticMarkup(
       <RepoSelectorCompact
-        selectedOwner=""
+        selectedOwner={SELECTED_SCOPE_NO_URL_INSTALLATION.accountLogin}
         selectedRepo=""
         onSelect={() => {}}
       />,
@@ -195,21 +195,21 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     //   error state -> finally setIsRefreshing(false).
     // We assert the shape directly since there is no DOM/testing-library in
     // this repo's test setup to observe a live re-render (see file header).
-    let isRefreshing = false;
-    let refreshErrorMessage: string | null = null;
+    const state: { isRefreshing: boolean; refreshErrorMessage: string | null } =
+      {
+        isRefreshing: false,
+        refreshErrorMessage: null,
+      };
 
     async function handleRefresh(refresh: () => Promise<unknown>) {
-      isRefreshing = true;
-      refreshErrorMessage = null;
+      state.isRefreshing = true;
+      state.refreshErrorMessage = null;
       try {
         await refresh();
-      } catch (refreshError) {
-        refreshErrorMessage =
-          refreshError instanceof Error
-            ? "Refresh failed. Please try again."
-            : "Refresh failed. Please try again.";
+      } catch {
+        state.refreshErrorMessage = "Refresh failed. Please try again.";
       } finally {
-        isRefreshing = false;
+        state.isRefreshing = false;
       }
     }
 
@@ -220,7 +220,7 @@ describe("RepoSelectorCompact - installation-scope dead end (#785)", () => {
     await handleRefresh(failingRefresh);
 
     expect(failingRefresh).toHaveBeenCalledTimes(1);
-    expect(isRefreshing).toBe(false);
-    expect(refreshErrorMessage).toBe("Refresh failed. Please try again.");
+    expect(state.isRefreshing).toBe(false);
+    expect(state.refreshErrorMessage).toBe("Refresh failed. Please try again.");
   });
 });

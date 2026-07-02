@@ -20,8 +20,7 @@ export const GENERIC_EMPTY_REPOS_COPY = "No repositories found.";
 export const SCOPED_EMPTY_REPOS_COPY =
   "This installation only covers selected repositories.";
 export const MANAGE_ACCESS_LABEL = "Manage access";
-export const FRIENDLY_REPOS_ERROR_COPY =
-  "We couldn't load your repositories.";
+export const FRIENDLY_REPOS_ERROR_COPY = "We couldn't load your repositories.";
 export const RETRY_LABEL = "Retry";
 export const REFRESH_FAILED_COPY = "Refresh failed. Please try again.";
 
@@ -86,11 +85,7 @@ export function RepoPickerErrorRetry({
   return (
     <div className={className}>
       <p>{FRIENDLY_REPOS_ERROR_COPY}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className={retryButtonClassName}
-      >
+      <button type="button" onClick={onRetry} className={retryButtonClassName}>
         {RETRY_LABEL}
       </button>
     </div>

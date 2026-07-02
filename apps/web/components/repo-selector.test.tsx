@@ -29,7 +29,6 @@ import { describe, expect, mock, test } from "bun:test";
 import {
   FRIENDLY_REPOS_ERROR_COPY,
   isScopedEmpty,
-  RETRY_LABEL,
   SCOPED_EMPTY_REPOS_COPY,
 } from "./repo-picker-scope-empty-state";
 
@@ -53,7 +52,7 @@ describe("RepoSelector - installation-scope dead end (#785)", () => {
 
   test("BT-RS-006: repo-selector.tsx imports the shared scoped-empty-state helper (wiring check)", async () => {
     const source = await Bun.file(
-      new URL("./repo-selector.tsx", import.meta.url),
+      new URL("repo-selector.tsx", import.meta.url),
     ).text();
 
     expect(source).toContain("repo-picker-scope-empty-state");
@@ -61,14 +60,16 @@ describe("RepoSelector - installation-scope dead end (#785)", () => {
 
   test("BT-RS-006b: repo-selector.tsx does not render the raw reposError string directly", async () => {
     const source = await Bun.file(
-      new URL("./repo-selector.tsx", import.meta.url),
+      new URL("repo-selector.tsx", import.meta.url),
     ).text();
 
     // The pre-fix implementation rendered `{reposError}` verbatim inside
-    // CommandEmpty. After the fix, friendly copy + Retry must replace it.
+    // CommandEmpty. After the fix, friendly copy + Retry must replace it,
+    // reusing the shared FRIENDLY_REPOS_ERROR_COPY / RETRY_LABEL constants
+    // (imported by reference, not re-declared) from the colocated helper.
     expect(source).not.toMatch(/\{reposError\s*\?\s*reposError\s*:/);
-    expect(source).toContain(FRIENDLY_REPOS_ERROR_COPY);
-    expect(source).toContain(RETRY_LABEL);
+    expect(source).toContain("FRIENDLY_REPOS_ERROR_COPY");
+    expect(source).toContain("RETRY_LABEL");
   });
 
   test("BT-RS-003: reposError -> friendly copy + Retry action wiring (pure logic mirrors component contract)", () => {
@@ -91,18 +92,21 @@ describe("RepoSelector - installation-scope dead end (#785)", () => {
   });
 
   test("BT-RS-004: handleRefresh catch path must produce a visible (non-console-only) failure state and always reset to idle", async () => {
-    let isRefreshing = false;
-    let refreshErrorMessage: string | null = null;
+    const state: { isRefreshing: boolean; refreshErrorMessage: string | null } =
+      {
+        isRefreshing: false,
+        refreshErrorMessage: null,
+      };
 
     async function handleRefresh(refresh: () => Promise<unknown>) {
-      isRefreshing = true;
-      refreshErrorMessage = null;
+      state.isRefreshing = true;
+      state.refreshErrorMessage = null;
       try {
         await refresh();
       } catch {
-        refreshErrorMessage = "Refresh failed. Please try again.";
+        state.refreshErrorMessage = "Refresh failed. Please try again.";
       } finally {
-        isRefreshing = false;
+        state.isRefreshing = false;
       }
     }
 
@@ -113,7 +117,7 @@ describe("RepoSelector - installation-scope dead end (#785)", () => {
     await handleRefresh(failingRefresh);
 
     expect(failingRefresh).toHaveBeenCalledTimes(1);
-    expect(isRefreshing).toBe(false);
-    expect(refreshErrorMessage).toBe("Refresh failed. Please try again.");
+    expect(state.isRefreshing).toBe(false);
+    expect(state.refreshErrorMessage).toBe("Refresh failed. Please try again.");
   });
 });
