@@ -1,19 +1,23 @@
 import { z } from "zod";
 import { USER_INFERENCE_OPTION_PREFIX } from "@/lib/inference/model-option-id";
-import { validateSchedule } from "./schedule-presets";
+import { triggerShapeSchema } from "./trigger-shape-schema";
+import {
+  backgroundAgentStatuses,
+  backgroundAgentTriggerKinds,
+  triggerConditionsSchema,
+  type BackgroundAgentStatus,
+  type BackgroundAgentTriggerKind,
+} from "./trigger-primitives";
 
-export const backgroundAgentTriggerKinds = [
-  "github.pull_request",
-  "github.pull_request_review",
-  "github.deployment_status",
-  "github.issue",
-  "github.check_suite",
-  "schedule.cron",
-  "webhook.error",
-] as const;
-
-export type BackgroundAgentTriggerKind =
-  (typeof backgroundAgentTriggerKinds)[number];
+// Re-exported for backward compatibility — these primitives now live in
+// trigger-primitives.ts (shared with trigger-shape-schema.ts, #762) to avoid
+// a circular import between this file and trigger-shape-schema.ts.
+export {
+  backgroundAgentStatuses,
+  backgroundAgentTriggerKinds,
+  triggerConditionsSchema,
+};
+export type { BackgroundAgentStatus, BackgroundAgentTriggerKind };
 
 export const backgroundAgentRunSources = [
   "github",
@@ -23,10 +27,6 @@ export const backgroundAgentRunSources = [
 
 export type BackgroundAgentRunSource =
   (typeof backgroundAgentRunSources)[number];
-
-export const backgroundAgentStatuses = ["enabled", "disabled"] as const;
-
-export type BackgroundAgentStatus = (typeof backgroundAgentStatuses)[number];
 
 export const backgroundAgentRunStatuses = [
   "queued",
@@ -59,24 +59,6 @@ export const backgroundAgentErrorKinds = [
 
 export type BackgroundAgentErrorKind =
   (typeof backgroundAgentErrorKinds)[number];
-
-export const triggerConditionsSchema = z
-  .object({
-    actions: z.array(z.string().min(1)).optional(),
-    branches: z.array(z.string().min(1)).optional(),
-    labels: z.array(z.string().min(1)).optional(),
-    environments: z.array(z.string().min(1)).optional(),
-    severities: z.array(z.string().min(1)).optional(),
-    // mergedOnly restricts github.pull_request to merged-closed events.
-    // Stored as JSONB, no migration needed. Not user-exposed yet (CODE-03).
-    mergedOnly: z.boolean().optional(),
-    // actors/ignoreActors (#749): allowlist/denylist matched case-insensitively
-    // against event.actor (sender.login). Lets a reviewer agent ignore its own
-    // bot login, or a fixer ignore the reviewer, to break ping-pong loops.
-    actors: z.array(z.string().min(1)).max(20).optional(),
-    ignoreActors: z.array(z.string().min(1)).max(20).optional(),
-  })
-  .strict();
 
 export const permissionsSchema = z
   .object({
@@ -182,34 +164,10 @@ export const createBackgroundAgentSchema = z
     modelId: modelIdSchema.optional().default(null),
     // Per-agent-per-PR run budget (#749) — backstop against ping-pong loops.
     runBudgetPerTarget: z.number().int().min(1).max(1000).default(10),
-    triggers: z
-      .array(
-        z
-          .object({
-            name: z.string().trim().min(1).max(100),
-            kind: z.enum(backgroundAgentTriggerKinds),
-            status: z.enum(backgroundAgentStatuses).default("enabled"),
-            conditions: triggerConditionsSchema.default({}),
-            schedule: z.string().trim().max(100).optional().nullable(),
-          })
-          .strict()
-          .superRefine((trigger, ctx) => {
-            if (trigger.kind === "schedule.cron") {
-              const result = validateSchedule(trigger.schedule);
-              if (!result.valid) {
-                ctx.addIssue({
-                  code: z.ZodIssueCode.custom,
-                  path: ["schedule"],
-                  message:
-                    result.error ??
-                    "Invalid schedule expression. Supported formats: @hourly, @daily, @weekly, or a 5-field cron expression.",
-                });
-              }
-            }
-          }),
-      )
-      .min(1)
-      .max(10),
+    // The single-trigger shape (name/kind/status/conditions/schedule, with
+    // schedule.cron validation) is shared with the loop-trigger routes
+    // (#762) via trigger-shape-schema.ts — do not duplicate it here.
+    triggers: z.array(triggerShapeSchema).min(1).max(10),
   })
   .strict();
 

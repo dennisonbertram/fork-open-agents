@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -22,8 +21,12 @@ import type {
 } from "@/app/api/agent-loops/types";
 import type { AgentLoopRun } from "@/lib/db/schema";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
+import type { ListLoopTriggersResponse } from "@/app/api/agent-loops/[loopId]/triggers/trigger-route-types";
 import { summarizeLoopSteps } from "./loop-step-summary";
 import { getStatusMeaning } from "./status-meanings";
+import { getActiveStatusNote } from "./status-trigger-notice";
+import { LoopTriggersCard } from "./loop-triggers-card";
+import { StatusPill } from "./status-pill";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -60,27 +63,6 @@ function formatDuration(
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
-}
-
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium capitalize",
-        status === "active" || status === "succeeded" || status === "completed"
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : status === "failed" || status === "cancelled"
-            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-            : status === "running" || status === "queued"
-              ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              : "border-border bg-muted/40 text-muted-foreground",
-      )}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
 }
 
 // ── Run row ───────────────────────────────────────────────────────────────────
@@ -128,9 +110,20 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
     fetchJson,
     { refreshInterval: 5000 },
   );
+  const { data: triggersData, mutate: mutateTriggersData } =
+    useSWR<ListLoopTriggersResponse>(
+      `/api/agent-loops/${loopId}/triggers`,
+      fetchJson,
+    );
 
-  const { loop, triggers } = loopData ?? initialLoopData;
+  const { loop } = loopData ?? initialLoopData;
   const runs = runsData?.runs ?? [];
+  // triggersData (from the #762 triggers route) carries the humanized
+  // schedule + nextRunAt; fall back to the loop-detail page's initial
+  // trigger summary (no humanized fields) until the client fetch resolves,
+  // so the trigger COUNT used by status-honesty copy is correct on first
+  // paint even before triggersData loads.
+  const triggers = triggersData?.triggers ?? initialLoopData.triggers;
 
   async function handleRunNow() {
     setRunningNow(true);
@@ -393,43 +386,29 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                 <p className="text-xs text-muted-foreground">
                   {getStatusMeaning(loop.status)}
                 </p>
+                {(() => {
+                  const activeNote = getActiveStatusNote({
+                    status: loop.status,
+                    triggerCount: triggers.length,
+                  });
+                  return activeNote ? (
+                    <p className="text-xs text-muted-foreground">
+                      {activeNote}
+                    </p>
+                  ) : null;
+                })()}
               </div>
             </section>
 
-            {/* Trigger summary */}
-            <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Triggers</h2>
-              </div>
-              {triggers.length === 0 ? (
-                <div className="p-4 text-xs text-muted-foreground">
-                  No triggers configured. Manage triggers in{" "}
-                  <Link
-                    href="/settings/background-agents"
-                    className="underline hover:text-foreground"
-                  >
-                    Background agents settings
-                  </Link>
-                  .
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {triggers.map((trigger) => (
-                    <div key={trigger.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-mono text-xs">{trigger.kind}</p>
-                        <StatusPill status={trigger.status} />
-                      </div>
-                      {trigger.schedule && (
-                        <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                          {trigger.schedule}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            {/* Trigger manager (#762) */}
+            <LoopTriggersCard
+              loopId={loopId}
+              loopStatus={loop.status}
+              triggers={triggers}
+              onTriggersChanged={() => {
+                void mutateTriggersData();
+              }}
+            />
 
             {/* Guardrails */}
             {loop.guardrails && (
