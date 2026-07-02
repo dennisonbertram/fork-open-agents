@@ -7,6 +7,7 @@ export const backgroundAgentTriggerKinds = [
   "github.pull_request_review",
   "github.deployment_status",
   "github.issue",
+  "github.check_suite",
   "schedule.cron",
   "webhook.error",
 ] as const;
@@ -80,6 +81,11 @@ export const triggerConditionsSchema = z
     // mergedOnly restricts github.pull_request to merged-closed events.
     // Stored as JSONB, no migration needed. Not user-exposed yet (CODE-03).
     mergedOnly: z.boolean().optional(),
+    // actors/ignoreActors (#749): allowlist/denylist matched case-insensitively
+    // against event.actor (sender.login). Lets a reviewer agent ignore its own
+    // bot login, or a fixer ignore the reviewer, to break ping-pong loops.
+    actors: z.array(z.string().min(1)).max(20).optional(),
+    ignoreActors: z.array(z.string().min(1)).max(20).optional(),
   })
   .strict();
 
@@ -188,6 +194,8 @@ export const createBackgroundAgentSchema = z
     writeScope: writeScopeSchema.default(defaultWriteScope),
     requireCiGreenForMerge: z.boolean().default(true),
     modelId: modelIdSchema.optional().default(null),
+    // Per-agent-per-PR run budget (#749) — backstop against ping-pong loops.
+    runBudgetPerTarget: z.number().int().min(1).max(1000).default(10),
     triggers: z
       .array(
         z

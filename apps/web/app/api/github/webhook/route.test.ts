@@ -401,4 +401,89 @@ describe("POST /api/github/webhook background agent dispatch", () => {
       },
     });
   });
+
+  // #749: check_suite trigger — merge-bot backstop
+  test("dispatches check_suite completed events", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      githubRequest({
+        event: "check_suite",
+        payload: {
+          action: "completed",
+          repository: {
+            name: "widgets",
+            owner: { login: "acme" },
+          },
+          sender: { login: "merge-bot" },
+          check_suite: {
+            id: 909,
+            conclusion: "success",
+            head_sha: "sha909",
+            head_branch: "feature/widgets",
+            pull_requests: [{ number: 7 }],
+          },
+        },
+        requestId: "req-check-suite",
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      ok: true,
+      event: "check_suite",
+      backgroundAgents: {
+        enabled: true,
+        matched: 1,
+        created: 1,
+        duplicates: 0,
+        runIds: ["run-1"],
+      },
+    });
+    expect(dispatchBackgroundTriggerEvent).toHaveBeenCalledWith({
+      requestId: "req-check-suite",
+      event: {
+        source: "github",
+        kind: "github.check_suite",
+        externalId: "check_suite:909:success:sha909",
+        repoOwner: "acme",
+        repoName: "widgets",
+        action: "success",
+        sha: "sha909",
+        branch: "feature/widgets",
+        prNumber: 7,
+        actor: "merge-bot",
+      },
+    });
+  });
+
+  test("ignores check_suite events that are not yet completed", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      githubRequest({
+        event: "check_suite",
+        payload: {
+          action: "requested",
+          repository: {
+            name: "widgets",
+            owner: { login: "acme" },
+          },
+          sender: { login: "merge-bot" },
+          check_suite: {
+            id: 910,
+            conclusion: null,
+            head_sha: "sha910",
+          },
+        },
+        requestId: "req-check-suite-requested",
+      }),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({ ok: true, ignored: true, event: "check_suite" });
+    expect(dispatchBackgroundTriggerEvent).not.toHaveBeenCalled();
+  });
 });

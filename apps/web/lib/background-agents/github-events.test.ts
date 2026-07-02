@@ -150,4 +150,76 @@ describe("normalizeGitHubBackgroundEvent", () => {
     expect(event?.repoOwner).toBe("owner");
     expect(event?.repoName).toBe("repo");
   });
+
+  // #749: check_suite normalizer — merge-bot trigger
+  test("normalizes check_suite completed with a linked pull request", () => {
+    const event = normalizeGitHubBackgroundEvent("check_suite", {
+      action: "completed",
+      repository: { name: "repo", owner: { login: "owner" } },
+      sender: { login: "merge-bot" },
+      check_suite: {
+        id: 555,
+        conclusion: "success",
+        head_sha: "sha555",
+        head_branch: "feature/x",
+        pull_requests: [{ number: 12 }, { number: 13 }],
+      },
+    });
+
+    expect(event).toEqual({
+      source: "github",
+      kind: "github.check_suite",
+      externalId: "check_suite:555:success:sha555",
+      repoOwner: "owner",
+      repoName: "repo",
+      action: "success",
+      sha: "sha555",
+      branch: "feature/x",
+      prNumber: 12,
+      actor: "merge-bot",
+    });
+  });
+
+  test("returns null for check_suite actions other than completed", () => {
+    expect(
+      normalizeGitHubBackgroundEvent("check_suite", {
+        action: "requested",
+        repository: { name: "repo", owner: { login: "owner" } },
+        sender: { login: "merge-bot" },
+        check_suite: {
+          id: 556,
+          conclusion: null,
+          head_sha: "sha556",
+        },
+      }),
+    ).toBeNull();
+  });
+
+  test("normalizes check_suite completed with no linked pull request", () => {
+    const event = normalizeGitHubBackgroundEvent("check_suite", {
+      action: "completed",
+      repository: { name: "repo", owner: { login: "owner" } },
+      sender: { login: "merge-bot" },
+      check_suite: {
+        id: 557,
+        conclusion: "failure",
+        head_sha: "sha557",
+        head_branch: "main",
+        pull_requests: [],
+      },
+    });
+
+    expect(event).toEqual({
+      source: "github",
+      kind: "github.check_suite",
+      externalId: "check_suite:557:failure:sha557",
+      repoOwner: "owner",
+      repoName: "repo",
+      action: "failure",
+      sha: "sha557",
+      branch: "main",
+      prNumber: undefined,
+      actor: "merge-bot",
+    });
+  });
 });

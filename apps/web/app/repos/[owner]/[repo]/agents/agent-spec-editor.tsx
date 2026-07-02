@@ -53,6 +53,8 @@ type AgentSpecEditorProps = {
   initialConditionLabels?: string;
   initialConditionEnvironments?: string;
   initialConditionSeverities?: string;
+  initialConditionActors?: string;
+  initialConditionIgnoreActors?: string;
   initialPermissionContents?: GitHubAccessLevel;
   initialPermissionPullRequests?: GitHubAccessLevel;
   /** Composio toolkit slugs to pre-select. Defaults to none. */
@@ -95,6 +97,8 @@ export function AgentSpecEditor({
   initialConditionLabels = "",
   initialConditionEnvironments = "",
   initialConditionSeverities = "",
+  initialConditionActors = "",
+  initialConditionIgnoreActors = "",
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
   initialComposioToolkitSlugs = [],
@@ -121,6 +125,12 @@ export function AgentSpecEditor({
   );
   const [conditionSeverities, setConditionSeverities] = useState(
     initialConditionSeverities,
+  );
+  const [conditionActors, setConditionActors] = useState(
+    initialConditionActors,
+  );
+  const [conditionIgnoreActors, setConditionIgnoreActors] = useState(
+    initialConditionIgnoreActors,
   );
   // Merge goal into instructions once, as the initial value: prepend the goal as
   // the first sentence when present. Computed in a lazy useState initializer so
@@ -180,6 +190,8 @@ export function AgentSpecEditor({
       conditionLabels,
       conditionEnvironments,
       conditionSeverities,
+      conditionActors,
+      conditionIgnoreActors,
       instructions,
       outputMode,
       checkCommand,
@@ -389,11 +401,15 @@ export function AgentSpecEditor({
                 conditionLabels={conditionLabels}
                 conditionEnvironments={conditionEnvironments}
                 conditionSeverities={conditionSeverities}
+                conditionActors={conditionActors}
+                conditionIgnoreActors={conditionIgnoreActors}
                 onConditionActionsChange={setConditionActions}
                 onConditionBranchesChange={setConditionBranches}
                 onConditionLabelsChange={setConditionLabels}
                 onConditionEnvironmentsChange={setConditionEnvironments}
                 onConditionSeveritiesChange={setConditionSeverities}
+                onConditionActorsChange={setConditionActors}
+                onConditionIgnoreActorsChange={setConditionIgnoreActors}
               />
             </div>
           </div>

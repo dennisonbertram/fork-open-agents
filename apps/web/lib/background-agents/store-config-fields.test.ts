@@ -135,6 +135,7 @@ function baseCreateInput(overrides: Record<string, unknown> = {}) {
     writeScope: { mode: "this_repo" as const },
     requireCiGreenForMerge: true,
     modelId: null,
+    runBudgetPerTarget: 10,
     triggers: [baseTrigger],
     ...overrides,
   };

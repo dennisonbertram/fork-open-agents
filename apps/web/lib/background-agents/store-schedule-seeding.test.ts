@@ -200,6 +200,7 @@ const baseCreateInput = {
   writeScope: { mode: "this_repo" as const },
   requireCiGreenForMerge: true,
   modelId: null,
+  runBudgetPerTarget: 10,
 };
 
 describe("#750 store scheduling: seeding on create", () => {

@@ -125,6 +125,7 @@ export async function createBackgroundAgent(
         writeScope: input.writeScope,
         requireCiGreenForMerge: input.requireCiGreenForMerge,
         modelId: input.modelId,
+        runBudgetPerTarget: input.runBudgetPerTarget,
       })
       .returning();
 
@@ -213,6 +214,9 @@ export async function updateBackgroundAgent(
           ? { requireCiGreenForMerge: input.requireCiGreenForMerge }
           : {}),
         ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
+        ...(input.runBudgetPerTarget !== undefined
+          ? { runBudgetPerTarget: input.runBudgetPerTarget }
+          : {}),
         updatedAt: new Date(),
       })
       .where(
@@ -952,6 +956,38 @@ export async function seedTriggerNextRunAt(params: {
       updatedAt: new Date(),
     })
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
+/**
+ * Counts runs this agent has created for the same (repo, prNumber) since a
+ * given timestamp (#749). Backs the per-agent-per-PR run budget: the
+ * dispatcher refuses to create additional runs once this count reaches the
+ * agent's runBudgetPerTarget within a rolling 24h window.
+ *
+ * repoOwner/repoName are matched case-insensitively for consistency with the
+ * rest of the matching/dispatch pipeline.
+ */
+export async function countRecentRunsForTarget(params: {
+  agentId: string;
+  repoOwner: string;
+  repoName: string;
+  prNumber: number;
+  since: Date;
+}): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(backgroundAgentRuns)
+    .where(
+      and(
+        eq(backgroundAgentRuns.agentId, params.agentId),
+        eq(backgroundAgentRuns.prNumber, params.prNumber),
+        sql`lower(${backgroundAgentRuns.repoOwner}) = ${params.repoOwner.toLowerCase()}`,
+        sql`lower(${backgroundAgentRuns.repoName}) = ${params.repoName.toLowerCase()}`,
+        sql`${backgroundAgentRuns.createdAt} > ${params.since.toISOString()}`,
+      ),
+    );
+
+  return Number(row?.count ?? 0);
 }
 
 export async function recordTriggerSkipReason(params: {

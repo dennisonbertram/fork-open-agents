@@ -121,6 +121,7 @@ export async function ensureRepoLearningsAgent(
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,
+    runBudgetPerTarget: 10,
     triggers: [
       {
         name: "Merged PR",

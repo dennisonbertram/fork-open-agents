@@ -4,6 +4,7 @@ import { start } from "workflow/api";
 import { runBackgroundAgentWorkflow } from "@/app/workflows/background-agent";
 import {
   advanceTriggerScheduleState,
+  countRecentRunsForTarget,
   createRunForTrigger,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
@@ -63,6 +64,61 @@ async function startRun(runId: string): Promise<string | null> {
     console.error("[background-agents] Failed to start workflow:", error);
     return null;
   }
+}
+
+const RUN_BUDGET_WINDOW_HOURS = 24;
+
+/**
+ * #749 loop-safety backstop: refuses to create another run for this agent
+ * against the same (repo, prNumber) once the agent's runBudgetPerTarget is
+ * reached within a rolling 24h window. Prevents unbounded
+ * implementer -> reviewer -> fixer ping-pong.
+ *
+ * There is no runId yet at this point (no run is created), so this cannot
+ * use recordBackgroundAgentEvent (which requires a runId). Instead the skip
+ * is surfaced via recordTriggerSkipReason (visible in the trigger's UI card)
+ * plus a structured console.warn — a deliberate deviation from the
+ * runId-scoped event surface (documented in the PR).
+ */
+async function isRunBudgetExhausted(params: {
+  agent: { id: string; repoOwner: string; repoName: string };
+  trigger: { id: string };
+  event: NormalizedBackgroundTriggerEvent;
+  runBudgetPerTarget: number;
+  requestId?: string | null;
+}): Promise<boolean> {
+  if (params.event.prNumber == null) {
+    return false;
+  }
+
+  const since = new Date(Date.now() - RUN_BUDGET_WINDOW_HOURS * 60 * 60 * 1000);
+  const recentRuns = await countRecentRunsForTarget({
+    agentId: params.agent.id,
+    repoOwner: params.agent.repoOwner,
+    repoName: params.agent.repoName,
+    prNumber: params.event.prNumber,
+    since,
+  });
+
+  if (recentRuns < params.runBudgetPerTarget) {
+    return false;
+  }
+
+  await recordTriggerSkipReason({
+    triggerId: params.trigger.id,
+    skipReason: `budget exhausted: ${recentRuns}/${params.runBudgetPerTarget} runs in ${RUN_BUDGET_WINDOW_HOURS}h for PR #${params.event.prNumber}`,
+  });
+  console.warn("[background-agents] run budget exhausted", {
+    eventName: "background-agent.run.budget_exhausted",
+    agentId: params.agent.id,
+    repoOwner: params.agent.repoOwner,
+    repoName: params.agent.repoName,
+    prNumber: params.event.prNumber,
+    budget: params.runBudgetPerTarget,
+    windowHours: RUN_BUDGET_WINDOW_HOURS,
+    requestId: params.requestId ?? null,
+  });
+  return true;
 }
 
 async function recordWorkflowStartFailure(input: WorkflowStartFailureInput) {
@@ -146,6 +202,20 @@ export async function dispatchBackgroundTriggerEvent(params: {
       // Defensive guard: should not happen — row has neither loopId nor agent.
       continue;
     }
+
+    // #749: per-agent-per-PR run budget backstop — checked before creating a
+    // run so an exhausted budget never wedges the run/idempotency tables.
+    const budgetExhausted = await isRunBudgetExhausted({
+      agent,
+      trigger: match.trigger,
+      event: params.event,
+      runBudgetPerTarget: agent.runBudgetPerTarget,
+      requestId: params.requestId,
+    });
+    if (budgetExhausted) {
+      continue;
+    }
+
     const result = await createRunForTrigger({
       agent,
       trigger: match.trigger,

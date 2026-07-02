@@ -83,6 +83,7 @@ function makeAgent(
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,
+    runBudgetPerTarget: 10,
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [
