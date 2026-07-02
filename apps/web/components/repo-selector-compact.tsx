@@ -32,6 +32,14 @@ import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status"
 import { useSession } from "@/hooks/use-session";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
 import { cn } from "@/lib/utils";
+import {
+  FRIENDLY_REPOS_ERROR_COPY,
+  isScopedEmpty,
+  MANAGE_ACCESS_LABEL,
+  REFRESH_FAILED_COPY,
+  RETRY_LABEL,
+  SCOPED_EMPTY_REPOS_COPY,
+} from "@/components/repo-picker-scope-empty-state";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -163,6 +171,7 @@ export function RepoSelectorCompact({
   const [repoSearch, setRepoSearch] = useState("");
   const [debouncedRepoSearch, setDebouncedRepoSearch] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const hasAutoSelectedRef = useRef(false);
 
@@ -216,13 +225,21 @@ export function RepoSelectorCompact({
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setRefreshError(null);
     try {
       await refreshRepos();
-    } catch (refreshError) {
-      console.error("Failed to refresh repositories:", refreshError);
+    } catch (caughtRefreshError) {
+      console.error("Failed to refresh repositories:", caughtRefreshError);
+      setRefreshError(REFRESH_FAILED_COPY);
     } finally {
       setIsRefreshing(false);
     }
+  }, [refreshRepos]);
+
+  const handleRetry = useCallback(() => {
+    refreshRepos().catch((retryError) => {
+      console.error("Failed to refresh repositories:", retryError);
+    });
   }, [refreshRepos]);
 
   // Auto-select first owner when data loads (only once)
@@ -504,8 +521,33 @@ export function RepoSelectorCompact({
             <div className="flex-1" />
           </div>
         ) : reposError ? (
-          <div className="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
-            {reposError}
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted-foreground">
+            <p>{FRIENDLY_REPOS_ERROR_COPY}</p>
+            <button
+              type="button"
+              onClick={handleRetry}
+              className="rounded-md border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent dark:border-white/20 dark:bg-white/[0.06] dark:hover:bg-white/10"
+            >
+              {RETRY_LABEL}
+            </button>
+          </div>
+        ) : isScopedEmpty(
+            currentInstallation?.repositorySelection,
+            sortedRepos.length,
+          ) ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-4 text-center text-sm text-muted-foreground">
+            <p>{SCOPED_EMPTY_REPOS_COPY}</p>
+            {currentInstallation?.installationUrl && (
+              <Link
+                href={currentInstallation.installationUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-foreground underline-offset-2 hover:underline"
+              >
+                {MANAGE_ACCESS_LABEL}
+                <ExternalLink className="size-3" />
+              </Link>
+            )}
           </div>
         ) : sortedRepos.length === 0 ? (
           <div className="flex h-full items-center justify-center px-4 text-sm text-muted-foreground">
@@ -559,9 +601,12 @@ export function RepoSelectorCompact({
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-muted-foreground transition-colors hover:text-foreground"
             >
-              Manage access
+              {MANAGE_ACCESS_LABEL}
               <ExternalLink className="size-3" />
             </Link>
+          )}
+          {refreshError && (
+            <span className="text-destructive">{refreshError}</span>
           )}
         </div>
         <button

@@ -29,6 +29,14 @@ import { useInstallationRepos } from "@/hooks/use-installation-repos";
 import { useSession } from "@/hooks/use-session";
 import { buildGitHubReconnectUrl } from "@/lib/github/urls";
 import { cn } from "@/lib/utils";
+import {
+  FRIENDLY_REPOS_ERROR_COPY,
+  isScopedEmpty,
+  MANAGE_ACCESS_LABEL,
+  REFRESH_FAILED_COPY,
+  RETRY_LABEL,
+  SCOPED_EMPTY_REPOS_COPY,
+} from "@/components/repo-picker-scope-empty-state";
 
 interface Installation {
   installationId: number;
@@ -71,6 +79,7 @@ export function RepoSelector({
   const [debouncedRepoSearch, setDebouncedRepoSearch] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const startGitHubInstall = useCallback(() => {
     const params = new URLSearchParams({
@@ -145,13 +154,21 @@ export function RepoSelector({
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
+    setRefreshError(null);
     try {
       await refreshRepos();
-    } catch (refreshError) {
-      console.error("Failed to refresh repositories:", refreshError);
+    } catch (caughtRefreshError) {
+      console.error("Failed to refresh repositories:", caughtRefreshError);
+      setRefreshError(REFRESH_FAILED_COPY);
     } finally {
       setIsRefreshing(false);
     }
+  }, [refreshRepos]);
+
+  const handleRetry = useCallback(() => {
+    refreshRepos().catch((retryError) => {
+      console.error("Failed to refresh repositories:", retryError);
+    });
   }, [refreshRepos]);
 
   useEffect(() => {
@@ -290,22 +307,27 @@ export function RepoSelector({
           </Button>
         </PopoverTrigger>
         <PopoverContent className="w-64 p-0">
-          <div className="flex items-center justify-between border-b px-3 py-2 text-xs text-muted-foreground">
-            <span>
-              Showing repos for{" "}
-              <span className="text-foreground">{selectedOwner}</span>
-            </span>
-            <button
-              type="button"
-              onClick={handleRefresh}
-              disabled={isRefreshing}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
-            >
-              <RefreshCw
-                className={cn("size-3", isRefreshing && "animate-spin")}
-              />
-              {isRefreshing ? "Refreshing..." : "Refresh"}
-            </button>
+          <div className="flex flex-col gap-1 border-b px-3 py-2 text-xs text-muted-foreground">
+            <div className="flex items-center justify-between">
+              <span>
+                Showing repos for{" "}
+                <span className="text-foreground">{selectedOwner}</span>
+              </span>
+              <button
+                type="button"
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                <RefreshCw
+                  className={cn("size-3", isRefreshing && "animate-spin")}
+                />
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </button>
+            </div>
+            {refreshError && (
+              <span className="text-destructive">{refreshError}</span>
+            )}
           </div>
           <Command>
             <CommandInput
@@ -315,11 +337,39 @@ export function RepoSelector({
             />
             <CommandList>
               <CommandEmpty>
-                {reposError
-                  ? reposError
-                  : reposLoading
-                    ? "Loading..."
-                    : "No repositories found."}
+                {reposError ? (
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <p>{FRIENDLY_REPOS_ERROR_COPY}</p>
+                    <button
+                      type="button"
+                      onClick={handleRetry}
+                      className="rounded-md border px-2 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent"
+                    >
+                      {RETRY_LABEL}
+                    </button>
+                  </div>
+                ) : reposLoading ? (
+                  "Loading..."
+                ) : isScopedEmpty(
+                    selectedInstallation?.repositorySelection,
+                    repos.length,
+                  ) ? (
+                  <div className="flex flex-col items-center gap-2 py-2">
+                    <p>{SCOPED_EMPTY_REPOS_COPY}</p>
+                    {selectedInstallation?.installationUrl && (
+                      <a
+                        href={selectedInstallation.installationUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-foreground underline-offset-2 hover:underline"
+                      >
+                        {MANAGE_ACCESS_LABEL}
+                      </a>
+                    )}
+                  </div>
+                ) : (
+                  "No repositories found."
+                )}
               </CommandEmpty>
               <CommandGroup>
                 {repos.slice(0, 25).map((repo) => (
