@@ -10,6 +10,9 @@
  * BT-RTL-003: empty slugs — empty array returns { status: "off" }.
  * BT-RTL-004: configHash stability — same slugs always produce the same hash,
  *   different slug sets produce different hashes.
+ * BT-RTL-007 (issue #797 / finding G9): a toolkit slug that Composio's toolkit
+ *   metadata marks as not requiring auth is excluded from disconnectedToolkits
+ *   even when it has zero connected accounts.
  */
 
 import type { ToolSet } from "ai";
@@ -39,6 +42,11 @@ const fakeComposio = {
           { id: "acct-gh-1", toolkit: { slug: "github" }, status: "ACTIVE" },
         ],
       }),
+  },
+  // No toolkit in this fixture requires no-auth awareness by default; tests
+  // that need it override this with their own fakeComposio-shaped object.
+  toolkits: {
+    get: (_slug: string) => Promise.resolve({ noAuth: false }),
   },
 };
 
@@ -218,6 +226,38 @@ describe("resolveComposioToolsForToolkitList", () => {
     expect(result.status).toBe("ready");
     if (result.status === "ready") {
       expect(result.disconnectedToolkits).toEqual([]);
+    }
+  });
+
+  test("BT-RTL-007: no-auth toolkit is excluded from disconnectedToolkits even with zero connected accounts", async () => {
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
+
+    const noAuthAwareComposio = {
+      ...fakeComposio,
+      toolkits: {
+        get: (slug: string) =>
+          Promise.resolve({ noAuth: slug === "weather" }),
+      },
+    };
+
+    const result = await resolveComposioToolsForToolkitList({
+      userId,
+      // "weather" is a no-auth toolkit with no connected account; "linear"
+      // requires auth and also has no connected account.
+      slugs: ["weather", "linear"],
+      composio: noAuthAwareComposio as never,
+      connectedAccountIdsByToolkit: {},
+      getCachedSession: () => Promise.resolve(null),
+      upsertSession: () => Promise.resolve({ id: "row-new" }),
+      touchSession: () => Promise.resolve(),
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      // "weather" must NOT be reported as disconnected (no-auth toolkit);
+      // "linear" must still be reported (requires auth, not connected).
+      expect(result.disconnectedToolkits).toEqual(["linear"]);
     }
   });
 });
