@@ -66,8 +66,12 @@ export class CreateSessionError extends Error {
 }
 
 function inferKindFromStatus(status: number): CreateSessionErrorKind {
+  // A bare 403 is deliberately "unknown", never vercel_reauth_required: the
+  // /api/sessions route sets an explicit `kind` on its Vercel-reauth 403,
+  // while its bot-protection 403 ("Access denied") is bare — inferring reauth
+  // would attach a misleading "/settings" recovery link it cannot fix.
   if (status === 403) {
-    return "vercel_reauth_required";
+    return "unknown";
   }
   if (status === 429) {
     return "rate_limited";
