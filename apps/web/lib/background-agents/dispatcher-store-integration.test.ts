@@ -112,6 +112,7 @@ mock.module("drizzle-orm", () => ({
   isNull: mock((a: unknown) => ({ _isNull: a })),
   desc: mock((a: unknown) => ({ _desc: a })),
   inArray: mock((a: unknown, b: unknown) => ({ _inArray: [a, b] })),
+  notInArray: mock((a: unknown, b: unknown) => ({ _notInArray: [a, b] })),
   sql: Object.assign(
     mock((strings: TemplateStringsArray, ...values: unknown[]) => ({
       _sql: { strings: Array.from(strings), values },
@@ -230,7 +231,6 @@ const agentEventTriggerRow = {
     description: null,
     instructions: "Test agent.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     createdAt: new Date(),

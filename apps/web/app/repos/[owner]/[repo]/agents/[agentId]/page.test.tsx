@@ -67,7 +67,6 @@ describe("AgentDetailPage", () => {
       repoName: "widgets",
       instructions: "Run smoke checks after each deployment to production.",
       permissions: { github: { contents: "read" } },
-      outputMode: "comment",
       checkCommand: null,
       createdAt: new Date("2026-01-01"),
       updatedAt: new Date("2026-01-01"),
@@ -111,7 +110,6 @@ describe("AgentDetailPage", () => {
         issueNumber: null,
         deploymentUrl: null,
         sandboxName: null,
-        outputKind: "comment",
         outputUrl: "https://github.com/acme/widgets/issues/1#comment-1",
         errorKind: null,
         errorMessage: null,
@@ -216,9 +214,11 @@ describe("AgentDetailPage", () => {
       }),
     );
 
-    // Artifacts from the run's resultSummary
-    expect(html.toLowerCase()).toMatch(/artifact|output/);
-    // The comment artifact URL should appear
+    // Artifacts from the run's resultSummary — the comment artifact URL
+    // should appear as a link.
+    expect(html).toContain(
+      "https://github.com/acme/widgets/issues/1#comment-1",
+    );
     expect(html).toContain("comment");
   });
 

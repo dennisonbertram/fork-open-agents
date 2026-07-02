@@ -93,6 +93,7 @@ const listBackgroundAgentOutputs = mock(async () => []);
 const listEnabledToolGrantsForAgent = mock(async (_agentId: string) => []);
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput,
@@ -186,6 +187,7 @@ const successfulAccess = {
   installationId: 99,
   repositoryId: 42,
   defaultBranch: "main",
+  userPermission: "write",
 } as const;
 
 const verifyRepoAccess = mock(async () => successfulAccess);
@@ -241,7 +243,25 @@ mock.module("@/lib/github/commit", () => ({ buildCoAuthor, createCommit }));
 mock.module("@/lib/github/commit-intent", () => ({
   buildCommitIntentFromSandbox,
 }));
-mock.module("@/lib/github/pulls", () => ({ openPullRequest }));
+const mergePullRequest = mock(async () => ({ success: true, sha: "merged" }));
+const submitPullRequestReview = mock(async () => ({
+  success: true,
+  reviewId: 1,
+}));
+const deleteBranchRef = mock(async () => ({ success: true }));
+const getMergeReadinessViaInstallation = mock(async () => ({
+  canMerge: true,
+  checks: { failed: 0, pending: 0, passed: 1 },
+  reasons: [] as string[],
+}));
+
+mock.module("@/lib/github/pulls", () => ({
+  openPullRequest,
+  mergePullRequest,
+  submitPullRequestReview,
+  deleteBranchRef,
+  getMergeReadinessViaInstallation,
+}));
 mock.module("@/lib/github/token", () => ({ getGitHubAppUserToken }));
 mock.module("@/lib/github/users", () => ({ getGitHubUserProfile }));
 
@@ -274,7 +294,24 @@ const generate = mock(async (input: GenerateCall) => {
 mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
+  defaultModelLabel: "anthropic/claude-opus-4.6",
   openAgent: { generate },
+}));
+
+mock.module("@/lib/inference/model-option-id", () => ({
+  USER_INFERENCE_OPTION_PREFIX: "user-profile:",
+  parseModelOptionSelection: (optionId: string) => ({
+    modelId: optionId,
+    inferenceProfileId: null,
+  }),
+  getModelOptionSelectionId: (modelId: string | null | undefined) =>
+    modelId ?? "",
+}));
+
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 // ---------------------------------------------------------------------------
@@ -332,8 +369,6 @@ function buildRun(
     issueNumber: null,
     deploymentUrl: null,
     sandboxName: null,
-    // Use ready_pr so runMutationAgent (which calls openAgent.generate) is reached.
-    outputKind: "ready_pr",
     outputUrl: null,
     errorKind: null,
     errorMessage: null,
@@ -361,11 +396,17 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     repoName: "widgets",
     instructions: "Do composio things.",
     permissions: {},
-    // Use ready_pr so runMutationAgent (which calls openAgent.generate) is reached.
-    outputMode: "ready_pr",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,
+    // All native GitHub action toggles disabled — these tests exercise
+    // Composio tool injection in isolation from the native GitHub tools
+    // (covered by executor.test.ts / github-action-tools.test.ts).
+    githubActions: {},
+    writeScope: { mode: "this_repo" },
+    requireCiGreenForMerge: true,
+    modelId: null,
+    runBudgetPerTarget: 10,
     createdAt: now,
     updatedAt: now,
     ...overrides,

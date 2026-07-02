@@ -90,28 +90,28 @@ function formatTriggerKind(kind: string): string {
   }
 }
 
-function formatOutputMode(mode: string): string {
-  switch (mode) {
-    case "none":
-      return "Report only";
-    case "ready_pr":
-      return "Open a pull request";
-    case "comment":
-      return "Leave a comment";
-    case "issue":
-      return "Open an issue";
-    case "notification":
-      return "Send a notification";
-    default:
-      return mode;
-  }
-}
+type SummarizableGithubActions = {
+  open_pull_request?: boolean;
+  comment_on_pr_or_issue?: boolean;
+  approve_pull_request?: boolean;
+  request_changes?: boolean;
+  merge_pull_request?: boolean;
+  push?: boolean;
+  delete_branch?: boolean;
+};
+
+type SummarizableWriteScope = {
+  mode: "this_repo" | "all_repos" | "specific_repos";
+  repos?: Array<{ owner: string; name: string }>;
+};
 
 type SummarizableDraft = {
   name?: string;
   description?: string | null;
   instructions?: string;
-  outputMode?: string;
+  githubActions?: SummarizableGithubActions;
+  writeScope?: SummarizableWriteScope;
+  modelId?: string | null;
   triggers?: Array<{
     name: string;
     kind: string;
@@ -121,6 +121,60 @@ type SummarizableDraft = {
   }>;
   composioToolkitSlugs?: string[];
 };
+
+/**
+ * Ordered so the summary always lists actions in the same sequence as the
+ * GitHub actions panel (open PR, comment, approve, request changes, merge,
+ * push, delete branch).
+ */
+const GITHUB_ACTION_KEYS: Array<keyof SummarizableGithubActions> = [
+  "open_pull_request",
+  "comment_on_pr_or_issue",
+  "approve_pull_request",
+  "request_changes",
+  "merge_pull_request",
+  "push",
+  "delete_branch",
+];
+
+function summarizeEnabledActions(
+  actions: SummarizableGithubActions | undefined,
+): string | null {
+  if (!actions) return null;
+  const enabled = GITHUB_ACTION_KEYS.filter((key) => actions[key]);
+  if (enabled.length === 0) return null;
+  return enabled.join(", ");
+}
+
+function summarizeWriteScope(
+  scope: SummarizableWriteScope | undefined,
+): string | null {
+  if (!scope || scope.mode === "this_repo") {
+    // "this_repo" is the default — no need to call it out explicitly.
+    return null;
+  }
+  if (scope.mode === "specific_repos") {
+    const repos = (scope.repos ?? [])
+      .map((r) => `${r.owner}/${r.name}`)
+      .join(", ");
+    return repos ? `specific_repos (${repos})` : "specific_repos";
+  }
+  return scope.mode;
+}
+
+function hasAnyWriteAction(
+  actions: SummarizableGithubActions | undefined,
+): boolean {
+  if (!actions) return false;
+  return Boolean(
+    actions.open_pull_request ||
+    actions.approve_pull_request ||
+    actions.request_changes ||
+    actions.merge_pull_request ||
+    actions.push ||
+    actions.delete_branch,
+  );
+}
 
 function summarizeTrigger(draft: SummarizableDraft): string {
   const triggers = draft.triggers ?? [];
@@ -166,8 +220,18 @@ function summarizeSpec(draft: SummarizableDraft): string {
         : draft.instructions;
     parts.push(`**Instructions:** ${truncated}`);
   }
-  if (draft.outputMode) {
-    parts.push(`**Output:** ${formatOutputMode(draft.outputMode)}`);
+  const actionsSummary = summarizeEnabledActions(draft.githubActions);
+  if (actionsSummary) {
+    parts.push(`**Actions:** ${actionsSummary}`);
+  }
+
+  const writeScopeSummary = summarizeWriteScope(draft.writeScope);
+  if (writeScopeSummary) {
+    parts.push(`**Write scope:** ${writeScopeSummary}`);
+  }
+
+  if (draft.modelId) {
+    parts.push(`**Model:** ${draft.modelId}`);
   }
 
   if (draft.triggers && draft.triggers.length > 0) {
@@ -223,11 +287,11 @@ export function previewBackgroundAgentSpec(
 
     const warnings: string[] = [];
     if (
-      draft.outputMode === "ready_pr" &&
+      hasAnyWriteAction(draft.githubActions) &&
       draft.permissions.github?.contents !== "write"
     ) {
       warnings.push(
-        'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+        "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
       );
     }
 
@@ -262,11 +326,11 @@ export function previewBackgroundAgentSpec(
 
   const warnings: string[] = [];
   if (
-    draft.outputMode === "ready_pr" &&
+    hasAnyWriteAction(draft.githubActions) &&
     draft.permissions?.github?.contents !== "write"
   ) {
     warnings.push(
-      'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+      "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
     );
   }
 
@@ -434,6 +498,21 @@ export function normalizeAgentDraft(
     result.permissions = normalizeAgentPermissions(
       draft.permissions as Record<string, unknown>,
     );
+  }
+
+  // Legacy outputMode (#748): the column and schema field are gone, but older
+  // model prompts may still emit it. Map ready_pr to the equivalent action
+  // toggles (unless the draft already declares githubActions) and strip the
+  // key so the strict create/update schema does not reject the draft.
+  if ("outputMode" in result) {
+    if (result.outputMode === "ready_pr" && result.githubActions == null) {
+      result.githubActions = {
+        push: true,
+        open_pull_request: true,
+        comment_on_pr_or_issue: true,
+      };
+    }
+    delete result.outputMode;
   }
 
   return result;

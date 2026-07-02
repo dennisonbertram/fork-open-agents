@@ -176,7 +176,9 @@ mock.module("@/app/workflows/background-agent", () => ({
 // Do NOT register mock.module calls for agent-loops paths in this file —
 // doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   advanceTriggerScheduleState,
+  countRecentRunsForTarget: async () => 0,
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId,
@@ -200,10 +202,17 @@ const baseAgent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Handle GitHub events.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,
+  githubActions: {
+    open_pull_request: true,
+    comment_on_pr_or_issue: true,
+  },
+  writeScope: { mode: "this_repo" },
+  requireCiGreenForMerge: true,
+  modelId: null,
+  runBudgetPerTarget: 10,
   createdAt: new Date(),
   updatedAt: new Date(),
   triggers: [

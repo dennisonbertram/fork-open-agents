@@ -128,7 +128,6 @@ export function AgentEditForm({
         initialGoal={agent.description ?? ""}
         initialTriggerKind={form.triggerKind}
         initialInstructions={form.instructions}
-        initialOutputMode={form.outputMode}
         initialCheckCommand={form.checkCommand}
         initialEnabled={form.enabled}
         initialSchedule={form.schedule}
@@ -140,6 +139,10 @@ export function AgentEditForm({
         initialPermissionContents={form.permissionContents}
         initialPermissionPullRequests={form.permissionPullRequests}
         initialComposioToolkitSlugs={form.composioToolkitSlugs}
+        initialGithubActions={form.githubActions}
+        initialWriteScope={form.writeScope}
+        initialRequireCiGreenForMerge={form.requireCiGreenForMerge}
+        initialModelId={form.modelId}
         createdAgentId={agent.id}
         testRunId={testRunId}
         onSave={handleSave}

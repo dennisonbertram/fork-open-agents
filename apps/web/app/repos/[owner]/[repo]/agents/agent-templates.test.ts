@@ -33,9 +33,6 @@ describe("AGENT_TEMPLATES", () => {
 
       expect(typeof template.instructions).toBe("string");
       expect(template.instructions.length).toBeGreaterThan(0);
-
-      expect(typeof template.outputMode).toBe("string");
-      expect(template.outputMode.length).toBeGreaterThan(0);
     }
   });
 
@@ -79,9 +76,11 @@ describe("AGENT_TEMPLATES", () => {
     expect(template?.triggerKind).toBe("schedule.cron");
   });
 
-  test("BT-019: ready_pr templates declare explicit write permission intent", () => {
+  test("BT-019: write-action templates declare explicit write permission intent", () => {
     for (const template of AGENT_TEMPLATES) {
-      if (template.outputMode === "ready_pr") {
+      const hasWriteAction =
+        template.githubActions.push || template.githubActions.open_pull_request;
+      if (hasWriteAction) {
         expect(template.permissionsNote).toBeDefined();
         expect(template.permissionsNote).toContain("write");
       }

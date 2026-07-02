@@ -34,7 +34,6 @@ function detailData(
       prNumber: 7,
       issueNumber: null,
       deploymentUrl: null,
-      outputKind: "ready_pr",
       outputUrl: "https://github.com/acme/widgets/pull/42",
       sandboxName: "background_agent_run_123",
       requestId: "req_123",
@@ -367,5 +366,60 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("Event context");
     // Trigger kind shown
     expect(html).toContain("github.pull_request");
+  });
+
+  // #747: sidebar "Run" section's Output field must reflect recorded action
+  // outputs (kind + url), not the deprecated run.outputKind column.
+  test("#747: sidebar Run section lists recorded output kinds and links, not run.outputKind", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({
+      outputs: [
+        {
+          id: "output-1",
+          kind: "push",
+          status: "created",
+          url: null,
+          prNumber: null,
+        },
+        {
+          id: "output-2",
+          kind: "pr_comment",
+          status: "created",
+          url: "https://github.com/acme/widgets/pull/42#issuecomment-1",
+          prNumber: 42,
+        },
+      ],
+    });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // The sidebar "Run" section's Output row lists both recorded output
+    // kinds joined together, and the raw run.outputKind ("ready_pr" in
+    // detailData()) must not leak into that row.
+    expect(html).toContain("push, pr_comment");
+  });
+
+  test("#747: sidebar Run section Output field shows 'none' when no outputs are recorded", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+
+    const data = detailData({ outputs: [] });
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // Find the sidebar Run-section Output row specifically (not the proof-strip
+    // Output tile, which has its own "none"/"pending" text) — assert the
+    // "Run" section text block contains a bare "none" for the Output row.
+    const runSectionStart = html.indexOf(
+      '<h2 class="text-sm font-medium">Run</h2>',
+    );
+    const debugSectionStart = html.indexOf("Debug");
+    expect(runSectionStart).toBeGreaterThanOrEqual(0);
+    const runSectionHtml = html.slice(runSectionStart, debugSectionStart);
+    expect(runSectionHtml).toContain(">none<");
   });
 });

@@ -115,10 +115,17 @@ function makeAgent(
     repoName: "widgets",
     instructions: "Run smoke checks after deployments.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,
+    githubActions: {
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    },
+    writeScope: { mode: "this_repo" },
+    requireCiGreenForMerge: true,
+    modelId: null,
+    runBudgetPerTarget: 10,
     createdAt: new Date("2026-01-01"),
     updatedAt: new Date("2026-01-01"),
     triggers: [

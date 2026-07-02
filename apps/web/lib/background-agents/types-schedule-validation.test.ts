@@ -10,7 +10,6 @@ function basePayload(triggerOverrides: Record<string, unknown> = {}) {
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Run smoke checks.",
-    outputMode: "none",
     triggers: [
       {
         name: "Daily cron",
@@ -99,7 +98,6 @@ describe("createBackgroundAgentSchema — schedule.cron trigger validation", () 
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review PRs.",
-      outputMode: "comment",
       triggers: [
         {
           name: "Pull request opened",
@@ -117,7 +115,6 @@ describe("createBackgroundAgentSchema — schedule.cron trigger validation", () 
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Check deployments.",
-      outputMode: "none",
       triggers: [
         {
           name: "Deployment",

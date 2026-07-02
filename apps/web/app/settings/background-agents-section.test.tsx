@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildAgentPayload,
   buildFormFromAgent,
-  supportedOutputModes,
   type FormState,
 } from "./background-agents-form";
 
@@ -16,7 +15,6 @@ type AgentListData = {
     repoOwner: string;
     repoName: string;
     instructions: string;
-    outputMode: "comment" | "ready_pr" | "issue" | "notification" | "none";
     checkCommand: string | null;
     triggers: Array<{
       id: string;
@@ -55,7 +53,6 @@ type RunListData = {
     branch: string | null;
     prNumber: number | null;
     issueNumber: number | null;
-    outputKind: string | null;
     outputUrl: string | null;
     errorKind: string | null;
     createdAt: string;
@@ -279,7 +276,6 @@ describe("BackgroundAgentsSection", () => {
             branch: "main",
             prNumber: 42,
             issueNumber: null,
-            outputKind: "ready_pr",
             outputUrl: "https://github.com/acme/widgets/pull/42",
             errorKind: null,
             createdAt: "2026-05-27T12:00:00.000Z",
@@ -315,7 +311,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Run deployment smoke checks.",
-            outputMode: "ready_pr",
             checkCommand: "bun --bun run ci",
             triggers: [
               {
@@ -355,7 +350,6 @@ describe("BackgroundAgentsSection", () => {
     expect(html).toContain("repo-scoped builder");
     expect(html).not.toContain("Tool providers coming later");
     expect(html).not.toContain("Composio is planned for v1.5");
-    expect(supportedOutputModes).toEqual(["none", "ready_pr"]);
     expect(html).toContain("Edit");
     expect(html).toContain("Test");
     expect(html).toContain("/repos/acme/widgets/agents");
@@ -380,7 +374,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "api",
             instructions: "Watch for errors.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -418,7 +411,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Some instructions.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -456,7 +448,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "api",
             instructions: "Watch for PRs.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -513,7 +504,6 @@ describe("BackgroundAgentsSection", () => {
             branch: null,
             prNumber: 7,
             issueNumber: null,
-            outputKind: null,
             outputUrl: null,
             errorKind: null,
             createdAt: "2026-06-01T10:00:00.000Z",
@@ -533,7 +523,6 @@ describe("BackgroundAgentsSection", () => {
             branch: null,
             prNumber: null,
             issueNumber: null,
-            outputKind: null,
             outputUrl: null,
             errorKind: null,
             createdAt: "2026-06-01T11:00:00.000Z",
@@ -554,19 +543,22 @@ describe("BackgroundAgentsSection", () => {
     expect(html).not.toContain("github.deployment_status");
   });
 
-  test("REG-004: output mode permissions summary renders below the output mode select (regression guard)", async () => {
+  test("REG-004: permissions summary renders below the GitHub actions panel (regression guard)", async () => {
     // Radix Select portals dropdown content so SelectItem text is not in static markup.
     // Instead assert that the derived permissions summary is present — this relies on
-    // describeOutputModePermissions being wired to the rendered form.
+    // the panel's githubActions state being wired to the rendered form.
     const { BackgroundAgentsSection } = await componentModulePromise;
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
-    // Default outputMode is "none" → read-only summary must appear
-    expect(html.toLowerCase()).toContain("read-only");
+    // Default githubActions (open_pull_request:true) requires write, so the
+    // "write access" summary must appear, not "read-only".
+    expect(html.toLowerCase()).toContain("write access");
     // Raw enum "ready_pr" must not appear as visible element content
     expect(html).not.toContain(">ready_pr<");
-    // The output mode label field heading must be present
-    expect(html).toContain("Output mode");
+    // The GitHub actions panel field labels must be present
+    expect(html).toContain("Open pull requests");
+    expect(html).toContain("Write scope");
+    expect(html).toContain("Model");
   });
 
   test("REG-005: condition fields section renders only fields valid for pull_request trigger (regression guard)", async () => {
@@ -597,8 +589,9 @@ describe("BackgroundAgentsSection", () => {
       conditionLabels: "",
       conditionEnvironments: "",
       conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
       instructions: "Review changes.",
-      outputMode: "none",
       checkCommand: "",
       enabled: false,
       permissionContents: "read",
@@ -643,20 +636,30 @@ describe("BackgroundAgentsSection", () => {
     expect(webhookHtml).not.toContain("Branches");
   });
 
-  test("ISSUE-229: permissions summary renders derived grants by output mode", async () => {
+  test("ISSUE-229: permissions summary renders derived grants by enabled githubActions", async () => {
     const { PermissionsSummary } = await componentModulePromise;
 
-    const readOnlyHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="none" />,
+    // Comment-only agents are NOT read-only: commenting is a GitHub write
+    // (issues:write token + write-scope gate). The summary must say so.
+    const commentsOnlyHtml = renderToStaticMarkup(
+      <PermissionsSummary githubActions={{ comment_on_pr_or_issue: true }} />,
     );
-    expect(readOnlyHtml).toContain("Permissions summary");
-    expect(readOnlyHtml).toContain("GitHub contents: ");
-    expect(readOnlyHtml).toContain("Pull requests: ");
+    expect(commentsOnlyHtml).toContain("Permissions summary");
+    expect(commentsOnlyHtml).toContain("GitHub contents: ");
+    expect(commentsOnlyHtml).toContain("Pull requests: ");
+    expect(commentsOnlyHtml).toContain("comments only");
+    expect(commentsOnlyHtml).toContain("write access to the repo");
+    expect(commentsOnlyHtml).not.toContain("read-only");
+
+    // A truly no-action agent IS read-only.
+    const readOnlyHtml = renderToStaticMarkup(
+      <PermissionsSummary githubActions={{}} />,
+    );
     expect(readOnlyHtml).toContain("read-only");
     expect(readOnlyHtml).not.toContain("write access");
 
     const readyPrHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="ready_pr" />,
+      <PermissionsSummary githubActions={{ open_pull_request: true }} />,
     );
     expect(readyPrHtml).toContain("write access");
     expect(readyPrHtml).toContain("GitHub contents: ");
@@ -712,7 +715,6 @@ describe("BackgroundAgentsSection", () => {
             repoOwner: "acme",
             repoName: "widgets",
             instructions: "Run checks.",
-            outputMode: "none",
             checkCommand: null,
             triggers: [
               {
@@ -748,7 +750,6 @@ describe("BackgroundAgentsSection", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Run deployment smoke checks.",
-      outputMode: "ready_pr",
       checkCommand: "bun --bun run ci",
       triggers: [
         {
@@ -775,7 +776,6 @@ describe("BackgroundAgentsSection", () => {
       conditionActions: "",
       conditionEnvironments: "production",
       conditionSeverities: "success",
-      outputMode: "ready_pr",
     });
 
     // Simulate the user updating the status filter in the editor

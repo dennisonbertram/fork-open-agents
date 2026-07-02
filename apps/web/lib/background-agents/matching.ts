@@ -51,5 +51,27 @@ export function triggerMatchesEvent(
     return false;
   }
 
+  // actors (#749): allowlist matched case-insensitively against event.actor.
+  // Missing actor never matches a configured allowlist.
+  if (conditions.actors?.length) {
+    const actor = event.actor?.toLowerCase();
+    const allowed = conditions.actors.map((value) => value.toLowerCase());
+    if (!actor || !allowed.includes(actor)) {
+      return false;
+    }
+  }
+
+  // ignoreActors (#749): denylist matched case-insensitively against
+  // event.actor. This is the loop-safety backstop — e.g. a reviewer agent
+  // ignores events authored by its own bot login. A missing actor never
+  // matches a configured denylist (nothing to filter out).
+  if (conditions.ignoreActors?.length) {
+    const actor = event.actor?.toLowerCase();
+    const ignored = conditions.ignoreActors.map((value) => value.toLowerCase());
+    if (actor && ignored.includes(actor)) {
+      return false;
+    }
+  }
+
   return true;
 }

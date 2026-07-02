@@ -159,7 +159,7 @@ export default async function AgentDetailPage({
         <section className="rounded-md border border-border">
           <SectionHeader>Current state</SectionHeader>
           <div className="px-4 py-4">
-            <div className="grid gap-3 sm:grid-cols-3">
+            <div className="grid gap-3 sm:grid-cols-2">
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                   Status
@@ -167,12 +167,6 @@ export default async function AgentDetailPage({
                 <p className="mt-1 text-sm">
                   {agent.status === "disabled" ? "Paused" : "Enabled"}
                 </p>
-              </div>
-              <div>
-                <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Output mode
-                </p>
-                <p className="mt-1 text-sm">{agent.outputMode ?? "none"}</p>
               </div>
               <div>
                 <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">

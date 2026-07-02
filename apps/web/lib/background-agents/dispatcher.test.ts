@@ -31,6 +31,8 @@ const listStaleBackgroundAgentRuns = mock(async () => []);
 const updateBackgroundAgentRunStatus = mock(async () => undefined);
 const advanceTriggerScheduleState = mock(async () => undefined);
 const recordTriggerSkipReason = mock(async () => undefined);
+let recentRunsForTargetCount = 0;
+const countRecentRunsForTarget = mock(async () => recentRunsForTargetCount);
 
 mock.module("workflow/api", () => ({ start }));
 
@@ -46,7 +48,9 @@ mock.module("@/app/workflows/background-agent", () => ({
 // doing so pollutes the module registry and breaks dispatcher-bridge.test.ts.
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   advanceTriggerScheduleState,
+  countRecentRunsForTarget,
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId,
@@ -108,10 +112,17 @@ const agent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Run the smoke check.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,
+  githubActions: {
+    open_pull_request: true,
+    comment_on_pr_or_issue: true,
+  },
+  writeScope: { mode: "this_repo" },
+  requireCiGreenForMerge: true,
+  modelId: null,
+  runBudgetPerTarget: 10,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
@@ -156,6 +167,7 @@ function resetDispatcherMocks() {
   matchingRows = [];
   webhookRow = null;
   scheduleRows = [];
+  recentRunsForTargetCount = 0;
   start.mockClear();
   createRunForTrigger.mockClear();
   createRunForTrigger.mockImplementation(
@@ -172,6 +184,7 @@ function resetDispatcherMocks() {
   listEnabledScheduleTriggers.mockClear();
   advanceTriggerScheduleState.mockClear();
   recordTriggerSkipReason.mockClear();
+  countRecentRunsForTarget.mockClear();
 }
 
 describe("dispatchBackgroundTriggerEvent", () => {
@@ -272,6 +285,94 @@ describe("dispatchBackgroundTriggerEvent", () => {
     expect(listMatchingTriggersForEvent).not.toHaveBeenCalled();
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+  });
+
+  // #749: per-agent-per-PR run budget — the ping-pong loop backstop.
+  test("refuses to create a run when the agent's per-PR budget is exhausted", async () => {
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    recentRunsForTargetCount = agent.runBudgetPerTarget; // already at budget
+
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-budget",
+    });
+
+    expect(countRecentRunsForTarget).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: agent.id,
+        repoOwner: agent.repoOwner,
+        repoName: agent.repoName,
+        prNumber: githubEvent.prNumber,
+      }),
+    );
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith(
+      expect.objectContaining({
+        triggerId: enabledTrigger.id,
+        skipReason: expect.stringContaining("budget"),
+      }),
+    );
+    expect(result).toEqual({
+      enabled: true,
+      matched: 1,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+    });
+  });
+
+  test("still creates a run when the agent is under its per-PR budget", async () => {
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    recentRunsForTargetCount = agent.runBudgetPerTarget - 1;
+
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-under-budget",
+    });
+
+    expect(createRunForTrigger).toHaveBeenCalledTimes(1);
+    expect(result.created).toBe(1);
+  });
+
+  test("does not budget-check events with no prNumber", async () => {
+    matchingRows = [
+      {
+        agent,
+        trigger: enabledTrigger,
+      },
+    ];
+    recentRunsForTargetCount = agent.runBudgetPerTarget;
+    const eventWithoutPr: NormalizedBackgroundTriggerEvent = {
+      ...githubEvent,
+      prNumber: undefined,
+    };
+
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: eventWithoutPr,
+      requestId: "req-no-pr",
+    });
+
+    expect(countRecentRunsForTarget).not.toHaveBeenCalled();
+    expect(createRunForTrigger).toHaveBeenCalledTimes(1);
+    expect(result.created).toBe(1);
   });
 });
 
@@ -568,6 +669,57 @@ describe("dispatchManualBackgroundAgentTest", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  // #743: manual-test guard — a disabled agent must never run, even via the
+  // manual Test button (which could mutate a real PR if it slipped through).
+  test("does not create a manual test run when the agent is disabled", async () => {
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent: { ...agent, status: "disabled" },
+      requestId: "req-1",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "agent_disabled",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  // #743: only an enabled trigger counts — the dispatcher must not fall back
+  // to a disabled trigger just because it's the only one on the agent.
+  test("does not fall back to a disabled trigger when no trigger is enabled", async () => {
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent: {
+        ...agent,
+        triggers: [
+          agent.triggers[0] as BackgroundAgentWithTriggers["triggers"][number],
+        ],
+      },
+      requestId: "req-1",
+    });
+
+    expect(result).toEqual({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "no_enabled_trigger",
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();

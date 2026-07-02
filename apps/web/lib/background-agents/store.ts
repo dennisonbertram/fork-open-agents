@@ -1,6 +1,15 @@
 import "server-only";
 
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  notInArray,
+  or,
+  sql,
+} from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -9,7 +18,6 @@ import {
   backgroundAgentOutputs,
   backgroundAgentRuns,
   backgroundAgents,
-  backgroundAgentToolGrants,
   backgroundAgentTriggers,
   type BackgroundAgent,
   type BackgroundAgentEvent,
@@ -22,6 +30,7 @@ import {
 } from "@/lib/db/schema";
 import { redactBackgroundAgentPayload } from "./redaction";
 import { triggerMatchesEvent } from "./matching";
+import { computeNextRuns } from "./schedule-presets";
 import {
   buildBackgroundRunIdempotencyKey,
   type BackgroundAgentRunStatus,
@@ -33,6 +42,23 @@ import {
   getExistingWebhookPublicIds,
   getWebhookPublicIdForUpdatedTrigger,
 } from "./trigger-public-ids";
+import { matchTriggersByIdentity } from "./trigger-upsert";
+
+/**
+ * Seeds nextRunAt for a schedule.cron trigger at creation/replacement time.
+ * Returns null for non-schedule triggers or invalid/missing schedules
+ * (computeNextRuns already returns [] for those — see schedule-presets.ts).
+ */
+function seedNextRunAt(params: {
+  kind: string;
+  schedule: string | null;
+  now: Date;
+}): Date | null {
+  if (params.kind !== "schedule.cron") {
+    return null;
+  }
+  return computeNextRuns(params.schedule, params.now, 1)[0] ?? null;
+}
 
 export type BackgroundAgentWithTriggers = BackgroundAgent & {
   triggers: BackgroundAgentTrigger[];
@@ -75,7 +101,9 @@ function normalizeOptionalText(value: string | null | undefined) {
 export async function createBackgroundAgent(
   userId: string,
   input: CreateBackgroundAgentInput,
+  options?: { now?: Date },
 ): Promise<BackgroundAgentWithTriggers> {
+  const now = options?.now ?? new Date();
   return db.transaction(async (tx) => {
     const [agent] = await tx
       .insert(backgroundAgents)
@@ -89,9 +117,13 @@ export async function createBackgroundAgent(
         repoName: input.repoName,
         instructions: input.instructions,
         permissions: input.permissions,
-        outputMode: input.outputMode,
         checkCommand: normalizeOptionalText(input.checkCommand),
         composioToolkitSlugs: input.composioToolkitSlugs,
+        githubActions: input.githubActions,
+        writeScope: input.writeScope,
+        requireCiGreenForMerge: input.requireCiGreenForMerge,
+        modelId: input.modelId,
+        runBudgetPerTarget: input.runBudgetPerTarget,
       })
       .returning();
 
@@ -102,17 +134,22 @@ export async function createBackgroundAgent(
     const triggers = await tx
       .insert(backgroundAgentTriggers)
       .values(
-        input.triggers.map((trigger) => ({
-          id: nanoid(),
-          agentId: agent.id,
-          userId,
-          name: trigger.name,
-          kind: trigger.kind,
-          status: trigger.status,
-          conditions: trigger.conditions,
-          schedule: normalizeOptionalText(trigger.schedule),
-          webhookPublicId: trigger.kind === "webhook.error" ? nanoid(16) : null,
-        })),
+        input.triggers.map((trigger) => {
+          const schedule = normalizeOptionalText(trigger.schedule);
+          return {
+            id: nanoid(),
+            agentId: agent.id,
+            userId,
+            name: trigger.name,
+            kind: trigger.kind,
+            status: trigger.status,
+            conditions: trigger.conditions,
+            schedule,
+            webhookPublicId:
+              trigger.kind === "webhook.error" ? nanoid(16) : null,
+            nextRunAt: seedNextRunAt({ kind: trigger.kind, schedule, now }),
+          };
+        }),
       )
       .returning();
 
@@ -124,7 +161,9 @@ export async function updateBackgroundAgent(
   userId: string,
   agentId: string,
   input: UpdateBackgroundAgentInput,
+  options?: { now?: Date },
 ): Promise<BackgroundAgentWithTriggers | null> {
+  const now = options?.now ?? new Date();
   return db.transaction(async (tx) => {
     const existing = await tx.query.backgroundAgents.findFirst({
       where: and(
@@ -154,14 +193,24 @@ export async function updateBackgroundAgent(
         ...(input.permissions !== undefined
           ? { permissions: input.permissions }
           : {}),
-        ...(input.outputMode !== undefined
-          ? { outputMode: input.outputMode }
-          : {}),
         ...(input.checkCommand !== undefined
           ? { checkCommand: normalizeOptionalText(input.checkCommand) }
           : {}),
         ...(input.composioToolkitSlugs !== undefined
           ? { composioToolkitSlugs: input.composioToolkitSlugs }
+          : {}),
+        ...(input.githubActions !== undefined
+          ? { githubActions: input.githubActions }
+          : {}),
+        ...(input.writeScope !== undefined
+          ? { writeScope: input.writeScope }
+          : {}),
+        ...(input.requireCiGreenForMerge !== undefined
+          ? { requireCiGreenForMerge: input.requireCiGreenForMerge }
+          : {}),
+        ...(input.modelId !== undefined ? { modelId: input.modelId } : {}),
+        ...(input.runBudgetPerTarget !== undefined
+          ? { runBudgetPerTarget: input.runBudgetPerTarget }
           : {}),
         updatedAt: new Date(),
       })
@@ -182,28 +231,81 @@ export async function updateBackgroundAgent(
         where: eq(backgroundAgentTriggers.agentId, agent.id),
         orderBy: [desc(backgroundAgentTriggers.createdAt)],
       });
-      const existingWebhookPublicIds =
-        getExistingWebhookPublicIds(existingTriggers);
-
-      await tx
-        .delete(backgroundAgentTriggers)
-        .where(eq(backgroundAgentTriggers.agentId, agent.id));
-      await tx.insert(backgroundAgentTriggers).values(
-        input.triggers.map((trigger) => ({
-          id: nanoid(),
-          agentId: agent.id,
-          userId,
+      // Upsert-by-identity: a trigger whose kind/schedule/conditions/name are
+      // unchanged is PRESERVED (same row id, lastRunAt, nextRunAt,
+      // lastSkipReason, webhookPublicId) instead of being deleted and
+      // recreated. This keeps run idempotency identity stable across edits
+      // and prevents a no-op edit from silently resetting a working schedule.
+      const matches = matchTriggersByIdentity({
+        incoming: input.triggers.map((trigger) => ({
           name: trigger.name,
           kind: trigger.kind,
-          status: trigger.status,
           conditions: trigger.conditions,
-          schedule: normalizeOptionalText(trigger.schedule),
-          webhookPublicId: getWebhookPublicIdForUpdatedTrigger({
-            trigger,
-            existingWebhookPublicIds,
-          }),
+          schedule: trigger.schedule,
         })),
+        existing: existingTriggers,
+      });
+
+      const preservedIds = new Set<string>();
+      for (const [index, trigger] of input.triggers.entries()) {
+        const matched = matches[index];
+        if (matched) {
+          preservedIds.add(matched.id);
+          await tx
+            .update(backgroundAgentTriggers)
+            .set({
+              status: trigger.status,
+              updatedAt: new Date(),
+            })
+            .where(eq(backgroundAgentTriggers.id, matched.id));
+        }
+      }
+
+      const staleTriggerIds = existingTriggers
+        .map((row) => row.id)
+        .filter((id) => !preservedIds.has(id));
+      if (staleTriggerIds.length > 0) {
+        await tx
+          .delete(backgroundAgentTriggers)
+          .where(inArray(backgroundAgentTriggers.id, staleTriggerIds));
+      }
+
+      // The webhook-id reuse pool must contain ONLY ids from rows being
+      // replaced (deleted above). A preserved row's id is still live under
+      // the unique webhook_public_id index — handing it to a new row would
+      // fail the insert and abort the whole agent edit.
+      const existingWebhookPublicIds = getExistingWebhookPublicIds(
+        existingTriggers.filter((row) => !preservedIds.has(row.id)),
       );
+
+      const newTriggerValues = input.triggers
+        .map((trigger, index) => ({ trigger, matched: matches[index] }))
+        .filter(({ matched }) => !matched)
+        .map(({ trigger }) => {
+          const schedule = normalizeOptionalText(trigger.schedule);
+          return {
+            id: nanoid(),
+            agentId: agent.id,
+            userId,
+            name: trigger.name,
+            kind: trigger.kind,
+            status: trigger.status,
+            conditions: trigger.conditions,
+            schedule,
+            webhookPublicId: getWebhookPublicIdForUpdatedTrigger({
+              trigger,
+              existingWebhookPublicIds,
+            }),
+            nextRunAt: seedNextRunAt({ kind: trigger.kind, schedule, now }),
+            // A replaced/new trigger identity starts fresh — it must not
+            // inherit lastRunAt/lastSkipReason from the row it replaced.
+            lastRunAt: null,
+            lastSkipReason: null,
+          };
+        });
+      if (newTriggerValues.length > 0) {
+        await tx.insert(backgroundAgentTriggers).values(newTriggerValues);
+      }
     }
 
     const triggers = await tx.query.backgroundAgentTriggers.findMany({
@@ -368,7 +470,6 @@ export async function createRunForTrigger(params: {
     prNumber: params.event.prNumber ?? null,
     issueNumber: params.event.issueNumber ?? null,
     deploymentUrl: params.event.deploymentUrl ?? null,
-    outputKind: params.agent.outputMode,
     payloadSummary: {
       title: params.event.title,
       url: params.event.url,
@@ -416,47 +517,62 @@ export async function createRunForTrigger(params: {
   return { run: existing, created: false };
 }
 
+const RECORD_EVENT_MAX_ATTEMPTS = 5;
+
 export async function recordBackgroundAgentEvent(
   input: RecordEventInput,
 ): Promise<BackgroundAgentEvent> {
-  // Assign a monotonic per-run sequence in application code.
-  // We compute max(sequence) for the run and add 1, using raw SQL
-  // coalesce so the first event starts at 1.
-  const [seqRow] = await db
-    .select({
-      nextSeq: sql<number>`coalesce(max(${backgroundAgentEvents.sequence}), 0) + 1`,
-    })
-    .from(backgroundAgentEvents)
-    .where(eq(backgroundAgentEvents.runId, input.runId));
+  // Assign a monotonic per-run sequence in application code: compute
+  // max(sequence) for the run and add 1, using raw SQL coalesce so the first
+  // event starts at 1. This computation is not atomic with the insert, so two
+  // concurrent callers can compute the same next sequence — the UNIQUE index
+  // on (run_id, sequence) then rejects the second writer's insert instead of
+  // silently overwriting/dropping it (#743). We retry with a fresh max+1 on
+  // that conflict rather than surface the drop to the caller.
+  for (let attempt = 0; attempt < RECORD_EVENT_MAX_ATTEMPTS; attempt++) {
+    const [seqRow] = await db
+      .select({
+        nextSeq: sql<number>`coalesce(max(${backgroundAgentEvents.sequence}), 0) + 1`,
+      })
+      .from(backgroundAgentEvents)
+      .where(eq(backgroundAgentEvents.runId, input.runId));
 
-  const sequence = Number(seqRow?.nextSeq ?? 1);
+    const sequence = Number(seqRow?.nextSeq ?? 1);
 
-  const [event] = await db
-    .insert(backgroundAgentEvents)
-    .values({
-      id: nanoid(),
-      runId: input.runId,
-      agentId: input.agentId ?? null,
-      userId: input.userId,
-      eventName: input.eventName,
-      status: input.status,
-      level: input.level ?? "info",
-      summary: input.summary ?? null,
-      requestId: input.requestId ?? null,
-      workflowRunId: input.workflowRunId ?? null,
-      sandboxName: input.sandboxName ?? null,
-      errorKind: input.errorKind ?? null,
-      payload: redactBackgroundAgentPayload(input.payload),
-      redactionStatus: "passed",
-      sequence,
-    })
-    .returning();
+    const [event] = await db
+      .insert(backgroundAgentEvents)
+      .values({
+        id: nanoid(),
+        runId: input.runId,
+        agentId: input.agentId ?? null,
+        userId: input.userId,
+        eventName: input.eventName,
+        status: input.status,
+        level: input.level ?? "info",
+        summary: input.summary ?? null,
+        requestId: input.requestId ?? null,
+        workflowRunId: input.workflowRunId ?? null,
+        sandboxName: input.sandboxName ?? null,
+        errorKind: input.errorKind ?? null,
+        payload: redactBackgroundAgentPayload(input.payload),
+        redactionStatus: "passed",
+        sequence,
+      })
+      .onConflictDoNothing({
+        target: [backgroundAgentEvents.runId, backgroundAgentEvents.sequence],
+      })
+      .returning();
 
-  if (!event) {
-    throw new Error("Failed to record background agent event");
+    if (event) {
+      return event;
+    }
+    // Sequence collided with a concurrent writer for this run — retry with a
+    // freshly computed max+1 on the next loop iteration.
   }
 
-  return event;
+  throw new Error(
+    `Failed to record background agent event for run ${input.runId} after ${RECORD_EVENT_MAX_ATTEMPTS} sequence-conflict retries`,
+  );
 }
 
 export async function recordBackgroundAgentOutput(
@@ -483,6 +599,16 @@ export async function recordBackgroundAgentOutput(
   return output;
 }
 
+const TERMINAL_RUN_STATUSES: BackgroundAgentRunStatus[] = [
+  "succeeded",
+  "failed",
+  "skipped",
+  "cancelled",
+];
+const terminalRunStatusSet = new Set<BackgroundAgentRunStatus>(
+  TERMINAL_RUN_STATUSES,
+);
+
 export async function updateBackgroundAgentRunStatus(params: {
   runId: string;
   status: BackgroundAgentRunStatus;
@@ -491,41 +617,84 @@ export async function updateBackgroundAgentRunStatus(params: {
   errorKind?: string | null;
   errorMessage?: string | null;
   outputUrl?: string | null;
+  /**
+   * Bypasses the terminal-status guard below. Only the stale-run sweeper
+   * (dispatcher.ts) should pass this — it must be able to terminalize a run
+   * that is legitimately stuck, even if the run already reached a terminal
+   * status through a race with its own executor (#743).
+   */
+  force?: boolean;
+  /**
+   * Needed only to emit a background-agent.run.status_conflict event when a
+   * non-forced transition is refused. Callers that don't have these on hand
+   * simply won't get a conflict event recorded (best-effort observability).
+   */
+  agentId?: string | null;
+  userId?: string;
 }): Promise<BackgroundAgentRun | null> {
-  const terminalStatuses = new Set<BackgroundAgentRunStatus>([
-    "succeeded",
-    "failed",
-    "skipped",
-    "cancelled",
-  ]);
   const now = new Date();
+  const setValues = {
+    status: params.status,
+    ...(params.workflowRunId !== undefined
+      ? { workflowRunId: params.workflowRunId }
+      : {}),
+    ...(params.sandboxName !== undefined
+      ? { sandboxName: params.sandboxName }
+      : {}),
+    ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+    ...(params.errorMessage !== undefined
+      ? { errorMessage: params.errorMessage }
+      : {}),
+    ...(params.outputUrl !== undefined ? { outputUrl: params.outputUrl } : {}),
+    ...(params.status === "running" ? { startedAt: now } : {}),
+    ...(terminalRunStatusSet.has(params.status) ? { finishedAt: now } : {}),
+    updatedAt: now,
+  };
+
+  const whereCondition = params.force
+    ? eq(backgroundAgentRuns.id, params.runId)
+    : and(
+        eq(backgroundAgentRuns.id, params.runId),
+        notInArray(backgroundAgentRuns.status, TERMINAL_RUN_STATUSES),
+      );
+
   const [run] = await db
     .update(backgroundAgentRuns)
-    .set({
-      status: params.status,
-      ...(params.workflowRunId !== undefined
-        ? { workflowRunId: params.workflowRunId }
-        : {}),
-      ...(params.sandboxName !== undefined
-        ? { sandboxName: params.sandboxName }
-        : {}),
-      ...(params.errorKind !== undefined
-        ? { errorKind: params.errorKind }
-        : {}),
-      ...(params.errorMessage !== undefined
-        ? { errorMessage: params.errorMessage }
-        : {}),
-      ...(params.outputUrl !== undefined
-        ? { outputUrl: params.outputUrl }
-        : {}),
-      ...(params.status === "running" ? { startedAt: now } : {}),
-      ...(terminalStatuses.has(params.status) ? { finishedAt: now } : {}),
-      updatedAt: now,
-    })
-    .where(eq(backgroundAgentRuns.id, params.runId))
+    .set(setValues)
+    .where(whereCondition)
     .returning();
 
-  return run ?? null;
+  if (run) {
+    return run;
+  }
+
+  // The UPDATE matched no row. Distinguish "run doesn't exist" from "refused
+  // a non-forced transition out of a terminal status" so we only emit a
+  // status_conflict event for the latter.
+  if (!params.force) {
+    const existing = await getBackgroundAgentRun(params.runId);
+    if (existing && terminalRunStatusSet.has(existing.status)) {
+      if (params.userId) {
+        await recordBackgroundAgentEvent({
+          runId: params.runId,
+          agentId: params.agentId ?? existing.agentId ?? null,
+          userId: params.userId,
+          eventName: "background-agent.run.status_conflict",
+          status: "info",
+          level: "warn",
+          summary: `Refused non-forced transition from ${existing.status} to ${params.status}.`,
+          payload: {
+            runId: params.runId,
+            from: existing.status,
+            to: params.status,
+          },
+        });
+      }
+      return null;
+    }
+  }
+
+  return null;
 }
 
 export async function getBackgroundAgentRun(
@@ -760,6 +929,58 @@ export async function advanceTriggerScheduleState(params: {
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
 }
 
+/**
+ * Seeds nextRunAt for a legacy schedule trigger row created before #750
+ * (nextRunAt was never set at creation back then). Unlike
+ * advanceTriggerScheduleState this does NOT touch lastRunAt/lastSkipReason —
+ * the trigger has not fired; it is only being given a real due time so the
+ * due-window dispatch can reach it.
+ */
+export async function seedTriggerNextRunAt(params: {
+  triggerId: string;
+  nextRunAt: Date | null;
+}): Promise<void> {
+  await db
+    .update(backgroundAgentTriggers)
+    .set({
+      nextRunAt: params.nextRunAt,
+      updatedAt: new Date(),
+    })
+    .where(eq(backgroundAgentTriggers.id, params.triggerId));
+}
+
+/**
+ * Counts runs this agent has created for the same (repo, prNumber) since a
+ * given timestamp (#749). Backs the per-agent-per-PR run budget: the
+ * dispatcher refuses to create additional runs once this count reaches the
+ * agent's runBudgetPerTarget within a rolling 24h window.
+ *
+ * repoOwner/repoName are matched case-insensitively for consistency with the
+ * rest of the matching/dispatch pipeline.
+ */
+export async function countRecentRunsForTarget(params: {
+  agentId: string;
+  repoOwner: string;
+  repoName: string;
+  prNumber: number;
+  since: Date;
+}): Promise<number> {
+  const [row] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(backgroundAgentRuns)
+    .where(
+      and(
+        eq(backgroundAgentRuns.agentId, params.agentId),
+        eq(backgroundAgentRuns.prNumber, params.prNumber),
+        sql`lower(${backgroundAgentRuns.repoOwner}) = ${params.repoOwner.toLowerCase()}`,
+        sql`lower(${backgroundAgentRuns.repoName}) = ${params.repoName.toLowerCase()}`,
+        sql`${backgroundAgentRuns.createdAt} > ${params.since.toISOString()}`,
+      ),
+    );
+
+  return Number(row?.count ?? 0);
+}
+
 export async function recordTriggerSkipReason(params: {
   triggerId: string;
   skipReason: string;
@@ -771,51 +992,6 @@ export async function recordTriggerSkipReason(params: {
       updatedAt: new Date(),
     })
     .where(eq(backgroundAgentTriggers.id, params.triggerId));
-}
-
-export { backgroundAgentToolGrants };
-
-/**
- * Returns all enabled Composio tool grants for a given background agent.
- * An enabled grant means the agent is authorized to use the linked Composio
- * profile for that role/phase combination.
- *
- * Used by the executor to gate Composio tool resolution: if no enabled grants
- * exist, the agent gets no Composio tools (pre-Phase-5 behavior).
- */
-export async function listEnabledToolGrantsForAgent(
-  agentId: string,
-): Promise<
-  Array<
-    Pick<
-      typeof backgroundAgentToolGrants.$inferSelect,
-      | "id"
-      | "agentId"
-      | "userId"
-      | "provider"
-      | "profileId"
-      | "agentRole"
-      | "phase"
-      | "status"
-    >
-  >
-> {
-  return db.query.backgroundAgentToolGrants.findMany({
-    where: and(
-      eq(backgroundAgentToolGrants.agentId, agentId),
-      eq(backgroundAgentToolGrants.status, "enabled"),
-    ),
-    columns: {
-      id: true,
-      agentId: true,
-      userId: true,
-      provider: true,
-      profileId: true,
-      agentRole: true,
-      phase: true,
-      status: true,
-    },
-  });
 }
 
 /**

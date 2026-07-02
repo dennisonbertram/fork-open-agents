@@ -37,6 +37,8 @@ type OutputInput = {
   payload?: unknown;
 };
 
+type OutputRow = OutputInput & { id: string };
+
 type StatusUpdateInput = {
   runId: string;
   status: BackgroundAgentRun["status"];
@@ -64,20 +66,12 @@ type ConnectSandboxInput = {
   };
 };
 
-type OpenPullRequestInput = {
-  repoUrl: string;
-  branchName: string;
-  title: string;
-  body: string;
-  baseBranch: string;
-  token: string;
-};
-
 const successfulAccess = {
   ok: true,
   installationId: 99,
   repositoryId: 42,
   defaultBranch: "main",
+  userPermission: "write",
 } as const;
 
 const successfulCommand: ExecResult = {
@@ -91,13 +85,23 @@ const successfulCommand: ExecResult = {
 let currentRun: BackgroundAgentRun;
 let currentAgent: BackgroundAgent | null;
 let commandResults = new Map<string, ExecResult>();
+let recordedOutputs: OutputRow[] = [];
+let outputIdCounter = 0;
 
 const getBackgroundAgentRunWithAgent = mock(async () => ({
   run: currentRun,
   agent: currentAgent,
 }));
 const recordBackgroundAgentEvent = mock(async (input: EventInput) => input);
-const recordBackgroundAgentOutput = mock(async (input: OutputInput) => input);
+const recordBackgroundAgentOutput = mock(async (input: OutputInput) => {
+  outputIdCounter += 1;
+  const row: OutputRow = { ...input, id: `output-${outputIdCounter}` };
+  recordedOutputs.push(row);
+  return row;
+});
+const listBackgroundAgentOutputsMock = mock(
+  async (_runId: string): Promise<OutputRow[]> => recordedOutputs,
+);
 const updateBackgroundAgentRunStatus = mock(
   async (input: StatusUpdateInput): Promise<BackgroundAgentRun> => ({
     ...currentRun,
@@ -181,10 +185,21 @@ const buildCommitIntentFromSandbox = mock(async () => ({
     },
   },
 }));
-const openPullRequest = mock(async (_input: OpenPullRequestInput) => ({
+const openPullRequest = mock(async () => ({
   success: true,
   prUrl: "https://github.com/acme/widgets/pull/42",
   prNumber: 42,
+}));
+const mergePullRequest = mock(async () => ({ success: true, sha: "merged" }));
+const submitPullRequestReview = mock(async () => ({
+  success: true,
+  reviewId: 1,
+}));
+const deleteBranchRef = mock(async () => ({ success: true }));
+const getMergeReadinessViaInstallation = mock(async () => ({
+  canMerge: true,
+  checks: { failed: 0, pending: 0, passed: 1 },
+  reasons: [] as string[],
 }));
 const getGitHubAppUserToken = mock(async () => "user-token");
 const getGitHubUserProfile = mock(async () => ({
@@ -211,15 +226,16 @@ const generate = mock(async () => ({
 }));
 
 const listBackgroundAgentEvents = mock(async () => []);
-const listBackgroundAgentOutputs = mock(async () => []);
+const recordUsage = mock(async () => undefined);
 
 mock.module("./store", () => ({
+  seedTriggerNextRunAt: async () => undefined,
   getBackgroundAgentRunWithAgent,
   recordBackgroundAgentEvent,
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
   listBackgroundAgentEvents,
-  listBackgroundAgentOutputs,
+  listBackgroundAgentOutputs: listBackgroundAgentOutputsMock,
   // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
   listRepoBackgroundAgents: mock(async () => []),
   listBackgroundAgents: mock(async () => []),
@@ -244,7 +260,7 @@ mock.module("./run-summary-persist", () => ({
 }));
 
 mock.module("@/lib/db/usage", () => ({
-  recordUsage: mock(async () => undefined),
+  recordUsage,
 }));
 
 mock.module("@open-agents/sandbox", () => ({
@@ -284,6 +300,10 @@ mock.module("@/lib/github/commit-intent", () => ({
 
 mock.module("@/lib/github/pulls", () => ({
   openPullRequest,
+  mergePullRequest,
+  submitPullRequestReview,
+  deleteBranchRef,
+  getMergeReadinessViaInstallation,
 }));
 
 mock.module("@/lib/github/token", () => ({
@@ -297,9 +317,26 @@ mock.module("@/lib/github/users", () => ({
 mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
+  defaultModelLabel: "anthropic/claude-opus-4.6",
   openAgent: {
     generate,
   },
+}));
+
+mock.module("@/lib/inference/model-option-id", () => ({
+  USER_INFERENCE_OPTION_PREFIX: "user-profile:",
+  parseModelOptionSelection: (optionId: string) => ({
+    modelId: optionId,
+    inferenceProfileId: null,
+  }),
+  getModelOptionSelectionId: (modelId: string | null | undefined) =>
+    modelId ?? "",
+}));
+
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 const executorModulePromise = import("./executor");
@@ -328,7 +365,6 @@ function buildRun(
     issueNumber: null,
     deploymentUrl: null,
     sandboxName: null,
-    outputKind: "none",
     outputUrl: null,
     errorKind: null,
     errorMessage: null,
@@ -359,10 +395,17 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     repoName: "widgets",
     instructions: "Fix the failing smoke check.",
     permissions: {},
-    outputMode: "none",
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,
+    githubActions: {
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    },
+    writeScope: { mode: "this_repo" },
+    requireCiGreenForMerge: true,
+    modelId: null,
+    runBudgetPerTarget: 10,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -386,9 +429,12 @@ beforeEach(() => {
   currentRun = buildRun();
   currentAgent = buildAgent();
   commandResults = new Map<string, ExecResult>();
+  recordedOutputs = [];
+  outputIdCounter = 0;
   getBackgroundAgentRunWithAgent.mockClear();
   recordBackgroundAgentEvent.mockClear();
   recordBackgroundAgentOutput.mockClear();
+  listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
   sandboxExec.mockClear();
   connectSandbox.mockClear();
@@ -405,9 +451,14 @@ beforeEach(() => {
   createCommit.mockClear();
   buildCommitIntentFromSandbox.mockClear();
   openPullRequest.mockClear();
+  mergePullRequest.mockClear();
+  submitPullRequestReview.mockClear();
+  deleteBranchRef.mockClear();
+  getMergeReadinessViaInstallation.mockClear();
   getGitHubAppUserToken.mockClear();
   getGitHubUserProfile.mockClear();
   generate.mockClear();
+  recordUsage.mockClear();
 });
 
 afterEach(() => {
@@ -423,7 +474,10 @@ afterAll(() => {
 });
 
 describe("executeBackgroundAgentRun", () => {
-  test("starts a resumable sandbox and records skipped check evidence", async () => {
+  test("starts a resumable sandbox, resolves read access for a comment-only agent, and runs the agent loop", async () => {
+    currentAgent = buildAgent({
+      githubActions: { comment_on_pr_or_issue: true },
+    });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -463,6 +517,9 @@ describe("executeBackgroundAgentRun", () => {
     });
     expect(revokeInstallationToken).toHaveBeenCalledWith("setup-token");
 
+    // The agent loop always runs now — no more outputMode gate.
+    expect(generate).toHaveBeenCalledTimes(1);
+
     expect(recordedEvents().map((event) => event.eventName)).toEqual(
       expect.arrayContaining([
         "background-agent.workflow.started",
@@ -470,6 +527,9 @@ describe("executeBackgroundAgentRun", () => {
         "background-agent.sandbox.started",
         "background-agent.git.context.started",
         "background-agent.git.context.completed",
+        "background-agent.agent.started",
+        "background-agent.agent.step.completed",
+        "background-agent.agent.completed",
         "background-agent.check.completed",
         "background-agent.run.completed",
       ]),
@@ -482,16 +542,95 @@ describe("executeBackgroundAgentRun", () => {
       "running",
       "succeeded",
     ]);
+
+    // Comment-only agent has no write action enabled — no working branch
+    // prep git checkout should have run.
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(false);
   });
 
-  test("stops before ready PR creation when required checks fail", async () => {
+  test("requires write permission when open_pull_request is enabled", async () => {
     currentAgent = buildAgent({
-      outputMode: "ready_pr",
-      checkCommand: "bun test",
+      githubActions: { open_pull_request: true },
     });
-    currentRun = buildRun({
-      outputKind: "ready_pr",
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
     });
+
+    expect(verifyRepoAccess).toHaveBeenCalledWith({
+      userId: "user-1",
+      owner: "acme",
+      repo: "widgets",
+      requiredUserPermission: "write",
+    });
+  });
+
+  test("prepares a working branch and passes it to the prompt when a write action is enabled", async () => {
+    currentAgent = buildAgent({
+      githubActions: { open_pull_request: true, push: true },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(
+      sandboxExec.mock.calls.some(([command]) =>
+        (command as string).includes("git checkout"),
+      ),
+    ).toBe(true);
+    expect(recordedEvent("background-agent.git.branch.resolved")).toMatchObject(
+      {
+        status: "succeeded",
+        payload: {
+          branchName: "background-agent/smoke-fixer/run_12345678",
+        },
+      },
+    );
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      messages?: Array<{ content?: string }>;
+    };
+    const promptContent = call?.messages?.[0]?.content ?? "";
+    expect(promptContent).toContain(
+      "background-agent/smoke-fixer/run_12345678",
+    );
+    expect(promptContent).toContain("github_push");
+    expect(promptContent).toContain("github_open_pull_request");
+  });
+
+  test("stops before checks when the agent loop throws", async () => {
+    generate.mockImplementationOnce(async () => {
+      throw new Error("agent loop exploded");
+    });
+    currentAgent = buildAgent({ checkCommand: "bun test" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "workflow_failed",
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "workflow_failed",
+    });
+  });
+
+  test("stops at checks_failed when the required check command fails", async () => {
+    currentAgent = buildAgent({ checkCommand: "bun test" });
     commandResults.set("bun test", {
       success: false,
       stdout: "",
@@ -516,23 +655,34 @@ describe("executeBackgroundAgentRun", () => {
       errorKind: "checks_failed",
       summary: "Required background-agent check failed.",
     });
-    expect(hasUncommittedChanges).not.toHaveBeenCalled();
-    expect(createCommit).not.toHaveBeenCalled();
-    expect(openPullRequest).not.toHaveBeenCalled();
-    expect(recordBackgroundAgentOutput).not.toHaveBeenCalled();
     expect(recordedStatusUpdates().at(-1)).toMatchObject({
       status: "failed",
       errorKind: "checks_failed",
     });
   });
 
-  test("creates a ready PR output only after checks pass", async () => {
-    currentAgent = buildAgent({
-      outputMode: "ready_pr",
-      checkCommand: "bun test",
-    });
-    currentRun = buildRun({
-      outputKind: "ready_pr",
+  test("succeeds after checks pass and sets outputUrl from the newest created output", async () => {
+    currentAgent = buildAgent({ checkCommand: "bun test" });
+    // Simulate the agent loop calling github_open_pull_request, which
+    // records an output row via recordBackgroundAgentOutput before the
+    // executor reaches its terminal success path.
+    generate.mockImplementationOnce(async () => {
+      await recordBackgroundAgentOutput({
+        runId: currentRun.id,
+        userId: currentRun.userId,
+        kind: "ready_pr",
+        status: "created",
+        url: "https://github.com/acme/widgets/pull/42",
+        prNumber: 42,
+      });
+      return {
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        totalUsage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+      };
     });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
@@ -544,51 +694,6 @@ describe("executeBackgroundAgentRun", () => {
     expect(recordedEvent("background-agent.check.completed")).toMatchObject({
       status: "succeeded",
     });
-    expect(stageAll).toHaveBeenCalledWith(fakeSandbox);
-    expect(buildCommitIntentFromSandbox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "acme",
-        repo: "widgets",
-        branch: "background-agent/smoke-fixer/run_12345678",
-        baseBranch: "main",
-      }),
-    );
-    expect(createCommit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        owner: "acme",
-        repo: "widgets",
-        branch: "background-agent/smoke-fixer/run_12345678",
-      }),
-    );
-
-    const prCall = openPullRequest.mock.calls[0]?.[0] as
-      | OpenPullRequestInput
-      | undefined;
-    expect(prCall).toMatchObject({
-      repoUrl: "https://github.com/acme/widgets",
-      branchName: "background-agent/smoke-fixer/run_12345678",
-      baseBranch: "main",
-      token: "user-token",
-    });
-    expect(prCall?.body).toContain(
-      "https://open-agents.example/background-runs/run_1234567890abcdef",
-    );
-    expect(recordBackgroundAgentOutput).toHaveBeenCalledWith(
-      expect.objectContaining({
-        runId: "run_1234567890abcdef",
-        kind: "ready_pr",
-        status: "created",
-        url: "https://github.com/acme/widgets/pull/42",
-        prNumber: 42,
-      }),
-    );
-    expect(recordedEvent("background-agent.output.created")).toMatchObject({
-      status: "succeeded",
-      payload: expect.objectContaining({
-        outputKind: "ready_pr",
-        prNumber: 42,
-      }),
-    });
     expect(recordedStatusUpdates().at(-1)).toMatchObject({
       status: "succeeded",
       outputUrl: "https://github.com/acme/widgets/pull/42",
@@ -597,10 +702,8 @@ describe("executeBackgroundAgentRun", () => {
 
   test("runs unattended and forwards the agent's builtinToolNames allowlist", async () => {
     currentAgent = buildAgent({
-      outputMode: "ready_pr",
       builtinToolNames: ["read", "grep", "bash"],
     });
-    currentRun = buildRun({ outputKind: "ready_pr" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -620,8 +723,7 @@ describe("executeBackgroundAgentRun", () => {
   });
 
   test("defaults builtinToolNames to null (no restriction) when the agent has none", async () => {
-    currentAgent = buildAgent({ outputMode: "ready_pr" });
-    currentRun = buildRun({ outputKind: "ready_pr" });
+    currentAgent = buildAgent();
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
     await executeBackgroundAgentRun({
@@ -633,5 +735,64 @@ describe("executeBackgroundAgentRun", () => {
       options?: { allowedBuiltinToolNames?: unknown };
     };
     expect(call?.options?.allowedBuiltinToolNames).toBeNull();
+  });
+
+  test("injects only the enabled native GitHub action tools", async () => {
+    currentAgent = buildAgent({
+      githubActions: { comment_on_pr_or_issue: true },
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const call = (generate.mock.calls[0] as unknown[] | undefined)?.[0] as {
+      tools?: Record<string, unknown>;
+    };
+    expect(call?.tools?.github_comment_on_pr_or_issue).toBeDefined();
+    expect(call?.tools?.github_open_pull_request).toBeUndefined();
+    expect(call?.tools?.github_push).toBeUndefined();
+  });
+
+  test("records the resolved model id on usage events instead of the literal 'ai/background-agent'", async () => {
+    currentAgent = buildAgent({ modelId: "anthropic/claude-haiku-4.5" });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(recordUsage).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        source: "background-agent",
+        model: "anthropic/claude-haiku-4.5",
+      }),
+    );
+
+    const startedEvent = recordedEvent("background-agent.agent.started");
+    expect(startedEvent?.payload).toMatchObject({
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+  });
+
+  test("records the default model id on usage events when the agent has no modelId", async () => {
+    currentAgent = buildAgent({ modelId: null });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(recordUsage).toHaveBeenCalledWith(
+      "user-1",
+      expect.objectContaining({
+        model: "anthropic/claude-opus-4.6",
+      }),
+    );
   });
 });

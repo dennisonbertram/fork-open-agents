@@ -123,10 +123,7 @@ function formatDuration(startedAt: string | null, finishedAt: string | null) {
   return `${minutes}m ${seconds}s`;
 }
 
-function formatPermissionSummary(
-  agent: SerializedBackgroundAgent | null,
-  run: SerializedBackgroundRun,
-) {
+function formatPermissionSummary(agent: SerializedBackgroundAgent | null) {
   const permissions = isRecord(agent?.permissions) ? agent.permissions : null;
   const github = isRecord(permissions?.github) ? permissions.github : null;
   if (github) {
@@ -142,7 +139,7 @@ function formatPermissionSummary(
     }
   }
 
-  return run.outputKind === "ready_pr" ? "GitHub write" : "GitHub read";
+  return "GitHub read";
 }
 
 function getLatestCheckEvent(events: SerializedBackgroundEvent[]) {
@@ -164,17 +161,23 @@ function formatCheckSummary(
   return command ? `${checkEvent.status} · ${command}` : checkEvent.status;
 }
 
-function formatOutputSummary(
-  outputs: SerializedBackgroundOutput[],
-  run: SerializedBackgroundRun,
-) {
+function formatOutputSummary(outputs: SerializedBackgroundOutput[]) {
   const output = outputs[0];
   if (output) {
     return `${output.kind} · ${output.status}`;
   }
-  return run.outputKind && run.outputKind !== "none"
-    ? `${run.outputKind} pending`
-    : "none";
+  return "none";
+}
+
+/**
+ * Sidebar "Run" section's Output field: lists the recorded action outputs
+ * (kind per row). "none" when no outputs have been recorded yet.
+ */
+function formatSidebarOutputKinds(outputs: SerializedBackgroundOutput[]) {
+  if (outputs.length === 0) {
+    return "none";
+  }
+  return outputs.map((output) => output.kind).join(", ");
 }
 
 function findCostValue(value: unknown): number | null {
@@ -415,10 +418,10 @@ export function BackgroundRunDetail({
           <ProofItem label="Sandbox" value={run.sandboxName ?? "-"} />
           <ProofItem
             label="Permissions"
-            value={formatPermissionSummary(agent, run)}
+            value={formatPermissionSummary(agent)}
           />
           <ProofItem label="Checks" value={formatCheckSummary(events, agent)} />
-          <ProofItem label="Output" value={formatOutputSummary(outputs, run)} />
+          <ProofItem label="Output" value={formatOutputSummary(outputs)} />
           <ProofItem
             label="Duration"
             value={formatDuration(run.startedAt, run.finishedAt)}
@@ -577,7 +580,9 @@ export function BackgroundRunDetail({
                 </div>
                 <div className="flex justify-between gap-3 px-4 py-2">
                   <span className="text-muted-foreground">Output</span>
-                  <span className="font-mono">{run.outputKind ?? "none"}</span>
+                  <span className="font-mono">
+                    {formatSidebarOutputKinds(outputs)}
+                  </span>
                 </div>
                 {run.errorKind && (
                   <div className="grid gap-1 px-4 py-2">

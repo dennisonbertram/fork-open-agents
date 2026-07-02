@@ -1,0 +1,2 @@
+ALTER TABLE "background_agents" ADD COLUMN IF NOT EXISTS "run_budget_per_target" integer DEFAULT 10 NOT NULL;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "background_agent_runs_agent_pr_created_idx" ON "background_agent_runs" USING btree ("agent_id","pr_number","created_at");

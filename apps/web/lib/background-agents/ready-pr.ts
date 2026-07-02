@@ -1,8 +1,6 @@
 import { isSafeBranchName } from "@/lib/git/helpers";
 import type { BackgroundAgentTriggerKind } from "./types";
 
-const MAX_PR_TITLE_LENGTH = 72;
-
 function sanitizeBranchSegment(value: string): string {
   return (
     value
@@ -24,7 +22,14 @@ export function buildBackgroundBranchName(params: {
   return branch;
 }
 
-export function buildBackgroundAgentMutationPrompt(params: {
+/**
+ * Builds the standing prompt for a background-agent run (#746). Unlike the
+ * old mutation prompt, this does NOT forbid the agent from pushing or
+ * opening a pull request itself — the agent has direct access to the
+ * `github_*` action tools (filtered by the agent's enabled toggles) and is
+ * expected to use them to accomplish the standing instructions.
+ */
+export function buildBackgroundAgentRunbookPrompt(params: {
   agentName: string;
   instructions: string;
   triggerKind: BackgroundAgentTriggerKind;
@@ -38,11 +43,27 @@ export function buildBackgroundAgentMutationPrompt(params: {
   deploymentUrl?: string | null;
   payloadSummary?: unknown;
   checkCommand?: string | null;
+  /** Sandbox working branch prepared by the executor before the loop, when
+   * any write action is enabled. Absent for comment/review-only agents. */
+  workingBranch?: string | null;
+  /** Human-readable labels for the GitHub action tools enabled for this run
+   * (e.g. "github_push", "github_open_pull_request"). Empty = no GitHub
+   * automation available this run. */
+  enabledGithubActionTools: string[];
 }): string {
   const summary = params.payloadSummary
     ? JSON.stringify(params.payloadSummary, null, 2)
     : "{}";
   const checkCommand = params.checkCommand?.trim();
+
+  const toolsSection =
+    params.enabledGithubActionTools.length > 0
+      ? `You have access to the following GitHub action tools: ${params.enabledGithubActionTools.join(", ")}. Only use the tools listed here — do not attempt any other GitHub write action; it is disabled for this agent and will be refused.`
+      : "No GitHub action tools are enabled for this agent. You may still read the repository, but you cannot push, comment, review, merge, or delete branches.";
+
+  const branchSection = params.workingBranch
+    ? `Your working branch for this run is \`${params.workingBranch}\`. When you use \`github_push\`, target this branch unless the standing instructions require otherwise. When you use \`github_open_pull_request\`, use this branch as the head.`
+    : "";
 
   return `You are running as a background agent named "${params.agentName}".
 
@@ -61,48 +82,11 @@ ${summary}
 Standing instructions:
 ${params.instructions}
 
-Work autonomously in the sandbox. Make the smallest scoped code changes needed to satisfy the standing instructions for this trigger. Do not ask the user questions. Do not create, push, or open a pull request yourself; the background-agent executor will run checks and create the PR after your work is complete. Do not edit GitHub Actions or workflow files unless the standing instructions explicitly require that.
+Work autonomously in the sandbox. Make the smallest scoped changes needed to satisfy the standing instructions for this trigger. Do not ask the user questions.
+
+${toolsSection}
+${branchSection ? `\n${branchSection}\n` : ""}
+For code changes: make your edits in the sandbox, then call \`github_push\` to commit and push them, then call \`github_open_pull_request\` to open a pull request (when both tools are enabled). Do not edit GitHub Actions or workflow files unless the standing instructions explicitly require that.
 
 ${checkCommand ? `The required check command after your changes is:\n${checkCommand}` : "No required check command is configured."}`;
-}
-
-export function buildBackgroundPullRequestTitle(agentName: string): string {
-  const title = `chore: ${agentName}`;
-  return title.length <= MAX_PR_TITLE_LENGTH
-    ? title
-    : title.slice(0, MAX_PR_TITLE_LENGTH).trimEnd();
-}
-
-export function buildBackgroundPullRequestBody(params: {
-  runId: string;
-  agentName: string;
-  triggerKind: BackgroundAgentTriggerKind;
-  repoOwner: string;
-  repoName: string;
-  baseBranch: string;
-  branchName: string;
-  commitSha: string;
-  checkCommand?: string | null;
-  runUrl?: string | null;
-}): string {
-  const runLine = params.runUrl
-    ? `[Background run](${params.runUrl})`
-    : `Background run: ${params.runId}`;
-  const checkLine = params.checkCommand?.trim()
-    ? `- Check: \`${params.checkCommand.trim()}\``
-    : "- Check: not configured";
-
-  return `## Summary
-
-Automated changes from background agent **${params.agentName}** for \`${params.triggerKind}\`.
-
-## Evidence
-
-- ${runLine}
-- Repository: \`${params.repoOwner}/${params.repoName}\`
-- Branch: \`${params.branchName}\` into \`${params.baseBranch}\`
-- Commit: \`${params.commitSha}\`
-${checkLine}
-
-This PR was created only after the configured sandbox work and required checks completed successfully.`;
 }

@@ -218,8 +218,23 @@ export async function POST(req: Request): Promise<Response> {
   if (
     event === "issues" ||
     event === "deployment_status" ||
-    event === "pull_request_review"
+    event === "pull_request_review" ||
+    event === "check_suite"
   ) {
+    // check_suite fires for requested/rerequested/completed actions, but the
+    // normalizer only understands "completed" (the only action with a final
+    // conclusion worth acting on). Ignore the others rather than treating
+    // them as invalid payloads.
+    if (
+      event === "check_suite" &&
+      parsedPayload &&
+      typeof parsedPayload === "object" &&
+      "action" in parsedPayload &&
+      (parsedPayload as { action?: unknown }).action !== "completed"
+    ) {
+      return Response.json({ ok: true, ignored: true, event });
+    }
+
     const backgroundEvent = normalizeGitHubBackgroundEvent(
       event,
       parsedPayload,

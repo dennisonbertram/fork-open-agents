@@ -96,7 +96,7 @@ describe("TemplatePicker", () => {
 });
 
 describe("AgentSpecEditor", () => {
-  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, Result, and a top-level Enable control", async () => {
+  test("BT-024: renders new section titles: Name, What should this agent do?, When should it run?, Tools, GitHub actions, and a top-level Enable control", async () => {
     const { AgentSpecEditor } = await agentSpecEditorPromise;
 
     const html = renderToStaticMarkup(
@@ -107,7 +107,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Keep PRs up to date"
         initialTriggerKind="github.pull_request"
         initialInstructions="Check PRs and update them."
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -119,7 +118,7 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("What should this agent do?");
     expect(html).toContain("When should it run?");
     expect(html).toContain("Tools");
-    expect(html).toContain("Result");
+    expect(html).toContain("GitHub actions");
     // Enable moved to a top-level Enabled/Disabled control (no "Turn it on" section)
     expect(html).toContain("Enabled");
     expect(html).toContain("Disabled");
@@ -143,7 +142,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Some goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Do stuff"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -169,7 +167,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Create PRs"
         initialTriggerKind="github.pull_request"
         initialInstructions="Create PRs for issues."
-        initialOutputMode="ready_pr"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -197,7 +194,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="ready_pr"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -222,7 +218,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -246,7 +241,6 @@ describe("AgentSpecEditor", () => {
         initialGoal="Run nightly"
         initialTriggerKind="schedule.cron"
         initialInstructions="Check things."
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -293,7 +287,6 @@ describe("RepoAgentsDashboard", () => {
         initialGoal="Goal"
         initialTriggerKind="github.pull_request"
         initialInstructions="Instructions"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}

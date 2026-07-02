@@ -90,6 +90,25 @@ const issuesSchema = z.object({
   }),
 });
 
+const checkSuiteSchema = z.object({
+  action: z.string(),
+  repository: repositorySchema,
+  sender: senderSchema,
+  check_suite: z.object({
+    id: z.number().optional(),
+    conclusion: z.string().nullable().optional(),
+    head_sha: z.string().optional(),
+    head_branch: z.string().nullable().optional(),
+    pull_requests: z
+      .array(
+        z.object({
+          number: z.number(),
+        }),
+      )
+      .optional(),
+  }),
+});
+
 const deploymentStatusSchema = z.object({
   action: z.string(),
   repository: repositorySchema,
@@ -185,6 +204,36 @@ export function normalizeGitHubBackgroundEvent(
       labels: issue.labels?.map((label) => label.name) ?? [],
       title: issue.title,
       url: issue.html_url,
+      actor: parsed.data.sender?.login,
+    };
+  }
+
+  if (eventName === "check_suite") {
+    if (payload && typeof payload === "object" && "action" in payload) {
+      const action = (payload as { action?: unknown }).action;
+      if (action !== "completed") {
+        return null;
+      }
+    }
+
+    const parsed = checkSuiteSchema.safeParse(payload);
+    if (!parsed.success) {
+      return null;
+    }
+
+    const checkSuite = parsed.data.check_suite;
+    const conclusion = checkSuite.conclusion ?? "unknown";
+    const firstPr = checkSuite.pull_requests?.[0];
+    return {
+      source: "github",
+      kind: "github.check_suite",
+      externalId: `check_suite:${checkSuite.id ?? "unknown"}:${conclusion}:${checkSuite.head_sha ?? "unknown"}`,
+      repoOwner: parsed.data.repository.owner.login,
+      repoName: parsed.data.repository.name,
+      action: conclusion,
+      sha: checkSuite.head_sha,
+      branch: checkSuite.head_branch ?? undefined,
+      prNumber: firstPr?.number,
       actor: parsed.data.sender?.login,
     };
   }

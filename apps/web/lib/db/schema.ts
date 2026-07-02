@@ -50,6 +50,10 @@ export type BackgroundAgentTriggerConditions = {
   // mergedOnly: true restricts github.pull_request triggers to merged-closed events only.
   // Stored as JSONB — no migration needed. Not yet exposed in the UI (CODE-03).
   mergedOnly?: boolean;
+  // actors/ignoreActors (#749): allowlist/denylist matched case-insensitively
+  // against event.actor (sender.login). Stored as JSONB — no migration needed.
+  actors?: string[];
+  ignoreActors?: string[];
 };
 
 export type BackgroundAgentPermissions = {
@@ -61,6 +65,39 @@ export type BackgroundAgentPermissions = {
     statuses?: "read";
     checks?: "read";
   };
+};
+
+/**
+ * Per-action toggles describing what a background agent's GitHub-facing
+ * automation is allowed to do — the sole behavior driver (#742/#745/#748).
+ */
+export type BackgroundAgentGithubActions = {
+  open_pull_request?: boolean;
+  comment_on_pr_or_issue?: boolean;
+  approve_pull_request?: boolean;
+  request_changes?: boolean;
+  merge_pull_request?: boolean;
+  push?: boolean;
+  delete_branch?: boolean;
+};
+
+export const defaultBackgroundAgentGithubActions: BackgroundAgentGithubActions =
+  {
+    open_pull_request: true,
+    comment_on_pr_or_issue: true,
+  };
+
+/**
+ * Which repositories a background agent's write actions may target,
+ * independent of the trigger-binding repoOwner/repoName pair.
+ */
+export type BackgroundAgentWriteScope = {
+  mode: "this_repo" | "all_repos" | "specific_repos";
+  repos?: Array<{ owner: string; name: string }>;
+};
+
+export const defaultBackgroundAgentWriteScope: BackgroundAgentWriteScope = {
+  mode: "this_repo",
 };
 
 export type BackgroundAgentPayloadSummary = {
@@ -1089,17 +1126,12 @@ export const backgroundAgents = pgTable(
       .$type<BackgroundAgentPermissions>()
       .notNull()
       .default({}),
-    outputMode: text("output_mode", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
-    })
-      .notNull()
-      .default("none"),
     checkCommand: text("check_command"),
     /**
      * Composio toolkit slugs this agent is allowed to use.
      * Empty array (default) = no Composio tools = pre-Phase-5 behavior.
      * Populated slugs are resolved at run time via resolveComposioToolsForBgRun,
-     * gated by enabled backgroundAgentToolGrants and repo policy.
+     * gated by repo policy.
      */
     composioToolkitSlugs: jsonb("composio_toolkit_slugs")
       .$type<string[]>()
@@ -1114,6 +1146,41 @@ export const backgroundAgents = pgTable(
      * separately and always pass.
      */
     builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
+    /**
+     * Per-action GitHub automation toggles (#745) — the sole behavior
+     * driver for GitHub-facing automation (#748).
+     */
+    githubActions: jsonb("github_actions")
+      .$type<BackgroundAgentGithubActions>()
+      .notNull()
+      .default(defaultBackgroundAgentGithubActions),
+    /**
+     * Which repositories this agent's write actions may target. Independent
+     * of repoOwner/repoName, which remain the trigger-binding repo.
+     */
+    writeScope: jsonb("write_scope")
+      .$type<BackgroundAgentWriteScope>()
+      .notNull()
+      .default(defaultBackgroundAgentWriteScope),
+    /** When true, merge automation must wait for CI to report green. */
+    requireCiGreenForMerge: boolean("require_ci_green_for_merge")
+      .notNull()
+      .default(true),
+    /**
+     * Max runs this agent may create for the same (repo, prNumber) within a
+     * rolling 24h window (#749). Backstop against ping-pong loops between
+     * chained agents (implementer -> reviewer -> fixer). The dispatcher
+     * refuses to create additional runs once the budget is exhausted and
+     * records a `background-agent.run.budget_exhausted` skip.
+     */
+    runBudgetPerTarget: integer("run_budget_per_target").notNull().default(10),
+    /**
+     * Optional explicit model selection for this agent's runs, either a
+     * gateway `provider/model` id or a `user-profile:`-prefixed inference
+     * profile selection (see lib/inference/model-option-id.ts). Null means
+     * inherit the default model.
+     */
+    modelId: text("model_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -1200,6 +1267,7 @@ export const backgroundAgentTriggers = pgTable(
         "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
+        "github.check_suite",
         "schedule.cron",
         "webhook.error",
       ],
@@ -1215,6 +1283,8 @@ export const backgroundAgentTriggers = pgTable(
       .default({}),
     schedule: text("schedule"),
     webhookPublicId: text("webhook_public_id"),
+    // Reserved for per-trigger webhook secrets (not yet wired up to any
+    // verification path). Explicitly out of scope for #748 — kept as-is.
     webhookSecretHash: text("webhook_secret_hash"),
     lastRunAt: timestamp("last_run_at"),
     nextRunAt: timestamp("next_run_at"),
@@ -1238,40 +1308,6 @@ export const backgroundAgentTriggers = pgTable(
       "background_agent_triggers_owner_check",
       sql`num_nonnulls(agent_id, loop_id) = 1`,
     ),
-  ],
-);
-
-export const backgroundAgentToolGrants = pgTable(
-  "background_agent_tool_grants",
-  {
-    id: text("id").primaryKey(),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => backgroundAgents.id, { onDelete: "cascade" }),
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    provider: text("provider", {
-      enum: ["composio"],
-    }).notNull(),
-    profileId: text("profile_id"),
-    agentRole: text("agent_role", {
-      enum: ["main", "explorer", "executor", "design"],
-    }).notNull(),
-    phase: text("phase", {
-      enum: ["investigate", "mutate", "notify", "always"],
-    }).notNull(),
-    status: text("status", {
-      enum: ["enabled", "disabled"],
-    })
-      .notNull()
-      .default("disabled"),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  },
-  (table) => [
-    index("background_agent_tool_grants_agent_idx").on(table.agentId),
-    index("background_agent_tool_grants_user_idx").on(table.userId),
   ],
 );
 
@@ -1307,6 +1343,7 @@ export const backgroundAgentRuns = pgTable(
         "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
+        "github.check_suite",
         "schedule.cron",
         "webhook.error",
       ],
@@ -1322,9 +1359,6 @@ export const backgroundAgentRuns = pgTable(
     issueNumber: integer("issue_number"),
     deploymentUrl: text("deployment_url"),
     sandboxName: text("sandbox_name"),
-    outputKind: text("output_kind", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
-    }),
     outputUrl: text("output_url"),
     errorKind: text("error_kind"),
     errorMessage: text("error_message"),
@@ -1359,6 +1393,13 @@ export const backgroundAgentRuns = pgTable(
     ),
     uniqueIndex("background_agent_runs_idempotency_idx").on(
       table.idempotencyKey,
+    ),
+    // Backs the per-agent-per-PR run budget count query (#749):
+    // count(*) where agent_id = ? and pr_number = ? and created_at > ?
+    index("background_agent_runs_agent_pr_created_idx").on(
+      table.agentId,
+      table.prNumber,
+      table.createdAt,
     ),
   ],
 );
@@ -1476,7 +1517,13 @@ export const backgroundAgentEvents = pgTable(
       table.createdAt,
     ),
     index("background_agent_events_request_idx").on(table.requestId),
-    index("background_agent_events_run_seq_idx").on(
+    // #743: was a plain index — recordBackgroundAgentEvent computes
+    // max(sequence)+1 non-atomically, so two concurrent writers for the
+    // same run could compute the same sequence. A UNIQUE index makes the
+    // second writer's insert fail instead of silently colliding, and
+    // recordBackgroundAgentEvent retries with a fresh max+1 on that
+    // conflict (see migration 0081 for the idempotent upgrade + dedup).
+    uniqueIndex("background_agent_events_run_seq_idx").on(
       table.runId,
       table.sequence,
     ),
@@ -1494,7 +1541,22 @@ export const backgroundAgentOutputs = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     kind: text("kind", {
-      enum: ["comment", "ready_pr", "issue", "notification", "none"],
+      // Additive extension (#745): pr_comment/pr_review/merge/push/branch_delete
+      // cover the new per-action github_actions toggles. This is a plain
+      // `text` column at the DB level (Drizzle enums are TS-only, no CHECK
+      // constraint), so widening this union requires no migration DDL.
+      enum: [
+        "comment",
+        "ready_pr",
+        "issue",
+        "notification",
+        "none",
+        "pr_comment",
+        "pr_review",
+        "merge",
+        "push",
+        "branch_delete",
+      ],
     }).notNull(),
     status: text("status", {
       enum: ["pending", "created", "failed", "skipped"],
@@ -2477,10 +2539,6 @@ export type BackgroundAgentTrigger =
   typeof backgroundAgentTriggers.$inferSelect;
 export type NewBackgroundAgentTrigger =
   typeof backgroundAgentTriggers.$inferInsert;
-export type BackgroundAgentToolGrant =
-  typeof backgroundAgentToolGrants.$inferSelect;
-export type NewBackgroundAgentToolGrant =
-  typeof backgroundAgentToolGrants.$inferInsert;
 export type BackgroundAgentRun = typeof backgroundAgentRuns.$inferSelect;
 export type NewBackgroundAgentRun = typeof backgroundAgentRuns.$inferInsert;
 export type BackgroundAgentEvent = typeof backgroundAgentEvents.$inferSelect;

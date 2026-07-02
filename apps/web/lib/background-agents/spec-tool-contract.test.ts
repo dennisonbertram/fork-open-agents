@@ -22,7 +22,10 @@ function validCreateDraft(overrides: Record<string, unknown> = {}) {
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Review new pull requests and add a summary comment.",
-    outputMode: "none" as const,
+    // Report-only default (no write action enabled) so tests that don't care
+    // about actions get a warning-free baseline. #747 derives the write
+    // warning from githubActions, not outputMode.
+    githubActions: { comment_on_pr_or_issue: true as const },
     permissions: {
       github: {
         contents: "read" as const,
@@ -101,7 +104,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Generate weekly release notes.",
-        outputMode: "ready_pr",
         permissions: {
           github: {
             contents: "write",
@@ -130,7 +132,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "",
-        outputMode: "none",
         triggers: [],
       },
     };
@@ -146,7 +147,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none",
         triggers: [
           {
             name: "Bad trigger",
@@ -196,13 +196,15 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("summary includes output mode", () => {
+  test("summary includes enabled GitHub actions", () => {
     const result = previewBackgroundAgentSpec(
-      validCreateInput({ outputMode: "ready_pr" }),
+      validCreateInput({
+        githubActions: { push: true, open_pull_request: true },
+      }),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.summary).toContain("Open a pull request");
+      expect(result.summary).toContain("open_pull_request");
     }
   });
 
@@ -243,7 +245,6 @@ describe("previewBackgroundAgentSpec — success", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Generate weekly release notes.",
-        outputMode: "none",
         triggers: [
           {
             name: "Weekly schedule",
@@ -302,10 +303,10 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns warning for ready_pr without write permission", () => {
+  test("returns warning for an enabled write action without write permission", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "ready_pr",
+        githubActions: { open_pull_request: true },
         permissions: { github: { contents: "read", pullRequests: "read" } },
       }),
     );
@@ -316,10 +317,10 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns no warning for ready_pr with write permission", () => {
+  test("returns no warning for an enabled write action with write permission", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "ready_pr",
+        githubActions: { open_pull_request: true },
         permissions: { github: { contents: "write", pullRequests: "write" } },
       }),
     );
@@ -329,16 +330,102 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns no warning for none outputMode regardless of permissions", () => {
+  test("returns no warning when no write action is enabled, regardless of permissions", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "none",
+        githubActions: { comment_on_pr_or_issue: true },
         permissions: { github: { contents: "read", pullRequests: "read" } },
       }),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.warnings).toEqual([]);
+    }
+  });
+});
+
+// ── previewBackgroundAgentSpec — #747 actions/scope/model preview ────────
+
+describe("previewBackgroundAgentSpec — githubActions/writeScope/model preview", () => {
+  test("summary lists enabled github actions", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        githubActions: {
+          push: true,
+          open_pull_request: true,
+          comment_on_pr_or_issue: true,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Actions:**");
+      expect(result.summary).toContain("push");
+      expect(result.summary).toContain("open_pull_request");
+      expect(result.summary).toContain("comment_on_pr_or_issue");
+      // Disabled actions must not appear
+      expect(result.summary).not.toContain("merge_pull_request");
+    }
+  });
+
+  test("summary omits an Actions line when every githubActions toggle is disabled", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: false,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).not.toContain("**Actions:**");
+    }
+  });
+
+  test("summary includes write scope when not the default this_repo mode", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        writeScope: {
+          mode: "specific_repos",
+          repos: [{ owner: "acme", name: "widgets" }],
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Write scope:**");
+      expect(result.summary).toContain("specific_repos");
+      expect(result.summary).toContain("acme/widgets");
+    }
+  });
+
+  test("summary includes the model id when set", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ modelId: "anthropic/claude-sonnet-4-5" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Model:**");
+      expect(result.summary).toContain("anthropic/claude-sonnet-4-5");
+    }
+  });
+
+  test("summary omits the model line when modelId is not set (default model)", () => {
+    const result = previewBackgroundAgentSpec(validCreateInput());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).not.toContain("**Model:**");
+    }
+  });
+
+  test("rejects the removed outputMode field with a validation error (#748)", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ outputMode: "ready_pr" }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorKind).toBe("validation_failed");
     }
   });
 });
@@ -415,7 +502,6 @@ describe("previewBackgroundAgentSpec — validation failures", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none",
         triggers: [
           {
             name: "Bad schedule trigger",
@@ -446,7 +532,6 @@ describe("previewBackgroundAgentSpec — validation failures", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none" as const,
         status: "disabled" as const,
         permissions: {},
         composioToolkitSlugs: [],
@@ -624,7 +709,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review PRs.",
-      outputMode: "ready_pr",
       triggers: [
         {
           name: "PR opened",
@@ -714,7 +798,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review PRs.",
-      outputMode: "none",
       checkCommand: "bun test",
       composioToolkitSlugs: ["github"],
       triggers: [{ name: "PR", kind: "pull_request.opened", conditions: [] }],
@@ -726,7 +809,6 @@ describe("normalizeAgentDraft", () => {
     expect(result.repoOwner).toBe("acme");
     expect(result.repoName).toBe("widgets");
     expect(result.instructions).toBe("Review PRs.");
-    expect(result.outputMode).toBe("none");
     expect(result.checkCommand).toBe("bun test");
     expect(result.composioToolkitSlugs).toEqual(["github"]);
   });
@@ -750,7 +832,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review new pull requests and add a summary comment.",
-      outputMode: "ready_pr",
       description: "An automated PR reviewer",
       triggers: [
         {
@@ -882,5 +963,37 @@ describe("previewBackgroundAgentSpec — edge cases", () => {
       expect(result.triggerSummary).toContain("New trigger");
       expect(result.triggerSummary).toContain("Issue");
     }
+  });
+});
+
+describe("normalizeAgentDraft legacy outputMode mapping (#748)", () => {
+  test("maps ready_pr to write-capable githubActions and strips the legacy key", () => {
+    const normalized = normalizeAgentDraft({
+      name: "Legacy",
+      outputMode: "ready_pr",
+    });
+    expect("outputMode" in normalized).toBe(false);
+    expect(normalized.githubActions).toEqual({
+      push: true,
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    });
+  });
+
+  test("strips non-ready_pr legacy modes without injecting actions", () => {
+    for (const mode of ["none", "comment", "issue", "notification"]) {
+      const normalized = normalizeAgentDraft({ name: "L", outputMode: mode });
+      expect("outputMode" in normalized).toBe(false);
+      expect("githubActions" in normalized).toBe(false);
+    }
+  });
+
+  test("never overrides an explicit githubActions draft", () => {
+    const normalized = normalizeAgentDraft({
+      outputMode: "ready_pr",
+      githubActions: { comment_on_pr_or_issue: true },
+    });
+    expect(normalized.githubActions).toEqual({ comment_on_pr_or_issue: true });
+    expect("outputMode" in normalized).toBe(false);
   });
 });

@@ -4,10 +4,12 @@ import { start } from "workflow/api";
 import { runBackgroundAgentWorkflow } from "@/app/workflows/background-agent";
 import {
   advanceTriggerScheduleState,
+  countRecentRunsForTarget,
   createRunForTrigger,
   getWebhookTriggerByPublicId,
   listEnabledScheduleTriggers,
   listStaleBackgroundAgentRuns,
+  seedTriggerNextRunAt,
   listMatchingTriggersForEvent,
   recordBackgroundAgentEvent,
   recordTriggerSkipReason,
@@ -23,7 +25,7 @@ import {
   isBackgroundAgentsEnabled,
 } from "./config";
 import { scheduleMatchesNow } from "./schedule";
-import { computeNextRuns } from "./schedule-presets";
+import { computeNextRuns, validateSchedule } from "./schedule-presets";
 import { getAgentLoopById } from "@/lib/agent-loops/store";
 import { dispatchLoopRunForTrigger } from "@/lib/agent-loops/dispatcher-bridge";
 // Note: dispatchLoopRunForTrigger is dynamically imported within the
@@ -39,6 +41,12 @@ export type BackgroundDispatchResult = {
   runIds: string[];
   /** Run ids for loop runs dispatched in this invocation (M1-07). */
   loopRunIds: string[];
+  /**
+   * Set when nothing ran because the request was refused before matching —
+   * e.g. a manual test against a disabled agent (#743). Callers (the test
+   * API route) surface this so the operator sees WHY nothing ran.
+   */
+  skipReason?: "agent_disabled" | "no_enabled_trigger";
 };
 
 type WorkflowStartFailureInput = {
@@ -56,6 +64,61 @@ async function startRun(runId: string): Promise<string | null> {
     console.error("[background-agents] Failed to start workflow:", error);
     return null;
   }
+}
+
+const RUN_BUDGET_WINDOW_HOURS = 24;
+
+/**
+ * #749 loop-safety backstop: refuses to create another run for this agent
+ * against the same (repo, prNumber) once the agent's runBudgetPerTarget is
+ * reached within a rolling 24h window. Prevents unbounded
+ * implementer -> reviewer -> fixer ping-pong.
+ *
+ * There is no runId yet at this point (no run is created), so this cannot
+ * use recordBackgroundAgentEvent (which requires a runId). Instead the skip
+ * is surfaced via recordTriggerSkipReason (visible in the trigger's UI card)
+ * plus a structured console.warn — a deliberate deviation from the
+ * runId-scoped event surface (documented in the PR).
+ */
+async function isRunBudgetExhausted(params: {
+  agent: { id: string; repoOwner: string; repoName: string };
+  trigger: { id: string };
+  event: NormalizedBackgroundTriggerEvent;
+  runBudgetPerTarget: number;
+  requestId?: string | null;
+}): Promise<boolean> {
+  if (params.event.prNumber == null) {
+    return false;
+  }
+
+  const since = new Date(Date.now() - RUN_BUDGET_WINDOW_HOURS * 60 * 60 * 1000);
+  const recentRuns = await countRecentRunsForTarget({
+    agentId: params.agent.id,
+    repoOwner: params.agent.repoOwner,
+    repoName: params.agent.repoName,
+    prNumber: params.event.prNumber,
+    since,
+  });
+
+  if (recentRuns < params.runBudgetPerTarget) {
+    return false;
+  }
+
+  await recordTriggerSkipReason({
+    triggerId: params.trigger.id,
+    skipReason: `budget exhausted: ${recentRuns}/${params.runBudgetPerTarget} runs in ${RUN_BUDGET_WINDOW_HOURS}h for PR #${params.event.prNumber}`,
+  });
+  console.warn("[background-agents] run budget exhausted", {
+    eventName: "background-agent.run.budget_exhausted",
+    agentId: params.agent.id,
+    repoOwner: params.agent.repoOwner,
+    repoName: params.agent.repoName,
+    prNumber: params.event.prNumber,
+    budget: params.runBudgetPerTarget,
+    windowHours: RUN_BUDGET_WINDOW_HOURS,
+    requestId: params.requestId ?? null,
+  });
+  return true;
 }
 
 async function recordWorkflowStartFailure(input: WorkflowStartFailureInput) {
@@ -139,6 +202,20 @@ export async function dispatchBackgroundTriggerEvent(params: {
       // Defensive guard: should not happen — row has neither loopId nor agent.
       continue;
     }
+
+    // #749: per-agent-per-PR run budget backstop — checked before creating a
+    // run so an exhausted budget never wedges the run/idempotency tables.
+    const budgetExhausted = await isRunBudgetExhausted({
+      agent,
+      trigger: match.trigger,
+      event: params.event,
+      runBudgetPerTarget: agent.runBudgetPerTarget,
+      requestId: params.requestId,
+    });
+    if (budgetExhausted) {
+      continue;
+    }
+
     const result = await createRunForTrigger({
       agent,
       trigger: match.trigger,
@@ -391,9 +468,25 @@ export async function dispatchManualBackgroundAgentTest(params: {
     };
   }
 
-  const trigger =
-    params.agent.triggers.find((item) => item.status === "enabled") ??
-    params.agent.triggers[0];
+  // #743: a disabled agent must never run, even via the manual Test button —
+  // it can trigger real GitHub/PR mutations if it slips through.
+  if (params.agent.status !== "enabled") {
+    return {
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "agent_disabled",
+    };
+  }
+
+  // Only an enabled trigger counts — never fall back to a disabled trigger
+  // just because it's the only one configured on the agent.
+  const trigger = params.agent.triggers.find(
+    (item) => item.status === "enabled",
+  );
   if (!trigger) {
     return {
       enabled: true,
@@ -402,6 +495,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "no_enabled_trigger",
     };
   }
   if (
@@ -506,12 +600,19 @@ async function sweepStaleBackgroundRuns(params: {
   });
 
   for (const run of staleRuns) {
+    // #743: force:true — a stale/stuck run may have already reached a
+    // terminal status via a race with its own executor. The sweeper's job is
+    // to terminalize genuinely stuck runs, so it must bypass the
+    // terminal-status guard rather than have its own update silently refused.
     await updateBackgroundAgentRunStatus({
       runId: run.id,
       status: "failed",
       errorKind: "stuck_running",
       errorMessage:
         "Background agent run exceeded the stale threshold and was swept by cron.",
+      force: true,
+      agentId: run.agentId,
+      userId: run.userId,
     });
     await recordBackgroundAgentEvent({
       runId: run.id,
@@ -588,14 +689,37 @@ export async function dispatchScheduledBackgroundAgents(params?: {
     }
     // Loop-bound rows: allowlist check deferred to dispatchLoopRunForTrigger.
 
+    // An invalid schedule expression is an actionable misconfiguration —
+    // record a skip reason so the user sees it in the schedule card.
+    // An ordinary "not due yet" result is expected on nearly every sweep
+    // (the cron tick runs every 5 minutes) and must NOT record a skip
+    // reason, or the schedule card would show a permanent amber warning.
+    if (!validateSchedule(row.trigger.schedule).valid) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: "invalid schedule expression",
+      });
+      continue;
+    }
+
+    // Legacy rows created before #750 have nextRunAt null and would only
+    // ever fire on an exact-minute coincidence with the */5 platform tick —
+    // off-grid schedules (e.g. '7 * * * *') would never fire at all. Seed
+    // the persisted nextRunAt once so the due-window path below reaches
+    // them on the first sweep after their next matching minute.
+    if (row.trigger.nextRunAt == null) {
+      const seeded = computeNextRuns(row.trigger.schedule, now, 1)[0] ?? null;
+      await seedTriggerNextRunAt({
+        triggerId: row.trigger.id,
+        nextRunAt: seeded,
+      });
+      row.trigger.nextRunAt = seeded;
+    }
+
     const dueAt = getDueScheduleTime(row.trigger, now);
     const scheduleMatches =
       dueAt < now || scheduleMatchesNow(row.trigger.schedule, now);
     if (!scheduleMatches) {
-      await recordTriggerSkipReason({
-        triggerId: row.trigger.id,
-        skipReason: "schedule did not match current time",
-      });
       continue;
     }
 

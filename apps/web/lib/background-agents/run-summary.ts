@@ -29,7 +29,6 @@ export type MinimalRun = {
   status: string;
   repoOwner: string;
   repoName: string;
-  outputKind: string | null;
   outputUrl: string | null;
   prNumber: number | null;
   issueNumber: number | null;
@@ -64,6 +63,27 @@ export type BuildRunSummaryParams = {
 const MAX_ITEMS = 20;
 const MAX_STRING_LENGTH = 300;
 
+/**
+ * Deterministic, human-readable headline verb for a recorded output kind
+ * (#746). Falls back to the raw kind for values not in this map so a future
+ * output kind never produces a blank headline.
+ */
+const OUTPUT_KIND_HEADLINE_VERB: Record<string, string> = {
+  ready_pr: "Opened PR",
+  pr_comment: "Commented",
+  pr_review: "Reviewed PR",
+  merge: "Merged PR",
+  push: "Pushed changes",
+  branch_delete: "Deleted branch",
+  comment: "Commented",
+  issue: "Created issue",
+  notification: "Sent notification",
+};
+
+function describeOutputKind(kind: string): string {
+  return OUTPUT_KIND_HEADLINE_VERB[kind] ?? kind;
+}
+
 function truncate(value: string): string {
   return value.length <= MAX_STRING_LENGTH
     ? value
@@ -88,11 +108,11 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     if (createdOutputs.length > 0) {
       const first = createdOutputs[0]!;
       const prSuffix = first.prNumber ? ` #${first.prNumber}` : "";
-      headline = truncate(`Run succeeded — created ${first.kind}${prSuffix}`);
-    } else if (run.outputKind === "none" || !run.outputKind) {
-      headline = truncate("Run succeeded — no output created");
+      headline = truncate(
+        `Run succeeded — ${describeOutputKind(first.kind)}${prSuffix}`,
+      );
     } else {
-      headline = truncate("Run succeeded");
+      headline = truncate("Run succeeded — no output created");
     }
   } else if (run.status === "failed") {
     const kind = run.errorKind ?? "unknown_error";
@@ -116,7 +136,6 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
   const changed: string[] = [];
   if (
     run.status === "succeeded" &&
-    (run.outputKind === "none" || !run.outputKind) &&
     outputs.filter((o) => o.status === "created").length === 0
   ) {
     changed.push("no output created");
@@ -184,7 +203,6 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     }
   } else if (
     run.status === "succeeded" &&
-    (run.outputKind === "none" || !run.outputKind) &&
     outputs.filter((o) => o.status === "created").length === 0
   ) {
     next.push("no output created");

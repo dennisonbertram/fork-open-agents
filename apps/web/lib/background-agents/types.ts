@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { USER_INFERENCE_OPTION_PREFIX } from "@/lib/inference/model-option-id";
 import { validateSchedule } from "./schedule-presets";
 
 export const backgroundAgentTriggerKinds = [
@@ -6,6 +7,7 @@ export const backgroundAgentTriggerKinds = [
   "github.pull_request_review",
   "github.deployment_status",
   "github.issue",
+  "github.check_suite",
   "schedule.cron",
   "webhook.error",
 ] as const;
@@ -21,17 +23,6 @@ export const backgroundAgentRunSources = [
 
 export type BackgroundAgentRunSource =
   (typeof backgroundAgentRunSources)[number];
-
-export const backgroundAgentOutputModes = [
-  "comment",
-  "ready_pr",
-  "issue",
-  "notification",
-  "none",
-] as const;
-
-export type BackgroundAgentOutputMode =
-  (typeof backgroundAgentOutputModes)[number];
 
 export const backgroundAgentStatuses = ["enabled", "disabled"] as const;
 
@@ -57,7 +48,12 @@ export const backgroundAgentErrorKinds = [
   "sandbox_unavailable",
   "workflow_failed",
   "checks_failed",
+  // Retired (#746): action-level errorKinds (write_scope_denied,
+  // ci_not_green, github_api_error, token_mint_failed) from the native
+  // GitHub action tools replace pr_creation_failed. Kept in this union for
+  // backward compatibility with historical run rows.
   "pr_creation_failed",
+  "model_resolution_failed",
   "webhook_signature_invalid",
 ] as const;
 
@@ -74,6 +70,11 @@ export const triggerConditionsSchema = z
     // mergedOnly restricts github.pull_request to merged-closed events.
     // Stored as JSONB, no migration needed. Not user-exposed yet (CODE-03).
     mergedOnly: z.boolean().optional(),
+    // actors/ignoreActors (#749): allowlist/denylist matched case-insensitively
+    // against event.actor (sender.login). Lets a reviewer agent ignore its own
+    // bot login, or a fixer ignore the reviewer, to break ping-pong loops.
+    actors: z.array(z.string().min(1)).max(20).optional(),
+    ignoreActors: z.array(z.string().min(1)).max(20).optional(),
   })
   .strict();
 
@@ -93,6 +94,77 @@ export const permissionsSchema = z
   })
   .strict();
 
+/**
+ * Per-action GitHub automation toggles (#745) — the sole behavior driver
+ * for a background agent's GitHub-facing automation (#748).
+ */
+export const githubActionsSchema = z
+  .object({
+    open_pull_request: z.boolean().optional(),
+    comment_on_pr_or_issue: z.boolean().optional(),
+    approve_pull_request: z.boolean().optional(),
+    request_changes: z.boolean().optional(),
+    merge_pull_request: z.boolean().optional(),
+    push: z.boolean().optional(),
+    delete_branch: z.boolean().optional(),
+  })
+  .strict();
+
+export const defaultGithubActions = {
+  open_pull_request: true,
+  comment_on_pr_or_issue: true,
+} as const;
+
+/**
+ * Which repositories a background agent's write actions may target,
+ * independent of the trigger-binding repoOwner/repoName pair.
+ */
+export const writeScopeSchema = z
+  .object({
+    mode: z.enum(["this_repo", "all_repos", "specific_repos"]),
+    repos: z
+      .array(
+        z
+          .object({
+            owner: z.string().trim().min(1).max(120),
+            name: z.string().trim().min(1).max(120),
+          })
+          .strict(),
+      )
+      .max(50)
+      .optional(),
+  })
+  .strict();
+
+export const defaultWriteScope = { mode: "this_repo" } as const;
+
+// The model half may itself contain slashes — the catalog carries nested ids
+// like 'fireworks/zai/glm-5.2' and Fireworks-style
+// 'fireworks/accounts/fireworks/models/...' paths.
+const gatewayModelIdPattern = /^[a-z0-9._-]+\/[a-z0-9._:/-]+$/i;
+
+/**
+ * modelId must be either a gateway `provider/model` id or a
+ * `user-profile:`-prefixed inference profile selection (see
+ * lib/inference/model-option-id.ts). Null/omitted means inherit the
+ * default model.
+ */
+export const modelIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(300)
+  .refine(
+    (value) =>
+      value.startsWith(USER_INFERENCE_OPTION_PREFIX) ||
+      gatewayModelIdPattern.test(value),
+    {
+      message:
+        "modelId must be a gateway 'provider/model' id or a 'user-profile:'-prefixed selection.",
+    },
+  )
+  .nullable();
+
 export const createBackgroundAgentSchema = z
   .object({
     name: z.string().trim().min(1).max(100),
@@ -102,9 +174,14 @@ export const createBackgroundAgentSchema = z
     repoName: z.string().trim().min(1).max(120),
     instructions: z.string().trim().min(1).max(8000),
     permissions: permissionsSchema.default({}),
-    outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
     composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
+    githubActions: githubActionsSchema.default(defaultGithubActions),
+    writeScope: writeScopeSchema.default(defaultWriteScope),
+    requireCiGreenForMerge: z.boolean().default(true),
+    modelId: modelIdSchema.optional().default(null),
+    // Per-agent-per-PR run budget (#749) — backstop against ping-pong loops.
+    runBudgetPerTarget: z.number().int().min(1).max(1000).default(10),
     triggers: z
       .array(
         z

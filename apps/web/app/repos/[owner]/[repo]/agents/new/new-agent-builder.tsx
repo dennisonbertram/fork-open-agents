@@ -9,7 +9,7 @@ import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
 import {
   buildAgentPayload,
   type GitHubAccessLevel,
-  type OutputMode,
+  type GithubActions,
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
 import {
@@ -226,8 +226,21 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   }
 
   // edit-spec step
-  const initialAccessLevel: GitHubAccessLevel =
-    template.outputMode === "ready_pr" ? "write" : "read";
+  const templateGithubActions: GithubActions =
+    "githubActions" in template
+      ? template.githubActions
+      : { open_pull_request: true, comment_on_pr_or_issue: true };
+  const templateRequiresWrite = Boolean(
+    templateGithubActions.open_pull_request ||
+    templateGithubActions.approve_pull_request ||
+    templateGithubActions.request_changes ||
+    templateGithubActions.merge_pull_request ||
+    templateGithubActions.push ||
+    templateGithubActions.delete_branch,
+  );
+  const initialAccessLevel: GitHubAccessLevel = templateRequiresWrite
+    ? "write"
+    : "read";
 
   return (
     <div className="space-y-4">
@@ -239,7 +252,6 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialGoal={template.goal}
         initialTriggerKind={template.triggerKind as TriggerKind}
         initialInstructions={template.instructions}
-        initialOutputMode={template.outputMode as OutputMode}
         initialCheckCommand={template.defaultCheckCommand}
         initialEnabled={false}
         initialSchedule={
@@ -248,6 +260,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialPermissionContents={initialAccessLevel}
         initialPermissionPullRequests={initialAccessLevel}
         initialComposioToolkitSlugs={[]}
+        initialGithubActions={templateGithubActions}
         createdAgentId={createdAgentId}
         testRunId={testRunId}
         onSave={handleSave}
