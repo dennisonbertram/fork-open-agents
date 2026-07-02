@@ -18,6 +18,10 @@
  * Plus:
  *   WD-11: watchdog.started event emitted before agent call
  *   WD-12: watchdog.decided event emitted after decision (info for retry/skip, warn for pause)
+ *   WD-13: retry decision but retryCurrentStepForWatchdog THROWS → decision integrity
+ *          (issue #763): the persisted row + watchdog.decided event must record
+ *          decision='pause' (level warn) with payload.retry_dispatch_failed=true —
+ *          never a phantom 'retry'.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -130,10 +134,14 @@ const countWatchdogRetryDecisionsMock = mock(
   },
 );
 
+let retryCurrentStepForWatchdogShouldThrow = false;
 const retryCurrentStepForWatchdogMock = mock(
   async (params: { runId: string; hint?: string }) => {
     retryCallCount++;
     lastRetryHint = params.hint;
+    if (retryCurrentStepForWatchdogShouldThrow) {
+      throw new Error("retryCurrentStepForWatchdog: TOCTOU race — rejected");
+    }
     return { id: "new-step-run-1", attempt: 2, nodeId: "node-a" };
   },
 );
@@ -361,6 +369,7 @@ function resetAll() {
   mockRetryDecisionCount = 0;
   mockAgentDecision = { decision: "retry", diagnosis: "Test diagnosis" };
   watchdogRunIdCounter = 0;
+  retryCurrentStepForWatchdogShouldThrow = false;
 
   createAgentLoopWatchdogRunMock.mockClear();
   updateAgentLoopWatchdogRunMock.mockClear();
@@ -1100,5 +1109,95 @@ describe("WD-12: watchdog.decided event emitted after decision", () => {
     );
     const payload = decidedEvent?.payload as Record<string, unknown>;
     expect(typeof payload?.["budgetRemaining"]).toBe("number");
+  });
+});
+
+describe("WD-13: retry decision but retryCurrentStepForWatchdog throws — decision integrity (issue #763)", () => {
+  beforeEach(resetAll);
+
+  test("retry-dispatch throw → persisted watchdog row records decision=pause (not phantom retry)", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun();
+    mockAgentDecision = { decision: "retry", diagnosis: "Retry this step" };
+    retryCurrentStepForWatchdogShouldThrow = true;
+
+    const result = await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    // The function's own return must not claim retry succeeded.
+    expect(result.decision).toBe("pause");
+
+    // The persisted watchdog run row must be updated with decision=pause.
+    const updated = watchdogRunsUpdated.at(-1);
+    expect(updated?.decision).toBe("pause");
+    expect(updated?.status).toBe("decided");
+
+    // pauseLoopRunSystem must have been called (fallback pause applied).
+    expect(pauseCallCount).toBe(1);
+  });
+
+  test("retry-dispatch throw → watchdog.decided event records decision=pause at level warn with retry_dispatch_failed marker", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun();
+    mockAgentDecision = { decision: "retry", diagnosis: "Retry this step" };
+    retryCurrentStepForWatchdogShouldThrow = true;
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    const decidedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.watchdog.decided",
+    );
+    expect(decidedEvent).toBeDefined();
+    expect(decidedEvent?.level).toBe("warn");
+    const payload = decidedEvent?.payload as Record<string, unknown>;
+    expect(payload?.["decision"]).toBe("pause");
+    expect(payload?.["retry_dispatch_failed"]).toBe(true);
+  });
+
+  test("retry-dispatch throw → no chain.dispatched event is emitted (nothing was actually dispatched)", async () => {
+    const { invokeWatchdog } = await watchdogPromise;
+    const loop = makeLoop({ watchdogEnabled: true, watchdogRetryBudget: 2 });
+    const loopRun = makeLoopRun();
+    mockAgentDecision = { decision: "retry", diagnosis: "Retry this step" };
+    retryCurrentStepForWatchdogShouldThrow = true;
+
+    await invokeWatchdog({
+      loop,
+      loopRun,
+      stepRunId: "step-run-1",
+      nodeId: "node-a",
+      nodeKind: "agent_step",
+      attempt: 1,
+      errorKind: "step_failed",
+      errorMessage: "Step failed",
+      workflowRunId: "wf-1",
+    });
+
+    const dispatchedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.chain.dispatched",
+    );
+    expect(dispatchedEvent).toBeUndefined();
+    expect(dispatchCallCount).toBe(0);
   });
 });

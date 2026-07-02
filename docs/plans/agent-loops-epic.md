@@ -238,7 +238,10 @@ New module `apps/web/lib/agent-loops/`:
 
 - `types.ts` — LoopDefinition zod schemas, error taxonomy
   (`loop_invalid`, `guardrail_exceeded`, `step_output_invalid`,
-  `sandbox_unavailable`, `github_check_failed`, `chain_dispatch_failed`, …)
+  `sandbox_unavailable`, `github_check_failed`, `chain_dispatch_failed`,
+  `dispatch_failed` — run-level errorKind set when `start()` throws on
+  initial dispatch, resume, or retry: the run is marked `failed` instead of
+  silently reporting success (issue #763), …)
 - `validation.ts` — graph validation
 - `store.ts` — CRUD + run/step/event persistence (mirrors background-agents/store.ts)
 - `context.ts` — context merge, size cap, path lookup for conditions/`*From` refs

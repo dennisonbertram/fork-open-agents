@@ -26,11 +26,15 @@
  * BT-RC03: Resume re-dispatches queued step (pause-mid-execution recovery path)
  *   BT-RC03a: resumeLoopRun with queued currentStepRunId → workflow dispatch fires
  *   BT-RC03b: resumeLoopRun without currentStepRunId → no dispatch, no error
- *   BT-RC03c: dispatch failure during resume → dispatch_failed event recorded, no throw
+ *   BT-RC03c: dispatch failure during resume → dispatch_failed event recorded,
+ *             run marked failed with errorKind=dispatch_failed, DispatchFailedError
+ *             thrown (issue #763 — no false "Resume successful")
  *
  * BT-RC04: Retry dispatches the new attempt workflow
  *   BT-RC04a: retryCurrentStep → dispatches new step, attempt n+1
- *   BT-RC04b: dispatch failure during retry → dispatch_failed event, no throw
+ *   BT-RC04b: dispatch failure during retry → dispatch_failed event, run marked
+ *             failed with errorKind=dispatch_failed, DispatchFailedError thrown
+ *             (issue #763 — no false "Retry successful")
  *
  * BT-RC05: chain.ts does NOT export the four control functions (separation gate)
  *   BT-RC05: pauseLoopRun/cancelLoopRun/resumeLoopRun/retryCurrentStep absent from chain.ts
@@ -38,7 +42,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
-import { RunControlError } from "./run-controls-error";
+import { DispatchFailedError, RunControlError } from "./run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -165,6 +169,29 @@ const recordAgentLoopEventMock = mock(async (input: EventInput) => {
   return { id: `evt-${recordedEvents.length}`, ...input };
 });
 
+type TransitionCall = {
+  runId: string;
+  toStatus: string;
+  fromStatuses: string[];
+  errorKind?: string | null;
+  errorMessage?: string | null;
+};
+let transitionCalls: TransitionCall[] = [];
+const conditionallyTransitionRunStatusMock = mock(
+  async (params: TransitionCall) => {
+    transitionCalls.push(params);
+    currentLoopRun = {
+      ...currentLoopRun,
+      status: params.toStatus as AgentLoopRun["status"],
+      ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+      ...(params.errorMessage !== undefined
+        ? { errorMessage: params.errorMessage }
+        : {}),
+    };
+    return currentLoopRun;
+  },
+);
+
 let workflowStartThrows: Error | null = null;
 const workflowStartMock = mock(
   async (_workflow: unknown, args: [{ stepRunId: string }]) => {
@@ -184,7 +211,7 @@ mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: mock(async () => null),
   getAgentLoopRunWithLoop: mock(async () => null),
   updateAgentLoopRunStatus: mock(async () => ({})),
-  conditionallyTransitionRunStatus: mock(async () => ({})),
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   updateAgentLoopStepRun: mock(async () => ({})),
   createAgentLoopStepRun: mock(async () => ({})),
   advanceRunToNextStep: mock(async () => false),
@@ -298,6 +325,7 @@ function resetAll() {
   runOwnership = {};
   workflowStartThrows = null;
   nextStepRunIdCounter = 700;
+  transitionCalls = [];
 
   currentLoopRun = makeLoopRun();
   runOwnership["run-rc"] = "user-1";
@@ -308,6 +336,7 @@ function resetAll() {
   retryCurrentStepMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   workflowStartMock.mockClear();
+  conditionallyTransitionRunStatusMock.mockClear();
 }
 
 const runControlsPromise = import("./run-controls");
@@ -566,7 +595,7 @@ describe("BT-RC03: resume re-dispatches queued step (pause-mid-execution recover
     expect(workflowStartCalls.length).toBe(0);
   });
 
-  test("BT-RC03c: dispatch failure during resume → dispatch_failed event, no throw", async () => {
+  test("BT-RC03c: dispatch failure during resume → DispatchFailedError thrown, run marked failed, dispatch_failed event recorded", async () => {
     const nextStep = makeStepRun({
       id: "step-next-fail-rc",
       nodeId: "end",
@@ -581,13 +610,25 @@ describe("BT-RC03: resume re-dispatches queued step (pause-mid-execution recover
     workflowStartThrows = new Error("Workflow service unavailable");
 
     const { resumeLoopRun } = await runControlsPromise;
-    // Must not throw — dispatch failures are caught and recorded as events
-    await expect(resumeLoopRun("run-rc", "user-1")).resolves.toBeUndefined();
+    // Must throw a typed DispatchFailedError — resume must NOT report success
+    // when the workflow dispatch silently failed (issue #763).
+    await expect(resumeLoopRun("run-rc", "user-1")).rejects.toThrow(
+      DispatchFailedError,
+    );
 
     const dispatchFailedEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.chain.dispatch_failed",
     );
     expect(dispatchFailedEvent).toBeDefined();
+
+    // Run row must be transitioned to failed with errorKind=dispatch_failed
+    expect(conditionallyTransitionRunStatusMock).toHaveBeenCalled();
+    const failTransition = transitionCalls.find(
+      (c) => c.toStatus === "failed",
+    );
+    expect(failTransition).toBeDefined();
+    expect(failTransition?.errorKind).toBe("dispatch_failed");
+    expect(typeof failTransition?.errorMessage).toBe("string");
   });
 });
 
@@ -629,7 +670,7 @@ describe("BT-RC04: retry dispatches the new attempt workflow", () => {
     expect(payload?.["attempt"]).toBe(3);
   });
 
-  test("BT-RC04b: dispatch failure during retry → dispatch_failed event, no throw", async () => {
+  test("BT-RC04b: dispatch failure during retry → DispatchFailedError thrown, run marked failed, dispatch_failed event recorded", async () => {
     const failedStep = makeStepRun({
       id: "step-retry-fail-rc",
       attempt: 1,
@@ -643,11 +684,20 @@ describe("BT-RC04: retry dispatches the new attempt workflow", () => {
     workflowStartThrows = new Error("Workflow service down");
 
     const { retryCurrentStep } = await runControlsPromise;
-    await expect(retryCurrentStep("run-rc", "user-1")).resolves.toBeUndefined();
+    // Must throw — retry must NOT report success when dispatch silently failed.
+    await expect(retryCurrentStep("run-rc", "user-1")).rejects.toThrow(
+      DispatchFailedError,
+    );
 
     const dispatchFailedEvent = recordedEvents.find(
       (e) => e.eventName === "agent-loop.chain.dispatch_failed",
     );
     expect(dispatchFailedEvent).toBeDefined();
+
+    const failTransition = transitionCalls.find(
+      (c) => c.toStatus === "failed",
+    );
+    expect(failTransition).toBeDefined();
+    expect(failTransition?.errorKind).toBe("dispatch_failed");
   });
 });

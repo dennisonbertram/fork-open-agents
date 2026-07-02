@@ -23,6 +23,12 @@ type DispatchResult =
         | "loop_invalid"
         | "active_run"
         | "ownership_fail";
+    }
+  | {
+      dispatchFailed: true;
+      errorKind: "dispatch_failed";
+      errorMessage: string;
+      runId: string;
     };
 
 const dispatchManualAgentLoopStart = mock(
@@ -208,6 +214,29 @@ describe("POST /api/agent-loops/[loopId]/runs", () => {
     const body = await response.json();
     expect(response.status).toBe(403);
     expect(body).toMatchObject({ errorKind: "repo_not_allowed" });
+  });
+
+  test("BT-033: returns 502 with success:false, errorKind:dispatch_failed when initial dispatch fails (issue #763 — no false {created:true})", async () => {
+    dispatchManualAgentLoopStart.mockImplementation(async () => ({
+      dispatchFailed: true as const,
+      errorKind: "dispatch_failed" as const,
+      errorMessage: "Failed to dispatch start node step workflow: boom",
+      runId: "run-1",
+    }));
+    const { POST } = await routeModulePromise;
+    const response = await POST(
+      new Request("http://localhost/api/agent-loops/loop-1/runs", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({
+      success: false,
+      errorKind: "dispatch_failed",
+      runId: "run-1",
+    });
   });
 });
 
