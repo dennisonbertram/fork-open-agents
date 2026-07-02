@@ -5,8 +5,10 @@
  * buildAgentPayload (save payload):
  *   - Edit display ⟹ the user's saved access, preserved (least-privilege), so
  *     editing an unrelated field never silently re-escalates a read-only agent.
- *   - Save payload for Ready PR ⟹ write (it can't push a branch / open a PR
- *     without it), floored for every calling surface.
+ *   - Save payload ⟹ write is floored whenever an enabled githubActions
+ *     toggle requires it (push/merge/delete_branch/open_pr/approve/request_changes),
+ *     mirroring the executor's own derivation (#745/#756). This replaces the
+ *     old outputMode==="ready_pr" flooring (#747).
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -30,7 +32,7 @@ function makeSavedAgent(
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Review PRs.",
-    outputMode: "ready_pr",
+    outputMode: "none",
     checkCommand: null,
     triggers: [
       {
@@ -52,7 +54,7 @@ describe("edit-mode GitHub permission invariant", () => {
     // The genuine least-privilege case: a report-only agent the user keeps at
     // read must NOT be silently bumped to write when re-editing.
     const agent = makeSavedAgent({
-      outputMode: "none",
+      githubActions: { comment_on_pr_or_issue: true },
       permissions: {
         github: { contents: "read", pullRequests: "read" },
       },
@@ -69,7 +71,7 @@ describe("edit-mode GitHub permission invariant", () => {
 
   test("report-only agent with saved write access is preserved", () => {
     const agent = makeSavedAgent({
-      outputMode: "none",
+      githubActions: { comment_on_pr_or_issue: true },
       permissions: {
         github: { contents: "write", pullRequests: "write" },
       },
@@ -82,11 +84,12 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(payload.permissions.github.contents).toBe("write");
   });
 
-  test("ready_pr edit display preserves saved read access instead of re-escalating", () => {
+  test("open_pull_request edit display preserves saved read access instead of re-escalating", () => {
     // Edit mode reflects persisted GitHub access rather than re-deriving from
-    // outputMode. This keeps a downgraded or legacy row honest when reopened.
+    // enabled write actions. This keeps a downgraded or legacy row honest
+    // when reopened.
     const agent = makeSavedAgent({
-      outputMode: "ready_pr",
+      githubActions: { open_pull_request: true },
       permissions: {
         github: { contents: "read", pullRequests: "read" },
       },
@@ -101,17 +104,25 @@ describe("edit-mode GitHub permission invariant", () => {
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
-  test("ready_pr payload is write even when the form somehow carries read", () => {
+  test("open_pull_request payload is write even when the form somehow carries read", () => {
     // Guards the buildAgentPayload floor independently of buildFormFromAgent:
-    // the settings form sends defaultForm read/read for a ready_pr agent.
-    const form = buildFormFromAgent(makeSavedAgent({ outputMode: "none" }));
-    const payload = buildAgentPayload({ ...form, outputMode: "ready_pr" });
+    // the settings form sends defaultForm read/read for an agent with
+    // open_pull_request enabled.
+    const form = buildFormFromAgent(
+      makeSavedAgent({ githubActions: { comment_on_pr_or_issue: true } }),
+    );
+    const payload = buildAgentPayload({
+      ...form,
+      githubActions: { open_pull_request: true },
+    });
     expect(payload.permissions.github.contents).toBe("write");
     expect(payload.permissions.github.pullRequests).toBe("write");
   });
 
   test("agent with no saved permissions + report-only falls back to read", () => {
-    const agent = makeSavedAgent({ outputMode: "none" });
+    const agent = makeSavedAgent({
+      githubActions: { comment_on_pr_or_issue: true },
+    });
     const form = buildFormFromAgent(agent);
     expect(form.permissionContents).toBe("read");
     expect(form.permissionPullRequests).toBe("read");

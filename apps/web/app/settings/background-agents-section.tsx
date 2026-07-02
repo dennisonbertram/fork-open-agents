@@ -45,19 +45,17 @@ import {
   buildFormFromAgent,
   conditionFieldLabel,
   defaultForm,
-  describeOutputModePermissions,
   fieldsForTrigger,
   isStepValid,
-  outputModeLabel,
-  supportedOutputModes,
   triggerLabels,
   type BackgroundAgent,
   type ConditionField,
   type FormState,
-  type OutputMode,
+  type GithubActions,
   type StepId,
   type TriggerKind,
 } from "./background-agents-form";
+import { GithubActionsPanel } from "@/app/repos/[owner]/[repo]/agents/github-actions-panel";
 import {
   mapReadinessToVerdict,
   type BackgroundReadinessResponse,
@@ -264,18 +262,51 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export function PermissionsSummary({ outputMode }: { outputMode: OutputMode }) {
-  const requiresWrite = outputMode === "ready_pr";
+function hasAnyWriteAction(actions: GithubActions | undefined): boolean {
+  if (!actions) return false;
+  return Boolean(
+    actions.open_pull_request ||
+    actions.approve_pull_request ||
+    actions.request_changes ||
+    actions.merge_pull_request ||
+    actions.push ||
+    actions.delete_branch,
+  );
+}
+
+export function PermissionsSummary({
+  githubActions,
+}: {
+  githubActions: GithubActions | undefined;
+}) {
+  const requiresWrite = hasAnyWriteAction(githubActions);
+  // Commenting is still a GitHub write (the tool mints issues:write and the
+  // write-scope gate requires the user to hold write on the repo) — it just
+  // can't change code. Don't tell users a commenting agent is "read-only".
+  const commentsOnly =
+    !requiresWrite && githubActions?.comment_on_pr_or_issue === true;
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
           <p className="text-sm font-medium">Permissions summary</p>
           <p className="text-pretty text-xs text-muted-foreground">
-            {describeOutputModePermissions(outputMode)}
+            {requiresWrite
+              ? "Read + write — this agent's enabled actions require write access to contents and pull requests."
+              : commentsOnly
+                ? "Comments only — this agent can post comments on PRs and issues (a GitHub write), but cannot change code, merge, or manage branches. Posting comments still requires your account to have write access to the repo."
+                : "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything."}
           </p>
         </div>
-        <StatusPill status={requiresWrite ? "write access" : "read-only"} />
+        <StatusPill
+          status={
+            requiresWrite
+              ? "write access"
+              : commentsOnly
+                ? "comments only"
+                : "read-only"
+          }
+        />
       </div>
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <div className="rounded border border-border bg-background px-2 py-1.5">
@@ -693,43 +724,37 @@ export function BackgroundAgentsSection() {
             hidden={activeStep !== "permissions"}
             className="space-y-4"
           >
-            <PermissionsSummary outputMode={form.outputMode} />
+            <PermissionsSummary githubActions={form.githubActions} />
             <p className="text-xs text-muted-foreground">
-              Permissions are derived from the selected output mode so the agent
-              only gets the access needed to produce that result.
+              Permissions are derived from the actions enabled on the next step,
+              so the agent only gets the access its enabled actions need.
             </p>
           </div>
 
           <div
             role="tabpanel"
             hidden={activeStep !== "outputs"}
-            className="grid gap-4 md:grid-cols-2"
+            className="space-y-4"
           >
-            <div className="space-y-2 md:col-span-2">
-              <Label htmlFor="agent-output">Output mode</Label>
-              <Select
-                value={form.outputMode}
-                onValueChange={(value) =>
-                  setForm((current) => ({
-                    ...current,
-                    outputMode: value as OutputMode,
-                  }))
-                }
-              >
-                <SelectTrigger id="agent-output">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {supportedOutputModes.map((mode) => (
-                    <SelectItem key={mode} value={mode}>
-                      {outputModeLabel(mode)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <PermissionsSummary outputMode={form.outputMode} />
-            </div>
-            <div className="space-y-2 md:col-span-2">
+            <GithubActionsPanel
+              value={{
+                githubActions: form.githubActions ?? {},
+                writeScope: form.writeScope ?? { mode: "this_repo" },
+                requireCiGreenForMerge: form.requireCiGreenForMerge ?? true,
+                modelId: form.modelId ?? null,
+              }}
+              onChange={(next) =>
+                setForm((current) => ({
+                  ...current,
+                  githubActions: next.githubActions,
+                  writeScope: next.writeScope,
+                  requireCiGreenForMerge: next.requireCiGreenForMerge,
+                  modelId: next.modelId,
+                }))
+              }
+            />
+            <PermissionsSummary githubActions={form.githubActions} />
+            <div className="space-y-2">
               <Label htmlFor="agent-check">Check command</Label>
               <Input
                 id="agent-check"
@@ -767,7 +792,7 @@ export function BackgroundAgentsSection() {
                 </p>
               )}
             </div>
-            <PermissionsSummary outputMode={form.outputMode} />
+            <PermissionsSummary githubActions={form.githubActions} />
           </div>
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">

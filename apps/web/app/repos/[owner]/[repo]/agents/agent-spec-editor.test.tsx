@@ -175,7 +175,7 @@ describe("AgentSpecEditor", () => {
     expect(html).toContain("This agent can propose changes as pull requests");
   });
 
-  test("(E4c) Result 'Open a pull request' is disabled when GitHub access is Read-only", async () => {
+  test("(E4c) GitHub actions panel renders the seven action toggles and risk copy for merge/push/delete_branch", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -183,20 +183,23 @@ describe("AgentSpecEditor", () => {
         {...defaultEditorProps}
         initialPermissionContents="read"
         initialPermissionPullRequests="read"
-        initialOutputMode="none"
       />,
     );
 
-    // The ready_pr radio must be disabled
-    const prLabelIdx = html.indexOf("Open a pull request");
-    expect(prLabelIdx).toBeGreaterThanOrEqual(0);
-    // Find the radio input before the label text
-    const radioIdx = html.lastIndexOf("<input", prLabelIdx);
-    const radioSnippet = html.slice(radioIdx, prLabelIdx);
-    expect(radioSnippet).toContain('disabled=""');
+    expect(html).toContain("Open pull requests");
+    expect(html).toContain("Comment on PRs or issues");
+    expect(html).toContain("Approve pull requests");
+    expect(html).toContain("Request changes");
+    expect(html).toContain("Merge pull requests");
+    expect(html).toContain("Push commits");
+    expect(html).toContain("Delete branches");
 
-    // The gating helper text is shown
-    expect(html).toContain("Give the GitHub tool pull-request access");
+    // Risk copy shown for actions off by default (merge/push/delete_branch)
+    expect(html).toContain("Off by default; enable deliberately.");
+
+    // Write scope + model fields present
+    expect(html).toContain("Write scope");
+    expect(html).toContain("Model");
   });
 
   test("(E4d) mixed initial permissions normalize to Read-only (no silent write)", async () => {

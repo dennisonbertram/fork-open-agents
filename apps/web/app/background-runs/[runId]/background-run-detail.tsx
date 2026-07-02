@@ -177,6 +177,18 @@ function formatOutputSummary(
     : "none";
 }
 
+/**
+ * Sidebar "Run" section's Output field (#747): lists the recorded action
+ * outputs (kind per row) instead of the deprecated run.outputKind column.
+ * "none" when no outputs have been recorded yet.
+ */
+function formatSidebarOutputKinds(outputs: SerializedBackgroundOutput[]) {
+  if (outputs.length === 0) {
+    return "none";
+  }
+  return outputs.map((output) => output.kind).join(", ");
+}
+
 function findCostValue(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return value;
@@ -577,7 +589,9 @@ export function BackgroundRunDetail({
                 </div>
                 <div className="flex justify-between gap-3 px-4 py-2">
                   <span className="text-muted-foreground">Output</span>
-                  <span className="font-mono">{run.outputKind ?? "none"}</span>
+                  <span className="font-mono">
+                    {formatSidebarOutputKinds(outputs)}
+                  </span>
                 </div>
                 {run.errorKind && (
                   <div className="grid gap-1 px-4 py-2">

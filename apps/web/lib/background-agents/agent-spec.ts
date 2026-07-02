@@ -8,6 +8,38 @@
  */
 import { validateSchedule } from "./schedule-presets";
 
+/**
+ * Per-action GitHub automation toggles (#745/#747). Mirrors
+ * `BackgroundAgentGithubActions` (lib/db/schema.ts) and `githubActionsSchema`
+ * (types.ts) — kept as an independent client-safe type here since schema.ts
+ * imports server-only Drizzle table definitions.
+ */
+export type GithubActions = {
+  open_pull_request?: boolean;
+  comment_on_pr_or_issue?: boolean;
+  approve_pull_request?: boolean;
+  request_changes?: boolean;
+  merge_pull_request?: boolean;
+  push?: boolean;
+  delete_branch?: boolean;
+};
+
+export const defaultGithubActions: GithubActions = {
+  open_pull_request: true,
+  comment_on_pr_or_issue: true,
+};
+
+/**
+ * Which repositories a background agent's write actions may target,
+ * independent of the trigger-binding repoOwner/repoName pair.
+ */
+export type WriteScope = {
+  mode: "this_repo" | "all_repos" | "specific_repos";
+  repos?: Array<{ owner: string; name: string }>;
+};
+
+export const defaultWriteScope: WriteScope = { mode: "this_repo" };
+
 export type TriggerKind =
   | "github.pull_request"
   | "github.pull_request_review"
@@ -70,6 +102,14 @@ export type BackgroundAgent = {
   };
   /** Composio toolkit slugs this agent is authorized to use. */
   composioToolkitSlugs?: string[];
+  /** Per-action GitHub automation toggles (#745). Defaults when unset. */
+  githubActions?: GithubActions;
+  /** Write-scope for this agent's write actions. Defaults when unset. */
+  writeScope?: WriteScope;
+  /** Whether merge_pull_request requires CI green. Defaults to true when unset. */
+  requireCiGreenForMerge?: boolean;
+  /** Explicit model selection (gateway id or user-profile: selection). Null/unset = default model. */
+  modelId?: string | null;
 };
 
 export type FormState = {
@@ -93,6 +133,19 @@ export type FormState = {
   permissionPullRequests: GitHubAccessLevel;
   /** Composio toolkit slugs selected for this agent. */
   composioToolkitSlugs: string[];
+  /** Per-action GitHub automation toggles (#745). Optional for callers that
+   * construct a bare FormState literal; buildAgentPayload/buildFormFromAgent
+   * apply defaultGithubActions when omitted. */
+  githubActions?: GithubActions;
+  /** Write-scope for this agent's write actions. Optional; defaults to
+   * defaultWriteScope when omitted. */
+  writeScope?: WriteScope;
+  /** Whether merge_pull_request requires CI green. Optional; defaults to
+   * true when omitted. */
+  requireCiGreenForMerge?: boolean;
+  /** Explicit model selection. Optional; defaults to null (inherit default
+   * model) when omitted. */
+  modelId?: string | null;
 };
 
 export const defaultForm: FormState = {
@@ -115,6 +168,10 @@ export const defaultForm: FormState = {
   permissionContents: "read",
   permissionPullRequests: "read",
   composioToolkitSlugs: [],
+  githubActions: { ...defaultGithubActions },
+  writeScope: { ...defaultWriteScope },
+  requireCiGreenForMerge: true,
+  modelId: null,
 };
 
 export const triggerLabels: Record<TriggerKind, string> = {
@@ -213,14 +270,40 @@ function buildConditions(form: FormState): TriggerConditions {
   };
 }
 
+/**
+ * Whether any of the given GitHub action toggles requires write access to
+ * contents + pull_requests. Mirrors the executor's own derivation
+ * (hasAnyWriteAction in executor.ts, #745/#756) — comment_on_pr_or_issue is
+ * NOT a write action; the other six are.
+ */
+function hasAnyWriteAction(actions: GithubActions | undefined): boolean {
+  if (!actions) return false;
+  return Boolean(
+    actions.open_pull_request ||
+    actions.approve_pull_request ||
+    actions.request_changes ||
+    actions.merge_pull_request ||
+    actions.push ||
+    actions.delete_branch,
+  );
+}
+
 export function buildAgentPayload(form: FormState) {
   const conditions = buildConditions(form);
-  // Ready PR is non-functional without write access — the agent must push a
-  // branch and open a PR — so floor contents + pull_requests to "write" for
-  // ready_pr regardless of the calling surface (the settings form has no
-  // permission controls and would otherwise send read/read). Report-only agents
-  // keep the user's chosen access so least-privilege selections are preserved.
-  const requiresWrite = form.outputMode === "ready_pr";
+  const githubActions = form.githubActions ?? { ...defaultGithubActions };
+  const writeScope = form.writeScope ?? { ...defaultWriteScope };
+  const requireCiGreenForMerge = form.requireCiGreenForMerge ?? true;
+  const modelId = form.modelId ?? null;
+
+  // An enabled write action (push/merge/delete_branch/open_pr/approve/
+  // request_changes) is non-functional without write access, so floor
+  // contents + pull_requests to "write" regardless of the calling surface
+  // (the settings form has no permission controls and would otherwise send
+  // read/read). Report-only agents (comment-only or no actions) keep the
+  // user's chosen access so least-privilege selections are preserved. This
+  // replaces the old outputMode==="ready_pr" flooring (#747) and mirrors the
+  // executor's own derivation.
+  const requiresWrite = hasAnyWriteAction(githubActions);
   const contents = requiresWrite ? "write" : form.permissionContents;
   const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
   return {
@@ -229,7 +312,9 @@ export function buildAgentPayload(form: FormState) {
     repoName: form.repoName,
     status: form.enabled ? "enabled" : "disabled",
     instructions: form.instructions,
-    outputMode: form.outputMode,
+    // outputMode is intentionally omitted — it is deprecated (#748/#C7) and
+    // the server applies its own schema default. Behavior is driven entirely
+    // by githubActions.
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
@@ -242,6 +327,10 @@ export function buildAgentPayload(form: FormState) {
       },
     },
     composioToolkitSlugs: form.composioToolkitSlugs,
+    githubActions,
+    writeScope,
+    requireCiGreenForMerge,
+    modelId,
     triggers: [
       {
         name: triggerLabels[form.triggerKind],
@@ -484,5 +573,9 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     permissionContents,
     permissionPullRequests,
     composioToolkitSlugs: agent.composioToolkitSlugs ?? [],
+    githubActions: agent.githubActions ?? { ...defaultGithubActions },
+    writeScope: agent.writeScope ?? { ...defaultWriteScope },
+    requireCiGreenForMerge: agent.requireCiGreenForMerge ?? true,
+    modelId: agent.modelId ?? null,
   };
 }

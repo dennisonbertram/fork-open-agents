@@ -109,11 +109,15 @@ describe("buildAgentPayload", () => {
   });
 
   test("BT-009: none output mode with read permissions in form keeps contents and pullRequests as read", () => {
+    // "Report only" intent is expressed via githubActions (no write actions
+    // enabled), not outputMode, since #747 replaces outputMode flooring with
+    // action-derived flooring.
     const payload = buildAgentPayload(
       makeForm({
         outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "read",
+        githubActions: { comment_on_pr_or_issue: true },
       }),
     );
 
@@ -140,6 +144,7 @@ describe("buildAgentPayload", () => {
         outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "write",
+        githubActions: { comment_on_pr_or_issue: true },
       }),
     );
 
@@ -572,5 +577,375 @@ describe("REG: describeOutputModePermissions — both modes produce distinct sum
     const prDesc = describeOutputModePermissions("ready_pr");
     // If someone accidentally returns the same string for both, this catches it
     expect(noneDesc).not.toBe(prDesc);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #747 — GitHub action toggles, write scope, CI-green, model — mapping tests
+// ---------------------------------------------------------------------------
+
+describe("buildAgentPayload — githubActions/writeScope/requireCiGreenForMerge/modelId", () => {
+  function makeForm(overrides: Partial<FormState> = {}): FormState {
+    return {
+      name: "Test Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
+      instructions: "Run smoke checks.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+      githubActions: {
+        open_pull_request: true,
+        comment_on_pr_or_issue: true,
+        approve_pull_request: false,
+        request_changes: false,
+        merge_pull_request: false,
+        push: false,
+        delete_branch: false,
+      },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: null,
+      ...overrides,
+    };
+  }
+
+  test("payload omits outputMode entirely (server applies its own default)", () => {
+    const payload = buildAgentPayload(makeForm());
+    expect(payload).not.toHaveProperty("outputMode");
+    expect(JSON.stringify(payload)).not.toContain("outputMode");
+  });
+
+  test("payload maps githubActions toggles through unchanged", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: true,
+          approve_pull_request: false,
+          request_changes: false,
+          merge_pull_request: true,
+          push: true,
+          delete_branch: false,
+        },
+      }),
+    );
+    expect(payload.githubActions).toEqual({
+      open_pull_request: false,
+      comment_on_pr_or_issue: true,
+      approve_pull_request: false,
+      request_changes: false,
+      merge_pull_request: true,
+      push: true,
+      delete_branch: false,
+    });
+  });
+
+  test("payload maps writeScope through unchanged (specific_repos with repo list)", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        writeScope: {
+          mode: "specific_repos",
+          repos: [{ owner: "acme", name: "widgets" }],
+        },
+      }),
+    );
+    expect(payload.writeScope).toEqual({
+      mode: "specific_repos",
+      repos: [{ owner: "acme", name: "widgets" }],
+    });
+  });
+
+  test("payload maps requireCiGreenForMerge through unchanged", () => {
+    const payloadTrue = buildAgentPayload(
+      makeForm({ requireCiGreenForMerge: true }),
+    );
+    expect(payloadTrue.requireCiGreenForMerge).toBe(true);
+
+    const payloadFalse = buildAgentPayload(
+      makeForm({ requireCiGreenForMerge: false }),
+    );
+    expect(payloadFalse.requireCiGreenForMerge).toBe(false);
+  });
+
+  test("payload maps modelId through unchanged, including null (inherit default)", () => {
+    const withModel = buildAgentPayload(
+      makeForm({ modelId: "anthropic/claude-sonnet-4-5" }),
+    );
+    expect(withModel.modelId).toBe("anthropic/claude-sonnet-4-5");
+
+    const withoutModel = buildAgentPayload(makeForm({ modelId: null }));
+    expect(withoutModel.modelId).toBeNull();
+  });
+
+  test("permission auto-flooring derives from enabled write actions (push) rather than outputMode", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        outputMode: "none",
+        permissionContents: "read",
+        permissionPullRequests: "read",
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: false,
+          approve_pull_request: false,
+          request_changes: false,
+          merge_pull_request: false,
+          push: true,
+          delete_branch: false,
+        },
+      }),
+    );
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("permission auto-flooring derives write from open_pull_request action", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        githubActions: {
+          open_pull_request: true,
+          comment_on_pr_or_issue: false,
+          approve_pull_request: false,
+          request_changes: false,
+          merge_pull_request: false,
+          push: false,
+          delete_branch: false,
+        },
+      }),
+    );
+    expect(payload.permissions.github.contents).toBe("write");
+    expect(payload.permissions.github.pullRequests).toBe("write");
+  });
+
+  test("permission stays read when only comment_on_pr_or_issue is enabled (comment is not a write action)", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: true,
+          approve_pull_request: false,
+          request_changes: false,
+          merge_pull_request: false,
+          push: false,
+          delete_branch: false,
+        },
+      }),
+    );
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
+  });
+
+  test("permission stays read when every action toggle is disabled", () => {
+    const payload = buildAgentPayload(
+      makeForm({
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: false,
+          approve_pull_request: false,
+          request_changes: false,
+          merge_pull_request: false,
+          push: false,
+          delete_branch: false,
+        },
+      }),
+    );
+    expect(payload.permissions.github.contents).toBe("read");
+    expect(payload.permissions.github.pullRequests).toBe("read");
+  });
+
+  test("permission floors to write when merge_pull_request, request_changes, approve_pull_request, or delete_branch is enabled", () => {
+    const actionKeys = [
+      "merge_pull_request",
+      "request_changes",
+      "approve_pull_request",
+      "delete_branch",
+    ] as const;
+    for (const key of actionKeys) {
+      const payload = buildAgentPayload(
+        makeForm({
+          githubActions: {
+            open_pull_request: false,
+            comment_on_pr_or_issue: false,
+            approve_pull_request: false,
+            request_changes: false,
+            merge_pull_request: false,
+            push: false,
+            delete_branch: false,
+            [key]: true,
+          },
+        }),
+      );
+      expect(payload.permissions.github.contents).toBe("write");
+      expect(payload.permissions.github.pullRequests).toBe("write");
+    }
+  });
+
+  test("defaults apply when githubActions/writeScope/requireCiGreenForMerge/modelId are omitted from FormState", () => {
+    const bareForm: FormState = {
+      name: "Test Agent",
+      repoOwner: "acme",
+      repoName: "widgets",
+      triggerKind: "github.pull_request",
+      schedule: "",
+      conditionActions: "",
+      conditionBranches: "",
+      conditionLabels: "",
+      conditionEnvironments: "",
+      conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
+      instructions: "Run smoke checks.",
+      outputMode: "none",
+      checkCommand: "",
+      enabled: false,
+      permissionContents: "read",
+      permissionPullRequests: "read",
+      composioToolkitSlugs: [],
+    };
+    const payload = buildAgentPayload(bareForm);
+    expect(payload.githubActions).toEqual({
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    });
+    expect(payload.writeScope).toEqual({ mode: "this_repo" });
+    expect(payload.requireCiGreenForMerge).toBe(true);
+    expect(payload.modelId).toBeNull();
+  });
+});
+
+describe("buildFormFromAgent — githubActions/writeScope/requireCiGreenForMerge/modelId round-trip", () => {
+  function makeAgent(
+    overrides: Partial<BackgroundAgent> = {},
+  ): BackgroundAgent {
+    return {
+      id: "agent-1",
+      name: "PR reporter",
+      description: null,
+      status: "disabled",
+      repoOwner: "acme",
+      repoName: "widgets",
+      instructions: "Summarize pull requests.",
+      outputMode: "none",
+      checkCommand: null,
+      permissions: {
+        github: {
+          contents: "read",
+          pullRequests: "read",
+          issues: "read",
+          deployments: "read",
+          statuses: "read",
+          checks: "read",
+        },
+      },
+      composioToolkitSlugs: [],
+      triggers: [
+        {
+          id: "trigger-1",
+          name: "A pull request changes",
+          kind: "github.pull_request",
+          status: "enabled",
+          conditions: { actions: ["opened"] },
+          schedule: null,
+          webhookPublicId: null,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  test("round-trips saved githubActions toggles into the form without re-escalating", () => {
+    const agent = makeAgent({
+      githubActions: {
+        open_pull_request: false,
+        comment_on_pr_or_issue: true,
+        approve_pull_request: false,
+        request_changes: false,
+        merge_pull_request: true,
+        push: true,
+        delete_branch: false,
+      },
+    });
+    const form = buildFormFromAgent(agent);
+    expect(form.githubActions).toEqual({
+      open_pull_request: false,
+      comment_on_pr_or_issue: true,
+      approve_pull_request: false,
+      request_changes: false,
+      merge_pull_request: true,
+      push: true,
+      delete_branch: false,
+    });
+
+    // Saving the form back must NOT re-derive from the (deprecated)
+    // outputMode field, and must NOT flip any toggle off/on that the user
+    // didn't touch.
+    const payload = buildAgentPayload(form);
+    expect(payload.githubActions).toEqual({
+      open_pull_request: false,
+      comment_on_pr_or_issue: true,
+      approve_pull_request: false,
+      request_changes: false,
+      merge_pull_request: true,
+      push: true,
+      delete_branch: false,
+    });
+  });
+
+  test("round-trips saved writeScope (specific_repos) into the form", () => {
+    const agent = makeAgent({
+      writeScope: {
+        mode: "specific_repos",
+        repos: [{ owner: "acme", name: "widgets" }],
+      },
+    });
+    const form = buildFormFromAgent(agent);
+    expect(form.writeScope).toEqual({
+      mode: "specific_repos",
+      repos: [{ owner: "acme", name: "widgets" }],
+    });
+  });
+
+  test("round-trips saved requireCiGreenForMerge into the form", () => {
+    const agentTrue = makeAgent({ requireCiGreenForMerge: true });
+    expect(buildFormFromAgent(agentTrue).requireCiGreenForMerge).toBe(true);
+
+    const agentFalse = makeAgent({ requireCiGreenForMerge: false });
+    expect(buildFormFromAgent(agentFalse).requireCiGreenForMerge).toBe(false);
+  });
+
+  test("round-trips saved modelId into the form, including null", () => {
+    const agentWithModel = makeAgent({
+      modelId: "anthropic/claude-sonnet-4-5",
+    });
+    expect(buildFormFromAgent(agentWithModel).modelId).toBe(
+      "anthropic/claude-sonnet-4-5",
+    );
+
+    const agentWithoutModel = makeAgent({ modelId: null });
+    expect(buildFormFromAgent(agentWithoutModel).modelId).toBeNull();
+  });
+
+  test("agent with no saved githubActions/writeScope/requireCiGreenForMerge/modelId falls back to defaults", () => {
+    const agent = makeAgent();
+    const form = buildFormFromAgent(agent);
+    expect(form.githubActions).toEqual({
+      open_pull_request: true,
+      comment_on_pr_or_issue: true,
+    });
+    expect(form.writeScope).toEqual({ mode: "this_repo" });
+    expect(form.requireCiGreenForMerge).toBe(true);
+    expect(form.modelId).toBeNull();
   });
 });
