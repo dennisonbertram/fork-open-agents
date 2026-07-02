@@ -1171,6 +1171,14 @@ export const backgroundAgents = pgTable(
       .notNull()
       .default(true),
     /**
+     * Max runs this agent may create for the same (repo, prNumber) within a
+     * rolling 24h window (#749). Backstop against ping-pong loops between
+     * chained agents (implementer -> reviewer -> fixer). The dispatcher
+     * refuses to create additional runs once the budget is exhausted and
+     * records a `background-agent.run.budget_exhausted` skip.
+     */
+    runBudgetPerTarget: integer("run_budget_per_target").notNull().default(10),
+    /**
      * Optional explicit model selection for this agent's runs, either a
      * gateway `provider/model` id or a `user-profile:`-prefixed inference
      * profile selection (see lib/inference/model-option-id.ts). Null means
@@ -1263,6 +1271,7 @@ export const backgroundAgentTriggers = pgTable(
         "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
+        "github.check_suite",
         "schedule.cron",
         "webhook.error",
       ],
@@ -1370,6 +1379,7 @@ export const backgroundAgentRuns = pgTable(
         "github.pull_request_review",
         "github.deployment_status",
         "github.issue",
+        "github.check_suite",
         "schedule.cron",
         "webhook.error",
       ],
@@ -1422,6 +1432,13 @@ export const backgroundAgentRuns = pgTable(
     ),
     uniqueIndex("background_agent_runs_idempotency_idx").on(
       table.idempotencyKey,
+    ),
+    // Backs the per-agent-per-PR run budget count query (#749):
+    // count(*) where agent_id = ? and pr_number = ? and created_at > ?
+    index("background_agent_runs_agent_pr_created_idx").on(
+      table.agentId,
+      table.prNumber,
+      table.createdAt,
     ),
   ],
 );

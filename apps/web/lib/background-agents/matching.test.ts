@@ -106,6 +106,63 @@ describe("triggerMatchesEvent", () => {
     ).toBe(true);
   });
 
+  // #749: actors allowlist
+  test("actors allowlist matches only listed actors, case-insensitively", () => {
+    const event: NormalizedBackgroundTriggerEvent = {
+      ...baseEvent,
+      actor: "Mona-Bot",
+    };
+    expect(
+      triggerMatchesEvent({ conditions: { actors: ["mona-bot"] } }, event),
+    ).toBe(true);
+    expect(
+      triggerMatchesEvent({ conditions: { actors: ["other-bot"] } }, event),
+    ).toBe(false);
+  });
+
+  test("actors allowlist does not match when event.actor is missing", () => {
+    const event: NormalizedBackgroundTriggerEvent = {
+      ...baseEvent,
+      actor: undefined,
+    };
+    expect(
+      triggerMatchesEvent({ conditions: { actors: ["mona-bot"] } }, event),
+    ).toBe(false);
+  });
+
+  // #749: ignoreActors denylist (loop-safety backstop)
+  test("ignoreActors denylist excludes listed actors, case-insensitively", () => {
+    const event: NormalizedBackgroundTriggerEvent = {
+      ...baseEvent,
+      actor: "Reviewer-Bot",
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { ignoreActors: ["reviewer-bot"] } },
+        event,
+      ),
+    ).toBe(false);
+    expect(
+      triggerMatchesEvent(
+        { conditions: { ignoreActors: ["other-bot"] } },
+        event,
+      ),
+    ).toBe(true);
+  });
+
+  test("ignoreActors denylist does not filter when event.actor is missing", () => {
+    const event: NormalizedBackgroundTriggerEvent = {
+      ...baseEvent,
+      actor: undefined,
+    };
+    expect(
+      triggerMatchesEvent(
+        { conditions: { ignoreActors: ["reviewer-bot"] } },
+        event,
+      ),
+    ).toBe(true);
+  });
+
   test("mergedOnly:false does not filter — matches regardless of merged", () => {
     const closedNotMerged: NormalizedBackgroundTriggerEvent = {
       source: "github",
