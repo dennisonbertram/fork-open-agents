@@ -1,8 +1,11 @@
 /**
  * Tests for the shared create-session error-surfacing helper (#784).
  *
- * BT-784-001: mapCreateSessionErrorResponse maps a 403 body (with or without
- *             an explicit `kind`) to vercel_reauth_required + /settings action.
+ * BT-784-001: mapCreateSessionErrorResponse only maps a 403 to
+ *             vercel_reauth_required when the body carries that explicit
+ *             `kind`. A bare 403 (e.g. the BotID "Access denied" response at
+ *             app/api/sessions/route.ts) must NOT get a misleading
+ *             "/settings" recovery link — it maps to "unknown".
  * BT-784-002: mapCreateSessionErrorResponse maps a 429 to rate_limited with no
  *             action link.
  * BT-784-003: mapCreateSessionErrorResponse maps a generic 500 to unknown with
@@ -21,9 +24,12 @@ import {
 } from "./create-session-error";
 
 describe("mapCreateSessionErrorResponse", () => {
-  test("BT-784-001: 403 body maps to vercel_reauth_required with a /settings action", () => {
+  test("BT-784-001a: 403 with explicit kind maps to vercel_reauth_required with a /settings action", () => {
     const info = mapCreateSessionErrorResponse(
-      { error: "Reconnect Vercel to select a Vercel project" },
+      {
+        error: "Reconnect Vercel to select a Vercel project",
+        kind: "vercel_reauth_required",
+      },
       403,
     );
 
@@ -31,6 +37,14 @@ describe("mapCreateSessionErrorResponse", () => {
     expect(info.kind).toBe("vercel_reauth_required");
     expect(info.actionUrl).toBe("/settings");
     expect(info.actionLabel).toBeTruthy();
+  });
+
+  test("BT-784-001b: bare 403 (no kind, e.g. bot protection) maps to unknown with no action link", () => {
+    const info = mapCreateSessionErrorResponse({ error: "Access denied" }, 403);
+
+    expect(info.message).toBe("Access denied");
+    expect(info.kind).toBe("unknown");
+    expect(info.actionUrl).toBeUndefined();
   });
 
   test("BT-784-002: 429 body maps to rate_limited with no action link", () => {
