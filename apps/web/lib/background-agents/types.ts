@@ -59,7 +59,12 @@ export const backgroundAgentErrorKinds = [
   "sandbox_unavailable",
   "workflow_failed",
   "checks_failed",
+  // Retired (#746): action-level errorKinds (write_scope_denied,
+  // ci_not_green, github_api_error, token_mint_failed) from the native
+  // GitHub action tools replace pr_creation_failed. Kept in this union for
+  // backward compatibility with historical run rows.
   "pr_creation_failed",
+  "model_resolution_failed",
   "webhook_signature_invalid",
 ] as const;
 

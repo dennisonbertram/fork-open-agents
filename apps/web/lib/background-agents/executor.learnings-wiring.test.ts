@@ -171,6 +171,14 @@ mock.module("@/lib/github/commit-intent", () => ({
 
 mock.module("@/lib/github/pulls", () => ({
   openPullRequest: mock(async () => ({ success: false })),
+  mergePullRequest: mock(async () => ({ success: false })),
+  submitPullRequestReview: mock(async () => ({ success: false })),
+  deleteBranchRef: mock(async () => ({ success: false })),
+  getMergeReadinessViaInstallation: mock(async () => ({
+    canMerge: false,
+    checks: { failed: 0, pending: 0, passed: 0 },
+    reasons: [],
+  })),
 }));
 
 mock.module("@/lib/github/token", () => ({
@@ -187,7 +195,24 @@ mock.module("@/lib/github/users", () => ({
 mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (modelId: string) => modelId,
+  defaultModelLabel: "anthropic/claude-opus-4.6",
   openAgent: { generate: mock(async () => ({})) },
+}));
+
+mock.module("@/lib/inference/model-option-id", () => ({
+  USER_INFERENCE_OPTION_PREFIX: "user-profile:",
+  parseModelOptionSelection: (optionId: string) => ({
+    modelId: optionId,
+    inferenceProfileId: null,
+  }),
+  getModelOptionSelectionId: (modelId: string | null | undefined) =>
+    modelId ?? "",
+}));
+
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 // ---- Learnings store mock ----
@@ -315,6 +340,23 @@ describe("executeBackgroundAgentRun — learnings built-in agent wiring", () => 
     });
 
     expect(runLearningsExtraction).toHaveBeenCalledTimes(1);
+  });
+
+  test("requires only read access for the learnings built-in agent even with write toggles (#746 review)", async () => {
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wfr-perm",
+    });
+
+    const calls = (
+      verifyRepoAccess as unknown as {
+        mock: { calls: Array<[{ requiredUserPermission?: string }]> };
+      }
+    ).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.at(-1)?.[0]?.requiredUserPermission).toBe("read");
   });
 
   test("does NOT call connectSandbox for the learnings built-in agent", async () => {

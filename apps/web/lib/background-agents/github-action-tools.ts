@@ -57,6 +57,9 @@ export type BackgroundAgentWriteScope =
   | { mode: "all_repos" }
   | { mode: "specific_repos"; repos: BackgroundAgentWriteScopeRepo[] };
 
+/** Timeout for the pre-push required-check gate (matches executor's check timeout). */
+const PUSH_CHECK_TIMEOUT_MS = 120_000;
+
 /**
  * Typed error kinds surfaced on `background-agent.github.<action>.failed`
  * events and returned to the model as part of the `{ ok: false, error }`
@@ -65,6 +68,7 @@ export type BackgroundAgentWriteScope =
 export type GitHubActionErrorKind =
   | "write_scope_denied"
   | "ci_not_green"
+  | "checks_failed"
   | "github_api_error"
   | "token_mint_failed";
 
@@ -87,6 +91,13 @@ export type GitHubActionToolsContext = {
   writeScope: BackgroundAgentWriteScope;
   requireCiGreen: boolean;
   userPermission: "read" | "write";
+  /**
+   * The agent's configured required check command. When set, github_push
+   * runs it in the sandbox BEFORE committing and refuses with
+   * `checks_failed` when it fails — parity with the old ready_pr flow where
+   * checks gated every commit/PR reaching GitHub.
+   */
+  checkCommand?: string | null;
   /**
    * Maps each action name to the `backgroundAgentOutputs.kind` value to
    * record for a successful call. Defaults to "none" when an action is
@@ -665,7 +676,7 @@ const pushInputSchema = z.object({
 
 function buildPushTool(ctx: GitHubActionToolsContext) {
   return tool({
-    description: `Commit sandbox working-tree changes and push them to a branch in ${ctx.repoOwner}/${ctx.repoName}.`,
+    description: `Commit sandbox working-tree changes and push them to a branch in ${ctx.repoOwner}/${ctx.repoName}.${ctx.checkCommand ? ` Runs the required check (${ctx.checkCommand}) first and refuses to push if it fails.` : ""}`,
     inputSchema: pushInputSchema,
     execute: async (input): Promise<ActionResult> =>
       runGitHubAction({
@@ -679,6 +690,24 @@ function buildPushTool(ctx: GitHubActionToolsContext) {
               ok: false,
               error: "No sandbox available for this run",
             } as const;
+          }
+
+          // Required-check gate (parity with the old ready_pr flow): nothing
+          // reaches GitHub from a tree that fails the configured check.
+          const checkCommand = ctx.checkCommand?.trim();
+          if (checkCommand) {
+            const checkResult = await ctx.sandbox.exec(
+              checkCommand,
+              ctx.sandbox.workingDirectory,
+              PUSH_CHECK_TIMEOUT_MS,
+            );
+            if (!checkResult.success) {
+              return {
+                ok: false,
+                errorKind: "checks_failed",
+                error: `Required check failed before push (${checkCommand}). Fix the failure and push again.`,
+              } as const;
+            }
           }
 
           const intentResult = await buildCommitIntentFromSandbox({

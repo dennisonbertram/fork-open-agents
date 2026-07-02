@@ -1012,6 +1012,70 @@ describe("github_push execute", () => {
     );
     expect(failedEvent?.errorKind).toBe("github_api_error");
   });
+
+  test("checkCommand gate: failing required check refuses the push with checks_failed before any commit", async () => {
+    const exec = mock(async () => ({
+      success: false,
+      stdout: "",
+      stderr: "tests failed",
+      exitCode: 1,
+    }));
+    const sandboxWithExec = {
+      workingDirectory: "/workspace/widgets",
+      currentBranch: "feature-branch",
+      exec,
+    } as unknown as Sandbox;
+    const ctx = buildCtx({
+      sandbox: sandboxWithExec,
+      checkCommand: "bun run ci",
+    });
+    const tools = resolveGitHubActionTools(ctx);
+    const tool = tools.github_push as unknown as ToolExecutor;
+
+    const result = (await tool.execute({
+      branch: "feature-branch",
+      message: "chore: apply changes",
+    })) as { ok: false; error: string };
+
+    expect(result.ok).toBe(false);
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(buildCommitIntentFromSandbox).not.toHaveBeenCalled();
+    expect(createCommit).not.toHaveBeenCalled();
+    expect(mintInstallationToken).not.toHaveBeenCalled();
+    const failedEvent = recordedEvents().find((event) =>
+      event.eventName.endsWith(".failed"),
+    );
+    expect(failedEvent?.errorKind).toBe("checks_failed");
+  });
+
+  test("checkCommand gate: passing check proceeds to commit", async () => {
+    const exec = mock(async () => ({
+      success: true,
+      stdout: "ok",
+      stderr: "",
+      exitCode: 0,
+    }));
+    const sandboxWithExec = {
+      workingDirectory: "/workspace/widgets",
+      currentBranch: "feature-branch",
+      exec,
+    } as unknown as Sandbox;
+    const ctx = buildCtx({
+      sandbox: sandboxWithExec,
+      checkCommand: "bun run ci",
+    });
+    const tools = resolveGitHubActionTools(ctx);
+    const tool = tools.github_push as unknown as ToolExecutor;
+
+    const result = (await tool.execute({
+      branch: "feature-branch",
+      message: "chore: apply changes",
+    })) as { ok: true };
+
+    expect(result.ok).toBe(true);
+    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createCommit).toHaveBeenCalledTimes(1);
+  });
 });
 
 // ---------------------------------------------------------------------------

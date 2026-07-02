@@ -184,6 +184,7 @@ const successfulAccess = {
   installationId: 99,
   repositoryId: 42,
   defaultBranch: "main",
+  userPermission: "write",
 } as const;
 mock.module("@/lib/github/access", () => ({
   verifyRepoAccess: mock(async () => successfulAccess),
@@ -228,6 +229,14 @@ mock.module("@/lib/github/pulls", () => ({
     prUrl: "https://github.com/acme/widgets/pull/99",
     prNumber: 99,
   })),
+  mergePullRequest: mock(async () => ({ success: true, sha: "merged" })),
+  submitPullRequestReview: mock(async () => ({ success: true, reviewId: 1 })),
+  deleteBranchRef: mock(async () => ({ success: true })),
+  getMergeReadinessViaInstallation: mock(async () => ({
+    canMerge: true,
+    checks: { failed: 0, pending: 0, passed: 1 },
+    reasons: [],
+  })),
 }));
 mock.module("@/lib/github/token", () => ({
   getGitHubAppUserToken: mock(async () => "user-token"),
@@ -264,7 +273,24 @@ const generate = mock(async (input: GenerateCall) => {
 mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
   gateway: (id: string) => id,
+  defaultModelLabel: "anthropic/claude-opus-4.6",
   openAgent: { generate },
+}));
+
+mock.module("@/lib/inference/model-option-id", () => ({
+  USER_INFERENCE_OPTION_PREFIX: "user-profile:",
+  parseModelOptionSelection: (optionId: string) => ({
+    modelId: optionId,
+    inferenceProfileId: null,
+  }),
+  getModelOptionSelectionId: (modelId: string | null | undefined) =>
+    modelId ?? "",
+}));
+
+mock.module("@/lib/inference/profile-resolution", () => ({
+  resolveInferenceProfileModelSelection: mock(
+    async (params: { selection: unknown }) => params.selection,
+  ),
 }));
 
 const fakeComposioTools: Record<string, unknown> = {
@@ -348,10 +374,10 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     checkCommand: null,
     composioToolkitSlugs: [],
     builtinToolNames: null,
-    githubActions: {
-      open_pull_request: true,
-      comment_on_pr_or_issue: true,
-    },
+    // All native GitHub action toggles disabled — these regression tests
+    // exercise Composio tool injection in isolation from the native GitHub
+    // tools (covered by executor.test.ts / github-action-tools.test.ts).
+    githubActions: {},
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,

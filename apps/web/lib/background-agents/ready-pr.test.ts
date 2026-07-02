@@ -1,10 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { isSafeBranchName } from "@/lib/git/helpers";
 import {
-  buildBackgroundAgentMutationPrompt,
+  buildBackgroundAgentRunbookPrompt,
   buildBackgroundBranchName,
-  buildBackgroundPullRequestBody,
-  buildBackgroundPullRequestTitle,
 } from "./ready-pr";
 
 describe("background agent ready PR helpers", () => {
@@ -20,8 +18,8 @@ describe("background agent ready PR helpers", () => {
     expect(isSafeBranchName(branchName)).toBe(true);
   });
 
-  it("builds an unattended mutation prompt with the trigger and no-PR constraint", () => {
-    const prompt = buildBackgroundAgentMutationPrompt({
+  it("builds a runbook prompt with the trigger, enabled tools, and working branch", () => {
+    const prompt = buildBackgroundAgentRunbookPrompt({
       agentName: "PR reviewer",
       instructions: "Fix obvious type errors.",
       triggerKind: "github.pull_request",
@@ -33,40 +31,30 @@ describe("background agent ready PR helpers", () => {
       prNumber: 5,
       payloadSummary: { title: "Fix widgets", actor: "mona" },
       checkCommand: "bun test",
+      workingBranch: "background-agent/pr-reviewer/run_12345678",
+      enabledGithubActionTools: ["github_push", "github_open_pull_request"],
     });
 
     expect(prompt).toContain('background agent named "PR reviewer"');
     expect(prompt).toContain("Trigger: github.pull_request");
     expect(prompt).toContain("Fix obvious type errors.");
     expect(prompt).toContain("Do not ask the user questions.");
-    expect(prompt).toContain("Do not create, push, or open a pull request");
+    expect(prompt).toContain("github_push, github_open_pull_request");
+    expect(prompt).toContain("background-agent/pr-reviewer/run_12345678");
     expect(prompt).toContain("bun test");
   });
 
-  it("builds a bounded PR title and evidence-heavy body", () => {
-    const title = buildBackgroundPullRequestTitle(
-      "Investigate production deployment failures and add smoke coverage",
-    );
-    const body = buildBackgroundPullRequestBody({
-      runId: "run_123",
-      agentName: "Deploy smoke",
-      triggerKind: "github.deployment_status",
+  it("tells the agent no GitHub tools are enabled when the toggle list is empty", () => {
+    const prompt = buildBackgroundAgentRunbookPrompt({
+      agentName: "Read-only reviewer",
+      instructions: "Summarize the diff.",
+      triggerKind: "github.pull_request",
       repoOwner: "acme",
       repoName: "widgets",
-      baseBranch: "main",
-      branchName: "background-agent/deploy-smoke/run_123",
-      commitSha: "abc123def",
-      checkCommand: "bun --bun run ci",
-      runUrl: "https://app.example.com/background-runs/run_123",
+      payloadSummary: { title: "Fix widgets" },
+      enabledGithubActionTools: [],
     });
 
-    expect(title.length).toBeLessThanOrEqual(72);
-    expect(body).toContain(
-      "[Background run](https://app.example.com/background-runs/run_123)",
-    );
-    expect(body).toContain("`github.deployment_status`");
-    expect(body).toContain("`abc123def`");
-    expect(body).toContain("`bun --bun run ci`");
-    expect(body).toContain("created only after");
+    expect(prompt).toContain("No GitHub action tools are enabled");
   });
 });

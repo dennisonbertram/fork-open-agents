@@ -475,7 +475,10 @@ export async function createRunForTrigger(params: {
     prNumber: params.event.prNumber ?? null,
     issueNumber: params.event.issueNumber ?? null,
     deploymentUrl: params.event.deploymentUrl ?? null,
-    outputKind: params.agent.outputMode,
+    // outputKind no longer snapshots agent.outputMode (#746) — the executor
+    // now derives run behavior from agent.githubActions, and outputMode is
+    // deprecated pending the column drop (#748/#C7).
+    outputKind: null,
     payloadSummary: {
       title: params.event.title,
       url: params.event.url,
