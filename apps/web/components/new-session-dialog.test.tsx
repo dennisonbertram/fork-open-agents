@@ -38,6 +38,27 @@ mock.module("@/components/session-starter", () => ({
   },
 }));
 
+// Radix Dialog renders via a portal and produces no static markup, so stub
+// it with plain elements that always render children (mirrors how other
+// tests in this repo stub heavy UI primitives for renderToStaticMarkup).
+mock.module("@/components/ui/dialog", () => ({
+  Dialog: ({ children }: { children: React.ReactNode }) => (
+    <div data-testid="dialog-stub">{children}</div>
+  ),
+  DialogContent: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogHeader: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogTitle: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+  DialogDescription: ({ children }: { children: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
+}));
+
 // --- Helpers -----------------------------------------------------------------
 
 const dialogModulePromise = import("./new-session-dialog");
@@ -142,7 +163,7 @@ describe("NewSessionDialog — create-session failure surfacing", () => {
       />,
     );
 
-    expect(errorHtml).toContain("Couldn't create the session — try again");
+    expect(errorHtml).toContain("Couldn&#x27;t create the session — try again");
     expect(errorHtml).not.toContain("Go to Settings");
   });
 
