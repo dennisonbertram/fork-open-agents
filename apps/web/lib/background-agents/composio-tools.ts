@@ -9,6 +9,7 @@ import { getComposioConfig } from "@/lib/composio/config";
 import { getComposioClient } from "@/lib/composio/client";
 import { toComposioUserId } from "@/lib/composio/user-id";
 import { resolveComposioToolsForToolkitList } from "@/lib/composio/resolve-toolkit-list";
+import { redactComposioErrorMessage } from "@/lib/composio/errors";
 import {
   getRepositoryComposioSettings,
   getRepositoryComposioSettingsValues,
@@ -185,16 +186,62 @@ export type ResolveComposioToolsForBgRunParams = {
   repoName: string;
 };
 
+/**
+ * errorKind taxonomy this resolver can actually produce today.
+ *
+ * Scoped intentionally: the full cross-surface taxonomy (e.g.
+ * "composio_auth_expired") belongs to the honest-connection-state ticket
+ * (#800). This resolver only ever hits "composio_missing_api_key" (config
+ * gate) or "composio_unknown" (SDK/network failure in the catch block).
+ */
+export type ResolveComposioToolsForBgRunErrorKind =
+  | "composio_missing_api_key"
+  | "composio_unknown";
+
+/**
+ * Reasons the resolver can report an "off" (no tools) outcome.
+ *
+ * The union is intentionally extensible: the repo-policy ticket (#799) adds
+ * "not_in_repo_allowlist" when a non-null repo allowlist drops slugs.
+ */
+export type ResolveComposioToolsForBgRunOffReason =
+  | "no_slugs_selected"
+  | "repo_policy_blocked";
+
 export type ResolveComposioToolsForBgRunResult =
-  | { status: "off" }
-  | { status: "error"; error: string }
-  | { status: "ready"; tools: ToolSet; toolkitSlugs: string[] };
+  | {
+      status: "ready";
+      tools: ToolSet;
+      toolkitSlugs: string[];
+      /**
+       * Selected toolkits with no ACTIVE connected account, threaded from
+       * resolveComposioToolsForToolkitList instead of being discarded.
+       */
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: ResolveComposioToolsForBgRunOffReason;
+      /** Present only when reason is "repo_policy_blocked". */
+      blockedSlugs?: string[];
+    }
+  | {
+      status: "error";
+      errorKind: ResolveComposioToolsForBgRunErrorKind;
+      /**
+       * Redacted, user-safe message. Never includes raw SDK error text that
+       * could contain account identifiers or tokens.
+       */
+      message: string;
+    };
 
 /**
  * Resolve Composio tools for a background agent run.
  *
- * - Empty slugs → { status: "off" } (today's behavior, unchanged).
- * - Repo policy blocks a slug → that slug is excluded; if none remain → "off".
+ * - Empty slugs → { status: "off", reason: "no_slugs_selected" }.
+ * - Repo policy blocks every requested slug → { status: "off",
+ *   reason: "repo_policy_blocked", blockedSlugs } (surviving slugs, if any,
+ *   proceed to resolution below).
  * - Uses backgroundAgentToolSessions as the per-run cache (not the chat cache).
  * - Never logs secrets or API keys.
  */
@@ -204,7 +251,7 @@ export async function resolveComposioToolsForBgRun(
   const { agentId, runId, userId, slugs, repoOwner, repoName } = params;
 
   if (slugs.length === 0) {
-    return { status: "off" };
+    return { status: "off", reason: "no_slugs_selected" };
   }
 
   // Gate by repo policy (blocked toolkit slugs)
@@ -216,14 +263,20 @@ export async function resolveComposioToolsForBgRun(
   });
 
   if (gatedSlugs.length === 0) {
-    return { status: "off" };
+    return {
+      status: "off",
+      reason: "repo_policy_blocked",
+      blockedSlugs: slugs,
+    };
   }
 
   const config = getComposioConfig();
   if (!config.configured) {
     return {
       status: "error",
-      error: "Composio tools selected but COMPOSIO_API_KEY is not configured.",
+      errorKind: "composio_missing_api_key",
+      message:
+        "Composio tools selected but COMPOSIO_API_KEY is not configured.",
     };
   }
 
@@ -253,21 +306,34 @@ export async function resolveComposioToolsForBgRun(
     });
 
     if (resolved.status !== "ready") {
-      return { status: "off" };
+      // Unreachable in practice: gatedSlugs.length > 0 is already guaranteed
+      // above, and resolveComposioToolsForToolkitList only returns "off" for
+      // an empty slug list. Kept as a defensive fallback so this function
+      // always returns a typed outcome even if that invariant changes.
+      return {
+        status: "off",
+        reason: "repo_policy_blocked",
+        blockedSlugs: [],
+      };
     }
 
     return {
       status: "ready",
       tools: resolved.tools,
       toolkitSlugs: gatedSlugs,
+      disconnectedToolkits: resolved.disconnectedToolkits ?? [],
     };
   } catch (error) {
+    // Redacted, user-safe message — never includes raw SDK error text that
+    // might contain account identifiers or tokens.
+    const rawMessage =
+      error instanceof Error
+        ? error.message
+        : "Composio tool resolution failed.";
     return {
       status: "error",
-      error:
-        error instanceof Error
-          ? error.message
-          : "Composio tool resolution failed.",
+      errorKind: "composio_unknown",
+      message: redactComposioErrorMessage(rawMessage),
     };
   }
 }

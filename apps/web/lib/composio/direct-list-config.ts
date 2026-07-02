@@ -52,10 +52,28 @@ export function buildComposioSessionConfigFromDirectList(params: {
 }
 
 /**
- * A stable SHA-256 hash of a sorted toolkit slug array, used as configHash
- * for the synthetic "direct" profile entry in the session cache.
+ * A stable SHA-256 hash of a sorted toolkit slug array plus a stable
+ * representation of connected-account membership for those slugs, used as
+ * configHash for the synthetic "direct" profile entry in the session cache.
+ *
+ * Incorporating connected-account state (issue #797 / finding G8) ensures a
+ * user disconnecting, reconnecting, or having a token expire rotates the
+ * cache key so a stale session (built against the old connected-account
+ * state) is never reused. connectedAccountIdsByToolkit entries for slugs NOT
+ * in toolkitSlugs are ignored — only accounts relevant to the selected
+ * toolkits affect the hash.
  */
-export function hashDirectConfig(toolkitSlugs: string[]): string {
+export function hashDirectConfig(
+  toolkitSlugs: string[],
+  connectedAccountIdsByToolkit: Record<string, string[]> = {},
+): string {
   const sorted = [...toolkitSlugs].sort();
-  return createHash("sha256").update(JSON.stringify(sorted)).digest("hex");
+  const accountState = sorted.map((slug) => {
+    const ids = connectedAccountIdsByToolkit[slug];
+    const sortedIds = Array.isArray(ids) ? [...ids].sort() : [];
+    return [slug, sortedIds] as const;
+  });
+  return createHash("sha256")
+    .update(JSON.stringify({ slugs: sorted, accountState }))
+    .digest("hex");
 }
