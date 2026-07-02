@@ -120,3 +120,37 @@ describe("GitHubStatusNotice", () => {
     expect(html.toLowerCase()).toContain("sync");
   });
 });
+
+describe("GitHubStatusNotice - regression: no dead-end retry link for not_linked/link_failed (#781)", () => {
+  test("not_linked renders no anchor tag at all, regardless of retryHref value", () => {
+    // Regression guard: this checks for the absence of any <a> element (not
+    // just the specific install-route substring), so a future change that
+    // points the CTA at a *different* URL still fails this test unless the
+    // CTA is intentionally reintroduced with its own coverage.
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="not_linked"
+        retryHref="/some/other/retry/path"
+      />,
+    );
+    expect(html).not.toContain("<a ");
+  });
+
+  test("link_failed renders no anchor tag at all, regardless of retryHref value", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="link_failed"
+        retryHref="/some/other/retry/path"
+      />,
+    );
+    expect(html).not.toContain("<a ");
+  });
+
+  test("invalid_state (a different recoverable-ish status) still renders its CTA — the fix is scoped to not_linked/link_failed only", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="invalid_state" retryHref="/retry" />,
+    );
+    expect(html).toContain("<a ");
+    expect(html).toContain("/retry");
+  });
+});

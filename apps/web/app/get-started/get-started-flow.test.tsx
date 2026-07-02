@@ -1,5 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { buildGitHubReconnectUrl } from "@/lib/github/urls";
 
 // Issue #781: any `github=<status>` param present on load must auto-open
 // step 2 ("Connect GitHub") regardless of the `step` param state.
@@ -104,5 +105,25 @@ describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
     expect(html.toLowerCase()).not.toContain("reconnect your github account");
     expect(html.toLowerCase()).not.toContain("reconnect github");
     expect(html.toLowerCase()).toContain("connect your github account");
+  });
+});
+
+describe("GetStartedFlow - regression: buildGitHubReconnectUrl integration (#781)", () => {
+  test("a real reconnect surface's generated URL (via buildGitHubReconnectUrl) forces the reconnect flow for a connected user", async () => {
+    // Regression guard: if a future change removes `reconnect=1` from
+    // buildGitHubReconnectUrl (or reintroduces deriving forceReconnect from
+    // `step=github` alone), this test fails because the *actual* reconnect
+    // helper's output would stop forcing the reconnect copy.
+    const reconnectUrl = buildGitHubReconnectUrl("/sessions");
+    const parsed = new URL(reconnectUrl, "http://localhost");
+    searchParamValues = Object.fromEntries(parsed.searchParams.entries());
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(searchParamValues.step).toBe("github");
+    expect(html.toLowerCase()).toContain("reconnect your github account");
+    expect(html.toLowerCase()).not.toContain("github connected");
   });
 });
