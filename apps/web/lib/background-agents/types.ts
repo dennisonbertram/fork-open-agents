@@ -24,17 +24,6 @@ export const backgroundAgentRunSources = [
 export type BackgroundAgentRunSource =
   (typeof backgroundAgentRunSources)[number];
 
-export const backgroundAgentOutputModes = [
-  "comment",
-  "ready_pr",
-  "issue",
-  "notification",
-  "none",
-] as const;
-
-export type BackgroundAgentOutputMode =
-  (typeof backgroundAgentOutputModes)[number];
-
 export const backgroundAgentStatuses = ["enabled", "disabled"] as const;
 
 export type BackgroundAgentStatus = (typeof backgroundAgentStatuses)[number];
@@ -106,8 +95,8 @@ export const permissionsSchema = z
   .strict();
 
 /**
- * Per-action GitHub automation toggles (#745). Replaces `outputMode` as the
- * behavior driver; `outputMode` remains accepted (deprecated) until #C7.
+ * Per-action GitHub automation toggles (#745). Replaces the removed
+ * `outputMode` field as the behavior driver (#748).
  */
 export const githubActionsSchema = z
   .object({
@@ -185,9 +174,6 @@ export const createBackgroundAgentSchema = z
     repoName: z.string().trim().min(1).max(120),
     instructions: z.string().trim().min(1).max(8000),
     permissions: permissionsSchema.default({}),
-    // Deprecated: retained for backward compatibility until the column-drop
-    // ticket (#748/#C7). Prefer githubActions for new behavior.
-    outputMode: z.enum(backgroundAgentOutputModes).default("none"),
     checkCommand: z.string().trim().max(500).optional().nullable(),
     composioToolkitSlugs: z.array(z.string().trim().min(1)).max(50).default([]),
     githubActions: githubActionsSchema.default(defaultGithubActions),
