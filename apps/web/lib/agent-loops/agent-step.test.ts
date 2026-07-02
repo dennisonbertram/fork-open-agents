@@ -1360,3 +1360,161 @@ describe("BT-S23: branch from output JSON field 'branch'", () => {
     expect(callArgs["branch"]).toBe("feat/agent-step-branch");
   });
 });
+
+// ── BT-S24: Flat-map outputSchema validation (#766) ──────────────────────────
+//
+// Shape-detection rule (pinned here, documented on the detector in
+// output-refs.ts / agent-step.ts): an outputSchema object where EVERY value
+// is a string type-name ("string"|"number"|"boolean"|"object"|"array") is a
+// flat map — every declared key is required + type-checked. Anything else
+// (e.g. presence of "properties"/"type" as JSON-Schema-Lite marker keys with
+// non-string-type-name values) is JSON-Schema-Lite — current semantics
+// unchanged.
+
+describe("BT-S24: flat-map outputSchema — every declared key required + type-checked", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S24a: flat-map schema, missing declared key → step_output_invalid", async () => {
+    sandboxReadFileResult = JSON.stringify({ notes: "looks good" });
+    const nodeWithSchema = makeAgentStepNode({
+      outputSchema: { passed: "boolean", notes: "string" },
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: nodeWithSchema as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("step_output_invalid");
+  });
+
+  test("BT-S24b: flat-map schema, wrong type on declared key → step_output_invalid", async () => {
+    sandboxReadFileResult = JSON.stringify({ passed: "yes", notes: "ok" });
+    const nodeWithSchema = makeAgentStepNode({
+      outputSchema: { passed: "boolean", notes: "string" },
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: nodeWithSchema as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("step_output_invalid");
+  });
+
+  test("BT-S24c: flat-map schema, all declared keys present + correctly typed → success", async () => {
+    sandboxReadFileResult = JSON.stringify({ passed: true, notes: "ok" });
+    const nodeWithSchema = makeAgentStepNode({
+      outputSchema: { passed: "boolean", notes: "string" },
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: nodeWithSchema as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+  });
+
+  test("BT-S24d: JSON-Schema-Lite shape behavior is unchanged (extra undeclared keys allowed)", async () => {
+    // Regression guard: a JSON-Schema-Lite schema only enforces `required` +
+    // `properties` types — it must NOT be reinterpreted as a flat map.
+    sandboxReadFileResult = JSON.stringify({
+      requiredField: "hello",
+      extra: "unrelated",
+    });
+    const nodeWithSchema = makeAgentStepNode({
+      outputSchema: {
+        type: "object",
+        required: ["requiredField"],
+        properties: {
+          requiredField: { type: "string" },
+        },
+      },
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: nodeWithSchema as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+  });
+});
+
+// ── BT-S25: stepTimeoutMs plumbing (#766) ────────────────────────────────────
+
+describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S25a: explicit stepTimeoutMs param is forwarded to openAgent.generate's timeout", async () => {
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      stepTimeoutMs: 5 * 60 * 1000,
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      timeout?: { totalMs?: number };
+    };
+    expect(call?.timeout?.totalMs).toBe(5 * 60 * 1000);
+  });
+
+  test("BT-S25b: omitted stepTimeoutMs falls back to the 10-minute default", async () => {
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const call = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      timeout?: { totalMs?: number };
+    };
+    expect(call?.timeout?.totalMs).toBe(10 * 60 * 1000);
+  });
+});

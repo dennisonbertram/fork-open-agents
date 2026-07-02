@@ -9,6 +9,34 @@ describe("outputFieldNames", () => {
       outputFieldNames({ passed: "boolean", issues: "array", $schema: "x" }),
     ).toEqual(["passed", "issues"]);
   });
+
+  it("returns declared property names for a JSON-Schema-Lite shape (not type/required/properties)", () => {
+    const fields = outputFieldNames({
+      type: "object",
+      required: ["passed"],
+      properties: {
+        passed: { type: "boolean" },
+        notes: { type: "string" },
+      },
+    });
+    expect(fields).toEqual(["passed", "notes"]);
+    expect(fields).not.toContain("type");
+    expect(fields).not.toContain("required");
+    expect(fields).not.toContain("properties");
+  });
+
+  it("returns [] for a JSON-Schema-Lite shape with no properties object", () => {
+    expect(outputFieldNames({ type: "object" })).toEqual([]);
+  });
+
+  it("edge case: a flat-map field literally named 'type' with a string type-name value stays a flat map", () => {
+    // Every value is a string type-name → flat map, per the detection rule.
+    // "type" here is a declared field name, not the JSON-Schema-Lite marker key.
+    expect(outputFieldNames({ type: "string", passed: "boolean" })).toEqual([
+      "type",
+      "passed",
+    ]);
+  });
 });
 
 const DEF: LoopDefinition = {
