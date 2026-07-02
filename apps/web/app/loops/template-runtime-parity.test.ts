@@ -53,7 +53,9 @@ const TRIGGER_CONTEXT_ROOT = "trigger";
  * upstream of targetNodeId in the definition's authoring order (position.x)
  * OR is part of a cycle that includes targetNodeId.
  */
-function buildPredecessors(definition: LoopDefinition): Map<string, Set<string>> {
+function buildPredecessors(
+  definition: LoopDefinition,
+): Map<string, Set<string>> {
   const outgoing = new Map<string, string[]>();
   for (const node of definition.nodes) {
     outgoing.set(node.id, []);

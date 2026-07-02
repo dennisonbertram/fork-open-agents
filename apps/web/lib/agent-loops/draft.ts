@@ -154,6 +154,8 @@ Node kinds:
 
 Edge "when": from a normal node use "success", "failure", or "always"; from a "start" node use "always"; from a "condition" node use "true" or "false".
 
+Failure edges (IMPORTANT — do this by default): do NOT add a "failure" edge from a node to "end" (or anywhere else) unless the user's request explicitly asks you to handle failures in some specific way (e.g. "if the review fails, open an issue about it"). Leave failed steps with no outgoing "failure" edge — a failed run with no failure edge fails visibly instead of silently routing to "end" and rendering as a false "Completed" run. Only wire a "failure" edge when the user explicitly describes what should happen on failure, and route it to real remedial work, not straight to "end".
+
 Rules: every non-end node needs at least one outgoing edge. Loops are allowed (e.g. a fix→review cycle): just point an edge back to an earlier node. Keep it as simple as the request allows — 2 to 6 nodes is typical. Give nodes short, human ids (review, implement, gate). Do not include "position".`;
 
 export function buildDraftUserPrompt(description: string): string {

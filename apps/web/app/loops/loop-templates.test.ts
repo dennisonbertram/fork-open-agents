@@ -136,8 +136,11 @@ describe("loop templates", () => {
       const template = getLoopTemplate("merge-when-green");
       expect(template).toBeDefined();
       if (!template) return;
-      const text = `${template.description} ${template.suggestedTrigger}`.toLowerCase();
-      expect(text).toMatch(/pr[- ]event|pull request.*trigger|trigger.*pull request/);
+      const text =
+        `${template.description} ${template.suggestedTrigger}`.toLowerCase();
+      expect(text).toMatch(
+        /pr[- ]event|pull request.*trigger|trigger.*pull request/,
+      );
     });
 
     test("create-from-template does not auto-attach a trigger — suggestedTriggerSpec is informational only", () => {
@@ -168,9 +171,12 @@ describe("loop templates", () => {
   // via POST /api/agent-loops/[loopId]/triggers (#762's API).
   test("#765: 'review-prs-and-comment' has a daily 02:00 UTC suggestedTriggerSpec", () => {
     const template = getLoopTemplate("review-prs-and-comment");
-    expect(template?.suggestedTriggerSpec).toBeDefined();
-    expect(template?.suggestedTriggerSpec?.kind).toBe("schedule.cron");
-    expect(template?.suggestedTriggerSpec?.schedule).toBe("0 2 * * *");
+    const spec = template?.suggestedTriggerSpec;
+    expect(spec).toBeDefined();
+    expect(spec?.kind).toBe("schedule.cron");
+    if (spec?.kind === "schedule.cron") {
+      expect(spec.schedule).toBe("0 2 * * *");
+    }
   });
 
   // #765: the template gallery's "Runs:" label was reworded to
