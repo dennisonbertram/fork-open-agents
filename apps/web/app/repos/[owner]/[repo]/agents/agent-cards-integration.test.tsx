@@ -238,6 +238,7 @@ describe("Agents page with agent cards", () => {
           blocked: [],
           artifacts: [],
           next: [],
+          warnings: [],
         },
         requestId: null,
         workflowRunId: null,

@@ -538,6 +538,22 @@ export const managedRuntimeProfileRuns = pgTable(
     profileId: text("profile_id").notNull(),
     profileVersion: text("profile_version").notNull(),
     profileDisplayName: text("profile_display_name").notNull(),
+    // requestedProfileId / resolvedProfileId: no FK — built-in profile ids
+    // exist only in code (packages/sandbox/managed-runtime-profiles.ts), so a
+    // DB foreign key is impossible. Validate references at the app layer via
+    // isKnownManagedRuntimeProfileReference (managed-runtime-saved-profiles.ts).
+    requestedProfileId: text("requested_profile_id"),
+    resolvedProfileId: text("resolved_profile_id"),
+    errorKind: text("error_kind", {
+      enum: [
+        "profile_not_found",
+        "setup_command_failed",
+        "verification_failed",
+        "setup_exec_error",
+        "evidence_write_failed",
+      ],
+    }),
+    nextAction: text("next_action"),
     status: text("status", {
       enum: ["running", "passed", "failed", "blocked"],
     }).notNull(),
@@ -756,8 +772,11 @@ export const managedRuntimeSavedProfiles = pgTable(
       onDelete: "cascade",
     }),
     sourceDraftId: text("source_draft_id"),
+    // Decision D4: "repo"-scope profiles are out of scope for this epic; the
+    // enum value is removed (TS-level only — no SQL CHECK constraint exists,
+    // so no destructive migration is required).
     scope: text("scope", {
-      enum: ["session", "repo", "user_default"],
+      enum: ["session", "user_default"],
     })
       .notNull()
       .default("session"),
@@ -790,6 +809,12 @@ export const managedRuntimeSavedProfiles = pgTable(
       .notNull()
       .default([]),
     testFailureMessage: text("test_failure_message"),
+    // App-level enum: "verify" | "setup_and_verify" (Decision D6 — both test
+    // modes are kept; the persisted scope lets the UI label the "Tested"
+    // badge honestly instead of implying a setup+verify pass happened).
+    lastTestScope: text("last_test_scope", {
+      enum: ["verify", "setup_and_verify"],
+    }),
     testedAt: timestamp("tested_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -828,8 +853,11 @@ export const managedRuntimeProfileDrafts = pgTable(
     })
       .notNull()
       .default("draft_ready"),
+    // Decision D4: "repo"-scope profiles are out of scope for this epic; the
+    // enum value is removed (TS-level only — no SQL CHECK constraint exists,
+    // so no destructive migration is required).
     targetScope: text("target_scope", {
-      enum: ["session", "repo", "user_default"],
+      enum: ["session", "user_default"],
     })
       .notNull()
       .default("session"),
@@ -848,11 +876,17 @@ export const managedRuntimeProfileDrafts = pgTable(
       .notNull()
       .default([]),
     testFailureMessage: text("test_failure_message"),
+    // App-level enum: "verify" | "setup_and_verify" (Decision D6 — mirrors
+    // managedRuntimeSavedProfiles.lastTestScope for drafts).
+    lastTestScope: text("last_test_scope", {
+      enum: ["verify", "setup_and_verify"],
+    }),
     testedAt: timestamp("tested_at"),
     userInstructions: text("user_instructions"),
     userDecision: text("user_decision", {
       enum: ["approved", "revise", "discarded"],
     }),
+    forceApproved: boolean("force_approved").notNull().default(false),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },

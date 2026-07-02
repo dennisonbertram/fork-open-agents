@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, count, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, like, sql } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import { db } from "@/lib/db/client";
 import {
@@ -715,6 +715,28 @@ export async function listAgentLoopEvents(
     where: eq(agentLoopEvents.loopRunId, loopRunId),
     orderBy: [desc(agentLoopEvents.createdAt)],
     limit: 200,
+  });
+}
+
+/**
+ * Uncapped fetch of this loop run's Composio-prefixed events (#798, Codex
+ * review P2-2). listAgentLoopEvents above is a bounded newest-200 slice;
+ * agent-loop.step.composio.* events are emitted before openAgent.generate's
+ * event storm within a step, so a chatty run's newer events can push the
+ * composio events off that slice entirely. This query is scoped by
+ * loopRunId first (same index as the capped query, via
+ * `agent_loop_events_loop_run_created_idx`), so filtering further by
+ * eventName is cheap — it never scans more than one run's events.
+ */
+export async function listAgentLoopComposioEvents(
+  loopRunId: string,
+): Promise<AgentLoopEvent[]> {
+  return db.query.agentLoopEvents.findMany({
+    where: and(
+      eq(agentLoopEvents.loopRunId, loopRunId),
+      like(agentLoopEvents.eventName, "%.composio.%"),
+    ),
+    orderBy: [desc(agentLoopEvents.createdAt)],
   });
 }
 

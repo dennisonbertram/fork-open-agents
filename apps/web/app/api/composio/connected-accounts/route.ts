@@ -1,58 +1,23 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { getComposioClient } from "@/lib/composio/client";
 import { getComposioConfig } from "@/lib/composio/config";
-import { toComposioUserId } from "@/lib/composio/user-id";
+import {
+  listComposioConnectedAccounts,
+  type ComposioConnectedAccount,
+} from "@/lib/composio/connected-accounts";
 
-export interface ComposioConnectedAccount {
-  toolkitSlug: string;
-  status: string;
-  alias: string | null;
-  id: string;
-}
+export type { ComposioConnectedAccount };
 
 export interface ComposioConnectedAccountsResponse {
   accounts: ComposioConnectedAccount[];
-}
-
-/**
- * Structural view of a Composio connected account item (avoids `any`).
- * The SDK types vary across versions; we narrow defensively.
- */
-interface RawConnectedAccount {
-  id?: string;
-  status?: string;
-  alias?: string | null;
-  toolkit?: {
-    slug?: string;
-  };
-  /** Some SDK versions expose slug directly on the item */
-  toolkitSlug?: string;
-}
-
-function normalizeConnectedAccount(
-  raw: unknown,
-): ComposioConnectedAccount | null {
-  if (typeof raw !== "object" || raw === null) return null;
-  const item = raw as RawConnectedAccount;
-
-  const id = typeof item.id === "string" ? item.id : null;
-  if (!id) return null;
-
-  const toolkitSlug =
-    typeof item.toolkit?.slug === "string"
-      ? item.toolkit.slug
-      : typeof item.toolkitSlug === "string"
-        ? item.toolkitSlug
-        : null;
-
-  if (!toolkitSlug) return null;
-
-  return {
-    id,
-    toolkitSlug,
-    status: typeof item.status === "string" ? item.status : "UNKNOWN",
-    alias: typeof item.alias === "string" ? item.alias : null,
-  };
+  /**
+   * True only when the Composio SDK call failed and this response could not
+   * determine the user's real connected-account state. Distinguishes
+   * "couldn't check right now" (unavailable: true, accounts: []) from
+   * "genuinely zero connections" (unavailable absent/false, accounts: []) —
+   * both would otherwise be an indistinguishable bare `{ accounts: [] }`.
+   */
+  unavailable?: boolean;
 }
 
 export async function GET() {
@@ -68,32 +33,22 @@ export async function GET() {
   }
 
   try {
-    const client = getComposioClient();
-    const response = await client.connectedAccounts.list({
-      userIds: [toComposioUserId(authResult.userId)],
-      statuses: ["ACTIVE"],
+    const accounts = await listComposioConnectedAccounts({
+      composio: getComposioClient(),
+      userId: authResult.userId,
     });
-
-    // SDK response shape varies; narrow from unknown
-    const rawItems: unknown[] = Array.isArray(response)
-      ? response
-      : Array.isArray((response as { items?: unknown[] }).items)
-        ? ((response as { items: unknown[] }).items ?? [])
-        : [];
-
-    const accounts = rawItems
-      .map(normalizeConnectedAccount)
-      .filter(
-        (account): account is ComposioConnectedAccount => account !== null,
-      );
 
     return Response.json({
       accounts,
     } satisfies ComposioConnectedAccountsResponse);
   } catch {
-    // Connected-accounts is best-effort status — don't 500
+    // Connected-accounts is best-effort status — don't 500. But an SDK
+    // failure must be distinguishable from a genuinely empty account list,
+    // so callers don't render "no tools connected" when the real answer is
+    // "couldn't check right now" (issue #800).
     return Response.json({
       accounts: [],
+      unavailable: true,
     } satisfies ComposioConnectedAccountsResponse);
   }
 }

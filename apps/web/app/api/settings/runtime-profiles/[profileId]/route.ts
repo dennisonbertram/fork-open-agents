@@ -101,5 +101,8 @@ export async function DELETE(
     return Response.json({ error: "Profile not found" }, { status: 404 });
   }
 
-  return Response.json({ deletedProfileId: deleted.id });
+  return Response.json({
+    deletedProfileId: deleted.id,
+    preferenceReset: deleted.preferenceReset,
+  });
 }

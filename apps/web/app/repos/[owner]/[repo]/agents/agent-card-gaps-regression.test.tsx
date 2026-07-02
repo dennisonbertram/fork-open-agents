@@ -91,6 +91,7 @@ type AgentRun = {
         blocked: string[];
         artifacts: RunSummaryArtifact[];
         next: string[];
+        warnings: string[];
       }
     | null
     | undefined;

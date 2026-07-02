@@ -139,6 +139,7 @@ mock.module("drizzle-orm", () => ({
   eq: mock((a: unknown, b: unknown) => ({ _eq: [a, b] })),
   isNotNull: mock((a: unknown) => ({ _isNotNull: a })),
   isNull: mock((a: unknown) => ({ _isNull: a })),
+  like: mock((a: unknown, b: unknown) => ({ _like: [a, b] })),
   desc: mock((a: unknown) => ({ _desc: a })),
   inArray: mock((a: unknown, b: unknown) => ({ _inArray: [a, b] })),
   notInArray: mock((a: unknown, b: unknown) => ({ _notInArray: [a, b] })),
