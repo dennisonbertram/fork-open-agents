@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/status";
+import { syncUserInstallations } from "@/lib/github/sync";
 import {
-  isGitHubInstallationsAuthError,
-  syncUserInstallations,
-} from "@/lib/github/sync";
+  logGitHubSyncAuthRequired,
+  logGitHubSyncFailed,
+} from "@/lib/github/sync-status-events";
+import {
+  classifyGitHubSyncError,
+  describeGitHubSyncError,
+} from "@/lib/github/sync-status";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername, hasGitHubAccount } from "@/lib/github/users";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -66,7 +71,14 @@ export async function GET() {
       syncedInstallationsCount,
     } satisfies GitHubConnectionStatusResponse);
   } catch (error) {
-    if (isGitHubInstallationsAuthError(error)) {
+    const errorKind = classifyGitHubSyncError(error);
+
+    if (errorKind === "auth_required") {
+      logGitHubSyncAuthRequired({
+        userId: session.user.id,
+        route: "connection-status",
+      });
+
       return NextResponse.json({
         status: "reconnect_required",
         reason: "sync_auth_failed",
@@ -75,13 +87,18 @@ export async function GET() {
       } satisfies GitHubConnectionStatusResponse);
     }
 
-    console.error("Failed to validate GitHub connection status:", error);
+    const { providerStatus } = describeGitHubSyncError(error);
+    logGitHubSyncFailed({
+      userId: session.user.id,
+      route: "connection-status",
+      providerStatus,
+    });
 
     return NextResponse.json({
-      status: "connected",
-      reason: null,
+      status: "sync_degraded",
+      reason: "sync_unknown_error",
       hasInstallations: installations.length > 0,
-      syncedInstallationsCount: installations.length,
+      syncedInstallationsCount: null,
     } satisfies GitHubConnectionStatusResponse);
   }
 }

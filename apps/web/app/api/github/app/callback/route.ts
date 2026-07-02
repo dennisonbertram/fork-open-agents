@@ -5,6 +5,14 @@ import { logInstallStateRejected } from "@/app/api/github/app/callback/log";
 import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
+import {
+  classifyGitHubSyncError,
+  describeGitHubSyncError,
+} from "@/lib/github/sync-status";
+import {
+  logGitHubSyncAuthRequired,
+  logGitHubSyncFailed,
+} from "@/lib/github/sync-status-events";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
@@ -110,6 +118,8 @@ export async function GET(req: Request): Promise<Response> {
 
   // sync installations
   let syncedInstallationsCount: number | null = null;
+  let syncFailed = false;
+  let syncAuthRequired = false;
   const username = await getGitHubUsername(session.user.id);
 
   if (username) {
@@ -120,13 +130,33 @@ export async function GET(req: Request): Promise<Response> {
         username,
       );
     } catch (error) {
-      console.error("Failed syncing installations:", error);
+      const errorKind = classifyGitHubSyncError(error);
+
+      if (errorKind === "auth_required") {
+        syncAuthRequired = true;
+        logGitHubSyncAuthRequired({
+          userId: session.user.id,
+          route: "callback",
+        });
+      } else {
+        syncFailed = true;
+        const { providerStatus } = describeGitHubSyncError(error);
+        logGitHubSyncFailed({
+          userId: session.user.id,
+          route: "callback",
+          providerStatus,
+        });
+      }
     }
   }
 
   let githubStatus: string;
   let missingInstallationId = false;
-  if (setupAction === "request") {
+  if (syncAuthRequired) {
+    githubStatus = "not_linked";
+  } else if (syncFailed) {
+    githubStatus = "sync_failed";
+  } else if (setupAction === "request") {
     githubStatus = "request_sent";
   } else if ((syncedInstallationsCount ?? 0) > 0) {
     githubStatus = "app_installed";

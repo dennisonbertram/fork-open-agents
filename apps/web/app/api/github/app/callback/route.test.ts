@@ -39,6 +39,8 @@ mock.module("@/lib/github/sync", () => ({
 
     return syncedInstallationsCount;
   },
+  isGitHubInstallationsAuthError: (error: unknown) =>
+    error instanceof Error && error.message.includes(" 401 "),
 }));
 
 const routeModulePromise = import("./route");
