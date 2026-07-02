@@ -327,7 +327,9 @@ export async function resolveComposioToolsForBgRun(
     // Redacted, user-safe message — never includes raw SDK error text that
     // might contain account identifiers or tokens.
     const rawMessage =
-      error instanceof Error ? error.message : "Composio tool resolution failed.";
+      error instanceof Error
+        ? error.message
+        : "Composio tool resolution failed.";
     return {
       status: "error",
       errorKind: "composio_unknown",
