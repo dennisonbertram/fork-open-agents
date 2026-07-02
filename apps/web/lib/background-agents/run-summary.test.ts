@@ -7,6 +7,7 @@ import { describe, expect, test } from "bun:test";
 // Import the builder — this module does not exist yet, so all tests fail.
 import {
   buildRunSummary,
+  mergeEventsForSummary,
   type RunSummaryArtifact,
   type RunSummary,
 } from "./run-summary";
@@ -604,5 +605,180 @@ describe("buildRunSummary", () => {
     expect(
       summary.warnings.some((w) => w.toLowerCase().includes("checks_failed")),
     ).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Codex review (PR #824), P2-3: background-agent.composio.error is recorded
+  // with status: "failed" (see executor.ts) so on a run that FAILS FOR AN
+  // UNRELATED REASON, blocked[]'s event-loop (status === "failed" && errorKind
+  // !== run.errorKind) picks it up as if it were a failure cause — even
+  // though it is warn-level and non-fatal, and it already appears correctly
+  // in warnings[]. This duplicates the same signal under the wrong heading
+  // and implies the composio error caused the run to fail.
+  // ---------------------------------------------------------------------------
+  test("BT-016 (#798 P2-3): failed run (unrelated errorKind) + nonfatal composio.error event -> blocked[] excludes it, warnings[] includes it", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed to start.",
+    });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-composio-error",
+        eventName: "background-agent.composio.error",
+        // Matches executor.ts's real emission shape for a resolver "error"
+        // outcome: status "failed", level "warn", carries errorKind.
+        status: "failed",
+        level: "warn",
+        summary: "Composio tool resolution failed.",
+        errorKind: "composio_unknown",
+        payload: {},
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
+
+    // blocked[] must not list the nonfatal composio error as a failure cause.
+    expect(
+      summary.blocked.some((b) => b.includes("composio_unknown")),
+    ).toBe(false);
+    // The run's real failure reason must still be present.
+    expect(
+      summary.blocked.some((b) => b.includes("sandbox_unavailable")),
+    ).toBe(true);
+
+    // warnings[] must still carry the composio degradation.
+    expect(
+      summary.warnings.some((w) => w.includes("composio_unknown")),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Codex review (PR #824), P2-1: listBackgroundAgentEvents (store.ts) is a
+// newest-200 slice (desc(createdAt), limit: 200). Composio resolution emits
+// EARLY in a run, so on a run with >200 total events, the composio events
+// fall off that slice entirely — buildRunSummary never sees them, so
+// warnings[] silently loses them AND the composioConfigured guard's
+// !anyComposioEvent check becomes falsely true, resurrecting the misleading
+// "never resolved" line even though Composio WAS resolved (just off-screen).
+//
+// Fix: at the persist site (executor.ts's buildAndPersistRunSummary), merge
+// an uncapped, composio-scoped fetch into the capped slice before calling
+// buildRunSummary. mergeEventsForSummary is the pure, testable merge step —
+// it takes the capped slice and an uncapped composio-only slice and returns
+// a deduped union (by id), so a composio event that also happens to be
+// within the capped 200 is not double-counted.
+// ---------------------------------------------------------------------------
+
+describe("mergeEventsForSummary (#798 P2-1)", () => {
+  test("BT-017: composio events outside the capped slice are still included in the merged result", () => {
+    // Simulate the capped newest-200 slice: 200 non-composio "noise" events,
+    // none of which are the early composio event that fell off the window.
+    const cappedSlice: MinimalEvent[] = Array.from(
+      { length: 200 },
+      (_, i) => ({
+        id: `noise-${i}`,
+        eventName: "background-agent.agent.step.completed",
+        status: "succeeded",
+        level: "info",
+        summary: null,
+        errorKind: null,
+        payload: {},
+      }),
+    );
+
+    // The uncapped, composio-scoped fetch — this is what would have fallen
+    // off the capped slice on a long/chatty run.
+    const composioOnlySlice: MinimalEvent[] = [
+      {
+        id: "ev-composio-off",
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { reason: "no_slugs_selected" },
+      },
+    ];
+
+    const merged = mergeEventsForSummary(cappedSlice, composioOnlySlice);
+
+    expect(merged.some((e) => e.id === "ev-composio-off")).toBe(true);
+    // Every capped-slice event must still be present too.
+    expect(merged.length).toBe(201);
+  });
+
+  test("BT-018: a composio event present in BOTH slices is not duplicated (dedupe by id)", () => {
+    const composioEvent: MinimalEvent = {
+      id: "ev-composio-off",
+      eventName: "background-agent.composio.off",
+      status: "succeeded",
+      level: "warn",
+      summary: null,
+      errorKind: null,
+      payload: { reason: "no_slugs_selected" },
+    };
+    const cappedSlice: MinimalEvent[] = [composioEvent];
+    const composioOnlySlice: MinimalEvent[] = [composioEvent];
+
+    const merged = mergeEventsForSummary(cappedSlice, composioOnlySlice);
+
+    expect(merged.filter((e) => e.id === "ev-composio-off").length).toBe(1);
+  });
+
+  test("BT-019 (integration): buildRunSummary on the merged result surfaces the warning AND does not show the misleading never-resolved line, even though the composio event fell off the notional 200-event cap", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed to start.",
+    });
+
+    // Simulate: 200 events already pushed the composio event out of the
+    // capped slice.
+    const cappedSlice: MinimalEvent[] = Array.from(
+      { length: 200 },
+      (_, i) => ({
+        id: `noise-${i}`,
+        eventName: "background-agent.agent.step.completed",
+        status: "succeeded",
+        level: "info",
+        summary: null,
+        errorKind: null,
+        payload: {},
+      }),
+    );
+    const composioOnlySlice: MinimalEvent[] = [
+      {
+        id: "ev-composio-off",
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { reason: "no_slugs_selected" },
+      },
+    ];
+
+    const merged = mergeEventsForSummary(cappedSlice, composioOnlySlice);
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events: merged,
+      outputs: [],
+      composioConfigured: true,
+    });
+
+    // warnings[] must carry the off-screen composio event.
+    expect(summary.warnings.length).toBeGreaterThan(0);
+    // next[] must NOT claim tools were never resolved — they WERE resolved
+    // (as "off"), just outside the naive capped slice.
+    const combined = [...summary.warnings, ...summary.next].join(" ");
+    expect(combined.toLowerCase()).not.toContain("never resolved");
   });
 });
