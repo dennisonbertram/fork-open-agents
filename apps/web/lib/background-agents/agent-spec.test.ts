@@ -53,6 +53,8 @@ describe("buildAgentPayload", () => {
       conditionLabels: "",
       conditionEnvironments: "",
       conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
       instructions: "Run smoke checks.",
       outputMode: "none",
       checkCommand: "",
@@ -238,6 +240,8 @@ describe("isStepValid", () => {
       conditionLabels: "",
       conditionEnvironments: "",
       conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
       instructions: "Do something.",
       outputMode: "none",
       checkCommand: "",
@@ -334,7 +338,7 @@ describe("isStepValid", () => {
 // ---------------------------------------------------------------------------
 
 describe("fieldsForTrigger", () => {
-  test("BT-021: pull_request trigger includes actions, branches, labels; excludes environments, statuses", () => {
+  test("BT-021: pull_request trigger includes actions, branches, labels, actors; excludes environments, statuses", () => {
     const fields = fieldsForTrigger("github.pull_request");
     const fieldArr = [...fields] as ConditionField[];
     expect(fields.has("actions")).toBe(true);
@@ -342,7 +346,9 @@ describe("fieldsForTrigger", () => {
     expect(fields.has("labels")).toBe(true);
     expect(fields.has("environments")).toBe(false);
     expect(fields.has("statuses")).toBe(false);
-    expect(fieldArr.length).toBe(3);
+    expect(fields.has("actors")).toBe(true);
+    expect(fields.has("ignoreActors")).toBe(true);
+    expect(fieldArr.length).toBe(5);
   });
 
   test("BT-022: issue trigger includes actions and labels; excludes branches, environments, statuses", () => {
@@ -466,12 +472,14 @@ describe("outputModeLabel", () => {
 // ---------------------------------------------------------------------------
 
 describe("REG: fieldsForTrigger — dead fields are fully absent", () => {
-  test("REG-010: deployment_status has exactly 2 fields (environments + statuses); no more", () => {
+  test("REG-010: deployment_status has exactly 4 fields (environments + statuses + actors + ignoreActors); no more", () => {
     const fields = fieldsForTrigger("github.deployment_status");
     // If someone accidentally adds actions/branches/labels back, this catches it
-    expect(fields.size).toBe(2);
+    expect(fields.size).toBe(4);
     expect(fields.has("environments")).toBe(true);
     expect(fields.has("statuses")).toBe(true);
+    expect(fields.has("actors")).toBe(true);
+    expect(fields.has("ignoreActors")).toBe(true);
   });
 
   test("REG-011: schedule.cron still returns empty set even if trigger map is extended", () => {
@@ -481,11 +489,24 @@ describe("REG: fieldsForTrigger — dead fields are fully absent", () => {
     expect(fields.size).toBe(0);
   });
 
-  test("REG-012: pull_request has exactly 3 fields; environments/statuses never leak in", () => {
+  test("REG-012: pull_request has exactly 5 fields; environments/statuses never leak in", () => {
     const fields = fieldsForTrigger("github.pull_request");
-    expect(fields.size).toBe(3);
+    expect(fields.size).toBe(5);
     expect(fields.has("environments")).toBe(false);
     expect(fields.has("statuses")).toBe(false);
+  });
+
+  // #749: check_suite condition fields
+  test("check_suite trigger includes branches, statuses (conclusion), actors, ignoreActors", () => {
+    const fields = fieldsForTrigger("github.check_suite");
+    expect(fields.size).toBe(4);
+    expect(fields.has("branches")).toBe(true);
+    expect(fields.has("statuses")).toBe(true);
+    expect(fields.has("actors")).toBe(true);
+    expect(fields.has("ignoreActors")).toBe(true);
+    expect(fields.has("actions")).toBe(false);
+    expect(fields.has("labels")).toBe(false);
+    expect(fields.has("environments")).toBe(false);
   });
 });
 
@@ -516,6 +537,8 @@ describe("REG: isStepValid — canSubmit uses isStepValid(form, 'test'); cron wi
       conditionLabels: "",
       conditionEnvironments: "",
       conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
       instructions: "Run nightly checks.",
       outputMode: "none",
       checkCommand: "",

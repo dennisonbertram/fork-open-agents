@@ -50,6 +50,10 @@ export type BackgroundAgentTriggerConditions = {
   // mergedOnly: true restricts github.pull_request triggers to merged-closed events only.
   // Stored as JSONB — no migration needed. Not yet exposed in the UI (CODE-03).
   mergedOnly?: boolean;
+  // actors/ignoreActors (#749): allowlist/denylist matched case-insensitively
+  // against event.actor (sender.login). Stored as JSONB — no migration needed.
+  actors?: string[];
+  ignoreActors?: string[];
 };
 
 export type BackgroundAgentPermissions = {

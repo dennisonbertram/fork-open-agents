@@ -51,6 +51,7 @@ mock.module("@/app/workflows/background-agent", () => ({
 mock.module("./store", () => ({
   seedTriggerNextRunAt: async () => undefined,
   advanceTriggerScheduleState,
+  countRecentRunsForTarget: async () => 0,
   createRunForTrigger,
   getOwnedBackgroundAgentWithTriggers: async () => null,
   getWebhookTriggerByPublicId,
@@ -154,6 +155,7 @@ const baseAgent: BackgroundAgentWithTriggers = {
   writeScope: { mode: "this_repo" },
   requireCiGreenForMerge: true,
   modelId: null,
+  runBudgetPerTarget: 10,
   createdAt: new Date(),
   updatedAt: new Date(),
   triggers: [],

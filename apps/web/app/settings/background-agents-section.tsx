@@ -112,6 +112,8 @@ const conditionPlaceholders: Record<ConditionField, string> = {
   labels: "bug, regression",
   environments: "production, preview",
   statuses: "critical, error",
+  actors: "my-agent-bot",
+  ignoreActors: "my-agent-bot, dependabot[bot]",
 };
 
 // Condition field → FormState key
@@ -121,6 +123,8 @@ const conditionFormKey: Record<ConditionField, keyof FormState> = {
   labels: "conditionLabels",
   environments: "conditionEnvironments",
   statuses: "conditionSeverities",
+  actors: "conditionActors",
+  ignoreActors: "conditionIgnoreActors",
 };
 
 const stepOrder: StepId[] = [
@@ -179,6 +183,8 @@ export function ConditionFields({
     "labels",
     "environments",
     "statuses",
+    "actors",
+    "ignoreActors",
   ];
 
   return (
