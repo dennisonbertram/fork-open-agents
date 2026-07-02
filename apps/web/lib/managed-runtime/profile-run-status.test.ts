@@ -1,5 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { ManagedRuntimeCommandObservation } from "@/lib/db/schema";
+
+mock.module("server-only", () => ({}));
 
 // RED: this module does not exist yet.
 const {

@@ -9,6 +9,7 @@ mock.module("server-only", () => ({}));
 let deletedSavedProfile: Record<string, unknown> | undefined;
 let sessionRow: Record<string, unknown> | undefined;
 let userPreferencesRow: Record<string, unknown> | undefined;
+let knownProfileLookupResult: Record<string, unknown> | undefined;
 
 const txDeleteWhereMock = mock(() =>
   Promise.resolve({
@@ -31,19 +32,31 @@ const txUpdateMock = mock((table: unknown) => ({
     // Distinguish sessions vs user_preferences updates by shape of setVals.
     if ("runtimeMode" in setVals || "managedRuntimeProfileId" in setVals) {
       sessionUpdateSetCalls.push(setVals);
+      // Real WHERE: sessions.managedRuntimeProfileId = deleted profile id.
+      // Only "matches" (returns a row) if the fixture's sessionRow currently
+      // points at the profile being deleted.
+      const matches =
+        sessionRow &&
+        deletedSavedProfile &&
+        sessionRow.managedRuntimeProfileId === deletedSavedProfile.id;
       return {
         where: mock(() => ({
-          returning: mock(() => (sessionRow ? [sessionRow] : [])),
+          returning: mock(() => (matches ? [sessionRow] : [])),
         })),
       };
     }
     if ("defaultManagedRuntimeProfileId" in setVals) {
       preferencesUpdateSetCalls.push(setVals);
+      // Real WHERE: userPreferences.defaultManagedRuntimeProfileId = deleted
+      // profile id. Only "matches" if the fixture currently references it.
+      const matches =
+        userPreferencesRow &&
+        deletedSavedProfile &&
+        userPreferencesRow.defaultManagedRuntimeProfileId ===
+          deletedSavedProfile.id;
       return {
         where: mock(() => ({
-          returning: mock(() =>
-            userPreferencesRow ? [userPreferencesRow] : [],
-          ),
+          returning: mock(() => (matches ? [userPreferencesRow] : [])),
         })),
       };
     }
@@ -68,7 +81,9 @@ mock.module("@/lib/db/client", () => ({
       }),
     ),
     query: {
-      managedRuntimeSavedProfiles: { findFirst: mock(async () => undefined) },
+      managedRuntimeSavedProfiles: {
+        findFirst: mock(async () => knownProfileLookupResult),
+      },
     },
   },
 }));
@@ -78,18 +93,23 @@ mock.module("@/lib/observability/events", () => ({
   emitSessionEvent: emitSessionEventMock,
 }));
 
+const consoleInfoMock = mock(() => undefined);
+console.info = consoleInfoMock as unknown as typeof console.info;
+
 const storeModulePromise = import("./managed-runtime-saved-profiles");
 
 function resetMocks() {
   deletedSavedProfile = undefined;
   sessionRow = undefined;
   userPreferencesRow = undefined;
+  knownProfileLookupResult = undefined;
   sessionUpdateSetCalls.length = 0;
   preferencesUpdateSetCalls.length = 0;
   txDeleteMock.mockClear();
   txUpdateMock.mockClear();
   txQueryFindFirstMock.mockClear();
   emitSessionEventMock.mockClear();
+  consoleInfoMock.mockClear();
 }
 
 describe("deleteManagedRuntimeSavedProfile — delete lifecycle (Decision D2)", () => {
@@ -108,8 +128,8 @@ describe("deleteManagedRuntimeSavedProfile — delete lifecycle (Decision D2)", 
     sessionRow = {
       id: "session-1",
       userId: "user-1",
-      runtimeMode: "classic",
-      managedRuntimeProfileId: "web-bun-agent-browser",
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "session-profile-draft-1",
     };
 
     const { deleteManagedRuntimeSavedProfile } = await storeModulePromise;
@@ -166,16 +186,23 @@ describe("deleteUserDefaultProfile — preference reset lifecycle (Decision D2)"
     expect(preferencesUpdateSetCalls[0]).toMatchObject({
       defaultManagedRuntimeProfileId: "web-bun-agent-browser",
     });
-    expect(emitSessionEventMock).toHaveBeenCalledTimes(1);
-    const [eventArgs] = emitSessionEventMock.mock.calls[0] as [
+    // No sessionId exists for this account-level action, so the reset
+    // cannot be persisted as a session_events row (session_id is a NOT NULL
+    // FK). The API response's preferenceReset:true field is the durable
+    // evidence surface for callers.
+    expect(consoleInfoMock).toHaveBeenCalledTimes(1);
+    const [, logPayload] = consoleInfoMock.mock.calls[0] as [
+      string,
       Record<string, unknown>,
     ];
-    expect(eventArgs.eventName).toBe(
-      "managed_runtime.profile.preference_reset",
-    );
+    expect(logPayload).toMatchObject({
+      userId: "user-1",
+      deletedProfileId: "user-profile-abc123",
+      newDefaultProfileId: "web-bun-agent-browser",
+    });
   });
 
-  test("does not touch user_preferences when it references a different profile", async () => {
+  test("leaves user_preferences unreset when it references a different profile", async () => {
     deletedSavedProfile = {
       id: "user-profile-abc123",
       userId: "user-1",
@@ -196,7 +223,58 @@ describe("deleteUserDefaultProfile — preference reset lifecycle (Decision D2)"
 
     expect(result).toBeDefined();
     expect(result?.preferenceReset).toBe(false);
-    expect(preferencesUpdateSetCalls).toEqual([]);
-    expect(emitSessionEventMock).not.toHaveBeenCalled();
+    // The row was untouched: it still references the other profile.
+    expect(userPreferencesRow?.defaultManagedRuntimeProfileId).toBe(
+      "user-profile-other",
+    );
+    expect(consoleInfoMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("isKnownManagedRuntimeProfileReference", () => {
+  beforeEach(resetMocks);
+
+  // RED: this export does not exist yet — write-path routes have no shared
+  // validator and currently accept any string as a profile id reference.
+  test("returns true for a built-in profile id without querying the database", async () => {
+    const { isKnownManagedRuntimeProfileReference } = await storeModulePromise;
+
+    const known = await isKnownManagedRuntimeProfileReference({
+      userId: "user-1",
+      sessionId: "session-1",
+      profileId: "web-bun-agent-browser",
+    });
+
+    expect(known).toBe(true);
+  });
+
+  test("returns true for a saved profile owned by the user (session or user_default scope)", async () => {
+    knownProfileLookupResult = {
+      id: "user-profile-abc123",
+      userId: "user-1",
+      scope: "user_default",
+    };
+    const { isKnownManagedRuntimeProfileReference } = await storeModulePromise;
+
+    const known = await isKnownManagedRuntimeProfileReference({
+      userId: "user-1",
+      sessionId: "session-1",
+      profileId: "user-profile-abc123",
+    });
+
+    expect(known).toBe(true);
+  });
+
+  test("returns false for an id that resolves nowhere", async () => {
+    knownProfileLookupResult = undefined;
+    const { isKnownManagedRuntimeProfileReference } = await storeModulePromise;
+
+    const known = await isKnownManagedRuntimeProfileReference({
+      userId: "user-1",
+      sessionId: "session-1",
+      profileId: "totally-made-up-id",
+    });
+
+    expect(known).toBe(false);
   });
 });
