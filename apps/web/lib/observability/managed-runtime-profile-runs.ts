@@ -95,6 +95,8 @@ export async function startManagedRuntimeProfileRun(params: {
   workflowRunId?: string | null;
   sandboxName?: string | null;
   profile: ManagedRuntimeProfile;
+  requestedProfileId?: string | null;
+  resolvedProfileId?: string | null;
 }): Promise<ManagedRuntimeProfileRun> {
   const now = new Date();
   const [run] = await db
@@ -109,6 +111,8 @@ export async function startManagedRuntimeProfileRun(params: {
       profileId: params.profile.id,
       profileVersion: params.profile.version,
       profileDisplayName: params.profile.displayName,
+      requestedProfileId: params.requestedProfileId ?? params.profile.id,
+      resolvedProfileId: params.resolvedProfileId ?? params.profile.id,
       status: "running",
       expectedTools: [...params.profile.expectedTools],
       optionalTools: [...params.profile.optionalTools],
@@ -188,6 +192,8 @@ export async function finishManagedRuntimeProfileRun(params: {
   status: ManagedRuntimeProfileRun["status"];
   summary?: string | null;
   failureMessage?: string | null;
+  errorKind?: ManagedRuntimeProfileRun["errorKind"];
+  nextAction?: string | null;
 }): Promise<ManagedRuntimeProfileRun> {
   const now = new Date();
   const [updated] = await db
@@ -196,6 +202,8 @@ export async function finishManagedRuntimeProfileRun(params: {
       status: params.status,
       summary: params.summary ?? null,
       failureMessage: params.failureMessage ?? null,
+      errorKind: params.errorKind ?? null,
+      nextAction: params.nextAction ?? null,
       finishedAt: now,
       updatedAt: now,
     })

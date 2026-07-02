@@ -333,6 +333,23 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles/[profileId]", () =>
     });
   });
 
+  // RED: today the DELETE route never reads a `sessionsReset` field from the
+  // store result, so a caller can't tell whether the active session's
+  // runtimeMode was reset to classic as part of Decision D2's delete lifecycle.
+  test("DELETE reports sessionsReset:true when the active session was reset to classic", async () => {
+    profileResult = { ...savedProfile, sessionsReset: true } as never;
+    const { DELETE } = await routeModulePromise;
+
+    const response = await DELETE(request("DELETE"), routeContext());
+    const body = (await response.json()) as {
+      deletedProfileId: string;
+      sessionsReset: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.sessionsReset).toBe(true);
+  });
+
   test("returns 404 when the profile is missing", async () => {
     profileResult = undefined;
     const { GET } = await routeModulePromise;
