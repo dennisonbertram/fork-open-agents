@@ -77,7 +77,11 @@ describe("GET /api/github/app/callback", () => {
     syncCallCount = 0;
   });
 
-  test("returns no_action when the user exits before selecting an installation", async () => {
+  // Issue #829 (comment 3516151659): no_action is a non-success status, so it
+  // now always reroutes to /get-started (carrying the original redirect
+  // target in `next`) instead of landing on the original non-/get-started
+  // target where the status would be silently dropped.
+  test("returns no_action and reroutes to get-started with next preserved", async () => {
     syncedInstallationsCount = 0;
     const { GET } = await routeModulePromise;
 
@@ -89,9 +93,10 @@ describe("GET /api/github/app/callback", () => {
 
     expect(response.status).toBe(307);
     const redirectUrl = getRedirectUrl(response);
-    expect(redirectUrl.pathname).toBe("/settings/connections");
+    expect(redirectUrl.pathname).toBe("/get-started");
     expect(redirectUrl.searchParams.get("github")).toBe("no_action");
     expect(redirectUrl.searchParams.get("missing_installation_id")).toBe("1");
+    expect(redirectUrl.searchParams.get("next")).toBe("/settings/connections");
   });
 
   test("returns pending_sync when github reports an installation but sync is still empty", async () => {
@@ -169,6 +174,53 @@ describe("GET /api/github/app/callback", () => {
     const redirectUrl = getRedirectUrl(response);
     expect(redirectUrl.pathname).toBe("/settings/connections");
     expect(redirectUrl.searchParams.get("step")).toBeNull();
+  });
+
+  // Issue #829 (comment 3516151659): a non-success status returning to a
+  // bare /sessions redirect target must reroute to /get-started with the
+  // status + next preserved, instead of landing on /sessions where the
+  // onboarding gate silently drops the query params.
+  test("reroutes no_action to get-started with next=/sessions preserved", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/sessions",
+      github_app_install_state: "state-match-1",
+    };
+    syncedInstallationsCount = 0;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?state=state-match-1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("no_action");
+    expect(redirectUrl.searchParams.get("missing_installation_id")).toBe("1");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+    expect(redirectUrl.searchParams.get("next")).toBe("/sessions");
+  });
+
+  test("app_installed (success) keeps redirecting to the /sessions next target", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/sessions",
+      github_app_install_state: "state-match-1",
+    };
+    syncedInstallationsCount = 1;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/sessions");
+    expect(redirectUrl.searchParams.get("github")).toBe("app_installed");
   });
 
   test("not_linked redirect also carries step=github for /get-started target", async () => {

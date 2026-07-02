@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { logInstallStateRejected } from "@/app/api/github/app/callback/log";
-import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
+import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
@@ -66,8 +66,6 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  const redirectUrl = new URL(redirectTo, req.url);
-
   const requestUrl = new URL(req.url);
   const installationId = parseInstallationId(
     requestUrl.searchParams.get("installation_id"),
@@ -83,21 +81,28 @@ export async function GET(req: Request): Promise<Response> {
       hasCookie: Boolean(stateCookieValue),
       hasParam: Boolean(stateParamValue),
     });
-    redirectUrl.searchParams.set("github", "invalid_state");
-    addGitHubStepParamIfGetStarted(redirectUrl);
+    // invalid_state is a non-success status: reroute to /get-started (with
+    // step=github + next preserved) so the status notice actually renders.
+    const redirectUrl = resolveGitHubReturnTarget(
+      "invalid_state",
+      redirectTo,
+      req.url,
+    );
     return redirectAndClearCookies(redirectUrl);
   }
 
   // get the user's github token from better-auth
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
-    redirectUrl.searchParams.set("github", "not_linked");
-    const stepPreserved = redirectUrl.pathname === "/get-started";
-    addGitHubStepParamIfGetStarted(redirectUrl);
+    const redirectUrl = resolveGitHubReturnTarget(
+      "not_linked",
+      redirectTo,
+      req.url,
+    );
     logGitHubRedirectIssued({
       status: "not_linked",
       route: "callback",
-      stepPreserved,
+      stepPreserved: redirectUrl.pathname === "/get-started",
       userId: session.user.id,
     });
     return redirectAndClearCookies(redirectUrl);
@@ -120,24 +125,28 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   let githubStatus: string;
+  let missingInstallationId = false;
   if (setupAction === "request") {
     githubStatus = "request_sent";
   } else if ((syncedInstallationsCount ?? 0) > 0) {
     githubStatus = "app_installed";
   } else if (!installationId) {
     githubStatus = "no_action";
-    redirectUrl.searchParams.set("missing_installation_id", "1");
+    missingInstallationId = true;
   } else {
     githubStatus = "pending_sync";
   }
 
-  redirectUrl.searchParams.set("github", githubStatus);
-  const stepPreserved = redirectUrl.pathname === "/get-started";
-  addGitHubStepParamIfGetStarted(redirectUrl);
+  const redirectUrl = resolveGitHubReturnTarget(
+    githubStatus,
+    redirectTo,
+    req.url,
+    { missingInstallationId },
+  );
   logGitHubRedirectIssued({
     status: githubStatus,
     route: "callback",
-    stepPreserved,
+    stepPreserved: redirectUrl.pathname === "/get-started",
     userId: session.user.id,
   });
   return redirectAndClearCookies(redirectUrl);

@@ -137,6 +137,28 @@ describe("GET /api/github/app/install", () => {
     expect(redirectUrl.searchParams.get("step")).toBe("github");
   });
 
+  // Issue #829 (comment 3516151659): app_not_configured must reroute to
+  // /get-started with next preserved even when next is a non-/get-started
+  // target like /sessions, not bounce the user to bare /sessions with the
+  // status silently dropped.
+  test("redirects app_not_configured to get-started with next=/sessions preserved", async () => {
+    process.env.NEXT_PUBLIC_GITHUB_APP_SLUG = "";
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest("http://localhost/api/github/app/install?next=/sessions"),
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBeTruthy();
+    const redirectUrl = new URL(location as string);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("app_not_configured");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+    expect(redirectUrl.searchParams.get("next")).toBe("/sessions");
+  });
+
   test("redirects to github install when linked but no installations", async () => {
     installations = [];
     const { GET } = await routeModulePromise;
