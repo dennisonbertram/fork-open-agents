@@ -13,3 +13,14 @@ export function shouldAutoExpandOrgs(
   if (allAccountsCount === 0) return false;
   return installedCount < allAccountsCount;
 }
+
+/**
+ * Account-level GitHub "manage installations" URL, derived from the OAuth
+ * app's client ID. Returns null when the client ID isn't configured so
+ * callers can omit the link rather than render a dead href="#".
+ */
+export function getGitHubManageUrl(clientId: string | undefined): string | null {
+  return clientId
+    ? `https://github.com/settings/connections/applications/${clientId}`
+    : null;
+}
