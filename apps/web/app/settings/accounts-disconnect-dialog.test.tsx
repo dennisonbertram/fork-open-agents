@@ -41,8 +41,6 @@ describe("AccountsDisconnectDialogBody (#789)", () => {
     const html = renderToStaticMarkup(<AccountsDisconnectDialogBody />);
 
     expect(html).toContain('href="https://github.com/settings/installations"');
-    expect(html).not.toContain(
-      "github.com/settings/connections/applications/",
-    );
+    expect(html).not.toContain("github.com/settings/connections/applications/");
   });
 });
