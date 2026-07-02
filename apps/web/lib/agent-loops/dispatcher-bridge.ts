@@ -80,20 +80,50 @@ export type LoopDispatchResult =
       activeRunId?: undefined;
     };
 
+/**
+ * The event payload shape dispatch callers pass in. Widened beyond the bare
+ * gate fields (source/kind/externalId/repo/occurredAt) to accept the full set
+ * of fields `normalizeGitHubBackgroundEvent` (lib/background-agents/github-events.ts)
+ * produces — `ref`, `prNumber`, `sha`, `branch`, `action`, `issueNumber`, etc.
+ * — so `dispatchLoopRun` can seed `run.context.trigger` (#765) with whatever
+ * subset the caller supplied, without every call site having to repeat the
+ * full field list.
+ */
+export type LoopDispatchEvent = {
+  source: "github" | "schedule" | "webhook" | "manual";
+  kind: string;
+  externalId?: string | null;
+  repoOwner?: string;
+  repoName?: string;
+  occurredAt?: string | null;
+  action?: string;
+  ref?: string;
+  sha?: string;
+  branch?: string;
+  prNumber?: number;
+  issueNumber?: number;
+  deploymentUrl?: string;
+  labels?: string[];
+  environment?: string;
+  severity?: string;
+  title?: string;
+  url?: string;
+  actor?: string;
+  message?: string;
+  merged?: boolean;
+  reviewId?: number;
+  reviewState?: string;
+  reviewerLogin?: string;
+  prUrl?: string;
+};
+
 export type DispatchLoopRunForTriggerParams = {
   loop: AgentLoop;
   trigger: Pick<
     BackgroundAgentTrigger,
     "id" | "loopId" | "kind" | "conditions" | "schedule"
   >;
-  event: {
-    source: "github" | "schedule" | "webhook" | "manual";
-    kind: string;
-    externalId?: string | null;
-    repoOwner?: string;
-    repoName?: string;
-    occurredAt?: string | null;
-  };
+  event: LoopDispatchEvent;
   requestId?: string | null;
 };
 
@@ -117,6 +147,36 @@ function buildIdempotencyKey(params: {
   ].join(":");
 }
 
+/**
+ * Builds the `run.context.trigger` seed value (#765 — the trigger.* context
+ * contract, documented in docs/plans/agent-loops-epic.md).
+ *
+ * Trigger-driven runs (github/schedule/webhook source) get the normalized
+ * event payload subset — `eventKind` plus whatever fields the caller supplied
+ * (repoOwner, repoName, ref, prNumber, sha, branch, action, etc., mirroring
+ * whatever normalizeGitHubBackgroundEvent produced upstream). Manual runs get
+ * `{ source: "manual" }` — there is no real trigger event to describe.
+ *
+ * Never throws; only copies defined (non-undefined) fields so the persisted
+ * context never carries stray `undefined` values.
+ */
+function buildTriggerContext(
+  event: LoopDispatchEvent,
+): Record<string, unknown> {
+  if (event.source === "manual") {
+    return { source: "manual" };
+  }
+
+  const { kind: eventKind, source: _source, ...rest } = event;
+  const trigger: Record<string, unknown> = { eventKind };
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) {
+      trigger[key] = value;
+    }
+  }
+  return trigger;
+}
+
 // ── Core dispatch logic ───────────────────────────────────────────────────────
 
 /**
@@ -127,12 +187,7 @@ function buildIdempotencyKey(params: {
 async function dispatchLoopRun(params: {
   loop: AgentLoop;
   trigger: Pick<BackgroundAgentTrigger, "id" | "loopId" | "kind">;
-  event: {
-    source: "github" | "schedule" | "webhook" | "manual";
-    kind: string;
-    externalId?: string | null;
-    occurredAt?: string | null;
-  };
+  event: LoopDispatchEvent;
   idempotencyKey: string;
   requestId?: string | null;
   /**
@@ -189,6 +244,9 @@ async function dispatchLoopRun(params: {
     idempotencyKey,
     triggerId: runTriggerId,
     requestId: requestId ?? null,
+    // #765: seed run.context.trigger at creation — trigger-driven runs get
+    // the normalized event payload subset, manual runs get {source:"manual"}.
+    context: { trigger: buildTriggerContext(event) },
   });
 
   if (!result) {

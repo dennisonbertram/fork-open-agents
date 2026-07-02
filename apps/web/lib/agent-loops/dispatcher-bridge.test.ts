@@ -15,6 +15,10 @@
  *             and returns a typed dispatchFailed result (issue #763 — no false success)
  * BT-326-12: cron sweep includes due loop trigger + updates nextRunAt
  * BT-326-13: agent-trigger path unchanged (existing suite behavior)
+ * BT-765-01: trigger-driven dispatch seeds run.context.trigger with the
+ *            normalized event payload subset (eventKind, repoOwner, repoName,
+ *            ref, prNumber, etc.) — issue #765.
+ * BT-765-02: manual dispatch seeds run.context.trigger = { source: "manual" }.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -228,6 +232,7 @@ const githubEvent = {
   repoName: "widgets",
   action: "opened",
   branch: "feature/test",
+  ref: "feature/test",
   prNumber: 42,
   occurredAt: "2026-06-01T00:00:00.000Z",
 };
@@ -312,6 +317,35 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(result.created).toBe(true);
     expect(result.runId).toBe("loop-run-1");
     expect(result.reason).toBeUndefined();
+  });
+
+  // BT-765-01: context.trigger seeding (trigger-driven dispatch)
+  test("BT-765-01: seeds run.context.trigger with the normalized event payload subset", async () => {
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    await dispatchLoopRunForTrigger({
+      loop: activeLoop,
+      trigger: enabledTrigger,
+      event: githubEvent,
+      requestId: "req-765-01",
+    });
+
+    expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { context?: Record<string, unknown> },
+      ]
+    )[0];
+    expect(createCall.context).toBeDefined();
+    const trigger = createCall.context?.trigger as Record<string, unknown>;
+    expect(trigger).toBeDefined();
+    expect(trigger.eventKind).toBe("github.pull_request");
+    expect(trigger.repoOwner).toBe("acme");
+    expect(trigger.repoName).toBe("widgets");
+    expect(trigger.ref).toBe("feature/test");
+    expect(trigger.prNumber).toBe(42);
+    // Must NOT carry a "source":"manual" placeholder for a trigger-driven run
+    expect(trigger.source).toBeUndefined();
   });
 
   // BT-326-02: duplicate delivery dedupes
@@ -512,6 +546,25 @@ describe("dispatchManualAgentLoopStart", () => {
     expect(createCall.idempotencyKey).toContain("manual");
 
     expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  // BT-765-02: manual dispatch seeds context.trigger = { source: "manual" }
+  test("BT-765-02: manual start seeds run.context.trigger = { source: 'manual' }", async () => {
+    const { dispatchManualAgentLoopStart } = await bridgeModulePromise;
+
+    await dispatchManualAgentLoopStart({
+      userId: "user-1",
+      loopId: "loop-1",
+      requestId: "req-765-02",
+    });
+
+    expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { context?: Record<string, unknown> },
+      ]
+    )[0];
+    expect(createCall.context).toEqual({ trigger: { source: "manual" } });
   });
 
   // BT-326-09: manual start ownership fail

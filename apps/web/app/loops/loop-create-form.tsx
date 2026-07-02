@@ -11,6 +11,8 @@ import { validateLoopDefinition } from "@/lib/agent-loops/validation";
 import type { LoopValidationError } from "@/lib/agent-loops/types";
 import type { CreateAgentLoopResponse } from "@/app/api/agent-loops/types";
 import { RepoCombobox } from "./repo-combobox";
+import type { LoopTemplateSuggestedTriggerSpec } from "./loop-templates";
+import { appendSuggestedTriggerParams } from "./suggested-trigger-query";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +37,13 @@ type LoopCreateFormProps = {
    * JSON. It auto-opens if the definition has errors.
    */
   definitionCollapsible?: boolean;
+  /**
+   * The chosen template's machine-readable trigger suggestion (#765), when
+   * present. Carried through to the post-create landing page as a query
+   * param so the "Attach suggested trigger" nudge can read it back — creating
+   * the loop never auto-attaches a trigger by itself.
+   */
+  suggestedTriggerSpec?: LoopTemplateSuggestedTriggerSpec;
 };
 
 // ── Validation error display ──────────────────────────────────────────────────
@@ -80,6 +89,7 @@ export function LoopCreateForm({
   initialDefinitionText,
   redirectTo = "detail",
   definitionCollapsible = false,
+  suggestedTriggerSpec,
 }: LoopCreateFormProps) {
   const router = useRouter();
   const [name, setName] = useState(initialName ?? "");
@@ -183,11 +193,11 @@ export function LoopCreateForm({
 
       const { loop } = (await res.json()) as CreateAgentLoopResponse;
       toast.success(`Loop "${loop.name}" created.`);
-      router.push(
+      const basePath =
         redirectTo === "builder"
           ? `/loops/${loop.id}/builder`
-          : `/loops/${loop.id}`,
-      );
+          : `/loops/${loop.id}`;
+      router.push(appendSuggestedTriggerParams(basePath, suggestedTriggerSpec));
     } catch {
       toast.error("Failed to create loop. Please try again.");
     } finally {

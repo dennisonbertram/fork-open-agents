@@ -89,6 +89,13 @@ export type CreateAgentLoopRunInput = {
   idempotencyKey: string;
   triggerId?: string | null;
   requestId?: string | null;
+  /**
+   * Initial run context (#765). The dispatcher bridge seeds `{ trigger: {...} }`
+   * here at run creation — the normalized event payload subset for
+   * trigger-driven runs, or `{ source: "manual" }` for manual starts. Defaults
+   * to the column default ({}) when omitted.
+   */
+  context?: Record<string, unknown>;
 };
 
 export type CreateAgentLoopStepRunInput = {
@@ -365,6 +372,7 @@ export async function createAgentLoopRun(
       idempotencyKey: input.idempotencyKey,
       triggerId: input.triggerId ?? null,
       requestId: input.requestId ?? null,
+      ...(input.context !== undefined ? { context: input.context } : {}),
     })
     .onConflictDoNothing({ target: agentLoopRuns.idempotencyKey })
     .returning();

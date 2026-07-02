@@ -19,7 +19,7 @@
  *   VR-08  end is reachable from start (BFS)
  *   VR-09  Cycles are explicitly legal (no rule — they are positively accepted)
  *   VR-10  Definition size cap (64KB serialized)
- *   VR-11  Forbidden node ids (__proto__, constructor, prototype)
+ *   VR-11  Forbidden node ids (__proto__, constructor, prototype, trigger)
  *   VR-12  github_check node requires check config
  *   VR-13  condition node requires condition config
  *   VR-14  condition ops other than exists require value
@@ -37,7 +37,20 @@ import { loopDefinitionSchema } from "./types";
 
 const DEFINITION_SIZE_CAP_BYTES = 64 * 1024; // 64KB
 
-const FORBIDDEN_NODE_IDS = new Set(["__proto__", "constructor", "prototype"]);
+/**
+ * "trigger" is reserved because the dispatcher bridge seeds
+ * `run.context.trigger` at run creation (#765) — a node id of "trigger" would
+ * collide with that context key and make refFrom/condition path lookups
+ * ambiguous. "start" is intentionally NOT reserved: every shipped template
+ * uses "start" as its literal start-node id, and there is no run.context key
+ * named "start" for it to collide with.
+ */
+const FORBIDDEN_NODE_IDS = new Set([
+  "__proto__",
+  "constructor",
+  "prototype",
+  "trigger",
+]);
 
 /** Ops that do NOT require a value field. */
 const VALUE_EXEMPT_OPS = new Set(["exists"]);
