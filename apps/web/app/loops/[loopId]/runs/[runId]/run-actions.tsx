@@ -36,6 +36,15 @@ const TERMINAL_STATUSES = new Set([
 
 const NON_TERMINAL_STATUSES = new Set(["queued", "running", "paused"]);
 
+/**
+ * Toast copy for a typed dispatch failure (issue #763 — "no false success").
+ * Used for resume/retry when the execution backend rejects the dispatch:
+ * the run is already marked failed server-side, so the copy points the user
+ * at the run page rather than implying the control action itself failed.
+ */
+const DISPATCH_FAILED_MESSAGE =
+  "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.";
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 async function postControl(runId: string, action: string): Promise<void> {
@@ -47,7 +56,11 @@ async function postControl(runId: string, action: string): Promise<void> {
       message?: string;
       errorKind?: string;
     };
-    throw Object.assign(new Error(body.message ?? `Failed to ${action} run`), {
+    const message =
+      body.errorKind === "dispatch_failed"
+        ? DISPATCH_FAILED_MESSAGE
+        : (body.message ?? `Failed to ${action} run`);
+    throw Object.assign(new Error(message), {
       status: res.status,
       errorKind: body.errorKind,
     });

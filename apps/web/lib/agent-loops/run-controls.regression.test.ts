@@ -163,7 +163,9 @@ const conditionallyTransitionRunStatusMock = mock(
     currentLoopRun = {
       ...currentLoopRun,
       status: params.toStatus as AgentLoopRun["status"],
-      ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
       ...(params.errorMessage !== undefined
         ? { errorMessage: params.errorMessage }
         : {}),
@@ -483,9 +485,7 @@ describe("REG-RC04: dispatch failure during resume surfaces as a typed failure (
 
     // Run is marked failed with errorKind=dispatch_failed — not left "running"
     expect(currentLoopRun.status).toBe("failed");
-    const failTransition = transitionCalls.find(
-      (c) => c.toStatus === "failed",
-    );
+    const failTransition = transitionCalls.find((c) => c.toStatus === "failed");
     expect(failTransition?.errorKind).toBe("dispatch_failed");
   });
 });

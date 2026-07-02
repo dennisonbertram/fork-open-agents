@@ -454,9 +454,9 @@ describe("dispatchLoopRunForTrigger", () => {
     expect((result as { errorKind?: string }).errorKind).toBe(
       "dispatch_failed",
     );
-    expect(
-      typeof (result as { errorMessage?: string }).errorMessage,
-    ).toBe("string");
+    expect(typeof (result as { errorMessage?: string }).errorMessage).toBe(
+      "string",
+    );
     expect((result as { runId?: string }).runId).toBe("loop-run-1");
 
     // Run row transitioned to failed with errorKind/errorMessage set

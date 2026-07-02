@@ -38,6 +38,21 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
     requestId,
   });
 
+  if (result.dispatchFailed) {
+    // Issue #763 — no false success: the run row is already marked failed
+    // with errorKind=dispatch_failed; the route must not return
+    // {created:true} in this case.
+    return Response.json(
+      {
+        success: false,
+        errorKind: "dispatch_failed",
+        message: result.errorMessage,
+        runId: result.runId,
+      },
+      { status: 502 },
+    );
+  }
+
   if (result.skipped) {
     switch (result.reason) {
       case "feature_disabled":

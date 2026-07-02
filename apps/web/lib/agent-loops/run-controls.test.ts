@@ -183,7 +183,9 @@ const conditionallyTransitionRunStatusMock = mock(
     currentLoopRun = {
       ...currentLoopRun,
       status: params.toStatus as AgentLoopRun["status"],
-      ...(params.errorKind !== undefined ? { errorKind: params.errorKind } : {}),
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
       ...(params.errorMessage !== undefined
         ? { errorMessage: params.errorMessage }
         : {}),
@@ -623,9 +625,7 @@ describe("BT-RC03: resume re-dispatches queued step (pause-mid-execution recover
 
     // Run row must be transitioned to failed with errorKind=dispatch_failed
     expect(conditionallyTransitionRunStatusMock).toHaveBeenCalled();
-    const failTransition = transitionCalls.find(
-      (c) => c.toStatus === "failed",
-    );
+    const failTransition = transitionCalls.find((c) => c.toStatus === "failed");
     expect(failTransition).toBeDefined();
     expect(failTransition?.errorKind).toBe("dispatch_failed");
     expect(typeof failTransition?.errorMessage).toBe("string");
@@ -694,9 +694,7 @@ describe("BT-RC04: retry dispatches the new attempt workflow", () => {
     );
     expect(dispatchFailedEvent).toBeDefined();
 
-    const failTransition = transitionCalls.find(
-      (c) => c.toStatus === "failed",
-    );
+    const failTransition = transitionCalls.find((c) => c.toStatus === "failed");
     expect(failTransition).toBeDefined();
     expect(failTransition?.errorKind).toBe("dispatch_failed");
   });
