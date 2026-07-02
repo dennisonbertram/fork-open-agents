@@ -1,11 +1,15 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { toast } from "sonner";
 import useSWR, { useSWRConfig } from "swr";
 import type { Chat, Session } from "@/lib/db/schema";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 import { fetcher } from "@/lib/swr";
+import {
+  CreateSessionError,
+  mapCreateSessionErrorResponse,
+  type CreateSessionErrorResponseBody,
+} from "@/lib/sessions/create-session-error";
 
 export type SessionWithUnread = Pick<
   Session,
@@ -144,13 +148,16 @@ export function useSessions(options?: {
       const responseData = (await res.json()) as {
         session?: Session;
         chat?: Chat;
-        error?: string;
-      };
+      } & CreateSessionErrorResponseBody;
 
       if (!res.ok || !responseData.session || !responseData.chat) {
-        const message = responseData.error ?? "Failed to create session";
-        toast.error(message);
-        throw new Error(message);
+        // Ownership decision (#784): this hook does NOT toast — every
+        // call site owns surfacing this rejection exactly once (inline in
+        // the New Session dialog, toast elsewhere) via the shared
+        // create-session-error helper. See docs/agents/lessons-learned.md.
+        throw new CreateSessionError(
+          mapCreateSessionErrorResponse(responseData, res.status),
+        );
       }
 
       const createdSession = responseData.session;

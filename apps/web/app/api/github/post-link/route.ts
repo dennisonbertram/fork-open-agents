@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
+import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
+import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
@@ -27,6 +29,14 @@ export async function GET(req: Request): Promise<Response> {
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
     redirectUrl.searchParams.set("github", "link_failed");
+    const stepPreserved = redirectUrl.pathname === "/get-started";
+    addGitHubStepParamIfGetStarted(redirectUrl);
+    logGitHubRedirectIssued({
+      status: "link_failed",
+      route: "post-link",
+      stepPreserved,
+      userId: session.user.id,
+    });
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -42,6 +52,14 @@ export async function GET(req: Request): Promise<Response> {
 
       if (count > 0) {
         redirectUrl.searchParams.set("github", "account_connected");
+        const stepPreserved = redirectUrl.pathname === "/get-started";
+        addGitHubStepParamIfGetStarted(redirectUrl);
+        logGitHubRedirectIssued({
+          status: "account_connected",
+          route: "post-link",
+          stepPreserved,
+          userId: session.user.id,
+        });
         return NextResponse.redirect(redirectUrl);
       }
     } catch (error) {
@@ -53,6 +71,14 @@ export async function GET(req: Request): Promise<Response> {
   const existingInstallations = await getInstallationsByUserId(session.user.id);
   if (existingInstallations.length > 0) {
     redirectUrl.searchParams.set("github", "account_connected");
+    const stepPreserved = redirectUrl.pathname === "/get-started";
+    addGitHubStepParamIfGetStarted(redirectUrl);
+    logGitHubRedirectIssued({
+      status: "account_connected",
+      route: "post-link",
+      stepPreserved,
+      userId: session.user.id,
+    });
     return NextResponse.redirect(redirectUrl);
   }
 
