@@ -22,3 +22,8 @@ export class RunControlError extends Error {
     this.kind = kind;
   }
 }
+
+// DispatchFailedError lives in its own colocated module — see
+// ./dispatch-failed-error.ts (distinct concern: control-plane dispatch
+// failures, not run-control state-machine violations).
+export { DispatchFailedError } from "./dispatch-failed-error";

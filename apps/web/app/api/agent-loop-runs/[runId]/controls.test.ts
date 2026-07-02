@@ -3,7 +3,10 @@
  * Written first (RED phase) — all tests fail before implementation.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { RunControlError } from "@/lib/agent-loops/run-controls-error";
+import {
+  DispatchFailedError,
+  RunControlError,
+} from "@/lib/agent-loops/run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -233,6 +236,28 @@ describe("POST /api/agent-loop-runs/[runId]/resume", () => {
     expect(response.status).toBe(409);
     expect(body).toMatchObject({ errorKind: "illegal_transition" });
   });
+
+  test("BT-059: returns 502 with success:false, errorKind:dispatch_failed when the execution backend rejects the dispatch (issue #763)", async () => {
+    resumeLoopRun.mockImplementation(async () => {
+      throw new DispatchFailedError(
+        "run-1",
+        "Failed to dispatch step workflow: boom",
+      );
+    });
+    const { POST } = await resumeRoutePromise;
+    const response = await POST(
+      new Request("http://localhost/api/agent-loop-runs/run-1/resume", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({
+      success: false,
+      errorKind: "dispatch_failed",
+    });
+  });
 });
 
 describe("POST /api/agent-loop-runs/[runId]/retry", () => {
@@ -304,5 +329,27 @@ describe("POST /api/agent-loop-runs/[runId]/retry", () => {
       context("run-999"),
     );
     expect(response.status).toBe(404);
+  });
+
+  test("BT-060: returns 502 with success:false, errorKind:dispatch_failed when the execution backend rejects the dispatch (issue #763)", async () => {
+    retryCurrentStep.mockImplementation(async () => {
+      throw new DispatchFailedError(
+        "run-1",
+        "Failed to dispatch retry step workflow: boom",
+      );
+    });
+    const { POST } = await retryRoutePromise;
+    const response = await POST(
+      new Request("http://localhost/api/agent-loop-runs/run-1/retry", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({
+      success: false,
+      errorKind: "dispatch_failed",
+    });
   });
 });

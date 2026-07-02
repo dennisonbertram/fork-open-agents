@@ -308,8 +308,12 @@ describe("REG-352: setInitialStepPointer called on every successful dispatch", (
     /**
      * setInitialStepPointer is called BEFORE start().  A workflow dispatch
      * failure must not retroactively prevent the pointer from being set.
-     * (The stall sweep or pause→resume will re-dispatch and now the advance
-     * WHERE clause will match correctly.)
+     *
+     * Post-#763: a dispatch failure marks the run "failed" with a typed
+     * dispatchFailed result (not {created:true}) — but the pointer write
+     * still must have happened before start() was attempted, since the run
+     * row's currentNodeId/currentStepRunId are separate bookkeeping from the
+     * run's status/errorKind.
      */
     workflowThrows = true;
     const { dispatchLoopRunForTrigger } = await bridgePromise;
@@ -320,7 +324,7 @@ describe("REG-352: setInitialStepPointer called on every successful dispatch", (
       requestId: "reg-005",
     });
 
-    expect(result.created).toBe(true);
+    expect((result as { dispatchFailed?: boolean }).dispatchFailed).toBe(true);
     // Even though start() threw, setInitialStepPointer was called before it
     expect(setInitialStepPointer).toHaveBeenCalledTimes(1);
     expect(runRow.currentStepRunId).not.toBeNull();
