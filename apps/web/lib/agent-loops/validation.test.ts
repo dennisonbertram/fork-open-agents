@@ -542,6 +542,48 @@ describe("VR-11: forbidden node ids (prototype-pollution-safe)", () => {
     const result = validateLoopDefinition(minimalValidDefinition());
     expect(result.ok).toBe(true);
   });
+
+  // #765: "trigger" is reserved as a run-context key (run.context.trigger),
+  // seeded by the dispatcher bridge for every run. A node id of "trigger"
+  // would collide with that key and confuse refFrom/condition path lookups.
+  test("node with id 'trigger' fails with forbidden_node_id (#765 — reserved context key)", () => {
+    const def = {
+      nodes: [
+        {
+          id: "trigger",
+          kind: "agent_step" as const,
+          label: "Trigger",
+          position: { x: 100, y: 0 },
+        },
+        makeStartNode(),
+        makeEndNode(),
+      ],
+      edges: [
+        makeEdge("e0", "start-1", "trigger", "always"),
+        makeEdge("e1", "trigger", "end-1", "success"),
+      ],
+    };
+    const result = validateLoopDefinition(def);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      const err = result.errors.find((e) => e.rule === "forbidden_node_id");
+      expect(err).toBeDefined();
+      expect(err?.nodeId).toBe("trigger");
+    }
+  });
+
+  // #765 regression guard: "start" is NOT reserved — every shipped template
+  // uses "start" as its literal start-node id, and there is no run.context
+  // key named "start" that a node id could collide with. Reserving it would
+  // break every existing template.
+  test("node with id 'start' remains legal (#765 — no 'start' context-key collision)", () => {
+    const result = validateLoopDefinition(minimalValidDefinition());
+    expect(result.ok).toBe(true);
+    const startNode = minimalValidDefinition().nodes.find(
+      (n) => n.kind === "start",
+    );
+    expect(startNode?.id).toBe("start-1");
+  });
 });
 
 // ── VR-12: github_check node requires check config ────────────────────────────
