@@ -15,9 +15,8 @@ mock.module("@/lib/models-with-context", () => ({
   fetchAvailableLanguageModelsWithContext: () => fetchImpl(),
 }));
 
-const { getInitialModels } = await import(
-  "../../sessions/[sessionId]/chats/[chatId]/get-initial-models"
-);
+const { getInitialModels } =
+  await import("../../../sessions/[sessionId]/chats/[chatId]/get-initial-models");
 
 describe("getInitialModels (mobile surface)", () => {
   const context = {

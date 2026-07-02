@@ -62,8 +62,9 @@ describe("getInitialModels", () => {
 
     await getInitialModels(context);
 
-    const warnCalls = (console.warn as unknown as { mock: { calls: unknown[][] } })
-      .mock.calls;
+    const warnCalls = (
+      console.warn as unknown as { mock: { calls: unknown[][] } }
+    ).mock.calls;
     const serialized = JSON.stringify(warnCalls);
     expect(serialized).not.toContain("secret gateway token xyz");
     expect(serialized).toContain("fetch_failed");

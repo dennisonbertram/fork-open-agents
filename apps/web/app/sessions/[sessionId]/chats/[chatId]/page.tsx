@@ -20,10 +20,11 @@ import {
 } from "@/lib/model-options";
 import { getAllVariants } from "@/lib/model-variants";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
-import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getCodeEditorDisabledReason } from "@/lib/managed-runtime/code-editor-gate";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
+import { getInitialModels } from "./get-initial-models";
+import { ModelAvailabilityBanner } from "./model-availability-banner";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
 import { SessionChatContent } from "./session-chat-content";
 import { SessionChatProvider } from "./session-chat-context";
@@ -46,14 +47,6 @@ function isOptimisticChatId(chatId: string): boolean {
 
 const OPTIMISTIC_CHAT_RETRY_DELAY_MS = 100;
 const OPTIMISTIC_CHAT_RETRY_ATTEMPTS = 50;
-
-async function getInitialModels() {
-  try {
-    return await fetchAvailableLanguageModelsWithContext();
-  } catch {
-    return [];
-  }
-}
 
 async function getChatByIdWithRetry(
   chatId: string,
@@ -116,7 +109,7 @@ export default async function SessionChatPage({
   const [
     chat,
     dbMessages,
-    initialModels,
+    initialModelsResult,
     rawPreferences,
     sessionChats,
     inferenceProfiles,
@@ -125,7 +118,7 @@ export default async function SessionChatPage({
   ] = await Promise.all([
     getChatByIdWithRetry(chatId, sessionId),
     getChatMessages(chatId),
-    getInitialModels(),
+    getInitialModels({ sessionId, chatId, surface: "desktop" }),
     getUserPreferences(session.user.id),
     getChatSummariesBySessionId(sessionId, session.user.id),
     listInferenceProfiles(session.user.id),
@@ -189,7 +182,7 @@ export default async function SessionChatPage({
   );
   const initialModelOptions = withMissingModelOption(
     buildSessionChatModelOptions(
-      initialModels,
+      initialModelsResult.models,
       modelVariants,
       inferenceProfiles,
     ),
@@ -209,6 +202,14 @@ export default async function SessionChatPage({
         initialMessages={initialMessages}
         initialModelOptions={initialModelOptions}
       >
+        {initialModelsResult.models.length === 0 && (
+          <div className="px-4 pt-4">
+            <ModelAvailabilityBanner
+              errorKind={initialModelsResult.errorKind}
+              hasModels={initialModelsResult.models.length > 0}
+            />
+          </div>
+        )}
         <SessionChatContent
           harnessEnabled={process.env.HARNESS_ENABLED === "true"}
           initialIsOnlyChatInSession={initialIsOnlyChatInSession}

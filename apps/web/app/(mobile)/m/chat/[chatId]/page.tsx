@@ -10,8 +10,9 @@ import {
 } from "@/lib/model-options";
 import { getAllVariants } from "@/lib/model-variants";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
-import { fetchAvailableLanguageModelsWithContext } from "@/lib/models-with-context";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getInitialModels } from "@/app/sessions/[sessionId]/chats/[chatId]/get-initial-models";
+import { ModelAvailabilityBanner } from "@/app/sessions/[sessionId]/chats/[chatId]/model-availability-banner";
 import { SessionChatProvider } from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
 import { MobileChatScreen } from "@/components/mobile/chat/mobile-chat-screen";
 
@@ -56,14 +57,6 @@ async function getChatByIdWithRetry(
   return undefined;
 }
 
-async function getInitialModels() {
-  try {
-    return await fetchAvailableLanguageModelsWithContext();
-  } catch {
-    return [];
-  }
-}
-
 /**
  * /m/chat/[chatId] — Mobile chat view.
  *
@@ -106,14 +99,19 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
   }
 
   // Step 3: parallel fetch — retry-aware chat + messages + models + prefs
-  const [chat, dbMessages, initialModels, rawPreferences, inferenceProfiles] =
-    await Promise.all([
-      getChatByIdWithRetry(chatId, sessionId),
-      getChatMessages(chatId),
-      getInitialModels(),
-      getUserPreferences(session.user.id),
-      listInferenceProfiles(session.user.id),
-    ]);
+  const [
+    chat,
+    dbMessages,
+    initialModelsResult,
+    rawPreferences,
+    inferenceProfiles,
+  ] = await Promise.all([
+    getChatByIdWithRetry(chatId, sessionId),
+    getChatMessages(chatId),
+    getInitialModels({ sessionId, chatId, surface: "mobile" }),
+    getUserPreferences(session.user.id),
+    listInferenceProfiles(session.user.id),
+  ]);
 
   if (!chat) {
     if (isOptimisticChatId(chatId)) {
@@ -131,7 +129,7 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
   );
   const initialModelOptions = withMissingModelOption(
     buildSessionChatModelOptions(
-      initialModels,
+      initialModelsResult.models,
       modelVariants,
       inferenceProfiles,
     ),
@@ -145,6 +143,14 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
       initialMessages={initialMessages}
       initialModelOptions={initialModelOptions}
     >
+      {initialModelsResult.models.length === 0 && (
+        <div className="px-4 pt-4">
+          <ModelAvailabilityBanner
+            errorKind={initialModelsResult.errorKind}
+            hasModels={initialModelsResult.models.length > 0}
+          />
+        </div>
+      )}
       <MobileChatScreen
         chatId={chatId}
         sessionId={sessionId}
