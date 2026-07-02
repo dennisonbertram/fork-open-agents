@@ -92,7 +92,7 @@ const NODE_20_BUN_WEB_APP_TEMPLATE: RuntimeProfileTemplate = {
         description: "Install Node 20 via nvm.",
         command: [
           "set -e",
-          "if [ ! -s \"$HOME/.nvm/nvm.sh\" ]; then curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash; fi",
+          'if [ ! -s "$HOME/.nvm/nvm.sh" ]; then curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh | bash; fi',
           '\\. "$HOME/.nvm/nvm.sh"',
           "nvm install 20",
           "nvm alias default 20",

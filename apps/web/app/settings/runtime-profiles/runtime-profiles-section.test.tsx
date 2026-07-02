@@ -273,7 +273,11 @@ describe("ProfileFormFields inline validation", () => {
 
   test("shows no inline error text when the form is valid", () => {
     const html = renderToStaticMarkup(
-      <ProfileFormFields fieldErrors={{}} formState={formState()} onChange={() => {}} />,
+      <ProfileFormFields
+        fieldErrors={{}}
+        formState={formState()}
+        onChange={() => {}}
+      />,
     );
 
     expect(html).not.toContain("Add at least one verification command");

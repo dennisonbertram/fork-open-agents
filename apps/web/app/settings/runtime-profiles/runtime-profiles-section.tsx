@@ -126,10 +126,7 @@ function builtInProfileToFormState(
 /** Extracts a user-facing message from an API error response body, honoring
  * the structured errorKind/failureMessage shape when present (from MR-1/MR-6)
  * and falling back to a generic message otherwise. Never returns empty. */
-function extractApiErrorMessage(
-  body: unknown,
-  fallback: string,
-): string {
+function extractApiErrorMessage(body: unknown, fallback: string): string {
   if (body && typeof body === "object") {
     const record = body as Record<string, unknown>;
     if (typeof record.failureMessage === "string" && record.failureMessage) {
@@ -406,7 +403,10 @@ function ProfileForm({
           </div>
           {!validation.ok && missingCount > 0 ? (
             <p className="text-xs text-muted-foreground">
-              Fix {missingCount === 1 ? "the field above" : `${missingCount} fields above`}{" "}
+              Fix{" "}
+              {missingCount === 1
+                ? "the field above"
+                : `${missingCount} fields above`}{" "}
               to enable {saveLabel}.
             </p>
           ) : null}
@@ -671,7 +671,9 @@ function UserProfileRow({
         deletedProfileId?: string;
       };
       if (!response.ok || !body.deletedProfileId) {
-        throw new Error(extractApiErrorMessage(body, "Failed to delete profile"));
+        throw new Error(
+          extractApiErrorMessage(body, "Failed to delete profile"),
+        );
       }
       toast.success("Profile deleted");
       onDeleted(profile.id);
