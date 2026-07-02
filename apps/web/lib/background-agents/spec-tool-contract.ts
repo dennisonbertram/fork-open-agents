@@ -500,5 +500,20 @@ export function normalizeAgentDraft(
     );
   }
 
+  // Legacy outputMode (#748): the column and schema field are gone, but older
+  // model prompts may still emit it. Map ready_pr to the equivalent action
+  // toggles (unless the draft already declares githubActions) and strip the
+  // key so the strict create/update schema does not reject the draft.
+  if ("outputMode" in result) {
+    if (result.outputMode === "ready_pr" && result.githubActions == null) {
+      result.githubActions = {
+        push: true,
+        open_pull_request: true,
+        comment_on_pr_or_issue: true,
+      };
+    }
+    delete result.outputMode;
+  }
+
   return result;
 }
