@@ -76,7 +76,7 @@ function rateLimitResponse(retryAfterMs: number): Response {
   const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
 
   return Response.json(
-    { error: "Too many requests" },
+    { error: "Too many requests", kind: "rate_limited" },
     {
       status: 429,
       headers: { "Retry-After": String(retryAfterSeconds) },
@@ -128,7 +128,7 @@ function rateLimitUnavailableResponse(): Response | null {
   }
 
   return Response.json(
-    { error: "Rate limit unavailable" },
+    { error: "Rate limit unavailable", kind: "unknown" },
     { status: 503, headers: { "Retry-After": "30" } },
   );
 }

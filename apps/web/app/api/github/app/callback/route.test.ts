@@ -105,4 +105,59 @@ describe("GET /api/github/app/callback", () => {
     expect(redirectUrl.searchParams.get("github")).toBe("app_installed");
     expect(redirectUrl.searchParams.get("missing_installation_id")).toBeNull();
   });
+
+  // Issue #781: when the resolved redirect target is /get-started, the
+  // redirect must carry step=github so the GitHub step auto-opens.
+  test("carries step=github when resolved redirect target is /get-started", async () => {
+    cookieValues = { github_app_install_redirect_to: "/get-started" };
+    syncedInstallationsCount = 1;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("app_installed");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+  });
+
+  // Non-/get-started targets (e.g. settings) must not gain a step param —
+  // only the first-run /get-started landing page uses it.
+  test("does not add step=github when redirect target is not /get-started", async () => {
+    cookieValues = { github_app_install_redirect_to: "/settings/connections" };
+    syncedInstallationsCount = 1;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/settings/connections");
+    expect(redirectUrl.searchParams.get("step")).toBeNull();
+  });
+
+  test("not_linked redirect also carries step=github for /get-started target", async () => {
+    cookieValues = { github_app_install_redirect_to: "/get-started" };
+    githubToken = null;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/github/app/callback"),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("not_linked");
+    expect(redirectUrl.searchParams.get("step")).toBe("github");
+  });
 });

@@ -3,6 +3,7 @@
 import { History } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import { SignedOutHero } from "@/components/auth/signed-out-hero";
 import { HomeSkeleton } from "@/components/home-skeleton";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
@@ -11,6 +12,7 @@ import { SessionStarter } from "@/components/session-starter";
 import { UserAvatarDropdown } from "@/components/user-avatar-dropdown";
 import { useSession } from "@/hooks/use-session";
 import { useSessions } from "@/hooks/use-sessions";
+import { toCreateSessionErrorInfo } from "@/lib/sessions/create-session-error";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 
 interface HomePageProps {
@@ -62,7 +64,11 @@ export function HomePage({ hasSessionCookie, lastRepo }: HomePageProps) {
 
       router.push(`/sessions/${createdSession.id}/chats/${chat.id}`);
     } catch (error) {
-      console.error("Failed to create session:", error);
+      // Ownership decision (#784): the home page has no persistent form
+      // surface, so it toasts the mapped failure exactly once (the hook no
+      // longer toasts — see use-sessions.ts).
+      const info = toCreateSessionErrorInfo(error);
+      toast.error(info.message);
     } finally {
       setIsCreating(false);
     }

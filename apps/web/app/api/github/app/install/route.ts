@@ -1,6 +1,7 @@
 import { generateState } from "arctic";
 import { NextResponse, type NextRequest } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
+import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
 import {
@@ -8,6 +9,7 @@ import {
   getGitHubUsername,
   hasGitHubAccount,
 } from "@/lib/github/users";
+import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -50,6 +52,14 @@ export async function GET(req: NextRequest): Promise<Response> {
   if (!appSlug) {
     const fallbackUrl = new URL(redirectTo, req.url);
     fallbackUrl.searchParams.set("github", "app_not_configured");
+    const stepPreserved = fallbackUrl.pathname === "/get-started";
+    addGitHubStepParamIfGetStarted(fallbackUrl);
+    logGitHubRedirectIssued({
+      status: "app_not_configured",
+      route: "install",
+      stepPreserved,
+      userId: session.user.id,
+    });
     return NextResponse.redirect(fallbackUrl);
   }
 
@@ -72,6 +82,13 @@ export async function GET(req: NextRequest): Promise<Response> {
     const connectUrl = new URL("/get-started", req.url);
     connectUrl.searchParams.set("github", "not_linked");
     connectUrl.searchParams.set("next", redirectTo);
+    addGitHubStepParamIfGetStarted(connectUrl);
+    logGitHubRedirectIssued({
+      status: "not_linked",
+      route: "install",
+      stepPreserved: true,
+      userId: session.user.id,
+    });
     return NextResponse.redirect(connectUrl);
   }
 
