@@ -139,6 +139,7 @@ mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
           ...profileResult,
           testResults: params.testResults,
           testFailureMessage: params.testFailureMessage ?? null,
+          testScope: params.testScope ?? null,
           testedAt: new Date("2026-05-24T00:01:00.000Z"),
         }
       : undefined;
@@ -291,5 +292,110 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles/[profileId]/test", 
 
     expect(response.status).toBe(404);
     expect(body.error).toBe("Profile not found");
+  });
+
+  // RED: today the route never persists or returns which scope (verify vs
+  // setup_and_verify) was actually executed, so a passing verify-only run and
+  // a passing setup_and_verify run are indistinguishable to the caller.
+  test("persists and returns the executed test scope for a verify-only pass", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(request(), routeContext());
+    const body = (await response.json()) as {
+      testEvidence: { testScope: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.testEvidence.testScope).toBe("verify");
+    expect(calls).toContainEqual(
+      expect.objectContaining({ fn: "finish", testScope: "verify" }),
+    );
+  });
+
+  test("persists and returns setup_and_verify as the executed test scope", async () => {
+    execResults = [
+      { success: true, exitCode: 0, stdout: "installed\n" },
+      { success: true, exitCode: 0, stdout: "1.2.3\n" },
+    ];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      request({ mode: "setup_and_verify" }),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      testEvidence: { testScope: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.testEvidence.testScope).toBe("setup_and_verify");
+    expect(calls).toContainEqual(
+      expect.objectContaining({ fn: "finish", testScope: "setup_and_verify" }),
+    );
+  });
+
+  // RED: today verify-mode does NOT break the loop on a required failure
+  // (route.ts:233-238 only breaks in setup_and_verify mode), so a required
+  // verification failure does not stop later commands from running. This
+  // pins the unified semantics: required failure breaks the loop in BOTH
+  // modes.
+  test("stops running remaining verification commands after a required failure in verify mode", async () => {
+    profileResult = {
+      ...profileRecord,
+      verificationCommands: [
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+        {
+          id: "verify-node",
+          label: "Verify Node",
+          description: "Verify Node",
+          command: "node --version",
+        },
+      ],
+    };
+    execResults = [{ success: false, exitCode: 1, stderr: "bun missing\n" }];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(request(), routeContext());
+    const body = (await response.json()) as {
+      testEvidence: {
+        testResults: Array<{ commandId: string }>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.testEvidence.testResults).toHaveLength(1);
+    expect(calls.filter((call) => call.fn === "exec")).toHaveLength(1);
+  });
+
+  // RED: today the catch handler returns a generic
+  // "Failed to test managed runtime profile" string instead of a structured,
+  // actionable error.
+  test("returns a structured error when a required setup command fails during setup_and_verify", async () => {
+    execResults = [{ success: false, exitCode: 1, stderr: "install failed\n" }];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      request({ mode: "setup_and_verify" }),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      testEvidence: {
+        errorKind: string;
+        failureMessage: string;
+        failedCommandLabel: string;
+        nextAction: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.testEvidence.errorKind).toBe("setup_command_failed");
+    expect(body.testEvidence.failedCommandLabel).toBe("Install Bun");
+    expect(body.testEvidence.failureMessage).toContain("Install Bun failed");
+    expect(body.testEvidence.nextAction).toContain("setup command");
   });
 });

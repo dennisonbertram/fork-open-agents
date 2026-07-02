@@ -213,6 +213,28 @@ describe("/api/sessions/[sessionId]/managed-runtime/profile-drafts/[draftId]", (
     });
   });
 
+  // RED: today the route never reads or persists a `forceApproved` flag, so
+  // approving over a failed/absent test leaves no evidence that the user
+  // knowingly overrode the failure.
+  test("PATCH persists forceApproved when approving over a failed test", async () => {
+    draftResult = { ...draftRecord, status: "needs_changes" };
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      request("PATCH", {
+        output: { decision: "approved", notes: "Approving anyway" },
+        forceApproved: true,
+      }),
+      routeContext(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(calls[0]).toMatchObject({
+      fn: "update",
+      forceApproved: true,
+    });
+  });
+
   test("PATCH rejects invalid decision payloads", async () => {
     const { PATCH } = await routeModulePromise;
 

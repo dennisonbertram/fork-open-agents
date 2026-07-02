@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   addCommand,
   getProfileManagerEvidenceNotice,
+  getUnsavedEditsWarning,
   normalizeCommandId,
   normalizeCommands,
   parseOptionalPositiveInteger,
@@ -171,6 +172,56 @@ describe("managed runtime profile manager helpers", () => {
     expect(added[1]?.id).toBe("setup-commands-2");
     expect(updated[1]?.label).toBe("Verify");
     expect(removed).toEqual([updated[1]]);
+  });
+
+  // RED: today the manager tests the SAVED state and never warns when the
+  // in-progress form edits differ from the loaded/saved profile, so a user
+  // can believe an edited-but-unsaved profile was tested.
+  test("warns that Test runs the saved profile when the form has unsaved edits", () => {
+    const savedFormState = {
+      displayName: "Bun app",
+      description: "Install and verify Bun",
+      expectedTools: "bun",
+      optionalTools: "",
+      defaultPorts: "3000",
+      setupCommands: [
+        {
+          id: "install-bun",
+          label: "Install Bun",
+          description: "Install Bun",
+          command: "bun --version",
+        },
+      ],
+      verificationCommands: [
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+      ],
+    };
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: { ...savedFormState, displayName: "Bun app (edited)" },
+        savedFormState,
+      }),
+    ).toBe("You have unsaved edits — Test runs the saved profile.");
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: savedFormState,
+        savedFormState,
+      }),
+    ).toBeNull();
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: savedFormState,
+        savedFormState: null,
+      }),
+    ).toBeNull();
   });
 
   test("keeps one command row and normalizes ids and timeout inputs", () => {

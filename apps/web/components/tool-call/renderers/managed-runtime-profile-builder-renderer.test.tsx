@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildManagedRuntimeProfileRevisionInstructions,
+  formatManagedRuntimeTestError,
   getApproveButtonLabel,
+  getForceApprovedLabel,
   getProfileApprovalWarning,
   getRevisionPlaceholder,
 } from "./managed-runtime-profile-builder-renderer";
@@ -108,5 +110,49 @@ describe("managed runtime profile builder revision instructions", () => {
     expect(
       getRevisionPlaceholder(["Which package manager should be used?"]),
     ).toBe("Answer the questions or describe what the agent should change");
+  });
+
+  // RED: today there is no evidenced label for a draft that was approved
+  // over a failed/absent test (force_approved from MR-1's column).
+  test("labels a draft as approved without passing a test when force-approved", () => {
+    expect(
+      getForceApprovedLabel({
+        id: "draft-1",
+        status: "approved",
+        testedAt: null,
+        forceApproved: true,
+      }),
+    ).toBe("Approved without passing test");
+    expect(
+      getForceApprovedLabel({
+        id: "draft-1",
+        status: "approved",
+        testedAt: "2026-05-24T00:00:00.000Z",
+        forceApproved: false,
+      }),
+    ).toBeNull();
+  });
+
+  // RED: today the test-route error is a generic string; this pins the
+  // structured-error rendering contract (failed command + first actionable
+  // line + next step).
+  test("formats structured test errors with the failed command and next step", () => {
+    const formatted = formatManagedRuntimeTestError({
+      errorKind: "setup_command_failed",
+      failureMessage: "Install Bun failed.",
+      failedCommandLabel: "Install Bun",
+      nextAction:
+        "Fix the failing setup command in the profile editor, then run setup again.",
+    });
+
+    expect(formatted).toContain("Install Bun");
+    expect(formatted).toContain("Install Bun failed.");
+    expect(formatted).toContain(
+      "Fix the failing setup command in the profile editor, then run setup again.",
+    );
+  });
+
+  test("returns null when there is no structured test error", () => {
+    expect(formatManagedRuntimeTestError(undefined)).toBeNull();
   });
 });
