@@ -299,7 +299,6 @@ describe("managed runtime profile manager helpers", () => {
           testFailureMessage: "boom",
           testResults: [],
           testedAt: null,
-          testScope: "verify",
           errorKind: "setup_exec_error",
           failureMessage: "boom",
           nextAction: "Resume the sandbox and try again.",

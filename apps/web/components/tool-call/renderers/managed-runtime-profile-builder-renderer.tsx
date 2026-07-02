@@ -223,22 +223,16 @@ export function ManagedRuntimeProfileBuilderRenderer({
             body: JSON.stringify({ mode }),
           },
         );
-        const body = (await response.json()) as {
-          draft?: ProfileDraftSnapshot & Partial<StructuredTestError>;
-          error?: string;
-        };
-        if (!response.ok || !body.draft) {
-          throw new Error(body.error ?? "Failed to test profile draft");
+        const body = (await response.json()) as DraftTestResponseBody;
+        const outcome = resolveDraftTestOutcome({
+          responseOk: response.ok,
+          body,
+        });
+        if (!outcome.ok) {
+          throw new Error(outcome.message);
         }
-        setPersistedDraft(body.draft);
-        if (body.draft.errorKind && body.draft.failureMessage) {
-          setTestError({
-            errorKind: body.draft.errorKind,
-            failureMessage: body.draft.failureMessage,
-            failedCommandLabel: body.draft.failedCommandLabel,
-            nextAction: body.draft.nextAction,
-          });
-        }
+        setPersistedDraft(outcome.draft);
+        setTestError(outcome.testError);
       } catch (error) {
         setPersistenceError(
           error instanceof Error ? error.message : "Failed to test draft",
@@ -601,6 +595,52 @@ export function getRevisionPlaceholder(questions: string[]): string {
   return questions.length > 0
     ? "Answer the questions or describe what the agent should change"
     : "Optional revision notes";
+}
+
+type DraftTestResponseBody = {
+  draft?: ProfileDraftSnapshot & Partial<StructuredTestError>;
+  error?: string;
+};
+
+type DraftTestOutcome =
+  | {
+      ok: true;
+      draft: ProfileDraftSnapshot & Partial<StructuredTestError>;
+      testError: StructuredTestError | null;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Resolves the draft test route's response into either a structured success
+ * outcome (draft snapshot + error, when present) or a thrown-error-equivalent
+ * message — without throwing before the structured `draft` fields can be
+ * read (Codex #833 P2: the route returns HTTP 500 with
+ * `{ draft: { errorKind, failureMessage, nextAction, ... } }` on its
+ * catch-path exec error; a 500 status alone must not discard that draft).
+ */
+export function resolveDraftTestOutcome(params: {
+  responseOk: boolean;
+  body: DraftTestResponseBody;
+}): DraftTestOutcome {
+  const { body } = params;
+  if (!body.draft) {
+    return {
+      ok: false,
+      message: body.error ?? "Failed to test profile draft",
+    };
+  }
+
+  const testError =
+    body.draft.errorKind && body.draft.failureMessage
+      ? {
+          errorKind: body.draft.errorKind,
+          failureMessage: body.draft.failureMessage,
+          failedCommandLabel: body.draft.failedCommandLabel,
+          nextAction: body.draft.nextAction,
+        }
+      : null;
+
+  return { ok: true, draft: body.draft, testError };
 }
 
 function summarizeProfileTestEvidence(

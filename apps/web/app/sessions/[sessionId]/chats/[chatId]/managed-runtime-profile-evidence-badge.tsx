@@ -4,16 +4,13 @@ import type { ManagedRuntimeProfileOption } from "@/app/api/sessions/[sessionId]
 import { cn } from "@/lib/utils";
 
 /**
- * Widens `ManagedRuntimeProfileOption` with the persisted test-scope field
- * (Decision D6). The scope lives on `managed_runtime_saved_profiles`
- * (`last_test_scope`, MR-1) but the profiles-list route (out of this
- * ticket's file territory) does not yet surface it on the option type, so
- * this badge accepts it as an optional local extension until that route is
- * updated to include it.
+ * `ManagedRuntimeProfileOption` (Decision D6) already carries the persisted
+ * `lastTestScope` field — the profiles-list route now populates it from
+ * `managed_runtime_saved_profiles.last_test_scope` (MR-1) for both saved
+ * profiles and source-draft-backed evidence. Kept as a named export for
+ * readability at this badge's call sites.
  */
-export type ManagedRuntimeProfileEvidence = ManagedRuntimeProfileOption & {
-  lastTestScope?: "verify" | "setup_and_verify" | null;
-};
+export type ManagedRuntimeProfileEvidence = ManagedRuntimeProfileOption;
 
 export function ManagedRuntimeProfileEvidenceBadge({
   profile,

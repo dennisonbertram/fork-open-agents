@@ -232,31 +232,21 @@ export function ManagedRuntimeProfileManager({
           body: JSON.stringify({ mode }),
         },
       );
-      const body = (await response.json()) as
-        | {
-            profile: EditableProfile;
-            testEvidence?: SavedProfileTestEvidence &
-              Partial<StructuredTestError>;
-            error?: string;
-          }
-        | { error?: string };
-      if (!response.ok || !("profile" in body)) {
-        throw new Error(getErrorMessage(body, "Failed to test profile"));
+      const body = (await response.json()) as ProfileTestResponseBody;
+      const outcome = resolveProfileTestOutcome({
+        responseOk: response.ok,
+        body,
+      });
+      if (!outcome.ok) {
+        throw new Error(outcome.message);
       }
-      setLoadedProfile(body.profile);
-      setTestEvidence(body.testEvidence);
+      setLoadedProfile(outcome.profile);
+      setTestEvidence(outcome.testEvidence);
       setSourceDraft(undefined);
-      const nextFormState = profileToFormState(body.profile);
+      const nextFormState = profileToFormState(outcome.profile);
       setFormState(nextFormState);
       setSavedFormState(nextFormState);
-      if (body.testEvidence?.errorKind && body.testEvidence.failureMessage) {
-        setTestError({
-          errorKind: body.testEvidence.errorKind,
-          failureMessage: body.testEvidence.failureMessage,
-          failedCommandLabel: body.testEvidence.failedCommandLabel,
-          nextAction: body.testEvidence.nextAction,
-        });
-      }
+      setTestError(outcome.testError);
       onProfileSaved();
     } catch (error) {
       setError(
@@ -933,6 +923,62 @@ function getErrorMessage(value: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+type ProfileTestResponseBody =
+  | {
+      profile: EditableProfile;
+      testEvidence?: SavedProfileTestEvidence & Partial<StructuredTestError>;
+      error?: string;
+    }
+  | { error?: string };
+
+type ProfileTestOutcome =
+  | {
+      ok: true;
+      profile: EditableProfile;
+      testEvidence?: SavedProfileTestEvidence & Partial<StructuredTestError>;
+      testError: StructuredTestError | null;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Resolves the saved-profile test route's response into either a structured
+ * success outcome (test evidence + error, when present) or a
+ * thrown-error-equivalent message — without throwing before structured
+ * `testEvidence` can be read (Codex #833 P2: the route returns HTTP 500 with
+ * `{ profile, testEvidence: { errorKind, failureMessage, nextAction } }` on
+ * a non-sandbox-unavailable failure; a 500 status alone must not discard
+ * that evidence).
+ */
+export function resolveProfileTestOutcome(params: {
+  responseOk: boolean;
+  body: ProfileTestResponseBody;
+}): ProfileTestOutcome {
+  const { body } = params;
+  if (!("profile" in body) || !body.profile) {
+    return {
+      ok: false,
+      message: getErrorMessage(body, "Failed to test profile"),
+    };
+  }
+
+  const testError =
+    body.testEvidence?.errorKind && body.testEvidence.failureMessage
+      ? {
+          errorKind: body.testEvidence.errorKind,
+          failureMessage: body.testEvidence.failureMessage,
+          failedCommandLabel: body.testEvidence.failedCommandLabel,
+          nextAction: body.testEvidence.nextAction,
+        }
+      : null;
+
+  return {
+    ok: true,
+    profile: body.profile,
+    testEvidence: body.testEvidence,
+    testError,
+  };
 }
 
 function parsePorts(value: string): number[] {
