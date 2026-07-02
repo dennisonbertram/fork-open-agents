@@ -25,11 +25,39 @@ type ComposioClientLike = {
    * connected account (finding G9) so they are never falsely reported as
    * disconnected. Optional so existing lightweight test fakes that don't
    * exercise the no-auth path keep compiling.
+   *
+   * The real Composio SDK's composio.toolkits.get(slug) returns
+   * ToolkitRetrieveResponse, whose `authConfigDetails` array lists one entry
+   * per supported auth scheme (e.g. "OAUTH2", "NO_AUTH"). We only read that
+   * one field, typed loosely (unknown record) so this interface stays
+   * structurally assignable from the real SDK client without importing its
+   * full response type.
    */
   toolkits?: {
-    get: (slug: string) => Promise<{ noAuth?: boolean }>;
+    get: (slug: string) => Promise<{ authConfigDetails?: unknown }>;
   };
 };
+
+const NO_AUTH_SCHEME_NAME = "NO_AUTH";
+
+/**
+ * Narrows a toolkits.get() response's authConfigDetails field (typed loosely
+ * as unknown at the interface boundary above) and reports whether it lists
+ * NO_AUTH as a supported auth scheme.
+ */
+function toolkitAuthConfigDetailsIncludesNoAuth(
+  authConfigDetails: unknown,
+): boolean {
+  if (!Array.isArray(authConfigDetails)) {
+    return false;
+  }
+  return authConfigDetails.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as Record<string, unknown>).name === NO_AUTH_SCHEME_NAME,
+  );
+}
 
 export type ResolveComposioToolsForToolkitListParams = {
   /** Application userId (not yet Composio-prefixed). */
@@ -81,7 +109,7 @@ async function toolkitRequiresAuth(
   }
   try {
     const toolkit = await composio.toolkits.get(slug);
-    return toolkit.noAuth !== true;
+    return !toolkitAuthConfigDetailsIncludesNoAuth(toolkit.authConfigDetails);
   } catch {
     return true;
   }

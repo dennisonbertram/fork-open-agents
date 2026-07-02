@@ -193,7 +193,12 @@ describe("resolveComposioToolsForToolkitList — regression suite", () => {
     const composioWithToolkitMetadata = {
       ...makeFakeComposio(),
       toolkits: {
-        get: (slug: string) => Promise.resolve({ noAuth: slug === "weather" }),
+        get: (slug: string) =>
+          Promise.resolve(
+            slug === "weather"
+              ? { authConfigDetails: [{ name: "NO_AUTH" }] }
+              : { authConfigDetails: [{ name: "OAUTH2" }] },
+          ),
       },
     };
 

@@ -45,8 +45,11 @@ const fakeComposio = {
   },
   // No toolkit in this fixture requires no-auth awareness by default; tests
   // that need it override this with their own fakeComposio-shaped object.
+  // Shape mirrors the real Composio SDK's ToolkitRetrieveResponse: an
+  // authConfigDetails array with one entry per supported auth scheme.
   toolkits: {
-    get: (_slug: string) => Promise.resolve({ noAuth: false }),
+    get: (_slug: string) =>
+      Promise.resolve({ authConfigDetails: [{ name: "OAUTH2" }] }),
   },
 };
 
@@ -237,7 +240,11 @@ describe("resolveComposioToolsForToolkitList", () => {
       ...fakeComposio,
       toolkits: {
         get: (slug: string) =>
-          Promise.resolve({ noAuth: slug === "weather" }),
+          Promise.resolve(
+            slug === "weather"
+              ? { authConfigDetails: [{ name: "NO_AUTH" }] }
+              : { authConfigDetails: [{ name: "OAUTH2" }] },
+          ),
       },
     };
 
