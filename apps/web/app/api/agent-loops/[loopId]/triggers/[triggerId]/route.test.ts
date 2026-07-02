@@ -12,6 +12,7 @@
  * BT-762-T8: DELETE returns 404 when the trigger doesn't belong to the loop.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { BackgroundAgentTrigger } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -30,14 +31,14 @@ const loopFixture = {
   repoName: "widgets",
 };
 
-const triggerFixture = {
+const triggerFixture: BackgroundAgentTrigger = {
   id: "trigger-1",
   agentId: null,
   loopId: "loop-1",
   userId: "user-1",
   name: "Nightly",
-  kind: "schedule.cron" as const,
-  status: "enabled" as const,
+  kind: "schedule.cron",
+  status: "enabled",
   conditions: {},
   schedule: "0 2 * * *",
   webhookPublicId: null,
@@ -54,9 +55,12 @@ const getOwnedAgentLoop = mock(
 );
 const isAgentLoopsEnabled = mock(() => true);
 const updateLoopTrigger = mock(
-  async () => triggerFixture as typeof triggerFixture | null,
+  async (): Promise<BackgroundAgentTrigger | null> => triggerFixture,
 );
 const deleteLoopTrigger = mock(async () => true);
+const getOwnedLoopTrigger = mock(
+  async (): Promise<BackgroundAgentTrigger | null> => triggerFixture,
+);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -73,6 +77,7 @@ mock.module("@/lib/agent-loops/config", () => ({
 mock.module("@/lib/background-agents/store", () => ({
   updateLoopTrigger,
   deleteLoopTrigger,
+  getOwnedLoopTrigger,
 }));
 
 const routeModulePromise = import("./route");
@@ -81,7 +86,11 @@ function context(loopId = "loop-1", triggerId = "trigger-1") {
   return { params: Promise.resolve({ loopId, triggerId }) };
 }
 
-function patchRequest(body: unknown, loopId = "loop-1", triggerId = "trigger-1") {
+function patchRequest(
+  body: unknown,
+  loopId = "loop-1",
+  triggerId = "trigger-1",
+) {
   return new Request(
     `http://localhost/api/agent-loops/${loopId}/triggers/${triggerId}`,
     {
@@ -200,6 +209,8 @@ describe("DELETE /api/agent-loops/[loopId]/triggers/[triggerId]", () => {
     getOwnedAgentLoop.mockImplementation(async () => loopFixture);
     deleteLoopTrigger.mockClear();
     deleteLoopTrigger.mockImplementation(async () => true);
+    getOwnedLoopTrigger.mockClear();
+    getOwnedLoopTrigger.mockImplementation(async () => triggerFixture);
   });
 
   test("BT-762-T1b: requires authentication", async () => {

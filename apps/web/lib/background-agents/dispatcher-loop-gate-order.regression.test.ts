@@ -81,9 +81,7 @@ describe("dispatcher.ts — loopId-before-agent gate order (#762 regression pin)
       "dispatchBackgroundTriggerEvent",
     );
     const loopIdCheckIdx = body.indexOf("match.trigger.loopId");
-    const agentDerefIdx = firstIndexOfAny(body, [
-      "const agent = match.agent",
-    ]);
+    const agentDerefIdx = firstIndexOfAny(body, ["const agent = match.agent"]);
     expect(loopIdCheckIdx).toBeGreaterThan(-1);
     expect(agentDerefIdx).toBeGreaterThan(-1);
     expect(loopIdCheckIdx).toBeLessThan(agentDerefIdx);

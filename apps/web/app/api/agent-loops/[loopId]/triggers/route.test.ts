@@ -14,6 +14,7 @@
  * BT-762-R7: GET lists triggers with humanized schedule + nextRunAt.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { BackgroundAgentTrigger } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -32,14 +33,14 @@ const loopFixture = {
   repoName: "widgets",
 };
 
-const triggerFixture = {
+const triggerFixture: BackgroundAgentTrigger = {
   id: "trigger-1",
   agentId: null,
   loopId: "loop-1",
   userId: "user-1",
   name: "Nightly",
-  kind: "schedule.cron" as const,
-  status: "enabled" as const,
+  kind: "schedule.cron",
+  status: "enabled",
   conditions: {},
   schedule: "0 2 * * *",
   webhookPublicId: null,
@@ -55,8 +56,12 @@ const getOwnedAgentLoop = mock(
   async () => loopFixture as typeof loopFixture | null,
 );
 const isAgentLoopsEnabled = mock(() => true);
-const createLoopTrigger = mock(async () => triggerFixture);
-const listTriggersForLoop = mock(async () => [triggerFixture]);
+const createLoopTrigger = mock(
+  async (): Promise<BackgroundAgentTrigger> => triggerFixture,
+);
+const listTriggersForLoop = mock(
+  async (): Promise<BackgroundAgentTrigger[]> => [triggerFixture],
+);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -107,7 +112,11 @@ describe("POST /api/agent-loops/[loopId]/triggers", () => {
     };
     const { POST } = await routeModulePromise;
     const response = await POST(
-      postRequest({ name: "Nightly", kind: "schedule.cron", schedule: "0 2 * * *" }),
+      postRequest({
+        name: "Nightly",
+        kind: "schedule.cron",
+        schedule: "0 2 * * *",
+      }),
       context(),
     );
     expect(response.status).toBe(401);
@@ -118,7 +127,11 @@ describe("POST /api/agent-loops/[loopId]/triggers", () => {
     isAgentLoopsEnabled.mockImplementation(() => false);
     const { POST } = await routeModulePromise;
     const response = await POST(
-      postRequest({ name: "Nightly", kind: "schedule.cron", schedule: "0 2 * * *" }),
+      postRequest({
+        name: "Nightly",
+        kind: "schedule.cron",
+        schedule: "0 2 * * *",
+      }),
       context(),
     );
     expect(response.status).toBe(403);

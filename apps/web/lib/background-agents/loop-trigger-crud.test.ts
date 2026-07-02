@@ -72,9 +72,10 @@ function evalCondition(
     );
   }
   if (cond._eq) {
-    const [field, value] = cond._eq as [unknown, unknown];
-    // field is a column reference symbol placeholder in our mock — we can't
-    // resolve which column it is, so we match by value against id/loopId.
+    // The first element is a column-reference symbol placeholder in our mock
+    // — we can't resolve which column it is, so we match by value against
+    // id/loopId instead.
+    const [, value] = cond._eq as [unknown, unknown];
     return row.id === value || row.loopId === value;
   }
   return true;
@@ -116,9 +117,7 @@ mock.module("@/lib/db/client", () => ({
           const matched = triggersTable.filter((row) =>
             evalCondition(row, cond),
           );
-          triggersTable = triggersTable.filter(
-            (row) => !matched.includes(row),
-          );
+          triggersTable = triggersTable.filter((row) => !matched.includes(row));
           return matched;
         },
       }),
