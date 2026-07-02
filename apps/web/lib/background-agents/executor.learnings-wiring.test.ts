@@ -123,6 +123,7 @@ mock.module("./run-summary", () => ({
     blocked: [],
     artifacts: [],
     next: [],
+    warnings: [],
   })),
 }));
 

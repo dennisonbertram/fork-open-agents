@@ -151,6 +151,7 @@ describe("BackgroundRunDetail", () => {
             },
           ],
           next: [],
+          warnings: [],
         },
       },
     };
@@ -183,6 +184,32 @@ describe("BackgroundRunDetail", () => {
     expect(html).not.toContain("undefined");
   });
 
+  // Regression (#798): a row persisted before the warnings[] field shipped
+  // has no `warnings` key at all in its stored jsonb — the component must
+  // not crash reading `.length` off `undefined`.
+  test("REGRESSION (#798): resultSummary without a warnings key does not throw", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+    const legacySummary = {
+      ...detailData(),
+      run: {
+        ...detailData().run,
+        resultSummary: {
+          headline: "Run succeeded — no output created",
+          checked: [],
+          changed: ["no output created"],
+          blocked: [],
+          artifacts: [],
+          next: [],
+          // Intentionally omitted: `warnings` — simulates a pre-#798 row.
+        } as unknown as BackgroundRunDetailData["run"]["resultSummary"],
+      },
+    };
+
+    expect(() =>
+      renderToStaticMarkup(<BackgroundRunDetail initialData={legacySummary} />),
+    ).not.toThrow();
+  });
+
   // BT-UI-003: failed run with summary shows blocked section (#163)
   test("BT-UI-003: failed run summary shows blocked section", async () => {
     const { BackgroundRunDetail } = await componentModulePromise;
@@ -201,6 +228,7 @@ describe("BackgroundRunDetail", () => {
           blocked: ["checks_failed: Required background-agent check failed."],
           artifacts: [],
           next: ["Fix CI and re-trigger"],
+          warnings: [],
         },
       },
     };
@@ -213,6 +241,40 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("Run failed — checks_failed");
     expect(html).toContain("Blocked");
     expect(html).toContain("checks_failed");
+  });
+
+  // BT-UI-004 (#798): a succeeded run with a Composio degradation warning
+  // shows a distinct "Warnings" block — separate from "Blocked" — so an
+  // operator can see a succeeded run still had a silent tool-resolution gap.
+  test("BT-UI-004 (#798): succeeded run with composio warning shows distinct Warnings block", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+    const succeededWithWarning = {
+      ...detailData(),
+      run: {
+        ...detailData().run,
+        status: "succeeded" as const,
+        resultSummary: {
+          headline: "Run succeeded — created ready_pr #42",
+          checked: [],
+          changed: [],
+          blocked: [],
+          artifacts: [],
+          next: [],
+          warnings: [
+            "Composio toolkits resolved but not connected: slack.",
+          ],
+        },
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={succeededWithWarning} />,
+    );
+
+    expect(html).toContain("Warnings");
+    expect(html).toContain("slack");
+    // Warnings must be a distinct block from Blocked, not folded into it.
+    expect(html).not.toContain("Blocked");
   });
 
   test("renders typed failure evidence when a run fails", async () => {

@@ -22,6 +22,13 @@ export type RunSummary = {
   blocked: string[];
   artifacts: RunSummaryArtifact[];
   next: string[];
+  /**
+   * Degradation warnings surfaced independent of run.status (#798) — e.g. a
+   * succeeded run whose Composio tools were silently off, partially
+   * disconnected, or errored. Populated from warn-level Composio-prefixed
+   * events only (scoped deliberately; see buildRunSummary's warnings block).
+   */
+  warnings: string[];
 };
 
 export type MinimalRun = {
@@ -185,6 +192,70 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       }),
   );
 
+  // --- warnings: degradation signals surfaced independent of run.status (#798) ---
+  // Scoped deliberately to warn-level events with a "composio" segment in
+  // their eventName (e.g. background-agent.composio.off / .error /
+  // .not_connected, plus their agent-loop.step.composio.* equivalents) so a
+  // non-Composio warn-level event never populates this array (BT-011).
+  const warnings: string[] = [];
+  const composioWarnEvents = events.filter(
+    (e) => e.level === "warn" && e.eventName.includes("composio"),
+  );
+  for (const ev of composioWarnEvents) {
+    if (warnings.length >= MAX_ITEMS) {
+      break;
+    }
+    const payload = ev.payload as Record<string, unknown>;
+    if (ev.eventName.endsWith(".off")) {
+      const reason = typeof payload?.reason === "string" ? payload.reason : null;
+      const blockedSlugs = Array.isArray(payload?.blockedSlugs)
+        ? (payload.blockedSlugs as unknown[]).filter(
+            (s): s is string => typeof s === "string",
+          )
+        : [];
+      if (reason === "repo_policy_blocked") {
+        warnings.push(
+          truncate(
+            blockedSlugs.length > 0
+              ? `Composio tools blocked by repo policy: ${blockedSlugs.join(", ")}.`
+              : "Composio tools blocked by repo policy.",
+          ),
+        );
+      } else {
+        warnings.push(
+          truncate(
+            ev.summary ?? "Composio tools requested but no toolkit slugs were selected.",
+          ),
+        );
+      }
+    } else if (ev.eventName.endsWith(".not_connected")) {
+      const disconnectedToolkits = Array.isArray(payload?.disconnectedToolkits)
+        ? (payload.disconnectedToolkits as unknown[]).filter(
+            (s): s is string => typeof s === "string",
+          )
+        : [];
+      warnings.push(
+        truncate(
+          disconnectedToolkits.length > 0
+            ? `Composio toolkits resolved but not connected: ${disconnectedToolkits.join(", ")}.`
+            : (ev.summary ?? "Composio toolkits resolved but not connected."),
+        ),
+      );
+    } else if (ev.eventName.endsWith(".error")) {
+      const errorKind = ev.errorKind;
+      warnings.push(
+        truncate(
+          errorKind
+            ? `Composio tool resolution failed: ${errorKind}.`
+            : (ev.summary ?? "Composio tool resolution failed."),
+        ),
+      );
+    } else {
+      // Any other composio-prefixed warn event (forward-compatible fallback).
+      warnings.push(truncate(ev.summary ?? ev.eventName));
+    }
+  }
+
   // --- next: actionable guidance (structured, not model prose) ---
   const next: string[] = [];
   if (run.status === "failed") {
@@ -201,6 +272,15 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     } else {
       next.push("Review error details and re-trigger");
     }
+    // #798: distinguish "tools never reached" from "tools failed" — a run
+    // that failed before Composio resolution ever executed has zero
+    // composio-prefixed events at all (not even an error/off event).
+    const anyComposioEvent = events.some((e) => e.eventName.includes("composio"));
+    if (!anyComposioEvent) {
+      next.push(
+        "Composio tools were never resolved for this run — it failed before tool resolution ran.",
+      );
+    }
   } else if (
     run.status === "succeeded" &&
     outputs.filter((o) => o.status === "created").length === 0
@@ -215,5 +295,6 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     blocked: capArray(blocked),
     artifacts,
     next: capArray(next),
+    warnings: capArray(warnings),
   };
 }

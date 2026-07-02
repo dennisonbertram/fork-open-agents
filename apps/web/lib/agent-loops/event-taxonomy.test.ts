@@ -184,6 +184,23 @@ const M1_TAXONOMY: Array<{
     name: "agent-loop.watchdog.decided",
     description: "Watchdog made a decision: retry, skip, or pause (M3-01)",
   },
+
+  // #798 — Composio degradation visibility (loop parity with
+  // background-agent.composio.* in executor.ts)
+  {
+    name: "agent-loop.step.composio.off",
+    description:
+      "Composio resolution returned off (no slugs selected or repo-policy blocked)",
+  },
+  {
+    name: "agent-loop.step.composio.error",
+    description: "Composio resolution failed; payload carries a typed errorKind",
+  },
+  {
+    name: "agent-loop.step.composio.not_connected",
+    description:
+      "Composio resolved ready but one or more toolkits have no connected account",
+  },
 ];
 
 describe("M1 Event Taxonomy — source-literal presence", () => {
