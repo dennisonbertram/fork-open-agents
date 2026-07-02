@@ -93,6 +93,24 @@ describe("rollupFromObservations", () => {
     expect(status).toBe("blocked");
   });
 
+  // Codex #825 P2: a REQUIRED command with status "skipped" is not a pass —
+  // the run must not report "passed" (it was previously mis-rolled to passed).
+  test("returns 'blocked' when a required observation was skipped (not passed)", () => {
+    const status = rollupFromObservations([
+      observation({ status: "passed" }),
+      observation({ commandId: "cmd-2", status: "skipped", required: true }),
+    ]);
+    expect(status).toBe("blocked");
+  });
+
+  test("returns 'passed' when a non-required observation was skipped", () => {
+    const status = rollupFromObservations([
+      observation({ status: "passed" }),
+      observation({ commandId: "cmd-2", status: "skipped", required: false }),
+    ]);
+    expect(status).toBe("passed");
+  });
+
   // REGRESSION: "running" must take precedence over a required failure that
   // already happened earlier in the same run (e.g., a required setup
   // command failed, but a later verification command is still executing).
