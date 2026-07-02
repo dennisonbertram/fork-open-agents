@@ -19,7 +19,9 @@ export function shouldAutoExpandOrgs(
  * app's client ID. Returns null when the client ID isn't configured so
  * callers can omit the link rather than render a dead href="#".
  */
-export function getGitHubManageUrl(clientId: string | undefined): string | null {
+export function getGitHubManageUrl(
+  clientId: string | undefined,
+): string | null {
   return clientId
     ? `https://github.com/settings/connections/applications/${clientId}`
     : null;

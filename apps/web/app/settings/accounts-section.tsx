@@ -365,7 +365,9 @@ function ConnectionStatusButton({
   const isConnected = status === "connected";
   const dotColor = isConnected ? "bg-green-500" : "bg-amber-500";
   const label = isConnected ? "Connected" : "Reconnect";
-  const manageUrl = getGitHubManageUrl(process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID);
+  const manageUrl = getGitHubManageUrl(
+    process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+  );
 
   return (
     <DropdownMenu>
@@ -431,7 +433,9 @@ export function AccountsSection() {
   );
 
   const tokenExpired = connectionData?.tokenExpired ?? false;
-  const manageUrl = getGitHubManageUrl(process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID);
+  const manageUrl = getGitHubManageUrl(
+    process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+  );
 
   const handleRefresh = useCallback(async () => {
     await Promise.all([mutateConnection(), refreshConnectionStatus()]);

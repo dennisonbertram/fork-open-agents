@@ -24,8 +24,8 @@ export function AccountsDisconnectDialogBody({
   return (
     <>
       This revokes this app&apos;s access to your GitHub account and removes
-      your local connection. The GitHub App installation itself stays on
-      GitHub — you can reconnect at any time.
+      your local connection. The GitHub App installation itself stays on GitHub
+      — you can reconnect at any time.
       {manageUrl ? (
         <>
           {" "}
