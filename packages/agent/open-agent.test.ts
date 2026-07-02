@@ -109,6 +109,43 @@ describe("openAgent runtime tool policy", () => {
     ]);
   });
 
+  // MR-8/D5: propose_tool and manage_background_agent must survive the
+  // managed_runtime coordinator allowlist when explicitly enabled, instead of
+  // being silently stripped by pickTools.
+  test("MR-8: managed_runtime keeps propose_tool and manage_background_agent when enabled", () => {
+    const managedTools = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime", undefined, {
+        toolAuthoringEnabled: true,
+        manageAgentEnabled: true,
+      }),
+    );
+
+    expect(managedTools).toContain("propose_tool");
+    expect(managedTools).toContain("manage_background_agent");
+  });
+
+  // Regression: pins open-agent.ts:373-388 — caller-provided external tools
+  // (Composio/GitHub, not in the native tool registry) must survive
+  // managed_runtime merging even though they are not on the coordinator
+  // allowlist. If this regresses, GitHub/Composio tools silently vanish in
+  // managed runtime mode.
+  test("regression: external (non-native) tools survive managed_runtime merging", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_CREATE_ISSUE" };
+    const filteredTools = getRuntimeModeToolPolicy("managed_runtime", {
+      COMPOSIO_GITHUB_CREATE_ISSUE: composioTool,
+    } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1]);
+
+    expect(Object.keys(filteredTools)).toContain(
+      "COMPOSIO_GITHUB_CREATE_ISSUE",
+    );
+    expect(filteredTools.COMPOSIO_GITHUB_CREATE_ISSUE as unknown).toBe(
+      composioTool,
+    );
+    // Native coding/shell tools must still be stripped in managed_runtime.
+    expect(Object.keys(filteredTools)).not.toContain("bash");
+    expect(Object.keys(filteredTools)).not.toContain("read");
+  });
+
   test("injects managed runtime coordinator instructions into the system prompt", () => {
     const prompt = buildSystemPrompt({ runtimeMode: "managed_runtime" });
 
