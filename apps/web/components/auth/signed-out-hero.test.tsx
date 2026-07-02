@@ -14,9 +14,7 @@ describe("SignedOutHero - honest first-run copy (#787)", () => {
 
   test("hero subhead does not list unexplained platform jargon as one string", () => {
     const html = renderToStaticMarkup(<SignedOutHero />);
-    expect(html).not.toContain(
-      "AI SDK, Gateway, Sandbox, and Workflow SDK",
-    );
+    expect(html).not.toContain("AI SDK, Gateway, Sandbox, and Workflow SDK");
   });
 
   test("a short 'why Vercel' explainer appears near the Sign in with Vercel CTA", () => {

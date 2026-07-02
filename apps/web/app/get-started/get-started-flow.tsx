@@ -110,8 +110,8 @@ export function GetStartedFlow() {
           </span>
         </div>
         <p className="max-w-sm text-sm leading-relaxed text-zinc-600">
-          Describe what you want built, and an AI agent writes the code in
-          its own cloud sandbox — no local setup required.
+          Describe what you want built, and an AI agent writes the code in its
+          own cloud sandbox — no local setup required.
         </p>
       </div>
 
@@ -359,9 +359,9 @@ function GitHubConnectStep({
       <div className="space-y-3">
         {statusNotice}
         <p className="text-xs text-zinc-500">
-          Your GitHub identity is verified. Next, install the Open Agents
-          GitHub App to grant repo access — you can choose selected
-          repositories instead of every repository in your account.
+          Your GitHub identity is verified. Next, install the Open Agents GitHub
+          App to grant repo access — you can choose selected repositories
+          instead of every repository in your account.
         </p>
         <Button
           asChild

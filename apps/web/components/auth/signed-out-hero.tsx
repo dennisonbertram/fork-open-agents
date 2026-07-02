@@ -41,8 +41,8 @@ export function SignedOutHero() {
                 Open Agents.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Describe what you want built, and an AI agent writes the
-                code in its own cloud sandbox — no local setup required.
+                Describe what you want built, and an AI agent writes the code in
+                its own cloud sandbox — no local setup required.
               </p>
             </div>
 
@@ -58,8 +58,8 @@ export function SignedOutHero() {
                 <GitHubLink>Open Source</GitHubLink>
               </div>
               <p className="text-xs text-(--l-fg-3)">
-                Why Vercel? It's the identity provider for Open Agents — one
-                account to sign in, no separate password to create.
+                Why Vercel? It&apos;s the identity provider for Open Agents —
+                one account to sign in, no separate password to create.
               </p>
             </div>
           </div>
