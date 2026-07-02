@@ -45,6 +45,43 @@ describe("loop templates", () => {
     );
   });
 
+  test("#768/#771 review: 'review-prs-and-comment' steps carry the GitHub permissions their gh commands need", () => {
+    const template = getLoopTemplate("review-prs-and-comment");
+    expect(template).toBeDefined();
+    if (!template) {
+      return;
+    }
+
+    // `gh pr list` needs pull-request read access; the default minted token
+    // only carries contents permissions (see lib/agent-loops/token-permissions.ts).
+    const listStep = template.definition.nodes.find((n) => n.id === "list");
+    expect(listStep?.kind).toBe("agent_step");
+    if (listStep?.kind === "agent_step") {
+      expect(listStep.permissions?.github?.pullRequests).toBe("read");
+    }
+
+    // `gh pr review --comment` creates a PR review — requires pull-request
+    // WRITE per GitHub's REST docs; without it the step 403s.
+    const reviewStep = template.definition.nodes.find((n) => n.id === "review");
+    expect(reviewStep?.kind).toBe("agent_step");
+    if (reviewStep?.kind === "agent_step") {
+      expect(reviewStep.permissions?.github?.pullRequests).toBe("write");
+    }
+  });
+
+  test("#768/#771 review: review instruction targets each PR by number (gh pr review without an argument reviews the current branch)", () => {
+    const template = getLoopTemplate("review-prs-and-comment");
+    const reviewStep = template?.definition.nodes.find(
+      (n) => n.id === "review",
+    );
+    expect(reviewStep?.kind).toBe("agent_step");
+    if (reviewStep?.kind === "agent_step") {
+      expect(reviewStep.instructions ?? "").toMatch(
+        /gh pr review\s+(<|\$\{?)?(pr[_ ]?)?number/i,
+      );
+    }
+  });
+
   test("every template slug is unique", () => {
     const slugs = LOOP_TEMPLATES.map((t) => t.slug);
     expect(new Set(slugs).size).toBe(slugs.length);
