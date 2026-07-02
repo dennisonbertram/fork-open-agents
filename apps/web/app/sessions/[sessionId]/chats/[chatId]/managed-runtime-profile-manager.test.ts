@@ -322,7 +322,9 @@ describe("managed runtime profile manager helpers", () => {
   test("still throws a generic error when a non-ok response carries no structured evidence", () => {
     const outcome = resolveProfileTestOutcome({
       responseOk: false,
-      body: { error: "Resume the sandbox before testing managed runtime profiles." },
+      body: {
+        error: "Resume the sandbox before testing managed runtime profiles.",
+      },
     });
 
     expect(outcome.ok).toBe(false);
