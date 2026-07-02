@@ -17,12 +17,15 @@ import { SettingsSection } from "@/components/ui/settings-section";
 import { cn } from "@/lib/utils";
 import {
   buildAgentPayload,
-  supportedOutputModes,
+  defaultGithubActions,
+  defaultWriteScope,
   triggerLabels,
   type FormState,
   type GitHubAccessLevel,
+  type GithubActions,
   type OutputMode,
   type TriggerKind,
+  type WriteScope,
 } from "@/lib/background-agents/agent-spec";
 import { validateSchedule } from "@/lib/background-agents/schedule-presets";
 import { SchedulePicker } from "./schedule-picker";
@@ -34,6 +37,7 @@ import {
   type GitHubToolAccess,
 } from "./github-tool-card";
 import { ComposioOtherToolsSection } from "./composio-other-tools-section";
+import { GithubActionsPanel } from "./github-actions-panel";
 
 type AgentSpecEditorProps = {
   /** "create" (default) shows creation-oriented copy; "edit" shows update-oriented copy. */
@@ -59,6 +63,14 @@ type AgentSpecEditorProps = {
   initialPermissionPullRequests?: GitHubAccessLevel;
   /** Composio toolkit slugs to pre-select. Defaults to none. */
   initialComposioToolkitSlugs?: string[];
+  /** Saved/initial GitHub action toggles. Defaults to open PR + comment on. */
+  initialGithubActions?: GithubActions;
+  /** Saved/initial write scope. Defaults to "this_repo". */
+  initialWriteScope?: WriteScope;
+  /** Saved/initial CI-green-for-merge toggle. Defaults to true. */
+  initialRequireCiGreenForMerge?: boolean;
+  /** Saved/initial explicit model selection. Defaults to null (inherit default model). */
+  initialModelId?: string | null;
   /** The ID of the agent once saved — enables the Run a test button. Defaults to null (disabled). */
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
@@ -102,6 +114,10 @@ export function AgentSpecEditor({
   initialPermissionContents = "read",
   initialPermissionPullRequests = "read",
   initialComposioToolkitSlugs = [],
+  initialGithubActions,
+  initialWriteScope,
+  initialRequireCiGreenForMerge = true,
+  initialModelId = null,
   createdAgentId = null,
   testRunId = null,
   onSave,
@@ -140,7 +156,10 @@ export function AgentSpecEditor({
     if (initialInstructions.startsWith(initialGoal)) return initialInstructions;
     return `${initialGoal}\n\n${initialInstructions}`.trim();
   });
-  const [outputMode, setOutputMode] = useState<OutputMode>(initialOutputMode);
+  // outputMode is kept only for the initial value round-trip through
+  // buildAgentPayload's FormState shape; it is no longer surfaced in the UI
+  // and is omitted from the save payload (deprecated — #747/#748).
+  const [outputMode] = useState<OutputMode>(initialOutputMode);
   const [checkCommand, setCheckCommand] = useState(initialCheckCommand);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
@@ -164,6 +183,16 @@ export function AgentSpecEditor({
   const [composioToolkitSlugs, setComposioToolkitSlugs] = useState<string[]>(
     initialComposioToolkitSlugs,
   );
+  const [githubActions, setGithubActions] = useState<GithubActions>(
+    initialGithubActions ?? { ...defaultGithubActions },
+  );
+  const [writeScope, setWriteScope] = useState<WriteScope>(
+    initialWriteScope ?? { ...defaultWriteScope },
+  );
+  const [requireCiGreenForMerge, setRequireCiGreenForMerge] = useState(
+    initialRequireCiGreenForMerge,
+  );
+  const [modelId, setModelId] = useState<string | null>(initialModelId);
 
   const isScheduleValid = useMemo(() => {
     if (triggerKind !== "schedule.cron") return true;
@@ -199,6 +228,10 @@ export function AgentSpecEditor({
       permissionContents,
       permissionPullRequests,
       composioToolkitSlugs,
+      githubActions,
+      writeScope,
+      requireCiGreenForMerge,
+      modelId,
     };
     return buildAgentPayload(form);
   }
@@ -222,13 +255,32 @@ export function AgentSpecEditor({
     }
   }
 
-  function handleOutputModeChange(v: string) {
-    const newMode = v as OutputMode;
-    setOutputMode(newMode);
-    // Auto-coerce permissions to write when transitioning to ready_pr.
-    // Only on the transition (handler), not an effect — so user can override
-    // back to read after the initial coerce without losing their choice.
-    if (newMode === "ready_pr") {
+  function hasAnyWriteAction(actions: GithubActions): boolean {
+    return Boolean(
+      actions.open_pull_request ||
+        actions.approve_pull_request ||
+        actions.request_changes ||
+        actions.merge_pull_request ||
+        actions.push ||
+        actions.delete_branch,
+    );
+  }
+
+  function handleActionsPanelChange(next: {
+    githubActions: GithubActions;
+    writeScope: WriteScope;
+    requireCiGreenForMerge: boolean;
+    modelId: string | null;
+  }) {
+    setGithubActions(next.githubActions);
+    setWriteScope(next.writeScope);
+    setRequireCiGreenForMerge(next.requireCiGreenForMerge);
+    setModelId(next.modelId);
+    // Auto-coerce the Tools card permissions to write when a write action is
+    // newly enabled. Only on this transition — so the user can still
+    // override back to read after the initial coerce without losing their
+    // choice — mirrors the old ready_pr-transition coercion.
+    if (hasAnyWriteAction(next.githubActions)) {
       setPermissionContents("write");
       setPermissionPullRequests("write");
     }
@@ -440,10 +492,10 @@ export function AgentSpecEditor({
         </div>
       </SettingsSection>
 
-      {/* 5 — Result (output mode) */}
+      {/* 5 — GitHub actions (automation toggles, write scope, CI-green, model) */}
       <SettingsSection
-        title="Result"
-        description="Choose what the agent leaves behind after a run."
+        title="GitHub actions"
+        description="What this agent is allowed to do on GitHub, where, and with which model."
         advanced={{
           label: "Advanced",
           children: (
@@ -467,50 +519,11 @@ export function AgentSpecEditor({
           ),
         }}
       >
-        <div className="space-y-2">
-          {supportedOutputModes.map((m) => {
-            const isReadyPr = m === "ready_pr";
-            const isDisabled =
-              isReadyPr &&
-              permissionPullRequests === "read" &&
-              permissionContents === "read";
-            return (
-              <label
-                key={m}
-                className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 ${
-                  outputMode === m
-                    ? "border-primary bg-primary/5"
-                    : "border-border"
-                } ${isDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
-              >
-                <input
-                  type="radio"
-                  name="output-mode"
-                  value={m}
-                  checked={outputMode === m}
-                  disabled={isDisabled}
-                  onChange={() => handleOutputModeChange(m)}
-                  className="mt-0.5 shrink-0"
-                />
-                <div>
-                  <p className="text-sm font-medium">
-                    {m === "ready_pr" ? "Open a pull request" : "Report only"}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {m === "ready_pr"
-                      ? "Open a draft pull request with its changes for you to review and merge."
-                      : "Leave a written summary on the run — you'll find it in this agent's run history. Doesn't open a PR or change the repo."}
-                  </p>
-                  {isDisabled && (
-                    <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
-                      Give the GitHub tool pull-request access to use this.
-                    </p>
-                  )}
-                </div>
-              </label>
-            );
-          })}
-        </div>
+        <GithubActionsPanel
+          value={{ githubActions, writeScope, requireCiGreenForMerge, modelId }}
+          onChange={handleActionsPanelChange}
+          disabled={saving}
+        />
       </SettingsSection>
     </div>
   );

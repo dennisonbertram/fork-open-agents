@@ -27,8 +27,10 @@ export type {
   ConditionField,
   FormState,
   GitHubAccessLevel,
+  GithubActions,
   OutputMode,
   StepId,
   TriggerConditions,
   TriggerKind,
+  WriteScope,
 } from "@/lib/background-agents/agent-spec";

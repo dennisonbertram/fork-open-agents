@@ -109,11 +109,15 @@ describe("buildAgentPayload", () => {
   });
 
   test("BT-009: none output mode with read permissions in form keeps contents and pullRequests as read", () => {
+    // "Report only" intent is expressed via githubActions (no write actions
+    // enabled), not outputMode, since #747 replaces outputMode flooring with
+    // action-derived flooring.
     const payload = buildAgentPayload(
       makeForm({
         outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "read",
+        githubActions: { comment_on_pr_or_issue: true },
       }),
     );
 
@@ -140,6 +144,7 @@ describe("buildAgentPayload", () => {
         outputMode: "none",
         permissionContents: "read",
         permissionPullRequests: "write",
+        githubActions: { comment_on_pr_or_issue: true },
       }),
     );
 
@@ -887,7 +892,15 @@ describe("buildFormFromAgent — githubActions/writeScope/requireCiGreenForMerge
     // outputMode field, and must NOT flip any toggle off/on that the user
     // didn't touch.
     const payload = buildAgentPayload(form);
-    expect(payload.githubActions).toEqual(form.githubActions);
+    expect(payload.githubActions).toEqual({
+      open_pull_request: false,
+      comment_on_pr_or_issue: true,
+      approve_pull_request: false,
+      request_changes: false,
+      merge_pull_request: true,
+      push: true,
+      delete_branch: false,
+    });
   });
 
   test("round-trips saved writeScope (specific_repos) into the form", () => {

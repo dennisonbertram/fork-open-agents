@@ -554,19 +554,22 @@ describe("BackgroundAgentsSection", () => {
     expect(html).not.toContain("github.deployment_status");
   });
 
-  test("REG-004: output mode permissions summary renders below the output mode select (regression guard)", async () => {
+  test("REG-004: permissions summary renders below the GitHub actions panel (regression guard)", async () => {
     // Radix Select portals dropdown content so SelectItem text is not in static markup.
     // Instead assert that the derived permissions summary is present — this relies on
-    // describeOutputModePermissions being wired to the rendered form.
+    // the panel's githubActions state being wired to the rendered form.
     const { BackgroundAgentsSection } = await componentModulePromise;
     const html = renderToStaticMarkup(<BackgroundAgentsSection />);
 
-    // Default outputMode is "none" → read-only summary must appear
-    expect(html.toLowerCase()).toContain("read-only");
+    // Default githubActions (open_pull_request:true) requires write, so the
+    // "write access" summary must appear, not "read-only".
+    expect(html.toLowerCase()).toContain("write access");
     // Raw enum "ready_pr" must not appear as visible element content
     expect(html).not.toContain(">ready_pr<");
-    // The output mode label field heading must be present
-    expect(html).toContain("Output mode");
+    // The GitHub actions panel field labels must be present
+    expect(html).toContain("Open pull requests");
+    expect(html).toContain("Write scope");
+    expect(html).toContain("Model");
   });
 
   test("REG-005: condition fields section renders only fields valid for pull_request trigger (regression guard)", async () => {
@@ -645,11 +648,13 @@ describe("BackgroundAgentsSection", () => {
     expect(webhookHtml).not.toContain("Branches");
   });
 
-  test("ISSUE-229: permissions summary renders derived grants by output mode", async () => {
+  test("ISSUE-229: permissions summary renders derived grants by enabled githubActions", async () => {
     const { PermissionsSummary } = await componentModulePromise;
 
     const readOnlyHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="none" />,
+      <PermissionsSummary
+        githubActions={{ comment_on_pr_or_issue: true }}
+      />,
     );
     expect(readOnlyHtml).toContain("Permissions summary");
     expect(readOnlyHtml).toContain("GitHub contents: ");
@@ -658,7 +663,7 @@ describe("BackgroundAgentsSection", () => {
     expect(readOnlyHtml).not.toContain("write access");
 
     const readyPrHtml = renderToStaticMarkup(
-      <PermissionsSummary outputMode="ready_pr" />,
+      <PermissionsSummary githubActions={{ open_pull_request: true }} />,
     );
     expect(readyPrHtml).toContain("write access");
     expect(readyPrHtml).toContain("GitHub contents: ");
