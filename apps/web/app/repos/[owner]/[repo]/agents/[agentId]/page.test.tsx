@@ -128,6 +128,7 @@ describe("AgentDetailPage", () => {
             },
           ],
           next: [],
+          warnings: [],
         },
         requestId: null,
         workflowRunId: null,

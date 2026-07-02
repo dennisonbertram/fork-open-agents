@@ -19,6 +19,8 @@ import { RunActions } from "./run-actions";
 import { RunGraph } from "./run-graph";
 import { PausedDiagnosisBanner } from "./paused-diagnosis-banner";
 import { WatchdogRow } from "./watchdog-row";
+import { ComposioWarningsSection } from "./composio-warnings-section";
+import { deriveLoopComposioWarnings } from "./composio-warnings";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -251,6 +253,10 @@ export function RunDetail({
   const detail = data ?? initialData;
   const { run, loop, steps, events, watchdogRuns } = detail;
 
+  // #798: Composio degradation warnings, derived from events (loops have no
+  // persisted RunSummary equivalent to background-agent runs).
+  const composioWarnings = deriveLoopComposioWarnings(events);
+
   const isActive =
     run.status === "queued" ||
     run.status === "running" ||
@@ -448,6 +454,12 @@ export function RunDetail({
               </div>
             );
           })()}
+
+        {/* Composio degradation warnings (#798) — distinct from the error
+            banner above: shown independent of run.status, so a succeeded
+            run whose Composio tools were silently off/disconnected/errored
+            still surfaces evidence here. */}
+        <ComposioWarningsSection warnings={composioWarnings} />
 
         {/* Live run graph — ABOVE timeline; collapsible */}
         {definitionSnapshot && definitionSnapshot.nodes.length > 0 && (

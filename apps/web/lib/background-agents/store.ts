@@ -6,6 +6,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  like,
   notInArray,
   or,
   sql,
@@ -816,6 +817,27 @@ export async function listBackgroundAgentEvents(
     where: eq(backgroundAgentEvents.runId, runId),
     orderBy: [desc(backgroundAgentEvents.createdAt)],
     limit: 200,
+  });
+}
+
+/**
+ * Uncapped fetch of this run's Composio-prefixed events (#798, Codex review
+ * P2-1). listBackgroundAgentEvents above is a bounded newest-200 slice;
+ * Composio resolution emits EARLY in a run, so on any run with more than
+ * 200 total events, the composio events can fall off that slice entirely.
+ * This query is scoped by runId first (same index as the capped query, via
+ * `background_agent_events_run_created_idx`), so filtering further by
+ * eventName is cheap — it never scans more than one run's events.
+ */
+export async function listBackgroundAgentComposioEvents(
+  runId: string,
+): Promise<BackgroundAgentEvent[]> {
+  return db.query.backgroundAgentEvents.findMany({
+    where: and(
+      eq(backgroundAgentEvents.runId, runId),
+      like(backgroundAgentEvents.eventName, "%.composio.%"),
+    ),
+    orderBy: [desc(backgroundAgentEvents.createdAt)],
   });
 }
 
