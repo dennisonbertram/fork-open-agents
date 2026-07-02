@@ -85,3 +85,42 @@ describe("RUNTIME_PROFILE_TEMPLATES", () => {
     expect(getRuntimeProfileTemplate("does-not-exist")).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression: templates must stay in sync with the validation schema and
+// with each other's tool/verify bindings. If a future edit adds a new
+// required field to the payload schema without updating the templates, or
+// removes a verification command while leaving the matching setup command
+// (or vice versa), these tests fail.
+// ---------------------------------------------------------------------------
+
+describe("runtime-profile-templates regression", () => {
+  test("REGRESSION: no non-blank template ships with an empty verification command list", () => {
+    for (const template of RUNTIME_PROFILE_TEMPLATES) {
+      if (template.id === "blank") {
+        continue;
+      }
+      expect(template.form.verificationCommands.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("REGRESSION: no non-blank template ships with an empty setup command list", () => {
+    for (const template of RUNTIME_PROFILE_TEMPLATES) {
+      if (template.id === "blank") {
+        continue;
+      }
+      expect(template.form.setupCommands.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("REGRESSION: every template id in RUNTIME_PROFILE_TEMPLATES is resolvable via getRuntimeProfileTemplate", () => {
+    for (const template of RUNTIME_PROFILE_TEMPLATES) {
+      expect(getRuntimeProfileTemplate(template.id)?.id).toBe(template.id);
+    }
+  });
+
+  test("REGRESSION: template ids are unique (prevents an accidental duplicate id from shadowing another template)", () => {
+    const ids = RUNTIME_PROFILE_TEMPLATES.map((template) => template.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
