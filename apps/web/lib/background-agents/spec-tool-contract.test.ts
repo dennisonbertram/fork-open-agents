@@ -23,6 +23,10 @@ function validCreateDraft(overrides: Record<string, unknown> = {}) {
     repoName: "widgets",
     instructions: "Review new pull requests and add a summary comment.",
     outputMode: "none" as const,
+    // Report-only default (no write action enabled) so tests that don't care
+    // about actions get a warning-free baseline. #747 derives the write
+    // warning from githubActions, not outputMode.
+    githubActions: { comment_on_pr_or_issue: true as const },
     permissions: {
       github: {
         contents: "read" as const,
@@ -302,10 +306,10 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns warning for ready_pr without write permission", () => {
+  test("returns warning for an enabled write action without write permission", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "ready_pr",
+        githubActions: { open_pull_request: true },
         permissions: { github: { contents: "read", pullRequests: "read" } },
       }),
     );
@@ -316,10 +320,10 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns no warning for ready_pr with write permission", () => {
+  test("returns no warning for an enabled write action with write permission", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "ready_pr",
+        githubActions: { open_pull_request: true },
         permissions: { github: { contents: "write", pullRequests: "write" } },
       }),
     );
@@ -329,10 +333,10 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("returns no warning for none outputMode regardless of permissions", () => {
+  test("returns no warning when no write action is enabled, regardless of permissions", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({
-        outputMode: "none",
+        githubActions: { comment_on_pr_or_issue: true },
         permissions: { github: { contents: "read", pullRequests: "read" } },
       }),
     );

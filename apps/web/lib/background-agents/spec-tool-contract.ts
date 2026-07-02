@@ -107,11 +107,29 @@ function formatOutputMode(mode: string): string {
   }
 }
 
+type SummarizableGithubActions = {
+  open_pull_request?: boolean;
+  comment_on_pr_or_issue?: boolean;
+  approve_pull_request?: boolean;
+  request_changes?: boolean;
+  merge_pull_request?: boolean;
+  push?: boolean;
+  delete_branch?: boolean;
+};
+
+type SummarizableWriteScope = {
+  mode: "this_repo" | "all_repos" | "specific_repos";
+  repos?: Array<{ owner: string; name: string }>;
+};
+
 type SummarizableDraft = {
   name?: string;
   description?: string | null;
   instructions?: string;
   outputMode?: string;
+  githubActions?: SummarizableGithubActions;
+  writeScope?: SummarizableWriteScope;
+  modelId?: string | null;
   triggers?: Array<{
     name: string;
     kind: string;
@@ -121,6 +139,60 @@ type SummarizableDraft = {
   }>;
   composioToolkitSlugs?: string[];
 };
+
+/**
+ * Ordered so the summary always lists actions in the same sequence as the
+ * GitHub actions panel (open PR, comment, approve, request changes, merge,
+ * push, delete branch).
+ */
+const GITHUB_ACTION_KEYS: Array<keyof SummarizableGithubActions> = [
+  "open_pull_request",
+  "comment_on_pr_or_issue",
+  "approve_pull_request",
+  "request_changes",
+  "merge_pull_request",
+  "push",
+  "delete_branch",
+];
+
+function summarizeEnabledActions(
+  actions: SummarizableGithubActions | undefined,
+): string | null {
+  if (!actions) return null;
+  const enabled = GITHUB_ACTION_KEYS.filter((key) => actions[key]);
+  if (enabled.length === 0) return null;
+  return enabled.join(", ");
+}
+
+function summarizeWriteScope(
+  scope: SummarizableWriteScope | undefined,
+): string | null {
+  if (!scope || scope.mode === "this_repo") {
+    // "this_repo" is the default — no need to call it out explicitly.
+    return null;
+  }
+  if (scope.mode === "specific_repos") {
+    const repos = (scope.repos ?? [])
+      .map((r) => `${r.owner}/${r.name}`)
+      .join(", ");
+    return repos ? `specific_repos (${repos})` : "specific_repos";
+  }
+  return scope.mode;
+}
+
+function hasAnyWriteAction(
+  actions: SummarizableGithubActions | undefined,
+): boolean {
+  if (!actions) return false;
+  return Boolean(
+    actions.open_pull_request ||
+      actions.approve_pull_request ||
+      actions.request_changes ||
+      actions.merge_pull_request ||
+      actions.push ||
+      actions.delete_branch,
+  );
+}
 
 function summarizeTrigger(draft: SummarizableDraft): string {
   const triggers = draft.triggers ?? [];
@@ -170,6 +242,20 @@ function summarizeSpec(draft: SummarizableDraft): string {
     parts.push(`**Output:** ${formatOutputMode(draft.outputMode)}`);
   }
 
+  const actionsSummary = summarizeEnabledActions(draft.githubActions);
+  if (actionsSummary) {
+    parts.push(`**Actions:** ${actionsSummary}`);
+  }
+
+  const writeScopeSummary = summarizeWriteScope(draft.writeScope);
+  if (writeScopeSummary) {
+    parts.push(`**Write scope:** ${writeScopeSummary}`);
+  }
+
+  if (draft.modelId) {
+    parts.push(`**Model:** ${draft.modelId}`);
+  }
+
   if (draft.triggers && draft.triggers.length > 0) {
     parts.push("**Triggers:**");
     for (const t of draft.triggers) {
@@ -183,6 +269,30 @@ function summarizeSpec(draft: SummarizableDraft): string {
   }
 
   return parts.join("\n");
+}
+
+/**
+ * Warns when a caller supplies the deprecated `outputMode` field with a
+ * non-default value (#747/#748). outputMode no longer drives behavior —
+ * githubActions does — so surface a suggestion for the equivalent toggle set
+ * instead of silently ignoring the input.
+ */
+function legacyOutputModeWarning(outputMode: string | undefined): string[] {
+  if (!outputMode || outputMode === "none") {
+    return [];
+  }
+  const suggestion =
+    outputMode === "ready_pr"
+      ? "push, open_pull_request"
+      : outputMode === "comment"
+        ? "comment_on_pr_or_issue"
+        : null;
+  const suggestionText = suggestion
+    ? ` Use githubActions instead — for "${outputMode}", enable: ${suggestion}.`
+    : ` Use githubActions instead of outputMode ("${outputMode}").`;
+  return [
+    `The "outputMode" field is deprecated.${suggestionText}`,
+  ];
 }
 
 // ── Main function ────────────────────────────────────────────────────────
@@ -223,13 +333,14 @@ export function previewBackgroundAgentSpec(
 
     const warnings: string[] = [];
     if (
-      draft.outputMode === "ready_pr" &&
+      hasAnyWriteAction(draft.githubActions) &&
       draft.permissions.github?.contents !== "write"
     ) {
       warnings.push(
-        'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+        "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
       );
     }
+    warnings.push(...legacyOutputModeWarning(draft.outputMode));
 
     return {
       ok: true,
@@ -262,13 +373,14 @@ export function previewBackgroundAgentSpec(
 
   const warnings: string[] = [];
   if (
-    draft.outputMode === "ready_pr" &&
+    hasAnyWriteAction(draft.githubActions) &&
     draft.permissions?.github?.contents !== "write"
   ) {
     warnings.push(
-      'Output mode "ready_pr" requires write access to contents. Set GitHub tool permissions to write.',
+      "One or more enabled GitHub actions require write access to contents. Set GitHub tool permissions to write.",
     );
   }
+  warnings.push(...legacyOutputModeWarning(draft.outputMode));
 
   return {
     ok: true,
