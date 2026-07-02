@@ -359,7 +359,7 @@ export async function invokeWatchdog(
     diagnosisNote = ` (${rawDecision} illegal for this invocation — coerced to pause)`;
     rawDecision = "pause";
   }
-  const finalDecision = rawDecision;
+  let finalDecision = rawDecision;
   const diagnosis =
     (decisionResult?.diagnosis ?? "Watchdog fallback: pause applied") +
     diagnosisNote;
@@ -399,6 +399,11 @@ export async function invokeWatchdog(
 
     return { invoked: true, decision: "pause" };
   }
+
+  // Track whether the retry branch's *store call itself* (not the subsequent
+  // dispatch) threw — this must reassign finalDecision to "pause" so the
+  // event/row below never records a phantom "retry" (issue #763).
+  let retryDispatchFailed = false;
 
   // Valid decision
   if (finalDecision === "retry") {
@@ -446,7 +451,12 @@ export async function invokeWatchdog(
         });
       }
     } catch {
-      // Retry failed — fall back to pause
+      // retryCurrentStepForWatchdog itself threw (e.g. TOCTOU race rejected) —
+      // no step run was ever created or dispatched. Fall back to pause AND
+      // reassign finalDecision so the decided row/event below never claims
+      // "retry" happened (issue #763 — watchdog decision integrity).
+      retryDispatchFailed = true;
+      finalDecision = "pause";
       await pauseLoopRunSystem(loopRunId);
     }
   } else if (finalDecision === "skip") {
@@ -520,6 +530,7 @@ export async function invokeWatchdog(
       diagnosis: truncate(diagnosis, MAX_DIAGNOSIS_EVENT_LENGTH),
       hasHint: Boolean(hint),
       budgetRemaining: budgetRemaining - (finalDecision === "retry" ? 1 : 0),
+      ...(retryDispatchFailed ? { retry_dispatch_failed: true } : {}),
     },
     workflowRunId,
   });
@@ -529,7 +540,7 @@ export async function invokeWatchdog(
     status: "decided",
     decision: finalDecision,
     diagnosis: truncate(diagnosis, MAX_DIAGNOSIS_STORE_LENGTH),
-    decisionPayload: hint ? { hint } : undefined,
+    decisionPayload: hint && !retryDispatchFailed ? { hint } : undefined,
     finishedAt: new Date(),
   });
 

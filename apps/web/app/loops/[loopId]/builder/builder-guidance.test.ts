@@ -141,4 +141,21 @@ describe("buildBuilderGuidance", () => {
       state: "done",
     });
   });
+
+  // #768: a valid, non-dirty loop previously showed headline "Ready to run"
+  // right next to a disabled Save button — confusing (nothing to save, but
+  // the headline implies imminent action). The not-dirty+valid state must
+  // read as a saved/settled state, not an action prompt.
+  test("#768: valid non-dirty loop reads as 'All changes saved', not 'Ready to run'", () => {
+    const { nodes, edges } = definitionToFlow(validDefinition);
+    const guidance = buildBuilderGuidance({
+      nodes,
+      edges,
+      validationErrors: [],
+      isDirty: false,
+    });
+
+    expect(guidance.headline).toBe("All changes saved");
+    expect(guidance.headline).not.toBe("Ready to run");
+  });
 });

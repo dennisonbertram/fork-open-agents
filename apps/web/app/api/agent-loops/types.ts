@@ -61,8 +61,31 @@ export type StartAgentLoopRunResponse = {
   created: boolean;
 };
 
+/**
+ * 502 response shape when the initial workflow dispatch throws (issue #763 —
+ * "no false success"). The run row has already been marked `failed` with
+ * `errorKind: "dispatch_failed"`; the client must not treat this as a
+ * successful start.
+ */
+export type StartAgentLoopRunDispatchFailedResponse = {
+  success: false;
+  errorKind: "dispatch_failed";
+  message: string;
+  runId: string;
+};
+
+/**
+ * Run row extended with `failedStepCount` (#767) — the number of failed
+ * step runs for that run, from a single grouped store query. Used by the
+ * runs list and run-detail header to render "Completed — N step(s) failed"
+ * honestly instead of a clean green for a completed-with-failures run.
+ */
+export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
+  failedStepCount: number;
+};
+
 export type ListAgentLoopRunsResponse = {
-  runs: AgentLoopRun[];
+  runs: AgentLoopRunWithFailedStepCount[];
 };
 
 // ── Run detail (poll target) ──────────────────────────────────────────────────
@@ -97,16 +120,30 @@ export type GetAgentLoopRunDetailResponse = {
 
 // ── Control plane ─────────────────────────────────────────────────────────────
 
-export type AgentLoopRunControlResponse = {
-  success: true;
-};
+/**
+ * Response shape for pause/cancel/resume/retry control routes.
+ *
+ * The success case is `{ success: true }` (200). resume and retry can also
+ * fail with a typed dispatch failure (issue #763 — "no false success") when
+ * the state transition succeeded but the workflow dispatch itself threw:
+ * the route returns 502 with `{ success: false, errorKind: "dispatch_failed" }`
+ * instead of silently reporting success. The run row is already marked
+ * `failed` with `errorKind: "dispatch_failed"` in this case.
+ */
+export type AgentLoopRunControlResponse =
+  | { success: true }
+  | {
+      success: false;
+      errorKind: "dispatch_failed";
+      message: string;
+    };
 
 // ── Readiness ─────────────────────────────────────────────────────────────────
 
 export type AgentLoopsReadinessStatus = "ready" | "missing" | "disabled";
 
 export type AgentLoopsReadinessCheck = {
-  id: "feature_flag" | "repo_allowlist";
+  id: "feature_flag" | "repo_allowlist" | "repo_access";
   label: string;
   status: AgentLoopsReadinessStatus;
   detail: string;

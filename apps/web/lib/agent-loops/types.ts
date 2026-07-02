@@ -229,6 +229,19 @@ export const loopGuardrailsSchema = z
 
 export type LoopGuardrails = z.infer<typeof loopGuardrailsSchema>;
 
+/**
+ * Guardrails after resolveGuardrails (chain.ts) has applied defaults and
+ * clamped to server ceilings. Unlike LoopGuardrails, every field is required
+ * — resolveGuardrails always returns a fully-resolved value.
+ */
+export type ResolvedGuardrails = {
+  maxStepsPerRun: number;
+  maxIterations: number;
+  maxRunDurationMs: number;
+  /** Agent invocation timeout for agent_step nodes, clamped to GUARDRAIL_CEILINGS.stepTimeoutMs (30 min). */
+  stepTimeoutMs: number;
+};
+
 // ── Error taxonomy ────────────────────────────────────────────────────────────
 
 /**

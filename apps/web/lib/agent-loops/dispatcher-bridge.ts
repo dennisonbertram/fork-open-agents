@@ -16,6 +16,7 @@ import { start } from "workflow/api";
 import { runAgentLoopStepWorkflow } from "@/app/workflows/agent-loop-step";
 import type { AgentLoop, BackgroundAgentTrigger } from "@/lib/db/schema";
 import {
+  conditionallyTransitionRunStatus,
   createAgentLoopRun,
   createAgentLoopStepRun,
   getOwnedAgentLoop,
@@ -43,6 +44,7 @@ export type LoopDispatchResult =
       runId?: undefined;
       created?: undefined;
       activeRunId?: undefined;
+      dispatchFailed?: undefined;
     }
   | {
       skipped: true;
@@ -51,6 +53,7 @@ export type LoopDispatchResult =
       created?: undefined;
       /** The id of the existing active/paused run that caused the skip. */
       activeRunId: string;
+      dispatchFailed?: undefined;
     }
   | {
       skipped?: false;
@@ -58,7 +61,61 @@ export type LoopDispatchResult =
       created: boolean;
       runId: string;
       activeRunId?: undefined;
+      dispatchFailed?: undefined;
+    }
+  | {
+      /**
+       * The run was created but the initial workflow dispatch (`start()`)
+       * threw. The run row has already been transitioned to `failed` with
+       * `errorKind: "dispatch_failed"` — callers MUST NOT report success
+       * (issue #763 — "no false success").
+       */
+      dispatchFailed: true;
+      errorKind: "dispatch_failed";
+      errorMessage: string;
+      runId: string;
+      skipped?: undefined;
+      reason?: undefined;
+      created?: undefined;
+      activeRunId?: undefined;
     };
+
+/**
+ * The event payload shape dispatch callers pass in. Widened beyond the bare
+ * gate fields (source/kind/externalId/repo/occurredAt) to accept the full set
+ * of fields `normalizeGitHubBackgroundEvent` (lib/background-agents/github-events.ts)
+ * produces — `ref`, `prNumber`, `sha`, `branch`, `action`, `issueNumber`, etc.
+ * — so `dispatchLoopRun` can seed `run.context.trigger` (#765) with whatever
+ * subset the caller supplied, without every call site having to repeat the
+ * full field list.
+ */
+export type LoopDispatchEvent = {
+  source: "github" | "schedule" | "webhook" | "manual";
+  kind: string;
+  externalId?: string | null;
+  repoOwner?: string;
+  repoName?: string;
+  occurredAt?: string | null;
+  action?: string;
+  ref?: string;
+  sha?: string;
+  branch?: string;
+  prNumber?: number;
+  issueNumber?: number;
+  deploymentUrl?: string;
+  labels?: string[];
+  environment?: string;
+  severity?: string;
+  title?: string;
+  url?: string;
+  actor?: string;
+  message?: string;
+  merged?: boolean;
+  reviewId?: number;
+  reviewState?: string;
+  reviewerLogin?: string;
+  prUrl?: string;
+};
 
 export type DispatchLoopRunForTriggerParams = {
   loop: AgentLoop;
@@ -66,14 +123,7 @@ export type DispatchLoopRunForTriggerParams = {
     BackgroundAgentTrigger,
     "id" | "loopId" | "kind" | "conditions" | "schedule"
   >;
-  event: {
-    source: "github" | "schedule" | "webhook" | "manual";
-    kind: string;
-    externalId?: string | null;
-    repoOwner?: string;
-    repoName?: string;
-    occurredAt?: string | null;
-  };
+  event: LoopDispatchEvent;
   requestId?: string | null;
 };
 
@@ -97,6 +147,36 @@ function buildIdempotencyKey(params: {
   ].join(":");
 }
 
+/**
+ * Builds the `run.context.trigger` seed value (#765 — the trigger.* context
+ * contract, documented in docs/plans/agent-loops-epic.md).
+ *
+ * Trigger-driven runs (github/schedule/webhook source) get the normalized
+ * event payload subset — `eventKind` plus whatever fields the caller supplied
+ * (repoOwner, repoName, ref, prNumber, sha, branch, action, etc., mirroring
+ * whatever normalizeGitHubBackgroundEvent produced upstream). Manual runs get
+ * `{ source: "manual" }` — there is no real trigger event to describe.
+ *
+ * Never throws; only copies defined (non-undefined) fields so the persisted
+ * context never carries stray `undefined` values.
+ */
+function buildTriggerContext(
+  event: LoopDispatchEvent,
+): Record<string, unknown> {
+  if (event.source === "manual") {
+    return { source: "manual" };
+  }
+
+  const { kind: eventKind, source: _source, ...rest } = event;
+  const trigger: Record<string, unknown> = { eventKind };
+  for (const [key, value] of Object.entries(rest)) {
+    if (value !== undefined) {
+      trigger[key] = value;
+    }
+  }
+  return trigger;
+}
+
 // ── Core dispatch logic ───────────────────────────────────────────────────────
 
 /**
@@ -107,12 +187,7 @@ function buildIdempotencyKey(params: {
 async function dispatchLoopRun(params: {
   loop: AgentLoop;
   trigger: Pick<BackgroundAgentTrigger, "id" | "loopId" | "kind">;
-  event: {
-    source: "github" | "schedule" | "webhook" | "manual";
-    kind: string;
-    externalId?: string | null;
-    occurredAt?: string | null;
-  };
+  event: LoopDispatchEvent;
   idempotencyKey: string;
   requestId?: string | null;
   /**
@@ -169,6 +244,9 @@ async function dispatchLoopRun(params: {
     idempotencyKey,
     triggerId: runTriggerId,
     requestId: requestId ?? null,
+    // #765: seed run.context.trigger at creation — trigger-driven runs get
+    // the normalized event payload subset, manual runs get {source:"manual"}.
+    context: { trigger: buildTriggerContext(event) },
   });
 
   if (!result) {
@@ -274,7 +352,13 @@ async function dispatchLoopRun(params: {
       requestId: requestId ?? null,
     });
   } catch (err) {
-    // Dispatch failure: run stays queued (recoverable via stall sweep / pause→resume)
+    // Dispatch failure (issue #763 — "no false success"): the run must be
+    // marked failed with a typed errorKind, and the caller must receive a
+    // typed failure result instead of {created: true}. The
+    // agent-loop.chain.dispatch_failed event still fires unconditionally
+    // (audit trail).
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
     await recordAgentLoopEvent({
       loopRunId,
       stepRunId: stepRun.id,
@@ -286,11 +370,27 @@ async function dispatchLoopRun(params: {
       payload: {
         stepRunId: stepRun.id,
         nodeId: startNode.id,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
       },
       requestId: requestId ?? null,
     });
-    // Do NOT fail the run — leave queued so stall sweep can recover.
+
+    const humanErrorMessage = `Couldn't start the run — the execution backend rejected the dispatch: ${errorMessage}`;
+
+    await conditionallyTransitionRunStatus({
+      runId: loopRunId,
+      toStatus: "failed",
+      fromStatuses: ["queued", "running"],
+      errorKind: "dispatch_failed",
+      errorMessage: humanErrorMessage,
+    });
+
+    return {
+      dispatchFailed: true,
+      errorKind: "dispatch_failed",
+      errorMessage: humanErrorMessage,
+      runId: loopRunId,
+    };
   }
 
   return { created: true, runId: loopRunId };

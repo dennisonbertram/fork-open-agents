@@ -149,6 +149,39 @@ Indexes: userId; (repoOwner, repoName); status.
 
 Indexes: (loopId, createdAt); (userId, createdAt); status.
 
+#### The `trigger.*` context contract (#765)
+
+`dispatcher-bridge.ts` seeds `run.context.trigger` at run creation, for every
+run — trigger-driven and manual alike — BEFORE any node executes. This makes
+`trigger.*` a documented root context key any node's `refFrom`/`condition.path`
+can reference, alongside the usual `<nodeId>.<field>` ancestor-output paths.
+
+- **Trigger-driven runs** (`dispatchLoopRunForTrigger`, source
+  `github`/`schedule`/`webhook`): `context.trigger` is the normalized event
+  payload subset the caller supplied, with `kind` renamed to `eventKind` to
+  avoid confusion with the trigger row's own `kind` column. At minimum:
+  `eventKind`, `repoOwner`, `repoName`. GitHub-event payloads
+  (`normalizeGitHubBackgroundEvent`, `lib/background-agents/github-events.ts`)
+  also carry `ref`, `sha`, `branch`, `prNumber`, `action`, `issueNumber`,
+  `labels`, `actor`, `merged`, etc., whenever the underlying webhook payload
+  provides them — see `NormalizedBackgroundTriggerEvent` for the full field
+  list. Only defined (non-`undefined`) fields are copied in.
+- **Manual runs** (`dispatchManualAgentLoopStart`, the "Run now" button /
+  `POST /api/agent-loops/[loopId]/runs`): `context.trigger = { source: "manual" }`
+  — there is no real trigger event to describe.
+
+Because this is seeded before the first node runs, `trigger.*` is always
+resolvable — unlike `<nodeId>.<field>` paths, which only resolve once that
+node has actually executed. The "Merge when green" template's `ci_status`
+check reads `trigger.ref` for exactly this reason (its very first step needs
+the PR's ref, and no node has run yet to have produced it).
+
+`"trigger"` is a **reserved node id** (`validateLoopDefinition`, VR-11): a node
+named `trigger` would collide with this context key and make path lookups
+ambiguous. `"start"` is intentionally NOT reserved — it has no context-key
+collision (no node's output is ever stored under a `context.start` key), and
+every shipped template uses `"start"` as its literal start-node id.
+
 ### `agentLoopStepRuns`
 | column | type | notes |
 |---|---|---|
@@ -238,7 +271,10 @@ New module `apps/web/lib/agent-loops/`:
 
 - `types.ts` — LoopDefinition zod schemas, error taxonomy
   (`loop_invalid`, `guardrail_exceeded`, `step_output_invalid`,
-  `sandbox_unavailable`, `github_check_failed`, `chain_dispatch_failed`, …)
+  `sandbox_unavailable`, `github_check_failed`, `chain_dispatch_failed`,
+  `dispatch_failed` — run-level errorKind set when `start()` throws on
+  initial dispatch, resume, or retry: the run is marked `failed` instead of
+  silently reporting success (issue #763), …)
 - `validation.ts` — graph validation
 - `store.ts` — CRUD + run/step/event persistence (mirrors background-agents/store.ts)
 - `context.ts` — context merge, size cap, path lookup for conditions/`*From` refs

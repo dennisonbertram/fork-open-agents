@@ -15,9 +15,9 @@
  * REG-RC03: Illegal-transition rejection is durable — if the store's status
  *           guard is removed, multiple wrong-status calls must still reject.
  *
- * REG-RC04: Resume dispatch-failure is non-fatal — if the try/catch is removed,
- *           a dispatch error on resume will surface as an unhandled rejection,
- *           leaving the run stuck in a recovered-but-unstarted state.
+ * REG-RC04: Resume dispatch-failure surfaces as a typed DispatchFailedError
+ *           (issue #763) — the run is marked failed with errorKind=
+ *           dispatch_failed and resume must NOT silently report success.
  *
  * REG-RC05: Retry creates a new step run and dispatches it in a single call —
  *           the two operations must be atomic from the caller's perspective.
@@ -29,7 +29,7 @@
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
-import { RunControlError } from "./run-controls-error";
+import { DispatchFailedError, RunControlError } from "./run-controls-error";
 
 mock.module("server-only", () => ({}));
 
@@ -149,6 +149,31 @@ const recordAgentLoopEventMock = mock(async (input: EventInput) => {
   return { id: `evt-${recordedEvents.length}`, ...input };
 });
 
+type TransitionCall = {
+  runId: string;
+  toStatus: string;
+  fromStatuses: string[];
+  errorKind?: string | null;
+  errorMessage?: string | null;
+};
+let transitionCalls: TransitionCall[] = [];
+const conditionallyTransitionRunStatusMock = mock(
+  async (params: TransitionCall) => {
+    transitionCalls.push(params);
+    currentLoopRun = {
+      ...currentLoopRun,
+      status: params.toStatus as AgentLoopRun["status"],
+      ...(params.errorKind !== undefined
+        ? { errorKind: params.errorKind }
+        : {}),
+      ...(params.errorMessage !== undefined
+        ? { errorMessage: params.errorMessage }
+        : {}),
+    };
+    return currentLoopRun;
+  },
+);
+
 let workflowStartThrows: Error | null = null;
 const workflowStartMock = mock(
   async (_workflow: unknown, args: [{ stepRunId: string }]) => {
@@ -168,7 +193,7 @@ mock.module("./store", () => ({
   getAgentLoopStepRunWithContext: mock(async () => null),
   getAgentLoopRunWithLoop: mock(async () => null),
   updateAgentLoopRunStatus: mock(async () => ({})),
-  conditionallyTransitionRunStatus: mock(async () => ({})),
+  conditionallyTransitionRunStatus: conditionallyTransitionRunStatusMock,
   updateAgentLoopStepRun: mock(async () => ({})),
   createAgentLoopStepRun: mock(async () => ({})),
   advanceRunToNextStep: mock(async () => false),
@@ -284,6 +309,7 @@ function resetAll() {
 
   currentLoopRun = makeLoopRun();
   runOwnership["run-reg-rc"] = "user-1";
+  transitionCalls = [];
 
   pauseLoopRunMock.mockClear();
   cancelLoopRunMock.mockClear();
@@ -291,6 +317,7 @@ function resetAll() {
   retryCurrentStepMock.mockClear();
   recordAgentLoopEventMock.mockClear();
   workflowStartMock.mockClear();
+  conditionallyTransitionRunStatusMock.mockClear();
 }
 
 const runControlsPromise = import("./run-controls");
@@ -423,12 +450,12 @@ describe("REG-RC03: multiple wrong-status calls always reject (guard is durable,
 
 // ── REG-RC04: Resume dispatch-failure is non-fatal ───────────────────────────
 
-describe("REG-RC04: dispatch failure during resume must not propagate (run recoverable)", () => {
+describe("REG-RC04: dispatch failure during resume surfaces as a typed failure (no false success)", () => {
   beforeEach(() => {
     resetAll();
   });
 
-  test("REG-RC04: resume with failing dispatch → resolves (no throw), dispatch_failed event", async () => {
+  test("REG-RC04: resume with failing dispatch → throws DispatchFailedError, dispatch_failed event, run marked failed", async () => {
     const nextStep = makeStepRun({
       id: "step-reg-resume",
       nodeId: "end",
@@ -443,10 +470,11 @@ describe("REG-RC04: dispatch failure during resume must not propagate (run recov
     workflowStartThrows = new Error("Workflow service unavailable");
 
     const { resumeLoopRun } = await runControlsPromise;
-    // This MUST resolve without throwing — dispatch failures are caught internally
-    await expect(
-      resumeLoopRun("run-reg-rc", "user-1"),
-    ).resolves.toBeUndefined();
+    // Must throw — a caller must not report "Resume successful" when the
+    // execution backend rejected the dispatch.
+    await expect(resumeLoopRun("run-reg-rc", "user-1")).rejects.toThrow(
+      DispatchFailedError,
+    );
 
     // The dispatch_failed event must be recorded
     const failedEvt = recordedEvents.find(
@@ -455,8 +483,10 @@ describe("REG-RC04: dispatch failure during resume must not propagate (run recov
     expect(failedEvt).toBeDefined();
     expect(failedEvt?.level).toBe("error");
 
-    // Run is still "running" (status transition succeeded; only dispatch failed)
-    expect(currentLoopRun.status).toBe("running");
+    // Run is marked failed with errorKind=dispatch_failed — not left "running"
+    expect(currentLoopRun.status).toBe("failed");
+    const failTransition = transitionCalls.find((c) => c.toStatus === "failed");
+    expect(failTransition?.errorKind).toBe("dispatch_failed");
   });
 });
 

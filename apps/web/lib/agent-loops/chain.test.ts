@@ -109,6 +109,7 @@ const executeAgentLoopStepMock = mock(
   async (params: {
     stepRunId: string;
     workflowRunId: string;
+    stepTimeoutMs?: number;
   }): Promise<ExecutorOutcome> => {
     // Find the node by stepRunId (via currentStepRun mapping)
     const nodeId = stepRunIdToNodeId[params.stepRunId] ?? currentStepRun.nodeId;
@@ -1053,6 +1054,56 @@ describe("BT-C05: guardrails", () => {
     const { resolveGuardrails } = await chainPromise;
     const resolved = resolveGuardrails({ maxIterations: 999 });
     expect(resolved.maxIterations).toBe(50);
+  });
+
+  test("BT-C05: resolveGuardrails defaults stepTimeoutMs to 10 minutes when unset (#766)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const { GUARDRAIL_DEFAULTS } = await import("./types");
+    const resolved = resolveGuardrails(null);
+    expect(resolved.stepTimeoutMs).toBe(GUARDRAIL_DEFAULTS.stepTimeoutMs);
+  });
+
+  test("BT-C05: resolveGuardrails clamps stepTimeoutMs to the 30-minute ceiling (#766)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const { GUARDRAIL_CEILINGS } = await import("./types");
+    const resolved = resolveGuardrails({ stepTimeoutMs: 60 * 60 * 1000 });
+    expect(resolved.stepTimeoutMs).toBe(GUARDRAIL_CEILINGS.stepTimeoutMs);
+  });
+
+  test("BT-C05: resolveGuardrails passes through a valid user stepTimeoutMs (#766)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const resolved = resolveGuardrails({ stepTimeoutMs: 5 * 60 * 1000 });
+    expect(resolved.stepTimeoutMs).toBe(5 * 60 * 1000);
+  });
+
+  test("BT-C05: runAgentLoopStep forwards the resolved (clamped) stepTimeoutMs to executeAgentLoopStep (#766)", async () => {
+    const sr = makeStepRunForNode("work", "step-guard-timeout");
+    currentStepRun = sr;
+    currentLoopRun = makeRunningRun({
+      definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      currentNodeId: "work",
+      currentStepRunId: "step-guard-timeout",
+      stepCount: 0,
+      iterationCount: 0,
+    });
+    // User requests a stepTimeoutMs above the 30-minute ceiling — must be clamped.
+    currentLoop = makeLoop({
+      guardrails: { stepTimeoutMs: 60 * 60 * 1000 },
+    });
+
+    const { runAgentLoopStep } = await chainPromise;
+    const { GUARDRAIL_CEILINGS } = await import("./types");
+    await runAgentLoopStep({
+      stepRunId: "step-guard-timeout",
+      workflowRunId: "wf-run-1",
+    });
+
+    const call = executeAgentLoopStepMock.mock.calls.find(
+      (c) => (c[0] as { stepRunId: string }).stepRunId === "step-guard-timeout",
+    );
+    expect(call).toBeDefined();
+    const callArgs = call?.[0] as { stepTimeoutMs?: number };
+    expect(callArgs.stepTimeoutMs).toBe(GUARDRAIL_CEILINGS.stepTimeoutMs);
   });
 });
 

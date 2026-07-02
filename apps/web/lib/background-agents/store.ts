@@ -38,6 +38,7 @@ import {
   type NormalizedBackgroundTriggerEvent,
   type UpdateBackgroundAgentInput,
 } from "./types";
+import type { TriggerShapeInput } from "./trigger-shape-schema";
 import {
   getExistingWebhookPublicIds,
   getWebhookPublicIdForUpdatedTrigger,
@@ -801,7 +802,7 @@ export async function listStaleBackgroundAgentRuns(params: {
   return db.query.backgroundAgentRuns.findMany({
     where: and(
       inArray(backgroundAgentRuns.status, ["queued", "running"]),
-      sql`${backgroundAgentRuns.updatedAt} < ${params.staleBefore}`,
+      sql`${backgroundAgentRuns.updatedAt} < ${params.staleBefore.toISOString()}::timestamp`,
     ),
     orderBy: [backgroundAgentRuns.updatedAt],
     limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
@@ -996,15 +997,23 @@ export async function recordTriggerSkipReason(params: {
 
 /**
  * Lists triggers bound to a loop (loopId set, agentId null).
- * Used by the M1-08 loop-detail route to include a trigger summary.
- * Returns a minimal projection — no schedule/conditions secrets exposed.
+ * Used by the M1-08 loop-detail route to include a trigger summary, and by
+ * the #762 GET /api/agent-loops/[loopId]/triggers route (which additionally
+ * humanizes `schedule` for display — see schedule-humanize.ts).
+ * Returns a minimal projection — no secrets (webhookSecretHash) exposed.
  */
 export async function listTriggersForLoop(
   loopId: string,
 ): Promise<
   Pick<
     BackgroundAgentTrigger,
-    "id" | "kind" | "status" | "conditions" | "schedule" | "createdAt"
+    | "id"
+    | "kind"
+    | "status"
+    | "conditions"
+    | "schedule"
+    | "nextRunAt"
+    | "createdAt"
   >[]
 > {
   return db.query.backgroundAgentTriggers.findMany({
@@ -1016,7 +1025,144 @@ export async function listTriggersForLoop(
       status: true,
       conditions: true,
       schedule: true,
+      nextRunAt: true,
       createdAt: true,
     },
   });
+}
+
+// ── Loop-bound trigger CRUD (#762) ───────────────────────────────────────────
+//
+// Rows are inserted with loopId set and agentId null — the DB CHECK
+// num_nonnulls(agent_id, loop_id) = 1 (schema.ts) enforces this is the only
+// valid shape for a loop-bound trigger. Route-level ownership (does this
+// loop belong to the caller?) happens one layer up in the route handler via
+// getOwnedAgentLoop; these store functions additionally scope every mutation
+// to (triggerId, loopId) so a trigger id guessed/leaked from another loop can
+// never be updated or deleted through this loop's routes.
+
+export async function createLoopTrigger(params: {
+  loopId: string;
+  userId: string;
+  input: TriggerShapeInput;
+  now?: Date;
+}): Promise<BackgroundAgentTrigger> {
+  const now = params.now ?? new Date();
+  const schedule = normalizeOptionalText(params.input.schedule);
+  const [trigger] = await db
+    .insert(backgroundAgentTriggers)
+    .values({
+      id: nanoid(),
+      agentId: null,
+      loopId: params.loopId,
+      userId: params.userId,
+      name: params.input.name,
+      kind: params.input.kind,
+      status: params.input.status,
+      conditions: params.input.conditions,
+      schedule,
+      webhookPublicId: null,
+      nextRunAt: seedNextRunAt({ kind: params.input.kind, schedule, now }),
+    })
+    .returning();
+
+  if (!trigger) {
+    throw new Error("Failed to create loop trigger");
+  }
+
+  return trigger;
+}
+
+export async function updateLoopTrigger(params: {
+  loopId: string;
+  triggerId: string;
+  input: Partial<TriggerShapeInput>;
+  now?: Date;
+}): Promise<BackgroundAgentTrigger | null> {
+  const now = params.now ?? new Date();
+  const existing = await db.query.backgroundAgentTriggers.findFirst({
+    where: and(
+      eq(backgroundAgentTriggers.id, params.triggerId),
+      eq(backgroundAgentTriggers.loopId, params.loopId),
+    ),
+  });
+  if (!existing) {
+    return null;
+  }
+
+  const nextKind = params.input.kind ?? existing.kind;
+  const scheduleProvided = params.input.schedule !== undefined;
+  const nextSchedule = scheduleProvided
+    ? normalizeOptionalText(params.input.schedule)
+    : existing.schedule;
+
+  // Re-seed nextRunAt whenever the kind or schedule changes (matches the
+  // agent-trigger replace-on-identity-change behavior in updateBackgroundAgent).
+  // An unchanged schedule.cron trigger keeps its existing nextRunAt so an
+  // in-flight due window isn't reset by an unrelated field edit (e.g. status).
+  const scheduleChanged =
+    (params.input.kind !== undefined && params.input.kind !== existing.kind) ||
+    (scheduleProvided && nextSchedule !== existing.schedule);
+
+  const [updated] = await db
+    .update(backgroundAgentTriggers)
+    .set({
+      ...(params.input.name !== undefined ? { name: params.input.name } : {}),
+      ...(params.input.kind !== undefined ? { kind: params.input.kind } : {}),
+      ...(params.input.status !== undefined
+        ? { status: params.input.status }
+        : {}),
+      ...(params.input.conditions !== undefined
+        ? { conditions: params.input.conditions }
+        : {}),
+      ...(scheduleProvided ? { schedule: nextSchedule } : {}),
+      ...(scheduleChanged
+        ? {
+            nextRunAt: seedNextRunAt({
+              kind: nextKind,
+              schedule: nextSchedule ?? null,
+              now,
+            }),
+          }
+        : {}),
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(backgroundAgentTriggers.id, params.triggerId),
+        eq(backgroundAgentTriggers.loopId, params.loopId),
+      ),
+    )
+    .returning();
+
+  return updated ?? null;
+}
+
+export async function deleteLoopTrigger(params: {
+  loopId: string;
+  triggerId: string;
+}): Promise<boolean> {
+  const deleted = await db
+    .delete(backgroundAgentTriggers)
+    .where(
+      and(
+        eq(backgroundAgentTriggers.id, params.triggerId),
+        eq(backgroundAgentTriggers.loopId, params.loopId),
+      ),
+    )
+    .returning({ id: backgroundAgentTriggers.id });
+  return deleted.length > 0;
+}
+
+export async function getOwnedLoopTrigger(params: {
+  loopId: string;
+  triggerId: string;
+}): Promise<BackgroundAgentTrigger | null> {
+  const trigger = await db.query.backgroundAgentTriggers.findFirst({
+    where: and(
+      eq(backgroundAgentTriggers.id, params.triggerId),
+      eq(backgroundAgentTriggers.loopId, params.loopId),
+    ),
+  });
+  return trigger ?? null;
 }

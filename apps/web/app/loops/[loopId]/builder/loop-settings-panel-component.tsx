@@ -122,7 +122,7 @@ function GuardrailNumberField({
 
 // ── LoopSettingsPanelContent ──────────────────────────────────────────────────
 
-type LoopSettingsPanelContentProps = {
+export type LoopSettingsPanelContentProps = {
   loopId: string;
   initialName: string;
   initialDescription?: string | null;
@@ -133,7 +133,7 @@ type LoopSettingsPanelContentProps = {
   onClose: () => void;
 };
 
-function LoopSettingsPanelContent({
+export function LoopSettingsPanelContent({
   loopId,
   initialName,
   initialDescription,
@@ -280,10 +280,14 @@ function LoopSettingsPanelContent({
 
       <hr className="border-border" />
 
-      {/* Guardrails */}
+      {/* Guardrails (labeled "Safety limits" for a naive-user audience) */}
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Guardrails
+          Safety limits
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          Limits on how long and how far a run can go before it&apos;s stopped
+          automatically.
         </p>
       </div>
 
@@ -327,7 +331,7 @@ function LoopSettingsPanelContent({
       <GuardrailNumberField
         id="step-timeout"
         label="Step timeout (minutes)"
-        help={`Default: ${msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)} minutes. Server allows up to ${msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)} minutes.`}
+        help={`Bounds each agent_step's agent invocation. Default: ${msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)} minutes. Server allows up to ${msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)} minutes. A step's checkCommand has its own fixed 2-minute timeout, unaffected by this setting.`}
         value={msToMinOpt(guardrails.stepTimeoutMs)}
         placeholder={msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)}
         ceiling={msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)}
@@ -342,10 +346,14 @@ function LoopSettingsPanelContent({
 
       <hr className="border-border" />
 
-      {/* Watchdog (M3-01) */}
+      {/* Watchdog (M3-01), labeled "Auto-recovery (watchdog)" for clarity */}
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Watchdog
+          Auto-recovery (watchdog)
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          When a step fails, let an agent diagnose it and decide whether to
+          retry, skip, or pause the run.
         </p>
       </div>
 

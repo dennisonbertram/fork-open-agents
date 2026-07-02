@@ -11,9 +11,14 @@
  * BT-326-08: manual start happy path
  * BT-326-09: manual start ownership fail
  * BT-326-10: manual start active-run signal (409-style)
- * BT-326-11: dispatch-throw leaves run queued (recoverable)
+ * BT-326-11: dispatch-throw marks the run failed with errorKind=dispatch_failed
+ *             and returns a typed dispatchFailed result (issue #763 — no false success)
  * BT-326-12: cron sweep includes due loop trigger + updates nextRunAt
  * BT-326-13: agent-trigger path unchanged (existing suite behavior)
+ * BT-765-01: trigger-driven dispatch seeds run.context.trigger with the
+ *            normalized event payload subset (eventKind, repoOwner, repoName,
+ *            ref, prNumber, etc.) — issue #765.
+ * BT-765-02: manual dispatch seeds run.context.trigger = { source: "manual" }.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -78,6 +83,15 @@ const setInitialStepPointer = mock(
     id: "loop-run-1",
   }),
 );
+const conditionallyTransitionRunStatus = mock(
+  async (_params: {
+    runId: string;
+    toStatus: string;
+    fromStatuses: string[];
+    errorKind?: string | null;
+    errorMessage?: string | null;
+  }) => ({ id: "loop-run-1", status: _params.toStatus }),
+);
 
 mock.module("@/lib/agent-loops/store", () => ({
   createAgentLoopRun,
@@ -88,7 +102,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   recordAgentLoopEvent,
   setInitialStepPointer,
   updateAgentLoopRunContext: mock(async () => undefined),
-  conditionallyTransitionRunStatus: mock(async () => null),
+  conditionallyTransitionRunStatus,
   findStalledLoopRunCandidates: mock(async () => []),
   retryCurrentStep: mock(async () => undefined),
 }));
@@ -218,6 +232,7 @@ const githubEvent = {
   repoName: "widgets",
   action: "opened",
   branch: "feature/test",
+  ref: "feature/test",
   prNumber: 42,
   occurredAt: "2026-06-01T00:00:00.000Z",
 };
@@ -244,6 +259,7 @@ function resetMocks() {
   updateAgentLoopRunStatus.mockClear();
   recordAgentLoopEvent.mockClear();
   setInitialStepPointer.mockClear();
+  conditionallyTransitionRunStatus.mockClear();
 }
 
 // ── BT-326-01: happy path — trigger matches, run created, workflow dispatched ──
@@ -301,6 +317,35 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(result.created).toBe(true);
     expect(result.runId).toBe("loop-run-1");
     expect(result.reason).toBeUndefined();
+  });
+
+  // BT-765-01: context.trigger seeding (trigger-driven dispatch)
+  test("BT-765-01: seeds run.context.trigger with the normalized event payload subset", async () => {
+    const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
+
+    await dispatchLoopRunForTrigger({
+      loop: activeLoop,
+      trigger: enabledTrigger,
+      event: githubEvent,
+      requestId: "req-765-01",
+    });
+
+    expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { context?: Record<string, unknown> },
+      ]
+    )[0];
+    expect(createCall.context).toBeDefined();
+    const trigger = createCall.context?.trigger as Record<string, unknown>;
+    expect(trigger).toBeDefined();
+    expect(trigger.eventKind).toBe("github.pull_request");
+    expect(trigger.repoOwner).toBe("acme");
+    expect(trigger.repoName).toBe("widgets");
+    expect(trigger.ref).toBe("feature/test");
+    expect(trigger.prNumber).toBe(42);
+    // Must NOT carry a "source":"manual" placeholder for a trigger-driven run
+    expect(trigger.source).toBeUndefined();
   });
 
   // BT-326-02: duplicate delivery dedupes
@@ -425,8 +470,8 @@ describe("dispatchLoopRunForTrigger", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
-  // BT-326-11: dispatch-throw leaves run queued (recoverable)
-  test("BT-326-11: workflow dispatch throws — run stays queued, chain_dispatch_failed event recorded", async () => {
+  // BT-326-11: dispatch-throw marks the run failed (no false success)
+  test("BT-326-11: workflow dispatch throws — run marked failed with errorKind=dispatch_failed, typed failure returned", async () => {
     workflowStartShouldThrow = true;
     const { dispatchLoopRunForTrigger } = await bridgeModulePromise;
 
@@ -437,14 +482,35 @@ describe("dispatchLoopRunForTrigger", () => {
       requestId: "req-011",
     });
 
-    // Run was created
-    expect(result.created).toBe(true);
-    expect(result.runId).toBe("loop-run-1");
+    // Result must be a typed dispatch failure, NOT { created: true }
+    expect(result.created).toBeUndefined();
+    expect((result as { dispatchFailed?: boolean }).dispatchFailed).toBe(true);
+    expect((result as { errorKind?: string }).errorKind).toBe(
+      "dispatch_failed",
+    );
+    expect(typeof (result as { errorMessage?: string }).errorMessage).toBe(
+      "string",
+    );
+    expect((result as { runId?: string }).runId).toBe("loop-run-1");
 
-    // Run stays in queued (not failed)
-    expect(updateAgentLoopRunStatus).not.toHaveBeenCalled();
+    // Run row transitioned to failed with errorKind/errorMessage set
+    expect(conditionallyTransitionRunStatus).toHaveBeenCalledTimes(1);
+    const transitionCall = (
+      conditionallyTransitionRunStatus.mock.calls[0] as unknown as [
+        {
+          runId: string;
+          toStatus: string;
+          errorKind?: string | null;
+          errorMessage?: string | null;
+        },
+      ]
+    )[0];
+    expect(transitionCall.runId).toBe("loop-run-1");
+    expect(transitionCall.toStatus).toBe("failed");
+    expect(transitionCall.errorKind).toBe("dispatch_failed");
+    expect(typeof transitionCall.errorMessage).toBe("string");
 
-    // dispatch_failed event recorded
+    // dispatch_failed event still fires unconditionally (audit trail)
     const eventNames = (
       recordAgentLoopEvent.mock.calls as unknown as { eventName: string }[][]
     ).map((c) => c[0]!.eventName);
@@ -480,6 +546,25 @@ describe("dispatchManualAgentLoopStart", () => {
     expect(createCall.idempotencyKey).toContain("manual");
 
     expect(start).toHaveBeenCalledTimes(1);
+  });
+
+  // BT-765-02: manual dispatch seeds context.trigger = { source: "manual" }
+  test("BT-765-02: manual start seeds run.context.trigger = { source: 'manual' }", async () => {
+    const { dispatchManualAgentLoopStart } = await bridgeModulePromise;
+
+    await dispatchManualAgentLoopStart({
+      userId: "user-1",
+      loopId: "loop-1",
+      requestId: "req-765-02",
+    });
+
+    expect(createAgentLoopRun).toHaveBeenCalledTimes(1);
+    const createCall = (
+      createAgentLoopRun.mock.calls[0] as unknown as [
+        { context?: Record<string, unknown> },
+      ]
+    )[0];
+    expect(createCall.context).toEqual({ trigger: { source: "manual" } });
   });
 
   // BT-326-09: manual start ownership fail

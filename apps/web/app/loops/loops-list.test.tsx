@@ -88,6 +88,24 @@ describe("LoopsList", () => {
     expect(html).toContain("No loops");
   });
 
+  // BT-LOOPS-002c (#768): empty state must define the concept, not just
+  // restate the button. A naive user landing here has no idea what a "loop"
+  // is; the empty state is the first and only explanation before they must
+  // commit to creating one.
+  test("BT-LOOPS-002c: empty state explains what a loop is (concept, not just CTA)", async () => {
+    _swrOverride = { data: { loops: [] }, isLoading: false };
+    const { LoopsList } = await loopsListModulePromise;
+    const html = renderToStaticMarkup(<LoopsList />);
+
+    // Must define the concept: multi-step agent pipeline against a repo.
+    expect(html).toContain("multi-step agent pipeline");
+    // Must give a concrete example so "loop" isn't just jargon restated.
+    expect(html).toContain("review new PRs and comment");
+    // Must mention step ordering / failure handling — the two things a
+    // naive user needs to know before building one.
+    expect(html).toMatch(/steps run in order/i);
+  });
+
   // BT-LOOPS-003: skeleton loading
   test("BT-LOOPS-003: renders skeleton loading when data is loading", async () => {
     _swrOverride = { data: undefined, isLoading: true };

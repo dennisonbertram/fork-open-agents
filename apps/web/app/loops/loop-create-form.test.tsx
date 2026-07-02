@@ -78,4 +78,20 @@ describe("LoopCreateForm", () => {
     // The previous weak assertion still holds but is no longer sufficient alone
     expect(html).toContain("name");
   });
+
+  // BT-LOOPS-009 (#768): the primary "Create loop" CTA must sit in a sticky
+  // action footer so it is never off-screen on a short form-only viewport
+  // (walk 1 hit 2 failed clicks at 633px viewport height because the
+  // Create/Cancel row scrolled below the fold with no way to reach it
+  // without first scrolling the long JSON textarea into view).
+  test("BT-LOOPS-009: primary CTA row is a sticky action footer", async () => {
+    const { LoopCreateForm } = await formModulePromise;
+    const html = renderToStaticMarkup(<LoopCreateForm />);
+
+    // The action row wrapping Cancel/Create loop must be sticky-positioned
+    // to the bottom of its scroll container so it's always reachable.
+    expect(html).toMatch(
+      /class="[^"]*sticky[^"]*bottom-0[^"]*"[^>]*>[\s\S]*Create loop/,
+    );
+  });
 });

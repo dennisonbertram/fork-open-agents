@@ -30,8 +30,10 @@ import {
   cancelLoopRun as storeCancelLoopRun,
   resumeLoopRun as storeResumeLoopRun,
   retryCurrentStep as storeRetryCurrentStep,
+  conditionallyTransitionRunStatus,
   recordAgentLoopEvent,
 } from "./store";
+import { DispatchFailedError } from "./run-controls-error";
 
 /**
  * Pauses a running or queued loop run (cooperative — takes effect at next step boundary).
@@ -112,6 +114,8 @@ export async function resumeLoopRun(
         },
       });
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : String(err);
+
       await recordAgentLoopEvent({
         loopRunId: runId,
         eventName: "agent-loop.chain.dispatch_failed",
@@ -120,10 +124,26 @@ export async function resumeLoopRun(
         summary: "Failed to re-dispatch step on resume (via API)",
         payload: {
           stepRunId: run.currentStepRunId,
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage,
           source: "api",
         },
       });
+
+      const humanErrorMessage = `Couldn't start the run — the execution backend rejected the dispatch: ${errorMessage}`;
+
+      // Issue #763 — no false success: the run must not stay "running" while
+      // resume silently failed to dispatch. Mark it failed with a typed
+      // errorKind and rethrow so the caller (API route) does NOT report
+      // "Resume successful".
+      await conditionallyTransitionRunStatus({
+        runId,
+        toStatus: "failed",
+        fromStatuses: ["running", "queued", "paused"],
+        errorKind: "dispatch_failed",
+        errorMessage: humanErrorMessage,
+      });
+
+      throw new DispatchFailedError(runId, humanErrorMessage);
     }
   }
 }
@@ -170,6 +190,8 @@ export async function retryCurrentStep(
       },
     });
   } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
     await recordAgentLoopEvent({
       loopRunId: runId,
       eventName: "agent-loop.chain.dispatch_failed",
@@ -178,9 +200,25 @@ export async function retryCurrentStep(
       summary: "Failed to dispatch retry step (via API)",
       payload: {
         stepRunId: newStepRun.id,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage,
         source: "api",
       },
     });
+
+    const humanErrorMessage = `Couldn't start the run — the execution backend rejected the dispatch: ${errorMessage}`;
+
+    // Issue #763 — no false success: the run must not stay "running" while
+    // retry silently failed to dispatch. Mark it failed with a typed
+    // errorKind and rethrow so the caller (API route) does NOT report
+    // "Retry successful".
+    await conditionallyTransitionRunStatus({
+      runId,
+      toStatus: "failed",
+      fromStatuses: ["running", "queued"],
+      errorKind: "dispatch_failed",
+      errorMessage: humanErrorMessage,
+    });
+
+    throw new DispatchFailedError(runId, humanErrorMessage);
   }
 }

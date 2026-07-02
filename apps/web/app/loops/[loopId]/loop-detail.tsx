@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -21,6 +20,16 @@ import type {
   StartAgentLoopRunResponse,
 } from "@/app/api/agent-loops/types";
 import type { AgentLoopRun } from "@/lib/db/schema";
+import type { LoopDefinition } from "@/lib/agent-loops/types";
+import type { ListLoopTriggersResponse } from "@/app/api/agent-loops/[loopId]/triggers/trigger-route-types";
+import { summarizeLoopSteps } from "./loop-step-summary";
+import { getStatusMeaning } from "./status-meanings";
+import { getActiveStatusNote } from "./status-trigger-notice";
+import { LoopTriggersCard } from "./loop-triggers-card";
+import { StatusPill } from "./status-pill";
+import { getGuardrailLabel } from "./guardrail-labels";
+import { getScheduleTruthLine } from "./schedule-truth-line";
+import { getRunCompletionLabel } from "./run-completion-label";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -59,30 +68,19 @@ function formatDuration(
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
-// ── Status pill ───────────────────────────────────────────────────────────────
-
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium capitalize",
-        status === "active" || status === "succeeded" || status === "completed"
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : status === "failed" || status === "cancelled"
-            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-            : status === "running" || status === "queued"
-              ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              : "border-border bg-muted/40 text-muted-foreground",
-      )}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
-
 // ── Run row ───────────────────────────────────────────────────────────────────
 
-function RunRow({ run, loopId }: { run: AgentLoopRun; loopId: string }) {
+function RunRow({
+  run,
+  loopId,
+}: {
+  run: AgentLoopRun & { failedStepCount?: number };
+  loopId: string;
+}) {
+  const completionLabel = getRunCompletionLabel({
+    status: run.status,
+    failedStepCount: run.failedStepCount ?? 0,
+  });
   return (
     <Link
       href={`/loops/${loopId}/runs/${run.id}`}
@@ -90,6 +88,16 @@ function RunRow({ run, loopId }: { run: AgentLoopRun; loopId: string }) {
     >
       <div className="min-w-0">
         <p className="truncate font-mono text-xs">{run.id}</p>
+        {completionLabel && (
+          <p className="mt-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+            {completionLabel}
+          </p>
+        )}
+        {run.status === "stalled" && (
+          <p className="mt-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+            No activity for a while — the run appears stuck.
+          </p>
+        )}
       </div>
       <StatusPill status={run.status} />
       <span className="text-xs text-muted-foreground">{run.source}</span>
@@ -120,14 +128,26 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
     useSWR<GetAgentLoopResponse>(`/api/agent-loops/${loopId}`, fetchJson, {
       fallbackData: initialLoopData,
     });
-  const { data: runsData } = useSWR<ListAgentLoopRunsResponse>(
-    `/api/agent-loops/${loopId}/runs`,
-    fetchJson,
-    { refreshInterval: 5000 },
-  );
+  const { data: runsData, mutate: mutateRunsData } =
+    useSWR<ListAgentLoopRunsResponse>(
+      `/api/agent-loops/${loopId}/runs`,
+      fetchJson,
+      { refreshInterval: 5000 },
+    );
+  const { data: triggersData, mutate: mutateTriggersData } =
+    useSWR<ListLoopTriggersResponse>(
+      `/api/agent-loops/${loopId}/triggers`,
+      fetchJson,
+    );
 
-  const { loop, triggers } = loopData ?? initialLoopData;
+  const { loop } = loopData ?? initialLoopData;
   const runs = runsData?.runs ?? [];
+  // triggersData (from the #762 triggers route) carries the humanized
+  // schedule + nextRunAt; fall back to the loop-detail page's initial
+  // trigger summary (no humanized fields) until the client fetch resolves,
+  // so the trigger COUNT used by status-honesty copy is correct on first
+  // paint even before triggersData loads.
+  const triggers = triggersData?.triggers ?? initialLoopData.triggers;
 
   async function handleRunNow() {
     setRunningNow(true);
@@ -163,6 +183,23 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         return;
       }
 
+      if (res.status === 502) {
+        // Issue #763 — no false success: the execution backend rejected the
+        // dispatch. The run was created but is already marked failed —
+        // surface the real state and point at the run page for details.
+        const body = (await res.json().catch(() => ({}))) as {
+          errorKind?: string;
+          runId?: string;
+        };
+        toast.error(
+          "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.",
+        );
+        if (body.runId) {
+          router.push(`/loops/${loopId}/runs/${body.runId}`);
+        }
+        return;
+      }
+
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as {
           message?: string;
@@ -173,6 +210,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
 
       const { runId } = (await res.json()) as StartAgentLoopRunResponse;
       toast.success("Run started");
+      // Revalidate the runs list immediately (#767) so it doesn't disagree
+      // with the run-detail page the user is about to land on.
+      void mutateRunsData();
       router.push(`/loops/${loopId}/runs/${runId}`);
     } catch {
       toast.error("Failed to start run.");
@@ -289,6 +329,21 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
           </div>
         )}
 
+        {/* Stalled-runs summary (#767) — surfaced above the fold so a pile
+            of stuck runs can't hide inside the run history list. */}
+        {(() => {
+          const stalledCount = runs.filter(
+            (r) => r.status === "stalled",
+          ).length;
+          if (stalledCount === 0) return null;
+          return (
+            <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+              {stalledCount} stalled run{stalledCount === 1 ? "" : "s"} need
+              attention.
+            </div>
+          );
+        })()}
+
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {/* Run history */}
@@ -310,19 +365,41 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               )}
             </section>
 
-            {/* Definition */}
+            {/* Definition — prose step list is the primary description; raw
+                JSON moves behind "Advanced" for anyone who needs it. */}
             <section className="rounded-md border border-border">
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Definition</h2>
+                <h2 className="text-sm font-medium">What this loop does</h2>
               </div>
-              <details className="px-4 py-3">
-                <summary className="cursor-pointer text-xs text-muted-foreground">
-                  Show JSON definition
-                </summary>
-                <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-muted/30 p-3 font-mono text-[11px]">
-                  {JSON.stringify(loop.definition, null, 2)}
-                </pre>
-              </details>
+              <div className="px-4 py-3">
+                {(() => {
+                  const steps = summarizeLoopSteps(
+                    loop.definition as LoopDefinition,
+                  );
+                  if (steps.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        This loop has no steps yet. Open the builder to add one.
+                      </p>
+                    );
+                  }
+                  return (
+                    <ol className="space-y-1 text-sm text-foreground">
+                      {steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  );
+                })()}
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Advanced — view JSON definition
+                  </summary>
+                  <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-muted/30 p-3 font-mono text-[11px]">
+                    {JSON.stringify(loop.definition, null, 2)}
+                  </pre>
+                </details>
+              </div>
             </section>
           </div>
 
@@ -332,7 +409,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Loop status</h2>
               </div>
-              <div className="p-4">
+              <div className="space-y-2 p-4">
                 <Select
                   value={loop.status}
                   onValueChange={handleStatusChange}
@@ -348,43 +425,40 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                     <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {getStatusMeaning(loop.status)}
+                </p>
+                {(() => {
+                  const activeNote = getActiveStatusNote({
+                    status: loop.status,
+                    triggerCount: triggers.length,
+                  });
+                  return activeNote ? (
+                    <p className="text-xs text-muted-foreground">
+                      {activeNote}
+                    </p>
+                  ) : null;
+                })()}
+                {/* Schedule truth line (#767) — answers "when does this run
+                    next?" using the Triggers card's nextRunAt (#762). */}
+                <p className="text-xs text-muted-foreground">
+                  {getScheduleTruthLine({
+                    loopStatus: loop.status,
+                    triggers,
+                  })}
+                </p>
               </div>
             </section>
 
-            {/* Trigger summary */}
-            <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Triggers</h2>
-              </div>
-              {triggers.length === 0 ? (
-                <div className="p-4 text-xs text-muted-foreground">
-                  No triggers configured. Manage triggers in{" "}
-                  <Link
-                    href="/settings/background-agents"
-                    className="underline hover:text-foreground"
-                  >
-                    Background agents settings
-                  </Link>
-                  .
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {triggers.map((trigger) => (
-                    <div key={trigger.id} className="px-4 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="font-mono text-xs">{trigger.kind}</p>
-                        <StatusPill status={trigger.status} />
-                      </div>
-                      {trigger.schedule && (
-                        <p className="mt-1 font-mono text-[10px] text-muted-foreground">
-                          {trigger.schedule}
-                        </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            {/* Trigger manager (#762) */}
+            <LoopTriggersCard
+              loopId={loopId}
+              loopStatus={loop.status}
+              triggers={triggers}
+              onTriggersChanged={() => {
+                void mutateTriggersData();
+              }}
+            />
 
             {/* Guardrails */}
             {loop.guardrails && (
@@ -398,7 +472,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                       key={key}
                       className="flex justify-between gap-3 px-4 py-2"
                     >
-                      <span className="text-muted-foreground">{key}</span>
+                      <span className="text-muted-foreground">
+                        {getGuardrailLabel(key)}
+                      </span>
                       <span className="font-mono text-xs">{String(value)}</span>
                     </div>
                   ))}

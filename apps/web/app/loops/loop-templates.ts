@@ -14,6 +14,24 @@ import type { LoopDefinition } from "@/lib/agent-loops/types";
 
 export type LoopTemplateTrigger = "schedule" | "github_pr" | "manual";
 
+/**
+ * Machine-readable trigger suggestion (#765). Mirrors the shape the loop
+ * trigger API (`POST /api/agent-loops/[loopId]/triggers`, #762) accepts, so
+ * the post-create nudge can attach it with a single API call. Creating a loop
+ * from a template never auto-attaches this — it is purely a one-click
+ * suggestion the user can accept or ignore.
+ */
+export type LoopTemplateSuggestedTriggerSpec =
+  | { kind: "schedule.cron"; schedule: string }
+  | {
+      kind:
+        | "github.pull_request"
+        | "github.pull_request_review"
+        | "github.deployment_status"
+        | "github.issue"
+        | "github.check_suite";
+    };
+
 export type LoopTemplate = {
   slug: string;
   name: string;
@@ -21,6 +39,12 @@ export type LoopTemplate = {
   description: string;
   /** Short, human phrasing of when this loop runs. */
   suggestedTrigger: string;
+  /**
+   * Machine-readable trigger suggestion (#765), when this template's job
+   * benefits from one. Absent when no single trigger kind is an obvious fit
+   * (e.g. email-triage needs an unshipped email-poll trigger kind).
+   */
+  suggestedTriggerSpec?: LoopTemplateSuggestedTriggerSpec;
   /** Capability the agent steps need before this loop can run, if any. */
   requiresTool?: string;
   definition: LoopDefinition;
@@ -118,6 +142,11 @@ const backlogToPr: LoopTemplate = {
         position: { x: 1200, y: 0 },
         instructions:
           'Open a PR from the working branch with a summary (`gh pr create`). Write {"pr": <number>} to /tmp/loop-step-output.json.',
+        // #765: this step is the one place `gh pr create` is legitimate in
+        // this template — declare pull-request WRITE so the step-prompt
+        // builder's conditional permission (loop-step-prompt.ts) lifts the
+        // default PR-creation prohibition for this node only.
+        permissions: { github: { pullRequests: "write" } },
       },
       { id: "end", kind: "end", label: "Done", position: { x: 1440, y: 0 } },
     ],
@@ -201,12 +230,68 @@ const emailTriage: LoopTemplate = {
   },
 };
 
+const reviewPrsAndComment: LoopTemplate = {
+  slug: "review-prs-and-comment",
+  name: "Review PRs and comment",
+  description:
+    "List open pull requests and leave a review comment on each one. Agent steps only — this template never opens or merges anything.",
+  // Worded as a suggestion, not an implemented/wired trigger: trigger CRUD
+  // ships separately (#762/C1), so creating this template does not attach
+  // any schedule or webhook by itself.
+  suggestedTrigger: "A nightly schedule works well for this, if you add one",
+  // #765: daily 02:00 UTC — matches the suggestedTrigger prose above. The
+  // post-create nudge offers this as a one-click "Attach suggested trigger"
+  // action; it is never auto-attached by creating the loop.
+  suggestedTriggerSpec: { kind: "schedule.cron", schedule: "0 2 * * *" },
+  definition: {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "list",
+        kind: "agent_step",
+        label: "List open PRs",
+        position: { x: 260, y: 0 },
+        instructions:
+          'List the repository\'s open pull requests (`gh pr list`). Write {"prs":[{"number": <n>, "title": "..."}]} to /tmp/loop-step-output.json.',
+        // `gh pr list` needs pull-request read; the default minted token
+        // carries contents-only scopes (lib/agent-loops/token-permissions.ts).
+        permissions: { github: { pullRequests: "read" } },
+      },
+      {
+        id: "review",
+        kind: "agent_step",
+        label: "Review and comment",
+        position: { x: 520, y: 0 },
+        instructions:
+          'For each PR in context.list.prs, review its diff and leave a review comment summarizing findings, targeting it by number: `gh pr review <number> --comment --body "..."` (without a number, gh reviews the current branch\'s PR — wrong here). Do NOT approve, request changes, merge, or open any PR. Write {"commented": <count>} to /tmp/loop-step-output.json.',
+        // Creating a PR review requires pull-request WRITE on the minted token.
+        permissions: { github: { pullRequests: "write" } },
+      },
+      { id: "end", kind: "end", label: "Done", position: { x: 780, y: 0 } },
+    ],
+    edges: [
+      { id: "e1", source: "start", target: "list", when: "always" },
+      { id: "e2", source: "list", target: "review", when: "success" },
+      { id: "e3", source: "review", target: "end", when: "success" },
+    ],
+  },
+};
+
 const mergeWhenGreen: LoopTemplate = {
   slug: "merge-when-green",
   name: "Merge when green",
+  // #765: this template only works when it runs from a PR-event trigger —
+  // its check node reads the PR's ref from trigger.ref (seeded by the
+  // dispatcher bridge from the trigger's event payload). Creating this
+  // template does NOT attach a trigger automatically; without one, "Run now"
+  // has no trigger.ref to read and the check step fails with
+  // condition_path_missing.
   description:
-    "Check a PR's CI status; if it's passing, merge it. Teaches the GitHub check node.",
-  suggestedTrigger: "On a new PR",
+    "Check a PR's CI status; if it's passing, merge it. Teaches the GitHub check node. Needs a PR-event trigger to be useful — without one, there's no PR ref to check.",
+  suggestedTrigger: "On a new PR (attach a PR-event trigger after creating)",
+  // #765: matches the description above — the post-create nudge offers this
+  // as a one-click "Attach suggested trigger" action; never auto-attached.
+  suggestedTriggerSpec: { kind: "github.pull_request" },
   definition: {
     nodes: [
       { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
@@ -215,7 +300,12 @@ const mergeWhenGreen: LoopTemplate = {
         kind: "github_check",
         label: "Check CI",
         position: { x: 240, y: 0 },
-        check: { kind: "ci_status", refFrom: "context.start.ref" },
+        // #765: was "context.start.ref" — a path that can never resolve (no
+        // node writes output under a "start" or "context" context key).
+        // trigger.ref is seeded by the dispatcher bridge from the PR-event
+        // trigger's payload (docs/plans/agent-loops-epic.md's trigger.*
+        // contract) and is the PR head ref this check needs.
+        check: { kind: "ci_status", refFrom: "trigger.ref" },
       },
       {
         id: "green",
@@ -272,6 +362,7 @@ function withSpacing(template: LoopTemplate): LoopTemplate {
 /** All starter templates, in display order (simplest first). */
 export const LOOP_TEMPLATES: LoopTemplate[] = [
   reviewToIssues,
+  reviewPrsAndComment,
   backlogToPr,
   mergeWhenGreen,
   emailTriage,

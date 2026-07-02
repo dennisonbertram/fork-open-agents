@@ -142,7 +142,7 @@ export function buildBuilderGuidance({
   }
 
   return {
-    headline: "Ready to run",
+    headline: "All changes saved",
     detail:
       "This loop is saved and valid. Add more steps only when the process needs them.",
     steps,
