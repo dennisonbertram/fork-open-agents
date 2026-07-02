@@ -1,0 +1,156 @@
+import { describe, expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { GitHubStatusNotice } from "./github-status-notice";
+
+// Issue #781: render github=<status> outcomes on /get-started as designed
+// inline states instead of a silent no-op.
+
+describe("GitHubStatusNotice", () => {
+  test("request_sent: durable pending-approval card, no CTA", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="request_sent" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("approval");
+    expect(html.toLowerCase()).toContain("pending");
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain("/retry");
+  });
+
+  test("pending_sync: install detected, sync in progress, refresh affordance", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="pending_sync" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("sync");
+    expect(html).toContain('role="status"');
+  });
+
+  test("app_not_configured: operator-facing, no user-blame copy", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="app_not_configured" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("administrator");
+    expect(html.toLowerCase()).not.toContain("you did");
+    expect(html).toContain('role="alert"');
+  });
+
+  test("not_linked: no retry CTA link — the Connect GitHub button below owns recovery (#781)", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="not_linked"
+        retryHref="/api/github/app/install?next=%2Fget-started"
+      />,
+    );
+    expect(html).not.toContain("/api/github/app/install");
+    expect(html.toLowerCase()).not.toContain("try connecting again");
+    expect(html).toContain('role="alert"');
+  });
+
+  test("link_failed: no retry CTA link — the Connect GitHub button below owns recovery (#781)", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="link_failed"
+        retryHref="/api/github/app/install?next=%2Fget-started"
+      />,
+    );
+    expect(html).not.toContain("/api/github/app/install");
+    expect(html.toLowerCase()).not.toContain("try connecting again");
+    expect(html).toContain('role="alert"');
+  });
+
+  test("no_action: neutral acknowledgment, not an error", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="no_action" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("no changes");
+    expect(html).toContain('role="status"');
+    expect(html).not.toContain('role="alert"');
+  });
+
+  test("account_connected: success confirmation", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="account_connected" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("connected");
+    expect(html).toContain('role="status"');
+  });
+
+  test("app_installed: success confirmation", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="app_installed" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("installed");
+    expect(html).toContain('role="status"');
+  });
+
+  test("invalid_state: forward-compatible generic copy, no crash", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="invalid_state" retryHref="/retry" />,
+    );
+    expect(html.toLowerCase()).toContain("interrupted");
+    expect(html).toContain("/retry");
+  });
+
+  test("unrecognized/unknown status renders generic forward-compatible copy instead of throwing", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <GitHubStatusNotice
+          status={"some_future_status" as never}
+          retryHref="/retry"
+        />,
+      ),
+    ).not.toThrow();
+
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status={"some_future_status" as never}
+        retryHref="/retry"
+      />,
+    );
+    expect(html.toLowerCase()).toContain("interrupted");
+  });
+
+  test("missingInstallationId flag adjusts pending_sync copy without crashing", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="pending_sync"
+        retryHref="/retry"
+        missingInstallationId
+      />,
+    );
+    expect(html.toLowerCase()).toContain("sync");
+  });
+});
+
+describe("GitHubStatusNotice - regression: no dead-end retry link for not_linked/link_failed (#781)", () => {
+  test("not_linked renders no anchor tag at all, regardless of retryHref value", () => {
+    // Regression guard: this checks for the absence of any <a> element (not
+    // just the specific install-route substring), so a future change that
+    // points the CTA at a *different* URL still fails this test unless the
+    // CTA is intentionally reintroduced with its own coverage.
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="not_linked"
+        retryHref="/some/other/retry/path"
+      />,
+    );
+    expect(html).not.toContain("<a ");
+  });
+
+  test("link_failed renders no anchor tag at all, regardless of retryHref value", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice
+        status="link_failed"
+        retryHref="/some/other/retry/path"
+      />,
+    );
+    expect(html).not.toContain("<a ");
+  });
+
+  test("invalid_state (a different recoverable-ish status) still renders its CTA — the fix is scoped to not_linked/link_failed only", () => {
+    const html = renderToStaticMarkup(
+      <GitHubStatusNotice status="invalid_state" retryHref="/retry" />,
+    );
+    expect(html).toContain("<a ");
+    expect(html).toContain("/retry");
+  });
+});

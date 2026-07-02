@@ -1,5 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
+import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
@@ -56,6 +58,14 @@ export async function GET(req: Request): Promise<Response> {
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
     redirectUrl.searchParams.set("github", "not_linked");
+    const stepPreserved = redirectUrl.pathname === "/get-started";
+    addGitHubStepParamIfGetStarted(redirectUrl);
+    logGitHubRedirectIssued({
+      status: "not_linked",
+      route: "callback",
+      stepPreserved,
+      userId: session.user.id,
+    });
     return redirectAndClearCookies(redirectUrl);
   }
 
@@ -88,5 +98,13 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   redirectUrl.searchParams.set("github", githubStatus);
+  const stepPreserved = redirectUrl.pathname === "/get-started";
+  addGitHubStepParamIfGetStarted(redirectUrl);
+  logGitHubRedirectIssued({
+    status: githubStatus,
+    route: "callback",
+    stepPreserved,
+    userId: session.user.id,
+  });
   return redirectAndClearCookies(redirectUrl);
 }
