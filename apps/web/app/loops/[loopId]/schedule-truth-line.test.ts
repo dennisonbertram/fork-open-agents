@@ -64,7 +64,7 @@ describe("getScheduleTruthLine", () => {
 // Codex finding on PR #775: with multiple enabled schedule triggers,
 // listTriggersForLoop returns newest-first, so `find` could report a later
 // nextRunAt than the trigger that actually fires next.
-test("#767: picks the EARLIEST nextRunAt among multiple enabled schedule triggers", () => {
+it("#767: picks the EARLIEST nextRunAt among multiple enabled schedule triggers", () => {
   const line = getScheduleTruthLine({
     loopStatus: "active",
     triggers: [

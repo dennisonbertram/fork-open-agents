@@ -30,7 +30,14 @@ export function getRunControlToastMessage(
   if (body.errorKind === "dispatch_failed") {
     return DISPATCH_FAILED_MESSAGE;
   }
-  if (body.errorKind === "illegal_transition" && action === "retry") {
+  // illegal_transition also covers non-race cases ("not in a retryable
+  // status ... got: completed") whose server messages carry the real reason —
+  // only the store's TOCTOU-race message gets the humanized conflict copy.
+  if (
+    body.errorKind === "illegal_transition" &&
+    action === "retry" &&
+    body.message?.includes("TOCTOU race")
+  ) {
     return RETRY_CONFLICT_MESSAGE;
   }
   return body.message ?? `Failed to ${action} run`;

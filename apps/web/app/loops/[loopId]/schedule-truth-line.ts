@@ -35,11 +35,17 @@ export function getScheduleTruthLine(params: {
   loopStatus: string;
   triggers: ScheduleTruthTrigger[];
 }): string {
-  const enabledSchedule = params.triggers.find(
-    (t) => t.kind === "schedule.cron" && t.status === "enabled" && t.nextRunAt,
-  );
+  // listTriggersForLoop returns newest-first — pick the trigger that fires
+  // soonest, not the first in list order.
+  const nextRunAt = params.triggers
+    .filter(
+      (t) =>
+        t.kind === "schedule.cron" && t.status === "enabled" && t.nextRunAt,
+    )
+    .map((t) => new Date(t.nextRunAt as Date | string))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
 
-  if (!enabledSchedule) {
+  if (!nextRunAt) {
     return NO_SCHEDULE_LINE;
   }
 
@@ -47,5 +53,5 @@ export function getScheduleTruthLine(params: {
     return "This loop has a schedule, but it won't fire until the loop is Active.";
   }
 
-  return `Next run: ${formatNextRunUtc(enabledSchedule.nextRunAt as Date | string)}`;
+  return `Next run: ${formatNextRunUtc(nextRunAt)}`;
 }
