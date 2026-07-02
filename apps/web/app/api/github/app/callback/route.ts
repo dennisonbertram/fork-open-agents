@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
+import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
@@ -46,8 +46,6 @@ export async function GET(req: Request): Promise<Response> {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  const redirectUrl = new URL(redirectTo, req.url);
-
   const requestUrl = new URL(req.url);
   const installationId = parseInstallationId(
     requestUrl.searchParams.get("installation_id"),
@@ -57,13 +55,15 @@ export async function GET(req: Request): Promise<Response> {
   // get the user's github token from better-auth
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
-    redirectUrl.searchParams.set("github", "not_linked");
-    const stepPreserved = redirectUrl.pathname === "/get-started";
-    addGitHubStepParamIfGetStarted(redirectUrl);
+    const redirectUrl = resolveGitHubReturnTarget(
+      "not_linked",
+      redirectTo,
+      req.url,
+    );
     logGitHubRedirectIssued({
       status: "not_linked",
       route: "callback",
-      stepPreserved,
+      stepPreserved: redirectUrl.pathname === "/get-started",
       userId: session.user.id,
     });
     return redirectAndClearCookies(redirectUrl);
@@ -86,24 +86,28 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   let githubStatus: string;
+  let missingInstallationId = false;
   if (setupAction === "request") {
     githubStatus = "request_sent";
   } else if ((syncedInstallationsCount ?? 0) > 0) {
     githubStatus = "app_installed";
   } else if (!installationId) {
     githubStatus = "no_action";
-    redirectUrl.searchParams.set("missing_installation_id", "1");
+    missingInstallationId = true;
   } else {
     githubStatus = "pending_sync";
   }
 
-  redirectUrl.searchParams.set("github", githubStatus);
-  const stepPreserved = redirectUrl.pathname === "/get-started";
-  addGitHubStepParamIfGetStarted(redirectUrl);
+  const redirectUrl = resolveGitHubReturnTarget(
+    githubStatus,
+    redirectTo,
+    req.url,
+    { missingInstallationId },
+  );
   logGitHubRedirectIssued({
     status: githubStatus,
     route: "callback",
-    stepPreserved,
+    stepPreserved: redirectUrl.pathname === "/get-started",
     userId: session.user.id,
   });
   return redirectAndClearCookies(redirectUrl);

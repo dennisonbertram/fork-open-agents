@@ -59,7 +59,11 @@ describe("GET /api/github/app/callback", () => {
     syncInstallationsError = null;
   });
 
-  test("returns no_action when the user exits before selecting an installation", async () => {
+  // Issue #829 (comment 3516151659): no_action is a non-success status, so it
+  // now always reroutes to /get-started (carrying the original redirect
+  // target in `next`) instead of landing on the original non-/get-started
+  // target where the status would be silently dropped.
+  test("returns no_action and reroutes to get-started with next preserved", async () => {
     syncedInstallationsCount = 0;
     const { GET } = await routeModulePromise;
 
@@ -69,9 +73,10 @@ describe("GET /api/github/app/callback", () => {
 
     expect(response.status).toBe(307);
     const redirectUrl = getRedirectUrl(response);
-    expect(redirectUrl.pathname).toBe("/settings/connections");
+    expect(redirectUrl.pathname).toBe("/get-started");
     expect(redirectUrl.searchParams.get("github")).toBe("no_action");
     expect(redirectUrl.searchParams.get("missing_installation_id")).toBe("1");
+    expect(redirectUrl.searchParams.get("next")).toBe("/settings/connections");
   });
 
   test("returns pending_sync when github reports an installation but sync is still empty", async () => {
