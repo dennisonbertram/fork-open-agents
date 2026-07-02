@@ -1,6 +1,8 @@
 "use client";
 
 import { MessageSquare, Plus } from "lucide-react";
+import Link from "next/link";
+import { useSession } from "@/hooks/use-session";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -13,8 +15,13 @@ import {
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useSessionsShell } from "./sessions-shell-context";
 
+// sessions-empty-state: a brand-new user's very first authenticated screen.
+// Names the "session" concept explicitly (a scoped agent conversation,
+// optionally tied to a repo) instead of assuming sidebar familiarity, and
+// only offers a GitHub-connect path when there is nothing to connect yet.
 export function SessionsIndexShell() {
   const { openNewSessionDialog } = useSessionsShell();
+  const { hasGitHubInstallations } = useSession();
 
   return (
     <>
@@ -29,9 +36,11 @@ export function SessionsIndexShell() {
             <EmptyMedia variant="icon">
               <MessageSquare />
             </EmptyMedia>
-            <EmptyTitle>Select a Session</EmptyTitle>
+            <EmptyTitle>Start your first session</EmptyTitle>
             <EmptyDescription>
-              Choose a session from the sidebar to continue, or start a new one.
+              A session is a scoped conversation with the agent — optionally
+              tied to a repo, or standalone. Create one to get started, or
+              connect GitHub first if you want repo-scoped sessions.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
@@ -39,6 +48,11 @@ export function SessionsIndexShell() {
               <Plus className="h-4 w-4" />
               New Session
             </Button>
+            {hasGitHubInstallations ? null : (
+              <Button asChild variant="outline">
+                <Link href="/get-started?step=github">Connect GitHub</Link>
+              </Button>
+            )}
           </EmptyContent>
         </Empty>
       </div>
