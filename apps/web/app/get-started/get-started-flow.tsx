@@ -109,9 +109,9 @@ export function GetStartedFlow() {
             Open Agents
           </span>
         </div>
-        <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">
-          Spawn coding agents that run infinitely in the cloud. Powered by AI
-          SDK, Gateway, Sandbox, and Workflow SDK.
+        <p className="max-w-sm text-sm leading-relaxed text-zinc-600">
+          Describe what you want built, and an AI agent writes the code in
+          its own cloud sandbox — no local setup required.
         </p>
       </div>
 
@@ -359,7 +359,9 @@ function GitHubConnectStep({
       <div className="space-y-3">
         {statusNotice}
         <p className="text-xs text-zinc-500">
-          GitHub account linked. Install the GitHub App to grant repo access.
+          Your GitHub identity is verified. Next, install the Open Agents
+          GitHub App to grant repo access — you can choose selected
+          repositories instead of every repository in your account.
         </p>
         <Button
           asChild
@@ -382,7 +384,7 @@ function GitHubConnectStep({
       <p className="text-xs text-zinc-500">
         {forceReconnect
           ? "Reconnect your GitHub account to restore repository and installation access."
-          : "Connect your GitHub account to clone repos, create PRs, and push code."}
+          : "Connect your GitHub account to verify your identity (step 1 of 2). Next you'll install the Open Agents GitHub App and choose which repositories it can access."}
       </p>
       <Button
         variant="outline"

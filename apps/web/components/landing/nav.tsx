@@ -30,7 +30,7 @@ export function LandingNav({
               : "shadow-none"
           }`}
         >
-          <Logo className="h-[17px]" />
+          <Logo className="h-[17px]" aria-label="Open Agents home" />
 
           <div
             className={cn(
@@ -40,8 +40,12 @@ export function LandingNav({
                 : "pointer-events-none opacity-0 blur-xs",
             )}
           >
-            <GitHubLink variant="ghost" size="sm" />
-            <SignInButton size="sm" />
+            <GitHubLink
+              variant="ghost"
+              size="sm"
+              aria-label="Open Agents on GitHub (opens in a new tab)"
+            />
+            <SignInButton size="sm" className="h-10 sm:h-8" />
           </div>
         </div>
       </div>
