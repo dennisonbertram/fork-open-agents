@@ -24,11 +24,37 @@ export function formatTriggerLabel(
       return formatIssueLabel(conditions);
     case "github.deployment_status":
       return formatDeploymentLabel(conditions);
+    case "github.check_suite":
+      return formatCheckSuiteLabel(conditions);
     case "schedule.cron":
       return "Scheduled";
     case "webhook.error":
       return "On error webhook";
   }
+}
+
+function formatCheckSuiteLabel(conditions: TriggerConditions): string {
+  const hasBranches = conditions.branches && conditions.branches.length > 0;
+  // check_suite conclusion is stored in conditions.actions (the normalizer
+  // sets event.action = conclusion, matched the same way deployment_status is).
+  const hasConclusion = conditions.actions && conditions.actions.length > 0;
+
+  if (!hasBranches && !hasConclusion) {
+    return "On CI checks finishing";
+  }
+
+  const parts: string[] = ["On CI checks"];
+
+  if (hasConclusion) {
+    parts.push(conditions.actions![0]!);
+  }
+
+  if (hasBranches) {
+    parts.push("on");
+    parts.push(conditions.branches![0]!);
+  }
+
+  return parts.join(" ");
 }
 
 function formatPrReviewLabel(conditions: TriggerConditions): string {

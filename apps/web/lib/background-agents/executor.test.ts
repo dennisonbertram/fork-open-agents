@@ -371,6 +371,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,
+    runBudgetPerTarget: 10,
     createdAt: now,
     updatedAt: now,
     ...overrides,

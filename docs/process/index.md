@@ -51,6 +51,9 @@ Start here:
 - [Pipeline Gates](pipeline-gates.md) - the machine-enforced layer (pre-push
   hook, CI build/guards jobs, migration-safety, test-touch, production smoke)
   under the prose process docs.
+- [Night-Shift Pipeline](night-shift-pipeline.md) - recipe for a three-agent
+  implementer/reviewer/merge-bot pipeline using the `github.check_suite`
+  trigger, `actors`/`ignoreActors` conditions, and the per-PR run budget.
 
 Supporting docs:
 

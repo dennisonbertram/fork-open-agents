@@ -13,6 +13,7 @@ export type TriggerKind =
   | "github.pull_request_review"
   | "github.deployment_status"
   | "github.issue"
+  | "github.check_suite"
   | "schedule.cron"
   | "webhook.error";
 
@@ -29,6 +30,8 @@ export type TriggerConditions = {
   labels?: string[];
   environments?: string[];
   severities?: string[];
+  actors?: string[];
+  ignoreActors?: string[];
 };
 
 export type BackgroundAgentTrigger = {
@@ -80,6 +83,8 @@ export type FormState = {
   conditionLabels: string;
   conditionEnvironments: string;
   conditionSeverities: string;
+  conditionActors: string;
+  conditionIgnoreActors: string;
   instructions: string;
   outputMode: OutputMode;
   checkCommand: string;
@@ -101,6 +106,8 @@ export const defaultForm: FormState = {
   conditionLabels: "",
   conditionEnvironments: "",
   conditionSeverities: "",
+  conditionActors: "",
+  conditionIgnoreActors: "",
   instructions: "",
   outputMode: "none",
   checkCommand: "",
@@ -115,6 +122,7 @@ export const triggerLabels: Record<TriggerKind, string> = {
   "github.pull_request_review": "A pull request is reviewed",
   "github.deployment_status": "A deployment finishes",
   "github.issue": "An issue is opened",
+  "github.check_suite": "CI checks finish (check_suite)",
   "schedule.cron": "On a schedule",
   "webhook.error": "An error is reported (webhook)",
 };
@@ -166,6 +174,8 @@ function buildConditions(form: FormState): TriggerConditions {
   const labels = splitConditionList(form.conditionLabels);
   const environments = splitConditionList(form.conditionEnvironments);
   const severities = splitConditionList(form.conditionSeverities);
+  const actors = splitConditionList(form.conditionActors);
+  const ignoreActors = splitConditionList(form.conditionIgnoreActors);
 
   // For deployment_status triggers, the normalizer sets event.action = deployment
   // state ("success", "failure", etc.) and never sets event.severity. Route the
@@ -175,6 +185,20 @@ function buildConditions(form: FormState): TriggerConditions {
     return {
       ...(severities ? { actions: severities } : {}),
       ...(environments ? { environments } : {}),
+      ...(actors ? { actors } : {}),
+      ...(ignoreActors ? { ignoreActors } : {}),
+    };
+  }
+
+  // check_suite: the normalizer maps conclusion -> event.action, so the
+  // "Statuses" UI field (conditionSeverities) is routed into conditions.actions
+  // the same way deployment_status is.
+  if (form.triggerKind === "github.check_suite") {
+    return {
+      ...(severities ? { actions: severities } : {}),
+      ...(branches ? { branches } : {}),
+      ...(actors ? { actors } : {}),
+      ...(ignoreActors ? { ignoreActors } : {}),
     };
   }
 
@@ -184,6 +208,8 @@ function buildConditions(form: FormState): TriggerConditions {
     ...(labels ? { labels } : {}),
     ...(environments ? { environments } : {}),
     ...(severities ? { severities } : {}),
+    ...(actors ? { actors } : {}),
+    ...(ignoreActors ? { ignoreActors } : {}),
   };
 }
 
@@ -245,7 +271,9 @@ export type ConditionField =
   | "branches"
   | "labels"
   | "environments"
-  | "statuses";
+  | "statuses"
+  | "actors"
+  | "ignoreActors";
 
 /**
  * Returns the Set of condition fields valid for the given trigger kind.
@@ -254,18 +282,51 @@ export type ConditionField =
  *
  * "statuses" maps to `conditionSeverities` in FormState — the UI label is
  * trigger-dependent (see conditionFieldLabel).
+ *
+ * "actors"/"ignoreActors" (#749) are available on every GitHub event trigger
+ * kind (including check_suite) — they gate on event.actor (sender.login) and
+ * are the loop-safety backstop for chained agents.
  */
 export function fieldsForTrigger(kind: TriggerKind): Set<ConditionField> {
   switch (kind) {
     case "github.pull_request":
-      return new Set<ConditionField>(["actions", "branches", "labels"]);
+      return new Set<ConditionField>([
+        "actions",
+        "branches",
+        "labels",
+        "actors",
+        "ignoreActors",
+      ]);
     case "github.pull_request_review":
       // actions: submitted; statuses: approved|changes_requested|commented
-      return new Set<ConditionField>(["actions", "statuses"]);
+      return new Set<ConditionField>([
+        "actions",
+        "statuses",
+        "actors",
+        "ignoreActors",
+      ]);
     case "github.issue":
-      return new Set<ConditionField>(["actions", "labels"]);
+      return new Set<ConditionField>([
+        "actions",
+        "labels",
+        "actors",
+        "ignoreActors",
+      ]);
     case "github.deployment_status":
-      return new Set<ConditionField>(["environments", "statuses"]);
+      return new Set<ConditionField>([
+        "environments",
+        "statuses",
+        "actors",
+        "ignoreActors",
+      ]);
+    case "github.check_suite":
+      // statuses maps to the check_suite conclusion (success|failure|...)
+      return new Set<ConditionField>([
+        "branches",
+        "statuses",
+        "actors",
+        "ignoreActors",
+      ]);
     case "schedule.cron":
       return new Set<ConditionField>();
     case "webhook.error":
@@ -278,6 +339,7 @@ export function fieldsForTrigger(kind: TriggerKind): Set<ConditionField> {
  *
  * The "statuses" field has a trigger-dependent label:
  * - github.deployment_status: "Deployment state" (matches deployment state like success/failure)
+ * - github.check_suite: "Conclusion" (matches check_suite conclusion like success/failure)
  * - webhook.error: "Severity" (matches severity on the webhook payload)
  */
 export function conditionFieldLabel(
@@ -286,6 +348,7 @@ export function conditionFieldLabel(
 ): string {
   if (field === "statuses") {
     if (triggerKind === "github.deployment_status") return "Deployment state";
+    if (triggerKind === "github.check_suite") return "Conclusion";
     if (triggerKind === "webhook.error") return "Severity";
     if (triggerKind === "github.pull_request_review") return "Review state";
     return "Statuses";
@@ -299,6 +362,10 @@ export function conditionFieldLabel(
       return "Labels";
     case "environments":
       return "Environments";
+    case "actors":
+      return "Only these actors";
+    case "ignoreActors":
+      return "Ignore these actors";
   }
 }
 
@@ -371,20 +438,23 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
   const conditions = trigger?.conditions ?? {};
   const triggerKind = trigger?.kind ?? "github.pull_request";
 
-  // For deployment_status triggers, the status was stored in conditions.actions
-  // (see buildConditions). Restore it into conditionSeverities so the UI shows
-  // the value in the "Statuses" field where the user originally entered it.
-  const conditionSeverities =
-    triggerKind === "github.deployment_status"
-      ? joinConditionList(conditions.actions)
-      : joinConditionList(conditions.severities);
+  // For deployment_status/check_suite triggers, the status was stored in
+  // conditions.actions (see buildConditions). Restore it into
+  // conditionSeverities so the UI shows the value in the "Statuses" field
+  // where the user originally entered it.
+  const statusDrivenByActions =
+    triggerKind === "github.deployment_status" ||
+    triggerKind === "github.check_suite";
+  const conditionSeverities = statusDrivenByActions
+    ? joinConditionList(conditions.actions)
+    : joinConditionList(conditions.severities);
 
-  // For deployment_status, conditionActions is driven by conditionSeverities, so
-  // leave it empty to avoid showing the same value in two fields.
-  const conditionActions =
-    triggerKind === "github.deployment_status"
-      ? ""
-      : joinConditionList(conditions.actions);
+  // For deployment_status/check_suite, conditionActions is driven by
+  // conditionSeverities, so leave it empty to avoid showing the same value
+  // in two fields.
+  const conditionActions = statusDrivenByActions
+    ? ""
+    : joinConditionList(conditions.actions);
 
   // Edit mode must reflect what was actually saved, not re-derive GitHub access
   // from outputMode. That keeps downgraded agents from silently re-escalating
@@ -405,6 +475,8 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     conditionLabels: joinConditionList(conditions.labels),
     conditionEnvironments: joinConditionList(conditions.environments),
     conditionSeverities,
+    conditionActors: joinConditionList(conditions.actors),
+    conditionIgnoreActors: joinConditionList(conditions.ignoreActors),
     instructions: agent.instructions,
     outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",

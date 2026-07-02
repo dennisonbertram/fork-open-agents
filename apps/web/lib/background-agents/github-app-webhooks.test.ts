@@ -40,12 +40,13 @@ describe("GitHub App webhook readiness", () => {
     }
     appData = {
       slug: "open-agents-dennison",
-      // pull_request_review is now required (CODE-02)
+      // pull_request_review is required (CODE-02); check_suite is required (#749)
       events: [
         "pull_request",
         "issues",
         "deployment_status",
         "pull_request_review",
+        "check_suite",
       ],
       permissions: {
         contents: "write",
@@ -53,6 +54,7 @@ describe("GitHub App webhook readiness", () => {
         issues: "read",
         deployments: "read",
         statuses: "read",
+        checks: "read",
         metadata: "read",
       },
     };
@@ -182,6 +184,65 @@ describe("GitHub App webhook readiness", () => {
         "issues",
         "deployment_status",
         "pull_request_review",
+        "check_suite",
+      ],
+      permissions: {
+        contents: "write",
+        pull_requests: "write",
+        issues: "read",
+        deployments: "read",
+        statuses: "read",
+        checks: "read",
+        metadata: "read",
+      },
+    };
+    const { getGitHubAppWebhookReadinessCheck } = await modulePromise;
+
+    const check = await getGitHubAppWebhookReadinessCheck();
+
+    expect(check.status).toBe("ready");
+    expect(check.missing).not.toContain("event:pull_request_review");
+  });
+
+  // #749: check_suite subscription requirement (merge-bot trigger backstop)
+  test("reports missing when check_suite is absent from installed events", async () => {
+    configureEnv();
+    appData = {
+      slug: "open-agents-dennison",
+      events: [
+        "pull_request",
+        "issues",
+        "deployment_status",
+        "pull_request_review",
+      ],
+      permissions: {
+        contents: "write",
+        pull_requests: "write",
+        issues: "read",
+        deployments: "read",
+        statuses: "read",
+        checks: "read",
+        metadata: "read",
+      },
+    };
+    const { getGitHubAppWebhookReadinessCheck } = await modulePromise;
+
+    const check = await getGitHubAppWebhookReadinessCheck();
+
+    expect(check.status).toBe("missing");
+    expect(check.missing).toContain("event:check_suite");
+  });
+
+  test("reports missing when checks:read permission is absent", async () => {
+    configureEnv();
+    appData = {
+      slug: "open-agents-dennison",
+      events: [
+        "pull_request",
+        "issues",
+        "deployment_status",
+        "pull_request_review",
+        "check_suite",
       ],
       permissions: {
         contents: "write",
@@ -196,7 +257,7 @@ describe("GitHub App webhook readiness", () => {
 
     const check = await getGitHubAppWebhookReadinessCheck();
 
-    expect(check.status).toBe("ready");
-    expect(check.missing).not.toContain("event:pull_request_review");
+    expect(check.status).toBe("missing");
+    expect(check.missing).toContain("permission:checks=read");
   });
 });

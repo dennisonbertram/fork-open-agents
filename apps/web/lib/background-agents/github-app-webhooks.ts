@@ -6,11 +6,14 @@ import type { BackgroundAgentReadinessCheck } from "./readiness";
 
 // pull_request_review requires only pull_requests:read — no write scope needed
 // for the learnings extraction arc (CODE-02).
+// check_suite (#749) backs the merge-bot trigger kind and requires
+// checks:read; operators must add it to the GitHub App's event subscriptions.
 const requiredGitHubAppEvents = [
   "pull_request",
   "issues",
   "deployment_status",
   "pull_request_review",
+  "check_suite",
 ] as const;
 
 const requiredGitHubAppPermissions = {
@@ -19,6 +22,7 @@ const requiredGitHubAppPermissions = {
   issues: "read",
   deployments: "read",
   statuses: "read",
+  checks: "read",
   metadata: "read",
 } as const;
 

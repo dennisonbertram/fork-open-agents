@@ -597,6 +597,8 @@ describe("BackgroundAgentsSection", () => {
       conditionLabels: "",
       conditionEnvironments: "",
       conditionSeverities: "",
+      conditionActors: "",
+      conditionIgnoreActors: "",
       instructions: "Review changes.",
       outputMode: "none",
       checkCommand: "",
