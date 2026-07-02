@@ -26,6 +26,10 @@ import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
 import { resolveComposioSlugsForChatMain } from "./resolve-chat-with-agent-row";
 import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
 import { getEffectiveRepoToolkitSlugs } from "./repo-toolkit-selection";
+import {
+  listComposioConnectedAccounts,
+  type ComposioConnectedAccount,
+} from "./connected-accounts";
 
 export {
   buildComposioSessionConfig,
@@ -52,74 +56,90 @@ export type ResolvedComposioTools =
       configHash: string;
       reusedSession: boolean;
       /**
-       * Selected direct-list toolkits that have no ACTIVE connected account.
+       * Selected direct-list toolkits that have no connected account at all.
        * Their tools are still offered but cannot authenticate, so the chat
        * surfaces a "not connected" warning. Undefined on the profile path.
        */
       disconnectedToolkits?: string[];
+      /**
+       * Selected direct-list toolkits whose connected account(s) exist but
+       * are ALL status EXPIRED (none ACTIVE) — distinct from
+       * disconnectedToolkits (zero accounts at all). Lets the chat/UI say
+       * "expired — reconnect" instead of "not connected". Undefined on the
+       * profile path. (#800)
+       */
+      expiredToolkits?: string[];
     };
 
 /**
- * Fetches the user's ACTIVE connected accounts from Composio and groups them
- * by toolkit slug → connectedAccountId[].
- *
- * Defensively typed: the Composio SDK response is unknown at the TS level, so
- * we narrow each item before using it.
+ * Groups the full-status connected-account list (from the shared helper) by
+ * toolkit slug, so both the ACTIVE-only ids map and the expired-only slug set
+ * can be derived from the SAME single SDK fetch.
  */
-async function fetchConnectedAccountsByToolkit(
+function groupAccountsByToolkit(
+  accounts: ComposioConnectedAccount[],
+): Record<string, ComposioConnectedAccount[]> {
+  const result: Record<string, ComposioConnectedAccount[]> = {};
+  for (const account of accounts) {
+    const existing = result[account.toolkitSlug];
+    if (existing) {
+      existing.push(account);
+    } else {
+      result[account.toolkitSlug] = [account];
+    }
+  }
+  return result;
+}
+
+/**
+ * Computes, for the given toolkit slugs, the ACTIVE-only connected-account-id
+ * map (existing session-building behavior) and the expired-only slug set (a
+ * toolkit selected here whose accounts all exist but are status EXPIRED,
+ * none ACTIVE) — from a single shared connected-accounts fetch, not two SDK
+ * round-trips.
+ */
+async function resolveConnectedAccountState(
   composio: ReturnType<typeof getComposioClient>,
   userId: string,
-): Promise<Record<string, string[]>> {
-  const response = await composio.connectedAccounts.list({
-    userIds: [toComposioUserId(userId)],
-    statuses: ["ACTIVE"],
-  });
+): Promise<{
+  connectedAccountIdsByToolkit: Record<string, string[]>;
+  accountsByToolkit: Record<string, ComposioConnectedAccount[]>;
+}> {
+  const accounts = await listComposioConnectedAccounts({ composio, userId });
+  const accountsByToolkit = groupAccountsByToolkit(accounts);
 
-  const items: unknown[] = Array.isArray(
-    (response as { items?: unknown }).items,
-  )
-    ? (response as { items: unknown[] }).items
-    : [];
-
-  const result: Record<string, string[]> = {};
-  for (const item of items) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      typeof (item as Record<string, unknown>).id !== "string"
-    ) {
+  const connectedAccountIdsByToolkit: Record<string, string[]> = {};
+  for (const account of accounts) {
+    if (account.status !== "ACTIVE") {
       continue;
     }
-
-    const record = item as Record<string, unknown>;
-    const id = record.id as string;
-
-    // toolkit.slug or toolkitSlug depending on SDK version
-    const toolkit = record.toolkit;
-    let slug: string | null = null;
-    if (
-      typeof toolkit === "object" &&
-      toolkit !== null &&
-      typeof (toolkit as Record<string, unknown>).slug === "string"
-    ) {
-      slug = (toolkit as Record<string, unknown>).slug as string;
-    } else if (typeof record.toolkitSlug === "string") {
-      slug = record.toolkitSlug;
-    }
-
-    if (!slug) {
-      continue;
-    }
-
-    const existing = result[slug];
+    const existing = connectedAccountIdsByToolkit[account.toolkitSlug];
     if (existing) {
-      existing.push(id);
+      existing.push(account.id);
     } else {
-      result[slug] = [id];
+      connectedAccountIdsByToolkit[account.toolkitSlug] = [account.id];
     }
   }
 
-  return result;
+  return { connectedAccountIdsByToolkit, accountsByToolkit };
+}
+
+/**
+ * Selected toolkit slugs whose accounts exist (at least one) but are ALL
+ * status EXPIRED — i.e. none ACTIVE. A slug with zero accounts at all is NOT
+ * included here (that stays in disconnectedToolkits).
+ */
+function computeExpiredToolkits(
+  slugs: string[],
+  accountsByToolkit: Record<string, ComposioConnectedAccount[]>,
+): string[] {
+  return slugs.filter((slug) => {
+    const accountsForSlug = accountsByToolkit[slug];
+    if (!accountsForSlug || accountsForSlug.length === 0) {
+      return false;
+    }
+    return accountsForSlug.every((account) => account.status === "EXPIRED");
+  });
 }
 
 function toSetupError(error: unknown): ComposioSetupError {
@@ -163,11 +183,11 @@ async function resolveRepoSelectedSlugs(params: {
   // decision (an unconfigured repo). An explicit selection wins without it.
   let githubConnected = false;
   if (selectedToolkitSlugs === null) {
-    const connected = await fetchConnectedAccountsByToolkit(
+    const { connectedAccountIdsByToolkit } = await resolveConnectedAccountState(
       getComposioClient(),
       params.userId,
     );
-    githubConnected = (connected.github?.length ?? 0) > 0;
+    githubConnected = (connectedAccountIdsByToolkit.github?.length ?? 0) > 0;
   }
 
   const effective = getEffectiveRepoToolkitSlugs({
@@ -277,14 +297,19 @@ export async function resolveComposioToolsForChat(params: {
     const syntheticProfileId = "direct";
     const agentKey = params.agentKey ?? "main";
 
-    // Fetch user's active connected accounts, grouped by toolkit slug.
-    const connectedAccountIdsByToolkit = await fetchConnectedAccountsByToolkit(
-      composio,
-      params.userId,
+    // Fetch the user's full-status connected accounts once, grouped both by
+    // ACTIVE-only ids (for session-building, existing behavior) and by full
+    // status (to compute expiredToolkits below) — one shared SDK call, not
+    // two (#800).
+    const { connectedAccountIdsByToolkit, accountsByToolkit } =
+      await resolveConnectedAccountState(composio, params.userId);
+    const expiredToolkits = computeExpiredToolkits(
+      directSlugs,
+      accountsByToolkit,
     );
 
     try {
-      return await resolveComposioToolsForToolkitList({
+      const resolved = await resolveComposioToolsForToolkitList({
         userId: params.userId,
         slugs: directSlugs,
         composio,
@@ -308,6 +333,18 @@ export async function resolveComposioToolsForChat(params: {
           }),
         touchSession: (id) => touchComposioAgentSession(id),
       });
+      if (resolved.status !== "ready") {
+        return resolved;
+      }
+      // A toolkit with only EXPIRED accounts still has SOME account, so it
+      // must not double-count in disconnectedToolkits (zero accounts at
+      // all) — expiredToolkits and disconnectedToolkits are mutually
+      // exclusive from the chat/UI's point of view (#800).
+      const expiredSet = new Set(expiredToolkits);
+      const disconnectedToolkits = (resolved.disconnectedToolkits ?? []).filter(
+        (slug) => !expiredSet.has(slug),
+      );
+      return { ...resolved, disconnectedToolkits, expiredToolkits };
     } catch (error) {
       throw toSetupError(error);
     }

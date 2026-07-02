@@ -833,13 +833,18 @@ export async function resolveChatSandboxRuntime(params: {
     ]);
   }
 
+  // MR-1 forward-shim (#808): unwrap the resolution union, preserving the
+  // pre-MR-2 fall-back-to-default behavior. MR-2 (#811) replaces this block
+  // with fail-closed handling (typed error, no silent default) of the union.
   const managedRuntimeProfile =
     session.runtimeMode === "managed_runtime"
       ? await resolveManagedRuntimeProfile({
           userId: params.userId,
           sessionId: session.id,
           profileId: session.managedRuntimeProfileId,
-        })
+        }).then((resolution) =>
+          resolution.ok ? resolution.profile : getManagedRuntimeProfile(),
+        )
       : undefined;
   const managedRuntimeEnvironment =
     session.runtimeMode === "managed_runtime"

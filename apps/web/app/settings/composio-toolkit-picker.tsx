@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { CheckCircle2, Search, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
 import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
@@ -18,6 +18,11 @@ import {
   selectableToolkits,
   type ToolkitSource,
 } from "./composio-selectable-toolkits";
+import {
+  buildToolkitStatusMap,
+  getToolkitConnectionState,
+  isToolkitChipFlagged,
+} from "./composio-connection-state";
 
 export interface ComposioToolkitPickerProps {
   /** Currently selected toolkit slugs. Parent owns persistence. */
@@ -99,25 +104,43 @@ export function ComposioToolkitPicker({
   );
 
   const allToolkits = toolkitsData?.toolkits ?? [];
-  const connectedSlugs = new Set(
-    (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
-  );
+  const accountsUnavailable = accountsData?.unavailable === true;
+  const toolkitStatusMap = buildToolkitStatusMap(accountsData?.accounts ?? []);
+  // "has been connected" (any status, including expired) — still shown as
+  // selectable/known in the connected-only picker so an expired toolkit
+  // remains visible to reconnect, rather than disappearing entirely.
+  const connectedSlugs = new Set(toolkitStatusMap.keys());
   const toolkitBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
 
   /**
-   * A selected tool "needs connection" when it's a real catalog toolkit that
-   * requires auth (not noAuth) and the user has NOT connected an account for it.
-   * Such chips are flagged so it's clear why a tool won't work yet.
+   * Connection state for a selected chip's badge/hint text: distinguishes
+   * "active" (no flag), "expired" (needs reconnect), "not_connected"
+   * (never connected), "other" (some other non-active status), and
+   * "unavailable" (couldn't check) — never collapses expired/unavailable
+   * into "not connected" (#800).
    */
-  const needsConnection = (slug: string, unknown: boolean): boolean => {
+  const connectionStateFor = (
+    slug: string,
+    unknown: boolean,
+  ):
+    | "active"
+    | "expired"
+    | "not_connected"
+    | "other"
+    | "unavailable"
+    | null => {
     if (unknown) {
-      return false;
+      return null;
     }
     const tk = toolkitBySlug.get(slug);
-    if (!tk) {
-      return false;
+    if (!tk || tk.noAuth) {
+      return null;
     }
-    return !tk.noAuth && !connectedSlugs.has(slug);
+    return getToolkitConnectionState({
+      slug,
+      statusMap: toolkitStatusMap,
+      unavailable: accountsUnavailable,
+    });
   };
 
   // Derive the selectable set according to source mode
@@ -197,21 +220,37 @@ export function ComposioToolkitPicker({
       {selectedEntries.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {selectedEntries.map((entry) => {
-            const unconnected = needsConnection(
+            const connectionState = connectionStateFor(
               entry.slug,
               entry.unknown ?? false,
             );
-            const flagged = entry.unknown || unconnected;
+            const flagged = isToolkitChipFlagged({
+              unknown: entry.unknown ?? false,
+              connectionState,
+            });
+            const chipLabel =
+              connectionState === "expired"
+                ? "expired — reconnect"
+                : connectionState === "unavailable"
+                  ? "can't check right now"
+                  : connectionState === "not_connected" ||
+                      connectionState === "other"
+                    ? "not connected"
+                    : null;
+            const chipTitle = entry.unknown
+              ? "This tool isn't in the Composio catalog."
+              : connectionState === "expired"
+                ? `Connection expired — reconnect it in ${connectHint}.`
+                : connectionState === "unavailable"
+                  ? "Couldn't check connection status right now."
+                  : connectionState === "not_connected" ||
+                      connectionState === "other"
+                    ? `Not connected — connect it in ${connectHint}, or it won't work.`
+                    : undefined;
             return (
               <span
                 key={entry.slug}
-                title={
-                  entry.unknown
-                    ? "This tool isn't in the Composio catalog."
-                    : unconnected
-                      ? `Not connected — connect it in ${connectHint}, or it won't work.`
-                      : undefined
-                }
+                title={chipTitle}
                 className={cn(
                   "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
                   flagged
@@ -233,10 +272,8 @@ export function ComposioToolkitPicker({
                 {entry.name}
                 {entry.unknown ? (
                   <span className="opacity-60 text-[10px]">(unknown)</span>
-                ) : unconnected ? (
-                  <span className="text-[10px] opacity-80">
-                    · not connected
-                  </span>
+                ) : chipLabel ? (
+                  <span className="text-[10px] opacity-80">· {chipLabel}</span>
                 ) : null}
                 <button
                   type="button"
@@ -305,7 +342,10 @@ export function ComposioToolkitPicker({
             ) : (
               <div className="p-1">
                 {visibleRows.map((entry) => {
-                  const isConnected = connectedSlugs.has(entry.slug);
+                  const rowState = connectionStateFor(
+                    entry.slug,
+                    entry.unknown ?? false,
+                  );
                   return (
                     <button
                       key={entry.slug}
@@ -352,11 +392,20 @@ export function ComposioToolkitPicker({
                         </span>
                       ) : null}
 
-                      {/* Connected badge */}
-                      {isConnected && !entry.unknown ? (
+                      {/* Connection state badge */}
+                      {rowState === "active" ? (
                         <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
                           <CheckCircle2 className="h-3 w-3" />
                           Connected
+                        </span>
+                      ) : rowState === "expired" ? (
+                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                          <AlertTriangle className="h-3 w-3" />
+                          Expired — reconnect
+                        </span>
+                      ) : rowState === "unavailable" ? (
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          Can&apos;t check right now
                         </span>
                       ) : null}
 

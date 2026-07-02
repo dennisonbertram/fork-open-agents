@@ -224,7 +224,21 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   "setup_managed_runtime_profile",
   "skill",
   "web_fetch",
-] as const satisfies ReadonlyArray<keyof typeof tools>;
+  // Decision D5 (epic #807): propose_tool and manage_background_agent are
+  // config-write actions, not direct code-execution tools, so they are safe
+  // for the managed_runtime coordinator to hold. Each is only actually added
+  // to the merged tool set when its own feature flag
+  // (toolAuthoringEnabled / manageAgentEnabled) is enabled (see
+  // getRuntimeModeToolPolicy below), and execution of any resulting
+  // background-agent run is still gated by the grant/allowlist layer
+  // (packages background-agents grants), not by tool visibility here.
+  PROPOSE_TOOL_NAME,
+  MANAGE_BACKGROUND_AGENT_TOOL_NAME,
+] as const satisfies ReadonlyArray<
+  | keyof typeof tools
+  | typeof PROPOSE_TOOL_NAME
+  | typeof MANAGE_BACKGROUND_AGENT_TOOL_NAME
+>;
 
 /**
  * Tool names that are safe to expose when there is no sandbox VM.

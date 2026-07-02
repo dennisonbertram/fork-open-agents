@@ -6,6 +6,7 @@ let githubToken: string | null;
 let githubUsername: string | null;
 let syncedInstallationsCount = 0;
 let syncInstallationsError: Error | null;
+let syncCallCount = 0;
 
 mock.module("next/headers", () => ({
   cookies: async () => ({
@@ -31,6 +32,7 @@ mock.module("@/lib/github/users", () => ({
 
 mock.module("@/lib/github/sync", () => ({
   syncUserInstallations: async () => {
+    syncCallCount += 1;
     if (syncInstallationsError) {
       throw syncInstallationsError;
     }
@@ -47,16 +49,32 @@ function getRedirectUrl(response: Response): URL {
   return new URL(location as string);
 }
 
+function expectCookiesCleared(response: Response): void {
+  const setCookies = response.headers.getSetCookie();
+  const names = [
+    "github_app_install_redirect_to",
+    "github_app_install_state",
+    "github_reconnect",
+  ];
+  for (const name of names) {
+    const header = setCookies.find((entry) => entry.startsWith(`${name}=`));
+    expect(header).toBeTruthy();
+    expect(header).toContain("Expires=Thu, 01 Jan 1970");
+  }
+}
+
 describe("GET /api/github/app/callback", () => {
   beforeEach(() => {
     authSession = { user: { id: "user-1" } };
     cookieValues = {
       github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-match-1",
     };
     githubToken = "ghu_test";
     githubUsername = "octocat";
     syncedInstallationsCount = 1;
     syncInstallationsError = null;
+    syncCallCount = 0;
   });
 
   test("returns no_action when the user exits before selecting an installation", async () => {
@@ -64,7 +82,9 @@ describe("GET /api/github/app/callback", () => {
     const { GET } = await routeModulePromise;
 
     const response = await GET(
-      new Request("http://localhost/api/github/app/callback"),
+      new Request(
+        "http://localhost/api/github/app/callback?state=state-match-1",
+      ),
     );
 
     expect(response.status).toBe(307);
@@ -80,7 +100,7 @@ describe("GET /api/github/app/callback", () => {
 
     const response = await GET(
       new Request(
-        "http://localhost/api/github/app/callback?installation_id=123",
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
       ),
     );
 
@@ -96,7 +116,7 @@ describe("GET /api/github/app/callback", () => {
 
     const response = await GET(
       new Request(
-        "http://localhost/api/github/app/callback?installation_id=123",
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
       ),
     );
 
@@ -109,13 +129,16 @@ describe("GET /api/github/app/callback", () => {
   // Issue #781: when the resolved redirect target is /get-started, the
   // redirect must carry step=github so the GitHub step auto-opens.
   test("carries step=github when resolved redirect target is /get-started", async () => {
-    cookieValues = { github_app_install_redirect_to: "/get-started" };
+    cookieValues = {
+      github_app_install_redirect_to: "/get-started",
+      github_app_install_state: "state-match-1",
+    };
     syncedInstallationsCount = 1;
     const { GET } = await routeModulePromise;
 
     const response = await GET(
       new Request(
-        "http://localhost/api/github/app/callback?installation_id=123",
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
       ),
     );
 
@@ -129,13 +152,16 @@ describe("GET /api/github/app/callback", () => {
   // Non-/get-started targets (e.g. settings) must not gain a step param —
   // only the first-run /get-started landing page uses it.
   test("does not add step=github when redirect target is not /get-started", async () => {
-    cookieValues = { github_app_install_redirect_to: "/settings/connections" };
+    cookieValues = {
+      github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-match-1",
+    };
     syncedInstallationsCount = 1;
     const { GET } = await routeModulePromise;
 
     const response = await GET(
       new Request(
-        "http://localhost/api/github/app/callback?installation_id=123",
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
       ),
     );
 
@@ -146,12 +172,17 @@ describe("GET /api/github/app/callback", () => {
   });
 
   test("not_linked redirect also carries step=github for /get-started target", async () => {
-    cookieValues = { github_app_install_redirect_to: "/get-started" };
+    cookieValues = {
+      github_app_install_redirect_to: "/get-started",
+      github_app_install_state: "state-match-1",
+    };
     githubToken = null;
     const { GET } = await routeModulePromise;
 
     const response = await GET(
-      new Request("http://localhost/api/github/app/callback"),
+      new Request(
+        "http://localhost/api/github/app/callback?state=state-match-1",
+      ),
     );
 
     expect(response.status).toBe(307);
@@ -159,5 +190,95 @@ describe("GET /api/github/app/callback", () => {
     expect(redirectUrl.pathname).toBe("/get-started");
     expect(redirectUrl.searchParams.get("github")).toBe("not_linked");
     expect(redirectUrl.searchParams.get("step")).toBe("github");
+  });
+
+  test("returns invalid_state and skips sync when the install-state cookie is missing", async () => {
+    cookieValues = { github_app_install_redirect_to: "/settings/connections" };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?state=abc123&installation_id=123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).toBe("invalid_state");
+    expect(syncCallCount).toBe(0);
+  });
+
+  test("returns invalid_state and skips sync when the state param does not match the cookie", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-a",
+    };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?state=state-b&installation_id=123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).toBe("invalid_state");
+    expect(syncCallCount).toBe(0);
+  });
+
+  test("returns invalid_state when the callback omits the state param entirely but a cookie exists", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-a",
+    };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).toBe("invalid_state");
+    expect(syncCallCount).toBe(0);
+  });
+
+  test("proceeds normally when state matches the cookie", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-match-1",
+    };
+    syncedInstallationsCount = 1;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).toBe("app_installed");
+    expect(syncCallCount).toBe(1);
+  });
+
+  test("clears all three install cookies on the invalid_state early return", async () => {
+    cookieValues = {
+      github_app_install_redirect_to: "/settings/connections",
+      github_app_install_state: "state-a",
+    };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?state=state-b&installation_id=123",
+      ),
+    );
+
+    expectCookiesCleared(response);
   });
 });
