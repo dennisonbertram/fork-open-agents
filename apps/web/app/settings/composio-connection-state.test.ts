@@ -209,3 +209,45 @@ describe("isToolkitChipFlagged", () => {
     ).toBe(false);
   });
 });
+
+// Regression: the full reconnect scenario end to end, composing all three
+// helpers exactly as composio-toolkit-picker.tsx does. This is the scenario
+// PR #826's Codex review (P2-A + P2-B) was filed against: a user reconnects
+// an expired Slack account, so the SDK's connected-accounts response now
+// contains both the stale EXPIRED account and the new ACTIVE one. If either
+// fix were reverted, this test fails:
+// - revert P2-B (buildToolkitStatusMap priority): the map keeps whichever
+//   status was written last, so with the SDK returning the old EXPIRED
+//   account after the new ACTIVE one, the derived state regresses to
+//   "expired" and the chip is wrongly flagged.
+// - revert P2-A (isToolkitChipFlagged): even with the correct "active"
+//   state, the old `Boolean(connectionState)` check would still flag the
+//   chip as a warning.
+describe("regression: reconnect scenario (EXPIRED + ACTIVE for one slug)", () => {
+  test("resolves to 'active' and is NOT flagged, regardless of SDK response order", () => {
+    const responseOrders: ComposioConnectedAccount[][] = [
+      [
+        account({ id: "ca_old", toolkitSlug: "slack", status: "EXPIRED" }),
+        account({ id: "ca_new", toolkitSlug: "slack", status: "ACTIVE" }),
+      ],
+      [
+        account({ id: "ca_new", toolkitSlug: "slack", status: "ACTIVE" }),
+        account({ id: "ca_old", toolkitSlug: "slack", status: "EXPIRED" }),
+      ],
+    ];
+
+    for (const accounts of responseOrders) {
+      const statusMap = buildToolkitStatusMap(accounts);
+      const connectionState = getToolkitConnectionState({
+        slug: "slack",
+        statusMap,
+        unavailable: false,
+      });
+
+      expect(connectionState).toBe("active");
+      expect(isToolkitChipFlagged({ unknown: false, connectionState })).toBe(
+        false,
+      );
+    }
+  });
+});
