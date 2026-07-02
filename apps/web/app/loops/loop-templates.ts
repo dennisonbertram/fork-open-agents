@@ -201,6 +201,49 @@ const emailTriage: LoopTemplate = {
   },
 };
 
+const reviewPrsAndComment: LoopTemplate = {
+  slug: "review-prs-and-comment",
+  name: "Review PRs and comment",
+  description:
+    "List open pull requests and leave a review comment on each one. Agent steps only — this template never opens or merges anything.",
+  // Worded as a suggestion, not an implemented/wired trigger: trigger CRUD
+  // ships separately (#762/C1), so creating this template does not attach
+  // any schedule or webhook by itself.
+  suggestedTrigger: "A nightly schedule works well for this, if you add one",
+  definition: {
+    nodes: [
+      { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+      {
+        id: "list",
+        kind: "agent_step",
+        label: "List open PRs",
+        position: { x: 260, y: 0 },
+        instructions:
+          'List the repository\'s open pull requests (`gh pr list`). Write {"prs":[{"number": <n>, "title": "..."}]} to /tmp/loop-step-output.json.',
+        // `gh pr list` needs pull-request read; the default minted token
+        // carries contents-only scopes (lib/agent-loops/token-permissions.ts).
+        permissions: { github: { pullRequests: "read" } },
+      },
+      {
+        id: "review",
+        kind: "agent_step",
+        label: "Review and comment",
+        position: { x: 520, y: 0 },
+        instructions:
+          'For each PR in context.list.prs, review its diff and leave a review comment summarizing findings, targeting it by number: `gh pr review <number> --comment --body "..."` (without a number, gh reviews the current branch\'s PR — wrong here). Do NOT approve, request changes, merge, or open any PR. Write {"commented": <count>} to /tmp/loop-step-output.json.',
+        // Creating a PR review requires pull-request WRITE on the minted token.
+        permissions: { github: { pullRequests: "write" } },
+      },
+      { id: "end", kind: "end", label: "Done", position: { x: 780, y: 0 } },
+    ],
+    edges: [
+      { id: "e1", source: "start", target: "list", when: "always" },
+      { id: "e2", source: "list", target: "review", when: "success" },
+      { id: "e3", source: "review", target: "end", when: "success" },
+    ],
+  },
+};
+
 const mergeWhenGreen: LoopTemplate = {
   slug: "merge-when-green",
   name: "Merge when green",
@@ -272,6 +315,7 @@ function withSpacing(template: LoopTemplate): LoopTemplate {
 /** All starter templates, in display order (simplest first). */
 export const LOOP_TEMPLATES: LoopTemplate[] = [
   reviewToIssues,
+  reviewPrsAndComment,
   backlogToPr,
   mergeWhenGreen,
   emailTriage,

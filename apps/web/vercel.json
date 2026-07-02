@@ -4,6 +4,10 @@
     {
       "path": "/api/background-agents/cron",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agent-loops/sweep",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
