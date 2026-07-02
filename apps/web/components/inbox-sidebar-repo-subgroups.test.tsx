@@ -259,6 +259,35 @@ describe("RepoLoopsSubGroup", () => {
 
     expect(html).toContain("No loops yet");
   });
+
+  // BT-SG-012 (#768): create link must not rely solely on hover to be
+  // reachable. Root cause of the dead sidebar click (repro: click lands,
+  // URL stays /sessions, zero console errors) is that this link is
+  // `opacity-0` at rest and only becomes visible/clickable via
+  // `group-hover/sub:opacity-100` — a user (or a scripted click) landing on
+  // the header row without triggering CSS :hover, or scrolling to a row
+  // that briefly renders before hover state settles, sees and can target a
+  // link that has zero effective opacity. The link must be reachable via
+  // keyboard focus at minimum (focus-visible reveals it), and must not sit
+  // at opacity 0 when not covered by any occluding element.
+  test("BT-SG-012: create link is keyboard-focusable and reveals on focus, not hover-only", async () => {
+    const { RepoLoopsSubGroup } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <RepoLoopsSubGroup
+        repoOwner="myorg"
+        repoName="myrepo"
+        loops={[]}
+        featureDisabled={false}
+        initialExpanded={true}
+      />,
+    );
+
+    // The create link's class list must expose a focus-visible reveal so
+    // keyboard users (and low-precision pointer paths) can reach it without
+    // depending on true CSS :hover.
+    expect(html).toMatch(/focus-visible:opacity-100/);
+  });
 });
 
 describe("getRepoSubGroupRailActions", () => {

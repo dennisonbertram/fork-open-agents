@@ -122,7 +122,7 @@ function GuardrailNumberField({
 
 // ── LoopSettingsPanelContent ──────────────────────────────────────────────────
 
-type LoopSettingsPanelContentProps = {
+export type LoopSettingsPanelContentProps = {
   loopId: string;
   initialName: string;
   initialDescription?: string | null;
@@ -133,7 +133,7 @@ type LoopSettingsPanelContentProps = {
   onClose: () => void;
 };
 
-function LoopSettingsPanelContent({
+export function LoopSettingsPanelContent({
   loopId,
   initialName,
   initialDescription,
