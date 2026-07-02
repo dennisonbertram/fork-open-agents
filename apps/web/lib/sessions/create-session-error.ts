@@ -86,8 +86,7 @@ export function mapCreateSessionErrorResponse(
   body: CreateSessionErrorResponseBody,
   status: number,
 ): CreateSessionErrorInfo {
-  const kind: CreateSessionErrorKind =
-    body.kind ?? inferKindFromStatus(status);
+  const kind: CreateSessionErrorKind = body.kind ?? inferKindFromStatus(status);
   const action = body.actionUrl
     ? { actionUrl: body.actionUrl, actionLabel: "Go to Settings" }
     : ACTION_BY_KIND[kind];

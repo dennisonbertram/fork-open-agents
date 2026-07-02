@@ -105,9 +105,7 @@ describe("HomePage — create-session failure surfacing", () => {
       });
     };
 
-    renderToStaticMarkup(
-      <HomePage hasSessionCookie={true} lastRepo={null} />,
-    );
+    renderToStaticMarkup(<HomePage hasSessionCookie={true} lastRepo={null} />);
 
     // Must not throw / reject unhandled.
     await capturedOnSubmit(BASE_INPUT);
@@ -125,9 +123,7 @@ describe("HomePage — create-session failure surfacing", () => {
       });
     };
 
-    renderToStaticMarkup(
-      <HomePage hasSessionCookie={true} lastRepo={null} />,
-    );
+    renderToStaticMarkup(<HomePage hasSessionCookie={true} lastRepo={null} />);
     await capturedOnSubmit(BASE_INPUT);
 
     const html = renderToStaticMarkup(
@@ -145,9 +141,7 @@ describe("HomePage — create-session failure surfacing", () => {
       });
     };
 
-    renderToStaticMarkup(
-      <HomePage hasSessionCookie={true} lastRepo={null} />,
-    );
+    renderToStaticMarkup(<HomePage hasSessionCookie={true} lastRepo={null} />);
     await capturedOnSubmit(BASE_INPUT);
 
     expect(toastError).toHaveBeenCalledTimes(1);

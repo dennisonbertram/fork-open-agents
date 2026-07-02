@@ -167,7 +167,7 @@ describe("NewSessionDialog — create-session failure surfacing", () => {
     expect(errorHtml).not.toContain("Go to Settings");
   });
 
-  test("BT-784-008: the inline error region uses role=\"alert\"", async () => {
+  test('BT-784-008: the inline error region uses role="alert"', async () => {
     const { NewSessionDialog } = await dialogModulePromise;
     const createSession = mock(async () => ({
       session: { id: "s1" },

@@ -130,10 +130,7 @@ describe("SessionsRouteShell — create-session failure surfacing", () => {
     };
 
     renderToStaticMarkup(
-      <SessionsRouteShell
-        currentUser={{ id: "u1" } as never}
-        lastRepo={null}
-      >
+      <SessionsRouteShell currentUser={{ id: "u1" } as never} lastRepo={null}>
         <div />
       </SessionsRouteShell>,
     );
@@ -154,10 +151,7 @@ describe("SessionsRouteShell — create-session failure surfacing", () => {
     };
 
     renderToStaticMarkup(
-      <SessionsRouteShell
-        currentUser={{ id: "u1" } as never}
-        lastRepo={null}
-      >
+      <SessionsRouteShell currentUser={{ id: "u1" } as never} lastRepo={null}>
         <div />
       </SessionsRouteShell>,
     );
@@ -178,10 +172,7 @@ describe("SessionsRouteShell — create-session failure surfacing", () => {
     };
 
     renderToStaticMarkup(
-      <SessionsRouteShell
-        currentUser={{ id: "u1" } as never}
-        lastRepo={null}
-      >
+      <SessionsRouteShell currentUser={{ id: "u1" } as never} lastRepo={null}>
         <div />
       </SessionsRouteShell>,
     );
@@ -196,10 +187,7 @@ describe("SessionsRouteShell — create-session failure surfacing", () => {
     const { SessionsRouteShell } = await shellModulePromise;
 
     renderToStaticMarkup(
-      <SessionsRouteShell
-        currentUser={{ id: "u1" } as never}
-        lastRepo={null}
-      >
+      <SessionsRouteShell currentUser={{ id: "u1" } as never} lastRepo={null}>
         <div />
       </SessionsRouteShell>,
     );
