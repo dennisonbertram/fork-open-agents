@@ -260,9 +260,7 @@ describe("BackgroundRunDetail", () => {
           blocked: [],
           artifacts: [],
           next: [],
-          warnings: [
-            "Composio toolkits resolved but not connected: slack.",
-          ],
+          warnings: ["Composio toolkits resolved but not connected: slack."],
         },
       },
     };

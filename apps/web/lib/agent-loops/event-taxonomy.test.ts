@@ -194,7 +194,8 @@ const M1_TAXONOMY: Array<{
   },
   {
     name: "agent-loop.step.composio.error",
-    description: "Composio resolution failed; payload carries a typed errorKind",
+    description:
+      "Composio resolution failed; payload carries a typed errorKind",
   },
   {
     name: "agent-loop.step.composio.not_connected",

@@ -429,4 +429,56 @@ describe("buildRunSummary", () => {
       expect(w.length).toBeLessThanOrEqual(300);
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // Regression (#798): warnings[] and blocked[] must stay independent arrays.
+  // A failed run with BOTH a genuine failure errorKind event AND a Composio
+  // warn event must not cross-contaminate: the Composio warning belongs only
+  // in warnings[], the failure errorKind belongs only in blocked[]. This is
+  // a different angle from BT-008..BT-011 (which test each array alone) —
+  // it catches a future change that merges the two computations into one
+  // loop and forgets the level/eventName filter on one side.
+  // ---------------------------------------------------------------------------
+  test("REGRESSION (#798): failed run with both a failure event and a composio warning keeps warnings[] and blocked[] independent", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "checks_failed",
+      errorMessage: "Required background-agent check failed.",
+    });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-fail",
+        eventName: "background-agent.run.failed",
+        status: "failed",
+        level: "warn",
+        summary: "Required background-agent check failed.",
+        errorKind: "checks_failed",
+        payload: {},
+      },
+      {
+        id: "ev-composio-off",
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { reason: "no_slugs_selected" },
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({ run, events, outputs });
+
+    // blocked[] carries the real failure reason, not the composio warning.
+    expect(summary.blocked.some((b) => b.includes("checks_failed"))).toBe(true);
+    expect(
+      summary.blocked.some((b) => b.toLowerCase().includes("composio")),
+    ).toBe(false);
+
+    // warnings[] carries the composio degradation, not the run failure.
+    expect(summary.warnings.length).toBeGreaterThan(0);
+    expect(
+      summary.warnings.some((w) => w.toLowerCase().includes("checks_failed")),
+    ).toBe(false);
+  });
 });

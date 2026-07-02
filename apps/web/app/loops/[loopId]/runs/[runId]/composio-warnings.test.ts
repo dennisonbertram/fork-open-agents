@@ -72,9 +72,9 @@ describe("deriveLoopComposioWarnings", () => {
 
     const warnings = deriveLoopComposioWarnings(events);
 
-    expect(
-      warnings.some((w) => w.includes("composio_missing_api_key")),
-    ).toBe(true);
+    expect(warnings.some((w) => w.includes("composio_missing_api_key"))).toBe(
+      true,
+    );
   });
 
   test("BT-004: not_connected event names the disconnected toolkits", () => {

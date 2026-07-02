@@ -26,9 +26,7 @@ function truncate(value: string): string {
  * events. Returns an empty array when no composio-prefixed warn event
  * exists (no Composio configured, or everything resolved cleanly).
  */
-export function deriveLoopComposioWarnings(
-  events: AgentLoopEvent[],
-): string[] {
+export function deriveLoopComposioWarnings(events: AgentLoopEvent[]): string[] {
   const warnings: string[] = [];
 
   const composioWarnEvents = events.filter(
@@ -39,7 +37,8 @@ export function deriveLoopComposioWarnings(
     const payload = ev.payload as Record<string, unknown>;
 
     if (ev.eventName.endsWith(".off")) {
-      const reason = typeof payload?.reason === "string" ? payload.reason : null;
+      const reason =
+        typeof payload?.reason === "string" ? payload.reason : null;
       const blockedSlugs = Array.isArray(payload?.blockedSlugs)
         ? (payload.blockedSlugs as unknown[]).filter(
             (s): s is string => typeof s === "string",

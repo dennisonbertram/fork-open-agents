@@ -765,7 +765,8 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
       status: "error" as const,
       errorKind: "composio_missing_api_key",
-      message: "Composio tools selected but COMPOSIO_API_KEY is not configured.",
+      message:
+        "Composio tools selected but COMPOSIO_API_KEY is not configured.",
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;

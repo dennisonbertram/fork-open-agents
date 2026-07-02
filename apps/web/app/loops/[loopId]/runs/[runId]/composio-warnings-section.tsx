@@ -7,11 +7,7 @@
  * "Warnings" block (same accessible-text standard, same amber treatment,
  * distinct from the red error banner used for run-level failures).
  */
-export function ComposioWarningsSection({
-  warnings,
-}: {
-  warnings: string[];
-}) {
+export function ComposioWarningsSection({ warnings }: { warnings: string[] }) {
   if (warnings.length === 0) {
     return null;
   }
@@ -23,10 +19,7 @@ export function ComposioWarningsSection({
       </p>
       <ul className="mt-1.5 space-y-1">
         {warnings.map((warning, i) => (
-          <li
-            key={i}
-            className="text-sm text-amber-800 dark:text-amber-200"
-          >
+          <li key={i} className="text-sm text-amber-800 dark:text-amber-200">
             {warning}
           </li>
         ))}

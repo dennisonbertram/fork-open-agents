@@ -1739,7 +1739,8 @@ describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => 
     resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
       status: "error",
       errorKind: "composio_missing_api_key",
-      message: "Composio tools selected but COMPOSIO_API_KEY is not configured.",
+      message:
+        "Composio tools selected but COMPOSIO_API_KEY is not configured.",
     }));
 
     await executeAgentStep({

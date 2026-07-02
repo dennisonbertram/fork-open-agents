@@ -207,7 +207,8 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     }
     const payload = ev.payload as Record<string, unknown>;
     if (ev.eventName.endsWith(".off")) {
-      const reason = typeof payload?.reason === "string" ? payload.reason : null;
+      const reason =
+        typeof payload?.reason === "string" ? payload.reason : null;
       const blockedSlugs = Array.isArray(payload?.blockedSlugs)
         ? (payload.blockedSlugs as unknown[]).filter(
             (s): s is string => typeof s === "string",
@@ -224,7 +225,8 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       } else {
         warnings.push(
           truncate(
-            ev.summary ?? "Composio tools requested but no toolkit slugs were selected.",
+            ev.summary ??
+              "Composio tools requested but no toolkit slugs were selected.",
           ),
         );
       }
@@ -275,7 +277,9 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     // #798: distinguish "tools never reached" from "tools failed" — a run
     // that failed before Composio resolution ever executed has zero
     // composio-prefixed events at all (not even an error/off event).
-    const anyComposioEvent = events.some((e) => e.eventName.includes("composio"));
+    const anyComposioEvent = events.some((e) =>
+      e.eventName.includes("composio"),
+    );
     if (!anyComposioEvent) {
       next.push(
         "Composio tools were never resolved for this run — it failed before tool resolution ran.",
