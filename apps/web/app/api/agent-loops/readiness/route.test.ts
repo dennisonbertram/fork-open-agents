@@ -14,6 +14,7 @@ let authResult: AuthResult = { ok: true, userId: "user-1" };
 
 const isAgentLoopsEnabled = mock(() => false);
 const getAgentLoopsAllowedRepos = mock(() => null);
+const isAgentLoopRepoAllowed = mock(() => true);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -22,6 +23,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled,
   getAgentLoopsAllowedRepos,
+  isAgentLoopRepoAllowed,
 }));
 
 const routeModulePromise = import("./route");

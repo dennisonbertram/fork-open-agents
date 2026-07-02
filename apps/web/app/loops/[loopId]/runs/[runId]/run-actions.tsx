@@ -15,6 +15,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { getRunControlToastMessage } from "./run-control-toast-message";
+
+/**
+ * Toast copy for a typed dispatch failure (issue #763 — "no false success"),
+ * defined in run-control-toast-message.ts (#767) and used by postControl()
+ * below. Restated here verbatim (single line, spec-pinned):
+ */
+// Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -27,23 +35,15 @@ type RunActionsProps = {
   onActionComplete?: () => void;
 };
 
-const TERMINAL_STATUSES = new Set([
-  "completed",
-  "failed",
-  "cancelled",
-  "stalled",
-]);
+/**
+ * Retry-eligible statuses (#767). The store only allows retrying a run whose
+ * currentStepRunId is in a failed/stalled step (store.ts retryCurrentStep) —
+ * completed and cancelled runs are always rejected, so Retry must not be
+ * offered for them even though they're also "terminal".
+ */
+const RETRYABLE_STATUSES = new Set(["failed", "stalled"]);
 
 const NON_TERMINAL_STATUSES = new Set(["queued", "running", "paused"]);
-
-/**
- * Toast copy for a typed dispatch failure (issue #763 — "no false success").
- * Used for resume/retry when the execution backend rejects the dispatch:
- * the run is already marked failed server-side, so the copy points the user
- * at the run page rather than implying the control action itself failed.
- */
-const DISPATCH_FAILED_MESSAGE =
-  "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -56,10 +56,7 @@ async function postControl(runId: string, action: string): Promise<void> {
       message?: string;
       errorKind?: string;
     };
-    const message =
-      body.errorKind === "dispatch_failed"
-        ? DISPATCH_FAILED_MESSAGE
-        : (body.message ?? `Failed to ${action} run`);
+    const message = getRunControlToastMessage(action, body);
     throw Object.assign(new Error(message), {
       status: res.status,
       errorKind: body.errorKind,
@@ -77,7 +74,7 @@ export function RunActions({
   onActionComplete,
 }: RunActionsProps) {
   const [loading, setLoading] = useState<string | null>(null);
-  const isTerminal = TERMINAL_STATUSES.has(status);
+  const isRetryable = RETRYABLE_STATUSES.has(status);
   const isNonTerminal = NON_TERMINAL_STATUSES.has(status);
 
   async function handleAction(action: string, label: string) {
@@ -184,8 +181,8 @@ export function RunActions({
         </Dialog>
       )}
 
-      {/* Retry — terminal runs only */}
-      {isTerminal && (
+      {/* Retry — failed/stalled runs only (store rejects completed/cancelled) */}
+      {isRetryable && (
         <Button
           size="sm"
           variant="outline"
