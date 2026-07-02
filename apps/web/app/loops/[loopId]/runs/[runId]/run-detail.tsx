@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Clock3, Copy } from "lucide-react";
 import Link from "next/link";
+import { mutate as globalMutate } from "swr";
 import { cn } from "@/lib/utils";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import type {
@@ -11,7 +12,9 @@ import type {
   AgentLoopWatchdogRun,
 } from "@/lib/db/schema";
 import { loopDefinitionSchema } from "@/lib/agent-loops/types";
-import { useLoopRunPolling } from "./use-loop-run-polling";
+import { getLoopErrorCopy, sanitizeErrorDetail } from "@/app/loops/error-copy";
+import { getRunCompletionLabel } from "../../run-completion-label";
+import { loopRunsListSwrKey, useLoopRunPolling } from "./use-loop-run-polling";
 import { RunActions } from "./run-actions";
 import { RunGraph } from "./run-graph";
 import { PausedDiagnosisBanner } from "./paused-diagnosis-banner";
@@ -62,7 +65,9 @@ function StatusPill({ status }: { status: string }) {
           ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
           : status === "failed"
             ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-            : status === "running" || status === "queued"
+            : status === "running" ||
+                status === "queued" ||
+                status === "stalled"
               ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
               : "border-border bg-muted/40 text-muted-foreground",
       )}
@@ -251,6 +256,16 @@ export function RunDetail({
     run.status === "running" ||
     run.status === "paused";
 
+  // Completed-with-failures honesty (#767): a "completed" run can still have
+  // failed step runs (e.g. a failure-tolerant chain reached END anyway).
+  // Computed from `steps` (already fetched for the timeline) — no extra
+  // request needed.
+  const failedStepCount = steps.filter((s) => s.status === "failed").length;
+  const completionLabel = getRunCompletionLabel({
+    status: run.status,
+    failedStepCount,
+  });
+
   const guardrails = loop.guardrails as
     | Record<string, unknown>
     | null
@@ -315,6 +330,18 @@ export function RunDetail({
               <h1 className="truncate text-2xl font-semibold">Loop run</h1>
               <StatusPill status={run.status} />
             </div>
+            {completionLabel ? (
+              <p className="mt-1 text-sm font-medium text-amber-700 dark:text-amber-300">
+                {completionLabel}
+              </p>
+            ) : (
+              run.status === "stalled" && (
+                <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                  No activity for a while — the run appears stuck. Retry it or
+                  check the step log.
+                </p>
+              )
+            )}
             <p className="mt-1 truncate font-mono text-sm text-muted-foreground">
               {run.id}
             </p>
@@ -367,26 +394,60 @@ export function RunDetail({
         </section>
 
         {/* Run actions */}
-        <RunActions runId={run.id} loopId={loop.id} status={run.status} />
+        <RunActions
+          runId={run.id}
+          loopId={loop.id}
+          status={run.status}
+          onActionComplete={() => {
+            // Revalidate this run's own SWR key AND the loop's runs-list
+            // key (loop-detail.tsx) so the two surfaces can't disagree about
+            // this run's status after a control action (#767, walk-3).
+            void globalMutate(`/api/agent-loop-runs/${run.id}`);
+            void globalMutate(loopRunsListSwrKey(loop.id));
+          }}
+        />
 
         {/* Watchdog diagnosis banner — only when paused with a watchdog decision */}
         {run.status === "paused" && watchdogRuns.length > 0 && (
           <PausedDiagnosisBanner watchdogRuns={watchdogRuns} />
         )}
 
-        {/* Error banner */}
-        {run.errorKind && (
-          <div className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
-            <p className="font-mono text-xs text-red-700 dark:text-red-300">
-              {run.errorKind}
-            </p>
-            {run.errorMessage && (
-              <p className="mt-1 text-xs text-muted-foreground">
-                {run.errorMessage}
-              </p>
-            )}
-          </div>
-        )}
+        {/* Error banner — what happened / what to do / technical details (#767) */}
+        {run.errorKind &&
+          (() => {
+            const copy = getLoopErrorCopy(run.errorKind);
+            return (
+              <div className="rounded-md border border-red-500/25 bg-red-500/10 p-3">
+                <p className="text-sm font-medium text-red-700 dark:text-red-300">
+                  {copy.whatHappened}
+                </p>
+                <p className="mt-1 text-sm text-foreground">
+                  {copy.actionHref ? (
+                    <Link href={copy.actionHref} className="underline">
+                      {copy.whatToDo}
+                    </Link>
+                  ) : (
+                    copy.whatToDo
+                  )}
+                </p>
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-[10px] text-muted-foreground">
+                    Technical details
+                  </summary>
+                  <div className="mt-1 space-y-1">
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      {copy.rawKind}
+                    </p>
+                    {run.errorMessage && (
+                      <p className="font-mono text-[10px] text-muted-foreground">
+                        {sanitizeErrorDetail(run.errorMessage)}
+                      </p>
+                    )}
+                  </div>
+                </details>
+              </div>
+            );
+          })()}
 
         {/* Live run graph — ABOVE timeline; collapsible */}
         {definitionSnapshot && definitionSnapshot.nodes.length > 0 && (

@@ -9,8 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { validateLoopDefinition } from "@/lib/agent-loops/validation";
 import type { LoopValidationError } from "@/lib/agent-loops/types";
-import type { CreateAgentLoopResponse } from "@/app/api/agent-loops/types";
+import type {
+  AgentLoopsReadinessResponse,
+  CreateAgentLoopResponse,
+} from "@/app/api/agent-loops/types";
 import { RepoCombobox } from "./repo-combobox";
+import { getRepoAllowlistBlockMessage } from "./repo-allowlist-precheck";
 import type { LoopTemplateSuggestedTriggerSpec } from "./loop-templates";
 import { appendSuggestedTriggerParams } from "./suggested-trigger-query";
 
@@ -137,6 +141,26 @@ export function LoopCreateForm({
     if (!repoOwner || !repoName) {
       toast.error("Pick a repository (owner/repo) for this loop.");
       return;
+    }
+
+    // Allowlist precheck (#767) — ask before submit so the user sees a
+    // plain-language message instead of a first-run 403.
+    try {
+      const readinessRes = await fetch(
+        `/api/agent-loops/readiness?owner=${encodeURIComponent(repoOwner)}&repo=${encodeURIComponent(repoName)}`,
+      );
+      if (readinessRes.ok) {
+        const readiness =
+          (await readinessRes.json()) as AgentLoopsReadinessResponse;
+        const blockMessage = getRepoAllowlistBlockMessage(readiness);
+        if (blockMessage) {
+          toast.error(blockMessage);
+          return;
+        }
+      }
+    } catch {
+      // Precheck is best-effort — if it fails, fall through to the real
+      // create request, which enforces the allowlist authoritatively.
     }
 
     let definition: unknown;

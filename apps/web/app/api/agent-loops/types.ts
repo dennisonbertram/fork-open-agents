@@ -74,8 +74,18 @@ export type StartAgentLoopRunDispatchFailedResponse = {
   runId: string;
 };
 
+/**
+ * Run row extended with `failedStepCount` (#767) — the number of failed
+ * step runs for that run, from a single grouped store query. Used by the
+ * runs list and run-detail header to render "Completed — N step(s) failed"
+ * honestly instead of a clean green for a completed-with-failures run.
+ */
+export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
+  failedStepCount: number;
+};
+
 export type ListAgentLoopRunsResponse = {
-  runs: AgentLoopRun[];
+  runs: AgentLoopRunWithFailedStepCount[];
 };
 
 // ── Run detail (poll target) ──────────────────────────────────────────────────
@@ -133,7 +143,7 @@ export type AgentLoopRunControlResponse =
 export type AgentLoopsReadinessStatus = "ready" | "missing" | "disabled";
 
 export type AgentLoopsReadinessCheck = {
-  id: "feature_flag" | "repo_allowlist";
+  id: "feature_flag" | "repo_allowlist" | "repo_access";
   label: string;
   status: AgentLoopsReadinessStatus;
   detail: string;

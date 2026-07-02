@@ -58,8 +58,19 @@ const deleteMock = mock((_table: unknown) => ({
 const findManyMock = mock(async () => queryResult as unknown[]);
 const findFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
 
+// groupBy/orderBy/limit chain used by listAgentLoopRuns's single grouped
+// failedStepCount query (#767): select().from().leftJoin().where()
+// .groupBy().orderBy().limit() — queryResult rows are
+// { run, failedStepCount } shaped for that path.
+const limitMockGrouped = mock(() => Promise.resolve(queryResult));
+const orderByMockGrouped = mock(() => ({ limit: limitMockGrouped }));
+const groupByMockGrouped = mock(() => ({ orderBy: orderByMockGrouped }));
+
 const limitMockLeft = mock(() => Promise.resolve([queryResult[0] ?? null]));
-const whereMockLeft = mock(() => ({ limit: limitMockLeft }));
+const whereMockLeft = mock(() => ({
+  limit: limitMockLeft,
+  groupBy: groupByMockGrouped,
+}));
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 const fromMock = mock(() => ({
   leftJoin: leftJoinMock,
@@ -336,7 +347,7 @@ describe("REGRESSION-005: listAgentLoopRuns respects limit cap of 200", () => {
   beforeEach(resetMocks);
 
   test("clamped limit does not exceed 200 even when caller requests 9999", async () => {
-    findManyMock.mockResolvedValueOnce([]);
+    queryResult = [];
 
     const store = await storePromise;
     await store.listAgentLoopRuns({
@@ -345,12 +356,14 @@ describe("REGRESSION-005: listAgentLoopRuns respects limit cap of 200", () => {
       limit: 9999,
     });
 
-    // The findMany call should have been made with limit <= 200
-    const calls = findManyMock.mock.calls as unknown as Array<Array<unknown>>;
-    const rawCall: unknown = calls[0]?.[0];
-    const findManyCall =
-      rawCall != null ? (rawCall as { limit?: number }) : null;
-    expect(findManyCall?.limit).toBeLessThanOrEqual(200);
+    // The grouped query's .limit() call should have been made with limit <= 200
+    // (#767 — listAgentLoopRuns moved from db.query.findMany to a single
+    // grouped db.select().groupBy().orderBy().limit() query).
+    const calls = limitMockGrouped.mock.calls as unknown as Array<
+      Array<unknown>
+    >;
+    const clampedLimit = calls[0]?.[0] as number | undefined;
+    expect(clampedLimit).toBeLessThanOrEqual(200);
   });
 });
 

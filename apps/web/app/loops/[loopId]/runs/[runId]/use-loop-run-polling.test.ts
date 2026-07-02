@@ -57,3 +57,12 @@ describe("computeLoopRunRefreshInterval", () => {
     expect(computeLoopRunRefreshInterval(undefined)).toBe(0);
   });
 });
+
+// #767 — the SWR key run-detail.tsx revalidates after a control action so
+// the loop's runs list can't disagree with this run's status.
+describe("loopRunsListSwrKey", () => {
+  test("matches the runs-list fetch key used by loop-detail.tsx", async () => {
+    const { loopRunsListSwrKey } = await pollingModulePromise;
+    expect(loopRunsListSwrKey("loop_1")).toBe("/api/agent-loops/loop_1/runs");
+  });
+});

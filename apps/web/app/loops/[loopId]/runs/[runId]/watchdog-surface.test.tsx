@@ -28,6 +28,7 @@ mock.module("swr", () => ({
     data: options?.fallbackData,
     error: null,
   }),
+  mutate: async () => undefined,
 }));
 
 const runDetailModulePromise = import("./run-detail");

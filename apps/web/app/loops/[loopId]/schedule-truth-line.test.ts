@@ -1,0 +1,90 @@
+/**
+ * schedule-truth-line.test.ts (#767)
+ *
+ * Loop detail's schedule-truth statement, derived from the Triggers card
+ * data (#762 GET returns nextRunAt + humanizedSchedule per trigger):
+ *   - "Next run: <time> UTC" when an enabled schedule trigger exists
+ *   - "No schedule — runs only when you press Run now." when none
+ *   - reflects that the loop must also be active for triggers to fire
+ */
+
+import { describe, expect, it } from "bun:test";
+import { getScheduleTruthLine } from "./schedule-truth-line";
+
+const scheduleTrigger = {
+  id: "trig_1",
+  kind: "schedule.cron" as const,
+  status: "enabled",
+  nextRunAt: "2026-07-03T14:30:00.000Z",
+  humanizedSchedule: "Daily at 2:30 PM UTC",
+};
+
+describe("getScheduleTruthLine", () => {
+  it("states the next run time when an enabled schedule trigger exists and loop is active", () => {
+    const line = getScheduleTruthLine({
+      loopStatus: "active",
+      triggers: [scheduleTrigger],
+    });
+    expect(line).toContain("Next run");
+    expect(line).toMatch(/UTC/);
+  });
+
+  it("says there's no schedule when there are no triggers", () => {
+    const line = getScheduleTruthLine({ loopStatus: "active", triggers: [] });
+    expect(line).toBe("No schedule — runs only when you press Run now.");
+  });
+
+  it("says there's no schedule when only event (non-schedule) triggers exist", () => {
+    const line = getScheduleTruthLine({
+      loopStatus: "active",
+      triggers: [
+        { ...scheduleTrigger, kind: "github.pull_request", nextRunAt: null },
+      ],
+    });
+    expect(line).toBe("No schedule — runs only when you press Run now.");
+  });
+
+  it("ignores a disabled schedule trigger", () => {
+    const line = getScheduleTruthLine({
+      loopStatus: "active",
+      triggers: [{ ...scheduleTrigger, status: "disabled" }],
+    });
+    expect(line).toBe("No schedule — runs only when you press Run now.");
+  });
+
+  it("notes the loop isn't active even when a schedule trigger exists", () => {
+    const line = getScheduleTruthLine({
+      loopStatus: "paused",
+      triggers: [scheduleTrigger],
+    });
+    expect(line.toLowerCase()).toContain("active");
+  });
+});
+
+// Codex finding on PR #775: with multiple enabled schedule triggers,
+// listTriggersForLoop returns newest-first, so `find` could report a later
+// nextRunAt than the trigger that actually fires next.
+it("#767: picks the EARLIEST nextRunAt among multiple enabled schedule triggers", () => {
+  const line = getScheduleTruthLine({
+    loopStatus: "active",
+    triggers: [
+      {
+        kind: "schedule.cron",
+        status: "enabled",
+        nextRunAt: "2026-07-04T02:00:00.000Z",
+      },
+      {
+        kind: "schedule.cron",
+        status: "enabled",
+        nextRunAt: "2026-07-03T05:00:00.000Z",
+      },
+      {
+        kind: "schedule.cron",
+        status: "disabled",
+        nextRunAt: "2026-07-03T01:00:00.000Z",
+      },
+    ],
+  });
+  expect(line).toContain("Jul 3");
+  expect(line).not.toContain("Jul 4");
+});

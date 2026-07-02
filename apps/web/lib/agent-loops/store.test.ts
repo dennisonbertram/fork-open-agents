@@ -68,8 +68,19 @@ const deleteMock = mock((_table: unknown) => ({
 const findManyMock = mock(async () => queryResult as unknown[]);
 const findFirstMock = mock(async () => (queryResult[0] ?? null) as unknown);
 
+// groupBy is used by listAgentLoopRuns's single grouped failedStepCount
+// query (#767): select().from(agentLoopRuns).leftJoin(...).where(...)
+// .groupBy(...).orderBy(...).limit(...) — queryResult rows are
+// { run, failedStepCount } shaped for that path.
+const limitMockGrouped = mock(() => Promise.resolve(queryResult));
+const orderByMockGrouped = mock(() => ({ limit: limitMockGrouped }));
+const groupByMockGrouped = mock(() => ({ orderBy: orderByMockGrouped }));
+
 const limitMockLeft = mock(() => Promise.resolve([queryResult[0] ?? null]));
-const whereMockLeft = mock(() => ({ limit: limitMockLeft }));
+const whereMockLeft = mock(() => ({
+  limit: limitMockLeft,
+  groupBy: groupByMockGrouped,
+}));
 const leftJoinMock = mock(() => ({ where: whereMockLeft }));
 
 const limitMockSelect = mock(() => Promise.resolve(queryResult));
@@ -554,7 +565,7 @@ describe("listAgentLoopRuns", () => {
 
   test("BT-008: returns runs for the given loopId", async () => {
     const run = makeLoopRun();
-    findManyMock.mockResolvedValueOnce([run]);
+    queryResult = [{ run, failedStepCount: 0 }];
 
     const store = await storePromise;
     const result = await store.listAgentLoopRuns({
@@ -564,6 +575,20 @@ describe("listAgentLoopRuns", () => {
 
     expect(result).toHaveLength(1);
     expect(result[0]?.loopId).toBe("loop-1");
+  });
+
+  // #767 — each run is extended with failedStepCount from the grouped query.
+  test("BT-008b: returns failedStepCount alongside each run", async () => {
+    const run = makeLoopRun();
+    queryResult = [{ run, failedStepCount: 2 }];
+
+    const store = await storePromise;
+    const result = await store.listAgentLoopRuns({
+      loopId: "loop-1",
+      userId: "user-1",
+    });
+
+    expect(result[0]?.failedStepCount).toBe(2);
   });
 });
 

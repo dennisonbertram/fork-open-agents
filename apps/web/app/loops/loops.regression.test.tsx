@@ -34,6 +34,7 @@ mock.module("swr", () => ({
     opts?.fallbackData
       ? { data: opts.fallbackData, error: null }
       : (_swrOverride as SWRState<T>),
+  mutate: async () => undefined,
 }));
 
 mock.module("next/navigation", () => ({
@@ -141,7 +142,12 @@ describe("Regression: Loops UI", () => {
   });
 
   // REG-LOOPS-004: RunActions does NOT show pause for terminal run
-  test("REG-LOOPS-004: RunActions does not render pause button for completed runs", async () => {
+  //
+  // #767 update: the store rejects retry for completed/cancelled runs
+  // (store.ts retryCurrentStep), so Retry must NOT render for a completed
+  // run either — only failed/stalled are retry-eligible. See
+  // run-actions.retry-gating.test.tsx for the full gating matrix.
+  test("REG-LOOPS-004: RunActions does not render pause or retry for a completed run", async () => {
     const { RunActions } = await runActionsModule;
     const html = renderToStaticMarkup(
       <RunActions runId="run_1" status="completed" loopId="loop_1" />,
@@ -149,8 +155,8 @@ describe("Regression: Loops UI", () => {
 
     // Pause must not appear for terminal runs
     expect(html.toLowerCase()).not.toContain("pause");
-    // Retry must appear instead
-    expect(html.toLowerCase()).toContain("retry");
+    // Retry must not appear either — the store rejects retry for completed runs
+    expect(html.toLowerCase()).not.toContain("retry");
   });
 
   // REG-LOOPS-005: Create form renders per-rule validation errors, not generic

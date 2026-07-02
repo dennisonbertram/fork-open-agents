@@ -27,6 +27,9 @@ import { getStatusMeaning } from "./status-meanings";
 import { getActiveStatusNote } from "./status-trigger-notice";
 import { LoopTriggersCard } from "./loop-triggers-card";
 import { StatusPill } from "./status-pill";
+import { getGuardrailLabel } from "./guardrail-labels";
+import { getScheduleTruthLine } from "./schedule-truth-line";
+import { getRunCompletionLabel } from "./run-completion-label";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -67,7 +70,17 @@ function formatDuration(
 
 // ── Run row ───────────────────────────────────────────────────────────────────
 
-function RunRow({ run, loopId }: { run: AgentLoopRun; loopId: string }) {
+function RunRow({
+  run,
+  loopId,
+}: {
+  run: AgentLoopRun & { failedStepCount?: number };
+  loopId: string;
+}) {
+  const completionLabel = getRunCompletionLabel({
+    status: run.status,
+    failedStepCount: run.failedStepCount ?? 0,
+  });
   return (
     <Link
       href={`/loops/${loopId}/runs/${run.id}`}
@@ -75,6 +88,16 @@ function RunRow({ run, loopId }: { run: AgentLoopRun; loopId: string }) {
     >
       <div className="min-w-0">
         <p className="truncate font-mono text-xs">{run.id}</p>
+        {completionLabel && (
+          <p className="mt-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+            {completionLabel}
+          </p>
+        )}
+        {run.status === "stalled" && (
+          <p className="mt-0.5 text-[10px] text-amber-700 dark:text-amber-300">
+            No activity for a while — the run appears stuck.
+          </p>
+        )}
       </div>
       <StatusPill status={run.status} />
       <span className="text-xs text-muted-foreground">{run.source}</span>
@@ -105,11 +128,12 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
     useSWR<GetAgentLoopResponse>(`/api/agent-loops/${loopId}`, fetchJson, {
       fallbackData: initialLoopData,
     });
-  const { data: runsData } = useSWR<ListAgentLoopRunsResponse>(
-    `/api/agent-loops/${loopId}/runs`,
-    fetchJson,
-    { refreshInterval: 5000 },
-  );
+  const { data: runsData, mutate: mutateRunsData } =
+    useSWR<ListAgentLoopRunsResponse>(
+      `/api/agent-loops/${loopId}/runs`,
+      fetchJson,
+      { refreshInterval: 5000 },
+    );
   const { data: triggersData, mutate: mutateTriggersData } =
     useSWR<ListLoopTriggersResponse>(
       `/api/agent-loops/${loopId}/triggers`,
@@ -186,6 +210,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
 
       const { runId } = (await res.json()) as StartAgentLoopRunResponse;
       toast.success("Run started");
+      // Revalidate the runs list immediately (#767) so it doesn't disagree
+      // with the run-detail page the user is about to land on.
+      void mutateRunsData();
       router.push(`/loops/${loopId}/runs/${runId}`);
     } catch {
       toast.error("Failed to start run.");
@@ -302,6 +329,21 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
           </div>
         )}
 
+        {/* Stalled-runs summary (#767) — surfaced above the fold so a pile
+            of stuck runs can't hide inside the run history list. */}
+        {(() => {
+          const stalledCount = runs.filter(
+            (r) => r.status === "stalled",
+          ).length;
+          if (stalledCount === 0) return null;
+          return (
+            <div className="rounded-md border border-amber-500/25 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
+              {stalledCount} stalled run{stalledCount === 1 ? "" : "s"} need
+              attention.
+            </div>
+          );
+        })()}
+
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {/* Run history */}
@@ -397,6 +439,14 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                     </p>
                   ) : null;
                 })()}
+                {/* Schedule truth line (#767) — answers "when does this run
+                    next?" using the Triggers card's nextRunAt (#762). */}
+                <p className="text-xs text-muted-foreground">
+                  {getScheduleTruthLine({
+                    loopStatus: loop.status,
+                    triggers,
+                  })}
+                </p>
               </div>
             </section>
 
@@ -422,7 +472,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                       key={key}
                       className="flex justify-between gap-3 px-4 py-2"
                     >
-                      <span className="text-muted-foreground">{key}</span>
+                      <span className="text-muted-foreground">
+                        {getGuardrailLabel(key)}
+                      </span>
                       <span className="font-mono text-xs">{String(value)}</span>
                     </div>
                   ))}

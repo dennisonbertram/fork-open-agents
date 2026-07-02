@@ -409,19 +409,47 @@ export async function getAgentLoopRunWithLoop(
   return { run: row.run, loop: row.loop };
 }
 
+/** An AgentLoopRun extended with the count of its failed step runs (#767). */
+export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
+  failedStepCount: number;
+};
+
+/**
+ * Lists runs for a loop, each extended with `failedStepCount` — the number
+ * of step runs with status="failed" for that run — via a single grouped
+ * query (COUNT ... FILTER, LEFT JOIN agent_loop_step_runs, GROUP BY run.id).
+ * This intentionally avoids N+1: one query for the whole list, not one
+ * failed-step-count query per run (#767).
+ */
 export async function listAgentLoopRuns(params: {
   loopId: string;
   userId: string;
   limit?: number;
-}): Promise<AgentLoopRun[]> {
-  return db.query.agentLoopRuns.findMany({
-    where: and(
-      eq(agentLoopRuns.loopId, params.loopId),
-      eq(agentLoopRuns.userId, params.userId),
-    ),
-    orderBy: [desc(agentLoopRuns.createdAt)],
-    limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
-  });
+}): Promise<AgentLoopRunWithFailedStepCount[]> {
+  const rows = await db
+    .select({
+      run: agentLoopRuns,
+      failedStepCount: sql<number>`COALESCE(COUNT(${agentLoopStepRuns.id}) FILTER (WHERE ${agentLoopStepRuns.status} = 'failed'), 0)`,
+    })
+    .from(agentLoopRuns)
+    .leftJoin(
+      agentLoopStepRuns,
+      eq(agentLoopStepRuns.loopRunId, agentLoopRuns.id),
+    )
+    .where(
+      and(
+        eq(agentLoopRuns.loopId, params.loopId),
+        eq(agentLoopRuns.userId, params.userId),
+      ),
+    )
+    .groupBy(agentLoopRuns.id)
+    .orderBy(desc(agentLoopRuns.createdAt))
+    .limit(Math.min(Math.max(params.limit ?? 50, 1), 200));
+
+  return rows.map((row) => ({
+    ...row.run,
+    failedStepCount: Number(row.failedStepCount),
+  }));
 }
 
 export async function updateAgentLoopRunStatus(params: {
