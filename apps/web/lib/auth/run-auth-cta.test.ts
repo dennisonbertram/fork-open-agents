@@ -128,3 +128,77 @@ describe("runAuthCta / retryAuthCta (#786)", () => {
     expect(fields).toMatchObject({ cta: "vercel_signin" });
   });
 });
+
+// Codex P1 (PR #837, comment 3516586660): better-auth's client resolves API
+// errors as { data, error } instead of rejecting. A resolved error must take
+// the same failure path as a rejection — never leave the CTA pending forever.
+describe("resolved better-auth { error } responses (#786)", () => {
+  let pendingValues: boolean[] = [];
+  let errorValues: (string | null)[] = [];
+  let originalWarn: typeof console.warn;
+  let warnSpy: ReturnType<typeof mock>;
+
+  beforeEach(() => {
+    pendingValues = [];
+    errorValues = [];
+    originalWarn = console.warn;
+    warnSpy = mock(() => undefined);
+    console.warn = warnSpy as unknown as typeof console.warn;
+  });
+
+  function setters() {
+    return {
+      setPending: (value: boolean) => pendingValues.push(value),
+      setError: (value: string | null) => errorValues.push(value),
+    };
+  }
+
+  test("BT-786-006: a resolved { error } resets pending and sets the error message", async () => {
+    await runAuthCta({
+      cta: "vercel_signin",
+      errorMessage: "Sign-in didn't start. Try again.",
+      action: () =>
+        Promise.resolve({
+          data: null,
+          error: { status: 400, message: "invalid provider" },
+        }),
+      ...setters(),
+    });
+
+    console.warn = originalWarn;
+
+    expect(pendingValues).toEqual([true, false]);
+    expect(errorValues).toEqual([null, "Sign-in didn't start. Try again."]);
+  });
+
+  test("BT-786-007: a resolved { error } logs auth_cta_failed", async () => {
+    await runAuthCta({
+      cta: "github_link_settings",
+      errorMessage: "Connect didn't start. Try again.",
+      action: () =>
+        Promise.resolve({ data: null, error: { message: "denied" } }),
+      ...setters(),
+    });
+
+    console.warn = originalWarn;
+
+    const logged = warnSpy.mock.calls
+      .map((call) => String(call[0]))
+      .some((line) => line.includes("auth_cta_failed"));
+    expect(logged).toBe(true);
+  });
+
+  test("BT-786-008: a resolved { data, error: null } success still leaves pending true", async () => {
+    await runAuthCta({
+      cta: "vercel_signin",
+      errorMessage: "Sign-in didn't start. Try again.",
+      action: () => Promise.resolve({ data: { url: "x" }, error: null }),
+      ...setters(),
+    });
+
+    console.warn = originalWarn;
+
+    expect(pendingValues).toEqual([true]);
+    expect(errorValues).toEqual([null]);
+  });
+});
