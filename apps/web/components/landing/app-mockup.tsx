@@ -212,7 +212,10 @@ export function AppMockup() {
           <div className="p-3">
             <div className="mb-2 flex items-center justify-between">
               <span className="text-[10px] font-medium uppercase tracking-wider text-(--l-panel-fg-4)">
-                Sessions
+                Sessions{" "}
+                <span className="normal-case text-(--l-panel-fg-5)">
+                  (example)
+                </span>
               </span>
               <div className="flex size-5 items-center justify-center rounded-md bg-(--l-panel-surface) text-[10px] text-(--l-panel-fg-3)">
                 +
@@ -224,6 +227,7 @@ export function AppMockup() {
                   key={s.title}
                   type="button"
                   onClick={() => handleSwitch(i)}
+                  aria-label={`Preview example: ${s.title}`}
                   className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors ${
                     i === activeIndex
                       ? "bg-(--l-panel-active)"
