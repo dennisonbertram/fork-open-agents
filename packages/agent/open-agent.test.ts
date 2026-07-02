@@ -82,7 +82,16 @@ describe("openAgent runtime tool policy", () => {
       getOpenAgentToolsForRuntimeMode("managed_runtime"),
     );
 
-    expect(managedTools).toEqual([...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES]);
+    // getOpenAgentToolsForRuntimeMode picks from the base tool registry only,
+    // so it only ever returns allowlisted names that also exist as base
+    // tools (propose_composio_tool/manage_background_agent are added
+    // dynamically elsewhere, only when their feature flags are enabled — see
+    // the MR-8 test below).
+    expect(managedTools).toEqual(
+      [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
+        OPEN_AGENT_TOOL_NAMES.includes(name as (typeof OPEN_AGENT_TOOL_NAMES)[number]),
+      ),
+    );
     expect(managedTools).not.toContain("read");
     expect(managedTools).not.toContain("write");
     expect(managedTools).not.toContain("edit");
@@ -104,9 +113,15 @@ describe("openAgent runtime tool policy", () => {
       requestedTools,
     );
 
-    expect(Object.keys(filteredTools)).toEqual([
-      ...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
-    ]);
+    // getRuntimeModeToolPolicy merges base tools with requestedTools before
+    // applying the allowlist; propose_composio_tool/manage_background_agent
+    // are not present unless their feature flags are enabled (see the MR-8
+    // test below), so they are absent here.
+    expect(Object.keys(filteredTools)).toEqual(
+      [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
+        OPEN_AGENT_TOOL_NAMES.includes(name as (typeof OPEN_AGENT_TOOL_NAMES)[number]),
+      ),
+    );
   });
 
   // MR-8/D5: propose_tool and manage_background_agent must survive the
@@ -120,7 +135,7 @@ describe("openAgent runtime tool policy", () => {
       }),
     );
 
-    expect(managedTools).toContain("propose_tool");
+    expect(managedTools).toContain("propose_composio_tool");
     expect(managedTools).toContain("manage_background_agent");
   });
 
