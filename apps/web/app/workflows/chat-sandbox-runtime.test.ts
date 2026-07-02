@@ -45,7 +45,9 @@ const fakeSandbox: FakeSandbox = {
   }),
 };
 
-const connectSandboxSpy = mock(async () => fakeSandbox as unknown as Sandbox);
+const connectSandboxSpy = mock(
+  async (_params: Record<string, unknown>) => fakeSandbox as unknown as Sandbox,
+);
 
 // ── Configurable exec spy for setup/verification command behavior ──────────────
 
@@ -121,6 +123,24 @@ mock.module("@/lib/observability/events", () => ({
   emitSessionEvent: async () => null,
 }));
 
+const NEXT_ACTION_BY_ERROR_KIND: Record<string, string> = {
+  profile_not_found:
+    "This profile no longer exists. Choose another profile or recreate it.",
+  setup_command_failed:
+    "Fix the failing setup command in the profile editor, then run setup again.",
+  verification_failed:
+    "Fix the failing verification command in the profile editor, then re-run verification.",
+  setup_exec_error:
+    "The setup command could not run in the sandbox. Check the sandbox status and try again.",
+  evidence_write_failed:
+    "Evidence for this run could not be saved. Re-run the profile to try recording evidence again.",
+};
+
+mock.module("@/lib/managed-runtime/profile-run-status", () => ({
+  nextActionFor: (kind: string) => NEXT_ACTION_BY_ERROR_KIND[kind],
+  rollupFromObservations: () => "passed",
+}));
+
 type ProfileResolution =
   | {
       ok: true;
@@ -153,18 +173,24 @@ let resolveProfileResult: ProfileResolution = {
   resolvedProfileId: "test-profile",
 };
 
-const resolveManagedRuntimeProfileSpy = mock(
-  async () => resolveProfileResult,
-);
+const resolveManagedRuntimeProfileSpy = mock(async () => resolveProfileResult);
 
 mock.module("@/lib/managed-runtime/profile-resolution", () => ({
   resolveManagedRuntimeProfile: resolveManagedRuntimeProfileSpy,
 }));
 
-const startManagedRuntimeProfileRunSpy = mock(async () => ({ id: "run_1" }));
-const appendManagedRuntimeSetupResultSpy = mock(async () => undefined);
-const appendManagedRuntimeVerificationResultSpy = mock(async () => undefined);
-const finishManagedRuntimeProfileRunSpy = mock(async () => undefined);
+const startManagedRuntimeProfileRunSpy = mock(
+  async (_params: Record<string, unknown>) => ({ id: "run_1" }),
+);
+const appendManagedRuntimeSetupResultSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
+const appendManagedRuntimeVerificationResultSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
+const finishManagedRuntimeProfileRunSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 
 mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
   appendManagedRuntimeSetupResult: appendManagedRuntimeSetupResultSpy,
@@ -243,10 +269,14 @@ mock.module("@open-agents/agent", () => ({
   discoverSkills: async () => [],
 }));
 
+const capturedStartupMessages: string[] = [];
+
 mock.module("./workspace-startup-log", () => ({
   WorkspaceStartupReporter: class {
     constructor() {}
-    async send() {}
+    async send(message: string) {
+      capturedStartupMessages.push(message);
+    }
     async appendCommandResult() {}
   },
 }));
@@ -353,6 +383,7 @@ beforeEach(() => {
   appendManagedRuntimeVerificationResultSpy.mockClear();
   finishManagedRuntimeProfileRunSpy.mockClear();
   resolveManagedRuntimeProfileSpy.mockClear();
+  capturedStartupMessages.length = 0;
   execImpl = () =>
     Promise.resolve({
       success: true,
@@ -773,23 +804,10 @@ describe("resolveChatSandboxRuntime", () => {
 
   describe("BT-007 (#811): startup copy is honest about what the profile does", () => {
     test("startup notes say 'will run setup, then verify' and never claim to 'install' tools", async () => {
-      const sentMessages: string[] = [];
       const session = makeManagedRuntimeSession({
         id: "session-honest-copy",
       });
       testSessionById[session.id] = session;
-
-      const capturingReporter = await import("./workspace-startup-log");
-      const OriginalReporter = capturingReporter.WorkspaceStartupReporter;
-      class CapturingReporter extends OriginalReporter {
-        async send(message: string, logLines: string[] = []) {
-          sentMessages.push(message);
-          return super.send(message, logLines);
-        }
-      }
-      mock.module("./workspace-startup-log", () => ({
-        WorkspaceStartupReporter: CapturingReporter,
-      }));
 
       await resolveChatSandboxRuntime({
         userId: "user-1",
@@ -797,17 +815,9 @@ describe("resolveChatSandboxRuntime", () => {
         assistantId: "asst-bt7-1",
       });
 
-      const combined = sentMessages.join(" | ");
+      const combined = capturedStartupMessages.join(" | ");
       expect(combined).toContain("will run setup, then verify");
       expect(combined).not.toMatch(/installs? .*bun/i);
-
-      // Restore the no-op reporter for subsequent tests.
-      mock.module("./workspace-startup-log", () => ({
-        WorkspaceStartupReporter: class {
-          async send() {}
-          async appendCommandResult() {}
-        },
-      }));
     });
   });
 
