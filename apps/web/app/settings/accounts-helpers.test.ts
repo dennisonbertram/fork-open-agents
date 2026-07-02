@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { shouldAutoExpandOrgs } from "./accounts-helpers";
+import {
+  resolveConnectionButtonStatus,
+  shouldAutoExpandOrgs,
+} from "./accounts-helpers";
 
 describe("shouldAutoExpandOrgs", () => {
   test("returns false when every account has the app installed (happy path stays collapsed)", () => {
@@ -24,5 +27,34 @@ describe("shouldAutoExpandOrgs", () => {
 
   test("returns false when installedCount equals allAccountsCount (all installed)", () => {
     expect(shouldAutoExpandOrgs(5, 5)).toBe(false);
+  });
+});
+
+describe("resolveConnectionButtonStatus", () => {
+  test("reconnect wins over degraded", () => {
+    expect(
+      resolveConnectionButtonStatus({
+        reconnectRequired: true,
+        syncDegraded: true,
+      }),
+    ).toBe("reconnect");
+  });
+
+  test("sync_degraded maps to a visible degraded state, never green connected", () => {
+    expect(
+      resolveConnectionButtonStatus({
+        reconnectRequired: false,
+        syncDegraded: true,
+      }),
+    ).toBe("degraded");
+  });
+
+  test("healthy status maps to connected", () => {
+    expect(
+      resolveConnectionButtonStatus({
+        reconnectRequired: false,
+        syncDegraded: false,
+      }),
+    ).toBe("connected");
   });
 });

@@ -5,6 +5,7 @@ let githubToken: string | null;
 let githubUsername: string | null;
 let syncedInstallationsCount: number;
 let existingInstallations: Array<{ installationId: number }>;
+let syncError: Error | null;
 
 mock.module("@/lib/session/get-server-session", () => ({
   getServerSession: async () => authSession,
@@ -19,7 +20,15 @@ mock.module("@/lib/github/users", () => ({
 }));
 
 mock.module("@/lib/github/sync", () => ({
-  syncUserInstallations: async () => syncedInstallationsCount,
+  syncUserInstallations: async () => {
+    if (syncError) {
+      throw syncError;
+    }
+
+    return syncedInstallationsCount;
+  },
+  isGitHubInstallationsAuthError: (error: unknown) =>
+    error instanceof Error && error.message.includes(" 401 "),
 }));
 
 mock.module("@/lib/db/installations", () => ({
@@ -41,6 +50,7 @@ describe("GET /api/github/post-link", () => {
     githubUsername = "octocat";
     syncedInstallationsCount = 1;
     existingInstallations = [];
+    syncError = null;
   });
 
   // Issue #829 (comment 3516151659): link_failed returning to a bare
@@ -104,5 +114,22 @@ describe("GET /api/github/post-link", () => {
     const redirectUrl = getRedirectUrl(response);
     expect(redirectUrl.pathname).toBe("/api/github/app/install");
     expect(redirectUrl.searchParams.get("next")).toBe("/sessions");
+  });
+
+  // Issue #783: a non-auth sync failure must surface as sync_failed instead
+  // of silently falling through to the DB-installations-check branch.
+  test("routes sync_failed to get-started when syncUserInstallations throws a non-auth error", async () => {
+    syncError = new Error("GitHub API 500 Internal Server Error");
+    existingInstallations = [{ installationId: 42 }];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/github/post-link?next=/sessions"),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("sync_failed");
   });
 });

@@ -1,10 +1,18 @@
 import { NextResponse } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
 import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
-import { getUserGitHubToken } from "@/lib/github/token";
-import { getGitHubUsername } from "@/lib/github/users";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
 import { syncUserInstallations } from "@/lib/github/sync";
+import {
+  classifyGitHubSyncError,
+  describeGitHubSyncError,
+} from "@/lib/github/sync-status";
+import {
+  logGitHubSyncAuthRequired,
+  logGitHubSyncFailed,
+} from "@/lib/github/sync-status-events";
+import { getUserGitHubToken } from "@/lib/github/token";
+import { getGitHubUsername } from "@/lib/github/users";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -62,7 +70,34 @@ export async function GET(req: Request): Promise<Response> {
         return NextResponse.redirect(redirectUrl);
       }
     } catch (error) {
-      console.error("Failed syncing installations after GitHub link:", error);
+      const errorKind = classifyGitHubSyncError(error);
+
+      if (errorKind === "auth_required") {
+        logGitHubSyncAuthRequired({
+          userId: session.user.id,
+          route: "post-link",
+        });
+      } else {
+        const { providerStatus } = describeGitHubSyncError(error);
+        logGitHubSyncFailed({
+          userId: session.user.id,
+          route: "post-link",
+          providerStatus,
+        });
+
+        const redirectUrl = resolveGitHubReturnTarget(
+          "sync_failed",
+          next,
+          req.url,
+        );
+        logGitHubRedirectIssued({
+          status: "sync_failed",
+          route: "post-link",
+          stepPreserved: redirectUrl.pathname === "/get-started",
+          userId: session.user.id,
+        });
+        return NextResponse.redirect(redirectUrl);
+      }
     }
   }
 

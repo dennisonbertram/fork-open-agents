@@ -43,3 +43,28 @@ export function getGitHubManageUrl(
  */
 export const GITHUB_INSTALLATIONS_SETTINGS_URL =
   "https://github.com/settings/installations";
+
+export type ConnectionButtonStatus = "connected" | "degraded" | "reconnect";
+
+/**
+ * Maps the GitHub connection-status API result onto the settings
+ * connection button. `sync_degraded` (status check failed for a non-auth
+ * reason) must be VISIBLE — it never maps to the green "connected" state,
+ * but it also must not trigger the OAuth reconnect flow, which cannot fix
+ * a transient validation failure.
+ */
+export function resolveConnectionButtonStatus({
+  reconnectRequired,
+  syncDegraded,
+}: {
+  reconnectRequired: boolean;
+  syncDegraded: boolean;
+}): ConnectionButtonStatus {
+  if (reconnectRequired) {
+    return "reconnect";
+  }
+  if (syncDegraded) {
+    return "degraded";
+  }
+  return "connected";
+}

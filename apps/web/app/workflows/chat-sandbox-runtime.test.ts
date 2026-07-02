@@ -3,6 +3,12 @@
  *
  * BT-001: session.sandboxState === null → returns sandbox-free runtime, connectSandbox NOT called.
  * BT-002: session.sandboxState non-null (active) → resumes sandbox, connectSandbox IS called.
+ * BT-003 (#811): unresolvable profile ⇒ typed throw BEFORE provisioning (fail-closed resolution).
+ * BT-004 (#811): profile with non-default ports ⇒ connectSandbox receives profile-derived ports.
+ * BT-005 (#811): required verification failure ⇒ throws typed error, run finishes "blocked" with errorKind.
+ * BT-006 (#811): sandbox.exec THROWS during setup ⇒ failed observation appended + run finished "failed".
+ * BT-007 (#811): startup notes read "will run setup, then verify" — never "installs".
+ * BT-008 (#811): classic-mode provisioning is unchanged — still uses DEFAULT_SANDBOX_PORTS.
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
@@ -39,7 +45,27 @@ const fakeSandbox: FakeSandbox = {
   }),
 };
 
-const connectSandboxSpy = mock(async () => fakeSandbox as unknown as Sandbox);
+const connectSandboxSpy = mock(
+  async (_params: Record<string, unknown>) => fakeSandbox as unknown as Sandbox,
+);
+
+// ── Configurable exec spy for setup/verification command behavior ──────────────
+
+type ExecResult = Awaited<ReturnType<Sandbox["exec"]>>;
+
+let execImpl: (command: string) => Promise<ExecResult> | ExecResult = () =>
+  Promise.resolve({
+    success: true,
+    exitCode: 0,
+    stdout: "",
+    stderr: "",
+    truncated: false,
+  });
+
+const execSpy = mock(async (command: string) => execImpl(command));
+
+fakeSandbox.exec = ((command: string) =>
+  execSpy(command)) as unknown as Sandbox["exec"];
 
 // Module mocks — must be declared before the module under test is imported.
 
@@ -47,16 +73,19 @@ mock.module("@open-agents/sandbox", () => ({
   connectSandbox: connectSandboxSpy,
 }));
 
+const DEFAULT_BUILT_IN_PROFILE = {
+  id: "test-profile",
+  version: "1.0",
+  displayName: "Test Profile",
+  setupCommands: [],
+  verificationCommands: [],
+  expectedTools: [],
+  optionalTools: [],
+  defaultPorts: [3000],
+};
+
 mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
-  getManagedRuntimeProfile: () => ({
-    id: "test-profile",
-    version: "1.0",
-    displayName: "Test Profile",
-    setupCommands: [],
-    verificationCommands: [],
-    expectedTools: [],
-    optionalTools: [],
-  }),
+  getManagedRuntimeProfile: () => DEFAULT_BUILT_IN_PROFILE,
 }));
 
 mock.module("workflow", () => ({
@@ -90,28 +119,105 @@ mock.module("@/lib/github/users", () => ({
   getGitHubUserProfile: async () => null,
 }));
 
+const emitSessionEventSpy = mock(
+  async (_params: Record<string, unknown>) => null,
+);
+
 mock.module("@/lib/observability/events", () => ({
-  emitSessionEvent: async () => null,
+  emitSessionEvent: emitSessionEventSpy,
 }));
+
+const NEXT_ACTION_BY_ERROR_KIND: Record<string, string> = {
+  profile_not_found:
+    "This profile no longer exists. Choose another profile or recreate it.",
+  setup_command_failed:
+    "Fix the failing setup command in the profile editor, then run setup again.",
+  verification_failed:
+    "Fix the failing verification command in the profile editor, then re-run verification.",
+  setup_exec_error:
+    "The setup command could not run in the sandbox. Check the sandbox status and try again.",
+  evidence_write_failed:
+    "Evidence for this run could not be saved. Re-run the profile to try recording evidence again.",
+};
+
+mock.module("@/lib/managed-runtime/profile-run-status", () => ({
+  nextActionFor: (kind: string) => NEXT_ACTION_BY_ERROR_KIND[kind],
+  rollupFromObservations: () => "passed",
+}));
+
+type ProfileResolution =
+  | {
+      ok: true;
+      profile: {
+        id: string;
+        version: string;
+        displayName: string;
+        setupCommands: unknown[];
+        verificationCommands: unknown[];
+        expectedTools: string[];
+        optionalTools: string[];
+        defaultPorts: number[];
+      };
+      source: "built_in" | "session" | "user_default";
+      requestedProfileId: string;
+      resolvedProfileId: string;
+    }
+  | {
+      ok: false;
+      kind: "profile_not_found" | "profile_scope_mismatch";
+      requestedProfileId: string;
+      nextAction: string;
+    };
+
+let resolveProfileResult: ProfileResolution = {
+  ok: true,
+  profile: DEFAULT_BUILT_IN_PROFILE,
+  source: "built_in",
+  requestedProfileId: "test-profile",
+  resolvedProfileId: "test-profile",
+};
+
+const resolveManagedRuntimeProfileSpy = mock(async () => resolveProfileResult);
 
 mock.module("@/lib/managed-runtime/profile-resolution", () => ({
-  resolveManagedRuntimeProfile: async () => ({
-    id: "test-profile",
-    version: "1.0",
-    displayName: "Test Profile",
-    setupCommands: [],
-    verificationCommands: [],
-    expectedTools: [],
-    optionalTools: [],
-  }),
+  resolveManagedRuntimeProfile: resolveManagedRuntimeProfileSpy,
 }));
 
+let startManagedRuntimeProfileRunShouldFail = false;
+
+const startManagedRuntimeProfileRunSpy = mock(
+  async (_params: Record<string, unknown>) => {
+    if (startManagedRuntimeProfileRunShouldFail) {
+      throw new Error("profile run write failed");
+    }
+    return { id: "run_1" };
+  },
+);
+const appendManagedRuntimeSetupResultSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
+const appendManagedRuntimeVerificationResultSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
+const finishManagedRuntimeProfileRunSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
+
 mock.module("@/lib/observability/managed-runtime-profile-runs", () => ({
-  appendManagedRuntimeSetupResult: async () => undefined,
-  appendManagedRuntimeVerificationResult: async () => undefined,
-  buildManagedRuntimeCommandObservation: () => ({}),
-  finishManagedRuntimeProfileRun: async () => undefined,
-  startManagedRuntimeProfileRun: async () => ({ id: "run_1" }),
+  appendManagedRuntimeSetupResult: appendManagedRuntimeSetupResultSpy,
+  appendManagedRuntimeVerificationResult:
+    appendManagedRuntimeVerificationResultSpy,
+  buildManagedRuntimeCommandObservation: (params: {
+    command: { id: string; label: string; required?: boolean };
+    status: string;
+  }) => ({
+    commandId: params.command.id,
+    label: params.command.label,
+    status: params.status,
+    required: params.command.required ?? true,
+  }),
+  finishManagedRuntimeProfileRun: finishManagedRuntimeProfileRunSpy,
+  startManagedRuntimeProfileRun: startManagedRuntimeProfileRunSpy,
 }));
 
 mock.module("@/lib/sandbox/lifecycle", () => ({
@@ -119,8 +225,9 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
   getNextLifecycleVersion: () => 1,
 }));
 
+const kickSandboxLifecycleWorkflowSpy = mock(() => undefined);
 mock.module("@/lib/sandbox/lifecycle-kick", () => ({
-  kickSandboxLifecycleWorkflow: () => undefined,
+  kickSandboxLifecycleWorkflow: kickSandboxLifecycleWorkflowSpy,
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
@@ -174,10 +281,14 @@ mock.module("@open-agents/agent", () => ({
   discoverSkills: async () => [],
 }));
 
+const capturedStartupMessages: string[] = [];
+
 mock.module("./workspace-startup-log", () => ({
   WorkspaceStartupReporter: class {
     constructor() {}
-    async send() {}
+    async send(message: string) {
+      capturedStartupMessages.push(message);
+    }
     async appendCommandResult() {}
   },
 }));
@@ -257,6 +368,19 @@ function makeRepoSession(overrides: Partial<TestSession> = {}): TestSession {
   };
 }
 
+function makeManagedRuntimeSession(
+  overrides: Partial<TestSession> = {},
+): TestSession {
+  return {
+    ...makeRepoSession({
+      id: "session-managed-runtime",
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "test-profile",
+    }),
+    ...overrides,
+  };
+}
+
 // ── Import the module under test (after all mocks are declared) ────────────────
 
 const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
@@ -265,6 +389,30 @@ const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
 
 beforeEach(() => {
   connectSandboxSpy.mockClear();
+  execSpy.mockClear();
+  startManagedRuntimeProfileRunSpy.mockClear();
+  appendManagedRuntimeSetupResultSpy.mockClear();
+  appendManagedRuntimeVerificationResultSpy.mockClear();
+  finishManagedRuntimeProfileRunSpy.mockClear();
+  resolveManagedRuntimeProfileSpy.mockClear();
+  emitSessionEventSpy.mockClear();
+  capturedStartupMessages.length = 0;
+  startManagedRuntimeProfileRunShouldFail = false;
+  execImpl = () =>
+    Promise.resolve({
+      success: true,
+      exitCode: 0,
+      stdout: "",
+      stderr: "",
+      truncated: false,
+    });
+  resolveProfileResult = {
+    ok: true,
+    profile: DEFAULT_BUILT_IN_PROFILE,
+    source: "built_in",
+    requestedProfileId: "test-profile",
+    resolvedProfileId: "test-profile",
+  };
   for (const key of Object.keys(testSessionById)) {
     delete testSessionById[key];
   }
@@ -469,6 +617,313 @@ describe("resolveChatSandboxRuntime", () => {
       ).rejects.toThrow("Session is archived");
 
       expect(connectSandboxSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("BT-003 (#811): unresolvable profile fails closed before provisioning", () => {
+    test("throws a typed error and never calls connectSandbox", async () => {
+      resolveProfileResult = {
+        ok: false,
+        kind: "profile_not_found",
+        requestedProfileId: "missing-profile",
+        nextAction: "Choose another profile or recreate it.",
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-unresolvable-profile",
+        managedRuntimeProfileId: "missing-profile",
+      });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt3-1",
+        }),
+      ).rejects.toThrow();
+
+      expect(connectSandboxSpy).not.toHaveBeenCalled();
+    });
+
+    test("throws WorkspaceSetupError named error carrying the next action", async () => {
+      resolveProfileResult = {
+        ok: false,
+        kind: "profile_not_found",
+        requestedProfileId: "missing-profile",
+        nextAction: "Choose another profile or recreate it.",
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-unresolvable-profile-2",
+        managedRuntimeProfileId: "missing-profile",
+      });
+      testSessionById[session.id] = session;
+
+      let caught: unknown;
+      try {
+        await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt3-2",
+        });
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(Error);
+      expect((caught as Error).name).toBe("WorkspaceSetupError");
+      expect((caught as Error).message).toContain(
+        "Choose another profile or recreate it.",
+      );
+    });
+  });
+
+  describe("BT-004 (#811): connectSandbox receives profile-derived ports", () => {
+    test("uses profile.defaultPorts, not DEFAULT_SANDBOX_PORTS, for managed runtime", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: { ...DEFAULT_BUILT_IN_PROFILE, defaultPorts: [8000] },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-custom-ports",
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-bt4-1",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+      const callArgs = connectSandboxSpy.mock.calls.at(0)?.[0] as {
+        options: { ports: number[] };
+      };
+      expect(callArgs.options.ports).toEqual([8000]);
+    });
+  });
+
+  describe("BT-005 (#811): required verification failure fails closed", () => {
+    test("throws and finishes the profile run 'blocked' with errorKind verification_failed", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [],
+          verificationCommands: [
+            {
+              id: "verify-tool",
+              label: "Verify tool",
+              description: "Confirms tool availability.",
+              command: "command -v tool",
+              required: true,
+            },
+          ],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () =>
+        Promise.resolve({
+          success: false,
+          exitCode: 1,
+          stdout: "",
+          stderr: "tool not found",
+          truncated: false,
+        });
+      const session = makeManagedRuntimeSession({
+        id: "session-verify-failed",
+      });
+      testSessionById[session.id] = session;
+      kickSandboxLifecycleWorkflowSpy.mockClear();
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt5-1",
+        }),
+      ).rejects.toThrow();
+
+      // Codex #832 P2: the lifecycle workflow must still be kicked even when
+      // managed-runtime setup fails closed, or the provisioned persistent
+      // sandbox is never hibernated/cleaned up.
+      expect(kickSandboxLifecycleWorkflowSpy).toHaveBeenCalled();
+
+      expect(finishManagedRuntimeProfileRunSpy).toHaveBeenCalled();
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as {
+        status: string;
+        errorKind?: string;
+      };
+      expect(finishArgs.status).toBe("blocked");
+      expect(finishArgs.errorKind).toBe("verification_failed");
+    });
+  });
+
+  describe("BT-006 (#811): sandbox.exec throwing during setup is captured as evidence", () => {
+    test("appends a failed observation and finishes the run 'failed' before propagating", async () => {
+      resolveProfileResult = {
+        ok: true,
+        profile: {
+          ...DEFAULT_BUILT_IN_PROFILE,
+          setupCommands: [
+            {
+              id: "install-thing",
+              label: "Install thing",
+              description: "Installs a thing.",
+              command: "install-thing",
+              required: true,
+            },
+          ],
+          verificationCommands: [],
+        },
+        source: "built_in",
+        requestedProfileId: "test-profile",
+        resolvedProfileId: "test-profile",
+      };
+      execImpl = () => {
+        throw new Error("sandbox exec transport failure");
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-exec-throws",
+      });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-bt6-1",
+        }),
+      ).rejects.toThrow();
+
+      expect(appendManagedRuntimeSetupResultSpy).toHaveBeenCalled();
+      const appendArgs = appendManagedRuntimeSetupResultSpy.mock.calls.at(
+        0,
+      )?.[0] as {
+        observation: { status: string };
+      };
+      expect(appendArgs.observation.status).toBe("failed");
+
+      expect(finishManagedRuntimeProfileRunSpy).toHaveBeenCalled();
+      const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
+        0,
+      )?.[0] as {
+        status: string;
+        errorKind?: string;
+      };
+      expect(finishArgs.status).toBe("failed");
+      expect(finishArgs.errorKind).toBe("setup_exec_error");
+    });
+  });
+
+  describe("BT-007 (#811): startup copy is honest about what the profile does", () => {
+    test("startup notes say 'will run setup, then verify' and never claim to 'install' tools", async () => {
+      const session = makeManagedRuntimeSession({
+        id: "session-honest-copy",
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-bt7-1",
+      });
+
+      const combined = capturedStartupMessages.join(" | ");
+      expect(combined).toContain("will run setup, then verify");
+      expect(combined).not.toMatch(/installs? .*bun/i);
+    });
+  });
+
+  describe("BT-008 (#811): classic-mode provisioning is unchanged", () => {
+    test("classic sessions still provision with DEFAULT_SANDBOX_PORTS", async () => {
+      const session = makeRepoSession({ id: "session-classic-ports" });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-bt8-1",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+      const callArgs = connectSandboxSpy.mock.calls.at(0)?.[0] as {
+        options: { ports: number[] };
+      };
+      expect(callArgs.options.ports).toEqual([3000]);
+    });
+  });
+
+  describe("regression: managed runtime never silently falls back on resolution failure", () => {
+    test("REG-005: an unresolvable profile never reaches SandboxBackedRuntime construction", async () => {
+      resolveProfileResult = {
+        ok: false,
+        kind: "profile_not_found",
+        requestedProfileId: "gone-profile",
+        nextAction: "Choose another profile or recreate it.",
+      };
+      const session = makeManagedRuntimeSession({
+        id: "session-reg-005",
+        managedRuntimeProfileId: "gone-profile",
+      });
+      testSessionById[session.id] = session;
+
+      let result: unknown;
+      let threw = false;
+      try {
+        result = await resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-reg-5",
+        });
+      } catch {
+        threw = true;
+      }
+
+      // If the fail-closed throw is reverted, this would silently resolve
+      // to a SandboxBackedRuntime using the built-in default profile instead.
+      expect(threw).toBe(true);
+      expect(result).toBeUndefined();
+    });
+
+    test("REG-006 (D8): a failed startManagedRuntimeProfileRun warns visibly and continues instead of hard-failing or silently skipping all evidence", async () => {
+      // If D8's warn-and-continue path regresses to either (a) swallowing the
+      // failure with no visible warning (the pre-#811 behavior) or (b)
+      // hard-failing the whole turn, this test fails: it asserts BOTH that
+      // the turn still completes AND that a visible warning + evidence event
+      // were emitted.
+      startManagedRuntimeProfileRunShouldFail = true;
+      const session = makeManagedRuntimeSession({
+        id: "session-reg-006",
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-reg-6",
+      });
+
+      // The turn must still complete (warn, not hard-fail).
+      expect(result.mode).toBe("sandbox");
+
+      // A visible warning must have been surfaced via the startup reporter.
+      const combined = capturedStartupMessages.join(" | ");
+      expect(combined).toContain("evidence");
+      expect(combined.toLowerCase()).toContain("could not be saved");
+
+      // An evidence_unavailable event must have been attempted.
+      const evidenceEventCall = emitSessionEventSpy.mock.calls.find((call) => {
+        const arg = call[0] as { eventName?: string };
+        return arg.eventName === "managed_runtime.profile.evidence_unavailable";
+      });
+      expect(evidenceEventCall).toBeDefined();
     });
   });
 });
