@@ -90,6 +90,11 @@ export function RunActions({
       const message =
         err instanceof Error ? err.message : `Failed to ${action}`;
       toast.error(message);
+      // dispatch_failed means the server already marked the run failed;
+      // refresh the run view since terminal statuses are not polled.
+      if ((err as { errorKind?: string }).errorKind === "dispatch_failed") {
+        onActionComplete?.();
+      }
     } finally {
       setLoading(null);
     }

@@ -24,10 +24,12 @@ import type { GetAgentLoopResponse } from "@/app/api/agent-loops/types";
 const swrMutate = mock(() => Promise.resolve());
 
 mock.module("swr", () => ({
-  default: <T = GetAgentLoopResponse>(
+  // No generic here: `<T = X>(...)` in a .tsx file fails to parse on CI's
+  // Bun 1.2.14 transpiler ("Expected '>' but found '='").
+  default: (
     _key: string,
     _fetcher?: unknown,
-    opts?: { fallbackData?: T },
+    opts?: { fallbackData?: GetAgentLoopResponse },
   ) => ({
     data: opts?.fallbackData,
     mutate: swrMutate,
