@@ -89,7 +89,9 @@ describe("openAgent runtime tool policy", () => {
     // the MR-8 test below).
     expect(managedTools).toEqual(
       [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
-        OPEN_AGENT_TOOL_NAMES.includes(name as (typeof OPEN_AGENT_TOOL_NAMES)[number]),
+        OPEN_AGENT_TOOL_NAMES.includes(
+          name as (typeof OPEN_AGENT_TOOL_NAMES)[number],
+        ),
       ),
     );
     expect(managedTools).not.toContain("read");
@@ -119,7 +121,9 @@ describe("openAgent runtime tool policy", () => {
     // test below), so they are absent here.
     expect(Object.keys(filteredTools)).toEqual(
       [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
-        OPEN_AGENT_TOOL_NAMES.includes(name as (typeof OPEN_AGENT_TOOL_NAMES)[number]),
+        OPEN_AGENT_TOOL_NAMES.includes(
+          name as (typeof OPEN_AGENT_TOOL_NAMES)[number],
+        ),
       ),
     );
   });

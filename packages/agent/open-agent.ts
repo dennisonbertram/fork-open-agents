@@ -235,7 +235,9 @@ export const MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES = [
   PROPOSE_TOOL_NAME,
   MANAGE_BACKGROUND_AGENT_TOOL_NAME,
 ] as const satisfies ReadonlyArray<
-  keyof typeof tools | typeof PROPOSE_TOOL_NAME | typeof MANAGE_BACKGROUND_AGENT_TOOL_NAME
+  | keyof typeof tools
+  | typeof PROPOSE_TOOL_NAME
+  | typeof MANAGE_BACKGROUND_AGENT_TOOL_NAME
 >;
 
 /**
