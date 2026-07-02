@@ -224,6 +224,53 @@ describe("managed runtime profile manager helpers", () => {
     ).toBeNull();
   });
 
+  // Regression: an edit to a command ROW (not just top-level fields like
+  // displayName) must also trigger the warning. This would fail if a future
+  // change compared only the top-level scalar fields and ignored
+  // setupCommands/verificationCommands.
+  test("warns on unsaved edits to a command row, not just top-level fields", () => {
+    const savedFormState = {
+      displayName: "Bun app",
+      description: "Install and verify Bun",
+      expectedTools: "bun",
+      optionalTools: "",
+      defaultPorts: "3000",
+      setupCommands: [
+        {
+          id: "install-bun",
+          label: "Install Bun",
+          description: "Install Bun",
+          command: "bun --version",
+        },
+      ],
+      verificationCommands: [
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+      ],
+    };
+
+    const editedFormState = {
+      ...savedFormState,
+      verificationCommands: [
+        {
+          ...savedFormState.verificationCommands[0],
+          command: "bun --revision",
+        },
+      ],
+    };
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: editedFormState,
+        savedFormState,
+      }),
+    ).toBe("You have unsaved edits — Test runs the saved profile.");
+  });
+
   test("keeps one command row and normalizes ids and timeout inputs", () => {
     const command = {
       id: "install",

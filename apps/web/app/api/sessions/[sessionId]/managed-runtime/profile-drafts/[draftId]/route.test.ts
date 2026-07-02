@@ -213,6 +213,27 @@ describe("/api/sessions/[sessionId]/managed-runtime/profile-drafts/[draftId]", (
     });
   });
 
+  // Regression: a normal approval (no forceApproved in the request body)
+  // must NOT be persisted as force_approved:true. This would fail if a
+  // future change hardcoded forceApproved:true or otherwise defaulted the
+  // flag on for every approval, which would mislabel every ordinary
+  // approval as an override in the evidence badge.
+  test("PATCH does not mark a normal approval as forceApproved", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    await PATCH(
+      request("PATCH", {
+        output: { decision: "approved", notes: "Looks right" },
+      }),
+      routeContext(),
+    );
+
+    expect(calls[0]).toMatchObject({ fn: "update" });
+    expect((calls[0] as { forceApproved?: boolean }).forceApproved).toBe(
+      undefined,
+    );
+  });
+
   // RED: today the route never reads or persists a `forceApproved` flag, so
   // approving over a failed/absent test leaves no evidence that the user
   // knowingly overrode the failure.

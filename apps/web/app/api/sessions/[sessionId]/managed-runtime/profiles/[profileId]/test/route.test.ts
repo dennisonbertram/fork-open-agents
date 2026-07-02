@@ -398,4 +398,51 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles/[profileId]/test", 
     expect(body.testEvidence.failureMessage).toContain("Install Bun failed");
     expect(body.testEvidence.nextAction).toContain("setup command");
   });
+
+  // Regression: the unified break-on-required-failure fix must only break
+  // on a REQUIRED failure, not any failure. If a future change widened the
+  // break condition to include optional commands, this test would fail
+  // because the second (required) command would never run and get
+  // recorded.
+  test("does not stop the loop after an optional command fails in verify mode", async () => {
+    profileResult = {
+      ...profileRecord,
+      verificationCommands: [
+        {
+          id: "observe-node",
+          label: "Observe Node",
+          description: "Observe Node",
+          command: "node --version",
+          required: false,
+        },
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+      ],
+    };
+    execResults = [
+      { success: false, exitCode: 127, stderr: "no node\n" },
+      { success: true, exitCode: 0, stdout: "1.2.3\n" },
+    ];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(request(), routeContext());
+    const body = (await response.json()) as {
+      testEvidence: {
+        status: string;
+        testResults: Array<{ commandId: string; status: string }>;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.testEvidence.status).toBe("passed");
+    expect(body.testEvidence.testResults).toEqual([
+      expect.objectContaining({ commandId: "observe-node", status: "failed" }),
+      expect.objectContaining({ commandId: "verify-bun", status: "passed" }),
+    ]);
+    expect(calls.filter((call) => call.fn === "exec")).toHaveLength(2);
+  });
 });
