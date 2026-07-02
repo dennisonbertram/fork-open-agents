@@ -415,7 +415,9 @@ describe("BackgroundRunDetail", () => {
     // Find the sidebar Run-section Output row specifically (not the proof-strip
     // Output tile, which has its own "none"/"pending" text) — assert the
     // "Run" section text block contains a bare "none" for the Output row.
-    const runSectionStart = html.indexOf("<h2 class=\"text-sm font-medium\">Run</h2>");
+    const runSectionStart = html.indexOf(
+      '<h2 class="text-sm font-medium">Run</h2>',
+    );
     const debugSectionStart = html.indexOf("Debug");
     expect(runSectionStart).toBeGreaterThanOrEqual(0);
     const runSectionHtml = html.slice(runSectionStart, debugSectionStart);

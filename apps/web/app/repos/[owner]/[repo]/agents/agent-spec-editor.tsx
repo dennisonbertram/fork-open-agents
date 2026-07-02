@@ -258,11 +258,11 @@ export function AgentSpecEditor({
   function hasAnyWriteAction(actions: GithubActions): boolean {
     return Boolean(
       actions.open_pull_request ||
-        actions.approve_pull_request ||
-        actions.request_changes ||
-        actions.merge_pull_request ||
-        actions.push ||
-        actions.delete_branch,
+      actions.approve_pull_request ||
+      actions.request_changes ||
+      actions.merge_pull_request ||
+      actions.push ||
+      actions.delete_branch,
     );
   }
 

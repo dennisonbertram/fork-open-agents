@@ -233,11 +233,11 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       : { open_pull_request: true, comment_on_pr_or_issue: true };
   const templateRequiresWrite = Boolean(
     templateGithubActions.open_pull_request ||
-      templateGithubActions.approve_pull_request ||
-      templateGithubActions.request_changes ||
-      templateGithubActions.merge_pull_request ||
-      templateGithubActions.push ||
-      templateGithubActions.delete_branch,
+    templateGithubActions.approve_pull_request ||
+    templateGithubActions.request_changes ||
+    templateGithubActions.merge_pull_request ||
+    templateGithubActions.push ||
+    templateGithubActions.delete_branch,
   );
   const initialAccessLevel: GitHubAccessLevel = templateRequiresWrite
     ? "write"

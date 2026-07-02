@@ -186,11 +186,11 @@ function hasAnyWriteAction(
   if (!actions) return false;
   return Boolean(
     actions.open_pull_request ||
-      actions.approve_pull_request ||
-      actions.request_changes ||
-      actions.merge_pull_request ||
-      actions.push ||
-      actions.delete_branch,
+    actions.approve_pull_request ||
+    actions.request_changes ||
+    actions.merge_pull_request ||
+    actions.push ||
+    actions.delete_branch,
   );
 }
 
@@ -290,9 +290,7 @@ function legacyOutputModeWarning(outputMode: string | undefined): string[] {
   const suggestionText = suggestion
     ? ` Use githubActions instead — for "${outputMode}", enable: ${suggestion}.`
     : ` Use githubActions instead of outputMode ("${outputMode}").`;
-  return [
-    `The "outputMode" field is deprecated.${suggestionText}`,
-  ];
+  return [`The "outputMode" field is deprecated.${suggestionText}`];
 }
 
 // ── Main function ────────────────────────────────────────────────────────

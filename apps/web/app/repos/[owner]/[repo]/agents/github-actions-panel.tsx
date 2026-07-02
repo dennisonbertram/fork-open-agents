@@ -188,9 +188,7 @@ export function GithubActionsPanel({
                   id={`action-${toggle.key}`}
                   checked={enabled}
                   disabled={disabled}
-                  onCheckedChange={(checked) =>
-                    setAction(toggle.key, checked)
-                  }
+                  onCheckedChange={(checked) => setAction(toggle.key, checked)}
                 />
               </div>
 
@@ -232,7 +230,7 @@ export function GithubActionsPanel({
       <div className="space-y-2 border-t border-border/60 pt-4">
         <Label htmlFor="write-scope-mode">Write scope</Label>
         <p className="text-xs text-muted-foreground">
-          Which repositories this agent's write actions may target.
+          Which repositories this agent&apos;s write actions may target.
         </p>
         <Select
           value={writeScope.mode}
@@ -320,8 +318,9 @@ export function GithubActionsPanel({
           }
         />
         <p className="text-xs text-muted-foreground">
-          A gateway model id in <code className="font-mono">provider/model</code>{" "}
-          form, or a selection copied from your model picker (accepts{" "}
+          A gateway model id in{" "}
+          <code className="font-mono">provider/model</code> form, or a selection
+          copied from your model picker (accepts{" "}
           <code className="font-mono">user-profile:</code>-prefixed values).
           Leave blank to use the default model.
         </p>

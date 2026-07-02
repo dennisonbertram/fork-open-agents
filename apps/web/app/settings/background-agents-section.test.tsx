@@ -652,9 +652,7 @@ describe("BackgroundAgentsSection", () => {
     const { PermissionsSummary } = await componentModulePromise;
 
     const readOnlyHtml = renderToStaticMarkup(
-      <PermissionsSummary
-        githubActions={{ comment_on_pr_or_issue: true }}
-      />,
+      <PermissionsSummary githubActions={{ comment_on_pr_or_issue: true }} />,
     );
     expect(readOnlyHtml).toContain("Permissions summary");
     expect(readOnlyHtml).toContain("GitHub contents: ");

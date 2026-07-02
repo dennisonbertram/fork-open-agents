@@ -926,7 +926,9 @@ describe("buildFormFromAgent — githubActions/writeScope/requireCiGreenForMerge
   });
 
   test("round-trips saved modelId into the form, including null", () => {
-    const agentWithModel = makeAgent({ modelId: "anthropic/claude-sonnet-4-5" });
+    const agentWithModel = makeAgent({
+      modelId: "anthropic/claude-sonnet-4-5",
+    });
     expect(buildFormFromAgent(agentWithModel).modelId).toBe(
       "anthropic/claude-sonnet-4-5",
     );
