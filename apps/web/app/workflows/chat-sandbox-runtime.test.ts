@@ -119,8 +119,12 @@ mock.module("@/lib/github/users", () => ({
   getGitHubUserProfile: async () => null,
 }));
 
+const emitSessionEventSpy = mock(
+  async (_params: Record<string, unknown>) => null,
+);
+
 mock.module("@/lib/observability/events", () => ({
-  emitSessionEvent: async () => null,
+  emitSessionEvent: emitSessionEventSpy,
 }));
 
 const NEXT_ACTION_BY_ERROR_KIND: Record<string, string> = {
@@ -179,8 +183,15 @@ mock.module("@/lib/managed-runtime/profile-resolution", () => ({
   resolveManagedRuntimeProfile: resolveManagedRuntimeProfileSpy,
 }));
 
+let startManagedRuntimeProfileRunShouldFail = false;
+
 const startManagedRuntimeProfileRunSpy = mock(
-  async (_params: Record<string, unknown>) => ({ id: "run_1" }),
+  async (_params: Record<string, unknown>) => {
+    if (startManagedRuntimeProfileRunShouldFail) {
+      throw new Error("profile run write failed");
+    }
+    return { id: "run_1" };
+  },
 );
 const appendManagedRuntimeSetupResultSpy = mock(
   async (_params: Record<string, unknown>) => undefined,
@@ -383,7 +394,9 @@ beforeEach(() => {
   appendManagedRuntimeVerificationResultSpy.mockClear();
   finishManagedRuntimeProfileRunSpy.mockClear();
   resolveManagedRuntimeProfileSpy.mockClear();
+  emitSessionEventSpy.mockClear();
   capturedStartupMessages.length = 0;
+  startManagedRuntimeProfileRunShouldFail = false;
   execImpl = () =>
     Promise.resolve({
       success: true,
@@ -870,6 +883,40 @@ describe("resolveChatSandboxRuntime", () => {
       // to a SandboxBackedRuntime using the built-in default profile instead.
       expect(threw).toBe(true);
       expect(result).toBeUndefined();
+    });
+
+    test("REG-006 (D8): a failed startManagedRuntimeProfileRun warns visibly and continues instead of hard-failing or silently skipping all evidence", async () => {
+      // If D8's warn-and-continue path regresses to either (a) swallowing the
+      // failure with no visible warning (the pre-#811 behavior) or (b)
+      // hard-failing the whole turn, this test fails: it asserts BOTH that
+      // the turn still completes AND that a visible warning + evidence event
+      // were emitted.
+      startManagedRuntimeProfileRunShouldFail = true;
+      const session = makeManagedRuntimeSession({
+        id: "session-reg-006",
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-reg-6",
+      });
+
+      // The turn must still complete (warn, not hard-fail).
+      expect(result.mode).toBe("sandbox");
+
+      // A visible warning must have been surfaced via the startup reporter.
+      const combined = capturedStartupMessages.join(" | ");
+      expect(combined).toContain("evidence");
+      expect(combined.toLowerCase()).toContain("could not be saved");
+
+      // An evidence_unavailable event must have been attempted.
+      const evidenceEventCall = emitSessionEventSpy.mock.calls.find((call) => {
+        const arg = call[0] as { eventName?: string };
+        return arg.eventName === "managed_runtime.profile.evidence_unavailable";
+      });
+      expect(evidenceEventCall).toBeDefined();
     });
   });
 });
