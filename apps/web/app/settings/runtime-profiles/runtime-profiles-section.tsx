@@ -909,6 +909,11 @@ export function RuntimeProfilesSection({
   const [showNewForm, setShowNewForm] = useState(false);
   const [cloneFormState, setCloneFormState] =
     useState<RuntimeProfileFormState | null>(null);
+  // Bumped on every clone so the create form remounts and re-seeds its local
+  // state from the new clone target even when it is already open (Codex #831
+  // P2 — otherwise NewProfileForm keeps its mount-time initializer state and
+  // the Clone appears to do nothing).
+  const [cloneNonce, setCloneNonce] = useState(0);
 
   function handleCreated(profile: SavedProfileRow) {
     setUserProfiles((prev) => [profile, ...prev]);
@@ -919,6 +924,7 @@ export function RuntimeProfilesSection({
   function handleClone(formState: RuntimeProfileFormState) {
     setCloneFormState(formState);
     setShowNewForm(true);
+    setCloneNonce((n) => n + 1);
   }
 
   function handleCancelNewForm() {
@@ -979,6 +985,7 @@ export function RuntimeProfilesSection({
           <div className="overflow-hidden rounded-lg border border-border">
             <NewProfileForm
               initialFormState={cloneFormState ?? undefined}
+              key={cloneNonce}
               onCancel={handleCancelNewForm}
               onCreated={handleCreated}
             />
