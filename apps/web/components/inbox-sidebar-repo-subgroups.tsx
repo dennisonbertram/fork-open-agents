@@ -139,7 +139,7 @@ function SubGroupHeader({
       <Link
         href={createHref}
         aria-label={createLabel}
-        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-colors hover:text-foreground group-hover/sub:opacity-100"
+        className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-colors hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring group-hover/sub:opacity-100"
       >
         <Plus className="h-3 w-3" />
       </Link>

@@ -301,7 +301,7 @@ export function LoopCreateForm({
         );
       })()}
 
-      <div className="flex justify-end gap-3">
+      <div className="sticky bottom-0 -mx-4 flex justify-end gap-3 border-t border-border bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <Button type="button" variant="outline" onClick={() => router.back()}>
           Cancel
         </Button>
