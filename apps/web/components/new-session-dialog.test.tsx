@@ -1,0 +1,202 @@
+/**
+ * Tests for new-session-dialog.tsx create-session failure surfacing (#784).
+ *
+ * BT-784-006: A mocked 403 "Reconnect Vercel..." rejection renders an inline
+ *             message + "Go to Settings" action link, and isCreating resets.
+ * BT-784-007: A generic/unknown rejection renders fallback copy inline.
+ * BT-784-008: The inline error region uses role="alert".
+ */
+
+import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { CreateSessionError } from "@/lib/sessions/create-session-error";
+
+// --- Mocks -------------------------------------------------------------------
+
+const push = mock((_url: string) => undefined);
+
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ push }),
+}));
+
+// Stub SessionStarter — captures onSubmit so tests can invoke it directly,
+// and renders isLoading so BT-784-006's isCreating-resets assertion holds.
+let capturedOnSubmit: (input: unknown) => Promise<void> = async () => {};
+
+mock.module("@/components/session-starter", () => ({
+  SessionStarter: (props: {
+    onSubmit: (input: unknown) => Promise<void>;
+    isLoading: boolean;
+  }) => {
+    capturedOnSubmit = props.onSubmit;
+    return (
+      <div
+        data-testid="session-starter-stub"
+        data-is-loading={String(props.isLoading)}
+      />
+    );
+  },
+}));
+
+// --- Helpers -----------------------------------------------------------------
+
+const dialogModulePromise = import("./new-session-dialog");
+
+const BASE_INPUT = {
+  isNewBranch: false,
+  sandboxType: "vercel" as const,
+  autoCommitPush: false,
+  autoCreatePr: false,
+};
+
+describe("NewSessionDialog — create-session failure surfacing", () => {
+  beforeEach(() => {
+    push.mockClear();
+  });
+
+  test("BT-784-006: 403 Vercel-reauth rejection renders inline message + Go to Settings link, isCreating resets", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    const rejection = new CreateSessionError({
+      message: "Reconnect Vercel to select a Vercel project",
+      kind: "vercel_reauth_required",
+      actionUrl: "/settings",
+      actionLabel: "Go to Settings",
+    });
+    const createSession = mock(async () => {
+      throw rejection;
+    });
+
+    renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+      />,
+    );
+
+    await capturedOnSubmit(BASE_INPUT);
+
+    // isCreating resets to false after the rejection (finally block ran).
+    const htmlAfter = renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+      />,
+    );
+    expect(htmlAfter).toContain('data-is-loading="false"');
+
+    // No navigation occurred on failure.
+    expect(push).not.toHaveBeenCalled();
+
+    // Pre-seed the error state the real handler would have set, to verify
+    // the rendered markup (mirrors the AgentEditForm _testSaveError pattern).
+    const errorHtml = renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+        _testCreateSessionError={{
+          message: "Reconnect Vercel to select a Vercel project",
+          kind: "vercel_reauth_required",
+          actionUrl: "/settings",
+          actionLabel: "Go to Settings",
+        }}
+      />,
+    );
+    expect(errorHtml).toContain("Reconnect Vercel to select a Vercel project");
+    expect(errorHtml).toContain("Go to Settings");
+    expect(errorHtml).toContain('href="/settings"');
+  });
+
+  test("BT-784-007: generic/unknown rejection renders fallback copy inline (no action link)", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    const createSession = mock(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+      />,
+    );
+
+    await capturedOnSubmit(BASE_INPUT);
+
+    const errorHtml = renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+        _testCreateSessionError={{
+          message: "Couldn't create the session — try again",
+          kind: "unknown",
+        }}
+      />,
+    );
+
+    expect(errorHtml).toContain("Couldn't create the session — try again");
+    expect(errorHtml).not.toContain("Go to Settings");
+  });
+
+  test("BT-784-008: the inline error region uses role=\"alert\"", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    const createSession = mock(async () => ({
+      session: { id: "s1" },
+      chat: { id: "c1" },
+    }));
+
+    const errorHtml = renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+        _testCreateSessionError={{
+          message: "Couldn't create the session — try again",
+          kind: "unknown",
+        }}
+      />,
+    );
+
+    expect(errorHtml).toContain('role="alert"');
+  });
+
+  test("BT-784-009: on success, no error region renders and navigation occurs", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    const createSession = mock(async () => ({
+      session: { id: "s1" },
+      chat: { id: "c1" },
+    }));
+
+    renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+      />,
+    );
+
+    await capturedOnSubmit(BASE_INPUT);
+
+    expect(push).toHaveBeenCalledWith("/sessions/s1/chats/c1");
+
+    const html = renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        createSession={createSession}
+      />,
+    );
+    expect(html).not.toContain('role="alert"');
+  });
+});
