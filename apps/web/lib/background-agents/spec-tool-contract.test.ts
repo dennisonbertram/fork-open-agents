@@ -343,6 +343,111 @@ describe("previewBackgroundAgentSpec — success", () => {
   });
 });
 
+// ── previewBackgroundAgentSpec — #747 actions/scope/model preview ────────
+
+describe("previewBackgroundAgentSpec — githubActions/writeScope/model preview", () => {
+  test("summary lists enabled github actions", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        githubActions: {
+          push: true,
+          open_pull_request: true,
+          comment_on_pr_or_issue: true,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Actions:**");
+      expect(result.summary).toContain("push");
+      expect(result.summary).toContain("open_pull_request");
+      expect(result.summary).toContain("comment_on_pr_or_issue");
+      // Disabled actions must not appear
+      expect(result.summary).not.toContain("merge_pull_request");
+    }
+  });
+
+  test("summary omits an Actions line when every githubActions toggle is disabled", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        githubActions: {
+          open_pull_request: false,
+          comment_on_pr_or_issue: false,
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).not.toContain("**Actions:**");
+    }
+  });
+
+  test("summary includes write scope when not the default this_repo mode", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({
+        writeScope: {
+          mode: "specific_repos",
+          repos: [{ owner: "acme", name: "widgets" }],
+        },
+      }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Write scope:**");
+      expect(result.summary).toContain("specific_repos");
+      expect(result.summary).toContain("acme/widgets");
+    }
+  });
+
+  test("summary includes the model id when set", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ modelId: "anthropic/claude-sonnet-4-5" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).toContain("**Model:**");
+      expect(result.summary).toContain("anthropic/claude-sonnet-4-5");
+    }
+  });
+
+  test("summary omits the model line when modelId is not set (default model)", () => {
+    const result = previewBackgroundAgentSpec(validCreateInput());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.summary).not.toContain("**Model:**");
+    }
+  });
+
+  test("warns when legacy outputMode='ready_pr' is supplied, suggesting push+open_pull_request", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ outputMode: "ready_pr" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const legacyWarning = result.warnings.find((w) =>
+        w.includes("outputMode"),
+      );
+      expect(legacyWarning).toBeDefined();
+      expect(legacyWarning).toContain("deprecated");
+      expect(legacyWarning).toContain("push");
+      expect(legacyWarning).toContain("open_pull_request");
+    }
+  });
+
+  test("does not warn about legacy outputMode when it is the default 'none'", () => {
+    const result = previewBackgroundAgentSpec(
+      validCreateInput({ outputMode: "none" }),
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const legacyWarning = result.warnings.find((w) =>
+        w.includes("outputMode"),
+      );
+      expect(legacyWarning).toBeUndefined();
+    }
+  });
+});
+
 // ── previewBackgroundAgentSpec — validation failures ─────────────────────
 
 describe("previewBackgroundAgentSpec — validation failures", () => {
