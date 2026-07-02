@@ -404,6 +404,7 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
     composioToolkitSlugs: [],
     builtinToolNames: null,
     githubActions: { comment_on_pr_or_issue: true },
+    runBudgetPerTarget: 10,
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,
