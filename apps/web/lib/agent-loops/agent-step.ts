@@ -22,6 +22,10 @@
  *        - unparseable JSON → step_output_invalid
  *        - exceeds 64KB cap → step_output_invalid
  *        - fails node.outputSchema (if present) → step_output_invalid
+ *          Dual-shape validation (#766, see output-schema-shape.ts):
+ *          flat map ({name: type}, from the builder's quick-add "Outputs"
+ *          control) requires + type-checks every declared key; JSON-Schema-
+ *          Lite ({type, required, properties}) keeps its existing semantics.
  *   9. If node.checkCommand configured: run with timeout.
  *        - non-zero exit → checks_failed; record agent-loop.step.check.completed
  *        - zero exit → record agent-loop.step.check.completed (success)
@@ -79,6 +83,7 @@ import {
   DEFAULT_SANDBOX_VCPUS,
 } from "@/lib/sandbox/config";
 import { mergeStepOutput } from "./context";
+import { isFlatOutputSchema } from "./output-schema-shape";
 import { resolveWorkingBranch } from "./resolve-working-branch";
 import {
   effectiveStepPermissions,
@@ -102,7 +107,13 @@ import type { Sandbox } from "@open-agents/sandbox";
 /** Maximum size for step output JSON (64KB). */
 const STEP_OUTPUT_MAX_BYTES = 64 * 1024;
 
-/** Default agent invocation timeout for step execution (10 minutes). */
+/**
+ * Default agent invocation timeout for step execution (10 minutes).
+ * Used as a fallback only when the caller does not resolve a guardrail
+ * (e.g. AgentStepParams.stepTimeoutMs is omitted). The real default/ceiling
+ * source of truth is GUARDRAIL_DEFAULTS/GUARDRAIL_CEILINGS in types.ts,
+ * resolved per-run by chain.ts's resolveGuardrails.
+ */
 const AGENT_STEP_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** Timeout for checkCommand execution (2 minutes). */
@@ -132,6 +143,12 @@ export type AgentStepParams = {
   startedAt: number;
   /** Optional watchdog hint from the previous failed attempt (via stepInput.watchdogHint). */
   watchdogHint?: string;
+  /**
+   * Resolved (default-applied, ceiling-clamped) agent invocation timeout in
+   * ms — see resolveGuardrails in chain.ts. Falls back to
+   * AGENT_STEP_TIMEOUT_MS when omitted (e.g. direct unit-test calls).
+   */
+  stepTimeoutMs?: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -150,6 +167,41 @@ function nowMs(): number {
 function truncateOutput(s: string, maxLen: number): string {
   if (s.length <= maxLen) return s;
   return `${s.slice(0, maxLen)}...[truncated]`;
+}
+
+/**
+ * Validates a flat-map outputSchema ({name: type}, as written by the
+ * builder's "Outputs" quick-add control — see
+ * components/agent-config-fields.tsx DeclaredOutputsField). Every declared
+ * key is required and its value must match the declared type-name.
+ * $-prefixed metadata keys (e.g. "$schema") are skipped, consistent with
+ * isFlatOutputSchema and outputFieldNames, which both deliberately exclude
+ * them when interpreting a flat map — otherwise a schema like
+ * {"$schema": "...", "passed": "boolean"} would be classified as flat but
+ * then always fail validation since the agent output never contains a
+ * literal "$schema" field.
+ * Returns null on success, or an error message on the first failure.
+ */
+function validateAgainstFlatSchema(
+  output: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): string | null {
+  for (const [field, expectedType] of Object.entries(schema)) {
+    if (field.startsWith("$")) {
+      continue;
+    }
+    if (!(field in output)) {
+      return `Missing required field: "${field}"`;
+    }
+    const actualValue = output[field];
+    const actualType = Array.isArray(actualValue)
+      ? "array"
+      : typeof actualValue;
+    if (actualType !== expectedType) {
+      return `Field "${field}": expected type "${String(expectedType)}", got "${actualType}"`;
+    }
+  }
+  return null;
 }
 
 /**
@@ -199,6 +251,21 @@ function validateAgainstJsonSchemaLite(
   }
 
   return null;
+}
+
+/**
+ * Validates step output against a node's outputSchema, dispatching to the
+ * flat-map or JSON-Schema-Lite validator per isFlatOutputSchema's detection
+ * rule (see output-schema-shape.ts). Returns null on success, or an error
+ * message on failure.
+ */
+function validateStepOutput(
+  output: Record<string, unknown>,
+  schema: Record<string, unknown>,
+): string | null {
+  return isFlatOutputSchema(schema)
+    ? validateAgainstFlatSchema(output, schema)
+    : validateAgainstJsonSchemaLite(output, schema);
 }
 
 /**
@@ -273,6 +340,7 @@ export async function executeAgentStep(
     loop,
     startedAt,
     watchdogHint,
+    stepTimeoutMs = AGENT_STEP_TIMEOUT_MS,
   } = params;
 
   const sandboxName = buildSandboxName(stepRunId);
@@ -471,10 +539,27 @@ export async function executeAgentStep(
     // Accumulate messages across turns so the next call sees prior tool results.
     let agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
 
+    // stepTimeoutMs is the budget for the WHOLE step, not each individual
+    // openAgent.generate call. Compute a single deadline before the loop and
+    // pass each call only the remaining budget — otherwise a step configured
+    // at e.g. 30 minutes could run up to AGENT_MAX_LOOP_STEPS x 30 minutes if
+    // every iteration reset the timeout to the full stepTimeoutMs.
+    const deadlineAt = Date.now() + stepTimeoutMs;
+
     try {
       let loopStep = 0;
       while (true) {
         loopStep++;
+
+        const remainingMs = deadlineAt - Date.now();
+        if (remainingMs <= 0) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "workflow_failed",
+            errorMessage: `Agent step timed out after ${stepTimeoutMs}ms`,
+          });
+        }
+
         // Repair any approval-gated tool call the previous turn left without a
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
@@ -482,7 +567,7 @@ export async function executeAgentStep(
         agentResult = await openAgent.generate({
           messages: agentMessages,
           options: agentOptions,
-          timeout: { totalMs: AGENT_STEP_TIMEOUT_MS },
+          timeout: { totalMs: Math.max(1, remainingMs) },
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
@@ -512,7 +597,7 @@ export async function executeAgentStep(
         ...failureCtx,
         errorKind: "workflow_failed",
         errorMessage: isAbort
-          ? `Agent step timed out after ${AGENT_STEP_TIMEOUT_MS}ms`
+          ? `Agent step timed out after ${stepTimeoutMs}ms`
           : `Agent step failed: ${err instanceof Error ? err.message : String(err)}`,
       });
     }
@@ -584,10 +669,7 @@ export async function executeAgentStep(
 
     // Optional schema validation
     if (node.outputSchema) {
-      const schemaError = validateAgainstJsonSchemaLite(
-        parsedOutput,
-        node.outputSchema,
-      );
+      const schemaError = validateStepOutput(parsedOutput, node.outputSchema);
       if (schemaError) {
         return await recordAgentStepFailure({
           ...failureCtx,
