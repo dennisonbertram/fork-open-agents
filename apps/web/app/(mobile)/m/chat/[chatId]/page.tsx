@@ -12,9 +12,10 @@ import { getAllVariants } from "@/lib/model-variants";
 import { getModelOptionSelectionId } from "@/lib/inference/model-option-id";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { getInitialModels } from "@/app/sessions/[sessionId]/chats/[chatId]/get-initial-models";
-import { ModelAvailabilityBanner } from "@/app/sessions/[sessionId]/chats/[chatId]/model-availability-banner";
+import { hasSelectableModelOptions } from "@/app/sessions/[sessionId]/chats/[chatId]/has-selectable-model-options";
 import { SessionChatProvider } from "@/app/sessions/[sessionId]/chats/[chatId]/session-chat-context";
 import { MobileChatScreen } from "@/components/mobile/chat/mobile-chat-screen";
+import { MobileModelAvailabilityOverlay } from "./mobile-model-availability-overlay";
 
 interface MobileChatPageProps {
   params: Promise<{ chatId: string }>;
@@ -127,12 +128,14 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
     chat.modelId,
     chat.inferenceProfileId,
   );
+  const sessionChatModelOptions = buildSessionChatModelOptions(
+    initialModelsResult.models,
+    modelVariants,
+    inferenceProfiles,
+  );
+  const modelsAvailable = hasSelectableModelOptions(sessionChatModelOptions);
   const initialModelOptions = withMissingModelOption(
-    buildSessionChatModelOptions(
-      initialModelsResult.models,
-      modelVariants,
-      inferenceProfiles,
-    ),
+    sessionChatModelOptions,
     chatModelOptionId,
   );
 
@@ -143,14 +146,11 @@ export default async function MobileChatPage({ params }: MobileChatPageProps) {
       initialMessages={initialMessages}
       initialModelOptions={initialModelOptions}
     >
-      {initialModelsResult.models.length === 0 && (
-        <div className="px-4 pt-4">
-          <ModelAvailabilityBanner
-            errorKind={initialModelsResult.errorKind}
-            hasModels={initialModelsResult.models.length > 0}
-          />
-        </div>
-      )}
+      <MobileModelAvailabilityOverlay
+        errorKind={initialModelsResult.errorKind}
+        hasModels={modelsAvailable}
+        retryHref={`/m/chat/${chatId}`}
+      />
       <MobileChatScreen
         chatId={chatId}
         sessionId={sessionId}

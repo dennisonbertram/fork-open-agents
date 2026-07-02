@@ -24,6 +24,7 @@ import { getServerSession } from "@/lib/session/get-server-session";
 import { getCodeEditorDisabledReason } from "@/lib/managed-runtime/code-editor-gate";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import { getInitialModels } from "./get-initial-models";
+import { hasSelectableModelOptions } from "./has-selectable-model-options";
 import { ModelAvailabilityBanner } from "./model-availability-banner";
 import { getInitialIsOnlyChatInSession } from "./only-chat-in-session";
 import { SessionChatContent } from "./session-chat-content";
@@ -180,12 +181,14 @@ export default async function SessionChatPage({
     chatModelId,
     chat.inferenceProfileId,
   );
+  const sessionChatModelOptions = buildSessionChatModelOptions(
+    initialModelsResult.models,
+    modelVariants,
+    inferenceProfiles,
+  );
+  const modelsAvailable = hasSelectableModelOptions(sessionChatModelOptions);
   const initialModelOptions = withMissingModelOption(
-    buildSessionChatModelOptions(
-      initialModelsResult.models,
-      modelVariants,
-      inferenceProfiles,
-    ),
+    sessionChatModelOptions,
     chatModelOptionId,
   );
 
@@ -202,11 +205,12 @@ export default async function SessionChatPage({
         initialMessages={initialMessages}
         initialModelOptions={initialModelOptions}
       >
-        {initialModelsResult.models.length === 0 && (
+        {!modelsAvailable && (
           <div className="px-4 pt-4">
             <ModelAvailabilityBanner
               errorKind={initialModelsResult.errorKind}
-              hasModels={initialModelsResult.models.length > 0}
+              hasModels={modelsAvailable}
+              retryHref={`/sessions/${sessionId}/chats/${chat.id}`}
             />
           </div>
         )}

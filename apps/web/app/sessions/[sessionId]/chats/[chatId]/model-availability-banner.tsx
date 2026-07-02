@@ -5,6 +5,14 @@ import type { ModelsErrorKind } from "./get-initial-models";
 export interface ModelAvailabilityBannerProps {
   errorKind: ModelsErrorKind | null;
   hasModels: boolean;
+  /**
+   * Concrete chat URL (e.g. `/sessions/<sessionId>/chats/<chatId>` or
+   * `/m/chat/<chatId>`) used for the fetch-failed retry link. Must be an
+   * absolute path to the current page, not a relative href — `href="."`
+   * resolves to the parent directory (which 404s) rather than reloading the
+   * current chat route.
+   */
+  retryHref: string;
 }
 
 /**
@@ -17,6 +25,7 @@ export interface ModelAvailabilityBannerProps {
 export function ModelAvailabilityBanner({
   errorKind,
   hasModels,
+  retryHref,
 }: ModelAvailabilityBannerProps) {
   if (hasModels) {
     return null;
@@ -47,7 +56,7 @@ export function ModelAvailabilityBanner({
             </Link>
             {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- intentional full page reload to re-run the server-side models fetch, not a Next.js page navigation */}
             <a
-              href="."
+              href={retryHref}
               className="inline-flex items-center gap-1.5 text-xs font-medium underline underline-offset-2 hover:opacity-80"
             >
               <RefreshCw className="size-3" />
