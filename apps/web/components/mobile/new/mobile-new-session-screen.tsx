@@ -3,12 +3,14 @@
 import { GitBranch, Globe } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import useSWR from "swr";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { toCreateSessionErrorInfo } from "@/lib/sessions/create-session-error";
 import { fetcher } from "@/lib/swr";
 import { BranchSelectorCompact } from "@/components/branch-selector-compact";
 import { useSession } from "@/hooks/use-session";
@@ -235,8 +237,11 @@ export function MobileNewSessionScreen() {
 
       router.push(`/m/chat/${chat.id}`);
     } catch (err) {
-      // createSession already shows a toast via useSessions
-      console.error("Failed to create session:", err);
+      // Ownership decision (#784): useSessions().createSession no longer
+      // toasts on failure — this screen has no persistent form surface, so
+      // it toasts the mapped failure exactly once.
+      const info = toCreateSessionErrorInfo(err);
+      toast.error(info.message);
     } finally {
       setIsSubmitting(false);
     }
