@@ -1125,6 +1125,16 @@ export async function resolveChatSandboxRuntime(params: {
     ]);
   }
 
+  // Kick the lifecycle workflow BEFORE managed-runtime setup runs. Managed
+  // setup can now fail closed (throw), and this is the only lifecycle kick in
+  // the provisioning path — kicking it first ensures a failed setup still
+  // leaves the persistent sandbox scheduled for hibernation/cleanup rather than
+  // orphaned (Codex #832 P2).
+  kickSandboxLifecycleWorkflow({
+    sessionId: params.sessionId,
+    reason: "sandbox-created",
+  });
+
   const managedRuntimeEnvironment =
     session.runtimeMode === "managed_runtime" &&
     managedRuntimeProfile &&
@@ -1144,11 +1154,6 @@ export async function resolveChatSandboxRuntime(params: {
         })
       : { notes: [] };
   const managedRuntimeNotes = managedRuntimeEnvironment.notes;
-
-  kickSandboxLifecycleWorkflow({
-    sessionId: params.sessionId,
-    reason: "sandbox-created",
-  });
 
   const skills = await loadSessionSkills({
     sessionId: params.sessionId,

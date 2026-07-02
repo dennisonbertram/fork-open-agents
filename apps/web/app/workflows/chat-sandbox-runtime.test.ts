@@ -225,8 +225,9 @@ mock.module("@/lib/sandbox/lifecycle", () => ({
   getNextLifecycleVersion: () => 1,
 }));
 
+const kickSandboxLifecycleWorkflowSpy = mock(() => undefined);
 mock.module("@/lib/sandbox/lifecycle-kick", () => ({
-  kickSandboxLifecycleWorkflow: () => undefined,
+  kickSandboxLifecycleWorkflow: kickSandboxLifecycleWorkflowSpy,
 }));
 
 mock.module("@/lib/sandbox/config", () => ({
@@ -737,6 +738,7 @@ describe("resolveChatSandboxRuntime", () => {
         id: "session-verify-failed",
       });
       testSessionById[session.id] = session;
+      kickSandboxLifecycleWorkflowSpy.mockClear();
 
       await expect(
         resolveChatSandboxRuntime({
@@ -745,6 +747,11 @@ describe("resolveChatSandboxRuntime", () => {
           assistantId: "asst-bt5-1",
         }),
       ).rejects.toThrow();
+
+      // Codex #832 P2: the lifecycle workflow must still be kicked even when
+      // managed-runtime setup fails closed, or the provisioned persistent
+      // sandbox is never hibernated/cleaned up.
+      expect(kickSandboxLifecycleWorkflowSpy).toHaveBeenCalled();
 
       expect(finishManagedRuntimeProfileRunSpy).toHaveBeenCalled();
       const finishArgs = finishManagedRuntimeProfileRunSpy.mock.calls.at(
