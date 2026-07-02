@@ -15,7 +15,10 @@ import type {
   SubagentRoster,
 } from "@open-agents/agent";
 import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
-import { getComposioUserFacingError } from "@/lib/composio/errors";
+import {
+  getComposioErrorKind,
+  getComposioUserFacingError,
+} from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
 import { getWorkflowMetadata, getWritable } from "workflow";
@@ -831,8 +834,34 @@ function getSetupErrorMessage(error: unknown): string {
     return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
   }
 
+  // A ComposioSetupError's message is sometimes already final, specific,
+  // actionable text (e.g. "Blocked toolkit for this repository: gmail." or
+  // "The selected Composio profile no longer exists."), built by the
+  // resolver that threw it — re-running that through getComposioUserFacingError
+  // can downgrade it to generic "Fix the Composio setup" copy (the
+  // double-wrap bug, issue #800). But some ComposioSetupError messages are
+  // deliberately terse factual statements (e.g. "COMPOSIO_API_KEY is not
+  // configured.") that getComposioErrorKind classifies into one of its
+  // specific, non-generic branches with genuinely more helpful expanded
+  // copy — those should still be expanded.
+  //
+  // Resolve the tension by classifying first: only skip the classifier when
+  // it would fall back to the generic "composio_unknown" branch (which is
+  // where the double-wrap actually bites); let the five specific kinds
+  // (missing/invalid API key, auth expired, not connected, unreachable)
+  // still expand via getComposioUserFacingError as before.
+  if (name === "ComposioSetupError") {
+    const kind = getComposioErrorKind(message);
+    return kind === "composio_unknown"
+      ? message
+      : getComposioUserFacingError(message);
+  }
+
+  // Fallback for errors that are NOT already a ComposioSetupError — e.g. a
+  // raw, untyped Composio SDK error that leaked through some other path.
+  // These still need classification, so this branch (unlike the one above)
+  // always calls getComposioUserFacingError.
   if (
-    name === "ComposioSetupError" ||
     message.includes("Composio") ||
     message.includes("COMPOSIO_API_KEY") ||
     message.includes("Invalid API key") ||

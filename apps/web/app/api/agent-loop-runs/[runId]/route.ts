@@ -1,12 +1,14 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import {
   getAgentLoopRunWithLoop,
+  listAgentLoopComposioEvents,
   listAgentLoopEvents,
   listStepRunsForRun,
   listWatchdogRunsForLoopRun,
 } from "@/lib/agent-loops/store";
 import { isAgentLoopsEnabled } from "@/lib/agent-loops/config";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
+import { mergeEventsForSummary } from "./_lib/merge-events-for-summary";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,11 +57,21 @@ export async function GET(_req: Request, ctx: RouteContext): Promise<Response> {
   }
 
   // Fetch steps, events, and watchdog runs concurrently (after ownership check)
-  const [steps, events, watchdogRuns] = await Promise.all([
-    listStepRunsForRun(runId),
-    listAgentLoopEvents(runId),
-    listWatchdogRunsForLoopRun(runId),
-  ]);
+  const [steps, cappedEvents, composioEvents, watchdogRuns] = await Promise.all(
+    [
+      listStepRunsForRun(runId),
+      listAgentLoopEvents(runId),
+      // #798 (Codex review P2-2): listAgentLoopEvents is a bounded
+      // newest-200 slice. agent-loop.step.composio.* events are emitted
+      // early in a step, so a chatty run's newer events can push them off
+      // that slice entirely — merge in an uncapped, composio-scoped fetch
+      // so deriveLoopComposioWarnings(events) never silently loses them.
+      listAgentLoopComposioEvents(runId),
+      listWatchdogRunsForLoopRun(runId),
+    ],
+  );
+
+  const events = mergeEventsForSummary(cappedEvents, composioEvents);
 
   const body: GetAgentLoopRunDetailResponse = {
     run: row.run,

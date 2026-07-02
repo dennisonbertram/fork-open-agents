@@ -6,6 +6,7 @@ import {
   getSessionsWithUnreadByUserId,
 } from "@/lib/db/sessions";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { requireOnboarded } from "./require-onboarded";
 import { SessionsRouteShell } from "./sessions-route-shell";
 
 type SessionsLayoutProps = {
@@ -20,7 +21,8 @@ export default async function SessionsLayout({
     redirect("/");
   }
 
-  const [lastRepo, sessions, archivedCount] = await Promise.all([
+  const [, lastRepo, sessions, archivedCount] = await Promise.all([
+    requireOnboarded(session.user.id),
     getLastRepoByUserId(session.user.id),
     getSessionsWithUnreadByUserId(session.user.id, { status: "active" }),
     getArchivedSessionCountByUserId(session.user.id),

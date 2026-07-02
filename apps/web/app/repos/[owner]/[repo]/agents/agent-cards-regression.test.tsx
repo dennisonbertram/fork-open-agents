@@ -88,6 +88,7 @@ type AgentRunViewModel = {
         blocked: string[];
         artifacts: RunSummaryArtifact[];
         next: string[];
+        warnings: string[];
       }
     | null
     | undefined;
@@ -195,6 +196,7 @@ describe("Regression: pause does not delete configuration", () => {
         blocked: [],
         artifacts: [],
         next: [],
+        warnings: [],
       },
       createdAt: new Date("2026-06-01"),
     };
@@ -251,6 +253,7 @@ describe("Regression: agent detail page is NOT a chat transcript", () => {
             { kind: "comment", label: "comment", url: null, prNumber: null },
           ],
           next: [],
+          warnings: [],
         },
         requestId: null,
         workflowRunId: null,
