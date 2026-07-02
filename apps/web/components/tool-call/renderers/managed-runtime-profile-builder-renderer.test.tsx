@@ -6,6 +6,7 @@ import {
   getForceApprovedLabel,
   getProfileApprovalWarning,
   getRevisionPlaceholder,
+  resolveDraftTestOutcome,
 } from "./managed-runtime-profile-builder-renderer";
 
 describe("managed runtime profile builder revision instructions", () => {
@@ -154,5 +155,57 @@ describe("managed runtime profile builder revision instructions", () => {
 
   test("returns null when there is no structured test error", () => {
     expect(formatManagedRuntimeTestError(undefined)).toBeNull();
+  });
+
+  // RED: today `testDraft` throws on `!response.ok` before ever reading the
+  // draft test route's structured `draft` (errorKind/failureMessage/
+  // nextAction) on its catch-path 500 response, so a sandbox/connect
+  // execution error discards the actionable guidance and only shows the
+  // generic persistence error.
+  test("surfaces the structured draft test error from a non-ok response instead of throwing", () => {
+    const outcome = resolveDraftTestOutcome({
+      responseOk: false,
+      body: {
+        draft: {
+          id: "draft-1",
+          status: "needs_changes",
+          testFailureMessage: "boom",
+          testResults: [],
+          testedAt: null,
+          testScope: "verify",
+          errorKind: "setup_exec_error",
+          failureMessage: "boom",
+          nextAction: "Resume the sandbox and try again.",
+        },
+        error: "Failed to test managed runtime profile draft",
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("expected structured outcome, got a thrown-error result");
+    }
+    expect(outcome.draft.id).toBe("draft-1");
+    expect(outcome.testError).toEqual({
+      errorKind: "setup_exec_error",
+      failureMessage: "boom",
+      failedCommandLabel: undefined,
+      nextAction: "Resume the sandbox and try again.",
+    });
+  });
+
+  test("still throws a generic error when a non-ok draft test response carries no structured draft", () => {
+    const outcome = resolveDraftTestOutcome({
+      responseOk: false,
+      body: { error: "Sandbox is unavailable. Please resume sandbox." },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("expected a thrown-error result");
+    }
+    expect(outcome.message).toBe(
+      "Sandbox is unavailable. Please resume sandbox.",
+    );
   });
 });

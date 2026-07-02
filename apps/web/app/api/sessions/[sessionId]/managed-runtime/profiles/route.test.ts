@@ -51,6 +51,7 @@ const savedProfiles = [
     testResults: [] as ManagedRuntimeCommandObservation[],
     testFailureMessage: null as string | null,
     testedAt: null as Date | null,
+    lastTestScope: null as "verify" | "setup_and_verify" | null,
   },
 ];
 let sourceDraftResult:
@@ -147,6 +148,7 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles", () => {
     savedProfiles[0].testResults = [];
     savedProfiles[0].testFailureMessage = null;
     savedProfiles[0].testedAt = null;
+    savedProfiles[0].lastTestScope = null;
     sourceDraftResult = {
       id: "draft-1",
       status: "applied",
@@ -295,6 +297,47 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles", () => {
       id: "session-profile-draft-1",
       testStatus: "passed",
       testedAt: "2026-05-24T00:04:00.000Z",
+    });
+  });
+
+  // RED: today toProfileOption only copies testStatus/testedAt from
+  // getSavedProfileTestEvidence, so a passing verify-only saved profile
+  // reports no lastTestScope in the list payload. The evidence badge (which
+  // already reads profile.lastTestScope) then falls through to its "Tested"
+  // branch for a profile whose setup commands were never run (Decision D6).
+  test("GET surfaces the persisted verify-only test scope for saved profiles", async () => {
+    savedProfiles[0].testResults = [
+      {
+        commandId: "verify-bun",
+        label: "Verify Bun",
+        status: "passed",
+        required: true,
+        startedAt: "2026-05-24T00:03:00.000Z",
+      },
+    ];
+    savedProfiles[0].testedAt = new Date("2026-05-24T00:04:00.000Z");
+    savedProfiles[0].lastTestScope = "verify";
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/sessions/session-1/managed-runtime/profiles",
+      ),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      profiles: Array<{
+        id: string;
+        testStatus?: string;
+        lastTestScope?: "verify" | "setup_and_verify" | null;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.profiles[0]).toMatchObject({
+      id: "session-profile-draft-1",
+      testStatus: "passed",
+      lastTestScope: "verify",
     });
   });
 

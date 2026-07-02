@@ -7,6 +7,7 @@ import {
   normalizeCommands,
   parseOptionalPositiveInteger,
   removeCommand,
+  resolveProfileTestOutcome,
   updateCommand,
 } from "./managed-runtime-profile-manager";
 
@@ -269,6 +270,69 @@ describe("managed runtime profile manager helpers", () => {
         savedFormState,
       }),
     ).toBe("You have unsaved edits — Test runs the saved profile.");
+  });
+
+  // RED: today `testProfile` throws a generic "Failed to test profile"
+  // message whenever `!response.ok`, before it ever looks at the route's
+  // structured `testEvidence` (errorKind/failureMessage/nextAction). A
+  // non-sandbox-unavailable test failure (HTTP 500 with structured evidence)
+  // must still surface the command-specific guidance instead of a plain
+  // string.
+  test("surfaces structured test evidence from a non-ok response instead of throwing", () => {
+    const outcome = resolveProfileTestOutcome({
+      responseOk: false,
+      body: {
+        profile: {
+          id: "session-profile-draft-1",
+          version: "edited-2026-05-24T00:00:00.000Z",
+          displayName: "Bun app",
+          description: "Install and verify Bun",
+          setupCommands: [],
+          verificationCommands: [],
+          expectedTools: ["bun"],
+          optionalTools: [],
+          defaultPorts: [3000],
+        },
+        error: "Failed to test managed runtime profile",
+        testEvidence: {
+          status: "failed",
+          testFailureMessage: "boom",
+          testResults: [],
+          testedAt: null,
+          testScope: "verify",
+          errorKind: "setup_exec_error",
+          failureMessage: "boom",
+          nextAction: "Resume the sandbox and try again.",
+        },
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("expected structured outcome, got a thrown-error result");
+    }
+    expect(outcome.testError).toEqual({
+      errorKind: "setup_exec_error",
+      failureMessage: "boom",
+      failedCommandLabel: undefined,
+      nextAction: "Resume the sandbox and try again.",
+    });
+    expect(outcome.profile.id).toBe("session-profile-draft-1");
+  });
+
+  test("still throws a generic error when a non-ok response carries no structured evidence", () => {
+    const outcome = resolveProfileTestOutcome({
+      responseOk: false,
+      body: { error: "Resume the sandbox before testing managed runtime profiles." },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("expected a thrown-error result");
+    }
+    expect(outcome.message).toBe(
+      "Resume the sandbox before testing managed runtime profiles.",
+    );
   });
 
   test("keeps one command row and normalizes ids and timeout inputs", () => {
