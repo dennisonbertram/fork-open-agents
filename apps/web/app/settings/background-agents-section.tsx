@@ -280,6 +280,11 @@ export function PermissionsSummary({
   githubActions: GithubActions | undefined;
 }) {
   const requiresWrite = hasAnyWriteAction(githubActions);
+  // Commenting is still a GitHub write (the tool mints issues:write and the
+  // write-scope gate requires the user to hold write on the repo) — it just
+  // can't change code. Don't tell users a commenting agent is "read-only".
+  const commentsOnly =
+    !requiresWrite && githubActions?.comment_on_pr_or_issue === true;
   return (
     <div className="rounded-md border border-border bg-muted/20 p-3">
       <div className="flex items-start justify-between gap-3">
@@ -288,10 +293,20 @@ export function PermissionsSummary({
           <p className="text-pretty text-xs text-muted-foreground">
             {requiresWrite
               ? "Read + write — this agent's enabled actions require write access to contents and pull requests."
-              : "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything."}
+              : commentsOnly
+                ? "Comments only — this agent can post comments on PRs and issues (a GitHub write), but cannot change code, merge, or manage branches. Posting comments still requires your account to have write access to the repo."
+                : "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything."}
           </p>
         </div>
-        <StatusPill status={requiresWrite ? "write access" : "read-only"} />
+        <StatusPill
+          status={
+            requiresWrite
+              ? "write access"
+              : commentsOnly
+                ? "comments only"
+                : "read-only"
+          }
+        />
       </div>
       <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
         <div className="rounded border border-border bg-background px-2 py-1.5">
