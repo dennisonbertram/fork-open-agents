@@ -1467,6 +1467,35 @@ describe("BT-S24: flat-map outputSchema — every declared key required + type-c
 
     expect(result.outcome).toBe("success");
   });
+
+  test("BT-S24e: flat-map schema with $-prefixed metadata key (e.g. $schema) does not demand a literal $schema output field", async () => {
+    // Regression guard: isFlatOutputSchema deliberately EXCLUDES $-prefixed
+    // keys when classifying a schema as flat (see output-schema-shape.ts).
+    // The flat-map validator must be consistent and also skip $-keys —
+    // otherwise a schema like {"$schema": "https://...", "passed": "boolean"}
+    // is classified as flat but then always fails validation because the
+    // agent output never contains a literal "$schema" field.
+    sandboxReadFileResult = JSON.stringify({ passed: true });
+    const nodeWithSchema = makeAgentStepNode({
+      outputSchema: {
+        $schema: "https://example.com/schema",
+        passed: "boolean",
+      },
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: nodeWithSchema as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(result.errorKind).toBeUndefined();
+  });
 });
 
 // ── BT-S25: stepTimeoutMs plumbing (#766) ────────────────────────────────────
@@ -1516,5 +1545,81 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
       timeout?: { totalMs?: number };
     };
     expect(call?.timeout?.totalMs).toBe(10 * 60 * 1000);
+  });
+
+  test("BT-S25c: stepTimeoutMs budget is cumulative across the tool-call loop, not reset per call", async () => {
+    // Regression guard: executeAgentStep loops openAgent.generate up to
+    // AGENT_MAX_LOOP_STEPS times while finishReason is "tool-calls". Each
+    // call must be given the REMAINING budget against a single deadline
+    // computed before the loop, not the full configured stepTimeoutMs again —
+    // otherwise an 8-step loop at stepTimeoutMs=X can run up to 8x.
+    const stepTimeoutMs = 30 * 60 * 1000; // 30 minutes, per the finding
+
+    // First 3 calls request more tool calls; 4th call stops. Each call sleeps
+    // briefly so real wall-clock time elapses between calls — this is what
+    // makes a cumulative (single-deadline) budget observably different from
+    // a per-call reset budget in the assertions below.
+    let callCount = 0;
+    openAgentGenerateMock.mockImplementation(async (_params: unknown) => {
+      callCount++;
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      if (callCount < 4) {
+        return {
+          finishReason: "tool-calls" as const,
+          rawFinishReason: "tool_use",
+          steps: [{ toolCalls: [{ toolCallId: `call-${callCount}` }] }],
+          response: { messages: [] },
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        };
+      }
+      return {
+        finishReason: "stop" as const,
+        rawFinishReason: "end_turn",
+        steps: [{ toolCalls: [] }],
+        response: { messages: [] },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      };
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      stepTimeoutMs,
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(openAgentGenerateMock.mock.calls.length).toBe(4);
+
+    const totalMsPerCall = openAgentGenerateMock.mock.calls.map((call) => {
+      const params = call[0] as { timeout?: { totalMs?: number } };
+      return params?.timeout?.totalMs ?? 0;
+    });
+
+    // Every call's budget must be within the configured ceiling...
+    for (const totalMs of totalMsPerCall) {
+      expect(totalMs).toBeLessThanOrEqual(stepTimeoutMs);
+      expect(totalMs).toBeGreaterThan(0);
+    }
+
+    // ...and strictly decreasing across successive calls: the mock sleeps
+    // between calls, so a cumulative (single-deadline) budget must shrink
+    // measurably. A buggy per-call reset (passing stepTimeoutMs unchanged
+    // every time) would keep every call's totalMs identical to the ceiling,
+    // which this asserts against.
+    for (let i = 1; i < totalMsPerCall.length; i++) {
+      expect(totalMsPerCall[i]).toBeLessThan(totalMsPerCall[i - 1]);
+    }
+    expect(totalMsPerCall[totalMsPerCall.length - 1]).toBeLessThan(
+      stepTimeoutMs,
+    );
   });
 });
