@@ -60,3 +60,31 @@ describe("getScheduleTruthLine", () => {
     expect(line.toLowerCase()).toContain("active");
   });
 });
+
+// Codex finding on PR #775: with multiple enabled schedule triggers,
+// listTriggersForLoop returns newest-first, so `find` could report a later
+// nextRunAt than the trigger that actually fires next.
+test("#767: picks the EARLIEST nextRunAt among multiple enabled schedule triggers", () => {
+  const line = getScheduleTruthLine({
+    loopStatus: "active",
+    triggers: [
+      {
+        kind: "schedule.cron",
+        status: "enabled",
+        nextRunAt: "2026-07-04T02:00:00.000Z",
+      },
+      {
+        kind: "schedule.cron",
+        status: "enabled",
+        nextRunAt: "2026-07-03T05:00:00.000Z",
+      },
+      {
+        kind: "schedule.cron",
+        status: "disabled",
+        nextRunAt: "2026-07-03T01:00:00.000Z",
+      },
+    ],
+  });
+  expect(line).toContain("Jul 3");
+  expect(line).not.toContain("Jul 4");
+});

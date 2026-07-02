@@ -42,3 +42,29 @@ describe("getRunControlToastMessage", () => {
     expect(message).toBe("Failed to cancel run");
   });
 });
+
+// Codex finding on PR #775: illegal_transition covers non-race cases too
+// (e.g. "not in a retryable status ... got: completed"); those must keep
+// their specific server message instead of the misleading race copy.
+test("#767: non-race illegal_transition retry errors keep the server message", () => {
+  const message =
+    "Cannot retry run r1: not in a retryable status (failed/stalled), got: completed";
+  expect(
+    getRunControlToastMessage("retry", {
+      errorKind: "illegal_transition",
+      message,
+    }),
+  ).toBe(message);
+});
+
+test("#767: the race copy still applies to the TOCTOU-race message", () => {
+  expect(
+    getRunControlToastMessage("retry", {
+      errorKind: "illegal_transition",
+      message:
+        "Cannot retry run r1: run status or step changed concurrently (TOCTOU race — retry rejected)",
+    }),
+  ).toBe(
+    "Someone else already retried this run — refresh to see the latest attempt.",
+  );
+});
