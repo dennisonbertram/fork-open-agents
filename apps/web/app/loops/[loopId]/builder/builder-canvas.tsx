@@ -48,6 +48,7 @@ import {
   Save,
 } from "lucide-react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
@@ -67,6 +68,7 @@ import { definitionToFlow } from "./definition-mapping";
 import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import { buildBuilderGuidance } from "./builder-guidance";
 import { BuilderWhatsNextNote } from "./builder-whats-next-note";
+import { TemplateTriggerNudge } from "../template-trigger-nudge";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { LoopFlowEdge } from "./definition-mapping";
 
@@ -165,6 +167,12 @@ function BuilderCanvasInner({
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
+  // #765: reads the suggestedTrigger* query params the create form appended
+  // after creating this loop from a template — drives the post-create
+  // "Attach suggested trigger" nudge below. Absent for every other landing
+  // (blank/AI-without-a-suggestion, or after a normal page reload once the
+  // route was replaced), in which case the nudge renders nothing.
+  const searchParams = useSearchParams();
   const colorMode: ColorMode = resolvedTheme === "dark" ? "dark" : "light";
 
   const nodes = useStore(store, (s) => s.nodes);
@@ -491,6 +499,10 @@ function BuilderCanvasInner({
               {saving ? "Saving…" : "Save"}
             </Button>
           </div>
+        </div>
+
+        <div className="px-4 pt-3">
+          <TemplateTriggerNudge loopId={loopId} searchParams={searchParams} />
         </div>
 
         <BuilderWhatsNextNote

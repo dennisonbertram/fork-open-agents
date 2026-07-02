@@ -12,6 +12,11 @@
  *   BP-006: prompt includes prohibition against writing outside workspace
  *   BP-007: prompt includes repo + branch context
  *   BP-008: prompt includes field 'branch' in output contract
+ *   BP-013/#765: prompt PERMITS `gh pr create` when the node's
+ *     permissions.github.pullRequests === "write" (the minted token already
+ *     carries that scope — agent-step.ts:permissionsToInstallationToken).
+ *   BP-014/#765: all other steps (no permission, or read-only) keep the
+ *     PR-creation prohibition verbatim.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -184,5 +189,59 @@ describe("buildLoopStepPrompt", () => {
     });
 
     expect(prompt).not.toContain("Watchdog hint");
+  });
+
+  test("BP-013/#765: prompt PERMITS `gh pr create` when permissions.github.pullRequests === 'write'", () => {
+    const nodeWithPrWrite = {
+      ...baseNode,
+      permissions: { github: { pullRequests: "write" as const } },
+    };
+    const prompt = buildLoopStepPrompt({
+      node: nodeWithPrWrite,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "main",
+    });
+
+    // Must NOT contain the blanket prohibition against opening PRs.
+    const lower = prompt.toLowerCase();
+    expect(lower).not.toMatch(
+      /do not.*open.*pull request|never.*open.*pr|must not.*open.*pr/,
+    );
+    // Must explicitly say PR creation is permitted for this step.
+    expect(lower).toMatch(/gh pr create/);
+    expect(lower).toMatch(/may open|permitted|allowed to open/);
+  });
+
+  test("BP-014/#765: prompt keeps the PR-creation prohibition when permissions.github.pullRequests is 'read'", () => {
+    const nodeWithPrRead = {
+      ...baseNode,
+      permissions: { github: { pullRequests: "read" as const } },
+    };
+    const prompt = buildLoopStepPrompt({
+      node: nodeWithPrRead,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "main",
+    });
+
+    const lower = prompt.toLowerCase();
+    expect(lower).toMatch(
+      /do not.*pull request|never.*pr|must not.*open.*pr|do not.*open.*pr/,
+    );
+  });
+
+  test("BP-015/#765: prompt keeps the PR-creation prohibition when permissions is absent (default)", () => {
+    const prompt = buildLoopStepPrompt({
+      node: baseNode,
+      contextSlice: baseContextSlice,
+      repo: "acme/my-repo",
+      branch: "main",
+    });
+
+    const lower = prompt.toLowerCase();
+    expect(lower).toMatch(
+      /do not.*pull request|never.*pr|must not.*open.*pr|do not.*open.*pr/,
+    );
   });
 });

@@ -77,13 +77,27 @@ Write this file before finishing. If the file is missing or contains invalid
 JSON, the step will be marked as failed.
 `;
 
+  // #765: PR creation is prohibited by default (dedicated steps handle it),
+  // UNLESS this node was granted permissions.github.pullRequests === "write" —
+  // the minted installation token already carries that scope in that case
+  // (see agent-step.ts's permissionsToInstallationToken call), so the step is
+  // explicitly permitted to run `gh pr create`. Every other prohibition stays
+  // verbatim for every step.
+  const canCreatePr = node.permissions?.github?.pullRequests === "write";
+
   const prohibitions = `## Strict Prohibitions
 
 - **Do NOT push** any commits. The executor handles all git push operations.
   Never run \`git push\` or any equivalent command.
-- **Do NOT open pull requests**. PR creation is handled by dedicated steps.
+${
+  canCreatePr
+    ? `- **You MAY open pull requests.** This step was granted pull-request
+  write access, so \`gh pr create\` is permitted here (unlike most steps).
+`
+    : `- **Do NOT open pull requests**. PR creation is handled by dedicated steps.
   Never run \`gh pr create\` or use any GitHub API to open a PR.
-- **Do NOT write outside the workspace** (outside the cloned repository
+`
+}- **Do NOT write outside the workspace** (outside the cloned repository
   directory). Restrict all file writes to the working directory.
 `;
 

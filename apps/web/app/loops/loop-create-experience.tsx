@@ -28,7 +28,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
 import { LoopCreateForm } from "./loop-create-form";
-import { LOOP_TEMPLATES, type LoopTemplate } from "./loop-templates";
+import {
+  LOOP_TEMPLATES,
+  type LoopTemplate,
+  type LoopTemplateSuggestedTriggerSpec,
+} from "./loop-templates";
 
 type LoopCreateExperienceProps = {
   initialRepoOwner?: string;
@@ -40,7 +44,18 @@ type Prefill = {
   name: string;
   description: string;
   definition: LoopDefinition;
+  suggestedTriggerSpec?: LoopTemplateSuggestedTriggerSpec;
 };
+
+/**
+ * Builds a per-template accessible name for the "Use this template" button
+ * (F-STORY-016-001). Sighted users still see the short "Use this template"
+ * label; assistive tech gets the full "Use <name> template" name so several
+ * identical-looking buttons in the gallery are distinguishable.
+ */
+export function getTemplateActionLabel(templateName: string): string {
+  return `Use ${templateName} template`;
+}
 
 const AI_EXAMPLES = [
   "Every time there's a new PR, review the code and file any problems as GitHub issues.",
@@ -88,6 +103,7 @@ export function LoopCreateExperience({
       name: template.name,
       description: template.description,
       definition: template.definition,
+      suggestedTriggerSpec: template.suggestedTriggerSpec,
     });
   }
 
@@ -168,6 +184,7 @@ export function LoopCreateExperience({
           initialDescription={prefill.description}
           initialDefinitionText={JSON.stringify(prefill.definition, null, 2)}
           redirectTo="builder"
+          suggestedTriggerSpec={prefill.suggestedTriggerSpec}
           definitionCollapsible
         />
       </div>
@@ -214,7 +231,9 @@ export function LoopCreateExperience({
               <CardContent className="flex-1 space-y-3">
                 <FlowPreview definition={template.definition} />
                 <p className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">Runs:</span>{" "}
+                  <span className="font-medium text-foreground">
+                    Suggested trigger:
+                  </span>{" "}
                   {template.suggestedTrigger}
                 </p>
                 {template.requiresTool ? (
@@ -228,6 +247,7 @@ export function LoopCreateExperience({
                   type="button"
                   size="sm"
                   onClick={() => chooseTemplate(template)}
+                  aria-label={getTemplateActionLabel(template.name)}
                 >
                   Use this template
                   <ArrowRight className="ml-1.5 h-4 w-4" />
