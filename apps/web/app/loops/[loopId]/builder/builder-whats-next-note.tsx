@@ -11,12 +11,7 @@
 
 import { X } from "lucide-react";
 
-const STEPS = [
-  "Draft",
-  "Activate",
-  "Add a trigger (or Run now)",
-  "Watch runs",
-];
+const STEPS = ["Draft", "Activate", "Add a trigger (or Run now)", "Watch runs"];
 
 export type BuilderWhatsNextNoteProps = {
   dismissed: boolean;

@@ -22,7 +22,9 @@ describe("status-meanings", () => {
   });
 
   test("BT-SM-001: paused means nothing fires", () => {
-    expect(getStatusMeaning("paused")).toMatch(/nothing fires|won'?t (run|fire)/i);
+    expect(getStatusMeaning("paused")).toMatch(
+      /nothing fires|won'?t (run|fire)/i,
+    );
   });
 
   test("BT-SM-001: archived means read-only", () => {

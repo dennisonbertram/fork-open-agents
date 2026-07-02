@@ -104,8 +104,8 @@ function EmptyState({
       <p className="text-sm font-medium text-muted-foreground">No loops yet</p>
       <p className="mt-2 max-w-md text-xs text-muted-foreground">
         A loop is a multi-step agent pipeline that works on your repo — for
-        example: review new PRs and comment every night. Steps run in order;
-        you decide what happens on failure.
+        example: review new PRs and comment every night. Steps run in order; you
+        decide what happens on failure.
       </p>
       {createEnabled && (
         <Link

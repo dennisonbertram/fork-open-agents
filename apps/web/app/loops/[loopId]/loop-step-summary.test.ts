@@ -63,7 +63,12 @@ describe("summarizeLoopSteps", () => {
   test("BT-LSS-003: a github_check node summarizes using its check kind, not raw JSON", () => {
     const definition: LoopDefinition = {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         {
           id: "ci",
           kind: "github_check",

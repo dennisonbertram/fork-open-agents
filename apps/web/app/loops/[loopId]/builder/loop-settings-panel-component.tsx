@@ -286,7 +286,7 @@ export function LoopSettingsPanelContent({
           Safety limits
         </p>
         <p className="text-[11px] text-muted-foreground">
-          Limits on how long and how far a run can go before it's stopped
+          Limits on how long and how far a run can go before it&apos;s stopped
           automatically.
         </p>
       </div>

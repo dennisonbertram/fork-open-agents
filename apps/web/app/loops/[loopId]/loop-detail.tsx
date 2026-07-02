@@ -327,8 +327,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                   if (steps.length === 0) {
                     return (
                       <p className="text-sm text-muted-foreground">
-                        This loop has no steps yet. Open the builder to add
-                        one.
+                        This loop has no steps yet. Open the builder to add one.
                       </p>
                     );
                   }

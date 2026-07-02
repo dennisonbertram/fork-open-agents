@@ -14,7 +14,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { GetAgentLoopResponse } from "@/app/api/agent-loops/types";
 
 mock.module("swr", () => ({
-  default: <T,>(_key: string, _fetcher?: unknown, opts?: { fallbackData?: T }) => ({
+  default: <T,>(
+    _key: string,
+    _fetcher?: unknown,
+    opts?: { fallbackData?: T },
+  ) => ({
     data: opts?.fallbackData,
     mutate: mock(() => Promise.resolve()),
   }),
@@ -44,7 +48,12 @@ function makeLoopData(
       guardrails: null,
       definition: {
         nodes: [
-          { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+          {
+            id: "start",
+            kind: "start",
+            label: "Start",
+            position: { x: 0, y: 0 },
+          },
           {
             id: "list",
             kind: "agent_step",

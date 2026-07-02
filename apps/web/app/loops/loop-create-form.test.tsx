@@ -90,6 +90,8 @@ describe("LoopCreateForm", () => {
 
     // The action row wrapping Cancel/Create loop must be sticky-positioned
     // to the bottom of its scroll container so it's always reachable.
-    expect(html).toMatch(/class="[^"]*sticky[^"]*bottom-0[^"]*"[^>]*>[\s\S]*Create loop/);
+    expect(html).toMatch(
+      /class="[^"]*sticky[^"]*bottom-0[^"]*"[^>]*>[\s\S]*Create loop/,
+    );
   });
 });
