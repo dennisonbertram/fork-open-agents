@@ -36,9 +36,8 @@ function makeEvent(overrides: Partial<AgentLoopEvent> = {}): AgentLoopEvent {
 
 describe("mergeEventsForSummary (#798 P2-2)", () => {
   test("BT-001: a composio event outside the capped slice is still included in the merged result", () => {
-    const cappedSlice: AgentLoopEvent[] = Array.from(
-      { length: 200 },
-      (_, i) => makeEvent({ id: `noise-${i}` }),
+    const cappedSlice: AgentLoopEvent[] = Array.from({ length: 200 }, (_, i) =>
+      makeEvent({ id: `noise-${i}` }),
     );
     const composioOnlySlice: AgentLoopEvent[] = [
       makeEvent({

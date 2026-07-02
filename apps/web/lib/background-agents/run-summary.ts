@@ -90,6 +90,32 @@ const MAX_ITEMS = 20;
 const MAX_STRING_LENGTH = 300;
 
 /**
+ * Merges a capped "newest-N" event slice with an uncapped, composio-scoped
+ * event fetch, deduping by id (Codex review, PR #824, P2-1).
+ *
+ * The persist site's primary events query is a bounded newest-200 slice
+ * (see store.ts's listBackgroundAgentEvents). Composio resolution emits
+ * EARLY in a run — before the main agent loop — so on any run with more
+ * than 200 total events, the composio-prefixed events can fall off that
+ * slice entirely. Without this merge, buildRunSummary would never see
+ * them: warnings[] would silently lose the degradation signal, AND the
+ * composioConfigured guard's "zero composio events" check would become
+ * falsely true, resurrecting the misleading "tools were never resolved"
+ * line even though Composio WAS resolved — just outside the naive window.
+ *
+ * `composioEvents` should come from an uncapped, composio-scoped store
+ * query (cheap: narrowed by runId first, same index as the capped query).
+ */
+export function mergeEventsForSummary(
+  cappedEvents: MinimalEvent[],
+  composioEvents: MinimalEvent[],
+): MinimalEvent[] {
+  const seenIds = new Set(cappedEvents.map((e) => e.id));
+  const additional = composioEvents.filter((e) => !seenIds.has(e.id));
+  return [...cappedEvents, ...additional];
+}
+
+/**
  * Deterministic, human-readable headline verb for a recorded output kind
  * (#746). Falls back to the raw kind for values not in this map so a future
  * output kind never produces a blank headline.
@@ -176,9 +202,19 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       const msg = errorMessage ? `${errorKind}: ${errorMessage}` : errorKind;
       blocked.push(truncate(msg));
     }
-    // Additional errorKinds from events (different from run-level errorKind)
+    // Additional errorKinds from events (different from run-level errorKind).
+    //
+    // Excludes warn-level events (defect fix, Codex review P2-3): a
+    // warn-level "failed" event (e.g. background-agent.composio.error,
+    // which is nonfatal by design and already surfaced in warnings[])
+    // must not be listed here as if it caused the run to fail. Only
+    // error-level events represent genuine failure causes for blocked[].
     const failEvents = events.filter(
-      (e) => e.status === "failed" && e.errorKind && e.errorKind !== errorKind,
+      (e) =>
+        e.status === "failed" &&
+        e.level !== "warn" &&
+        e.errorKind &&
+        e.errorKind !== errorKind,
     );
     for (const ev of failEvents) {
       if (blocked.length >= MAX_ITEMS) {

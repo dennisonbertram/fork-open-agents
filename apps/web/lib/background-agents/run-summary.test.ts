@@ -645,18 +645,18 @@ describe("buildRunSummary", () => {
     });
 
     // blocked[] must not list the nonfatal composio error as a failure cause.
-    expect(
-      summary.blocked.some((b) => b.includes("composio_unknown")),
-    ).toBe(false);
+    expect(summary.blocked.some((b) => b.includes("composio_unknown"))).toBe(
+      false,
+    );
     // The run's real failure reason must still be present.
-    expect(
-      summary.blocked.some((b) => b.includes("sandbox_unavailable")),
-    ).toBe(true);
+    expect(summary.blocked.some((b) => b.includes("sandbox_unavailable"))).toBe(
+      true,
+    );
 
     // warnings[] must still carry the composio degradation.
-    expect(
-      summary.warnings.some((w) => w.includes("composio_unknown")),
-    ).toBe(true);
+    expect(summary.warnings.some((w) => w.includes("composio_unknown"))).toBe(
+      true,
+    );
   });
 });
 
@@ -681,18 +681,15 @@ describe("mergeEventsForSummary (#798 P2-1)", () => {
   test("BT-017: composio events outside the capped slice are still included in the merged result", () => {
     // Simulate the capped newest-200 slice: 200 non-composio "noise" events,
     // none of which are the early composio event that fell off the window.
-    const cappedSlice: MinimalEvent[] = Array.from(
-      { length: 200 },
-      (_, i) => ({
-        id: `noise-${i}`,
-        eventName: "background-agent.agent.step.completed",
-        status: "succeeded",
-        level: "info",
-        summary: null,
-        errorKind: null,
-        payload: {},
-      }),
-    );
+    const cappedSlice: MinimalEvent[] = Array.from({ length: 200 }, (_, i) => ({
+      id: `noise-${i}`,
+      eventName: "background-agent.agent.step.completed",
+      status: "succeeded",
+      level: "info",
+      summary: null,
+      errorKind: null,
+      payload: {},
+    }));
 
     // The uncapped, composio-scoped fetch — this is what would have fallen
     // off the capped slice on a long/chatty run.
@@ -742,18 +739,15 @@ describe("mergeEventsForSummary (#798 P2-1)", () => {
 
     // Simulate: 200 events already pushed the composio event out of the
     // capped slice.
-    const cappedSlice: MinimalEvent[] = Array.from(
-      { length: 200 },
-      (_, i) => ({
-        id: `noise-${i}`,
-        eventName: "background-agent.agent.step.completed",
-        status: "succeeded",
-        level: "info",
-        summary: null,
-        errorKind: null,
-        payload: {},
-      }),
-    );
+    const cappedSlice: MinimalEvent[] = Array.from({ length: 200 }, (_, i) => ({
+      id: `noise-${i}`,
+      eventName: "background-agent.agent.step.completed",
+      status: "succeeded",
+      level: "info",
+      summary: null,
+      errorKind: null,
+      payload: {},
+    }));
     const composioOnlySlice: MinimalEvent[] = [
       {
         id: "ev-composio-off",

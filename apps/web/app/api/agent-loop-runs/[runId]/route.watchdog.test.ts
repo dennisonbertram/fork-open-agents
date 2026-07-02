@@ -122,6 +122,11 @@ const getAgentLoopRunWithLoop = mock(
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
 const listAgentLoopEvents = mock(async () => eventsFixture);
+// #798 P2-2: uncapped, composio-scoped fetch — default empty so existing
+// tests (which never assert on composio events) are unaffected.
+const listAgentLoopComposioEvents = mock(
+  async () => [] as typeof eventsFixture,
+);
 const listWatchdogRunsForLoopRun = mock(async () => watchdogRunsFixture);
 
 const isAgentLoopsEnabled = mock(() => true);
@@ -134,6 +139,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   getAgentLoopRunWithLoop,
   listStepRunsForRun,
   listAgentLoopEvents,
+  listAgentLoopComposioEvents,
   listWatchdogRunsForLoopRun,
   updateAgentLoopRunContext: mock(async () => undefined),
   conditionallyTransitionRunStatus: mock(async () => null),

@@ -96,7 +96,9 @@ const getAgentLoopRunWithLoop = mock(
   async (): Promise<typeof runAndLoopFixture | null> => runAndLoopFixture,
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
-const listAgentLoopEvents = mock(async (): Promise<AgentLoopEvent[]> => eventsFixture);
+const listAgentLoopEvents = mock(
+  async (): Promise<AgentLoopEvent[]> => eventsFixture,
+);
 // M3-02-B: listWatchdogRunsForLoopRun is now called by route.ts
 const listWatchdogRunsForLoopRun = mock(async () => []);
 
@@ -302,9 +304,7 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
       ...eventsFixture,
       overlapEvent,
     ]);
-    listAgentLoopComposioEvents.mockImplementation(async () => [
-      overlapEvent,
-    ]);
+    listAgentLoopComposioEvents.mockImplementation(async () => [overlapEvent]);
 
     const { GET } = await routeModulePromise;
     const response = await GET(

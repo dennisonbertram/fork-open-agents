@@ -41,6 +41,7 @@ import {
 } from "@/lib/db/schema";
 import {
   getBackgroundAgentRunWithAgent,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
   recordBackgroundAgentEvent,
@@ -53,7 +54,7 @@ import {
   type BackgroundAgentWriteScope as GitHubToolsWriteScope,
 } from "./github-action-tools";
 import { mergeExtraTools } from "@/app/workflows/merge-extra-tools";
-import { buildRunSummary } from "./run-summary";
+import { buildRunSummary, mergeEventsForSummary } from "./run-summary";
 import {
   persistRunSummary,
   recordSummaryFailedEvent,
@@ -282,15 +283,23 @@ async function buildAndPersistRunSummary(params: {
   agentId: string | null;
   userId: string;
 }) {
-  const [freshRun, events, outputs] = await Promise.all([
+  const [freshRun, cappedEvents, composioEvents, outputs] = await Promise.all([
     getBackgroundAgentRunWithAgent(params.runId),
     listBackgroundAgentEvents(params.runId),
+    // #798 defect fix (Codex review P2-1): listBackgroundAgentEvents is a
+    // bounded newest-200 slice. Composio resolution emits EARLY in a run,
+    // so on a run with >200 total events, the composio events can fall off
+    // that slice entirely — merge in an uncapped, composio-scoped fetch so
+    // buildRunSummary never silently loses them.
+    listBackgroundAgentComposioEvents(params.runId),
     listBackgroundAgentOutputs(params.runId),
   ]);
 
   if (!freshRun) {
     return;
   }
+
+  const events = mergeEventsForSummary(cappedEvents, composioEvents);
 
   const summary = buildRunSummary({
     run: freshRun.run,
