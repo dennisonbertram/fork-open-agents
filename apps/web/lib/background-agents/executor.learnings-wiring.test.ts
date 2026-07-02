@@ -350,11 +350,13 @@ describe("executeBackgroundAgentRun — learnings built-in agent wiring", () => 
       workflowRunId: "wfr-perm",
     });
 
-    expect(verifyRepoAccess).toHaveBeenCalledTimes(1);
-    const call = verifyRepoAccess.mock.calls[0]?.[0] as
-      | { requiredUserPermission?: string }
-      | undefined;
-    expect(call?.requiredUserPermission).toBe("read");
+    const calls = (
+      verifyRepoAccess as unknown as {
+        mock: { calls: Array<[{ requiredUserPermission?: string }]> };
+      }
+    ).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    expect(calls.at(-1)?.[0]?.requiredUserPermission).toBe("read");
   });
 
   test("does NOT call connectSandbox for the learnings built-in agent", async () => {

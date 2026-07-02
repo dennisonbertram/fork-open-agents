@@ -114,10 +114,9 @@ export async function ensureRepoLearningsAgent(
     },
     outputMode: "none",
     composioToolkitSlugs: [],
-    githubActions: {
-      open_pull_request: true,
-      comment_on_pr_or_issue: true,
-    },
+    // The learnings agent is read-only extraction — it never takes GitHub
+    // actions, and must not inherit a write-permission requirement (#746).
+    githubActions: {},
     writeScope: { mode: "this_repo" },
     requireCiGreenForMerge: true,
     modelId: null,

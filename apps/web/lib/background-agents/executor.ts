@@ -856,9 +856,13 @@ export async function executeBackgroundAgentRun(params: {
   }
 
   const githubActionToggles = toGitHubActionToggles(agent.githubActions);
-  const requiredUserPermission = hasAnyWriteAction(githubActionToggles)
-    ? "write"
-    : "read";
+  // The built-in learnings agent never takes GitHub actions (its branch below
+  // bypasses the sandbox + tool loop entirely), so it must not inherit a
+  // write requirement from action toggles — read-only users run it too.
+  const requiredUserPermission =
+    !isLearningsAgent(agent) && hasAnyWriteAction(githubActionToggles)
+      ? "write"
+      : "read";
 
   const access = await verifyRepoAccess({
     userId: run.userId,
@@ -1149,6 +1153,10 @@ export async function executeBackgroundAgentRun(params: {
     requireCiGreen: agent.requireCiGreenForMerge ?? true,
     userPermission: access.userPermission,
     outputKindByAction: buildOutputKindByAction(),
+    // Parity with the old ready_pr flow, where the required check ran BEFORE
+    // any commit/PR reached GitHub: github_push re-runs this gate inside the
+    // tool, so a failing check can never produce a pushed branch or PR.
+    checkCommand: agent.checkCommand,
   });
 
   const extraTools = mergeExtraTools(
