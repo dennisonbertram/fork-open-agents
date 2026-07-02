@@ -322,15 +322,25 @@ const fakeComposioTools: Record<string, unknown> = {
   github_create_issue: { description: "Create a GitHub issue" },
 };
 
+type FakeComposioResult =
+  | {
+      status: "ready";
+      tools: Record<string, unknown>;
+      toolkitSlugs: string[];
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: "no_slugs_selected" | "repo_policy_blocked";
+      blockedSlugs?: string[];
+    }
+  | { status: "error"; errorKind: string; message: string };
+
 const resolveComposioToolsForBgRun = mock(
-  async (
-    _params: unknown,
-  ): Promise<{
-    status: "ready" | "off" | "error";
-    tools?: Record<string, unknown>;
-    toolkitSlugs?: string[];
-    error?: string;
-  }> => ({ status: "off" }),
+  async (_params: unknown): Promise<FakeComposioResult> => ({
+    status: "off",
+    reason: "no_slugs_selected",
+  }),
 );
 
 mock.module("./composio-tools", () => ({
@@ -451,6 +461,7 @@ beforeEach(() => {
   listEnabledToolGrantsForAgent.mockImplementation(async () => []);
   resolveComposioToolsForBgRun.mockImplementation(async () => ({
     status: "off",
+    reason: "no_slugs_selected",
   }));
 });
 
@@ -516,6 +527,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
       status: "ready" as const,
       tools: fakeComposioTools,
       toolkitSlugs: ["github", "linear"],
+      disconnectedToolkits: [],
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -565,6 +577,8 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
     // Resolver returns off (no enabled grants)
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
       status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["github", "linear"],
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -616,6 +630,7 @@ describe("Background agent Composio tool injection (Phase 5)", () => {
       status: "ready" as const,
       tools: fakeComposioTools,
       toolkitSlugs: ["github", "linear"],
+      disconnectedToolkits: [],
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;

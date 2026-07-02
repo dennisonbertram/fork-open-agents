@@ -20,7 +20,44 @@ type ComposioClientLike = {
     config: ToolRouterCreateSessionConfig,
   ) => Promise<{ sessionId: string; tools: () => Promise<ToolSet> }>;
   use: (sessionId: string) => Promise<{ tools: () => Promise<ToolSet> }>;
+  /**
+   * Toolkit metadata lookup, used to detect toolkits that don't require a
+   * connected account (finding G9) so they are never falsely reported as
+   * disconnected. Optional so existing lightweight test fakes that don't
+   * exercise the no-auth path keep compiling.
+   *
+   * The real Composio SDK's composio.toolkits.get(slug) returns
+   * ToolkitRetrieveResponse, whose `authConfigDetails` array lists one entry
+   * per supported auth scheme (e.g. "OAUTH2", "NO_AUTH"). We only read that
+   * one field, typed loosely (unknown record) so this interface stays
+   * structurally assignable from the real SDK client without importing its
+   * full response type.
+   */
+  toolkits?: {
+    get: (slug: string) => Promise<{ authConfigDetails?: unknown }>;
+  };
 };
+
+const NO_AUTH_SCHEME_NAME = "NO_AUTH";
+
+/**
+ * Narrows a toolkits.get() response's authConfigDetails field (typed loosely
+ * as unknown at the interface boundary above) and reports whether it lists
+ * NO_AUTH as a supported auth scheme.
+ */
+function toolkitAuthConfigDetailsIncludesNoAuth(
+  authConfigDetails: unknown,
+): boolean {
+  if (!Array.isArray(authConfigDetails)) {
+    return false;
+  }
+  return authConfigDetails.some(
+    (entry) =>
+      typeof entry === "object" &&
+      entry !== null &&
+      (entry as Record<string, unknown>).name === NO_AUTH_SCHEME_NAME,
+  );
+}
 
 export type ResolveComposioToolsForToolkitListParams = {
   /** Application userId (not yet Composio-prefixed). */
@@ -54,15 +91,43 @@ export type ResolveComposioToolsForToolkitListParams = {
 };
 
 /**
+ * Returns true when the given toolkit slug requires a connected account to
+ * authenticate (the common case), and false when Composio's toolkit metadata
+ * marks it as `noAuth` (finding G9) — a no-auth toolkit is never "disconnected"
+ * even with zero connected accounts.
+ *
+ * Defensive: if the toolkit metadata lookup is unavailable or fails, assume
+ * auth IS required (today's behavior) rather than silently hiding a real
+ * disconnected-toolkit warning.
+ */
+async function toolkitRequiresAuth(
+  composio: ComposioClientLike,
+  slug: string,
+): Promise<boolean> {
+  if (!composio.toolkits) {
+    return true;
+  }
+  try {
+    const toolkit = await composio.toolkits.get(slug);
+    return !toolkitAuthConfigDetailsIncludesNoAuth(toolkit.authConfigDetails);
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Scope-agnostic create/use + config-hash session cache loop.
  *
  * Builds a Composio session from a direct list of toolkit slugs, using the
  * injected cache callbacks so the caller can supply any backing store
  * (chat sessions, background-run sessions, agent-row sessions, …).
  *
- * The cache key is hashDirectConfig(slugs). If a matching row is found the
- * existing Composio session is reused (composio.use); otherwise a new session
- * is created (composio.create) and the row is upserted.
+ * The cache key is hashDirectConfig(slugs, connectedAccountIdsByToolkit) — it
+ * incorporates connected-account membership so reconnecting or disconnecting
+ * a toolkit rotates the cache key instead of reusing a stale session (finding
+ * G8). If a matching row is found the existing Composio session is reused
+ * (composio.use); otherwise a new session is created (composio.create) and
+ * the row is upserted.
  *
  * Returns { status: "off" } when slugs is empty after normalisation.
  */
@@ -73,15 +138,27 @@ export async function resolveComposioToolsForToolkitList(
     return { status: "off" };
   }
 
-  const configHash = hashDirectConfig(params.slugs);
+  const configHash = hashDirectConfig(
+    params.slugs,
+    params.connectedAccountIdsByToolkit,
+  );
 
   // Selected toolkits with no ACTIVE connected account: their tools are offered
   // but cannot authenticate. Surfaced so the chat can warn instead of silently
-  // handing the model dead, unauthenticated tools.
-  const disconnectedToolkits = params.slugs.filter((slug) => {
+  // handing the model dead, unauthenticated tools. Toolkits that don't require
+  // auth at all (finding G9) are excluded — they were never "disconnected".
+  const candidateDisconnected = params.slugs.filter((slug) => {
     const ids = params.connectedAccountIdsByToolkit[slug];
     return !(Array.isArray(ids) && ids.length > 0);
   });
+
+  const disconnectedToolkits: string[] = [];
+  for (const slug of candidateDisconnected) {
+    const requiresAuth = await toolkitRequiresAuth(params.composio, slug);
+    if (requiresAuth) {
+      disconnectedToolkits.push(slug);
+    }
+  }
 
   const existingRow = await params.getCachedSession(configHash);
 
