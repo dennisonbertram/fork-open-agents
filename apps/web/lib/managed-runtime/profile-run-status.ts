@@ -71,8 +71,11 @@ export function nextActionFor(kind: ManagedRuntimeErrorKind): string {
  * - Any observation still "running" => the run is "running".
  * - Otherwise, any REQUIRED observation "failed" => the run is "failed".
  * - No observations at all => the run is "blocked" (nothing ran yet).
- * - Otherwise every required observation passed (optional failures do not
- *   fail the run) => the run is "passed".
+ * - Otherwise, any REQUIRED observation that did not pass (e.g. "skipped")
+ *   => the run is "blocked" (a required command was not verified — it must
+ *   never roll up to "passed"; Codex #825 P2).
+ * - Otherwise every required observation passed (optional failures/skips do
+ *   not fail the run) => the run is "passed".
  */
 export function rollupFromObservations(
   observations: ManagedRuntimeCommandObservation[],
@@ -85,10 +88,24 @@ export function rollupFromObservations(
     return "running";
   }
 
-  const hasRequiredFailure = observations.some(
-    (observation) =>
-      observation.status === "failed" && observation.required !== false,
-  );
+  const isRequired = (observation: ManagedRuntimeCommandObservation) =>
+    observation.required !== false;
 
-  return hasRequiredFailure ? "failed" : "passed";
+  const hasRequiredFailure = observations.some(
+    (observation) => observation.status === "failed" && isRequired(observation),
+  );
+  if (hasRequiredFailure) {
+    return "failed";
+  }
+
+  // A required command that finished without passing (e.g. "skipped") means the
+  // toolchain was not fully verified — this must not be reported as "passed".
+  const hasUnverifiedRequired = observations.some(
+    (observation) => observation.status !== "passed" && isRequired(observation),
+  );
+  if (hasUnverifiedRequired) {
+    return "blocked";
+  }
+
+  return "passed";
 }
