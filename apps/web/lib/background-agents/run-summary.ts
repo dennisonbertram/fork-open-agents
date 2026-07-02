@@ -65,6 +65,25 @@ export type BuildRunSummaryParams = {
   run: MinimalRun;
   events: MinimalEvent[];
   outputs: MinimalOutput[];
+  /**
+   * Whether the agent had one or more Composio toolkit slugs configured for
+   * this run (i.e. `agent.composioToolkitSlugs.length > 0` at the time the
+   * run executed). Required — not optional — so every caller must make an
+   * explicit, honest decision rather than silently defaulting.
+   *
+   * Used ONLY to gate the "tools were never resolved" copy in next[]: a
+   * failed run with zero composio-prefixed events is ambiguous by itself —
+   * it's indistinguishable between "this agent has no Composio tools at
+   * all" (the common case) and "this agent has Composio tools but failed
+   * before resolution ever ran" (#798's actual target). Without this flag,
+   * every failed run of a plain non-Composio agent would get a misleading
+   * Composio line.
+   *
+   * When the caller genuinely cannot know (e.g. the owning agent row was
+   * deleted and the run/agent join returns null), pass `false` — silence
+   * over noise.
+   */
+  composioConfigured: boolean;
 };
 
 const MAX_ITEMS = 20;
@@ -106,7 +125,7 @@ function capArray<T>(arr: T[]): T[] {
  * Does NOT include raw payloads, prompt content, or unbounded stdout.
  */
 export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
-  const { run, events, outputs } = params;
+  const { run, events, outputs, composioConfigured } = params;
 
   // --- headline ---
   let headline: string;
@@ -277,10 +296,16 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     // #798: distinguish "tools never reached" from "tools failed" — a run
     // that failed before Composio resolution ever executed has zero
     // composio-prefixed events at all (not even an error/off event).
+    //
+    // Gated on composioConfigured (defect fix, post-review): zero composio
+    // events is ALSO true for the common case of an agent with no Composio
+    // toolkits configured at all — without this guard, every failed run of
+    // a plain non-Composio agent got a misleading "Composio tools were
+    // never resolved" line.
     const anyComposioEvent = events.some((e) =>
       e.eventName.includes("composio"),
     );
-    if (!anyComposioEvent) {
+    if (composioConfigured && !anyComposioEvent) {
       next.push(
         "Composio tools were never resolved for this run — it failed before tool resolution ran.",
       );

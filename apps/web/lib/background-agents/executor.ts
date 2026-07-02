@@ -296,6 +296,12 @@ async function buildAndPersistRunSummary(params: {
     run: freshRun.run,
     events,
     outputs,
+    // #798 defect fix: whether this run's agent had Composio toolkits
+    // configured, gating run-summary.ts's "never resolved" copy. `agent`
+    // is null when the row's left join finds no match (e.g. the owning
+    // agent was deleted) — default to false (silence over noise) since we
+    // genuinely cannot know in that case.
+    composioConfigured: (freshRun.agent?.composioToolkitSlugs.length ?? 0) > 0,
   });
 
   await persistRunSummary({ runId: params.runId, summary });
