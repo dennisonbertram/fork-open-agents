@@ -27,11 +27,7 @@ export async function GET(req: Request): Promise<Response> {
 
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
-    const redirectUrl = resolveGitHubReturnTarget(
-      "link_failed",
-      next,
-      req.url,
-    );
+    const redirectUrl = resolveGitHubReturnTarget("link_failed", next, req.url);
     logGitHubRedirectIssued({
       status: "link_failed",
       route: "post-link",
