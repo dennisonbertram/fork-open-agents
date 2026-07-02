@@ -1,7 +1,7 @@
 import { generateState } from "arctic";
 import { NextResponse, type NextRequest } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
-import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
+import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { syncUserInstallations } from "@/lib/github/sync";
 import { getUserGitHubToken } from "@/lib/github/token";
 import {
@@ -50,14 +50,15 @@ export async function GET(req: NextRequest): Promise<Response> {
 
   const appSlug = process.env.NEXT_PUBLIC_GITHUB_APP_SLUG;
   if (!appSlug) {
-    const fallbackUrl = new URL(redirectTo, req.url);
-    fallbackUrl.searchParams.set("github", "app_not_configured");
-    const stepPreserved = fallbackUrl.pathname === "/get-started";
-    addGitHubStepParamIfGetStarted(fallbackUrl);
+    const fallbackUrl = resolveGitHubReturnTarget(
+      "app_not_configured",
+      redirectTo,
+      req.url,
+    );
     logGitHubRedirectIssued({
       status: "app_not_configured",
       route: "install",
-      stepPreserved,
+      stepPreserved: fallbackUrl.pathname === "/get-started",
       userId: session.user.id,
     });
     return NextResponse.redirect(fallbackUrl);
@@ -79,10 +80,11 @@ export async function GET(req: NextRequest): Promise<Response> {
   // no linked github account — redirect to get-started to connect first
   const linked = await hasGitHubAccount(session.user.id);
   if (!linked) {
-    const connectUrl = new URL("/get-started", req.url);
-    connectUrl.searchParams.set("github", "not_linked");
-    connectUrl.searchParams.set("next", redirectTo);
-    addGitHubStepParamIfGetStarted(connectUrl);
+    const connectUrl = resolveGitHubReturnTarget(
+      "not_linked",
+      redirectTo,
+      req.url,
+    );
     logGitHubRedirectIssued({
       status: "not_linked",
       route: "install",

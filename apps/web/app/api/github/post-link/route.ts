@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
-import { addGitHubStepParamIfGetStarted } from "@/lib/github/connect-status";
+import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
 import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
@@ -24,17 +24,14 @@ export async function GET(req: Request): Promise<Response> {
     "/sessions",
     req.url,
   );
-  const redirectUrl = new URL(next, req.url);
 
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
-    redirectUrl.searchParams.set("github", "link_failed");
-    const stepPreserved = redirectUrl.pathname === "/get-started";
-    addGitHubStepParamIfGetStarted(redirectUrl);
+    const redirectUrl = resolveGitHubReturnTarget("link_failed", next, req.url);
     logGitHubRedirectIssued({
       status: "link_failed",
       route: "post-link",
-      stepPreserved,
+      stepPreserved: redirectUrl.pathname === "/get-started",
       userId: session.user.id,
     });
     return NextResponse.redirect(redirectUrl);
@@ -51,13 +48,15 @@ export async function GET(req: Request): Promise<Response> {
       );
 
       if (count > 0) {
-        redirectUrl.searchParams.set("github", "account_connected");
-        const stepPreserved = redirectUrl.pathname === "/get-started";
-        addGitHubStepParamIfGetStarted(redirectUrl);
+        const redirectUrl = resolveGitHubReturnTarget(
+          "account_connected",
+          next,
+          req.url,
+        );
         logGitHubRedirectIssued({
           status: "account_connected",
           route: "post-link",
-          stepPreserved,
+          stepPreserved: redirectUrl.pathname === "/get-started",
           userId: session.user.id,
         });
         return NextResponse.redirect(redirectUrl);
@@ -70,13 +69,15 @@ export async function GET(req: Request): Promise<Response> {
   // no installations found — check if any exist in DB from a previous install
   const existingInstallations = await getInstallationsByUserId(session.user.id);
   if (existingInstallations.length > 0) {
-    redirectUrl.searchParams.set("github", "account_connected");
-    const stepPreserved = redirectUrl.pathname === "/get-started";
-    addGitHubStepParamIfGetStarted(redirectUrl);
+    const redirectUrl = resolveGitHubReturnTarget(
+      "account_connected",
+      next,
+      req.url,
+    );
     logGitHubRedirectIssued({
       status: "account_connected",
       route: "post-link",
-      stepPreserved,
+      stepPreserved: redirectUrl.pathname === "/get-started",
       userId: session.user.id,
     });
     return NextResponse.redirect(redirectUrl);

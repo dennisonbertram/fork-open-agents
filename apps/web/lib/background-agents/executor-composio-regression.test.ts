@@ -104,6 +104,9 @@ const updateBackgroundAgentRunStatus = mock(
   }),
 );
 const listBackgroundAgentEvents = mock(async () => []);
+// #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
+// tests (which never assert on the merge) are unaffected.
+const listBackgroundAgentComposioEvents = mock(async () => []);
 const listBackgroundAgentOutputs = mock(async () => []);
 const listEnabledToolGrantsForAgent = mock(async (_agentId: string) => []);
 
@@ -114,6 +117,7 @@ mock.module("./store", () => ({
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
   listBackgroundAgentEvents,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentOutputs,
   listEnabledToolGrantsForAgent,
   // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
@@ -131,7 +135,12 @@ mock.module("./run-summary", () => ({
     blocked: [],
     artifacts: [],
     next: [],
+    warnings: [],
   })),
+  mergeEventsForSummary: mock((capped: unknown[], composio: unknown[]) => [
+    ...capped,
+    ...composio,
+  ]),
 }));
 mock.module("./run-summary-persist", () => ({
   persistRunSummary: mock(async () => undefined),
@@ -581,5 +590,67 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       "distinctive-typed-error-message-marker",
     );
     expect(errorEvent?.summary ?? "").not.toContain("undefined");
+  });
+
+  /**
+   * REGRESSION-C-007 (#798): an "off" resolver outcome (previously a silent
+   * no-op) must remain NON-FATAL to the run — this is what distinguishes
+   * "visibility" from "the run now fails whenever tools are off". Catches a
+   * regression where someone accidentally wires the new .off event through
+   * a failure path (e.g. copy-pasting the .error branch's status: "failed").
+   */
+  test("REGRESSION-C-007: composio.off event does not change the run's terminal status", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["gmail"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["gmail"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    expect(offEvent).toBeDefined();
+    // The event itself is not a run failure...
+    expect(offEvent?.status).toBe("succeeded");
+    // ...and the run's terminal status is still succeeded, not failed.
+    const statuses = updateBackgroundAgentRunStatus.mock.calls.map(
+      ([i]: [StatusUpdateInput]) => i.status,
+    );
+    expect(statuses).toContain("succeeded");
+    expect(statuses).not.toContain("failed");
+  });
+
+  /**
+   * REGRESSION-C-008 (#798): the new .off / .not_connected event payloads
+   * never leak the raw Composio API key pattern, matching the redaction
+   * discipline already asserted for .resolved (BT-005). Catches a future
+   * change that widens the payload to include raw resolver internals.
+   */
+  test("REGRESSION-C-008: composio.off and composio.not_connected payloads never contain an API key", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["github", "slack"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementationOnce(async () => ({
+      status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["github", "slack"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    const offPayloadStr = JSON.stringify(offEvent?.payload ?? {});
+    expect(offPayloadStr).not.toMatch(/\bak_[A-Za-z0-9_*.-]+/);
+    expect(offPayloadStr).not.toContain("apiKey");
   });
 });
