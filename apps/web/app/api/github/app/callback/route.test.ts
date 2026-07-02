@@ -39,6 +39,8 @@ mock.module("@/lib/github/sync", () => ({
 
     return syncedInstallationsCount;
   },
+  isGitHubInstallationsAuthError: (error: unknown) =>
+    error instanceof Error && error.message.includes(" 401 "),
 }));
 
 const routeModulePromise = import("./route");
@@ -332,5 +334,39 @@ describe("GET /api/github/app/callback", () => {
     );
 
     expectCookiesCleared(response);
+  });
+
+  // Issue #783: a non-auth sync failure must not be swallowed into
+  // no_action/pending_sync — it must surface as its own status.
+  test("returns sync_failed when syncUserInstallations throws a non-auth error", async () => {
+    syncInstallationsError = new Error("GitHub API 500 Internal Server Error");
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).toBe("sync_failed");
+  });
+
+  // Issue #783: an auth-classified sync failure keeps the existing reconnect
+  // vocabulary instead of sync_failed.
+  test("keeps reconnect vocabulary when syncUserInstallations throws an auth error", async () => {
+    syncInstallationsError = new Error("Bad credentials 401 ");
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/github/app/callback?installation_id=123&state=state-match-1",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const redirectUrl = getRedirectUrl(response);
+    expect(redirectUrl.searchParams.get("github")).not.toBe("sync_failed");
   });
 });
