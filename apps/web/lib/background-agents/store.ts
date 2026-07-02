@@ -801,7 +801,7 @@ export async function listStaleBackgroundAgentRuns(params: {
   return db.query.backgroundAgentRuns.findMany({
     where: and(
       inArray(backgroundAgentRuns.status, ["queued", "running"]),
-      sql`${backgroundAgentRuns.updatedAt} < ${params.staleBefore}`,
+      sql`${backgroundAgentRuns.updatedAt} < ${params.staleBefore.toISOString()}::timestamp`,
     ),
     orderBy: [backgroundAgentRuns.updatedAt],
     limit: Math.min(Math.max(params.limit ?? 50, 1), 200),
