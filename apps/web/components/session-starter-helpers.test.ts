@@ -322,9 +322,8 @@ describe("getEffectiveRuntimeSelection (MR-4/#812)", () => {
 // ---------------------------------------------------------------------------
 describe("shouldConfirmDiscardOnChange (MR-4/#812 — fixes silent discard)", () => {
   test("BT-MR4-007: no input entered — no confirm needed", async () => {
-    const { shouldConfirmDiscardOnChange } = await import(
-      "./session-starter-helpers"
-    );
+    const { shouldConfirmDiscardOnChange } =
+      await import("./session-starter-helpers");
     expect(
       shouldConfirmDiscardOnChange({
         sessionTitle: "",
@@ -336,9 +335,8 @@ describe("shouldConfirmDiscardOnChange (MR-4/#812 — fixes silent discard)", ()
   });
 
   test("BT-MR4-008: a typed session title requires confirmation before discarding", async () => {
-    const { shouldConfirmDiscardOnChange } = await import(
-      "./session-starter-helpers"
-    );
+    const { shouldConfirmDiscardOnChange } =
+      await import("./session-starter-helpers");
     expect(
       shouldConfirmDiscardOnChange({
         sessionTitle: "My session",
@@ -350,9 +348,8 @@ describe("shouldConfirmDiscardOnChange (MR-4/#812 — fixes silent discard)", ()
   });
 
   test("BT-MR4-009: a selected repo in repo mode requires confirmation before discarding", async () => {
-    const { shouldConfirmDiscardOnChange } = await import(
-      "./session-starter-helpers"
-    );
+    const { shouldConfirmDiscardOnChange } =
+      await import("./session-starter-helpers");
     expect(
       shouldConfirmDiscardOnChange({
         sessionTitle: "",

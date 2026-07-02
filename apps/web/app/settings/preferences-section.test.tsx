@@ -134,16 +134,12 @@ describe("PreferencesSection — merged runtime profiles (MR-4/#812)", () => {
     const groups = groupRuntimeProfileOptions([
       {
         id: "web-bun-agent-browser",
-        version: "1",
         displayName: "Web (Bun + Agent Browser)",
-        description: "Built-in default",
         source: "built_in",
       },
       {
         id: "user-profile-python312",
-        version: "created-1",
         displayName: "Python 3.12",
-        description: "My custom Python profile",
         source: "user_default",
       },
     ]);

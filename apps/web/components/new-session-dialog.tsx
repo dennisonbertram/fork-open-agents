@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { SessionStarter } from "@/components/session-starter";
+import type { SessionRuntimeMode } from "@/components/session-starter-helpers";
 import {
   toCreateSessionErrorInfo,
   type CreateSessionErrorInfo,
@@ -26,6 +27,8 @@ type CreateSessionInput = {
   cloneUrl?: string;
   isNewBranch: boolean;
   sandboxType: SandboxType;
+  runtimeMode: SessionRuntimeMode;
+  managedRuntimeProfileId?: string;
   autoCommitPush: boolean;
   autoCreatePr: boolean;
   vercelProject?: VercelProjectSelection | null;

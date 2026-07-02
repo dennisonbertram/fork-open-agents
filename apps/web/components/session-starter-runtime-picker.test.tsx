@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { resolve } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 
 mock.module("@/hooks/use-session", () => ({
@@ -119,7 +119,7 @@ describe("SessionStarter runtime picker (MR-4/#812)", () => {
   // component source (a legitimate regression guard for a markup pattern).
   test("MR-4/#812: the footer 'Change' control is no longer a bare navigate-away Link to /settings/preferences", () => {
     const source = readFileSync(
-      join(__dirname, "session-starter.tsx"),
+      resolve(import.meta.dir, "session-starter.tsx"),
       "utf8",
     );
 

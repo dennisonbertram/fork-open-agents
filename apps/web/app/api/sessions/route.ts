@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { after } from "next/server";
-import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
+import { isKnownManagedRuntimeProfileReference } from "@/lib/db/managed-runtime-saved-profiles";
 import { checkBotProtection } from "@/lib/botid";
 import {
   createSessionWithInitialChat,
@@ -43,6 +43,7 @@ interface CreateSessionRequest {
   isNewBranch?: boolean;
   fullClone?: boolean;
   sandboxType?: "vercel";
+  runtimeMode?: "classic" | "managed_runtime";
   managedRuntimeProfileId?: string;
   autoCommitPush?: boolean;
   autoCreatePr?: boolean;
@@ -204,13 +205,33 @@ export async function POST(req: Request) {
   }
 
   if (
-    body.managedRuntimeProfileId !== undefined &&
-    !isManagedRuntimeProfileId(body.managedRuntimeProfileId)
+    body.runtimeMode !== undefined &&
+    body.runtimeMode !== "classic" &&
+    body.runtimeMode !== "managed_runtime"
   ) {
-    return Response.json(
-      { error: "Invalid managed runtime profile" },
-      { status: 400 },
-    );
+    return Response.json({ error: "Invalid runtime mode" }, { status: 400 });
+  }
+
+  if (body.managedRuntimeProfileId !== undefined) {
+    // A brand-new session has no session-scope saved profiles yet, so only
+    // the built-in and owned user_default arms of the reference check are
+    // reachable here — the sessionId is a placeholder for that reason.
+    const isKnown = await isKnownManagedRuntimeProfileReference({
+      userId: session.user.id,
+      sessionId: "__new_session__",
+      profileId: body.managedRuntimeProfileId,
+    });
+    if (!isKnown) {
+      return Response.json(
+        {
+          error: "Invalid managed runtime profile",
+          errorKind: "profile_not_found",
+          nextAction:
+            "This profile no longer exists. Choose another profile or recreate it.",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   if (
@@ -293,6 +314,7 @@ export async function POST(req: Request) {
     isNewBranch: bodyIsNewBranch,
     fullClone,
     sandboxType = "vercel",
+    runtimeMode: bodyRuntimeMode,
     managedRuntimeProfileId,
     autoCommitPush,
     autoCreatePr,
@@ -390,9 +412,11 @@ export async function POST(req: Request) {
       finalBranch = branch ?? repoDefaults?.defaultBranch ?? undefined;
     }
 
-    // runtimeMode: body has no field today; use repo default (falls through to
-    // system "classic" when repo has no override).
-    const effectiveRuntimeMode = repoDefaults?.runtimeMode ?? "classic";
+    // runtimeMode precedence: body (explicit New-Chat picker choice) > repo
+    // defaults > system "classic". A default-profile preference change never
+    // auto-flips existing sessions — this only affects sessions created here.
+    const effectiveRuntimeMode =
+      bodyRuntimeMode ?? repoDefaults?.runtimeMode ?? "classic";
 
     // managedRuntimeProfileId: body > repo defaults > user prefs
     const effectiveManagedRuntimeProfileId =

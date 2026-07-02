@@ -781,9 +781,7 @@ describe("/api/sessions POST activation path (runtimeMode + managedRuntimeProfil
       managedRuntimeProfileId: "user-profile-python312",
     });
     expect(body.session.runtimeMode).toBe("managed_runtime");
-    expect(body.session.managedRuntimeProfileId).toBe(
-      "user-profile-python312",
-    );
+    expect(body.session.managedRuntimeProfileId).toBe("user-profile-python312");
   });
 
   test("MR-4/#812: POST with no runtimeMode in the body still defaults to classic (no auto-flip regression)", async () => {
