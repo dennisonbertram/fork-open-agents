@@ -342,6 +342,21 @@ describe("executeBackgroundAgentRun — learnings built-in agent wiring", () => 
     expect(runLearningsExtraction).toHaveBeenCalledTimes(1);
   });
 
+  test("requires only read access for the learnings built-in agent even with write toggles (#746 review)", async () => {
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wfr-perm",
+    });
+
+    expect(verifyRepoAccess).toHaveBeenCalledTimes(1);
+    const call = verifyRepoAccess.mock.calls[0]?.[0] as
+      | { requiredUserPermission?: string }
+      | undefined;
+    expect(call?.requiredUserPermission).toBe("read");
+  });
+
   test("does NOT call connectSandbox for the learnings built-in agent", async () => {
     const { executeBackgroundAgentRun } = await executorModulePromise;
 
