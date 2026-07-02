@@ -262,9 +262,26 @@ mock.module("@open-agents/sandbox", () => ({
 
 // ── openAgent mock ────────────────────────────────────────────────────────────
 
+type OpenAgentGenerateResult = {
+  finishReason: "stop" | "tool-calls";
+  rawFinishReason: string;
+  steps: { toolCalls: { toolCallId: string }[] }[];
+  response: { messages: unknown[] };
+  usage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  totalUsage: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+};
+
 let openAgentShouldThrow: Error | null = null;
-let openAgentResult = {
-  finishReason: "stop" as const,
+let openAgentResult: OpenAgentGenerateResult = {
+  finishReason: "stop",
   rawFinishReason: "end_turn",
   steps: [{ toolCalls: [] }],
   response: { messages: [] },
@@ -272,12 +289,14 @@ let openAgentResult = {
   totalUsage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
 };
 
-const openAgentGenerateMock = mock(async (_params: unknown) => {
-  if (openAgentShouldThrow) {
-    throw openAgentShouldThrow;
-  }
-  return openAgentResult;
-});
+const openAgentGenerateMock = mock(
+  async (_params: unknown): Promise<OpenAgentGenerateResult> => {
+    if (openAgentShouldThrow) {
+      throw openAgentShouldThrow;
+    }
+    return openAgentResult;
+  },
+);
 
 mock.module("@open-agents/agent", () => ({
   sanitizeUnattendedToolCalls: (messages: unknown) => messages,
@@ -487,7 +506,17 @@ function resetMocks() {
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
   sandboxMock.stop.mockClear();
-  openAgentGenerateMock.mockClear();
+  // mockReset (not mockClear) so a per-test mockImplementation override
+  // (e.g. BT-S25c's multi-call tool-calls-then-stop sequence) does not leak
+  // into later tests — mockClear only resets call history, not the
+  // installed implementation.
+  openAgentGenerateMock.mockReset();
+  openAgentGenerateMock.mockImplementation(async (_params: unknown) => {
+    if (openAgentShouldThrow) {
+      throw openAgentShouldThrow;
+    }
+    return openAgentResult;
+  });
   buildCommitIntentFromSandboxMock.mockClear();
   createCommitMock.mockClear();
   buildCoAuthorMock.mockClear();
@@ -1570,7 +1599,11 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
           steps: [{ toolCalls: [{ toolCallId: `call-${callCount}` }] }],
           response: { messages: [] },
           usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
-          totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          totalUsage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+          },
         };
       }
       return {

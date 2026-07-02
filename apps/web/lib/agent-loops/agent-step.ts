@@ -174,6 +174,12 @@ function truncateOutput(s: string, maxLen: number): string {
  * builder's "Outputs" quick-add control — see
  * components/agent-config-fields.tsx DeclaredOutputsField). Every declared
  * key is required and its value must match the declared type-name.
+ * $-prefixed metadata keys (e.g. "$schema") are skipped, consistent with
+ * isFlatOutputSchema and outputFieldNames, which both deliberately exclude
+ * them when interpreting a flat map — otherwise a schema like
+ * {"$schema": "...", "passed": "boolean"} would be classified as flat but
+ * then always fail validation since the agent output never contains a
+ * literal "$schema" field.
  * Returns null on success, or an error message on the first failure.
  */
 function validateAgainstFlatSchema(
@@ -181,6 +187,9 @@ function validateAgainstFlatSchema(
   schema: Record<string, unknown>,
 ): string | null {
   for (const [field, expectedType] of Object.entries(schema)) {
+    if (field.startsWith("$")) {
+      continue;
+    }
     if (!(field in output)) {
       return `Missing required field: "${field}"`;
     }
@@ -530,10 +539,27 @@ export async function executeAgentStep(
     // Accumulate messages across turns so the next call sees prior tool results.
     let agentMessages: ModelMessage[] = [{ role: "user", content: prompt }];
 
+    // stepTimeoutMs is the budget for the WHOLE step, not each individual
+    // openAgent.generate call. Compute a single deadline before the loop and
+    // pass each call only the remaining budget — otherwise a step configured
+    // at e.g. 30 minutes could run up to AGENT_MAX_LOOP_STEPS x 30 minutes if
+    // every iteration reset the timeout to the full stepTimeoutMs.
+    const deadlineAt = Date.now() + stepTimeoutMs;
+
     try {
       let loopStep = 0;
       while (true) {
         loopStep++;
+
+        const remainingMs = deadlineAt - Date.now();
+        if (remainingMs <= 0) {
+          return await recordAgentStepFailure({
+            ...failureCtx,
+            errorKind: "workflow_failed",
+            errorMessage: `Agent step timed out after ${stepTimeoutMs}ms`,
+          });
+        }
+
         // Repair any approval-gated tool call the previous turn left without a
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
@@ -541,7 +567,7 @@ export async function executeAgentStep(
         agentResult = await openAgent.generate({
           messages: agentMessages,
           options: agentOptions,
-          timeout: { totalMs: stepTimeoutMs },
+          timeout: { totalMs: Math.max(1, remainingMs) },
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
 
