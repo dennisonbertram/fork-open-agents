@@ -121,6 +121,25 @@ mock.module("@/lib/db/vercel-project-links", () => ({
   },
 }));
 
+// MR-4 (#812): tracks calls to the MR-1 owner-checked reference validator so
+// tests can assert POST /api/sessions uses it for the requested profile id.
+const knownReferenceCalls: Array<{ userId: string; profileId: string }> = [];
+let knownReferenceResult = true;
+
+mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
+  isKnownManagedRuntimeProfileReference: async (params: {
+    userId: string;
+    sessionId: string;
+    profileId: string;
+  }) => {
+    knownReferenceCalls.push({
+      userId: params.userId,
+      profileId: params.profileId,
+    });
+    return knownReferenceResult;
+  },
+}));
+
 mock.module("@/lib/db/composio", () => ({
   listComposioToolProfiles: async () => [],
   listComposioProfileOptionsForRepository: async () => ({
@@ -710,5 +729,109 @@ describe("/api/sessions POST no-repo sandbox-free creation", () => {
     expect(afterCallbacks).toHaveLength(1);
     await afterCallbacks[0]?.();
     expect(scheduledWork).toHaveBeenCalledTimes(1);
+  });
+});
+
+// MR-4 (#812): activation path — POST /api/sessions must accept an optional
+// runtimeMode + managedRuntimeProfileId, validate the profile reference via
+// MR-1's isKnownManagedRuntimeProfileReference, and persist both. Before this
+// change, runtimeMode was hard-defaulted to "classic" regardless of the body.
+describe("/api/sessions POST activation path (runtimeMode + managedRuntimeProfileId)", () => {
+  beforeEach(() => {
+    currentSession = {
+      user: {
+        id: "user-1",
+        username: "nico",
+        name: "Nico",
+      },
+    };
+    savedLink = null;
+    currentVercelToken = "vercel-token";
+    matchingProjects = [];
+    matchingProjectsError = null;
+    createCalls.length = 0;
+    initialChatCalls.length = 0;
+    upsertCalls.length = 0;
+    prewarmKickCalls.length = 0;
+    afterCallbacks.length = 0;
+    composioPolicy = { allowed: true, reason: null };
+    knownReferenceCalls.length = 0;
+    knownReferenceResult = true;
+  });
+
+  test("MR-4/#812: POST with runtimeMode:managed_runtime + an owned profile id persists both", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "user-profile-python312",
+      }),
+    );
+    const body = (await response.json()) as {
+      session: Record<string, unknown>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(knownReferenceCalls).toEqual([
+      { userId: "user-1", profileId: "user-profile-python312" },
+    ]);
+    expect(createCalls[0]).toMatchObject({
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "user-profile-python312",
+    });
+    expect(body.session.runtimeMode).toBe("managed_runtime");
+    expect(body.session.managedRuntimeProfileId).toBe(
+      "user-profile-python312",
+    );
+  });
+
+  test("MR-4/#812: POST with no runtimeMode in the body still defaults to classic (no auto-flip regression)", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(createJsonRequest({}));
+
+    expect(response.status).toBe(200);
+    expect(createCalls[0]).toMatchObject({ runtimeMode: "classic" });
+  });
+
+  test("MR-4/#812: POST with an unknown/foreign managedRuntimeProfileId returns a structured 400", async () => {
+    knownReferenceResult = false;
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "not-mine",
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("profile_not_found");
+    expect(typeof body.nextAction).toBe("string");
+    expect(body.nextAction?.length).toBeGreaterThan(0);
+    expect(createCalls).toHaveLength(0);
+  });
+
+  test("MR-4/#812: setting a runtimeMode on a new session does not touch other sessions (no auto-flip of existing sessions)", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "user-profile-python312",
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    // Only one session is created by this call; no bulk/update calls touch
+    // other sessions' runtimeMode. createCalls captures every session insert
+    // attempted by this request — there must be exactly one.
+    expect(createCalls).toHaveLength(1);
   });
 });

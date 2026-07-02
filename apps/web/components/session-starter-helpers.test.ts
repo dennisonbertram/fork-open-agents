@@ -11,6 +11,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   getButtonLabel,
+  getEffectiveRuntimeSelection,
+  getRuntimeModeLabel,
   getSessionFooter,
   isSubmitBlocked,
 } from "./session-starter-helpers";
@@ -235,5 +237,129 @@ describe("REGRESSION — button label reads 'Start chat' in empty mode", () => {
     const label = getButtonLabel("empty", "", "");
     expect(label).not.toBe("Start session");
     expect(label).toBe("Start chat");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MR-4 (#812): New-Chat runtime picker — getRuntimeModeLabel
+// ---------------------------------------------------------------------------
+describe("getRuntimeModeLabel (MR-4/#812)", () => {
+  test("BT-MR4-001: classic mode reads 'Directly in a sandbox (classic)'", () => {
+    expect(getRuntimeModeLabel("classic", "Python 3.12")).toBe(
+      "Directly in a sandbox (classic)",
+    );
+  });
+
+  test("BT-MR4-002: managed_runtime mode names the active profile", () => {
+    expect(getRuntimeModeLabel("managed_runtime", "Python 3.12")).toBe(
+      "Through a verified environment (managed): Python 3.12",
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MR-4 (#812): getEffectiveRuntimeSelection — New-Chat picker prefilled from
+// the Preferences default (Decision D1), user override wins, never clobbers
+// an explicit user choice.
+// ---------------------------------------------------------------------------
+describe("getEffectiveRuntimeSelection (MR-4/#812)", () => {
+  test("BT-MR4-003: with no user selection, defaults to classic (system default) when preferences default is the built-in classic profile", () => {
+    const result = getEffectiveRuntimeSelection({
+      userSelection: null,
+      defaultRuntimeMode: "classic",
+      defaultProfileId: "web-bun-agent-browser",
+    });
+    expect(result).toEqual({
+      runtimeMode: "classic",
+      managedRuntimeProfileId: undefined,
+    });
+  });
+
+  test("BT-MR4-004: with no user selection and a managed default, prefills managed_runtime + the default profile id", () => {
+    const result = getEffectiveRuntimeSelection({
+      userSelection: null,
+      defaultRuntimeMode: "managed_runtime",
+      defaultProfileId: "user-profile-python312",
+    });
+    expect(result).toEqual({
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "user-profile-python312",
+    });
+  });
+
+  test("BT-MR4-005: an explicit user selection overrides the preferences default", () => {
+    const result = getEffectiveRuntimeSelection({
+      userSelection: { runtimeMode: "classic" },
+      defaultRuntimeMode: "managed_runtime",
+      defaultProfileId: "user-profile-python312",
+    });
+    expect(result).toEqual({
+      runtimeMode: "classic",
+      managedRuntimeProfileId: undefined,
+    });
+  });
+
+  test("BT-MR4-006: an explicit managed_runtime user selection carries its own profile id, not the default's", () => {
+    const result = getEffectiveRuntimeSelection({
+      userSelection: {
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "user-profile-node20",
+      },
+      defaultRuntimeMode: "managed_runtime",
+      defaultProfileId: "user-profile-python312",
+    });
+    expect(result).toEqual({
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "user-profile-node20",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// MR-4 (#812): "Change" no longer silently discards New-Chat dialog input.
+// shouldConfirmDiscardOnChange returns true only when the user has entered
+// something the navigation-away Link would silently throw away.
+// ---------------------------------------------------------------------------
+describe("shouldConfirmDiscardOnChange (MR-4/#812 — fixes silent discard)", () => {
+  test("BT-MR4-007: no input entered — no confirm needed", async () => {
+    const { shouldConfirmDiscardOnChange } = await import(
+      "./session-starter-helpers"
+    );
+    expect(
+      shouldConfirmDiscardOnChange({
+        sessionTitle: "",
+        mode: "empty",
+        selectedOwner: "",
+        selectedRepo: "",
+      }),
+    ).toBe(false);
+  });
+
+  test("BT-MR4-008: a typed session title requires confirmation before discarding", async () => {
+    const { shouldConfirmDiscardOnChange } = await import(
+      "./session-starter-helpers"
+    );
+    expect(
+      shouldConfirmDiscardOnChange({
+        sessionTitle: "My session",
+        mode: "empty",
+        selectedOwner: "",
+        selectedRepo: "",
+      }),
+    ).toBe(true);
+  });
+
+  test("BT-MR4-009: a selected repo in repo mode requires confirmation before discarding", async () => {
+    const { shouldConfirmDiscardOnChange } = await import(
+      "./session-starter-helpers"
+    );
+    expect(
+      shouldConfirmDiscardOnChange({
+        sessionTitle: "",
+        mode: "repo",
+        selectedOwner: "acme",
+        selectedRepo: "webapp",
+      }),
+    ).toBe(true);
   });
 });
