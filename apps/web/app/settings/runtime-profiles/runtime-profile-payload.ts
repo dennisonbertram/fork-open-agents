@@ -114,3 +114,108 @@ export function isValidCreatePayload(
     payload.setupCommands.length > 0
   );
 }
+
+// ---------------------------------------------------------------------------
+// Non-throwing form validation
+// ---------------------------------------------------------------------------
+
+export type RuntimeProfileFormFieldErrors = Partial<
+  Record<
+    | "displayName"
+    | "description"
+    | "setupCommands"
+    | "verificationCommands"
+    | "defaultPorts",
+    string
+  >
+>;
+
+export type ValidateCreateFormResult =
+  | { ok: true; payload: RuntimeProfileCreatePayload }
+  | { ok: false; fieldErrors: RuntimeProfileFormFieldErrors };
+
+function validateCommandList(
+  commands: ManagedRuntimeProfileCommand[],
+  label: "setup" | "verification",
+): string | null {
+  if (commands.length === 0) {
+    return label === "verification"
+      ? "Add at least one verification command — this is how the profile proves setup worked"
+      : "Add at least one setup command — this is how the profile prepares the sandbox";
+  }
+  for (const [index, command] of commands.entries()) {
+    if (
+      !command.label.trim() ||
+      !command.description.trim() ||
+      !command.command.trim()
+    ) {
+      return `${label === "verification" ? "Verification" : "Setup"} command ${
+        index + 1
+      } is missing a label, description, or command`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Non-throwing replacement for the throw-based formToCreatePayload +
+ * isValidCreatePayload pair. Returns either the validated payload or a map
+ * of field-level errors — never throws, so no caller can silently swallow a
+ * validation failure and leave the user with no feedback.
+ */
+export function validateCreateForm(
+  form: RuntimeProfileFormState,
+): ValidateCreateFormResult {
+  const fieldErrors: RuntimeProfileFormFieldErrors = {};
+
+  const displayName = form.displayName.trim();
+  if (!displayName) {
+    fieldErrors.displayName = "Name is required";
+  }
+
+  const description = form.description.trim();
+  if (!description) {
+    fieldErrors.description = "Description is required";
+  }
+
+  const setupError = validateCommandList(form.setupCommands, "setup");
+  if (setupError) {
+    fieldErrors.setupCommands = setupError;
+  }
+
+  const verificationError = validateCommandList(
+    form.verificationCommands,
+    "verification",
+  );
+  if (verificationError) {
+    fieldErrors.verificationCommands = verificationError;
+  }
+
+  let defaultPorts: number[] = [];
+  try {
+    defaultPorts = parsePorts(form.defaultPorts);
+  } catch {
+    fieldErrors.defaultPorts =
+      "Ports must be positive whole numbers, separated by commas (e.g. 3000, 5173)";
+  }
+
+  if (Object.keys(fieldErrors).length > 0) {
+    return { ok: false, fieldErrors };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      displayName,
+      description,
+      setupCommands: normalizeCommands(form.setupCommands, "setup"),
+      verificationCommands: normalizeCommands(
+        form.verificationCommands,
+        "verification",
+      ),
+      expectedTools: parseCsv(form.expectedTools),
+      optionalTools: parseCsv(form.optionalTools),
+      defaultPorts,
+    },
+  };
+}

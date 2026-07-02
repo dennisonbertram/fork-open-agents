@@ -6,12 +6,19 @@
  * BT-005: formToCreatePayload throws when verificationCommands is empty
  * BT-006: isValidCreatePayload returns true for a well-formed payload
  * BT-007: isValidCreatePayload returns false when displayName is blank
+ * BT-008: validateCreateForm returns { ok: true, payload } for a valid form
+ * BT-009: validateCreateForm returns field errors for empty verification commands
+ * BT-010: validateCreateForm returns field errors for empty setup commands
+ * BT-011: validateCreateForm returns a field error for a blank displayName
+ * BT-012: validateCreateForm returns a field error for an invalid port
+ * BT-013: validateCreateForm never throws, even on maximally invalid input
  */
 
 import { describe, expect, test } from "bun:test";
 import {
   formToCreatePayload,
   isValidCreatePayload,
+  validateCreateForm,
   type RuntimeProfileFormState,
 } from "./runtime-profile-payload";
 
@@ -132,5 +139,83 @@ describe("isValidCreatePayload", () => {
   test("returns false when setupCommands is empty", () => {
     const payload = formToCreatePayload(baseForm());
     expect(isValidCreatePayload({ ...payload, setupCommands: [] })).toBe(false);
+  });
+});
+
+describe("validateCreateForm", () => {
+  // BT-008: a well-formed form validates ok with a usable payload
+  test("BT-008: returns ok:true with a payload for a valid form", () => {
+    const result = validateCreateForm(baseForm());
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.payload.displayName).toBe("My Profile");
+      expect(result.payload.verificationCommands).toHaveLength(1);
+    }
+  });
+
+  // BT-009: empty verification commands produce a field-level error, not a throw
+  test("BT-009: returns a fieldErrors.verificationCommands message when verification commands is empty", () => {
+    const result = validateCreateForm({
+      ...baseForm(),
+      verificationCommands: [],
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.verificationCommands).toContain(
+        "at least one verification command",
+      );
+    }
+  });
+
+  // BT-010: empty setup commands produce a field-level error
+  test("BT-010: returns a fieldErrors.setupCommands message when setup commands is empty", () => {
+    const result = validateCreateForm({ ...baseForm(), setupCommands: [] });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.setupCommands).toContain(
+        "at least one setup command",
+      );
+    }
+  });
+
+  // BT-011: blank displayName produces a field-level error naming the field
+  test("BT-011: returns a fieldErrors.displayName message for a blank name", () => {
+    const result = validateCreateForm({ ...baseForm(), displayName: "   " });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.displayName).toBeDefined();
+    }
+  });
+
+  // BT-012: an invalid port produces a field-level error instead of throwing
+  test("BT-012: returns a fieldErrors.defaultPorts message for an invalid port", () => {
+    const result = validateCreateForm({
+      ...baseForm(),
+      defaultPorts: "not-a-port",
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.defaultPorts).toBeDefined();
+    }
+  });
+
+  // BT-013: validateCreateForm never throws, even with every field invalid at once
+  test("BT-013: does not throw for a form with every field invalid", () => {
+    expect(() =>
+      validateCreateForm({
+        displayName: "",
+        description: "",
+        expectedTools: "",
+        optionalTools: "",
+        defaultPorts: "abc",
+        setupCommands: [],
+        verificationCommands: [],
+      }),
+    ).not.toThrow();
   });
 });
