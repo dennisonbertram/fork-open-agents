@@ -44,9 +44,9 @@ describe("SessionsLayout onboarding gate", () => {
     mockNeedsOnboarding = async () => true;
     const { default: SessionsLayout } = await import("./layout");
 
-    await expect(
-      SessionsLayout({ children: null }),
-    ).rejects.toThrow("redirect:/get-started?next=%2Fsessions");
+    await expect(SessionsLayout({ children: null })).rejects.toThrow(
+      "redirect:/get-started?next=%2Fsessions",
+    );
 
     expect(redirect).toHaveBeenCalledWith("/get-started?next=%2Fsessions");
   });
