@@ -296,16 +296,24 @@ mock.module("@/lib/inference/profile-resolution", () => ({
 const fakeComposioTools: Record<string, unknown> = {
   github_create_issue: { description: "Create a GitHub issue" },
 };
+type FakeComposioResult =
+  | {
+      status: "ready";
+      tools: Record<string, unknown>;
+      toolkitSlugs: string[];
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: "no_slugs_selected" | "repo_policy_blocked";
+      blockedSlugs?: string[];
+    }
+  | { status: "error"; errorKind: string; message: string };
+
 const resolveComposioToolsForBgRun = mock(
-  async (
-    _params: unknown,
-  ): Promise<{
-    status: "ready" | "off" | "error";
-    tools?: Record<string, unknown>;
-    toolkitSlugs?: string[];
-    error?: string;
-  }> => ({
+  async (_params: unknown): Promise<FakeComposioResult> => ({
     status: "off",
+    reason: "no_slugs_selected",
   }),
 );
 mock.module("./composio-tools", () => ({ resolveComposioToolsForBgRun }));
@@ -416,6 +424,7 @@ beforeEach(() => {
   currentAgent = buildAgent({ composioToolkitSlugs: [] });
   resolveComposioToolsForBgRun.mockImplementation(async () => ({
     status: "off",
+    reason: "no_slugs_selected",
   }));
 });
 
@@ -471,6 +480,7 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       status: "ready" as const,
       tools: fakeComposioTools,
       toolkitSlugs: ["github"],
+      disconnectedToolkits: [],
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -497,7 +507,8 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
     currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
       status: "error" as const,
-      error: "COMPOSIO_API_KEY not configured",
+      errorKind: "composio_missing_api_key",
+      message: "COMPOSIO_API_KEY not configured",
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -540,5 +551,35 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       expect(instructions).not.toContain("not available in v1");
       expect(instructions).not.toContain("Composio are not available");
     }
+  });
+
+  /**
+   * REGRESSION-C-006 (issue #797): the executor reads the typed error
+   * outcome's `message` field for the composio.error event summary, not the
+   * removed untyped `error` field. Catches a revert to the old
+   * `{ status: "error", error: string }` shape at the executor call site —
+   * if the executor read `.error` again it would render "undefined" in the
+   * event summary instead of the resolver's actual message.
+   */
+  test("REGRESSION-C-006: composio.error event summary includes the typed message field", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "error" as const,
+      errorKind: "composio_unknown",
+      message: "distinctive-typed-error-message-marker",
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const errorEvent = recordedEvent("background-agent.composio.error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.summary ?? "").toContain(
+      "distinctive-typed-error-message-marker",
+    );
+    expect(errorEvent?.summary ?? "").not.toContain("undefined");
   });
 });
