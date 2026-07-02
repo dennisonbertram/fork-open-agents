@@ -19,6 +19,8 @@ import type {
   ManagedRuntimeProfileDraftData,
 } from "@/lib/db/schema";
 import { updateSession } from "@/lib/db/sessions";
+import type { ManagedRuntimeErrorKind } from "@/lib/managed-runtime/profile-run-status";
+import { nextActionFor } from "@/lib/managed-runtime/profile-run-status";
 import { buildManagedRuntimeCommandObservation } from "@/lib/observability/managed-runtime-profile-runs";
 import { buildHibernatedLifecycleUpdate } from "@/lib/sandbox/lifecycle";
 import {
@@ -97,13 +99,10 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     const sandbox = await connectSandbox(sandboxState);
     const profile = profileFromDraft(draft.id, draft.profileDraft);
-    const observations: ManagedRuntimeCommandObservation[] = [];
-    let failureMessage: string | null = null;
-
-    for (const command of getCommandsForMode(profile, parsedBody.mode)) {
-      const startedAt = new Date();
-      const result = await runDraftTestCommand({
-        command,
+    const { observations, failureMessage, failedCommand, errorKind } =
+      await runDraftTest({
+        profile,
+        mode: parsedBody.mode,
         exec: (commandText, timeoutMs) =>
           sandbox.exec(
             commandText,
@@ -111,24 +110,6 @@ export async function POST(req: Request, context: RouteContext) {
             timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS,
           ),
       });
-      const finishedAt = new Date();
-      const status = result.success ? "passed" : "failed";
-      const observation = buildManagedRuntimeCommandObservation({
-        command,
-        status,
-        startedAt,
-        finishedAt,
-        result,
-      });
-      observations.push(observation);
-
-      if (!result.success && command.required !== false && !failureMessage) {
-        failureMessage = `${command.label} failed.`;
-        if (parsedBody.mode === "setup_and_verify") {
-          break;
-        }
-      }
-    }
 
     const updatedDraft = await finishManagedRuntimeProfileDraftTest({
       userId: auth.userId,
@@ -137,6 +118,7 @@ export async function POST(req: Request, context: RouteContext) {
       status: failureMessage ? "needs_changes" : "tested",
       testResults: observations,
       testFailureMessage: failureMessage,
+      testScope: parsedBody.mode,
     });
 
     if (!updatedDraft) {
@@ -147,7 +129,18 @@ export async function POST(req: Request, context: RouteContext) {
     }
 
     return Response.json({
-      draft: toManagedRuntimeProfileDraftSnapshot(updatedDraft),
+      draft: {
+        ...toManagedRuntimeProfileDraftSnapshot(updatedDraft),
+        testScope: updatedDraft.lastTestScope ?? parsedBody.mode,
+        ...(errorKind
+          ? {
+              errorKind,
+              failureMessage,
+              failedCommandLabel: failedCommand?.label,
+              nextAction: nextActionFor(errorKind),
+            }
+          : {}),
+      },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -172,12 +165,19 @@ export async function POST(req: Request, context: RouteContext) {
       status: "needs_changes",
       testResults: [],
       testFailureMessage: message,
+      testScope: parsedBody.mode,
     });
 
     return Response.json(
       {
         draft: updatedDraft
-          ? toManagedRuntimeProfileDraftSnapshot(updatedDraft)
+          ? {
+              ...toManagedRuntimeProfileDraftSnapshot(updatedDraft),
+              testScope: parsedBody.mode,
+              errorKind: "setup_exec_error" satisfies ManagedRuntimeErrorKind,
+              failureMessage: message,
+              nextAction: nextActionFor("setup_exec_error"),
+            }
           : undefined,
         error: "Failed to test managed runtime profile draft",
       },
@@ -250,6 +250,62 @@ function getCommandsForMode(
   return mode === "setup_and_verify"
     ? [...profile.setupCommands, ...profile.verificationCommands]
     : profile.verificationCommands;
+}
+
+/**
+ * Unified required-command-failure loop semantics (#814): a required
+ * command failure stops the run in BOTH `verify` and `setup_and_verify`
+ * modes, mirroring the saved-profile test route.
+ */
+async function runDraftTest(params: {
+  profile: ManagedRuntimeProfile;
+  mode: "verify" | "setup_and_verify";
+  exec: (
+    command: string,
+    timeoutMs: number | undefined,
+  ) => Promise<CommandResultLike>;
+}): Promise<{
+  observations: ManagedRuntimeCommandObservation[];
+  failureMessage: string | null;
+  failedCommand: ManagedRuntimeProfileCommand | null;
+  errorKind: ManagedRuntimeErrorKind | null;
+}> {
+  const observations: ManagedRuntimeCommandObservation[] = [];
+  let failureMessage: string | null = null;
+  let failedCommand: ManagedRuntimeProfileCommand | null = null;
+  let errorKind: ManagedRuntimeErrorKind | null = null;
+  const setupCommandIds = new Set(
+    params.profile.setupCommands.map((command) => command.id),
+  );
+
+  for (const command of getCommandsForMode(params.profile, params.mode)) {
+    const startedAt = new Date();
+    const result = await runDraftTestCommand({
+      command,
+      exec: params.exec,
+    });
+    const finishedAt = new Date();
+    const status = result.success ? "passed" : "failed";
+    const observation = buildManagedRuntimeCommandObservation({
+      command,
+      status,
+      startedAt,
+      finishedAt,
+      result,
+    });
+    observations.push(observation);
+
+    if (!result.success && command.required !== false && !failureMessage) {
+      failureMessage = `${command.label} failed.`;
+      failedCommand = command;
+      errorKind = setupCommandIds.has(command.id)
+        ? "setup_command_failed"
+        : "verification_failed";
+      break;
+    }
+  }
+
+  return { observations, failureMessage, failedCommand, errorKind };
 }
 
 async function runDraftTestCommand(params: {

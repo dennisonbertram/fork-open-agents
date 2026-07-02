@@ -3,10 +3,22 @@
 import type { ManagedRuntimeProfileOption } from "@/app/api/sessions/[sessionId]/managed-runtime/profiles/route";
 import { cn } from "@/lib/utils";
 
+/**
+ * Widens `ManagedRuntimeProfileOption` with the persisted test-scope field
+ * (Decision D6). The scope lives on `managed_runtime_saved_profiles`
+ * (`last_test_scope`, MR-1) but the profiles-list route (out of this
+ * ticket's file territory) does not yet surface it on the option type, so
+ * this badge accepts it as an optional local extension until that route is
+ * updated to include it.
+ */
+export type ManagedRuntimeProfileEvidence = ManagedRuntimeProfileOption & {
+  lastTestScope?: "verify" | "setup_and_verify" | null;
+};
+
 export function ManagedRuntimeProfileEvidenceBadge({
   profile,
 }: {
-  profile: ManagedRuntimeProfileOption;
+  profile: ManagedRuntimeProfileEvidence;
 }) {
   const view = getManagedRuntimeProfileEvidenceBadgeView(profile);
   if (!view) {
@@ -27,7 +39,7 @@ export function ManagedRuntimeProfileEvidenceBadge({
 }
 
 export function getManagedRuntimeProfileEvidenceBadgeView(
-  profile: ManagedRuntimeProfileOption,
+  profile: ManagedRuntimeProfileEvidence,
 ): {
   label: string;
   title: string;
@@ -39,6 +51,21 @@ export function getManagedRuntimeProfileEvidenceBadgeView(
 
   const status = profile.testStatus ?? "untested";
   if (status === "passed") {
+    // Decision D6: only a setup_and_verify pass earns the "Tested" badge. A
+    // verify-only pass is real evidence (the current sandbox verified),
+    // but it never proves the profile's setup commands work, so it must
+    // not be labeled "Tested".
+    if (profile.lastTestScope === "verify") {
+      return {
+        label: "Verified on current sandbox — setup not tested",
+        title: profile.testedAt
+          ? `Verified ${formatManagedRuntimeProfileTestTime(profile.testedAt)} on the current sandbox; setup commands were not run`
+          : "Verification commands passed on the current sandbox; setup commands were not run",
+        className:
+          "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
+      };
+    }
+
     return {
       label: "Tested",
       title: profile.testedAt
@@ -66,7 +93,7 @@ export function getManagedRuntimeProfileEvidenceBadgeView(
 }
 
 export function getManagedRuntimeProfileEvidenceSummary(
-  profile: ManagedRuntimeProfileOption | undefined,
+  profile: ManagedRuntimeProfileEvidence | undefined,
 ): string {
   if (!profile) {
     return "No managed runtime profile is selected yet.";

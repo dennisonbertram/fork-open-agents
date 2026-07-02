@@ -596,6 +596,12 @@ export async function finishManagedRuntimeSavedProfileTest(params: {
   profileId: string;
   testResults: ManagedRuntimeCommandObservation[];
   testFailureMessage?: string | null;
+  /**
+   * The scope actually executed (verify vs setup_and_verify — Decision D6).
+   * Persisted so the "Tested" badge is only granted from a setup_and_verify
+   * pass instead of over-promising from a verify-only run.
+   */
+  testScope?: "verify" | "setup_and_verify" | null;
 }): Promise<ManagedRuntimeSavedProfile | undefined> {
   const now = new Date();
   const [profile] = await db
@@ -603,6 +609,7 @@ export async function finishManagedRuntimeSavedProfileTest(params: {
     .set({
       testResults: params.testResults,
       testFailureMessage: params.testFailureMessage ?? null,
+      lastTestScope: params.testScope ?? null,
       testedAt: now,
       updatedAt: now,
     })

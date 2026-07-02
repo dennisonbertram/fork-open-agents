@@ -24,6 +24,20 @@ type ProfileDraftSnapshot = {
   testResults?: CommandEvidence[];
   testFailureMessage?: string | null;
   testedAt?: string | null;
+  testScope?: "verify" | "setup_and_verify" | null;
+  forceApproved?: boolean;
+};
+
+/**
+ * Structured test-route error surface (#814): `{ errorKind, failureMessage,
+ * failedCommandLabel?, nextAction? }` returned by the draft test route
+ * instead of a generic error string.
+ */
+type StructuredTestError = {
+  errorKind: string;
+  failureMessage: string;
+  failedCommandLabel?: string;
+  nextAction?: string;
 };
 
 type CommandEvidence = {
@@ -55,6 +69,7 @@ export function ManagedRuntimeProfileBuilderRenderer({
   const [draftTestMode, setDraftTestMode] = useState<
     "verify" | "setup_and_verify" | null
   >(null);
+  const [testError, setTestError] = useState<StructuredTestError | null>(null);
   const profileInput = isProfileInput(input) ? input : null;
   const draft = input?.draft;
   const repoSignals = input?.repoSignals ?? [];
@@ -144,12 +159,15 @@ export function ManagedRuntimeProfileBuilderRenderer({
       setPersistenceError(null);
       try {
         if (sessionId && persistedDraft) {
+          const forceApproved =
+            decision.decision === "approved" &&
+            Boolean(getProfileApprovalWarning(persistedDraft));
           const response = await fetch(
             `/api/sessions/${sessionId}/managed-runtime/profile-drafts/${persistedDraft.id}`,
             {
               method: "PATCH",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ output: decision }),
+              body: JSON.stringify({ output: decision, forceApproved }),
             },
           );
           const body = (await response.json()) as {
@@ -195,6 +213,7 @@ export function ManagedRuntimeProfileBuilderRenderer({
 
       setDraftTestMode(mode);
       setPersistenceError(null);
+      setTestError(null);
       try {
         const response = await fetch(
           `/api/sessions/${sessionId}/managed-runtime/profile-drafts/${persistedDraft.id}/test`,
@@ -205,13 +224,21 @@ export function ManagedRuntimeProfileBuilderRenderer({
           },
         );
         const body = (await response.json()) as {
-          draft?: ProfileDraftSnapshot;
+          draft?: ProfileDraftSnapshot & Partial<StructuredTestError>;
           error?: string;
         };
         if (!response.ok || !body.draft) {
           throw new Error(body.error ?? "Failed to test profile draft");
         }
         setPersistedDraft(body.draft);
+        if (body.draft.errorKind && body.draft.failureMessage) {
+          setTestError({
+            errorKind: body.draft.errorKind,
+            failureMessage: body.draft.failureMessage,
+            failedCommandLabel: body.draft.failedCommandLabel,
+            nextAction: body.draft.nextAction,
+          });
+        }
       } catch (error) {
         setPersistenceError(
           error instanceof Error ? error.message : "Failed to test draft",
@@ -279,6 +306,18 @@ export function ManagedRuntimeProfileBuilderRenderer({
           {draftTestMode === "setup_and_verify"
             ? "Running setup commands, then testing verification commands against the active workspace..."
             : "Testing verification commands against the active workspace..."}
+        </p>
+      ) : null}
+
+      {formatManagedRuntimeTestError(testError ?? undefined) ? (
+        <p className="whitespace-pre-line rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-destructive text-xs">
+          {formatManagedRuntimeTestError(testError ?? undefined)}
+        </p>
+      ) : null}
+
+      {getForceApprovedLabel(persistedDraft) ? (
+        <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 text-xs dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+          {getForceApprovedLabel(persistedDraft)}
         </p>
       ) : null}
 
@@ -520,6 +559,42 @@ export function getProfileApprovalWarning(
 
 export function getApproveButtonLabel(draft: ProfileDraftSnapshot | null) {
   return getProfileApprovalWarning(draft) ? "Approve anyway" : "Approve draft";
+}
+
+/**
+ * Labels a draft that was approved over a failed/absent test (Decision D6 /
+ * MR-1's `force_approved` column). Returns null when the draft was not
+ * force-approved so the renderer shows no badge for a normal approval.
+ */
+export function getForceApprovedLabel(
+  draft: ProfileDraftSnapshot | null,
+): string | null {
+  return draft?.forceApproved ? "Approved without passing test" : null;
+}
+
+/**
+ * Formats the structured test-route error `{ errorKind, failureMessage,
+ * failedCommandLabel?, nextAction? }` (#814) into the failed command label,
+ * the first actionable failure line, and the next step — instead of a
+ * generic error string.
+ */
+export function formatManagedRuntimeTestError(
+  testError: StructuredTestError | undefined,
+): string | null {
+  if (!testError) {
+    return null;
+  }
+
+  const lines = [
+    testError.failedCommandLabel
+      ? `${testError.failedCommandLabel}: ${testError.failureMessage}`
+      : testError.failureMessage,
+  ];
+  if (testError.nextAction) {
+    lines.push(testError.nextAction);
+  }
+
+  return lines.join("\n");
 }
 
 export function getRevisionPlaceholder(questions: string[]): string {
