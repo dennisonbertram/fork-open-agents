@@ -1,11 +1,26 @@
 "use client";
 
-import { ChevronDown, Cpu, Loader2, Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { ChevronDown, Cpu, Loader2, LogIn, Plus, Trash2 } from "lucide-react";
+import { useId, useState } from "react";
 import { toast } from "sonner";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { ManagedRuntimeSavedProfile } from "@/lib/db/schema";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SettingsSection } from "@/components/ui/settings-section";
@@ -78,6 +93,126 @@ function profileToFormState(profile: SavedProfileRow): RuntimeProfileFormState {
 }
 
 // ---------------------------------------------------------------------------
+// Profile editor form fields (extracted so field help text is directly
+// testable without needing the save/cancel/delete action wiring)
+// ---------------------------------------------------------------------------
+
+export function ProfileFormFields({
+  formState,
+  onChange,
+}: {
+  formState: RuntimeProfileFormState;
+  onChange: (next: RuntimeProfileFormState) => void;
+}) {
+  return (
+    <>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Name">
+          {() => (
+            <Input
+              onChange={(e) =>
+                onChange({ ...formState, displayName: e.currentTarget.value })
+              }
+              placeholder="My runtime profile"
+              value={formState.displayName}
+            />
+          )}
+        </Field>
+        <Field
+          help="Ports the sandbox exposes for preview URLs when this profile runs."
+          label="Default ports"
+        >
+          {(helpId) => (
+            <Input
+              aria-describedby={helpId}
+              onChange={(e) =>
+                onChange({ ...formState, defaultPorts: e.currentTarget.value })
+              }
+              placeholder="3000, 5173"
+              value={formState.defaultPorts}
+            />
+          )}
+        </Field>
+      </div>
+
+      <Field label="Description">
+        {() => (
+          <Textarea
+            className="min-h-20"
+            onChange={(e) =>
+              onChange({ ...formState, description: e.currentTarget.value })
+            }
+            placeholder="What this profile sets up and when to use it"
+            value={formState.description}
+          />
+        )}
+      </Field>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field
+          help="Shown as environment info and used for verification labeling — NOT installed automatically. Install these with a setup command below."
+          label="Expected tools"
+        >
+          {(helpId) => (
+            <Input
+              aria-describedby={helpId}
+              onChange={(e) =>
+                onChange({
+                  ...formState,
+                  expectedTools: e.currentTarget.value,
+                })
+              }
+              placeholder="bun, node"
+              value={formState.expectedTools}
+            />
+          )}
+        </Field>
+        <Field
+          help="Shown as environment info and used for verification labeling — NOT installed automatically. Install these with a setup command below."
+          label="Optional tools"
+        >
+          {(helpId) => (
+            <Input
+              aria-describedby={helpId}
+              onChange={(e) =>
+                onChange({
+                  ...formState,
+                  optionalTools: e.currentTarget.value,
+                })
+              }
+              placeholder="docker"
+              value={formState.optionalTools}
+            />
+          )}
+        </Field>
+      </div>
+
+      <Field label="Setup commands">
+        {() => (
+          <CommandEditor
+            commands={formState.setupCommands}
+            onChange={(cmds) => onChange({ ...formState, setupCommands: cmds })}
+            title="setup"
+          />
+        )}
+      </Field>
+
+      <Field label="Verification commands">
+        {() => (
+          <CommandEditor
+            commands={formState.verificationCommands}
+            onChange={(cmds) =>
+              onChange({ ...formState, verificationCommands: cmds })
+            }
+            title="verification"
+          />
+        )}
+      </Field>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Profile editor form (shared between create + edit modes)
 // ---------------------------------------------------------------------------
 
@@ -113,76 +248,7 @@ function ProfileForm({
 
   return (
     <div className="space-y-4 pt-4">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Name">
-          <Input
-            onChange={(e) =>
-              onChange({ ...formState, displayName: e.currentTarget.value })
-            }
-            placeholder="My runtime profile"
-            value={formState.displayName}
-          />
-        </Field>
-        <Field label="Default ports">
-          <Input
-            onChange={(e) =>
-              onChange({ ...formState, defaultPorts: e.currentTarget.value })
-            }
-            placeholder="3000, 5173"
-            value={formState.defaultPorts}
-          />
-        </Field>
-      </div>
-
-      <Field label="Description">
-        <Textarea
-          className="min-h-20"
-          onChange={(e) =>
-            onChange({ ...formState, description: e.currentTarget.value })
-          }
-          placeholder="What this profile sets up and when to use it"
-          value={formState.description}
-        />
-      </Field>
-
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Expected tools">
-          <Input
-            onChange={(e) =>
-              onChange({ ...formState, expectedTools: e.currentTarget.value })
-            }
-            placeholder="bun, node"
-            value={formState.expectedTools}
-          />
-        </Field>
-        <Field label="Optional tools">
-          <Input
-            onChange={(e) =>
-              onChange({ ...formState, optionalTools: e.currentTarget.value })
-            }
-            placeholder="docker"
-            value={formState.optionalTools}
-          />
-        </Field>
-      </div>
-
-      <Field label="Setup commands">
-        <CommandEditor
-          commands={formState.setupCommands}
-          onChange={(cmds) => onChange({ ...formState, setupCommands: cmds })}
-          title="setup"
-        />
-      </Field>
-
-      <Field label="Verification commands">
-        <CommandEditor
-          commands={formState.verificationCommands}
-          onChange={(cmds) =>
-            onChange({ ...formState, verificationCommands: cmds })
-          }
-          title="verification"
-        />
-      </Field>
+      <ProfileFormFields formState={formState} onChange={onChange} />
 
       {error ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
@@ -321,6 +387,83 @@ function BuiltInProfileRow({ profile }: { profile: ManagedRuntimeProfile }) {
 }
 
 // ---------------------------------------------------------------------------
+// Delete confirmation dialog
+// ---------------------------------------------------------------------------
+
+/**
+ * Presenter for the delete-confirmation dialog body. Extracted from
+ * DeleteProfileDialog so it is directly testable — Radix DialogPortal does
+ * not emit children via renderToStaticMarkup (same portal-gated pattern as
+ * DropdownMenuContent used elsewhere in this app).
+ */
+export function DeleteProfileDialogContent({
+  profileName,
+  isDefault,
+  onConfirm,
+  onCancel,
+}: {
+  profileName: string;
+  isDefault: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Delete this profile?</DialogTitle>
+        <DialogDescription>
+          This permanently deletes{" "}
+          <strong className="font-medium text-foreground">{profileName}</strong>
+          . This cannot be undone.
+          {isDefault ? (
+            <>
+              {" "}
+              This is your current Preferences default — deleting it will leave
+              your default profile unset until you choose another one.
+            </>
+          ) : null}
+        </DialogDescription>
+      </DialogHeader>
+      <DialogFooter>
+        <Button onClick={onCancel} type="button" variant="ghost">
+          Cancel
+        </Button>
+        <Button onClick={onConfirm} type="button" variant="destructive">
+          Delete profile
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+export function DeleteProfileDialog({
+  open,
+  profileName,
+  isDefault,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  profileName: string;
+  isDefault: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Dialog onOpenChange={(isOpen) => !isOpen && onCancel()} open={open}>
+      <DialogContent>
+        <DeleteProfileDialogContent
+          isDefault={isDefault}
+          onCancel={onCancel}
+          onConfirm={onConfirm}
+          profileName={profileName}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // User profile row (editable)
 // ---------------------------------------------------------------------------
 
@@ -340,6 +483,7 @@ function UserProfileRow({
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const isBusy = isSaving || isDeleting;
 
   async function handleSave() {
@@ -400,6 +544,8 @@ function UserProfileRow({
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete profile");
       setIsDeleting(false);
+    } finally {
+      setShowDeleteConfirm(false);
     }
   }
 
@@ -436,6 +582,14 @@ function UserProfileRow({
         />
       </button>
 
+      <DeleteProfileDialog
+        isDefault={false}
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={() => void handleDelete()}
+        open={showDeleteConfirm}
+        profileName={profile.displayName}
+      />
+
       {expanded ? (
         <div className="border-t border-border px-4 pb-4">
           <ProfileForm
@@ -444,7 +598,7 @@ function UserProfileRow({
             isBusy={isBusy}
             onCancel={handleCancel}
             onChange={setFormState}
-            onDelete={() => void handleDelete()}
+            onDelete={() => setShowDeleteConfirm(true)}
             onSave={() => void handleSave()}
             saveLabel="Save changes"
             showDelete
@@ -570,6 +724,27 @@ function EmptyState({ onNew }: { onNew: () => void }) {
 // Main section component
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Unauthenticated state
+// ---------------------------------------------------------------------------
+
+export function RuntimeProfilesSignInPrompt() {
+  return (
+    <Empty>
+      <EmptyHeader>
+        <EmptyMedia variant="icon">
+          <LogIn />
+        </EmptyMedia>
+        <EmptyTitle>Sign in to manage runtime profiles</EmptyTitle>
+        <EmptyDescription>
+          Runtime profiles are saved per account. Sign in to view your saved
+          profiles and the platform&apos;s built-in profiles.
+        </EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
 export function RuntimeProfilesSection({
   initialUserProfiles,
   builtInProfiles,
@@ -666,15 +841,25 @@ export function RuntimeProfilesSection({
 
 function Field({
   label,
+  help,
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  help?: string;
+  children: (helpId: string | undefined) => React.ReactNode;
 }) {
+  const helpId = useId();
+  const describedBy = help ? helpId : undefined;
+
   return (
     <div className="grid gap-1.5">
       <Label className="text-xs">{label}</Label>
-      {children}
+      {children(describedBy)}
+      {help ? (
+        <p className="text-xs text-muted-foreground" id={helpId}>
+          {help}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -768,26 +953,29 @@ function CommandEditor({
             />
             <div className="grid gap-3 sm:grid-cols-[minmax(10rem,14rem)_1fr]">
               <Field label="Timeout (ms)">
-                <Input
-                  inputMode="numeric"
-                  onChange={(e) =>
-                    onChange(
-                      updateCommand(commands, index, {
-                        timeoutMs: parseOptionalPositiveInteger(
-                          e.currentTarget.value,
-                        ),
-                      }),
-                    )
-                  }
-                  placeholder="120000"
-                  value={command.timeoutMs?.toString() ?? ""}
-                />
+                {() => (
+                  <Input
+                    inputMode="numeric"
+                    onChange={(e) =>
+                      onChange(
+                        updateCommand(commands, index, {
+                          timeoutMs: parseOptionalPositiveInteger(
+                            e.currentTarget.value,
+                          ),
+                        }),
+                      )
+                    }
+                    placeholder="120000"
+                    value={command.timeoutMs?.toString() ?? ""}
+                  />
+                )}
               </Field>
               <div className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2">
                 <div className="space-y-0.5">
                   <p className="text-xs font-medium">Required</p>
                   <p className="text-xs text-muted-foreground">
-                    Required command failures block a successful profile test.
+                    A failing required command blocks the profile — in tests and
+                    in live sessions.
                   </p>
                 </div>
                 <Switch

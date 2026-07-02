@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ManagedRuntimeProfile } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { ManagedRuntimeSavedProfile } from "@/lib/db/schema";
+import { Dialog } from "@/components/ui/dialog";
 import {
   DeleteProfileDialog,
+  DeleteProfileDialogContent,
   ProfileFormFields,
   RuntimeProfilesSection,
   RuntimeProfilesSignInPrompt,
@@ -95,7 +97,7 @@ describe("ProfileFormFields help text", () => {
       <ProfileFormFields formState={formState()} onChange={() => {}} />,
     );
 
-    expect(html).toContain("shown as environment info");
+    expect(html).toContain("Shown as environment info");
     expect(html).toContain("NOT installed automatically");
   });
 
@@ -138,16 +140,17 @@ describe("ProfileFormFields help text", () => {
 // BT: delete confirmation dialog
 // ---------------------------------------------------------------------------
 
-describe("DeleteProfileDialog", () => {
+describe("DeleteProfileDialogContent", () => {
   test("names the profile being deleted", () => {
     const html = renderToStaticMarkup(
-      <DeleteProfileDialog
-        isDefault={false}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        open
-        profileName="My saved profile"
-      />,
+      <Dialog open>
+        <DeleteProfileDialogContent
+          isDefault={false}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          profileName="My saved profile"
+        />
+      </Dialog>,
     );
 
     expect(html).toContain("My saved profile");
@@ -155,13 +158,14 @@ describe("DeleteProfileDialog", () => {
 
   test("warns when the profile is the Preferences default", () => {
     const html = renderToStaticMarkup(
-      <DeleteProfileDialog
-        isDefault
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        open
-        profileName="My saved profile"
-      />,
+      <Dialog open>
+        <DeleteProfileDialogContent
+          isDefault
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          profileName="My saved profile"
+        />
+      </Dialog>,
     );
 
     expect(html).toContain("default");
@@ -169,13 +173,14 @@ describe("DeleteProfileDialog", () => {
 
   test("does not warn about default when the profile is not the default", () => {
     const html = renderToStaticMarkup(
-      <DeleteProfileDialog
-        isDefault={false}
-        onCancel={() => {}}
-        onConfirm={() => {}}
-        open
-        profileName="My saved profile"
-      />,
+      <Dialog open>
+        <DeleteProfileDialogContent
+          isDefault={false}
+          onCancel={() => {}}
+          onConfirm={() => {}}
+          profileName="My saved profile"
+        />
+      </Dialog>,
     );
 
     expect(html).not.toContain("Preferences default");

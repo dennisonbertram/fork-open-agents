@@ -39,10 +39,10 @@ export function getRuntimeModeSummary({
     const profileName = profile?.displayName ?? "the selected profile";
     const evidenceSummary = getManagedRuntimeProfileEvidenceSummary(profile);
 
-    return `Coordinated (${profileName}): a coordinator plans the work and delegates repo changes to managed workers, recording a proof bundle of every step. Open Runtime Inspector after a run to verify what ran — sandbox, services, browser checks, and any incomplete proof. Best for shared repos or when you want an audit trail. ${evidenceSummary}`;
+    return `Delegated (${profileName}): the agent delegates work to a verified sandbox worker and records evidence of every step. Open Runtime Inspector after a run to verify what ran — sandbox, services, browser checks, and any incomplete evidence. Best for shared repos or when you want a record of what happened. ${evidenceSummary}`;
   }
 
-  return "Direct: the agent edits your repo itself in the sandbox. Fastest — best for quick changes and exploration. Switch to Coordinated when you want a coordinator, managed workers, and a verifiable proof bundle.";
+  return "Direct: Agent edits files directly in the sandbox. Fastest — best for quick changes and exploration. Switch to Delegated when you want a verified sandbox worker and a record of what ran.";
 }
 
 export function RuntimeModeSelectorCompact({
@@ -80,7 +80,7 @@ export function RuntimeModeSelectorCompact({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Runtime: ${isManagedRuntime ? "Coordinated" : "Direct"}`}
+              aria-label={`Runtime: ${isManagedRuntime ? "Delegated" : "Direct"}`}
               className={cn(
                 "h-8 shrink-0 gap-1.5 rounded-full px-2 text-xs",
                 isManagedRuntime
@@ -93,7 +93,7 @@ export function RuntimeModeSelectorCompact({
               variant={isManagedRuntime ? "outline" : "ghost"}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{isManagedRuntime ? "Coordinated" : "Direct"}</span>
+              <span>{isManagedRuntime ? "Delegated" : "Direct"}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -115,8 +115,8 @@ export function RuntimeModeSelectorCompact({
             <span className="flex flex-col gap-0.5">
               <span>Direct</span>
               <span className="text-muted-foreground text-xs">
-                The agent edits your repo itself — fastest, best for quick
-                changes and exploration.
+                Agent edits files directly — fastest, best for quick changes and
+                exploration.
               </span>
             </span>
           </DropdownMenuRadioItem>
@@ -125,11 +125,11 @@ export function RuntimeModeSelectorCompact({
             value="managed_runtime"
           >
             <span className="flex flex-col gap-0.5">
-              <span>Coordinated</span>
+              <span>Delegated</span>
               <span className="text-muted-foreground text-xs">
-                A coordinator delegates the work to managed workers and records
-                a verifiable proof bundle — best for shared repos or an audit
-                trail.
+                Agent delegates work to a verified sandbox worker and records
+                evidence — best for shared repos or when you want a record of
+                what happened.
               </span>
             </span>
           </DropdownMenuRadioItem>
@@ -138,7 +138,7 @@ export function RuntimeModeSelectorCompact({
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
             After a run, open{" "}
             <span className="font-medium">Runtime Inspector</span> to verify
-            what ran — workers, services, and the proof bundle.
+            what ran — workers, services, and the recorded evidence.
           </p>
         ) : null}
         <DropdownMenuSeparator />
