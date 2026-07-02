@@ -21,6 +21,9 @@ import type {
   StartAgentLoopRunResponse,
 } from "@/app/api/agent-loops/types";
 import type { AgentLoopRun } from "@/lib/db/schema";
+import type { LoopDefinition } from "@/lib/agent-loops/types";
+import { summarizeLoopSteps } from "./loop-step-summary";
+import { getStatusMeaning } from "./status-meanings";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -310,19 +313,42 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               )}
             </section>
 
-            {/* Definition */}
+            {/* Definition — prose step list is the primary description; raw
+                JSON moves behind "Advanced" for anyone who needs it. */}
             <section className="rounded-md border border-border">
               <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Definition</h2>
+                <h2 className="text-sm font-medium">What this loop does</h2>
               </div>
-              <details className="px-4 py-3">
-                <summary className="cursor-pointer text-xs text-muted-foreground">
-                  Show JSON definition
-                </summary>
-                <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-muted/30 p-3 font-mono text-[11px]">
-                  {JSON.stringify(loop.definition, null, 2)}
-                </pre>
-              </details>
+              <div className="px-4 py-3">
+                {(() => {
+                  const steps = summarizeLoopSteps(
+                    loop.definition as LoopDefinition,
+                  );
+                  if (steps.length === 0) {
+                    return (
+                      <p className="text-sm text-muted-foreground">
+                        This loop has no steps yet. Open the builder to add
+                        one.
+                      </p>
+                    );
+                  }
+                  return (
+                    <ol className="space-y-1 text-sm text-foreground">
+                      {steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  );
+                })()}
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-xs text-muted-foreground">
+                    Advanced — view JSON definition
+                  </summary>
+                  <pre className="mt-3 max-h-80 overflow-auto rounded-md bg-muted/30 p-3 font-mono text-[11px]">
+                    {JSON.stringify(loop.definition, null, 2)}
+                  </pre>
+                </details>
+              </div>
             </section>
           </div>
 
@@ -332,7 +358,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Loop status</h2>
               </div>
-              <div className="p-4">
+              <div className="space-y-2 p-4">
                 <Select
                   value={loop.status}
                   onValueChange={handleStatusChange}
@@ -348,6 +374,9 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
                     <SelectItem value="archived">Archived</SelectItem>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  {getStatusMeaning(loop.status)}
+                </p>
               </div>
             </section>
 

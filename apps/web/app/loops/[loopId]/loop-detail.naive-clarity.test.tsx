@@ -115,7 +115,8 @@ describe("LoopDetail — status dropdown one-liners (BT-LD-002)", () => {
       />,
     );
 
-    // Draft = editable, can't run.
-    expect(html).toMatch(/can'?t run|cannot run/i);
+    // Draft = editable, can't run. renderToStaticMarkup HTML-escapes the
+    // apostrophe as &#x27;, so match both the raw and escaped forms.
+    expect(html).toMatch(/can(&#x27;|')?t run|cannot run/i);
   });
 });

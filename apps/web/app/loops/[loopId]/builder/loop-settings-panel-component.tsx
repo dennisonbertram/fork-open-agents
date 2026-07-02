@@ -280,10 +280,14 @@ export function LoopSettingsPanelContent({
 
       <hr className="border-border" />
 
-      {/* Guardrails */}
+      {/* Guardrails (labeled "Safety limits" for a naive-user audience) */}
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Guardrails
+          Safety limits
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          Limits on how long and how far a run can go before it's stopped
+          automatically.
         </p>
       </div>
 
@@ -342,10 +346,14 @@ export function LoopSettingsPanelContent({
 
       <hr className="border-border" />
 
-      {/* Watchdog (M3-01) */}
+      {/* Watchdog (M3-01), labeled "Auto-recovery (watchdog)" for clarity */}
       <div className="space-y-1">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          Watchdog
+          Auto-recovery (watchdog)
+        </p>
+        <p className="text-[11px] text-muted-foreground">
+          When a step fails, let an agent diagnose it and decide whether to
+          retry, skip, or pause the run.
         </p>
       </div>
 

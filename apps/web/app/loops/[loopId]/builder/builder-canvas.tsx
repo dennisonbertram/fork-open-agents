@@ -66,6 +66,7 @@ import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
 import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import { buildBuilderGuidance } from "./builder-guidance";
+import { BuilderWhatsNextNote } from "./builder-whats-next-note";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
 import type { LoopFlowEdge } from "./definition-mapping";
 
@@ -180,6 +181,7 @@ function BuilderCanvasInner({
   const updateEdgeWhen = useStore(store, (s) => s.updateEdgeWhen);
 
   const [saving, setSaving] = useState(false);
+  const [whatsNextDismissed, setWhatsNextDismissed] = useState(false);
   const [pendingConnection, setPendingConnection] =
     useState<PendingConnection | null>(null);
   const [pendingEdgeEdit, setPendingEdgeEdit] =
@@ -490,6 +492,11 @@ function BuilderCanvasInner({
             </Button>
           </div>
         </div>
+
+        <BuilderWhatsNextNote
+          dismissed={whatsNextDismissed}
+          onDismiss={() => setWhatsNextDismissed(true)}
+        />
 
         {/* Canvas + panels */}
         <div className="flex min-h-0 flex-1 overflow-hidden">
