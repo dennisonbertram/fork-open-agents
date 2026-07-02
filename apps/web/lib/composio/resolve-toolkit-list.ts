@@ -38,12 +38,16 @@ type ComposioClientLike = {
   };
 };
 
-const NO_AUTH_SCHEME_NAME = "NO_AUTH";
+const NO_AUTH_SCHEME = "NO_AUTH";
 
 /**
  * Narrows a toolkits.get() response's authConfigDetails field (typed loosely
  * as unknown at the interface boundary above) and reports whether it lists
  * NO_AUTH as a supported auth scheme.
+ *
+ * The scheme identifier lives on `mode` ("NO_AUTH", "OAUTH2", …); `name` is a
+ * human display label ("No Auth"). `name` is still checked defensively in
+ * case a response carries the identifier there.
  */
 function toolkitAuthConfigDetailsIncludesNoAuth(
   authConfigDetails: unknown,
@@ -51,12 +55,13 @@ function toolkitAuthConfigDetailsIncludesNoAuth(
   if (!Array.isArray(authConfigDetails)) {
     return false;
   }
-  return authConfigDetails.some(
-    (entry) =>
-      typeof entry === "object" &&
-      entry !== null &&
-      (entry as Record<string, unknown>).name === NO_AUTH_SCHEME_NAME,
-  );
+  return authConfigDetails.some((entry) => {
+    if (typeof entry !== "object" || entry === null) {
+      return false;
+    }
+    const record = entry as Record<string, unknown>;
+    return record.mode === NO_AUTH_SCHEME || record.name === NO_AUTH_SCHEME;
+  });
 }
 
 export type ResolveComposioToolsForToolkitListParams = {

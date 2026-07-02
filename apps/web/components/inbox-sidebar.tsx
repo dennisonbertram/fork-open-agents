@@ -26,6 +26,7 @@ import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
 import { BranchPickerDialog } from "@/components/branch-picker-dialog";
+import { InboxSidebarEmptyState } from "@/components/inbox-sidebar-empty-state";
 import {
   getCollapsedRailActions,
   getCollapsedRepoRailActions,
@@ -1375,23 +1376,12 @@ export function InboxSidebar({
                 ))}
               </div>
             ) : groupedSessions.length === 0 ? (
-              <div className="px-4 py-12 text-center text-sm text-muted-foreground">
-                {showArchived
-                  ? (archivedSessionsError ?? "No archived sessions")
-                  : "No sessions yet"}
-                {showArchived && archivedSessionsError ? (
-                  <div className="mt-3">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRetryArchivedSessions}
-                    >
-                      Retry
-                    </Button>
-                  </div>
-                ) : null}
-              </div>
+              <InboxSidebarEmptyState
+                showArchived={showArchived}
+                archivedSessionsError={archivedSessionsError ?? null}
+                onOpenNewSession={onOpenNewSession}
+                onRetryArchivedSessions={handleRetryArchivedSessions}
+              />
             ) : (
               <>
                 <div className="space-y-3 p-1.5">

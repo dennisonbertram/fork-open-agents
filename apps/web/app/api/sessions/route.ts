@@ -467,17 +467,37 @@ export async function POST(req: Request) {
   } catch (error) {
     if (isVercelInvalidTokenError(error)) {
       console.warn(
-        `Vercel token is invalid for user ${session.user.id}; reconnect required to create a session with env sync.`,
+        JSON.stringify({
+          event: "create_session_failed",
+          userId: session.user.id,
+          errorKind: "vercel_reauth_required",
+          message:
+            "Vercel token is invalid; reconnect required to create a session with env sync.",
+        }),
       );
       return Response.json(
-        { error: "Reconnect Vercel to select a Vercel project" },
+        {
+          error: "Reconnect Vercel to select a Vercel project",
+          kind: "vercel_reauth_required",
+          actionUrl: "/settings",
+        },
         { status: 403 },
       );
     }
 
-    console.error("Failed to create session:", error);
+    // Redaction: never log the raw error object (may contain provider
+    // tokens or stack traces with secrets) — log only error.message.
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(
+      JSON.stringify({
+        event: "create_session_failed",
+        userId: session.user.id,
+        errorKind: "unknown",
+        message,
+      }),
+    );
     return Response.json(
-      { error: "Failed to create session" },
+      { error: "Failed to create session", kind: "unknown" },
       { status: 500 },
     );
   }

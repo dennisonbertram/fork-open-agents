@@ -82,7 +82,18 @@ describe("openAgent runtime tool policy", () => {
       getOpenAgentToolsForRuntimeMode("managed_runtime"),
     );
 
-    expect(managedTools).toEqual([...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES]);
+    // getOpenAgentToolsForRuntimeMode picks from the base tool registry only,
+    // so it only ever returns allowlisted names that also exist as base
+    // tools (propose_composio_tool/manage_background_agent are added
+    // dynamically elsewhere, only when their feature flags are enabled — see
+    // the MR-8 test below).
+    expect(managedTools).toEqual(
+      [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
+        OPEN_AGENT_TOOL_NAMES.includes(
+          name as (typeof OPEN_AGENT_TOOL_NAMES)[number],
+        ),
+      ),
+    );
     expect(managedTools).not.toContain("read");
     expect(managedTools).not.toContain("write");
     expect(managedTools).not.toContain("edit");
@@ -104,9 +115,78 @@ describe("openAgent runtime tool policy", () => {
       requestedTools,
     );
 
-    expect(Object.keys(filteredTools)).toEqual([
-      ...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES,
-    ]);
+    // getRuntimeModeToolPolicy merges base tools with requestedTools before
+    // applying the allowlist; propose_composio_tool/manage_background_agent
+    // are not present unless their feature flags are enabled (see the MR-8
+    // test below), so they are absent here.
+    expect(Object.keys(filteredTools)).toEqual(
+      [...MANAGED_RUNTIME_COORDINATOR_TOOL_NAMES].filter((name) =>
+        OPEN_AGENT_TOOL_NAMES.includes(
+          name as (typeof OPEN_AGENT_TOOL_NAMES)[number],
+        ),
+      ),
+    );
+  });
+
+  // MR-8/D5: propose_tool and manage_background_agent must survive the
+  // managed_runtime coordinator allowlist when explicitly enabled, instead of
+  // being silently stripped by pickTools.
+  test("MR-8: managed_runtime keeps propose_tool and manage_background_agent when enabled", () => {
+    const managedTools = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime", undefined, {
+        toolAuthoringEnabled: true,
+        manageAgentEnabled: true,
+      }),
+    );
+
+    expect(managedTools).toContain("propose_composio_tool");
+    expect(managedTools).toContain("manage_background_agent");
+  });
+
+  // Regression: pins open-agent.ts:373-388 — caller-provided external tools
+  // (Composio/GitHub, not in the native tool registry) must survive
+  // managed_runtime merging even though they are not on the coordinator
+  // allowlist. If this regresses, GitHub/Composio tools silently vanish in
+  // managed runtime mode.
+  test("regression: external (non-native) tools survive managed_runtime merging", () => {
+    const composioTool = { name: "COMPOSIO_GITHUB_CREATE_ISSUE" };
+    const filteredTools = getRuntimeModeToolPolicy("managed_runtime", {
+      COMPOSIO_GITHUB_CREATE_ISSUE: composioTool,
+    } as unknown as Parameters<typeof getRuntimeModeToolPolicy>[1]);
+
+    expect(Object.keys(filteredTools)).toContain(
+      "COMPOSIO_GITHUB_CREATE_ISSUE",
+    );
+    expect(filteredTools.COMPOSIO_GITHUB_CREATE_ISSUE as unknown).toBe(
+      composioTool,
+    );
+    // Native coding/shell tools must still be stripped in managed_runtime.
+    expect(Object.keys(filteredTools)).not.toContain("bash");
+    expect(Object.keys(filteredTools)).not.toContain("read");
+  });
+
+  // Regression: manage_background_agent must NOT leak into managed_runtime
+  // when its flag is off, and coordinator coding-tool enforcement must still
+  // hold even when BOTH new tools are enabled together. Guards against a
+  // future change accidentally enabling the tool unconditionally or widening
+  // the allowlist to include direct code-execution tools.
+  test("regression: manage_background_agent is absent without the flag, and coding tools stay removed even with both flags on", () => {
+    const withoutFlags = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime"),
+    );
+    expect(withoutFlags).not.toContain("manage_background_agent");
+    expect(withoutFlags).not.toContain("propose_composio_tool");
+
+    const withBothFlags = Object.keys(
+      getRuntimeModeToolPolicy("managed_runtime", undefined, {
+        toolAuthoringEnabled: true,
+        manageAgentEnabled: true,
+      }),
+    );
+    expect(withBothFlags).not.toContain("bash");
+    expect(withBothFlags).not.toContain("read");
+    expect(withBothFlags).not.toContain("write");
+    expect(withBothFlags).not.toContain("edit");
   });
 
   test("injects managed runtime coordinator instructions into the system prompt", () => {
