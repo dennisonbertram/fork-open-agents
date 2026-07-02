@@ -29,7 +29,11 @@ export function outputFieldNames(schema: JsonSchemaLite | undefined): string[] {
   }
 
   const properties = schema["properties"];
-  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+  if (
+    properties &&
+    typeof properties === "object" &&
+    !Array.isArray(properties)
+  ) {
     return Object.keys(properties as Record<string, unknown>);
   }
   return [];

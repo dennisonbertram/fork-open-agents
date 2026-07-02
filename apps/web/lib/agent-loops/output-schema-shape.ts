@@ -45,9 +45,7 @@ const FLAT_SCHEMA_TYPE_NAMES = new Set([
  * JSON-Schema-Lite's absence of `required`/`properties` is already a no-op
  * there.
  */
-export function isFlatOutputSchema(
-  schema: Record<string, unknown>,
-): boolean {
+export function isFlatOutputSchema(schema: Record<string, unknown>): boolean {
   const keys = Object.keys(schema).filter((key) => !key.startsWith("$"));
   if (keys.length === 0) return false;
   return keys.every((key) => {

@@ -29,9 +29,9 @@ describe("outputFieldNames", () => {
     // { type: "object", required: [...] } (no properties key): required's
     // value is an array, not a string type-name, so this is JSON-Schema-Lite
     // per the detection rule — properties is absent, so no field names.
-    expect(
-      outputFieldNames({ type: "object", required: ["passed"] }),
-    ).toEqual([]);
+    expect(outputFieldNames({ type: "object", required: ["passed"] })).toEqual(
+      [],
+    );
   });
 
   it("edge case: a flat-map field literally named 'type' with a string type-name value stays a flat map", () => {
