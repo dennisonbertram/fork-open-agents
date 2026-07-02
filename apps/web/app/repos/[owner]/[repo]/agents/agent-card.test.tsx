@@ -129,6 +129,7 @@ type AgentRun = {
         blocked: string[];
         artifacts: RunSummaryArtifact[];
         next: string[];
+        warnings: string[];
       }
     | null
     | undefined;
@@ -149,6 +150,7 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
       blocked: [],
       artifacts: [],
       next: [],
+      warnings: [],
     },
     createdAt: new Date("2026-06-01"),
     ...overrides,
@@ -222,6 +224,7 @@ describe("AgentCard — status matrix", () => {
         blocked: ["checks_failed: CI checks did not pass"],
         artifacts: [],
         next: ["Fix CI and re-trigger"],
+        warnings: [],
       },
     });
 
@@ -346,6 +349,7 @@ describe("AgentCard — status matrix", () => {
         blocked: [],
         artifacts: [],
         next: [],
+        warnings: [],
       },
     });
 

@@ -250,6 +250,33 @@ mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_VCPUS: 2,
 }));
 
+// #798: default off/no_slugs_selected so existing tests (which never set
+// node.composioToolkitSlugs) never touch this mock's return shape.
+type RegressionComposioResult =
+  | {
+      status: "ready";
+      tools: Record<string, unknown>;
+      toolkitSlugs: string[];
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: "no_slugs_selected" | "repo_policy_blocked";
+      blockedSlugs?: string[];
+    }
+  | { status: "error"; errorKind: string; message: string };
+
+const resolveComposioToolsForBgRunRegressionMock = mock(
+  async (_params: unknown): Promise<RegressionComposioResult> => ({
+    status: "off",
+    reason: "no_slugs_selected",
+  }),
+);
+
+mock.module("@/lib/background-agents/composio-tools", () => ({
+  resolveComposioToolsForBgRun: resolveComposioToolsForBgRunRegressionMock,
+}));
+
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
 function makeStepRun(
@@ -377,6 +404,15 @@ function resetAll() {
   sandboxMock.readFile.mockClear();
   sandboxMock.exec.mockClear();
   buildCommitIntentMock.mockClear();
+
+  // mockReset (not mockClear) so a per-test mockImplementation override does
+  // not leak into later tests that rely on the default off/no_slugs_selected
+  // behavior.
+  resolveComposioToolsForBgRunRegressionMock.mockReset();
+  resolveComposioToolsForBgRunRegressionMock.mockImplementation(async () => ({
+    status: "off",
+    reason: "no_slugs_selected",
+  }));
 
   currentStepRun = makeStepRun();
   currentLoopRun = makeLoopRun();
@@ -658,5 +694,80 @@ describe("REG-AS-008: sandbox connect failure maps to sandbox_unavailable", () =
     expect(result.errorKind).toBe("sandbox_unavailable");
     expect(result.errorKind).not.toBe("workflow_failed");
     expect(result.errorKind).not.toBe("loop_invalid");
+  });
+});
+
+// ── REG-AS-009 (#798): Composio degradation visibility is non-fatal ─────────
+
+describe("REG-AS-009 (#798): Composio off/error events never fail the step", () => {
+  beforeEach(() => resetAll());
+
+  /**
+   * REG-AS-009a: an "off" resolver outcome for a step with composioToolkitSlugs
+   * configured must still record the loop-parity event AND let the step
+   * succeed — this is the entire point of #798 (visibility, not a new
+   * failure mode). Catches a regression where the new event-emission branch
+   * is accidentally wired to return/throw instead of falling through to the
+   * existing step execution.
+   */
+  test("REG-AS-009a: off outcome records agent-loop.step.composio.off and step still succeeds", async () => {
+    resolveComposioToolsForBgRunRegressionMock.mockImplementation(async () => ({
+      status: "off",
+      reason: "no_slugs_selected",
+    }));
+
+    const result = await executeAgentStep({
+      stepRunId: "step-1",
+      workflowRunId: "wf-1",
+      loopRunId: "run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["gmail"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+    const offEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.composio.off",
+    );
+    expect(offEvent).toBeDefined();
+  });
+
+  /**
+   * REG-AS-009b: a resolver "error" outcome for a step with
+   * composioToolkitSlugs configured must record the typed error event and
+   * still let the step succeed (Composio resolution failure is a tool-level
+   * degradation, not a step-level failure). Catches a regression where the
+   * new error-branch throws or maps to a step failure kind.
+   */
+  test("REG-AS-009b: error outcome records agent-loop.step.composio.error and step still succeeds", async () => {
+    resolveComposioToolsForBgRunRegressionMock.mockImplementation(async () => ({
+      status: "error",
+      errorKind: "composio_unknown",
+      message: "distinctive-loop-error-marker",
+    }));
+
+    const result = await executeAgentStep({
+      stepRunId: "step-1",
+      workflowRunId: "wf-1",
+      loopRunId: "run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["gmail"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+    const errorEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.composio.error",
+    );
+    expect(errorEvent).toBeDefined();
+    // The step's own errorKind (if any) must NOT be a composio-flavored
+    // value — resolver errors never become step failures.
+    expect(result.errorKind ?? null).not.toBe("composio_unknown");
   });
 });

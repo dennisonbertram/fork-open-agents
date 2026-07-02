@@ -96,6 +96,7 @@ type AgentRun = {
         blocked: string[];
         artifacts: RunSummaryArtifact[];
         next: string[];
+        warnings: string[];
       }
     | null
     | undefined;
@@ -166,6 +167,7 @@ function makeRun(overrides: Partial<AgentRun> = {}): AgentRun {
       blocked: [],
       artifacts: [],
       next: [],
+      warnings: [],
     },
     createdAt: new Date("2026-06-01"),
     ...overrides,
