@@ -29,7 +29,6 @@ export type MinimalRun = {
   status: string;
   repoOwner: string;
   repoName: string;
-  outputKind: string | null;
   outputUrl: string | null;
   prNumber: number | null;
   issueNumber: number | null;
@@ -112,10 +111,8 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       headline = truncate(
         `Run succeeded — ${describeOutputKind(first.kind)}${prSuffix}`,
       );
-    } else if (run.outputKind === "none" || !run.outputKind) {
-      headline = truncate("Run succeeded — no output created");
     } else {
-      headline = truncate("Run succeeded");
+      headline = truncate("Run succeeded — no output created");
     }
   } else if (run.status === "failed") {
     const kind = run.errorKind ?? "unknown_error";
@@ -139,7 +136,6 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
   const changed: string[] = [];
   if (
     run.status === "succeeded" &&
-    (run.outputKind === "none" || !run.outputKind) &&
     outputs.filter((o) => o.status === "created").length === 0
   ) {
     changed.push("no output created");
@@ -207,7 +203,6 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
     }
   } else if (
     run.status === "succeeded" &&
-    (run.outputKind === "none" || !run.outputKind) &&
     outputs.filter((o) => o.status === "created").length === 0
   ) {
     next.push("no output created");

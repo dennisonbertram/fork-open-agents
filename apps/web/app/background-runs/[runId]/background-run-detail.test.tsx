@@ -34,7 +34,6 @@ function detailData(
       prNumber: 7,
       issueNumber: null,
       deploymentUrl: null,
-      outputKind: "ready_pr",
       outputUrl: "https://github.com/acme/widgets/pull/42",
       sandboxName: "background_agent_run_123",
       requestId: "req_123",

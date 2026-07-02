@@ -32,7 +32,6 @@ function makeSavedAgent(
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Review PRs.",
-    outputMode: "none",
     checkCommand: null,
     triggers: [
       {

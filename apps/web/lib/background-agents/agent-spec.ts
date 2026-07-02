@@ -49,13 +49,6 @@ export type TriggerKind =
   | "schedule.cron"
   | "webhook.error";
 
-export type OutputMode =
-  | "comment"
-  | "ready_pr"
-  | "issue"
-  | "notification"
-  | "none";
-
 export type TriggerConditions = {
   actions?: string[];
   branches?: string[];
@@ -86,7 +79,6 @@ export type BackgroundAgent = {
   repoOwner: string;
   repoName: string;
   instructions: string;
-  outputMode: OutputMode;
   checkCommand: string | null;
   triggers: BackgroundAgentTrigger[];
   /** Saved GitHub permissions. Optional so create-flow callers stay valid. */
@@ -126,7 +118,6 @@ export type FormState = {
   conditionActors: string;
   conditionIgnoreActors: string;
   instructions: string;
-  outputMode: OutputMode;
   checkCommand: string;
   enabled: boolean;
   permissionContents: GitHubAccessLevel;
@@ -162,7 +153,6 @@ export const defaultForm: FormState = {
   conditionActors: "",
   conditionIgnoreActors: "",
   instructions: "",
-  outputMode: "none",
   checkCommand: "",
   enabled: false,
   permissionContents: "read",
@@ -192,11 +182,6 @@ export const flowSteps = [
   "Outputs",
   "Test",
 ];
-
-export const supportedOutputModes = [
-  "none",
-  "ready_pr",
-] as const satisfies readonly OutputMode[];
 
 /**
  * Creates a blank FormState pre-scoped to the given repo.
@@ -301,8 +286,7 @@ export function buildAgentPayload(form: FormState) {
   // (the settings form has no permission controls and would otherwise send
   // read/read). Report-only agents (comment-only or no actions) keep the
   // user's chosen access so least-privilege selections are preserved. This
-  // replaces the old outputMode==="ready_pr" flooring (#747) and mirrors the
-  // executor's own derivation.
+  // mirrors the executor's own derivation (#747/#748).
   const requiresWrite = hasAnyWriteAction(githubActions);
   const contents = requiresWrite ? "write" : form.permissionContents;
   const pullRequests = requiresWrite ? "write" : form.permissionPullRequests;
@@ -312,9 +296,6 @@ export function buildAgentPayload(form: FormState) {
     repoName: form.repoName,
     status: form.enabled ? "enabled" : "disabled",
     instructions: form.instructions,
-    // outputMode is intentionally omitted — it is deprecated (#748/#C7) and
-    // the server applies its own schema default. Behavior is driven entirely
-    // by githubActions.
     checkCommand: form.checkCommand || null,
     permissions: {
       github: {
@@ -459,38 +440,6 @@ export function conditionFieldLabel(
 }
 
 /**
- * Returns a user-facing summary of what the given output mode permits.
- * Derived from the outputMode → permissions map in buildAgentPayload.
- */
-export function describeOutputModePermissions(mode: OutputMode): string {
-  switch (mode) {
-    case "ready_pr":
-      return "Read + open PRs — this agent can read your code and open pull requests. It cannot merge, push to protected branches, or modify issues.";
-    default:
-      return "Read-only — this agent can read your code, PRs, issues, deployments, and checks. It cannot create or modify anything.";
-  }
-}
-
-/**
- * Returns the user-facing label for an output mode.
- * Centralizes the inline ternary used in background-agents-section.tsx.
- */
-export function outputModeLabel(mode: OutputMode): string {
-  switch (mode) {
-    case "none":
-      return "None";
-    case "ready_pr":
-      return "Ready PR";
-    case "comment":
-      return "Comment";
-    case "issue":
-      return "Issue";
-    case "notification":
-      return "Notification";
-  }
-}
-
-/**
  * Validates whether the given form step is complete.
  * Used by the form stepper to gate "Next" navigation and the final submit button.
  */
@@ -545,9 +494,9 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     ? ""
     : joinConditionList(conditions.actions);
 
-  // Edit mode must reflect what was actually saved, not re-derive GitHub access
-  // from outputMode. That keeps downgraded agents from silently re-escalating
-  // when reopened.
+  // Edit mode must reflect what was actually saved, not re-derive GitHub
+  // access from githubActions. That keeps downgraded agents from silently
+  // re-escalating when reopened.
   const savedGh = agent.permissions?.github;
   const permissionContents: GitHubAccessLevel = savedGh?.contents ?? "read";
   const permissionPullRequests: GitHubAccessLevel =
@@ -567,7 +516,6 @@ export function buildFormFromAgent(agent: BackgroundAgent): FormState {
     conditionActors: joinConditionList(conditions.actors),
     conditionIgnoreActors: joinConditionList(conditions.ignoreActors),
     instructions: agent.instructions,
-    outputMode: agent.outputMode,
     checkCommand: agent.checkCommand ?? "",
     enabled: agent.status === "enabled",
     permissionContents,

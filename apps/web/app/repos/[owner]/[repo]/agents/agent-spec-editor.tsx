@@ -23,7 +23,6 @@ import {
   type FormState,
   type GitHubAccessLevel,
   type GithubActions,
-  type OutputMode,
   type TriggerKind,
   type WriteScope,
 } from "@/lib/background-agents/agent-spec";
@@ -48,7 +47,6 @@ type AgentSpecEditorProps = {
   initialGoal: string;
   initialTriggerKind: TriggerKind;
   initialInstructions: string;
-  initialOutputMode: OutputMode;
   initialCheckCommand: string;
   initialEnabled: boolean;
   initialSchedule?: string;
@@ -100,7 +98,6 @@ export function AgentSpecEditor({
   initialGoal,
   initialTriggerKind,
   initialInstructions,
-  initialOutputMode,
   initialCheckCommand,
   initialEnabled,
   initialSchedule = "",
@@ -156,10 +153,6 @@ export function AgentSpecEditor({
     if (initialInstructions.startsWith(initialGoal)) return initialInstructions;
     return `${initialGoal}\n\n${initialInstructions}`.trim();
   });
-  // outputMode is kept only for the initial value round-trip through
-  // buildAgentPayload's FormState shape; it is no longer surfaced in the UI
-  // and is omitted from the save payload (deprecated — #747/#748).
-  const [outputMode] = useState<OutputMode>(initialOutputMode);
   const [checkCommand, setCheckCommand] = useState(initialCheckCommand);
   const [enabled, setEnabled] = useState(initialEnabled);
   const [saving, setSaving] = useState(false);
@@ -222,7 +215,6 @@ export function AgentSpecEditor({
       conditionActors,
       conditionIgnoreActors,
       instructions,
-      outputMode,
       checkCommand,
       enabled,
       permissionContents,

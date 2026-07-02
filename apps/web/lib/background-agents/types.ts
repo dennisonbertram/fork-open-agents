@@ -95,8 +95,8 @@ export const permissionsSchema = z
   .strict();
 
 /**
- * Per-action GitHub automation toggles (#745). Replaces the removed
- * `outputMode` field as the behavior driver (#748).
+ * Per-action GitHub automation toggles (#745) — the sole behavior driver
+ * for a background agent's GitHub-facing automation (#748).
  */
 export const githubActionsSchema = z
   .object({

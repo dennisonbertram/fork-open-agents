@@ -22,7 +22,6 @@ function validCreateDraft(overrides: Record<string, unknown> = {}) {
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Review new pull requests and add a summary comment.",
-    outputMode: "none" as const,
     // Report-only default (no write action enabled) so tests that don't care
     // about actions get a warning-free baseline. #747 derives the write
     // warning from githubActions, not outputMode.
@@ -105,7 +104,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Generate weekly release notes.",
-        outputMode: "ready_pr",
         permissions: {
           github: {
             contents: "write",
@@ -134,7 +132,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "",
-        outputMode: "none",
         triggers: [],
       },
     };
@@ -150,7 +147,6 @@ describe("previewBackgroundAgentSpecSchema", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none",
         triggers: [
           {
             name: "Bad trigger",
@@ -200,13 +196,15 @@ describe("previewBackgroundAgentSpec — success", () => {
     }
   });
 
-  test("summary includes output mode", () => {
+  test("summary includes enabled GitHub actions", () => {
     const result = previewBackgroundAgentSpec(
-      validCreateInput({ outputMode: "ready_pr" }),
+      validCreateInput({
+        githubActions: { push: true, open_pull_request: true },
+      }),
     );
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.summary).toContain("Open a pull request");
+      expect(result.summary).toContain("open_pull_request");
     }
   });
 
@@ -247,7 +245,6 @@ describe("previewBackgroundAgentSpec — success", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Generate weekly release notes.",
-        outputMode: "none",
         triggers: [
           {
             name: "Weekly schedule",
@@ -422,32 +419,13 @@ describe("previewBackgroundAgentSpec — githubActions/writeScope/model preview"
     }
   });
 
-  test("warns when legacy outputMode='ready_pr' is supplied, suggesting push+open_pull_request", () => {
+  test("rejects the removed outputMode field with a validation error (#748)", () => {
     const result = previewBackgroundAgentSpec(
       validCreateInput({ outputMode: "ready_pr" }),
     );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const legacyWarning = result.warnings.find((w) =>
-        w.includes("outputMode"),
-      );
-      expect(legacyWarning).toBeDefined();
-      expect(legacyWarning).toContain("deprecated");
-      expect(legacyWarning).toContain("push");
-      expect(legacyWarning).toContain("open_pull_request");
-    }
-  });
-
-  test("does not warn about legacy outputMode when it is the default 'none'", () => {
-    const result = previewBackgroundAgentSpec(
-      validCreateInput({ outputMode: "none" }),
-    );
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      const legacyWarning = result.warnings.find((w) =>
-        w.includes("outputMode"),
-      );
-      expect(legacyWarning).toBeUndefined();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errorKind).toBe("validation_failed");
     }
   });
 });
@@ -524,7 +502,6 @@ describe("previewBackgroundAgentSpec — validation failures", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none",
         triggers: [
           {
             name: "Bad schedule trigger",
@@ -555,7 +532,6 @@ describe("previewBackgroundAgentSpec — validation failures", () => {
         repoOwner: "acme",
         repoName: "widgets",
         instructions: "Test.",
-        outputMode: "none" as const,
         status: "disabled" as const,
         permissions: {},
         composioToolkitSlugs: [],
@@ -733,7 +709,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review PRs.",
-      outputMode: "ready_pr",
       triggers: [
         {
           name: "PR opened",
@@ -823,7 +798,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review PRs.",
-      outputMode: "none",
       checkCommand: "bun test",
       composioToolkitSlugs: ["github"],
       triggers: [{ name: "PR", kind: "pull_request.opened", conditions: [] }],
@@ -835,7 +809,6 @@ describe("normalizeAgentDraft", () => {
     expect(result.repoOwner).toBe("acme");
     expect(result.repoName).toBe("widgets");
     expect(result.instructions).toBe("Review PRs.");
-    expect(result.outputMode).toBe("none");
     expect(result.checkCommand).toBe("bun test");
     expect(result.composioToolkitSlugs).toEqual(["github"]);
   });
@@ -859,7 +832,6 @@ describe("normalizeAgentDraft", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "Review new pull requests and add a summary comment.",
-      outputMode: "ready_pr",
       description: "An automated PR reviewer",
       triggers: [
         {

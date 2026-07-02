@@ -32,7 +32,6 @@ function validCronPayload(scheduleOverride?: string) {
     repoOwner: "acme",
     repoName: "widgets",
     instructions: "Run smoke checks after deployments.",
-    outputMode: "none",
     triggers: [
       {
         name: "Daily cron",
@@ -154,7 +153,6 @@ describe("POST /api/background-agents", () => {
           repoOwner: "acme",
           repoName: "widgets",
           instructions: "Review PRs.",
-          outputMode: "comment",
           triggers: [
             {
               name: "Pull request",

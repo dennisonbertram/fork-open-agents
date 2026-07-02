@@ -42,7 +42,6 @@ const defaultEditorProps = {
   initialGoal: "Test goal",
   initialTriggerKind: "github.pull_request" as const,
   initialInstructions: "Do something.",
-  initialOutputMode: "none" as const,
   initialCheckCommand: "",
   initialEnabled: false,
   createdAgentId: null,
@@ -213,7 +212,6 @@ describe("AgentSpecEditor", () => {
         {...defaultEditorProps}
         initialPermissionContents="write"
         initialPermissionPullRequests="read"
-        initialOutputMode="none"
       />,
     );
 

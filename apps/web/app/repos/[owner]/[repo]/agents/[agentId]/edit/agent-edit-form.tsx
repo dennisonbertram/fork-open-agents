@@ -128,7 +128,6 @@ export function AgentEditForm({
         initialGoal={agent.description ?? ""}
         initialTriggerKind={form.triggerKind}
         initialInstructions={form.instructions}
-        initialOutputMode={form.outputMode}
         initialCheckCommand={form.checkCommand}
         initialEnabled={form.enabled}
         initialSchedule={form.schedule}

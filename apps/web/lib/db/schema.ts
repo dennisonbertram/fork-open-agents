@@ -69,8 +69,7 @@ export type BackgroundAgentPermissions = {
 
 /**
  * Per-action toggles describing what a background agent's GitHub-facing
- * automation is allowed to do. Replaces the removed `outputMode` column as
- * the behavior driver (#742/#745/#748).
+ * automation is allowed to do — the sole behavior driver (#742/#745/#748).
  */
 export type BackgroundAgentGithubActions = {
   open_pull_request?: boolean;
@@ -1148,8 +1147,8 @@ export const backgroundAgents = pgTable(
      */
     builtinToolNames: jsonb("builtin_tool_names").$type<string[] | null>(),
     /**
-     * Per-action GitHub automation toggles (#745). Replaces the removed
-     * outputMode column as the behavior driver (#748).
+     * Per-action GitHub automation toggles (#745) — the sole behavior
+     * driver for GitHub-facing automation (#748).
      */
     githubActions: jsonb("github_actions")
       .$type<BackgroundAgentGithubActions>()

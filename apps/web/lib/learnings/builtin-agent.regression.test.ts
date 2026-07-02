@@ -49,7 +49,6 @@ type FakeAgent = {
   repoOwner: string;
   repoName: string;
   instructions: string;
-  outputMode: string;
   triggers: FakeTrigger[];
 };
 
@@ -73,7 +72,6 @@ const createBackgroundAgent = mock(
       repoOwner: input.repoOwner as string,
       repoName: input.repoName as string,
       instructions: input.instructions as string,
-      outputMode: input.outputMode as string,
       triggers: ((input.triggers ?? []) as Array<Record<string, unknown>>).map(
         (t, i) => ({
           id: `trigger-r-${createdAgents.length + 1}-${i}`,

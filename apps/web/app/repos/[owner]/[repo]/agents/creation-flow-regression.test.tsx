@@ -72,7 +72,6 @@ describe("Regression: repo owner/name cannot be reassigned in the dashboard flow
         initialGoal=""
         initialTriggerKind="github.pull_request"
         initialInstructions="Test instructions"
-        initialOutputMode="none"
         initialCheckCommand=""
         initialEnabled={false}
         onSave={() => undefined}
@@ -104,7 +103,6 @@ describe("Regression: settings page re-export behaves identically to shared modu
       ...buildRepoScopedDefaultForm("acme", "widgets"),
       name: "Test Agent",
       instructions: "Do something useful.",
-      outputMode: "ready_pr" as const,
       enabled: true,
       // Permissions are now user-controlled; set them explicitly to write
       // (the UI auto-coerces to write when outputMode becomes ready_pr)

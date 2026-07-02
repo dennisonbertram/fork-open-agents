@@ -63,7 +63,6 @@ export default async function BackgroundRunPage({
       prNumber: run.prNumber,
       issueNumber: run.issueNumber,
       deploymentUrl: run.deploymentUrl,
-      outputKind: run.outputKind,
       outputUrl: run.outputUrl,
       sandboxName: run.sandboxName,
       requestId: run.requestId,

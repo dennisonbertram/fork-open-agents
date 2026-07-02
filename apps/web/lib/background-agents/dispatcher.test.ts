@@ -112,7 +112,6 @@ const agent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Run the smoke check.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,

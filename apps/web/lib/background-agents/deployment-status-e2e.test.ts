@@ -73,7 +73,6 @@ function makeDeploymentForm(overrides: Partial<FormState> = {}): FormState {
     conditionActors: "",
     conditionIgnoreActors: "",
     instructions: "React to deployments.",
-    outputMode: "none",
     checkCommand: "",
     enabled: true,
     permissionContents: "read",
@@ -186,7 +185,6 @@ describe("deployment-status trigger regression (TASK-168 bugfix)", () => {
       repoOwner: "acme",
       repoName: "widgets",
       instructions: "React to deployments.",
-      outputMode: "none",
       checkCommand: null,
       triggers: [
         {
@@ -227,7 +225,6 @@ describe("deployment-status trigger regression (TASK-168 bugfix)", () => {
       conditionActors: "",
       conditionIgnoreActors: "",
       instructions: "Review PRs.",
-      outputMode: "none",
       checkCommand: "",
       enabled: true,
       permissionContents: "read",

@@ -193,7 +193,6 @@ const baseCreateInput = {
   repoName: "widgets",
   instructions: "Summarize overnight activity.",
   permissions: {},
-  outputMode: "none" as const,
   checkCommand: null,
   composioToolkitSlugs: [],
   githubActions: { comment_on_pr_or_issue: true },

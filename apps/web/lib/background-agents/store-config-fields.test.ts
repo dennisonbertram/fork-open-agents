@@ -125,7 +125,6 @@ function baseCreateInput(overrides: Record<string, unknown> = {}) {
     repoName: "fork-open-agents",
     instructions: "Review new pull requests.",
     permissions: {},
-    outputMode: "none" as const,
     checkCommand: null,
     composioToolkitSlugs: [],
     githubActions: {

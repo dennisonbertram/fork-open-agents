@@ -82,7 +82,6 @@ type BackgroundRun = {
   branch: string | null;
   prNumber: number | null;
   issueNumber: number | null;
-  outputKind: string | null;
   outputUrl: string | null;
   errorKind: string | null;
   createdAt: string;

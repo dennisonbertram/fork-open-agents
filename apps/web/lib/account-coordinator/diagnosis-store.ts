@@ -996,7 +996,6 @@ async function loadBackgroundAgentDiagnosis(params: {
         sha: run.sha,
         branch: run.branch,
         deploymentUrl: run.deploymentUrl,
-        outputKind: run.outputKind,
         outputUrl: run.outputUrl,
         errorKind: run.errorKind,
         errorMessage: run.errorMessage,
@@ -1010,7 +1009,6 @@ async function loadBackgroundAgentDiagnosis(params: {
               repoOwner: row.agent.repoOwner,
               repoName: row.agent.repoName,
               permissions: row.agent.permissions,
-              outputMode: row.agent.outputMode,
               checkCommand: row.agent.checkCommand,
               composioToolkitSlugs: row.agent.composioToolkitSlugs,
             }

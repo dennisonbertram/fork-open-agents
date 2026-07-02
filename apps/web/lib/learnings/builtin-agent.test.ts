@@ -12,7 +12,6 @@ type FakeAgent = {
   repoOwner: string;
   repoName: string;
   instructions: string;
-  outputMode: string;
   triggers: FakeTrigger[];
 };
 
@@ -57,7 +56,6 @@ const createBackgroundAgent = mock(
       repoOwner: input.repoOwner as string,
       repoName: input.repoName as string,
       instructions: input.instructions as string,
-      outputMode: input.outputMode as string,
       triggers: ((input.triggers ?? []) as Array<Record<string, unknown>>).map(
         (t, i) => ({
           id: `trigger-${createdAgents.length + 1}-${i}`,
@@ -166,13 +164,12 @@ describe("ensureRepoLearningsAgent", () => {
     expect(isLearningsAgent({ instructions: "some other agent" })).toBe(false);
   });
 
-  test("created agent has outputMode none and two triggers with correct kinds", async () => {
+  test("created agent has two triggers with correct kinds", async () => {
     const { ensureRepoLearningsAgent } = await modulePromise;
 
     await ensureRepoLearningsAgent("user-1", "acme", "widgets", true);
 
     const agent = createdAgents[0];
-    expect(agent.outputMode).toBe("none");
     const kinds = agent.triggers.map((t) => t.kind).sort();
     expect(kinds).toEqual(
       ["github.pull_request", "github.pull_request_review"].sort(),

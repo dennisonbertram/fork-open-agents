@@ -202,7 +202,6 @@ const baseAgent: BackgroundAgentWithTriggers = {
   status: "enabled",
   instructions: "Handle GitHub events.",
   permissions: {},
-  outputMode: "none",
   checkCommand: null,
   composioToolkitSlugs: [],
   builtinToolNames: null,

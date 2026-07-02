@@ -40,7 +40,6 @@ export type BackgroundRunDetailResponse = {
     finishedAt: string | null;
     errorKind: string | null;
     errorMessage: string | null;
-    outputKind: string | null;
     outputUrl: string | null;
     sandboxName: string | null;
     requestId: string | null;
