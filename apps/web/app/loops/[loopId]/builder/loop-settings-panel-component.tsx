@@ -327,7 +327,7 @@ function LoopSettingsPanelContent({
       <GuardrailNumberField
         id="step-timeout"
         label="Step timeout (minutes)"
-        help={`Default: ${msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)} minutes. Server allows up to ${msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)} minutes.`}
+        help={`Bounds each agent_step's agent invocation. Default: ${msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)} minutes. Server allows up to ${msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)} minutes. A step's checkCommand has its own fixed 2-minute timeout, unaffected by this setting.`}
         value={msToMinOpt(guardrails.stepTimeoutMs)}
         placeholder={msToMin(GUARDRAIL_DEFAULTS.stepTimeoutMs)}
         ceiling={msToMin(GUARDRAIL_CEILINGS.stepTimeoutMs)}

@@ -44,6 +44,7 @@ import {
   GUARDRAIL_CEILINGS,
   loopDefinitionSchema,
   type LoopGuardrails,
+  type ResolvedGuardrails,
 } from "./types";
 import { evaluateEdges } from "./edge-evaluator";
 import {
@@ -68,11 +69,7 @@ export type RunAgentLoopStepParams = {
   workflowRunId: string;
 };
 
-export type ResolvedGuardrails = {
-  maxStepsPerRun: number;
-  maxIterations: number;
-  maxRunDurationMs: number;
-};
+export type { ResolvedGuardrails };
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -92,12 +89,15 @@ export function resolveGuardrails(
     userGuardrails?.maxIterations ?? GUARDRAIL_DEFAULTS.maxIterations;
   const duration =
     userGuardrails?.maxRunDurationMs ?? GUARDRAIL_DEFAULTS.maxRunDurationMs;
+  const stepTimeout =
+    userGuardrails?.stepTimeoutMs ?? GUARDRAIL_DEFAULTS.stepTimeoutMs;
 
   return {
     maxStepsPerRun: Math.min(steps, GUARDRAIL_CEILINGS.maxStepsPerRun),
     maxIterations: Math.min(iters, GUARDRAIL_CEILINGS.maxIterations),
     // No server ceiling on maxRunDurationMs per spec — apply as-is
     maxRunDurationMs: duration,
+    stepTimeoutMs: Math.min(stepTimeout, GUARDRAIL_CEILINGS.stepTimeoutMs),
   };
 }
 
@@ -284,7 +284,11 @@ export async function runAgentLoopStep(
 
   // ── 5. Execute the step ────────────────────────────────────────────────────
 
-  const result = await executeAgentLoopStep({ stepRunId, workflowRunId });
+  const result = await executeAgentLoopStep({
+    stepRunId,
+    workflowRunId,
+    stepTimeoutMs: guardrails.stepTimeoutMs,
+  });
 
   // ── 5b. Re-check run status after execution ────────────────────────────────
   //

@@ -11,12 +11,28 @@
  * upstream/ancestor steps).
  */
 
+import { isFlatOutputSchema } from "./output-schema-shape";
 import type { JsonSchemaLite, LoopDefinition } from "./types";
 
-/** Declared output field names of a step (top-level keys, skipping $-meta). */
+/**
+ * Declared output field names of a step, for both supported outputSchema
+ * shapes (see isFlatOutputSchema for the shape-detection rule):
+ *   - flat map: top-level keys, skipping $-meta (e.g. { passed: "boolean" }).
+ *   - JSON-Schema-Lite: keys of the `properties` object, if present
+ *     (e.g. { type: "object", properties: { passed: { type: "boolean" } } }).
+ */
 export function outputFieldNames(schema: JsonSchemaLite | undefined): string[] {
   if (!schema || typeof schema !== "object") return [];
-  return Object.keys(schema).filter((k) => !k.startsWith("$"));
+
+  if (isFlatOutputSchema(schema)) {
+    return Object.keys(schema).filter((k) => !k.startsWith("$"));
+  }
+
+  const properties = schema["properties"];
+  if (properties && typeof properties === "object" && !Array.isArray(properties)) {
+    return Object.keys(properties as Record<string, unknown>);
+  }
+  return [];
 }
 
 /**

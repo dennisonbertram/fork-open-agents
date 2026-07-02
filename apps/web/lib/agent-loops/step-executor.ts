@@ -124,8 +124,14 @@ async function recordStepFailure(params: {
 export async function executeAgentLoopStep(params: {
   stepRunId: string;
   workflowRunId: string;
+  /**
+   * Resolved (default-applied, ceiling-clamped) agent invocation timeout in
+   * ms for agent_step nodes — see resolveGuardrails in chain.ts. Forwarded
+   * to executeAgentStep; ignored by other node kinds.
+   */
+  stepTimeoutMs?: number;
 }): Promise<StepExecutionResult> {
-  const { stepRunId, workflowRunId } = params;
+  const { stepRunId, workflowRunId, stepTimeoutMs } = params;
   const startedAt = nowMs();
 
   // ── 1. Load step run + loop run + loop ─────────────────────────────────────
@@ -283,6 +289,7 @@ export async function executeAgentLoopStep(params: {
       loop,
       startedAt,
       watchdogHint,
+      stepTimeoutMs,
     });
   }
 
