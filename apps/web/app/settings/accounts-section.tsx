@@ -45,7 +45,8 @@ import { unlinkGitHub } from "@/lib/github/actions/connection";
 import { authClient } from "@/lib/auth/client";
 import type { GitHubConnectionReason } from "@/lib/github/status";
 import { fetcher } from "@/lib/swr";
-import { shouldAutoExpandOrgs } from "./accounts-helpers";
+import { AccountsDisconnectDialogBody } from "./accounts-disconnect-dialog";
+import { getGitHubManageUrl, shouldAutoExpandOrgs } from "./accounts-helpers";
 
 const GITHUB_OAUTH_CALLBACK =
   "/api/github/post-link?next=/settings/connections";
@@ -364,10 +365,9 @@ function ConnectionStatusButton({
   const isConnected = status === "connected";
   const dotColor = isConnected ? "bg-green-500" : "bg-amber-500";
   const label = isConnected ? "Connected" : "Reconnect";
-  const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID;
-  const manageUrl = clientId
-    ? `https://github.com/settings/connections/applications/${clientId}`
-    : null;
+  const manageUrl = getGitHubManageUrl(
+    process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+  );
 
   return (
     <DropdownMenu>
@@ -515,8 +515,7 @@ export function AccountsSection() {
           <DialogHeader>
             <DialogTitle>Disconnect GitHub?</DialogTitle>
             <DialogDescription>
-              This will unlink your GitHub account and remove all app
-              installations. You can reconnect at any time.
+              <AccountsDisconnectDialogBody />
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
