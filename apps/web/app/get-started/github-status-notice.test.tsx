@@ -33,25 +33,27 @@ describe("GitHubStatusNotice", () => {
     expect(html).toContain('role="alert"');
   });
 
-  test("not_linked: recovery CTA to retry connect", () => {
+  test("not_linked: no retry CTA link — the Connect GitHub button below owns recovery (#781)", () => {
     const html = renderToStaticMarkup(
       <GitHubStatusNotice
         status="not_linked"
         retryHref="/api/github/app/install?next=%2Fget-started"
       />,
     );
-    expect(html).toContain("/api/github/app/install?next=%2Fget-started");
-    expect(html.toLowerCase()).toContain("try connecting again");
+    expect(html).not.toContain("/api/github/app/install");
+    expect(html.toLowerCase()).not.toContain("try connecting again");
+    expect(html).toContain('role="alert"');
   });
 
-  test("link_failed: recovery CTA to retry connect", () => {
+  test("link_failed: no retry CTA link — the Connect GitHub button below owns recovery (#781)", () => {
     const html = renderToStaticMarkup(
       <GitHubStatusNotice
         status="link_failed"
         retryHref="/api/github/app/install?next=%2Fget-started"
       />,
     );
-    expect(html).toContain("/api/github/app/install?next=%2Fget-started");
+    expect(html).not.toContain("/api/github/app/install");
+    expect(html.toLowerCase()).not.toContain("try connecting again");
     expect(html).toContain('role="alert"');
   });
 

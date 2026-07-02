@@ -5,6 +5,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 // step 2 ("Connect GitHub") regardless of the `step` param state.
 
 let searchParamValues: Record<string, string | null> = {};
+let sessionState = {
+  hasGitHubAccount: false,
+  hasGitHubInstallations: false,
+};
 
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push: () => undefined, back: () => undefined }),
@@ -20,8 +24,8 @@ mock.module("@/hooks/use-session", () => ({
     isAuthenticated: true,
     isAdmin: false,
     hasGitHub: false,
-    hasGitHubAccount: false,
-    hasGitHubInstallations: false,
+    hasGitHubAccount: sessionState.hasGitHubAccount,
+    hasGitHubInstallations: sessionState.hasGitHubInstallations,
   }),
 }));
 
@@ -58,10 +62,47 @@ describe("GetStartedFlow - github status auto-open", () => {
 
   test("renders the GitHubStatusNotice inline state for the given status", async () => {
     searchParamValues = { github: "request_sent" };
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
     const { GetStartedFlow } = await flowModulePromise;
 
     const html = renderToStaticMarkup(<GetStartedFlow />);
 
     expect(html.toLowerCase()).toContain("approval");
+  });
+});
+
+describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
+  test("a) successful install (github=app_installed&step=github) for a connected user renders the connected card, not the reconnect flow", async () => {
+    searchParamValues = { github: "app_installed", step: "github" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).toContain("github connected");
+    expect(html.toLowerCase()).not.toContain("reconnect your github account");
+  });
+
+  test("b) reconnect=1 forces the reconnect flow even for a connected user", async () => {
+    searchParamValues = { reconnect: "1", next: "/sessions" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).toContain("reconnect your github account");
+    expect(html.toLowerCase()).not.toContain("github connected");
+  });
+
+  test("c) step=github without reconnect=1 does not force reconnect copy for a not-yet-linked user", async () => {
+    searchParamValues = { step: "github" };
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html.toLowerCase()).not.toContain("reconnect your github account");
+    expect(html.toLowerCase()).not.toContain("reconnect github");
+    expect(html.toLowerCase()).toContain("connect your github account");
   });
 });
