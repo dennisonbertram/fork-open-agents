@@ -1081,9 +1081,10 @@ export async function executeBackgroundAgentRun(params: {
   // ── Resolve Composio tools for this run ──────────────────────────────────
   // Attempted when the agent has non-empty composioToolkitSlugs.
   // Empty slugs = no-op (pre-Phase-5 behavior).
-  // The resolver handles repo policy gating. Grant-level gating is checked
-  // here: if no enabled grants exist, slugs are cleared before resolving
-  // so the resolver fast-paths to { status: "off" } without external calls.
+  // The resolver handles repo policy gating: blocked toolkit slugs are
+  // filtered out before resolution; if none remain, the resolver returns a
+  // typed { status: "off", reason: "repo_policy_blocked" } outcome without
+  // making any external Composio calls.
   let resolvedComposioTools: import("ai").ToolSet | undefined;
   const agentToolkitSlugs = agent.composioToolkitSlugs ?? [];
 
@@ -1113,6 +1114,7 @@ export async function executeBackgroundAgentRun(params: {
         payload: {
           toolkitSlugs: composioResult.toolkitSlugs,
           toolCount: Object.keys(composioResult.tools).length,
+          disconnectedToolkits: composioResult.disconnectedToolkits,
         },
       });
     } else if (composioResult.status === "error") {
@@ -1123,7 +1125,7 @@ export async function executeBackgroundAgentRun(params: {
         eventName: "background-agent.composio.error",
         status: "failed",
         level: "warn",
-        summary: `Composio tool resolution failed: ${composioResult.error}`,
+        summary: `Composio tool resolution failed: ${composioResult.message}`,
         workflowRunId: params.workflowRunId,
         requestId: run.requestId,
         sandboxName,
@@ -1134,6 +1136,11 @@ export async function executeBackgroundAgentRun(params: {
       });
       // Non-fatal: run continues without Composio tools.
     }
+    // composioResult.status === "off": today's behavior is unchanged — no
+    // event is emitted for "off" outcomes. Emitting a named event for every
+    // non-ready outcome (including "off") is the make-degradations-visible
+    // ticket's job (#798), which consumes composioResult.reason /
+    // blockedSlugs once it lands.
   }
 
   // ── Resolve native GitHub action tools, filtered by the agent's toggles ──
