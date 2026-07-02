@@ -81,8 +81,7 @@ function knownCopy(
       };
     case "permission_missing":
       return {
-        whatHappened:
-          "The loop doesn't have write access to this repository.",
+        whatHappened: "The loop doesn't have write access to this repository.",
         whatToDo:
           "Ask a repository admin to grant write access, or reconnect your GitHub account with the right permissions.",
         actionHref: GITHUB_SETTINGS_HREF,
@@ -92,7 +91,8 @@ function knownCopy(
       return {
         whatHappened:
           "The run couldn't start — the execution backend rejected the dispatch.",
-        whatToDo: "Retry the run. If it keeps failing, check the step log for details.",
+        whatToDo:
+          "Retry the run. If it keeps failing, check the step log for details.",
       };
     case "repo_not_allowed":
       return {
@@ -109,27 +109,33 @@ function knownCopy(
     case "loop_invalid":
       return {
         whatHappened: "The loop's step definition is invalid or incomplete.",
-        whatToDo: "Open the builder and fix the highlighted step configuration.",
+        whatToDo:
+          "Open the builder and fix the highlighted step configuration.",
       };
     case "active_run":
       return {
         whatHappened: "A run is already active for this loop.",
-        whatToDo: "Wait for it to finish, resume it, or cancel it before starting a new run.",
+        whatToDo:
+          "Wait for it to finish, resume it, or cancel it before starting a new run.",
       };
     case "ownership_fail":
       return {
-        whatHappened: "This loop couldn't be verified as belonging to your account.",
-        whatToDo: "Refresh the page and try again, or contact support if this persists.",
+        whatHappened:
+          "This loop couldn't be verified as belonging to your account.",
+        whatToDo:
+          "Refresh the page and try again, or contact support if this persists.",
       };
     case "feature_disabled":
       return {
         whatHappened: "The loops feature is disabled on this deployment.",
-        whatToDo: "Ask your workspace administrator to enable the loops feature flag.",
+        whatToDo:
+          "Ask your workspace administrator to enable the loops feature flag.",
       };
     case "sandbox_unavailable":
       return {
         whatHappened: "The run's execution sandbox couldn't be started.",
-        whatToDo: "Retry the run. If it keeps failing, check the step log for details.",
+        whatToDo:
+          "Retry the run. If it keeps failing, check the step log for details.",
       };
     case "workflow_failed":
       return {
@@ -141,22 +147,27 @@ function knownCopy(
       return {
         whatHappened:
           "A step produced output that didn't match the expected shape.",
-        whatToDo: "Open the builder and check that step's expected output format.",
+        whatToDo:
+          "Open the builder and check that step's expected output format.",
       };
     case "checks_failed":
       return {
-        whatHappened: "Required GitHub checks did not pass for this step's changes.",
-        whatToDo: "Review the failing checks on GitHub, then retry once they're fixed.",
+        whatHappened:
+          "Required GitHub checks did not pass for this step's changes.",
+        whatToDo:
+          "Review the failing checks on GitHub, then retry once they're fixed.",
       };
     case "commit_failed":
       return {
         whatHappened: "The step couldn't commit or push its changes.",
-        whatToDo: "Check repository permissions and branch protection rules, then retry.",
+        whatToDo:
+          "Check repository permissions and branch protection rules, then retry.",
       };
     case "guardrail_exceeded":
       return {
         whatHappened: "The run hit one of its configured guardrail limits.",
-        whatToDo: "Open the builder to review or raise the guardrail limits for this loop.",
+        whatToDo:
+          "Open the builder to review or raise the guardrail limits for this loop.",
       };
     case "chain_route_missing":
       return {
@@ -165,7 +176,8 @@ function knownCopy(
       };
     case "condition_path_missing":
       return {
-        whatHappened: "A condition step referenced a field that wasn't present in the data.",
+        whatHappened:
+          "A condition step referenced a field that wasn't present in the data.",
         whatToDo: "Open the builder and check that condition's field path.",
       };
     case "condition_type_mismatch":
@@ -176,7 +188,8 @@ function knownCopy(
     case "github_check_failed":
       return {
         whatHappened: "A GitHub check step could not be completed.",
-        whatToDo: "Check the repository's GitHub Actions/checks configuration, then retry.",
+        whatToDo:
+          "Check the repository's GitHub Actions/checks configuration, then retry.",
       };
     case "step_failed":
       return {
@@ -185,8 +198,10 @@ function knownCopy(
       };
     case "stall_sweep":
       return {
-        whatHappened: "No activity was seen for a while — the run appears stuck.",
-        whatToDo: "Retry the run, or check the step log for what it was last doing.",
+        whatHappened:
+          "No activity was seen for a while — the run appears stuck.",
+        whatToDo:
+          "Retry the run, or check the step log for what it was last doing.",
       };
     case "retry_conflict":
       return {
@@ -221,7 +236,8 @@ export function getLoopErrorCopy(
     return { ...knownCopy(kind), isKnown: true, rawKind: kind };
   }
   return {
-    whatHappened: "Something went wrong that we don't have specific guidance for yet.",
+    whatHappened:
+      "Something went wrong that we don't have specific guidance for yet.",
     whatToDo:
       "Check the technical details below, retry the run, or check the step log.",
     isKnown: false,

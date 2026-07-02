@@ -50,3 +50,14 @@ export function useLoopRunPolling(
     },
   );
 }
+
+/**
+ * The SWR key for a loop's runs list (loop-detail.tsx). Exported so
+ * run-detail.tsx can revalidate it after a control action (pause/resume/
+ * cancel/retry) — otherwise the runs list and this run-detail page can show
+ * contradictory statuses for the same run until the list's own polling
+ * interval catches up (walk-3 finding, #767).
+ */
+export function loopRunsListSwrKey(loopId: string): string {
+  return `/api/agent-loops/${loopId}/runs`;
+}

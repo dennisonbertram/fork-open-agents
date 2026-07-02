@@ -2,11 +2,13 @@
  * RunDetail — dispatch_failed error banner (issue #763 — "no false success")
  *
  * BT-DF-04: a run with status="failed" and errorKind="dispatch_failed" renders
- *           the existing generic red errorKind banner (run-detail.tsx ~377-389).
- *           The banner is intentionally generic — it renders any run.errorKind
- *           verbatim plus run.errorMessage; the full copy-map overhaul is #767
- *           (out of scope here). This test pins that dispatch_failed is not
- *           silently swallowed by the banner condition.
+ *           the error banner (run-detail.tsx). #767 replaced the raw
+ *           errorKind/errorMessage banner with the error-copy map: the
+ *           banner shows plain-language whatHappened/whatToDo copy, and the
+ *           raw errorKind + sanitized errorMessage move into a collapsible
+ *           "Technical details" disclosure — raw errorMessage is NEVER
+ *           echoed into the headline. This test pins that dispatch_failed
+ *           is not silently swallowed by the banner condition.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -27,6 +29,7 @@ mock.module("swr", () => ({
     data: options?.fallbackData,
     error: null,
   }),
+  mutate: async () => undefined,
 }));
 
 const runDetailModulePromise = import("./run-detail");
@@ -74,15 +77,16 @@ function makeRunDetail(
 }
 
 describe("BT-DF-04: RunDetail renders the errorKind banner for dispatch_failed", () => {
-  test("BT-DF-04: run.errorKind=dispatch_failed renders the red banner with errorKind and errorMessage", async () => {
+  test("BT-DF-04: run.errorKind=dispatch_failed renders plain-language copy, with the raw kind in the details disclosure", async () => {
     const { RunDetail } = await runDetailModulePromise;
     const data = makeRunDetail();
 
     const html = renderToStaticMarkup(<RunDetail initialData={data} />);
 
+    // Plain-language headline (error-copy.ts), not raw errorKind/errorMessage
+    expect(html).toContain("execution backend rejected the dispatch");
+    // Raw errorKind is still available, but only inside the disclosure
     expect(html).toContain("dispatch_failed");
-    expect(html).toContain(
-      "Couldn&#x27;t start the run — the execution backend rejected the dispatch: boom",
-    );
+    expect(html).toContain("Technical details");
   });
 });

@@ -25,9 +25,15 @@ mock.module("@/lib/db/client", () => ({
   db: {
     select: selectMock,
     query: {},
-    insert: mock(() => ({ values: mock(() => ({ returning: mock(() => []) })) })),
-    update: mock(() => ({ set: mock(() => ({ where: mock(() => ({ returning: mock(() => []) })) })) })),
-    delete: mock(() => ({ where: mock(() => ({ returning: mock(() => []) })) })),
+    insert: mock(() => ({
+      values: mock(() => ({ returning: mock(() => []) })),
+    })),
+    update: mock(() => ({
+      set: mock(() => ({ where: mock(() => ({ returning: mock(() => []) })) })),
+    })),
+    delete: mock(() => ({
+      where: mock(() => ({ returning: mock(() => []) })),
+    })),
     transaction: mock(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
   },
 }));

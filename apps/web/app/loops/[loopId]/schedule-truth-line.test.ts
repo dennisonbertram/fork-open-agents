@@ -13,7 +13,7 @@ import { getScheduleTruthLine } from "./schedule-truth-line";
 
 const scheduleTrigger = {
   id: "trig_1",
-  kind: "schedule" as const,
+  kind: "schedule.cron" as const,
   status: "enabled",
   nextRunAt: "2026-07-03T14:30:00.000Z",
   humanizedSchedule: "Daily at 2:30 PM UTC",
@@ -31,19 +31,17 @@ describe("getScheduleTruthLine", () => {
 
   it("says there's no schedule when there are no triggers", () => {
     const line = getScheduleTruthLine({ loopStatus: "active", triggers: [] });
-    expect(line).toBe(
-      "No schedule — runs only when you press Run now.",
-    );
+    expect(line).toBe("No schedule — runs only when you press Run now.");
   });
 
   it("says there's no schedule when only event (non-schedule) triggers exist", () => {
     const line = getScheduleTruthLine({
       loopStatus: "active",
-      triggers: [{ ...scheduleTrigger, kind: "event", nextRunAt: null }],
+      triggers: [
+        { ...scheduleTrigger, kind: "github.pull_request", nextRunAt: null },
+      ],
     });
-    expect(line).toBe(
-      "No schedule — runs only when you press Run now.",
-    );
+    expect(line).toBe("No schedule — runs only when you press Run now.");
   });
 
   it("ignores a disabled schedule trigger", () => {
@@ -51,9 +49,7 @@ describe("getScheduleTruthLine", () => {
       loopStatus: "active",
       triggers: [{ ...scheduleTrigger, status: "disabled" }],
     });
-    expect(line).toBe(
-      "No schedule — runs only when you press Run now.",
-    );
+    expect(line).toBe("No schedule — runs only when you press Run now.");
   });
 
   it("notes the loop isn't active even when a schedule trigger exists", () => {

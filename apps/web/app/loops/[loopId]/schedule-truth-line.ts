@@ -36,7 +36,7 @@ export function getScheduleTruthLine(params: {
   triggers: ScheduleTruthTrigger[];
 }): string {
   const enabledSchedule = params.triggers.find(
-    (t) => t.kind === "schedule" && t.status === "enabled" && t.nextRunAt,
+    (t) => t.kind === "schedule.cron" && t.status === "enabled" && t.nextRunAt,
   );
 
   if (!enabledSchedule) {

@@ -143,7 +143,7 @@ export type AgentLoopRunControlResponse =
 export type AgentLoopsReadinessStatus = "ready" | "missing" | "disabled";
 
 export type AgentLoopsReadinessCheck = {
-  id: "feature_flag" | "repo_allowlist";
+  id: "feature_flag" | "repo_allowlist" | "repo_access";
   label: string;
   status: AgentLoopsReadinessStatus;
   detail: string;
