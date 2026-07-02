@@ -267,4 +267,41 @@ describe("resolveComposioToolsForToolkitList", () => {
       expect(result.disconnectedToolkits).toEqual(["linear"]);
     }
   });
+
+  test("BT-RTL-008: no-auth detection reads the real API shape — scheme identifier on `mode`, display label on `name`", async () => {
+    const { resolveComposioToolsForToolkitList } =
+      await import("./resolve-toolkit-list");
+
+    // Real Composio toolkits.get() responses put the auth-scheme identifier
+    // on authConfigDetails[].mode ("NO_AUTH", "OAUTH2", …); `name` is a
+    // human display label like "No Auth" (Codex review on PR #820).
+    const realisticComposio = {
+      ...fakeComposio,
+      toolkits: {
+        get: (slug: string) =>
+          Promise.resolve(
+            slug === "weather"
+              ? { authConfigDetails: [{ name: "No Auth", mode: "NO_AUTH" }] }
+              : {
+                  authConfigDetails: [{ name: "GitHub OAuth", mode: "OAUTH2" }],
+                },
+          ),
+      },
+    };
+
+    const result = await resolveComposioToolsForToolkitList({
+      userId,
+      slugs: ["weather", "linear"],
+      composio: realisticComposio as never,
+      connectedAccountIdsByToolkit: {},
+      getCachedSession: () => Promise.resolve(null),
+      upsertSession: () => Promise.resolve({ id: "row-new" }),
+      touchSession: () => Promise.resolve(),
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.disconnectedToolkits).toEqual(["linear"]);
+    }
+  });
 });
