@@ -61,6 +61,16 @@ describe("BT-DF-01/02: run-actions.tsx dispatch_failed toast copy", () => {
     expect(message).toBe(EXPECTED_COPY);
   });
 
+  test("BT-DF-03: the dispatch_failed catch path refreshes the run view (onActionComplete), since the server already marked the run failed and terminal statuses are not polled", () => {
+    const source = readFileSync(
+      join(import.meta.dir, "run-actions.tsx"),
+      "utf8",
+    );
+    const catchBlock = source.slice(source.indexOf("catch (err)"));
+    expect(catchBlock).toContain('errorKind === "dispatch_failed"');
+    expect(catchBlock).toContain("onActionComplete?.()");
+  });
+
   test("BT-DF-02: postControl falls back to the body message for non-dispatch_failed errors", () => {
     const body = {
       message: "Cannot resume run: not in paused status",
