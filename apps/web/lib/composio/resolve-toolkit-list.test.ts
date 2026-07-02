@@ -283,9 +283,7 @@ describe("resolveComposioToolsForToolkitList", () => {
             slug === "weather"
               ? { authConfigDetails: [{ name: "No Auth", mode: "NO_AUTH" }] }
               : {
-                  authConfigDetails: [
-                    { name: "GitHub OAuth", mode: "OAUTH2" },
-                  ],
+                  authConfigDetails: [{ name: "GitHub OAuth", mode: "OAUTH2" }],
                 },
           ),
       },
