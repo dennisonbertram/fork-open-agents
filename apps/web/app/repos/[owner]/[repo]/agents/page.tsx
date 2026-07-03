@@ -172,9 +172,8 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
                         run.externalId}
                     </p>
                     <p className="mt-1 truncate text-xs text-muted-foreground">
-                      {(run.agentId
-                        ? agentNameById.get(run.agentId)
-                        : null) ?? "Unknown agent"}
+                      {(run.agentId ? agentNameById.get(run.agentId) : null) ??
+                        "Unknown agent"}
                     </p>
                     <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
                       {run.sha ?? run.ref ?? run.branch ?? "no ref"}

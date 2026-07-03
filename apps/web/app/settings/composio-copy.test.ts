@@ -30,7 +30,9 @@ describe("EMPTY_TOOL_PROFILES_TEXT (#803 item 3)", () => {
   test("BT-803-003 explains what creating a profile does, not just 'bundle tools for an agent'", () => {
     expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(/no tool profiles yet/i);
     expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(/gmail|slack/i);
-    expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(/hand.*to an agent|pick.*in a chat/i);
+    expect(EMPTY_TOOL_PROFILES_TEXT).toMatch(
+      /hand.*to an agent|pick.*in a chat/i,
+    );
   });
 });
 

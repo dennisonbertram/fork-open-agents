@@ -33,7 +33,9 @@ describe("composio copy — regression", () => {
   });
 
   test("REGRESSION-003 bring-your-own-auth title no longer uses unexplained 'auth' jargon alone", () => {
-    expect(BRING_YOUR_OWN_AUTH_TITLE).not.toBe("Bring your own auth (advanced)");
+    expect(BRING_YOUR_OWN_AUTH_TITLE).not.toBe(
+      "Bring your own auth (advanced)",
+    );
     expect(BRING_YOUR_OWN_AUTH_TITLE.toLowerCase()).toContain("credentials");
   });
 

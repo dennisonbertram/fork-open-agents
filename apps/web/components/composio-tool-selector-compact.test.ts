@@ -105,9 +105,8 @@ describe("BT-S6: ComposioToolSelectorCompact label logic — directToolkitSlugs"
 
 describe("#803 item 7 (C4): selected-vs-connected disclaimer caption", () => {
   test("BT-803-007: caption distinguishes 'selected for this chat' from a live connection check", async () => {
-    const { SELECTED_NOT_CONNECTED_CAPTION } = await import(
-      "@/lib/composio/chat-tool-summary"
-    );
+    const { SELECTED_NOT_CONNECTED_CAPTION } =
+      await import("@/lib/composio/chat-tool-summary");
     expect(SELECTED_NOT_CONNECTED_CAPTION).toMatch(/selected for this chat/i);
     expect(SELECTED_NOT_CONNECTED_CAPTION).toMatch(/settings.*composio/i);
   });

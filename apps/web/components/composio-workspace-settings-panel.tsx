@@ -338,7 +338,9 @@ export function ComposioWorkspaceSettingsPanel({
 
             {data.profileOptions.length > 0 ? (
               <div className="rounded-lg border border-border/70 p-3">
-                <p className="text-sm font-medium">Saved Tool Rules (current)</p>
+                <p className="text-sm font-medium">
+                  Saved Tool Rules (current)
+                </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   Shows what&apos;s saved now, not any unsaved edits above.
                 </p>

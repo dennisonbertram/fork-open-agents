@@ -80,7 +80,9 @@ describe("ComposioWorkspaceSettingsPanel — profile-restriction copy (B4)", () 
 describe("ComposioWorkspaceSettingsPanel — saved-vs-pending heading copy (#803 item 6, G13)", () => {
   test("BT-803-006: heading and caption communicate this reflects SAVED state, not any unsaved edits above", async () => {
     mockData = {
-      profiles: [{ id: "profile-1", name: "Main profile", toolkitSlugs: ["gmail"] }],
+      profiles: [
+        { id: "profile-1", name: "Main profile", toolkitSlugs: ["gmail"] },
+      ],
       profileOptions: [
         {
           id: "profile-1",
