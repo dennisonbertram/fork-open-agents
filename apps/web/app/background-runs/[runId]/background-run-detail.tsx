@@ -11,6 +11,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import { RunErrorBanner } from "./run-error-banner";
 import { RunSummarySection } from "./run-summary-section";
 import { useBackgroundRunEventSource } from "./use-background-run-event-source";
 import type {
@@ -403,6 +404,8 @@ export function BackgroundRunDetail({
             </Link>
           )}
         </div>
+
+        <RunErrorBanner errorKind={run.errorKind} />
 
         <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
           <ProofItem label="Status" value={run.status} />
