@@ -14,13 +14,13 @@ import { LandingNav } from "./nav";
 describe("LandingNav hidden sign-in cluster (#779)", () => {
   test("showSignIn=false renders the cluster aria-hidden and invisible", () => {
     const html = renderToStaticMarkup(<LandingNav showSignIn={false} />);
-    expect(html).toContain('aria-hidden="true"');
+    expect(html).toContain(String.raw`<div aria-hidden="true"`);
     expect(html).toContain("invisible");
   });
 
   test("showSignIn=true renders the cluster visible and not aria-hidden", () => {
     const html = renderToStaticMarkup(<LandingNav showSignIn={true} />);
-    expect(html).not.toContain('aria-hidden="true"');
+    expect(html).not.toContain(String.raw`<div aria-hidden="true"`);
     expect(html).not.toContain("invisible");
   });
 });
