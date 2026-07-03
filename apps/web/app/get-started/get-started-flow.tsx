@@ -78,9 +78,9 @@ export function GetStartedFlow() {
   const [activeStep, setActiveStep] = useState<StepId>(
     shouldAutoOpenGitHubStep ? 2 : 1,
   );
-  const [clickCompletedSteps, setClickCompletedSteps] = useState<
-    Set<StepId>
-  >(() => new Set(shouldAutoOpenGitHubStep ? [1] : []));
+  const [clickCompletedSteps, setClickCompletedSteps] = useState<Set<StepId>>(
+    () => new Set(shouldAutoOpenGitHubStep ? [1] : []),
+  );
 
   // Finding #2 (issue #842): step 1 (Vercel account) must not rely solely on
   // click-state. A signed-in user has already proven their Vercel identity

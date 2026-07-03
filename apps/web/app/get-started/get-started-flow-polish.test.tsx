@@ -89,7 +89,7 @@ describe("GetStartedFlow polish (#842) — finding 2: step 1 completion is deriv
     expect(step2Start).toBeGreaterThan(-1);
     const rowStart = lowerHtml.lastIndexOf("<button", step2Start);
     const rowEnd = lowerHtml.indexOf("</button>", step2Start);
-    expect(lowerHtml.slice(rowStart, rowEnd)).not.toContain("disabled=\"\"");
+    expect(lowerHtml.slice(rowStart, rowEnd)).not.toContain('disabled=""');
   });
 });
 
