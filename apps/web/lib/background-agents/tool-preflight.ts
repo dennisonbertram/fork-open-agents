@@ -8,6 +8,7 @@ import {
 } from "@/lib/composio/connected-accounts";
 import { applyRepoToolkitPolicy } from "@/lib/composio/repo-policy";
 import { getComposioErrorKind } from "@/lib/composio/errors";
+import { toolkitRequiresAuth } from "@/lib/composio/resolve-toolkit-list";
 import {
   buildToolkitStatusMap,
   getToolkitConnectionState,
@@ -34,6 +35,12 @@ import {
  *     honest-connection-states settings surface.
  *   - getComposioErrorKind (#800, lib/composio/errors.ts) — the 7-value
  *     errorKind taxonomy, reused rather than inventing parallel names.
+ *   - toolkitRequiresAuth (lib/composio/resolve-toolkit-list.ts, finding G9,
+ *     exported for this reuse per Codex review on PR #849) — the ONE place
+ *     Composio's toolkit metadata is checked for NO_AUTH toolkits, so a
+ *     no-auth toolkit with zero connected accounts predicts "ready" here
+ *     exactly like resolveComposioToolsForToolkitList excludes it from
+ *     disconnectedToolkits on the real run path.
  *
  * Runtime-mode note: background agents (the only surface this preflight
  * covers) always run in classic mode — `executor.ts` hardcodes
@@ -140,6 +147,7 @@ export async function computeAgentToolPreflight(
   // parallel SDK call.
   let statusMap: Map<string, string> | null = null;
   let unreachableErrorKind: string | null = null;
+  let composioClient: ReturnType<typeof getComposioClient> | null = null;
 
   if (gatedSlugs.length > 0) {
     const config = getComposioConfig();
@@ -149,9 +157,12 @@ export async function computeAgentToolPreflight(
       );
     } else {
       try {
-        const composio = getComposioClient();
+        composioClient = getComposioClient();
         const accounts: ComposioConnectedAccount[] =
-          await listComposioConnectedAccounts({ composio, userId });
+          await listComposioConnectedAccounts({
+            composio: composioClient,
+            userId,
+          });
         statusMap = buildToolkitStatusMap(accounts);
       } catch (error) {
         unreachableErrorKind = getComposioErrorKind(error);
@@ -159,14 +170,74 @@ export async function computeAgentToolPreflight(
     }
   }
 
-  const toolkits: AgentToolPreflightToolkitResult[] = slugs.map((slug) => {
-    const blockedReason = blockedBySlug.get(slug);
-    if (blockedReason) {
-      const result: AgentToolPreflightToolkitResult = {
+  const toolkits: AgentToolPreflightToolkitResult[] = await Promise.all(
+    slugs.map(async (slug) => {
+      const blockedReason = blockedBySlug.get(slug);
+      if (blockedReason) {
+        const result: AgentToolPreflightToolkitResult = {
+          slug,
+          predictedState: "blocked_by_repo_policy",
+          policyReason: blockedReason,
+        };
+        logToolPreflightEvaluated({
+          agentId,
+          repoOwner,
+          repoName,
+          toolkitSlug: slug,
+          predictedState: result.predictedState,
+        });
+        return result;
+      }
+
+      if (unreachableErrorKind) {
+        const result: AgentToolPreflightToolkitResult = {
+          slug,
+          predictedState: "composio_unreachable",
+          errorKind: unreachableErrorKind,
+        };
+        logToolPreflightEvaluated({
+          agentId,
+          repoOwner,
+          repoName,
+          toolkitSlug: slug,
+          predictedState: result.predictedState,
+          errorKind: result.errorKind,
+        });
+        return result;
+      }
+
+      // statusMap is guaranteed non-null here: every slug that reaches this
+      // branch survived the policy gate (gatedSlugs), and
+      // gatedSlugs.length > 0 is exactly the condition that populates
+      // statusMap above.
+      const connectionState = getToolkitConnectionState({
         slug,
-        predictedState: "blocked_by_repo_policy",
-        policyReason: blockedReason,
-      };
+        statusMap: statusMap ?? new Map(),
+        unavailable: false,
+      });
+
+      let predictedState: AgentToolPreflightPredictedState =
+        connectionState === "active"
+          ? "ready"
+          : connectionState === "expired"
+            ? "auth_expired"
+            : "not_connected";
+
+      // A toolkit with no ACTIVE/EXPIRED account is only "not connected" if
+      // it actually requires one. Composio's toolkit metadata (finding G9)
+      // marks some toolkits NO_AUTH — those never need a connected account,
+      // so the real bg-run path (resolveComposioToolsForToolkitList) never
+      // reports them as disconnected. Reuse that exact check here rather
+      // than re-deriving it, so preflight can't silently diverge from what
+      // the run will actually do.
+      if (predictedState === "not_connected" && composioClient) {
+        const requiresAuth = await toolkitRequiresAuth(composioClient, slug);
+        if (!requiresAuth) {
+          predictedState = "ready";
+        }
+      }
+
+      const result: AgentToolPreflightToolkitResult = { slug, predictedState };
       logToolPreflightEvaluated({
         agentId,
         repoOwner,
@@ -175,51 +246,8 @@ export async function computeAgentToolPreflight(
         predictedState: result.predictedState,
       });
       return result;
-    }
-
-    if (unreachableErrorKind) {
-      const result: AgentToolPreflightToolkitResult = {
-        slug,
-        predictedState: "composio_unreachable",
-        errorKind: unreachableErrorKind,
-      };
-      logToolPreflightEvaluated({
-        agentId,
-        repoOwner,
-        repoName,
-        toolkitSlug: slug,
-        predictedState: result.predictedState,
-        errorKind: result.errorKind,
-      });
-      return result;
-    }
-
-    // statusMap is guaranteed non-null here: every slug that reaches this
-    // branch survived the policy gate (gatedSlugs), and gatedSlugs.length > 0
-    // is exactly the condition that populates statusMap above.
-    const connectionState = getToolkitConnectionState({
-      slug,
-      statusMap: statusMap ?? new Map(),
-      unavailable: false,
-    });
-
-    const predictedState: AgentToolPreflightPredictedState =
-      connectionState === "active"
-        ? "ready"
-        : connectionState === "expired"
-          ? "auth_expired"
-          : "not_connected";
-
-    const result: AgentToolPreflightToolkitResult = { slug, predictedState };
-    logToolPreflightEvaluated({
-      agentId,
-      repoOwner,
-      repoName,
-      toolkitSlug: slug,
-      predictedState: result.predictedState,
-    });
-    return result;
-  });
+    }),
+  );
 
   return { toolkits };
 }

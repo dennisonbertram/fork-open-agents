@@ -101,6 +101,14 @@ mock.module("@/lib/composio/client", () => ({
 // create/reuse) is irrelevant to this parity check — preflight never
 // reaches it. Stub it minimally so the real resolver's "ready" path
 // completes without hitting the Composio SDK's session API.
+//
+// toolkitRequiresAuth is also re-exported from this module (#802, Codex
+// review on PR #849) — computeAgentToolPreflight imports it from here too.
+// None of this file's fixtures use a NO_AUTH toolkit, so it always reports
+// "requires auth" (true), matching the real helper's defensive default.
+// The NO_AUTH-specific parity case lives in
+// tool-preflight-no-auth-parity-regression.test.ts, which does NOT stub
+// this module away so the real toolkitRequiresAuth check is exercised.
 mock.module("@/lib/composio/resolve-toolkit-list", () => ({
   resolveComposioToolsForToolkitList: async (params: {
     slugs: string[];
@@ -116,6 +124,7 @@ mock.module("@/lib/composio/resolve-toolkit-list", () => ({
       (slug) => !(params.connectedAccountIdsByToolkit[slug]?.length ?? 0),
     ),
   }),
+  toolkitRequiresAuth: async () => true,
 }));
 
 // ---------------------------------------------------------------------------
