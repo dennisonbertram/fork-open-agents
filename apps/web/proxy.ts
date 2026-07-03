@@ -10,11 +10,27 @@ function wantsSharedMarkdown(acceptHeader: string | null): boolean {
 }
 
 export function proxy(request: NextRequest) {
+  const pathname = request.nextUrl.pathname;
+
+  // #793: server components (async layouts in particular) cannot read the
+  // incoming request's pathname/search directly — Next only exposes that
+  // via `usePathname()` in Client Components. So MobileLayout can preserve
+  // the original `/m/*` destination through its unauthenticated redirect,
+  // stamp the incoming pathname+search onto a request header the layout
+  // reads with `headers()`.
+  if (pathname === "/m" || pathname.startsWith("/m/")) {
+    const requestHeaders = new Headers(request.headers);
+    requestHeaders.set(
+      "x-invoke-path",
+      `${pathname}${request.nextUrl.search}`,
+    );
+    return NextResponse.next({ request: { headers: requestHeaders } });
+  }
+
   if (request.method !== "GET") {
     return NextResponse.next();
   }
 
-  const pathname = request.nextUrl.pathname;
   const segments = pathname.split("/").filter(Boolean);
 
   if (
@@ -31,5 +47,5 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/shared/:path*"],
+  matcher: ["/shared/:path*", "/m", "/m/:path*"],
 };
