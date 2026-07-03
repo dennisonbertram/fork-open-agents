@@ -51,6 +51,7 @@ const savedProfiles = [
     testResults: [] as ManagedRuntimeCommandObservation[],
     testFailureMessage: null as string | null,
     testedAt: null as Date | null,
+    lastTestScope: null as "verify" | "setup_and_verify" | null,
   },
 ];
 let sourceDraftResult:
@@ -67,6 +68,7 @@ let sourceDraftResult:
       testedAt: Date | null;
       createdAt: Date;
       updatedAt: Date;
+      lastTestScope?: "verify" | "setup_and_verify" | null;
     }
   | undefined = {
   id: "draft-1",
@@ -83,6 +85,7 @@ let sourceDraftResult:
   testedAt: new Date("2026-05-24T00:01:00.000Z"),
   createdAt: new Date("2026-05-24T00:00:00.000Z"),
   updatedAt: new Date("2026-05-24T00:01:00.000Z"),
+  lastTestScope: "setup_and_verify",
 };
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -147,6 +150,7 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles", () => {
     savedProfiles[0].testResults = [];
     savedProfiles[0].testFailureMessage = null;
     savedProfiles[0].testedAt = null;
+    savedProfiles[0].lastTestScope = null;
     sourceDraftResult = {
       id: "draft-1",
       status: "applied",
@@ -162,6 +166,7 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles", () => {
       testedAt: new Date("2026-05-24T00:01:00.000Z"),
       createdAt: new Date("2026-05-24T00:00:00.000Z"),
       updatedAt: new Date("2026-05-24T00:01:00.000Z"),
+      lastTestScope: "setup_and_verify",
     };
   });
 
@@ -295,6 +300,97 @@ describe("/api/sessions/[sessionId]/managed-runtime/profiles", () => {
       id: "session-profile-draft-1",
       testStatus: "passed",
       testedAt: "2026-05-24T00:04:00.000Z",
+    });
+  });
+
+  // RED: today toProfileOption only copies testStatus/testedAt from
+  // getSavedProfileTestEvidence, so a passing verify-only saved profile
+  // reports no lastTestScope in the list payload. The evidence badge (which
+  // already reads profile.lastTestScope) then falls through to its "Tested"
+  // branch for a profile whose setup commands were never run (Decision D6).
+  test("GET surfaces the persisted verify-only test scope for saved profiles", async () => {
+    savedProfiles[0].testResults = [
+      {
+        commandId: "verify-bun",
+        label: "Verify Bun",
+        status: "passed",
+        required: true,
+        startedAt: "2026-05-24T00:03:00.000Z",
+      },
+    ];
+    savedProfiles[0].testedAt = new Date("2026-05-24T00:04:00.000Z");
+    savedProfiles[0].lastTestScope = "verify";
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/sessions/session-1/managed-runtime/profiles",
+      ),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      profiles: Array<{
+        id: string;
+        testStatus?: string;
+        lastTestScope?: "verify" | "setup_and_verify" | null;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.profiles[0]).toMatchObject({
+      id: "session-profile-draft-1",
+      testStatus: "passed",
+      lastTestScope: "verify",
+    });
+  });
+
+  // Regression: this is a distinct code path from the direct-evidence test
+  // above — a saved profile with NO evidence of its own (never re-tested
+  // since being applied from a draft) falls back to the source draft
+  // snapshot's testStatus/testedAt. That fallback must also carry
+  // lastTestScope, or a profile applied straight from a verify-only-tested
+  // draft would still over-promise "Tested" via the badge. If a future
+  // change reverts the sourceDraftSnapshot?.lastTestScope fallback (or only
+  // wires the savedEvidence branch), this test fails.
+  test("GET surfaces the source draft's test scope when the saved profile has no evidence of its own", async () => {
+    sourceDraftResult = {
+      id: "draft-1",
+      status: "tested",
+      testFailureMessage: null,
+      testResults: [
+        {
+          commandId: "verify-bun",
+          label: "Verify Bun",
+          status: "passed",
+          startedAt: "2026-05-24T00:00:00.000Z",
+        },
+      ],
+      testedAt: new Date("2026-05-24T00:01:00.000Z"),
+      createdAt: new Date("2026-05-24T00:00:00.000Z"),
+      updatedAt: new Date("2026-05-24T00:01:00.000Z"),
+      lastTestScope: "verify",
+    };
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/sessions/session-1/managed-runtime/profiles",
+      ),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      profiles: Array<{
+        id: string;
+        testStatus?: string;
+        lastTestScope?: "verify" | "setup_and_verify" | null;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.profiles[0]).toMatchObject({
+      id: "session-profile-draft-1",
+      testStatus: "passed",
+      lastTestScope: "verify",
     });
   });
 
