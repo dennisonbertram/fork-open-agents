@@ -29,9 +29,7 @@ describe("External tools 'none assigned' copy (#803 item 5, W4)", () => {
 
   test("BT-803-005b hint points at what this page can actually do (pick tools directly), not a nonexistent profile picker here", () => {
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).toMatch(/pick tools directly/i);
-    expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).not.toMatch(
-      /assign one here/i,
-    );
+    expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).not.toMatch(/assign one here/i);
   });
 
   test("BT-803-005c hint points to Settings -> Composio's Agent defaults as where a default profile IS assignable", () => {
