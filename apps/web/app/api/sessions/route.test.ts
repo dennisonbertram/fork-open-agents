@@ -832,4 +832,75 @@ describe("/api/sessions POST activation path (runtimeMode + managedRuntimeProfil
     // attempted by this request — there must be exactly one.
     expect(createCalls).toHaveLength(1);
   });
+
+  // Codex #834 P2: `if (body.managedRuntimeProfileId !== undefined)` passed
+  // any non-string value (null, object, array) straight into
+  // isKnownManagedRuntimeProfileReference, which expects a string. A
+  // malformed request could surface as a 500 instead of a clean 400.
+  test("Codex #834 P2: a non-string managedRuntimeProfileId (null) returns a structured 400, not a 500, and never calls the reference check", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: null,
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("profile_not_found");
+    expect(typeof body.nextAction).toBe("string");
+    expect(body.nextAction?.length).toBeGreaterThan(0);
+    // The reference check expects a string profileId; a malformed value must
+    // never reach it (fail-closed before the DB check).
+    expect(knownReferenceCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(0);
+  });
+
+  test("Codex #834 P2: a non-string managedRuntimeProfileId (object) returns a structured 400, not a 500, and never calls the reference check", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: { foo: "bar" },
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("profile_not_found");
+    expect(knownReferenceCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(0);
+  });
+
+  test("Codex #834 P2: a non-string managedRuntimeProfileId (array) returns a structured 400, not a 500, and never calls the reference check", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      createJsonRequest({
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: ["not", "a", "string"],
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("profile_not_found");
+    expect(knownReferenceCalls).toHaveLength(0);
+    expect(createCalls).toHaveLength(0);
+  });
 });

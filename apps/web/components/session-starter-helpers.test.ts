@@ -13,6 +13,7 @@ import {
   getButtonLabel,
   getEffectiveRuntimeSelection,
   getRuntimeModeLabel,
+  getRuntimeSelectionForSubmit,
   getSessionFooter,
   isSubmitBlocked,
 } from "./session-starter-helpers";
@@ -358,5 +359,81 @@ describe("shouldConfirmDiscardOnChange (MR-4/#812 — fixes silent discard)", ()
         selectedRepo: "webapp",
       }),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Codex #834 P2: getRuntimeSelectionForSubmit — a repo is selected but
+// useRepoDefaults hasn't resolved (still loading, or errored) and the user
+// has NOT made an explicit picker choice yet. In that state,
+// effectiveRuntimeSelection is only a not-yet-resolved "classic" fallback —
+// submitting it as an explicit runtimeMode would incorrectly override the
+// repo's real saved default (server precedence is body > repo defaults >
+// system "classic", so an explicit fallback body value always wins even
+// though it was never really chosen).
+// ---------------------------------------------------------------------------
+describe("getRuntimeSelectionForSubmit (Codex #834 P2)", () => {
+  test("BT-P2-001: unresolved repo defaults + no explicit user choice omits runtimeMode and managedRuntimeProfileId", () => {
+    const result = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection: {
+        runtimeMode: "classic",
+        managedRuntimeProfileId: undefined,
+      },
+      hasExplicitUserSelection: false,
+      repoDefaultsResolved: false,
+    });
+
+    expect(result.runtimeMode).toBeUndefined();
+    expect(result.managedRuntimeProfileId).toBeUndefined();
+  });
+
+  test("BT-P2-002: an explicit user choice is always sent, even while repo defaults are unresolved", () => {
+    const result = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection: {
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "user-profile-node20",
+      },
+      hasExplicitUserSelection: true,
+      repoDefaultsResolved: false,
+    });
+
+    expect(result).toEqual({
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "user-profile-node20",
+    });
+  });
+
+  test("BT-P2-003: once repo defaults resolve, the resolved selection is sent even with no explicit user choice", () => {
+    const result = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection: {
+        runtimeMode: "managed_runtime",
+        managedRuntimeProfileId: "repo-default-profile",
+      },
+      hasExplicitUserSelection: false,
+      repoDefaultsResolved: true,
+    });
+
+    expect(result).toEqual({
+      runtimeMode: "managed_runtime",
+      managedRuntimeProfileId: "repo-default-profile",
+    });
+  });
+});
+
+describe("REGRESSION — getRuntimeSelectionForSubmit never sends an unresolved classic fallback", () => {
+  test("REGRESSION-P2-001: unresolved fallback of classic is never sent as an explicit runtimeMode", () => {
+    // If this regresses back to always sending effectiveRuntimeSelection,
+    // runtimeMode would be "classic" here instead of undefined, and a
+    // managed_runtime repo default could be silently overridden server-side.
+    const result = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection: {
+        runtimeMode: "classic",
+        managedRuntimeProfileId: undefined,
+      },
+      hasExplicitUserSelection: false,
+      repoDefaultsResolved: false,
+    });
+    expect(result.runtimeMode).not.toBe("classic");
+    expect(result.runtimeMode).toBeUndefined();
   });
 });
