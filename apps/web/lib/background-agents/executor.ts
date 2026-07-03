@@ -1191,7 +1191,8 @@ export async function executeBackgroundAgentRun(params: {
       } else if (composioResult.reason === "not_in_repo_allowlist") {
         offSummary = `Composio tools not in repository allowlist: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
       } else {
-        offSummary = "Composio tools requested but no toolkit slugs were selected.";
+        offSummary =
+          "Composio tools requested but no toolkit slugs were selected.";
       }
       const includeBlockedSlugsInPayload =
         composioResult.reason === "repo_policy_blocked" ||

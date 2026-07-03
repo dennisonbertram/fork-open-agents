@@ -73,8 +73,8 @@ async function fetchKnownToolkitSlugs(): Promise<
     const slugs = new Set(
       items
         .map((item) => item.slug)
-        .filter((slug): slug is string => Boolean(slug))
-        .map((slug) => slug.toLowerCase()),
+        .filter(Boolean)
+        .map((slug) => (slug as string).toLowerCase()),
     );
     return { ok: true, slugs };
   } catch (error) {

@@ -28,6 +28,14 @@ type RepoSettingsValues = {
 };
 
 let repoSettingsValues: RepoSettingsValues | null = null;
+let capturedSlugs: string[] | null = null;
+// Wrapping the read in a function defeats TS's control-flow narrowing of
+// capturedSlugs to `null` at the expect() call site — the assignment
+// happens inside a mock.module factory closure invoked between the
+// declaration and the read, which the type-checker cannot see statically.
+function readCapturedSlugs(): string[] | null {
+  return capturedSlugs;
+}
 
 mock.module("@/lib/db/composio", () => ({
   getRepositoryComposioSettings: () => Promise.resolve({} as unknown),
@@ -72,8 +80,16 @@ mock.module("@/lib/composio/client", () => ({
       list: () =>
         Promise.resolve({
           items: [
-            { id: "acct-slack-1", toolkit: { slug: "slack" }, status: "ACTIVE" },
-            { id: "acct-gmail-1", toolkit: { slug: "gmail" }, status: "ACTIVE" },
+            {
+              id: "acct-slack-1",
+              toolkit: { slug: "slack" },
+              status: "ACTIVE",
+            },
+            {
+              id: "acct-gmail-1",
+              toolkit: { slug: "gmail" },
+              status: "ACTIVE",
+            },
           ],
         }),
     },
@@ -110,7 +126,7 @@ describe("resolveComposioToolsForChat — direct-slug path applies repo policy (
       blockedToolkitSlugs: [],
     };
 
-    let capturedSlugs: string[] | null = null;
+    capturedSlugs = null;
     mock.module("@/lib/composio/resolve-toolkit-list", () => ({
       resolveComposioToolsForToolkitList: (params: { slugs: string[] }) => {
         capturedSlugs = params.slugs;
@@ -133,7 +149,7 @@ describe("resolveComposioToolsForChat — direct-slug path applies repo policy (
       chatId: "chat-rp-1",
     });
 
-    expect(capturedSlugs).toEqual(["slack"]);
+    expect(readCapturedSlugs()).toEqual(["slack"]);
   });
 
   test("BT-SESS-RP-003: every requested slug blocked resolves to status off (no session attempted)", async () => {

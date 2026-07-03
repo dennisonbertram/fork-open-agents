@@ -77,8 +77,16 @@ mock.module("@/lib/composio/client", () => ({
       list: () =>
         Promise.resolve({
           items: [
-            { id: "acct-slack-1", toolkit: { slug: "slack" }, status: "ACTIVE" },
-            { id: "acct-gmail-1", toolkit: { slug: "gmail" }, status: "ACTIVE" },
+            {
+              id: "acct-slack-1",
+              toolkit: { slug: "slack" },
+              status: "ACTIVE",
+            },
+            {
+              id: "acct-gmail-1",
+              toolkit: { slug: "gmail" },
+              status: "ACTIVE",
+            },
           ],
         }),
     },
@@ -105,9 +113,18 @@ mock.module("@/lib/composio/user-id", () => ({
   toComposioUserId: (userId: string) => `composio_${userId}`,
 }));
 
+let capturedSlugs: string[] | null = null;
+// Wrapping the read in a function defeats TS's control-flow narrowing of
+// capturedSlugs to `null` at the expect() call site — the assignment
+// happens inside a mock.module factory closure invoked between the
+// declaration and the read, which the type-checker cannot see statically.
+function readCapturedSlugs(): string[] | null {
+  return capturedSlugs;
+}
+
 describe("Cross-surface parity: chat, background-agent, and loop resolution (E2)", () => {
   test("PARITY-001: chat direct-slug path drops gmail via the shared repo-policy resolver", async () => {
-    let capturedSlugs: string[] | null = null;
+    capturedSlugs = null;
     mock.module("@/lib/composio/resolve-toolkit-list", () => ({
       resolveComposioToolsForToolkitList: (params: { slugs: string[] }) => {
         capturedSlugs = params.slugs;
@@ -130,13 +147,12 @@ describe("Cross-surface parity: chat, background-agent, and loop resolution (E2)
       chatId: "chat-parity-1",
     });
 
-    expect(capturedSlugs).toEqual(EXPECTED_FINAL_SLUGS);
+    expect(readCapturedSlugs()).toEqual(EXPECTED_FINAL_SLUGS);
   });
 
   test("PARITY-002: background-agent run drops gmail via the SAME shared repo-policy resolver, identical final slugs", async () => {
-    const { resolveComposioToolsForBgRun } = await import(
-      "@/lib/background-agents/composio-tools"
-    );
+    const { resolveComposioToolsForBgRun } =
+      await import("@/lib/background-agents/composio-tools");
 
     const result = await resolveComposioToolsForBgRun({
       agentId: "agent-parity",
@@ -157,9 +173,8 @@ describe("Cross-surface parity: chat, background-agent, and loop resolution (E2)
     // Loops call resolveComposioToolsForBgRun directly (agent-step.ts) — the
     // SAME function proven in PARITY-002 — so this is the same call with a
     // different runId, confirming no loop-specific bypass exists.
-    const { resolveComposioToolsForBgRun } = await import(
-      "@/lib/background-agents/composio-tools"
-    );
+    const { resolveComposioToolsForBgRun } =
+      await import("@/lib/background-agents/composio-tools");
 
     const result = await resolveComposioToolsForBgRun({
       agentId: null,
