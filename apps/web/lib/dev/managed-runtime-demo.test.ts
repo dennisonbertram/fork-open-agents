@@ -71,9 +71,7 @@ mock.module("@/lib/db/client", () => ({
       from: (_table: unknown) => ({
         where: (_cond: unknown) => ({
           limit: (_n: number) =>
-            Promise.resolve(
-              sessionSelectResult ? [sessionSelectResult] : [],
-            ),
+            Promise.resolve(sessionSelectResult ? [sessionSelectResult] : []),
         }),
       }),
     }),
@@ -159,12 +157,8 @@ describe("prepareManagedRuntimeDemo (#816)", () => {
   it("BT-001: seeds runtimeMode managed_runtime with the built-in default profile id", async () => {
     await prepareManagedRuntimeDemo();
 
-    const sessionInsert = insertCalls.find(
-      (call) => call.table === "sessions",
-    );
-    const sessionUpdate = updateCalls.find(
-      (call) => call.table === "sessions",
-    );
+    const sessionInsert = insertCalls.find((call) => call.table === "sessions");
+    const sessionUpdate = updateCalls.find((call) => call.table === "sessions");
 
     expect(sessionInsert?.values.runtimeMode).toBe("managed_runtime");
     expect(sessionInsert?.values.managedRuntimeProfileId).toBe(
@@ -179,12 +173,8 @@ describe("prepareManagedRuntimeDemo (#816)", () => {
   it("BT-002: an explicit profileId param seeds that profile id instead of the default", async () => {
     await prepareManagedRuntimeDemo({ profileId: "user-default-profile" });
 
-    const sessionInsert = insertCalls.find(
-      (call) => call.table === "sessions",
-    );
-    const sessionUpdate = updateCalls.find(
-      (call) => call.table === "sessions",
-    );
+    const sessionInsert = insertCalls.find((call) => call.table === "sessions");
+    const sessionUpdate = updateCalls.find((call) => call.table === "sessions");
 
     expect(sessionInsert?.values.runtimeMode).toBe("managed_runtime");
     expect(sessionInsert?.values.managedRuntimeProfileId).toBe(
@@ -198,14 +188,69 @@ describe("prepareManagedRuntimeDemo (#816)", () => {
   it("BT-003: an explicit runtimeMode 'classic' param preserves legacy classic seeding", async () => {
     await prepareManagedRuntimeDemo({ runtimeMode: "classic" });
 
-    const sessionInsert = insertCalls.find(
-      (call) => call.table === "sessions",
-    );
-    const sessionUpdate = updateCalls.find(
-      (call) => call.table === "sessions",
-    );
+    const sessionInsert = insertCalls.find((call) => call.table === "sessions");
+    const sessionUpdate = updateCalls.find((call) => call.table === "sessions");
 
     expect(sessionInsert?.values.runtimeMode).toBe("classic");
     expect(sessionUpdate?.set.runtimeMode).toBe("classic");
+  });
+
+  describe("regression coverage (#816)", () => {
+    it("passing only profileId (no runtimeMode override) still seeds managed_runtime, not classic", async () => {
+      // Guards against a regression where a future change makes profileId
+      // imply classic mode, or where the runtimeMode default silently
+      // reverts to "classic" while only the profile id plumbing is kept.
+      await prepareManagedRuntimeDemo({ profileId: "some-other-profile" });
+
+      const sessionInsert = insertCalls.find(
+        (call) => call.table === "sessions",
+      );
+
+      expect(sessionInsert?.values.runtimeMode).toBe("managed_runtime");
+    });
+
+    it("omitting profileId with an explicit managed_runtime mode still falls back to the built-in profile id, never undefined or empty", async () => {
+      // Guards against a regression where the default profile id constant
+      // is dropped and the column is written as undefined/empty, which
+      // would violate the NOT NULL managed_runtime_profile_id column and
+      // break every future call site that omits profileId.
+      await prepareManagedRuntimeDemo({ runtimeMode: "managed_runtime" });
+
+      const sessionInsert = insertCalls.find(
+        (call) => call.table === "sessions",
+      );
+      const sessionUpdate = updateCalls.find(
+        (call) => call.table === "sessions",
+      );
+
+      expect(sessionInsert?.values.managedRuntimeProfileId).toBe(
+        "web-bun-agent-browser",
+      );
+      expect(sessionInsert?.values.managedRuntimeProfileId).not.toBeUndefined();
+      expect(sessionUpdate?.set.managedRuntimeProfileId).toBe(
+        "web-bun-agent-browser",
+      );
+    });
+
+    it("repeated calls with no options each seed managed_runtime — the default does not drift to classic after the first call", async () => {
+      // Guards against a regression where default-resolution has hidden
+      // state (e.g. a module-level flag flipped after first invocation)
+      // that causes the second and subsequent no-args calls to silently
+      // fall back to classic while the first call looks correct.
+      await prepareManagedRuntimeDemo();
+      await prepareManagedRuntimeDemo();
+
+      const sessionInserts = insertCalls.filter(
+        (call) => call.table === "sessions",
+      );
+
+      expect(sessionInserts).toHaveLength(2);
+      for (const call of sessionInserts) {
+        expect(call.values.runtimeMode).toBe("managed_runtime");
+        expect(call.values.managedRuntimeProfileId).toBe(
+          "web-bun-agent-browser",
+        );
+      }
+    });
   });
 });
