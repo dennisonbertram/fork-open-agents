@@ -27,6 +27,7 @@ import {
   getButtonLabel,
   getEffectiveRuntimeSelection,
   getRuntimeModeLabel,
+  getRuntimeSelectionForSubmit,
   getSessionFooter,
   isSubmitBlocked,
   type RuntimeSelection,
@@ -151,8 +152,10 @@ export function SessionStarter({
   // Fetch resolved repo defaults when a repo is selected in repo mode.
   // The result is used as a fallback in the effective-value chain below;
   // state variables stay null so user edits are never clobbered.
+  const repoDefaultsEnabled =
+    mode === "repo" && !!selectedOwner && !!selectedRepo;
   const { defaults: repoDefaults } = useRepoDefaults({
-    enabled: mode === "repo" && !!selectedOwner && !!selectedRepo,
+    enabled: repoDefaultsEnabled,
     repoOwner: selectedOwner,
     repoName: selectedRepo,
   });
@@ -245,6 +248,13 @@ export function SessionStarter({
     defaultProfileId:
       repoDefaults?.managedRuntimeProfileId ?? defaultManagedRuntimeProfileId,
   });
+  // Codex #834 P2: repo defaults are "resolved" once they've loaded, or are
+  // simply not applicable (no repo selected yet) — there is nothing to wait
+  // for in either case. While repoDefaultsEnabled is true and the fetch is
+  // still loading/erroring, repoDefaults stays undefined, and
+  // effectiveRuntimeSelection above is only a not-yet-resolved "classic"
+  // fallback rather than a real choice.
+  const repoDefaultsResolved = !repoDefaultsEnabled || !!repoDefaults;
   const activeManagedProfileId =
     effectiveRuntimeSelection.managedRuntimeProfileId ??
     defaultManagedRuntimeProfileId;
@@ -281,7 +291,20 @@ export function SessionStarter({
       }
     }
 
-    onSubmit({
+    // Codex #834 P2: only send runtimeMode/managedRuntimeProfileId as an
+    // explicit choice when the user actually chose it in the picker, or once
+    // repo defaults have resolved. Otherwise effectiveRuntimeSelection is
+    // just a not-yet-resolved "classic" fallback, and sending it explicitly
+    // would win over POST /api/sessions' repo-defaults precedence (body >
+    // repo defaults > system "classic"), silently overriding a saved
+    // managed_runtime repo default.
+    const runtimeSelectionForSubmit = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection,
+      hasExplicitUserSelection: userRuntimeSelection !== null,
+      repoDefaultsResolved,
+    });
+
+    const submitPayload: Parameters<typeof onSubmit>[0] = {
       title: prepareSessionTitle(sessionTitle),
       repoOwner: mode === "repo" ? selectedOwner || undefined : undefined,
       repoName: mode === "repo" ? selectedRepo || undefined : undefined,
@@ -299,7 +322,17 @@ export function SessionStarter({
       autoCommitPush: effectiveAutoCommitPush,
       autoCreatePr: effectiveAutoCommitPush ? effectiveAutoCreatePr : false,
       vercelProject,
-    });
+    };
+
+    if (!("runtimeMode" in runtimeSelectionForSubmit)) {
+      delete (submitPayload as { runtimeMode?: SessionRuntimeMode })
+        .runtimeMode;
+    }
+    if (!("managedRuntimeProfileId" in runtimeSelectionForSubmit)) {
+      delete submitPayload.managedRuntimeProfileId;
+    }
+
+    onSubmit(submitPayload);
   };
 
   const buttonLabel = getButtonLabel(mode, selectedOwner, selectedRepo);

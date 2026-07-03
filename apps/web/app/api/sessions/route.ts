@@ -213,6 +213,23 @@ export async function POST(req: Request) {
   }
 
   if (body.managedRuntimeProfileId !== undefined) {
+    // Codex #834 P2: a non-string value here (null, object, array) must be
+    // rejected with the same structured 400 before it ever reaches
+    // isKnownManagedRuntimeProfileReference, which expects a string —
+    // passing a malformed value straight through could otherwise surface as
+    // a 500 instead of a clean 400.
+    if (typeof body.managedRuntimeProfileId !== "string") {
+      return Response.json(
+        {
+          error: "Invalid managed runtime profile",
+          errorKind: "profile_not_found",
+          nextAction:
+            "This profile no longer exists. Choose another profile or recreate it.",
+        },
+        { status: 400 },
+      );
+    }
+
     // A brand-new session has no session-scope saved profiles yet, so only
     // the built-in and owned user_default arms of the reference check are
     // reachable here — the sessionId is a placeholder for that reason.
