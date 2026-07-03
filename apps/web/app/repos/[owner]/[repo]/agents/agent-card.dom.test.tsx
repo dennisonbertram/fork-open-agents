@@ -76,7 +76,10 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
     await userClick(getByRole("button", { name: /run now/i }));
 
     expect(globalFetch).toHaveBeenCalledTimes(1);
-    const [url, opts] = globalFetch.mock.calls[0] as [string, { method: string }];
+    const [url, opts] = globalFetch.mock.calls[0] as [
+      string,
+      { method: string },
+    ];
     expect(url).toBe("/api/background-agents/agent-1/test");
     expect(opts.method).toBe("POST");
 
@@ -141,10 +144,7 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
 
     await userClick(getByRole("button", { name: /resume/i }));
 
-    const [, opts] = globalFetch.mock.calls[0] as [
-      string,
-      { body: string },
-    ];
+    const [, opts] = globalFetch.mock.calls[0] as [string, { body: string }];
     expect(JSON.parse(opts.body)).toEqual({ status: "enabled" });
   });
 });

@@ -22,7 +22,13 @@ import { act, cleanup, fireEvent } from "@testing-library/react";
  * `screen`. (Spike-verified failing-with-screen / passing-without on Bun
  * 1.3.14; see docs/agents/lessons-learned.md.)
  */
-export { act, fireEvent, render, waitFor, within } from "@testing-library/react";
+export {
+  act,
+  fireEvent,
+  render,
+  waitFor,
+  within,
+} from "@testing-library/react";
 
 afterEach(() => {
   cleanup();
