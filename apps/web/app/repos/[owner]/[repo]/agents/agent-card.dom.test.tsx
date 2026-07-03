@@ -15,10 +15,22 @@
  * run before React/@testing-library/react/next modules are evaluated.
  */
 
-import { render, userClick, waitFor } from "@/tests/dom";
+import {
+  registerDomTestHooks,
+  render,
+  userClick,
+  waitFor,
+  within,
+} from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { makeAgent } from "./agent-card.fixtures";
+
+// MUST be called at this file's own top level — see the header comment in
+// apps/web/tests/dom/index.ts for why `afterEach(cleanup)` otherwise
+// silently no-ops under CI's pinned Bun 1.2.14, leaking DOM nodes across
+// tests in this file.
+registerDomTestHooks();
 
 // --- Mocks -------------------------------------------------------------------
 
@@ -69,9 +81,10 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent();
 
-    const { getByRole } = render(
+    const { container } = render(
       <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
+    const { getByRole } = within(container);
 
     await userClick(getByRole("button", { name: /run now/i }));
 
@@ -96,9 +109,10 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent();
 
-    const { getByRole, findByRole } = render(
+    const { container } = render(
       <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
+    const { getByRole, findByRole } = within(container);
 
     await userClick(getByRole("button", { name: /run now/i }));
 
@@ -112,9 +126,10 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent(); // enabled by default
 
-    const { getByRole } = render(
+    const { container } = render(
       <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
+    const { getByRole } = within(container);
 
     await userClick(getByRole("button", { name: /pause/i }));
 
@@ -138,9 +153,10 @@ describe("AgentCard — DOM interaction (BT-167-006, BT-167-007)", () => {
     const { AgentCard } = await cardModulePromise;
     const agent = makeAgent({ status: "disabled" });
 
-    const { getByRole } = render(
+    const { container } = render(
       <AgentCard agent={agent} latestRun={null} owner="acme" repo="widgets" />,
     );
+    const { getByRole } = within(container);
 
     await userClick(getByRole("button", { name: /resume/i }));
 

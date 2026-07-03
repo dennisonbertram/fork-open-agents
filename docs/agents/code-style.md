@@ -85,6 +85,15 @@ accessible feedback, use the DOM-interaction convention instead:
   than raw `fireEvent.click`. It wraps the click in `act()`, which is
   required for state updates from async click handlers to reach
   `waitFor`/`findByRole` under CI's pinned Bun version.
+- Call `registerDomTestHooks()` from `@/tests/dom` at the top level of the
+  test file itself (not from within `describe`/`test`). Registering the
+  `afterEach(cleanup)` hook from an *imported* helper module silently no-ops
+  under CI's pinned Bun 1.2.14, leaking rendered DOM across tests in the
+  same file — it must be called from the test file's own module scope.
+- Scope queries to the render's own container via `within(container)`
+  (destructure `container` from `render(...)`'s return value) rather than
+  querying the ambient `document.body`. This keeps any accidental cleanup
+  leakage from silently matching a stale render from an earlier test.
 - Assert feedback by accessible role (e.g. `getByRole("alert")`), not by
   substring — this keeps the test enforcing accessible markup, not just
   visible text.
