@@ -87,7 +87,7 @@ export function LandingFeatures() {
           <Spotlight
             tone="ash"
             title="Cloud sandboxes, not local machines."
-            description="Every session runs in an isolated Vercel sandbox with its own branch. Work is committed and pushed automatically — nothing is lost when the sandbox expires."
+            description="Every session runs in an isolated Vercel sandbox with its own branch. Changes stay on that branch until you commit — turn on auto commit & push in Settings if you'd rather it happen automatically."
             bullets={[
               "Ephemeral environments with full git integration",
               "Auto-hibernate on inactivity, instant restore",

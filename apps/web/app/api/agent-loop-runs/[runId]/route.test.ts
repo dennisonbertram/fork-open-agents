@@ -3,6 +3,7 @@
  * Written first (RED phase) — all tests fail before implementation.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { AgentLoopEvent } from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -73,17 +74,17 @@ const stepRunsFixture = [
   },
 ];
 
-const eventsFixture = [
+const eventsFixture: AgentLoopEvent[] = [
   {
     id: "event-1",
     loopRunId: "run-1",
     stepRunId: "step-1",
     nodeId: "s1",
     eventName: "agent-loop.run.started",
-    status: "started" as const,
-    level: "info" as const,
+    status: "started",
+    level: "info",
     summary: "Run started",
-    payload: null,
+    payload: {},
     redactionStatus: "passed",
     requestId: null,
     workflowRunId: null,
@@ -95,9 +96,17 @@ const getAgentLoopRunWithLoop = mock(
   async (): Promise<typeof runAndLoopFixture | null> => runAndLoopFixture,
 );
 const listStepRunsForRun = mock(async () => stepRunsFixture);
-const listAgentLoopEvents = mock(async () => eventsFixture);
+const listAgentLoopEvents = mock(
+  async (): Promise<AgentLoopEvent[]> => eventsFixture,
+);
 // M3-02-B: listWatchdogRunsForLoopRun is now called by route.ts
 const listWatchdogRunsForLoopRun = mock(async () => []);
+
+// #798 P2-2: uncapped, composio-scoped fetch — default empty so existing
+// tests (which never assert on composio events) are unaffected.
+const listAgentLoopComposioEvents = mock(
+  async (): Promise<AgentLoopEvent[]> => [],
+);
 
 const isAgentLoopsEnabled = mock(() => true);
 
@@ -109,6 +118,7 @@ mock.module("@/lib/agent-loops/store", () => ({
   getAgentLoopRunWithLoop,
   listStepRunsForRun,
   listAgentLoopEvents,
+  listAgentLoopComposioEvents,
   listWatchdogRunsForLoopRun,
   updateAgentLoopRunContext: mock(async () => undefined),
   conditionallyTransitionRunStatus: mock(async () => null),
@@ -138,6 +148,8 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     listStepRunsForRun.mockImplementation(async () => stepRunsFixture);
     listAgentLoopEvents.mockClear();
     listAgentLoopEvents.mockImplementation(async () => eventsFixture);
+    listAgentLoopComposioEvents.mockClear();
+    listAgentLoopComposioEvents.mockImplementation(async () => []);
   });
 
   test("BT-039: requires authentication", async () => {
@@ -221,5 +233,89 @@ describe("GET /api/agent-loop-runs/[runId]", () => {
     expect(body.steps).toEqual(
       expect.arrayContaining([expect.objectContaining({ id: "step-1" })]),
     );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Codex review (PR #824), P2-2: listAgentLoopEvents is a newest-200 slice.
+  // agent-loop.step.composio.* events are emitted early in a step, so a
+  // chatty run's newer events can push them out of that window. The route
+  // must fetch composio-prefixed events explicitly (uncapped) and merge them
+  // into the response's events[] so the run-detail page's
+  // deriveLoopComposioWarnings(events) never silently loses them.
+  // ---------------------------------------------------------------------------
+  test("BT-045 (#798 P2-2): merges the uncapped composio-scoped fetch into events[], even when it's not in the capped slice", async () => {
+    const offScreenComposioEvent = {
+      id: "ev-composio-off",
+      loopRunId: "run-1",
+      stepRunId: "step-1",
+      nodeId: "s1",
+      eventName: "agent-loop.step.composio.off",
+      status: "succeeded" as const,
+      level: "warn" as const,
+      summary: null,
+      payload: { reason: "no_slugs_selected" },
+      redactionStatus: "passed" as const,
+      requestId: null,
+      workflowRunId: null,
+      createdAt: new Date("2023-01-01"), // older than the capped slice
+    };
+    listAgentLoopComposioEvents.mockImplementation(async () => [
+      offScreenComposioEvent,
+    ]);
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      new Request("http://localhost/api/agent-loop-runs/run-1"),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(
+      (body.events as Array<{ id: string }>).some(
+        (e) => e.id === "ev-composio-off",
+      ),
+    ).toBe(true);
+    // The original capped-slice event must still be present too.
+    expect(
+      (body.events as Array<{ id: string }>).some((e) => e.id === "event-1"),
+    ).toBe(true);
+  });
+
+  test("BT-046 (#798 P2-2): a composio event present in both the capped slice and the uncapped fetch is not duplicated", async () => {
+    // eventsFixture's "event-1" is agent-loop.run.started (not composio),
+    // so simulate an overlap explicitly.
+    const overlapEvent = {
+      id: "ev-overlap",
+      loopRunId: "run-1",
+      stepRunId: "step-1",
+      nodeId: "s1",
+      eventName: "agent-loop.step.composio.off",
+      status: "succeeded" as const,
+      level: "warn" as const,
+      summary: null,
+      payload: { reason: "no_slugs_selected" },
+      redactionStatus: "passed" as const,
+      requestId: null,
+      workflowRunId: null,
+      createdAt: new Date("2024-01-01"),
+    };
+    listAgentLoopEvents.mockImplementation(async () => [
+      ...eventsFixture,
+      overlapEvent,
+    ]);
+    listAgentLoopComposioEvents.mockImplementation(async () => [overlapEvent]);
+
+    const { GET } = await routeModulePromise;
+    const response = await GET(
+      new Request("http://localhost/api/agent-loop-runs/run-1"),
+      context(),
+    );
+    const body = await response.json();
+
+    const matches = (body.events as Array<{ id: string }>).filter(
+      (e) => e.id === "ev-overlap",
+    );
+    expect(matches.length).toBe(1);
   });
 });

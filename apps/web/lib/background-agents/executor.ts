@@ -41,6 +41,7 @@ import {
 } from "@/lib/db/schema";
 import {
   getBackgroundAgentRunWithAgent,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
   recordBackgroundAgentEvent,
@@ -53,7 +54,7 @@ import {
   type BackgroundAgentWriteScope as GitHubToolsWriteScope,
 } from "./github-action-tools";
 import { mergeExtraTools } from "@/app/workflows/merge-extra-tools";
-import { buildRunSummary } from "./run-summary";
+import { buildRunSummary, mergeEventsForSummary } from "./run-summary";
 import {
   persistRunSummary,
   recordSummaryFailedEvent,
@@ -282,9 +283,15 @@ async function buildAndPersistRunSummary(params: {
   agentId: string | null;
   userId: string;
 }) {
-  const [freshRun, events, outputs] = await Promise.all([
+  const [freshRun, cappedEvents, composioEvents, outputs] = await Promise.all([
     getBackgroundAgentRunWithAgent(params.runId),
     listBackgroundAgentEvents(params.runId),
+    // #798 defect fix (Codex review P2-1): listBackgroundAgentEvents is a
+    // bounded newest-200 slice. Composio resolution emits EARLY in a run,
+    // so on a run with >200 total events, the composio events can fall off
+    // that slice entirely — merge in an uncapped, composio-scoped fetch so
+    // buildRunSummary never silently loses them.
+    listBackgroundAgentComposioEvents(params.runId),
     listBackgroundAgentOutputs(params.runId),
   ]);
 
@@ -292,10 +299,18 @@ async function buildAndPersistRunSummary(params: {
     return;
   }
 
+  const events = mergeEventsForSummary(cappedEvents, composioEvents);
+
   const summary = buildRunSummary({
     run: freshRun.run,
     events,
     outputs,
+    // #798 defect fix: whether this run's agent had Composio toolkits
+    // configured, gating run-summary.ts's "never resolved" copy. `agent`
+    // is null when the row's left join finds no match (e.g. the owning
+    // agent was deleted) — default to false (silence over noise) since we
+    // genuinely cannot know in that case.
+    composioConfigured: (freshRun.agent?.composioToolkitSlugs.length ?? 0) > 0,
   });
 
   await persistRunSummary({ runId: params.runId, summary });
@@ -1081,9 +1096,10 @@ export async function executeBackgroundAgentRun(params: {
   // ── Resolve Composio tools for this run ──────────────────────────────────
   // Attempted when the agent has non-empty composioToolkitSlugs.
   // Empty slugs = no-op (pre-Phase-5 behavior).
-  // The resolver handles repo policy gating. Grant-level gating is checked
-  // here: if no enabled grants exist, slugs are cleared before resolving
-  // so the resolver fast-paths to { status: "off" } without external calls.
+  // The resolver handles repo policy gating: blocked toolkit slugs are
+  // filtered out before resolution; if none remain, the resolver returns a
+  // typed { status: "off", reason: "repo_policy_blocked" } outcome without
+  // making any external Composio calls.
   let resolvedComposioTools: import("ai").ToolSet | undefined;
   const agentToolkitSlugs = agent.composioToolkitSlugs ?? [];
 
@@ -1113,8 +1129,30 @@ export async function executeBackgroundAgentRun(params: {
         payload: {
           toolkitSlugs: composioResult.toolkitSlugs,
           toolCount: Object.keys(composioResult.tools).length,
+          disconnectedToolkits: composioResult.disconnectedToolkits,
         },
       });
+
+      // #798: surface toolkits that resolved but have no ACTIVE connected
+      // account — previously discarded entirely (finding A4). Additive to
+      // .resolved, not a replacement: the run still has (partial) tools.
+      if (composioResult.disconnectedToolkits.length > 0) {
+        await recordBackgroundAgentEvent({
+          runId: run.id,
+          agentId: run.agentId,
+          userId: run.userId,
+          eventName: "background-agent.composio.not_connected",
+          status: "succeeded",
+          level: "warn",
+          summary: `Composio toolkits resolved but not connected: ${composioResult.disconnectedToolkits.join(", ")}.`,
+          workflowRunId: params.workflowRunId,
+          requestId: run.requestId,
+          sandboxName,
+          payload: {
+            disconnectedToolkits: composioResult.disconnectedToolkits,
+          },
+        });
+      }
     } else if (composioResult.status === "error") {
       await recordBackgroundAgentEvent({
         runId: run.id,
@@ -1123,16 +1161,60 @@ export async function executeBackgroundAgentRun(params: {
         eventName: "background-agent.composio.error",
         status: "failed",
         level: "warn",
-        summary: `Composio tool resolution failed: ${composioResult.error}`,
+        summary: `Composio tool resolution failed: ${composioResult.message}`,
         workflowRunId: params.workflowRunId,
         requestId: run.requestId,
         sandboxName,
+        // #798: errorKind is now recorded so run-summary.ts can surface it
+        // in warnings[] regardless of the run's terminal status.
+        errorKind: composioResult.errorKind,
         payload: {
           // Do NOT include error details that might contain secrets
           toolkitSlugsRequested: agentToolkitSlugs,
         },
       });
       // Non-fatal: run continues without Composio tools.
+    } else {
+      // #798: composioResult.status === "off" — every non-ready, non-error
+      // resolver outcome now emits a named event instead of the previous
+      // silent no-op (finding A1). Non-fatal: the run continues without
+      // Composio tools; status stays "succeeded" here because this event
+      // does not by itself represent a run failure.
+      //
+      // #799 extends this switch with "not_in_repo_allowlist" (a non-null
+      // repo selectedToolkitSlugs allowlist dropped every requested slug) —
+      // distinct copy from "repo_policy_blocked" (denylist) so operators can
+      // tell which policy axis caused the drop.
+      let offSummary: string;
+      if (composioResult.reason === "repo_policy_blocked") {
+        offSummary = `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+      } else if (composioResult.reason === "not_in_repo_allowlist") {
+        offSummary = `Composio tools not in repository allowlist: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+      } else {
+        offSummary =
+          "Composio tools requested but no toolkit slugs were selected.";
+      }
+      const includeBlockedSlugsInPayload =
+        composioResult.reason === "repo_policy_blocked" ||
+        composioResult.reason === "not_in_repo_allowlist";
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: offSummary,
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        payload: {
+          reason: composioResult.reason,
+          ...(includeBlockedSlugsInPayload
+            ? { blockedSlugs: composioResult.blockedSlugs ?? [] }
+            : {}),
+        },
+      });
     }
   }
 

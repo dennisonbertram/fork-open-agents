@@ -32,7 +32,7 @@ mock.module("@/lib/composio/config", () => ({
   getComposioConfig: () => ({ configured: true, apiKey: "test-key" }),
 }));
 
-const listMock = mock(async () => listResult);
+const listMock = mock(async (_params: Record<string, unknown>) => listResult);
 
 mock.module("@/lib/composio/client", () => ({
   getComposioClient: () => ({
@@ -100,26 +100,73 @@ describe("GET /api/composio/connected-accounts", () => {
     expect(slack?.alias).toBeNull();
   });
 
-  test("calls list with userIds namespaced as open_agents_user_<userId>", async () => {
+  test("calls list WITHOUT a statuses filter, so non-ACTIVE accounts are not silently dropped by the SDK", async () => {
     const { GET } = await routePromise;
     await GET();
     expect(listMock).toHaveBeenCalledWith({
       userIds: ["open_agents_user_user-42"],
-      statuses: ["ACTIVE"],
     });
+    const callArgs = listMock.mock.calls[0]?.[0] as
+      | Record<string, unknown>
+      | undefined;
+    expect(callArgs?.statuses).toBeUndefined();
   });
 
-  test("returns empty accounts on SDK error (never 500)", async () => {
+  test("returns a distinguishable 'unavailable' shape on SDK error (never a bare {accounts:[]} 200)", async () => {
     listMock.mockImplementationOnce(() => {
       throw new Error("SDK boom");
     });
     const { GET } = await routePromise;
     const res = await GET();
-    const body = (await res.json()) as { accounts: unknown[] };
+    const body = (await res.json()) as {
+      accounts: unknown[];
+      unavailable?: boolean;
+    };
 
-    // Must not 500 — connected accounts are best-effort status
+    // Must not 500 — connected accounts is still best-effort status
     expect(res.status).toBe(200);
     expect(body.accounts).toHaveLength(0);
+    // Must be distinguishable from "genuinely zero connections"
+    expect(body.unavailable).toBe(true);
+  });
+
+  test("returns unavailable: false (or absent) on a genuinely successful zero-account response", async () => {
+    listResult = { items: [] };
+    const { GET } = await routePromise;
+    const res = await GET();
+    const body = (await res.json()) as {
+      accounts: unknown[];
+      unavailable?: boolean;
+    };
+
+    expect(res.status).toBe(200);
+    expect(body.accounts).toHaveLength(0);
+    expect(body.unavailable).toBeFalsy();
+  });
+
+  test("round-trips an EXPIRED account with its real status (not ACTIVE-only)", async () => {
+    listResult = {
+      items: [
+        {
+          id: "ca_expired",
+          status: "EXPIRED",
+          alias: null,
+          toolkit: { slug: "slack" },
+        },
+      ],
+    };
+    const { GET } = await routePromise;
+    const res = await GET();
+    const body = (await res.json()) as {
+      accounts: { toolkitSlug: string; status: string }[];
+    };
+
+    expect(res.status).toBe(200);
+    expect(body.accounts).toHaveLength(1);
+    expect(body.accounts[0]).toMatchObject({
+      toolkitSlug: "slack",
+      status: "EXPIRED",
+    });
   });
 
   test("handles SDK response as plain array (not items-wrapped object)", async () => {

@@ -904,6 +904,81 @@ describe("runAgentWorkflow", () => {
     );
   });
 
+  test("BT-CHAT-RP-001 (post-review, #799 contract gap): a partial repo-policy block on a READY outcome emits composio.repo_policy.blocked naming the dropped slug, tools still proceed", async () => {
+    const composioTools = {
+      COMPOSIO_SLACK_SEND_MESSAGE: { description: "Send a Slack message" },
+    };
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+      status: "ready" as const,
+      tools: composioTools,
+      profile: null,
+      composioSessionId: "composio-session-rp-1",
+      configHash: "hash-rp-1",
+      reusedSession: false,
+      repoPolicyBlocked: [{ slug: "gmail", reason: "repo_policy_blocked" }],
+    }));
+
+    await runAgentWorkflow(makeOptions());
+
+    // Tools continue with the surviving slugs — non-fatal.
+    expect(agentStreamTools).toEqual(composioTools);
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.repo_policy.blocked",
+        status: "failed",
+        summary:
+          "Blocked toolkit for this repository: gmail (repo_policy_blocked).",
+        payload: expect.objectContaining({
+          blockedSlugs: ["gmail"],
+          reasons: { gmail: "repo_policy_blocked" },
+        }),
+      }),
+    );
+  });
+
+  test("BT-CHAT-RP-002 (post-review, #799 contract gap): an all-blocked OFF outcome emits composio.repo_policy.blocked naming every dropped slug", async () => {
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+      status: "off" as const,
+      repoPolicyBlocked: [
+        { slug: "gmail", reason: "repo_policy_blocked" },
+        { slug: "slack", reason: "not_in_repo_allowlist" },
+      ],
+    }));
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(agentStreamTools).toBeUndefined();
+    expect(spies.emitSessionEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.repo_policy.blocked",
+        status: "failed",
+        summary:
+          "Blocked toolkit for this repository: gmail (repo_policy_blocked), slack (not_in_repo_allowlist).",
+        payload: expect.objectContaining({
+          blockedSlugs: ["gmail", "slack"],
+          reasons: {
+            gmail: "repo_policy_blocked",
+            slack: "not_in_repo_allowlist",
+          },
+        }),
+      }),
+    );
+  });
+
+  test("BT-CHAT-RP-003 (post-review, #799 contract gap): no repo_policy_blocked event when repoPolicyBlocked is absent (ordinary off, never configured)", async () => {
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => ({
+      status: "off" as const,
+    }));
+
+    await runAgentWorkflow(makeOptions());
+
+    expect(spies.emitSessionEvent).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventName: "composio.repo_policy.blocked",
+      }),
+    );
+  });
+
   test("surfaces Composio setup failures before model invocation", async () => {
     const setupError = new Error(
       "Composio tools are selected, but COMPOSIO_API_KEY is not configured.",
@@ -962,6 +1037,68 @@ describe("runAgentWorkflow", () => {
       ]),
     );
     expect(JSON.stringify(writtenChunks)).not.toContain("ak_invalid");
+  });
+
+  test("surfaces an already-final ComposioSetupError message verbatim, without double-wrapping it in generic setup copy", async () => {
+    const setupError = new Error("Blocked toolkit for this repository: gmail.");
+    setupError.name = "ComposioSetupError";
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+      throw setupError;
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "Blocked toolkit for this repository: gmail.",
+    );
+
+    expect(agentInputMessages).toBeUndefined();
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta: "Blocked toolkit for this repository: gmail.",
+        },
+      ]),
+    );
+    // Regression guard: the old code re-ran this final message through
+    // getComposioUserFacingError's generic "unknown" branch, which appends
+    // "Fix the Composio setup, then retry, or turn Tools off for this chat."
+    // That must NOT happen when the error already carries a final message.
+    expect(JSON.stringify(writtenChunks)).not.toContain(
+      "Fix the Composio setup",
+    );
+  });
+
+  test("surfaces a ComposioSetupError whose message falls outside the 6 specific errorKind branches verbatim, not re-wrapped with generic 'Fix the Composio setup' copy", async () => {
+    // This message is a real ComposioSetupError text (from db/composio.ts's
+    // profile-lookup path) that getComposioErrorKind classifies as
+    // "composio_unknown" — proving the fix operates at the getSetupErrorMessage
+    // level (name === "ComposioSetupError" short-circuit), not merely as a side
+    // effect of a specific errorKind's copy already passing through as-is.
+    const setupError = new Error(
+      "The selected Composio profile no longer exists.",
+    );
+    setupError.name = "ComposioSetupError";
+    spies.resolveComposioToolsForChat.mockImplementationOnce(async () => {
+      throw setupError;
+    });
+
+    await expect(runAgentWorkflow(makeOptions())).rejects.toThrow(
+      "The selected Composio profile no longer exists.",
+    );
+
+    expect(writtenChunks).toEqual(
+      expect.arrayContaining([
+        {
+          type: "text-delta",
+          id: "setup-error",
+          delta: "The selected Composio profile no longer exists.",
+        },
+      ]),
+    );
+    expect(JSON.stringify(writtenChunks)).not.toContain(
+      "Fix the Composio setup",
+    );
   });
 
   test("passes managed runtime mode into agent options", async () => {

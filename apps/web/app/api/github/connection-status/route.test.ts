@@ -162,4 +162,20 @@ describe("GET /api/github/connection-status", () => {
       syncedInstallationsCount: null,
     });
   });
+
+  // Issue #783: an unknown (non-auth) thrown error must not be reported as
+  // "connected" with a fabricated syncedInstallationsCount — it must return
+  // a degraded status instead.
+  test("returns a degraded status when sync throws an unknown non-auth error", async () => {
+    syncError = new Error("Unexpected GitHub API failure");
+    syncErrorIsAuth = false;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.status).not.toBe("connected");
+    expect(body.syncedInstallationsCount).not.toBe(installations.length);
+  });
 });

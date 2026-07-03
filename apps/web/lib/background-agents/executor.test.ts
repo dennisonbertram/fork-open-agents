@@ -226,6 +226,9 @@ const generate = mock(async () => ({
 }));
 
 const listBackgroundAgentEvents = mock(async () => []);
+// #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
+// tests (which never assert on the merge) are unaffected.
+const listBackgroundAgentComposioEvents = mock(async () => []);
 const recordUsage = mock(async () => undefined);
 
 mock.module("./store", () => ({
@@ -235,6 +238,7 @@ mock.module("./store", () => ({
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
   listBackgroundAgentEvents,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentOutputs: listBackgroundAgentOutputsMock,
   // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
   listRepoBackgroundAgents: mock(async () => []),
@@ -251,7 +255,12 @@ mock.module("./run-summary", () => ({
     blocked: [],
     artifacts: [],
     next: [],
+    warnings: [],
   })),
+  mergeEventsForSummary: mock((capped: unknown[], composio: unknown[]) => [
+    ...capped,
+    ...composio,
+  ]),
 }));
 
 mock.module("./run-summary-persist", () => ({

@@ -87,6 +87,12 @@ mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
   },
   mergeRepoDefaults: () => mockResolvedDefaults,
 }));
+// MR-4 (#812): the real module has `import "server-only"` and would throw
+// under bun:test's client-module guard if left unmocked.
+mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
+  isKnownManagedRuntimeProfileReference: async () => true,
+}));
+
 mock.module("@/lib/db/vercel-project-links", () => ({
   getVercelProjectLinkByRepo: async () => null,
   upsertVercelProjectLink: async () => undefined,

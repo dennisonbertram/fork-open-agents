@@ -164,6 +164,7 @@ export async function DELETE(_req: Request, context: RouteContext) {
   return Response.json({
     deletedProfileId: profile.id,
     fallbackProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+    sessionsReset: profile.sessionsReset,
   });
 }
 

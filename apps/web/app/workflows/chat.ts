@@ -15,7 +15,10 @@ import type {
   SubagentRoster,
 } from "@open-agents/agent";
 import { toAnthropicDirectModelId } from "@open-agents/agent/model-ids";
-import { getComposioUserFacingError } from "@/lib/composio/errors";
+import {
+  getComposioErrorKind,
+  getComposioUserFacingError,
+} from "@/lib/composio/errors";
 import type { BrowserRunResponse } from "@/lib/sandbox/runtime/browser-runs";
 import type { ManagedServiceResponse } from "@/lib/sandbox/runtime/service-launch";
 import { getWorkflowMetadata, getWritable } from "workflow";
@@ -831,8 +834,34 @@ function getSetupErrorMessage(error: unknown): string {
     return "The saved API key for this model can't be decrypted in this environment — re-enter it in Settings → Models.";
   }
 
+  // A ComposioSetupError's message is sometimes already final, specific,
+  // actionable text (e.g. "Blocked toolkit for this repository: gmail." or
+  // "The selected Composio profile no longer exists."), built by the
+  // resolver that threw it — re-running that through getComposioUserFacingError
+  // can downgrade it to generic "Fix the Composio setup" copy (the
+  // double-wrap bug, issue #800). But some ComposioSetupError messages are
+  // deliberately terse factual statements (e.g. "COMPOSIO_API_KEY is not
+  // configured.") that getComposioErrorKind classifies into one of its
+  // specific, non-generic branches with genuinely more helpful expanded
+  // copy — those should still be expanded.
+  //
+  // Resolve the tension by classifying first: only skip the classifier when
+  // it would fall back to the generic "composio_unknown" branch (which is
+  // where the double-wrap actually bites); let the five specific kinds
+  // (missing/invalid API key, auth expired, not connected, unreachable)
+  // still expand via getComposioUserFacingError as before.
+  if (name === "ComposioSetupError") {
+    const kind = getComposioErrorKind(message);
+    return kind === "composio_unknown"
+      ? message
+      : getComposioUserFacingError(message);
+  }
+
+  // Fallback for errors that are NOT already a ComposioSetupError — e.g. a
+  // raw, untyped Composio SDK error that leaked through some other path.
+  // These still need classification, so this branch (unlike the one above)
+  // always calls getComposioUserFacingError.
   if (
-    name === "ComposioSetupError" ||
     message.includes("Composio") ||
     message.includes("COMPOSIO_API_KEY") ||
     message.includes("Invalid API key") ||
@@ -2586,6 +2615,55 @@ const runAgentStep = async (
         agentKey: "main",
         runtimeMode: agentOptions.runtimeMode ?? "classic",
       });
+
+      // #799 post-review fix: a repo-policy block (partial on a ready
+      // outcome, or total on an off outcome) previously left no trace at
+      // all — the tool list silently shrank, or an all-blocked chat looked
+      // identical to a never-configured one. Record a typed, visible
+      // degradation event whenever repoPolicyBlocked is non-empty, on
+      // EITHER outcome, before the ready-specific events below (so it is
+      // visible even when composioResult.status is "off" and none of those
+      // fire). Non-fatal: never throws; tools continue without the
+      // blocked slugs.
+      if (
+        (composioResult.status === "ready" ||
+          composioResult.status === "off") &&
+        composioResult.repoPolicyBlocked &&
+        composioResult.repoPolicyBlocked.length > 0
+      ) {
+        const blockedSlugs = composioResult.repoPolicyBlocked.map(
+          (b) => b.slug,
+        );
+        const reasons = Object.fromEntries(
+          composioResult.repoPolicyBlocked.map((b) => [b.slug, b.reason]),
+        );
+        // Summary MUST start with "Blocked toolkit for this repository: "
+        // so lib/composio/errors.ts's getComposioErrorKind classifies it as
+        // composio_repo_policy_blocked, and the runtime-observability
+        // panel's LikelyIssue card (composio.* + status "failed") renders
+        // it verbatim (#800).
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "composio.repo_policy.blocked",
+          status: "failed",
+          summary: `Blocked toolkit for this repository: ${composioResult.repoPolicyBlocked
+            .map((b) => `${b.slug} (${b.reason})`)
+            .join(", ")}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            blockedSlugs,
+            reasons,
+          },
+        });
+      }
 
       if (composioResult.status === "ready") {
         composioTools = composioResult.tools;

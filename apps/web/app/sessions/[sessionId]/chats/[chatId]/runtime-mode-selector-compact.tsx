@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import type { ManagedRuntimeProfilesResponse } from "@/app/api/sessions/[sessionId]/managed-runtime/profiles/route";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,10 +39,10 @@ export function getRuntimeModeSummary({
     const profileName = profile?.displayName ?? "the selected profile";
     const evidenceSummary = getManagedRuntimeProfileEvidenceSummary(profile);
 
-    return `Coordinated (${profileName}): a coordinator plans the work and delegates repo changes to managed workers, recording a proof bundle of every step. Open Runtime Inspector after a run to verify what ran — sandbox, services, browser checks, and any incomplete proof. Best for shared repos or when you want an audit trail. ${evidenceSummary}`;
+    return `Delegated (${profileName}): the agent delegates work to a verified sandbox worker and records evidence of every step. Open Runtime Inspector after a run to verify what ran — sandbox, services, browser checks, and any incomplete evidence. Best for shared repos or when you want a record of what happened. ${evidenceSummary}`;
   }
 
-  return "Direct: the agent edits your repo itself in the sandbox. Fastest — best for quick changes and exploration. Switch to Coordinated when you want a coordinator, managed workers, and a verifiable proof bundle.";
+  return "Direct: Agent edits files directly in the sandbox. Fastest — best for quick changes and exploration. Switch to Delegated when you want a verified sandbox worker and a record of what ran.";
 }
 
 export function RuntimeModeSelectorCompact({
@@ -56,6 +56,7 @@ export function RuntimeModeSelectorCompact({
   onManagedRuntimeProfileChange,
   onManagedProfileSaved,
   onManagedProfileDeleted,
+  onOpenInspector,
 }: {
   runtimeMode: RuntimeMode;
   managedRuntimeProfileId: string;
@@ -67,6 +68,7 @@ export function RuntimeModeSelectorCompact({
   onManagedRuntimeProfileChange: (profileId: string) => void;
   onManagedProfileSaved?: () => void;
   onManagedProfileDeleted?: (fallbackProfileId: string) => Promise<void>;
+  onOpenInspector?: () => void;
 }) {
   const isManagedRuntime = runtimeMode === "managed_runtime";
   const summary = getRuntimeModeSummary({
@@ -80,7 +82,7 @@ export function RuntimeModeSelectorCompact({
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              aria-label={`Runtime: ${isManagedRuntime ? "Coordinated" : "Direct"}`}
+              aria-label={`Runtime: ${isManagedRuntime ? "Delegated" : "Direct"}`}
               className={cn(
                 "h-8 shrink-0 gap-1.5 rounded-full px-2 text-xs",
                 isManagedRuntime
@@ -93,7 +95,7 @@ export function RuntimeModeSelectorCompact({
               variant={isManagedRuntime ? "outline" : "ghost"}
             >
               <ShieldCheck className="h-3.5 w-3.5" />
-              <span>{isManagedRuntime ? "Coordinated" : "Direct"}</span>
+              <span>{isManagedRuntime ? "Delegated" : "Direct"}</span>
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -115,8 +117,8 @@ export function RuntimeModeSelectorCompact({
             <span className="flex flex-col gap-0.5">
               <span>Direct</span>
               <span className="text-muted-foreground text-xs">
-                The agent edits your repo itself — fastest, best for quick
-                changes and exploration.
+                Agent edits files directly — fastest, best for quick changes and
+                exploration.
               </span>
             </span>
           </DropdownMenuRadioItem>
@@ -125,11 +127,11 @@ export function RuntimeModeSelectorCompact({
             value="managed_runtime"
           >
             <span className="flex flex-col gap-0.5">
-              <span>Coordinated</span>
+              <span>Delegated</span>
               <span className="text-muted-foreground text-xs">
-                A coordinator delegates the work to managed workers and records
-                a verifiable proof bundle — best for shared repos or an audit
-                trail.
+                Agent delegates work to a verified sandbox worker and records
+                evidence — best for shared repos or when you want a record of
+                what happened.
               </span>
             </span>
           </DropdownMenuRadioItem>
@@ -138,7 +140,7 @@ export function RuntimeModeSelectorCompact({
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground">
             After a run, open{" "}
             <span className="font-medium">Runtime Inspector</span> to verify
-            what ran — workers, services, and the proof bundle.
+            what ran — workers, services, and the recorded evidence.
           </p>
         ) : null}
         <DropdownMenuSeparator />
@@ -167,6 +169,10 @@ export function RuntimeModeSelectorCompact({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        <RuntimeModeSelectorUntestedWarning
+          onOpenInspector={onOpenInspector}
+          selectedProfile={selectedProfile}
+        />
         {sessionId ? (
           <>
             <DropdownMenuSeparator />
@@ -187,6 +193,62 @@ export function RuntimeModeSelectorCompact({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * A profile is only "Tested" once it has a setup_and_verify pass (Decision
+ * D6) — a verify-only pass, a failure, or no evidence at all all mean the
+ * setup commands were never proven and the profile is not yet ready.
+ */
+function isProfileConsideredTested(
+  profile: ManagedRuntimeProfileOption,
+): boolean {
+  if (profile.source !== "session") {
+    return true;
+  }
+
+  return (
+    profile.testStatus === "passed" &&
+    profile.lastTestScope === "setup_and_verify"
+  );
+}
+
+/**
+ * Inline warning shown when the selected profile's persisted state is not
+ * "Tested" (#815 §3). Selection stays possible — this warns, it does not
+ * block — the real gate is fail-closed at run time (MR-2). Links to the
+ * Runtime Inspector so the user can see the actual evidence.
+ *
+ * Exported separately so tests can render it directly — Radix
+ * DropdownMenuContent is portal-gated and not emitted by
+ * renderToStaticMarkup when closed.
+ */
+export function RuntimeModeSelectorUntestedWarning({
+  selectedProfile,
+  onOpenInspector,
+}: {
+  selectedProfile: ManagedRuntimeProfileOption | undefined;
+  onOpenInspector?: () => void;
+}) {
+  if (!selectedProfile || isProfileConsideredTested(selectedProfile)) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-start gap-1.5 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+      <p>
+        Not yet tested — run Setup + verify first.{" "}
+        <button
+          className="font-medium underline underline-offset-2"
+          onClick={onOpenInspector}
+          type="button"
+        >
+          Open Runtime Inspector
+        </button>
+      </p>
+    </div>
   );
 }
 

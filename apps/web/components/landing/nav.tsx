@@ -30,18 +30,27 @@ export function LandingNav({
               : "shadow-none"
           }`}
         >
-          <Logo className="h-[17px]" />
+          <Logo className="h-[17px]" aria-label="Open Agents home" />
 
+          {/* Hidden must mean inert: `invisible` (visibility:hidden) plus
+              aria-hidden removes the cluster from the a11y tree and tab
+              order — otherwise this is an invisible, keyboard-activatable
+              "Sign in with Vercel" button. */}
           <div
+            aria-hidden={showSignIn ? undefined : true}
             className={cn(
               "flex items-center gap-2 transition-all duration-150 [transition-timing-function:cubic-bezier(0.4,0.04,0.04,1)]",
               showSignIn
                 ? "opacity-100 blur-none"
-                : "pointer-events-none opacity-0 blur-xs",
+                : "invisible pointer-events-none opacity-0 blur-xs",
             )}
           >
-            <GitHubLink variant="ghost" size="sm" />
-            <SignInButton size="sm" />
+            <GitHubLink
+              variant="ghost"
+              size="sm"
+              aria-label="Open Agents on GitHub (opens in a new tab)"
+            />
+            <SignInButton size="sm" className="h-10 sm:h-8" />
           </div>
         </div>
       </div>

@@ -8,8 +8,14 @@ import { Check, Github, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
+import { AuthCtaError } from "@/components/auth/auth-cta-error";
 import { authClient } from "@/lib/auth/client";
+import { runAuthCta } from "@/lib/auth/run-auth-cta";
+import type { GitHubConnectStatus } from "@/lib/github/connect-status";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
+import { GitHubStatusNotice } from "./github-status-notice";
+
+export const GITHUB_LINK_ERROR_MESSAGE = "Couldn't connect GitHub. Try again.";
 
 type StepId = 1 | 2;
 
@@ -47,16 +53,28 @@ export function GetStartedFlow() {
     hasGitHubAccount,
     hasGitHubInstallations,
   } = useSession();
-  const isGitHubReconnect = searchParams.get("step") === "github";
+  const githubStatus = searchParams.get("github") as GitHubConnectStatus | null;
+  const missingInstallationId =
+    searchParams.get("missing_installation_id") === "1";
+  // Reconnect intent must be explicit: `step=github` alone only means
+  // "auto-open the GitHub step" (see below) — it does not imply the user's
+  // GitHub connection is broken. Only an explicit `reconnect=1` (set by
+  // `buildGitHubReconnectUrl`) forces the reconnect flow.
+  const isGitHubReconnect = searchParams.get("reconnect") === "1";
+  const isGitHubStepParam = searchParams.get("step") === "github";
+  // Any github=<status> param present on load auto-opens step 2, regardless
+  // of the `step` param — the user is returning from a connect/install
+  // attempt and needs to see the outcome, not land back on step 1.
+  const shouldAutoOpenGitHubStep = isGitHubStepParam || githubStatus !== null;
   const redirectPath = sanitizeInternalRedirect(
     searchParams.get("next"),
     "/sessions",
   );
   const [activeStep, setActiveStep] = useState<StepId>(
-    isGitHubReconnect ? 2 : 1,
+    shouldAutoOpenGitHubStep ? 2 : 1,
   );
   const [completedSteps, setCompletedSteps] = useState<Set<StepId>>(
-    () => new Set(isGitHubReconnect ? [1] : []),
+    () => new Set(shouldAutoOpenGitHubStep ? [1] : []),
   );
 
   const markComplete = useCallback((step: StepId) => {
@@ -95,9 +113,9 @@ export function GetStartedFlow() {
             Open Agents
           </span>
         </div>
-        <p className="hidden max-w-sm text-sm leading-relaxed text-zinc-600 md:block">
-          Spawn coding agents that run infinitely in the cloud. Powered by AI
-          SDK, Gateway, Sandbox, and Workflow SDK.
+        <p className="max-w-sm text-sm leading-relaxed text-zinc-600">
+          Describe what you want built, and an AI agent writes the code in its
+          own cloud sandbox — no local setup required.
         </p>
       </div>
 
@@ -178,6 +196,8 @@ export function GetStartedFlow() {
                             hasGitHubInstallations={hasGitHubInstallations}
                             forceReconnect={isGitHubReconnect}
                             redirectPath={redirectPath}
+                            githubStatus={githubStatus}
+                            missingInstallationId={missingInstallationId}
                             onComplete={() => {
                               markComplete(2);
                               router.push(redirectPath);
@@ -260,6 +280,8 @@ function GitHubConnectStep({
   hasGitHubInstallations,
   forceReconnect,
   redirectPath,
+  githubStatus,
+  missingInstallationId,
   onComplete,
 }: {
   session: ReturnType<typeof useSession>["session"];
@@ -268,15 +290,26 @@ function GitHubConnectStep({
   hasGitHubInstallations: boolean;
   forceReconnect: boolean;
   redirectPath: string;
+  githubStatus: GitHubConnectStatus | null;
+  missingInstallationId: boolean;
   onComplete: () => void;
 }) {
   const [isLinking, setIsLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const isConnected =
     !forceReconnect && hasGitHubAccount && hasGitHubInstallations;
   const shouldShowInstallStep =
     !forceReconnect && hasGitHubAccount && !hasGitHubInstallations;
   const githubInstallHref = `/api/github/app/install?next=${encodeURIComponent(redirectPath)}`;
   const githubPostLinkCallback = `/api/github/post-link?next=${encodeURIComponent(redirectPath)}`;
+
+  const statusNotice = githubStatus ? (
+    <GitHubStatusNotice
+      status={githubStatus}
+      retryHref={githubInstallHref}
+      missingInstallationId={missingInstallationId}
+    />
+  ) : null;
 
   if (loading) {
     return <Skeleton className="h-10 w-full rounded bg-white/5" />;
@@ -285,6 +318,7 @@ function GitHubConnectStep({
   if (isConnected) {
     return (
       <div className="space-y-3">
+        {statusNotice}
         <div className="flex items-center justify-between rounded-lg border border-white/10 px-3 py-2.5">
           <div className="flex items-center gap-3">
             {session?.user?.avatar ? (
@@ -328,8 +362,11 @@ function GitHubConnectStep({
     // linked but no app installed
     return (
       <div className="space-y-3">
+        {statusNotice}
         <p className="text-xs text-zinc-500">
-          GitHub account linked. Install the GitHub App to grant repo access.
+          Your GitHub identity is verified. Next, install the Open Agents GitHub
+          App to grant repo access — you can choose selected repositories
+          instead of every repository in your account.
         </p>
         <Button
           asChild
@@ -346,23 +383,31 @@ function GitHubConnectStep({
   }
 
   // not linked
+  const handleLinkGitHub = () =>
+    runAuthCta({
+      cta: "github_link_get_started",
+      errorMessage: GITHUB_LINK_ERROR_MESSAGE,
+      action: () =>
+        authClient.linkSocial({
+          provider: "github",
+          callbackURL: githubPostLinkCallback,
+        }),
+      setPending: setIsLinking,
+      setError: setLinkError,
+    });
+
   return (
     <div className="space-y-3">
+      {statusNotice}
       <p className="text-xs text-zinc-500">
         {forceReconnect
           ? "Reconnect your GitHub account to restore repository and installation access."
-          : "Connect your GitHub account to clone repos, create PRs, and push code."}
+          : "Connect your GitHub account to verify your identity (step 1 of 2). Next you'll install the Open Agents GitHub App and choose which repositories it can access."}
       </p>
       <Button
         variant="outline"
         disabled={isLinking}
-        onClick={async () => {
-          setIsLinking(true);
-          await authClient.linkSocial({
-            provider: "github",
-            callbackURL: githubPostLinkCallback,
-          });
-        }}
+        onClick={() => void handleLinkGitHub()}
         className="gap-2 border-zinc-700 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"
       >
         {isLinking ? (
@@ -372,6 +417,12 @@ function GitHubConnectStep({
         )}
         {forceReconnect ? "Reconnect GitHub" : "Connect GitHub"}
       </Button>
+      {linkError ? (
+        <AuthCtaError
+          message={linkError}
+          onRetry={() => void handleLinkGitHub()}
+        />
+      ) : null}
     </div>
   );
 }

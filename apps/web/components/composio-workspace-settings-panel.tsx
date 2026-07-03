@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
+import { computeSelectedToolkitSlugsForSave } from "./composio-workspace-settings-panel-save-payload";
 
 type ComposioWorkspaceSettingsPanelProps = {
   repoOwner: string | null;
@@ -60,10 +61,17 @@ export function ComposioWorkspaceSettingsPanel({
   const [allowedProfileIds, setAllowedProfileIds] = useState<string[]>([]);
   const [blockedToolkits, setBlockedToolkits] = useState("");
   // Active toolkits for this repo (subset of globally-connected). GitHub is
-  // default-on when the repo has never been configured (null).
+  // default-on when the repo has never been configured (null). The picker
+  // can only display a concrete array, so ["github"] here is a DISPLAY
+  // default only — selectedToolkitSlugsTouched tracks whether the user has
+  // actually changed the selection, which is what savePolicy consults
+  // (#799, finding G6) so an untouched picker never persists a materialized
+  // ["github"] as if the user chose it.
   const [selectedToolkitSlugs, setSelectedToolkitSlugs] = useState<string[]>(
     [],
   );
+  const [selectedToolkitSlugsTouched, setSelectedToolkitSlugsTouched] =
+    useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -74,8 +82,13 @@ export function ComposioWorkspaceSettingsPanel({
     setAllowedProfileIds(settings?.allowedProfileIds ?? []);
     setRestrictsProfiles((settings?.allowedProfileIds.length ?? 0) > 0);
     setBlockedToolkits((settings?.blockedToolkitSlugs ?? []).join(", "));
-    // null/undefined = never configured → GitHub default-on.
+    // null/undefined = never configured → GitHub default-on for DISPLAY
+    // only. selectedToolkitSlugsTouched resets to false on every data load,
+    // so loading an explicit saved selection (non-null) also resets the
+    // touched flag — the display value below reflects "touched" reality
+    // once the user interacts with the picker again.
     setSelectedToolkitSlugs(settings?.selectedToolkitSlugs ?? ["github"]);
+    setSelectedToolkitSlugsTouched(settings?.selectedToolkitSlugs != null);
     setStatus(
       data
         ? settings
@@ -108,7 +121,12 @@ export function ComposioWorkspaceSettingsPanel({
           allowedProfileIds: restrictsProfiles ? allowedProfileIds : [],
           blockedToolkitSlugs: splitList(blockedToolkits),
           agentDefaults: data?.repositorySettings?.agentDefaults ?? {},
-          selectedToolkitSlugs,
+          // Preserves null (never configured) unless the user actually
+          // touched the picker this session (#799, finding G6).
+          selectedToolkitSlugs: computeSelectedToolkitSlugsForSave({
+            touched: selectedToolkitSlugsTouched,
+            currentSlugs: selectedToolkitSlugs,
+          }),
         }),
       });
       const body = (await response.json().catch(() => null)) as
@@ -206,7 +224,10 @@ export function ComposioWorkspaceSettingsPanel({
               <div className="mt-2">
                 <ComposioToolkitPicker
                   selectedSlugs={selectedToolkitSlugs}
-                  onChange={setSelectedToolkitSlugs}
+                  onChange={(slugs) => {
+                    setSelectedToolkitSlugs(slugs);
+                    setSelectedToolkitSlugsTouched(true);
+                  }}
                   source="connected"
                   repoOwner={repoOwner}
                   repoName={repoName}
@@ -243,6 +264,10 @@ export function ComposioWorkspaceSettingsPanel({
                   </Label>
                   <FieldHelp>
                     Leave off to allow every global profile in this repository.
+                  </FieldHelp>
+                  <FieldHelp>
+                    Leaving this empty allows all connected profiles; it does
+                    not block any profile.
                   </FieldHelp>
                 </div>
                 <Switch

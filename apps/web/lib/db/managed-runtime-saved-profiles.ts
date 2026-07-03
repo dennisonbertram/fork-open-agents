@@ -1,11 +1,14 @@
 import "server-only";
 
-import type {
-  ManagedRuntimeProfile,
-  ManagedRuntimeProfileCommand,
+import {
+  DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+  isManagedRuntimeProfileId,
+  type ManagedRuntimeProfile,
+  type ManagedRuntimeProfileCommand,
 } from "@open-agents/sandbox/managed-runtime-profiles";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, or } from "drizzle-orm";
 import { nanoid } from "nanoid";
+import { emitSessionEvent } from "@/lib/observability/events";
 import { db } from "./client";
 import {
   type ManagedRuntimeCommandObservation,
@@ -14,6 +17,7 @@ import {
   managedRuntimeProfileDrafts,
   managedRuntimeSavedProfiles,
   sessions,
+  userPreferences,
 } from "./schema";
 
 function normalizeCommand(
@@ -27,6 +31,24 @@ function normalizeCommand(
     timeoutMs: command.timeoutMs,
     required: command.required,
   };
+}
+
+/**
+ * Structured log for the account-level (no session context)
+ * `managed_runtime.profile.preference_reset` event. `session_events` cannot
+ * hold this event because `session_id` is a NOT NULL FK to `sessions.id`;
+ * the API response's `preferenceReset: true` field is the durable evidence
+ * surface consumed by callers (see #808 API contract).
+ */
+function emitManagedRuntimePreferenceResetLog(payload: {
+  userId: string;
+  deletedProfileId: string;
+  newDefaultProfileId: string;
+}): void {
+  console.info(
+    "[observability] managed_runtime.profile.preference_reset",
+    payload,
+  );
 }
 
 export function savedProfileIdForDraft(draftId: string): string {
@@ -61,6 +83,38 @@ export async function getManagedRuntimeSavedProfile(params: {
       eq(managedRuntimeSavedProfiles.sessionId, params.sessionId),
     ),
   });
+}
+
+/**
+ * App-level validator for a managed-runtime profile id reference — the
+ * write-path guard now that there is no (and can be no) foreign key on
+ * profile id columns: built-in profile ids exist only in code
+ * (packages/sandbox/managed-runtime-profiles.ts), so a DB FK is impossible.
+ * Returns true when the id is a built-in profile, a session-scope saved
+ * profile owned by this user+session, or a user_default-scope saved profile
+ * owned by this user. Consumed by write-path routes (MR-4).
+ */
+export async function isKnownManagedRuntimeProfileReference(params: {
+  userId: string;
+  sessionId: string;
+  profileId: string;
+}): Promise<boolean> {
+  if (isManagedRuntimeProfileId(params.profileId)) {
+    return true;
+  }
+
+  const saved = await db.query.managedRuntimeSavedProfiles.findFirst({
+    where: and(
+      eq(managedRuntimeSavedProfiles.id, params.profileId),
+      eq(managedRuntimeSavedProfiles.userId, params.userId),
+      or(
+        eq(managedRuntimeSavedProfiles.sessionId, params.sessionId),
+        eq(managedRuntimeSavedProfiles.scope, "user_default"),
+      ),
+    ),
+  });
+
+  return Boolean(saved);
 }
 
 export async function listManagedRuntimeSavedProfiles(params: {
@@ -122,13 +176,29 @@ export async function updateManagedRuntimeSavedProfile(params: {
   return profile;
 }
 
+export type DeleteManagedRuntimeSavedProfileResult =
+  ManagedRuntimeSavedProfile & {
+    /** True when an active session referencing this profile was reset. */
+    sessionsReset: boolean;
+  };
+
+/**
+ * Deletes a session-scope saved profile. Per Decision D2, if the owning
+ * session is currently pointed at the deleted profile, the session is reset
+ * to runtimeMode "classic" (not just given a fallback profile id) so the
+ * runtime never silently keeps running in managed_runtime against a profile
+ * that no longer exists. Emits
+ * `managed_runtime.profile.deleted_active_reset` after the transaction
+ * commits (warn-and-continue: an event-emit failure must not roll back the
+ * delete — Decision D8).
+ */
 export async function deleteManagedRuntimeSavedProfile(params: {
   userId: string;
   sessionId: string;
   profileId: string;
   fallbackProfileId: string;
-}): Promise<ManagedRuntimeSavedProfile | undefined> {
-  return db.transaction(async (tx) => {
+}): Promise<DeleteManagedRuntimeSavedProfileResult | undefined> {
+  const result = await db.transaction(async (tx) => {
     const [profile] = await tx
       .delete(managedRuntimeSavedProfiles)
       .where(
@@ -144,9 +214,10 @@ export async function deleteManagedRuntimeSavedProfile(params: {
       return undefined;
     }
 
-    await tx
+    const [resetSession] = await tx
       .update(sessions)
       .set({
+        runtimeMode: "classic",
         managedRuntimeProfileId: params.fallbackProfileId,
         updatedAt: new Date(),
       })
@@ -156,10 +227,38 @@ export async function deleteManagedRuntimeSavedProfile(params: {
           eq(sessions.userId, params.userId),
           eq(sessions.managedRuntimeProfileId, params.profileId),
         ),
-      );
+      )
+      .returning();
 
-    return profile;
+    return { profile, resetSession };
   });
+
+  if (!result) {
+    return undefined;
+  }
+
+  const sessionsReset = Boolean(result.resetSession);
+
+  if (sessionsReset) {
+    await emitSessionEvent({
+      sessionId: params.sessionId,
+      userId: params.userId,
+      source: "managed_runtime",
+      actorType: "user",
+      eventName: "managed_runtime.profile.deleted_active_reset",
+      status: "info",
+      summary: `Session's managed runtime profile "${params.profileId}" was deleted; runtime mode reset to classic.`,
+      payload: {
+        sessionId: params.sessionId,
+        profileId: params.profileId,
+        previousRuntimeMode: "managed_runtime",
+        newRuntimeMode: "classic",
+        fallbackProfileId: params.fallbackProfileId,
+      },
+    });
+  }
+
+  return { ...result.profile, sessionsReset };
 }
 
 export async function applyDraftAsSessionManagedRuntimeProfile(params: {
@@ -416,26 +515,77 @@ export async function updateUserDefaultProfile(params: {
   return profile;
 }
 
+export type DeleteUserDefaultProfileResult = ManagedRuntimeSavedProfile & {
+  /** True when user_preferences.default_managed_runtime_profile_id referenced this profile and was reset to the built-in default. */
+  preferenceReset: boolean;
+};
+
 /**
  * Delete an account-level profile. The scope guard ensures session profiles
- * cannot be accidentally deleted via this path.
+ * cannot be accidentally deleted via this path. Per Decision D2, if
+ * `user_preferences.default_managed_runtime_profile_id` references the
+ * deleted profile, it is reset to the built-in default in the same
+ * transaction so Preferences never points at a profile that no longer
+ * exists. Emits `managed_runtime.profile.preference_reset` after the
+ * transaction commits (warn-and-continue — Decision D8).
  */
 export async function deleteUserDefaultProfile(params: {
   userId: string;
   profileId: string;
-}): Promise<ManagedRuntimeSavedProfile | undefined> {
-  const [profile] = await db
-    .delete(managedRuntimeSavedProfiles)
-    .where(
-      and(
-        eq(managedRuntimeSavedProfiles.id, params.profileId),
-        eq(managedRuntimeSavedProfiles.userId, params.userId),
-        eq(managedRuntimeSavedProfiles.scope, "user_default"),
-      ),
-    )
-    .returning();
+}): Promise<DeleteUserDefaultProfileResult | undefined> {
+  const result = await db.transaction(async (tx) => {
+    const [profile] = await tx
+      .delete(managedRuntimeSavedProfiles)
+      .where(
+        and(
+          eq(managedRuntimeSavedProfiles.id, params.profileId),
+          eq(managedRuntimeSavedProfiles.userId, params.userId),
+          eq(managedRuntimeSavedProfiles.scope, "user_default"),
+        ),
+      )
+      .returning();
 
-  return profile;
+    if (!profile) {
+      return undefined;
+    }
+
+    const [resetPreferences] = await tx
+      .update(userPreferences)
+      .set({
+        defaultManagedRuntimeProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(userPreferences.userId, params.userId),
+          eq(userPreferences.defaultManagedRuntimeProfileId, params.profileId),
+        ),
+      )
+      .returning();
+
+    return { profile, resetPreferences };
+  });
+
+  if (!result) {
+    return undefined;
+  }
+
+  const preferenceReset = Boolean(result.resetPreferences);
+
+  if (preferenceReset) {
+    // Account-level action (no session context): `session_events.session_id`
+    // is a NOT NULL FK to `sessions.id`, so this cannot be persisted as a
+    // session event. Structured log mirrors emitSessionEvent's own
+    // warn-and-continue shape; the API response's `preferenceReset: true`
+    // field is the durable evidence surface (see #808 API contract).
+    emitManagedRuntimePreferenceResetLog({
+      userId: params.userId,
+      deletedProfileId: params.profileId,
+      newDefaultProfileId: DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
+    });
+  }
+
+  return { ...result.profile, preferenceReset };
 }
 
 // ---------------------------------------------------------------------------
@@ -446,6 +596,12 @@ export async function finishManagedRuntimeSavedProfileTest(params: {
   profileId: string;
   testResults: ManagedRuntimeCommandObservation[];
   testFailureMessage?: string | null;
+  /**
+   * The scope actually executed (verify vs setup_and_verify — Decision D6).
+   * Persisted so the "Tested" badge is only granted from a setup_and_verify
+   * pass instead of over-promising from a verify-only run.
+   */
+  testScope?: "verify" | "setup_and_verify" | null;
 }): Promise<ManagedRuntimeSavedProfile | undefined> {
   const now = new Date();
   const [profile] = await db
@@ -453,6 +609,7 @@ export async function finishManagedRuntimeSavedProfileTest(params: {
     .set({
       testResults: params.testResults,
       testFailureMessage: params.testFailureMessage ?? null,
+      lastTestScope: params.testScope ?? null,
       testedAt: now,
       updatedAt: now,
     })

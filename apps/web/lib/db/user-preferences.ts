@@ -1,9 +1,6 @@
 import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
-import {
-  DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
-  normalizeManagedRuntimeProfileId,
-} from "@open-agents/sandbox/managed-runtime-profiles";
+import { DEFAULT_MANAGED_RUNTIME_PROFILE_ID } from "@open-agents/sandbox/managed-runtime-profiles";
 import type { SandboxType } from "@/components/sandbox-selector-compact";
 import { modelVariantsSchema, type ModelVariant } from "@/lib/model-variants";
 import { APP_DEFAULT_MODEL_ID } from "@/lib/models";
@@ -131,9 +128,13 @@ export function toUserPreferencesData(
     defaultSubagentModelId: row?.defaultSubagentModelId ?? null,
     defaultInferenceProfileId: row?.defaultInferenceProfileId ?? null,
     defaultSandboxType: normalizeSandboxType(row?.defaultSandboxType),
-    defaultManagedRuntimeProfileId: normalizeManagedRuntimeProfileId(
-      row?.defaultManagedRuntimeProfileId,
-    ),
+    // Preserve the stored id verbatim — do NOT coerce a non-built-in
+    // (user_default) id to the built-in default here. Write-path validation
+    // (isKnownManagedRuntimeProfileReference) and resolution-time typed
+    // failures enforce validity; the delete lifecycle resets dangling refs.
+    defaultManagedRuntimeProfileId:
+      row?.defaultManagedRuntimeProfileId ??
+      DEFAULT_PREFERENCES.defaultManagedRuntimeProfileId,
     defaultDiffMode: normalizeDiffMode(row?.defaultDiffMode),
     autoCommitPush: row?.autoCommitPush ?? DEFAULT_PREFERENCES.autoCommitPush,
     autoCreatePr: row?.autoCreatePr ?? DEFAULT_PREFERENCES.autoCreatePr,

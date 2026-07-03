@@ -25,6 +25,15 @@ export type ManagedRuntimeProfileOption = {
   source: "built_in" | "session";
   testStatus?: "untested" | "passed" | "failed";
   testedAt?: string | null;
+  /**
+   * The scope actually executed for the current test evidence (Decision D6):
+   * "verify" (verification commands only) vs "setup_and_verify". A missing
+   * value means there is no persisted test evidence for this profile yet.
+   * The evidence badge only grants the green "Tested" label from a
+   * setup_and_verify pass; a verify-only pass renders "Verified on current
+   * sandbox — setup not tested" instead.
+   */
+  lastTestScope?: "verify" | "setup_and_verify" | null;
 };
 
 export type ManagedRuntimeProfilesResponse = {
@@ -86,6 +95,11 @@ export async function GET(
           : isEditedProfile
             ? null
             : (sourceDraftSnapshot?.testedAt ?? null),
+        lastTestScope: savedEvidence
+          ? savedEvidence.lastTestScope
+          : isEditedProfile
+            ? null
+            : (sourceDraftSnapshot?.lastTestScope ?? null),
       });
     }),
   );
@@ -98,7 +112,10 @@ export async function GET(
 function toProfileOption(
   profile: ReturnType<typeof listManagedRuntimeProfiles>[number],
   source: ManagedRuntimeProfileOption["source"],
-  evidence?: Pick<ManagedRuntimeProfileOption, "testStatus" | "testedAt">,
+  evidence?: Pick<
+    ManagedRuntimeProfileOption,
+    "testStatus" | "testedAt" | "lastTestScope"
+  >,
 ): ManagedRuntimeProfileOption {
   return {
     id: profile.id,
@@ -137,7 +154,11 @@ function getSavedProfileTestEvidence(profile: {
   testFailureMessage?: string | null;
   testResults?: Array<{ status: string; required?: boolean }>;
   testedAt?: Date | null;
-}): Pick<ManagedRuntimeProfileOption, "testStatus" | "testedAt"> | null {
+  lastTestScope?: "verify" | "setup_and_verify" | null;
+}): Pick<
+  ManagedRuntimeProfileOption,
+  "testStatus" | "testedAt" | "lastTestScope"
+> | null {
   const testResults = profile.testResults ?? [];
   if (
     !profile.testedAt &&
@@ -155,5 +176,6 @@ function getSavedProfileTestEvidence(profile: {
     testStatus:
       profile.testFailureMessage || hasRequiredFailure ? "failed" : "passed",
     testedAt: profile.testedAt?.toISOString() ?? null,
+    lastTestScope: profile.lastTestScope ?? null,
   };
 }

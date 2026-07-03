@@ -104,6 +104,9 @@ const updateBackgroundAgentRunStatus = mock(
   }),
 );
 const listBackgroundAgentEvents = mock(async () => []);
+// #798 P2-1: uncapped, composio-scoped fetch — default empty so existing
+// tests (which never assert on the merge) are unaffected.
+const listBackgroundAgentComposioEvents = mock(async () => []);
 const listBackgroundAgentOutputs = mock(async () => []);
 const listEnabledToolGrantsForAgent = mock(async (_agentId: string) => []);
 
@@ -114,6 +117,7 @@ mock.module("./store", () => ({
   recordBackgroundAgentOutput,
   updateBackgroundAgentRunStatus,
   listBackgroundAgentEvents,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentOutputs,
   listEnabledToolGrantsForAgent,
   // needed by builtin-agent.ts (imported via isLearningsAgent in executor.ts)
@@ -131,7 +135,12 @@ mock.module("./run-summary", () => ({
     blocked: [],
     artifacts: [],
     next: [],
+    warnings: [],
   })),
+  mergeEventsForSummary: mock((capped: unknown[], composio: unknown[]) => [
+    ...capped,
+    ...composio,
+  ]),
 }));
 mock.module("./run-summary-persist", () => ({
   persistRunSummary: mock(async () => undefined),
@@ -296,16 +305,24 @@ mock.module("@/lib/inference/profile-resolution", () => ({
 const fakeComposioTools: Record<string, unknown> = {
   github_create_issue: { description: "Create a GitHub issue" },
 };
+type FakeComposioResult =
+  | {
+      status: "ready";
+      tools: Record<string, unknown>;
+      toolkitSlugs: string[];
+      disconnectedToolkits: string[];
+    }
+  | {
+      status: "off";
+      reason: "no_slugs_selected" | "repo_policy_blocked";
+      blockedSlugs?: string[];
+    }
+  | { status: "error"; errorKind: string; message: string };
+
 const resolveComposioToolsForBgRun = mock(
-  async (
-    _params: unknown,
-  ): Promise<{
-    status: "ready" | "off" | "error";
-    tools?: Record<string, unknown>;
-    toolkitSlugs?: string[];
-    error?: string;
-  }> => ({
+  async (_params: unknown): Promise<FakeComposioResult> => ({
     status: "off",
+    reason: "no_slugs_selected",
   }),
 );
 mock.module("./composio-tools", () => ({ resolveComposioToolsForBgRun }));
@@ -416,6 +433,7 @@ beforeEach(() => {
   currentAgent = buildAgent({ composioToolkitSlugs: [] });
   resolveComposioToolsForBgRun.mockImplementation(async () => ({
     status: "off",
+    reason: "no_slugs_selected",
   }));
 });
 
@@ -471,6 +489,7 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       status: "ready" as const,
       tools: fakeComposioTools,
       toolkitSlugs: ["github"],
+      disconnectedToolkits: [],
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -497,7 +516,8 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
     currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
     resolveComposioToolsForBgRun.mockImplementation(async () => ({
       status: "error" as const,
-      error: "COMPOSIO_API_KEY not configured",
+      errorKind: "composio_missing_api_key",
+      message: "COMPOSIO_API_KEY not configured",
     }));
 
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -540,5 +560,97 @@ describe("Phase 5 regression: Composio tool injection stability", () => {
       expect(instructions).not.toContain("not available in v1");
       expect(instructions).not.toContain("Composio are not available");
     }
+  });
+
+  /**
+   * REGRESSION-C-006 (issue #797): the executor reads the typed error
+   * outcome's `message` field for the composio.error event summary, not the
+   * removed untyped `error` field. Catches a revert to the old
+   * `{ status: "error", error: string }` shape at the executor call site —
+   * if the executor read `.error` again it would render "undefined" in the
+   * event summary instead of the resolver's actual message.
+   */
+  test("REGRESSION-C-006: composio.error event summary includes the typed message field", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["github"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "error" as const,
+      errorKind: "composio_unknown",
+      message: "distinctive-typed-error-message-marker",
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const errorEvent = recordedEvent("background-agent.composio.error");
+    expect(errorEvent).toBeDefined();
+    expect(errorEvent?.summary ?? "").toContain(
+      "distinctive-typed-error-message-marker",
+    );
+    expect(errorEvent?.summary ?? "").not.toContain("undefined");
+  });
+
+  /**
+   * REGRESSION-C-007 (#798): an "off" resolver outcome (previously a silent
+   * no-op) must remain NON-FATAL to the run — this is what distinguishes
+   * "visibility" from "the run now fails whenever tools are off". Catches a
+   * regression where someone accidentally wires the new .off event through
+   * a failure path (e.g. copy-pasting the .error branch's status: "failed").
+   */
+  test("REGRESSION-C-007: composio.off event does not change the run's terminal status", async () => {
+    currentAgent = buildAgent({ composioToolkitSlugs: ["gmail"] });
+    resolveComposioToolsForBgRun.mockImplementation(async () => ({
+      status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["gmail"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    expect(offEvent).toBeDefined();
+    // The event itself is not a run failure...
+    expect(offEvent?.status).toBe("succeeded");
+    // ...and the run's terminal status is still succeeded, not failed.
+    const statuses = updateBackgroundAgentRunStatus.mock.calls.map(
+      ([i]: [StatusUpdateInput]) => i.status,
+    );
+    expect(statuses).toContain("succeeded");
+    expect(statuses).not.toContain("failed");
+  });
+
+  /**
+   * REGRESSION-C-008 (#798): the new .off / .not_connected event payloads
+   * never leak the raw Composio API key pattern, matching the redaction
+   * discipline already asserted for .resolved (BT-005). Catches a future
+   * change that widens the payload to include raw resolver internals.
+   */
+  test("REGRESSION-C-008: composio.off and composio.not_connected payloads never contain an API key", async () => {
+    currentAgent = buildAgent({
+      composioToolkitSlugs: ["github", "slack"],
+      builtinToolNames: null,
+    });
+    resolveComposioToolsForBgRun.mockImplementationOnce(async () => ({
+      status: "off" as const,
+      reason: "repo_policy_blocked",
+      blockedSlugs: ["github", "slack"],
+    }));
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-1",
+    });
+
+    const offEvent = recordedEvent("background-agent.composio.off");
+    const offPayloadStr = JSON.stringify(offEvent?.payload ?? {});
+    expect(offPayloadStr).not.toMatch(/\bak_[A-Za-z0-9_*.-]+/);
+    expect(offPayloadStr).not.toContain("apiKey");
   });
 });

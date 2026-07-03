@@ -13,6 +13,7 @@ import {
   useState,
   useTransition,
 } from "react";
+import { toast } from "sonner";
 import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import { InboxSidebar } from "@/components/inbox-sidebar";
 import { buildSandboxFreeChatInput } from "@/components/inbox-sidebar-new-chat";
@@ -29,6 +30,7 @@ import { useBackgroundChatNotifications } from "@/hooks/use-background-chat-noti
 import { useSessions, type SessionWithUnread } from "@/hooks/use-sessions";
 import { useUserPreferences } from "@/hooks/use-user-preferences";
 import { DEFAULT_SANDBOX_TYPE } from "@/components/sandbox-selector-compact";
+import { toCreateSessionErrorInfo } from "@/lib/sessions/create-session-error";
 import type { Session as AuthSession } from "@/lib/session/types";
 import { SessionsShellProvider } from "./sessions-shell-context";
 import {
@@ -264,7 +266,11 @@ export function SessionsRouteShell({
           scroll: false,
         });
       } catch (error) {
-        console.error("Failed to create session for repo:", error);
+        // Ownership decision (#784): the sessions shell has no persistent
+        // form surface for this action, so it toasts the mapped failure
+        // exactly once (the hook no longer toasts — see use-sessions.ts).
+        const info = toCreateSessionErrorInfo(error);
+        toast.error(info.message);
       }
     },
     [createSession, preferences, router],
@@ -287,7 +293,9 @@ export function SessionsRouteShell({
           scroll: false,
         });
       } catch (error) {
-        console.error("Failed to create session from branch:", error);
+        // Ownership decision (#784): see handleCreateSessionForRepo above.
+        const info = toCreateSessionErrorInfo(error);
+        toast.error(info.message);
       }
     },
     [createSession, preferences, router],
@@ -302,7 +310,9 @@ export function SessionsRouteShell({
         scroll: false,
       });
     } catch (error) {
-      console.error("Failed to create sandbox-free chat:", error);
+      // Ownership decision (#784): see handleCreateSessionForRepo above.
+      const info = toCreateSessionErrorInfo(error);
+      toast.error(info.message);
     }
   }, [createSession, router]);
 

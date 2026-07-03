@@ -1,8 +1,18 @@
 import { NextResponse } from "next/server";
 import { getInstallationsByUserId } from "@/lib/db/installations";
+import { resolveGitHubReturnTarget } from "@/lib/github/connect-status";
+import { logGitHubRedirectIssued } from "@/lib/github/onboarding-events";
+import { syncUserInstallations } from "@/lib/github/sync";
+import {
+  classifyGitHubSyncError,
+  describeGitHubSyncError,
+} from "@/lib/github/sync-status";
+import {
+  logGitHubSyncAuthRequired,
+  logGitHubSyncFailed,
+} from "@/lib/github/sync-status-events";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getGitHubUsername } from "@/lib/github/users";
-import { syncUserInstallations } from "@/lib/github/sync";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 
@@ -22,11 +32,16 @@ export async function GET(req: Request): Promise<Response> {
     "/sessions",
     req.url,
   );
-  const redirectUrl = new URL(next, req.url);
 
   const token = await getUserGitHubToken(session.user.id);
   if (!token) {
-    redirectUrl.searchParams.set("github", "link_failed");
+    const redirectUrl = resolveGitHubReturnTarget("link_failed", next, req.url);
+    logGitHubRedirectIssued({
+      status: "link_failed",
+      route: "post-link",
+      stepPreserved: redirectUrl.pathname === "/get-started",
+      userId: session.user.id,
+    });
     return NextResponse.redirect(redirectUrl);
   }
 
@@ -41,18 +56,65 @@ export async function GET(req: Request): Promise<Response> {
       );
 
       if (count > 0) {
-        redirectUrl.searchParams.set("github", "account_connected");
+        const redirectUrl = resolveGitHubReturnTarget(
+          "account_connected",
+          next,
+          req.url,
+        );
+        logGitHubRedirectIssued({
+          status: "account_connected",
+          route: "post-link",
+          stepPreserved: redirectUrl.pathname === "/get-started",
+          userId: session.user.id,
+        });
         return NextResponse.redirect(redirectUrl);
       }
     } catch (error) {
-      console.error("Failed syncing installations after GitHub link:", error);
+      const errorKind = classifyGitHubSyncError(error);
+
+      if (errorKind === "auth_required") {
+        logGitHubSyncAuthRequired({
+          userId: session.user.id,
+          route: "post-link",
+        });
+      } else {
+        const { providerStatus } = describeGitHubSyncError(error);
+        logGitHubSyncFailed({
+          userId: session.user.id,
+          route: "post-link",
+          providerStatus,
+        });
+
+        const redirectUrl = resolveGitHubReturnTarget(
+          "sync_failed",
+          next,
+          req.url,
+        );
+        logGitHubRedirectIssued({
+          status: "sync_failed",
+          route: "post-link",
+          stepPreserved: redirectUrl.pathname === "/get-started",
+          userId: session.user.id,
+        });
+        return NextResponse.redirect(redirectUrl);
+      }
     }
   }
 
   // no installations found — check if any exist in DB from a previous install
   const existingInstallations = await getInstallationsByUserId(session.user.id);
   if (existingInstallations.length > 0) {
-    redirectUrl.searchParams.set("github", "account_connected");
+    const redirectUrl = resolveGitHubReturnTarget(
+      "account_connected",
+      next,
+      req.url,
+    );
+    logGitHubRedirectIssued({
+      status: "account_connected",
+      route: "post-link",
+      stepPreserved: redirectUrl.pathname === "/get-started",
+      userId: session.user.id,
+    });
     return NextResponse.redirect(redirectUrl);
   }
 

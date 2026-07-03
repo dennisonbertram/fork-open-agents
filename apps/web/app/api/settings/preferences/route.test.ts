@@ -7,6 +7,25 @@ let currentSession: {
   user: { id: "user-1" },
 };
 
+// MR-4 (#812): tracks calls to the MR-1 owner-checked reference validator so
+// tests can assert the route uses it instead of the built-ins-only check.
+const knownReferenceCalls: Array<{ userId: string; profileId: string }> = [];
+let knownReferenceResult = false;
+
+mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
+  isKnownManagedRuntimeProfileReference: async (params: {
+    userId: string;
+    sessionId: string;
+    profileId: string;
+  }) => {
+    knownReferenceCalls.push({
+      userId: params.userId,
+      profileId: params.profileId,
+    });
+    return knownReferenceResult;
+  },
+}));
+
 const preferencesState = {
   defaultModelId: "anthropic/claude-haiku-4.5",
   defaultSubagentModelId: null as string | null,
@@ -64,6 +83,8 @@ describe("/api/settings/preferences", () => {
     preferencesState.enabledModelIds = [];
     preferencesState.modelSystemPrompts = {};
     updateCalls.length = 0;
+    knownReferenceCalls.length = 0;
+    knownReferenceResult = false;
   });
 
   test("GET returns 401 when unauthenticated", async () => {
@@ -150,6 +171,7 @@ describe("/api/settings/preferences", () => {
   });
 
   test("PATCH rejects invalid managed runtime profiles", async () => {
+    knownReferenceResult = false;
     const { PATCH } = await routeModulePromise;
 
     const response = await PATCH(
@@ -157,14 +179,19 @@ describe("/api/settings/preferences", () => {
         defaultManagedRuntimeProfileId: "unknown-profile",
       }),
     );
-    const body = (await response.json()) as { error: string };
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
 
     expect(response.status).toBe(400);
     expect(body.error).toBe("Invalid managed runtime profile");
     expect(updateCalls).toHaveLength(0);
   });
 
-  test("PATCH updates the default managed runtime profile", async () => {
+  test("PATCH updates the default managed runtime profile (built-in)", async () => {
+    knownReferenceResult = true;
     const { PATCH } = await routeModulePromise;
 
     const response = await PATCH(
@@ -184,6 +211,58 @@ describe("/api/settings/preferences", () => {
     expect(body.preferences.defaultManagedRuntimeProfileId).toBe(
       "web-bun-agent-browser",
     );
+  });
+
+  // BT (MR-4/#812): PATCH accepts an owned user_default profile id — the
+  // #1 naive-user defect. Before the fix, isManagedRuntimeProfileId()
+  // rejected every user profile id with a 400, even when owned by the caller.
+  test("MR-4/#812: PATCH accepts an owned user_default profile id via isKnownManagedRuntimeProfileReference", async () => {
+    knownReferenceResult = true;
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        defaultManagedRuntimeProfileId: "user-profile-abc123",
+      }),
+    );
+    const body = (await response.json()) as {
+      preferences: typeof preferencesState;
+    };
+
+    expect(response.status).toBe(200);
+    expect(knownReferenceCalls).toEqual([
+      { userId: "user-1", profileId: "user-profile-abc123" },
+    ]);
+    expect(updateCalls).toEqual([
+      { defaultManagedRuntimeProfileId: "user-profile-abc123" },
+    ]);
+    expect(body.preferences.defaultManagedRuntimeProfileId).toBe(
+      "user-profile-abc123",
+    );
+  });
+
+  // BT (MR-4/#812): a foreign/unknown profile id returns a structured 400
+  // with { errorKind: "profile_not_found", nextAction } — no silent accept.
+  test("MR-4/#812: PATCH returns structured 400 for a foreign/unknown profile id", async () => {
+    knownReferenceResult = false;
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      createJsonRequest("PATCH", {
+        defaultManagedRuntimeProfileId: "user-profile-not-mine",
+      }),
+    );
+    const body = (await response.json()) as {
+      error: string;
+      errorKind?: string;
+      nextAction?: string;
+    };
+
+    expect(response.status).toBe(400);
+    expect(body.errorKind).toBe("profile_not_found");
+    expect(typeof body.nextAction).toBe("string");
+    expect(body.nextAction?.length).toBeGreaterThan(0);
+    expect(updateCalls).toHaveLength(0);
   });
 
   test("PATCH rejects invalid autoCommitPush values", async () => {

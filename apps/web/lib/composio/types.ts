@@ -320,8 +320,35 @@ export function normalizeChatComposioSelection(
     };
   }
 
+  const mainProfileId = parsed.data.mainProfileId ?? null;
+
+  // Explicit "off" sentinel (#799, finding G1): the caller sent a non-null,
+  // empty directToolkitSlugs array with no profile fallback target
+  // (mainProfileId null). This is the compact selector's "Off" click
+  // (mainProfileId: null, directToolkitSlugs: []) and must survive
+  // normalization distinctly from "directToolkitSlugs never provided at
+  // all" — otherwise resolveComposioSlugsForChatMain can never see the
+  // difference and the explicit off is silently re-enabled by agent-row/repo
+  // defaults downstream.
+  //
+  // When mainProfileId IS set, an empty directToolkitSlugs array is treated
+  // as "no override" and the profile is retained (existing behavior,
+  // BT-S0-005) — a saved profile selection is not itself an "off" signal.
+  const hasExplicitEmptyDirectSlugs =
+    Array.isArray(parsed.data.directToolkitSlugs) &&
+    parsed.data.directToolkitSlugs.length === 0 &&
+    directSlugs.length === 0;
+
+  if (hasExplicitEmptyDirectSlugs && mainProfileId === null) {
+    return {
+      mainProfileId: null,
+      ...(overrides ? { agentProfileOverrides: overrides } : {}),
+      directToolkitSlugs: [],
+    };
+  }
+
   return {
-    mainProfileId: parsed.data.mainProfileId ?? null,
+    mainProfileId,
     ...(overrides ? { agentProfileOverrides: overrides } : {}),
   };
 }

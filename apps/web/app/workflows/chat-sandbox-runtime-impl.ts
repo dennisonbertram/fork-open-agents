@@ -25,6 +25,10 @@ import { getGitHubUserProfile } from "@/lib/github/users";
 import { emitSessionEvent } from "@/lib/observability/events";
 import { resolveManagedRuntimeProfile } from "@/lib/managed-runtime/profile-resolution";
 import {
+  nextActionFor,
+  type ManagedRuntimeErrorKind,
+} from "@/lib/managed-runtime/profile-run-status";
+import {
   appendManagedRuntimeSetupResult,
   appendManagedRuntimeVerificationResult,
   buildManagedRuntimeCommandObservation,
@@ -57,9 +61,17 @@ type SessionRecord = NonNullable<Awaited<ReturnType<typeof getSessionById>>>;
 type DiscoveredSkills = Awaited<ReturnType<typeof discoverSkills>>;
 
 export class WorkspaceSetupError extends Error {
-  constructor(message: string) {
+  errorKind?: ManagedRuntimeErrorKind;
+  nextAction?: string;
+
+  constructor(
+    message: string,
+    options?: { errorKind?: ManagedRuntimeErrorKind; nextAction?: string },
+  ) {
     super(message);
     this.name = "WorkspaceSetupError";
+    this.errorKind = options?.errorKind;
+    this.nextAction = options?.nextAction;
   }
 }
 
@@ -268,6 +280,8 @@ async function ensureManagedRuntimeEnvironment(params: {
   sandbox: Sandbox;
   sandboxName?: string | null;
   profile: ManagedRuntimeProfile;
+  requestedProfileId: string;
+  resolvedProfileId: string;
   startupReporter: WorkspaceStartupReporter;
 }): Promise<{ notes: string[]; profileRunId?: string }> {
   const notes: string[] = [];
@@ -282,19 +296,58 @@ async function ensureManagedRuntimeEnvironment(params: {
       workflowRunId: params.workflowRunId ?? null,
       sandboxName: params.sandboxName ?? null,
       profile,
+      requestedProfileId: params.requestedProfileId,
+      resolvedProfileId: params.resolvedProfileId,
     });
     profileRunId = profileRun.id;
   } catch (error) {
+    // D8 (recommended): warn-and-continue with a visible "evidence unavailable"
+    // state rather than hard-failing the turn when only evidence recording
+    // (not the runtime itself) is impacted.
     console.error(
       "[managed-runtime] Failed to create profile run observation:",
       error,
     );
+    notes.push(
+      "Evidence unavailable: this run's setup/verification results could not be saved.",
+    );
+    await params.startupReporter.send(
+      "Warning: evidence for this managed runtime run could not be saved.",
+    );
+    try {
+      await emitSessionEvent({
+        sessionId: params.session.id,
+        chatId: params.chatId ?? null,
+        userId: params.userId,
+        source: "managed_runtime",
+        actorType: "sandbox",
+        eventName: "managed_runtime.profile.evidence_unavailable",
+        status: "failed",
+        summary: "Managed runtime profile run evidence could not be saved",
+        workflowRunId: params.workflowRunId ?? null,
+        sandboxName: params.sandboxName ?? null,
+        managedRuntimeProfileRunId: null,
+        payload: {
+          sessionId: params.session.id,
+          chatId: params.chatId ?? null,
+          workflowRunId: params.workflowRunId ?? null,
+          requestedProfileId: params.requestedProfileId,
+          reason: error instanceof Error ? error.message : String(error),
+        },
+      });
+    } catch (emitError) {
+      console.error(
+        "[managed-runtime] Failed to emit evidence_unavailable event:",
+        emitError,
+      );
+    }
   }
 
+  const verificationLabels = profile.verificationCommands
+    .map((command) => command.label)
+    .join(", ");
   await params.startupReporter.send(
-    `Managed runtime selected: ${profile.displayName} (${profile.id}). This profile installs ${profile.expectedTools.join(
-      " and ",
-    )} so the agent can run web app commands and browser checks in the sandbox.`,
+    `Managed runtime selected: ${profile.displayName} (${profile.id}). This profile will run setup, then verify: ${verificationLabels || "no verification commands"}.`,
     [
       `Managed runtime profile: ${profile.displayName} (${profile.id}@${profile.version})`,
       `Expected tools: ${profile.expectedTools.join(", ") || "none"}`,
@@ -364,8 +417,74 @@ async function ensureManagedRuntimeEnvironment(params: {
         error instanceof Error
           ? error.message
           : `Unknown error: ${String(error)}`;
+      const execErrorFinishedAt = new Date();
+      const execErrorObservation = buildManagedRuntimeCommandObservation({
+        command: setupCommand,
+        status: "failed",
+        startedAt: commandStartedAt,
+        finishedAt: execErrorFinishedAt,
+        result: {
+          success: false,
+          exitCode: null,
+          stdout: "",
+          stderr: message,
+        },
+      });
+      if (profileRunId) {
+        try {
+          await appendManagedRuntimeSetupResult({
+            profileRunId,
+            observation: execErrorObservation,
+          });
+        } catch (appendError) {
+          console.error(
+            "[managed-runtime] Failed to append setup exec-error observation:",
+            appendError,
+          );
+        }
+        try {
+          await finishManagedRuntimeProfileRun({
+            profileRunId,
+            status: "failed",
+            summary: `Setup command could not run: ${setupCommand.label}`,
+            failureMessage: execErrorObservation.summary,
+            errorKind: "setup_exec_error",
+            nextAction: nextActionFor("setup_exec_error"),
+          });
+        } catch (finishError) {
+          console.error(
+            "[managed-runtime] Failed to finish profile run after setup exec error:",
+            finishError,
+          );
+        }
+      }
+      try {
+        await emitSessionEvent({
+          sessionId: params.session.id,
+          chatId: params.chatId ?? null,
+          userId: params.userId,
+          source: "managed_runtime",
+          actorType: "sandbox",
+          eventName: "managed_runtime.profile.setup_failed",
+          status: "failed",
+          summary: `Setup command could not run: ${setupCommand.label}`,
+          workflowRunId: params.workflowRunId ?? null,
+          sandboxName: params.sandboxName ?? null,
+          managedRuntimeProfileRunId: profileRunId ?? null,
+          payload: execErrorObservation,
+        });
+      } catch (emitError) {
+        console.error(
+          "[managed-runtime] Failed to emit setup_failed event:",
+          emitError,
+        );
+      }
       throw new WorkspaceSetupError(
         `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}). ${setupCommand.description} Error: ${message}`,
+        {
+          errorKind: "setup_exec_error",
+          nextAction: nextActionFor("setup_exec_error"),
+        },
       );
     }
     const commandFinishedAt = new Date();
@@ -433,6 +552,7 @@ async function ensureManagedRuntimeEnvironment(params: {
       await params.startupReporter.send(
         `Managed runtime profile setup failed: ${setupCommand.label}. ${setupCommand.description}`,
       );
+      const isRequiredSetupCommand = setupCommand.required ?? true;
       if (profileRunId) {
         try {
           await finishManagedRuntimeProfileRun({
@@ -440,6 +560,12 @@ async function ensureManagedRuntimeEnvironment(params: {
             status: "failed",
             summary: `Profile setup failed: ${setupCommand.label}`,
             failureMessage: observation.summary,
+            ...(isRequiredSetupCommand
+              ? {
+                  errorKind: "setup_command_failed",
+                  nextAction: nextActionFor("setup_command_failed"),
+                }
+              : {}),
           });
         } catch (error) {
           console.error(
@@ -454,15 +580,21 @@ async function ensureManagedRuntimeEnvironment(params: {
         userId: params.userId,
         source: "managed_runtime",
         actorType: "sandbox",
-        eventName: "managed_runtime.profile.failed",
+        eventName: "managed_runtime.profile.setup_failed",
         status: "failed",
         summary: `Managed runtime profile setup failed: ${setupCommand.label}`,
         workflowRunId: params.workflowRunId ?? null,
         sandboxName: params.sandboxName ?? null,
         managedRuntimeProfileRunId: profileRunId ?? null,
-        payload: observation,
+        payload: {
+          ...observation,
+          requestedProfileId: params.requestedProfileId,
+          resolvedProfileId: params.resolvedProfileId,
+          errorKind: "setup_command_failed",
+          nextAction: nextActionFor("setup_command_failed"),
+        },
       });
-      if (setupCommand.required ?? true) {
+      if (isRequiredSetupCommand) {
         throw new WorkspaceSetupError(
           [
             `Managed runtime profile setup failed while running ${setupCommand.label} for ${profile.displayName} (${profile.id}).`,
@@ -471,6 +603,10 @@ async function ensureManagedRuntimeEnvironment(params: {
           ]
             .filter((part) => part.length > 0)
             .join(" "),
+          {
+            errorKind: "setup_command_failed",
+            nextAction: nextActionFor("setup_command_failed"),
+          },
         );
       }
       return { notes, profileRunId };
@@ -510,11 +646,88 @@ async function ensureManagedRuntimeEnvironment(params: {
       },
     });
     const commandStartedAt = new Date();
-    const result = await params.sandbox.exec(
-      verificationCommand.command,
-      params.sandbox.workingDirectory,
-      verificationCommand.timeoutMs ?? 30_000,
-    );
+    let result: Awaited<ReturnType<typeof params.sandbox.exec>>;
+    try {
+      result = await params.sandbox.exec(
+        verificationCommand.command,
+        params.sandbox.workingDirectory,
+        verificationCommand.timeoutMs ?? 30_000,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Unknown error: ${String(error)}`;
+      const execErrorFinishedAt = new Date();
+      const execErrorObservation = buildManagedRuntimeCommandObservation({
+        command: verificationCommand,
+        status: "failed",
+        startedAt: commandStartedAt,
+        finishedAt: execErrorFinishedAt,
+        result: {
+          success: false,
+          exitCode: null,
+          stdout: "",
+          stderr: message,
+        },
+      });
+      if (profileRunId) {
+        try {
+          await appendManagedRuntimeVerificationResult({
+            profileRunId,
+            observation: execErrorObservation,
+          });
+        } catch (appendError) {
+          console.error(
+            "[managed-runtime] Failed to append verification exec-error observation:",
+            appendError,
+          );
+        }
+        try {
+          await finishManagedRuntimeProfileRun({
+            profileRunId,
+            status: "failed",
+            summary: `Verification command could not run: ${verificationCommand.label}`,
+            failureMessage: execErrorObservation.summary,
+            errorKind: "setup_exec_error",
+            nextAction: nextActionFor("setup_exec_error"),
+          });
+        } catch (finishError) {
+          console.error(
+            "[managed-runtime] Failed to finish profile run after verification exec error:",
+            finishError,
+          );
+        }
+      }
+      try {
+        await emitSessionEvent({
+          sessionId: params.session.id,
+          chatId: params.chatId ?? null,
+          userId: params.userId,
+          source: "managed_runtime",
+          actorType: "sandbox",
+          eventName: "managed_runtime.profile.verification_failed",
+          status: "failed",
+          summary: `Verification command could not run: ${verificationCommand.label}`,
+          workflowRunId: params.workflowRunId ?? null,
+          sandboxName: params.sandboxName ?? null,
+          managedRuntimeProfileRunId: profileRunId ?? null,
+          payload: execErrorObservation,
+        });
+      } catch (emitError) {
+        console.error(
+          "[managed-runtime] Failed to emit verification_failed event:",
+          emitError,
+        );
+      }
+      throw new WorkspaceSetupError(
+        `Managed runtime profile verification failed while running ${verificationCommand.label} for ${profile.displayName} (${profile.id}). ${verificationCommand.description} Error: ${message}`,
+        {
+          errorKind: "setup_exec_error",
+          nextAction: nextActionFor("setup_exec_error"),
+        },
+      );
+    }
     const commandFinishedAt = new Date();
     const observation = buildManagedRuntimeCommandObservation({
       command: verificationCommand,
@@ -593,7 +806,7 @@ async function ensureManagedRuntimeEnvironment(params: {
       `Required profile verification failed: ${verificationCommand.label}.`,
     );
     await params.startupReporter.send(
-      `Managed runtime is active, but verification failed: ${verificationCommand.label}.`,
+      `Blocked: verification failed for ${verificationCommand.label} — ${nextActionFor("verification_failed")}`,
     );
     if (profileRunId) {
       try {
@@ -602,6 +815,8 @@ async function ensureManagedRuntimeEnvironment(params: {
           status: "blocked",
           summary: `Required verification failed: ${verificationCommand.label}`,
           failureMessage: observation.summary,
+          errorKind: "verification_failed",
+          nextAction: nextActionFor("verification_failed"),
         });
       } catch (error) {
         console.error(
@@ -616,15 +831,29 @@ async function ensureManagedRuntimeEnvironment(params: {
       userId: params.userId,
       source: "managed_runtime",
       actorType: "sandbox",
-      eventName: "managed_runtime.profile.blocked",
+      eventName: "managed_runtime.profile.verification_failed",
       status: "blocked",
       summary: `Managed runtime profile verification failed: ${verificationCommand.label}`,
       workflowRunId: params.workflowRunId ?? null,
       sandboxName: params.sandboxName ?? null,
       managedRuntimeProfileRunId: profileRunId ?? null,
-      payload: observation,
+      payload: {
+        ...observation,
+        requestedProfileId: params.requestedProfileId,
+        resolvedProfileId: params.resolvedProfileId,
+        errorKind: "verification_failed",
+        nextAction: nextActionFor("verification_failed"),
+      },
     });
-    return { notes, profileRunId };
+    // D7 hard fail-closed: a required verification failure must block the
+    // turn — never return a usable runtime with tools proven missing.
+    throw new WorkspaceSetupError(
+      `Managed runtime is active, but a required verification command failed: ${verificationCommand.label}. ${nextActionFor("verification_failed")}`,
+      {
+        errorKind: "verification_failed",
+        nextAction: nextActionFor("verification_failed"),
+      },
+    );
   }
 
   await params.startupReporter.send(
@@ -722,6 +951,69 @@ export async function resolveChatSandboxRuntime(params: {
     ]);
   }
 
+  // #811 (MR-2): resolve the managed-runtime profile BEFORE sandbox
+  // provisioning so profile.defaultPorts can be passed into connectSandbox,
+  // and so an unresolvable profile fails closed before any sandbox is
+  // created. Never silently substitutes the built-in default (D7).
+  let managedRuntimeProfile: ManagedRuntimeProfile | undefined;
+  let requestedProfileId: string | undefined;
+  let resolvedProfileId: string | undefined;
+  if (session.runtimeMode === "managed_runtime") {
+    const resolution = await resolveManagedRuntimeProfile({
+      userId: params.userId,
+      sessionId: session.id,
+      profileId: session.managedRuntimeProfileId,
+    });
+
+    if (!resolution.ok) {
+      const errorKind: ManagedRuntimeErrorKind = "profile_not_found";
+      try {
+        await emitSessionEvent({
+          sessionId: session.id,
+          chatId: params.chatId ?? null,
+          userId: params.userId,
+          source: "managed_runtime",
+          actorType: "sandbox",
+          eventName: "managed_runtime.profile.resolution_failed",
+          status: "failed",
+          summary: `Managed runtime profile could not be resolved: ${resolution.requestedProfileId}`,
+          workflowRunId: params.workflowRunId ?? null,
+          sandboxName: sandboxInputState.sandboxName ?? null,
+          managedRuntimeProfileRunId: null,
+          payload: {
+            sessionId: session.id,
+            chatId: params.chatId ?? null,
+            workflowRunId: params.workflowRunId ?? null,
+            requestedProfileId: resolution.requestedProfileId,
+            errorKind,
+            nextAction: resolution.nextAction,
+          },
+        });
+      } catch (emitError) {
+        console.error(
+          "[managed-runtime] Failed to emit resolution_failed event:",
+          emitError,
+        );
+      }
+      await startupReporter.send(
+        `Blocked: managed runtime profile "${resolution.requestedProfileId}" could not be resolved — ${resolution.nextAction}`,
+      );
+      throw new WorkspaceSetupError(
+        `Managed runtime profile "${resolution.requestedProfileId}" could not be resolved. ${resolution.nextAction}`,
+        { errorKind, nextAction: resolution.nextAction },
+      );
+    }
+
+    managedRuntimeProfile = resolution.profile;
+    requestedProfileId = resolution.requestedProfileId;
+    resolvedProfileId = resolution.resolvedProfileId;
+  }
+
+  const sandboxPorts =
+    session.runtimeMode === "managed_runtime" && managedRuntimeProfile
+      ? managedRuntimeProfile.defaultPorts
+      : DEFAULT_SANDBOX_PORTS;
+
   const gitUser = await getGitUser(params.userId);
   let setupToken: ScopedInstallationToken | undefined;
 
@@ -759,7 +1051,7 @@ export async function resolveChatSandboxRuntime(params: {
         DEFAULT_SANDBOX_BASE_SNAPSHOT_ID
           ? `Base snapshot: ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID}`
           : "Base snapshot: default runtime",
-        `Ports: ${DEFAULT_SANDBOX_PORTS.join(", ")}`,
+        `Ports: ${sandboxPorts.join(", ")}`,
         `vCPUs: ${DEFAULT_SANDBOX_VCPUS}`,
       ]);
     }
@@ -770,7 +1062,7 @@ export async function resolveChatSandboxRuntime(params: {
         gitUser,
         timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
         vcpus: DEFAULT_SANDBOX_VCPUS,
-        ports: DEFAULT_SANDBOX_PORTS,
+        ports: sandboxPorts,
         baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
         persistent: true,
         resume: true,
@@ -833,16 +1125,21 @@ export async function resolveChatSandboxRuntime(params: {
     ]);
   }
 
-  const managedRuntimeProfile =
-    session.runtimeMode === "managed_runtime"
-      ? await resolveManagedRuntimeProfile({
-          userId: params.userId,
-          sessionId: session.id,
-          profileId: session.managedRuntimeProfileId,
-        })
-      : undefined;
+  // Kick the lifecycle workflow BEFORE managed-runtime setup runs. Managed
+  // setup can now fail closed (throw), and this is the only lifecycle kick in
+  // the provisioning path — kicking it first ensures a failed setup still
+  // leaves the persistent sandbox scheduled for hibernation/cleanup rather than
+  // orphaned (Codex #832 P2).
+  kickSandboxLifecycleWorkflow({
+    sessionId: params.sessionId,
+    reason: "sandbox-created",
+  });
+
   const managedRuntimeEnvironment =
-    session.runtimeMode === "managed_runtime"
+    session.runtimeMode === "managed_runtime" &&
+    managedRuntimeProfile &&
+    requestedProfileId &&
+    resolvedProfileId
       ? await ensureManagedRuntimeEnvironment({
           session,
           chatId: params.chatId ?? null,
@@ -850,16 +1147,13 @@ export async function resolveChatSandboxRuntime(params: {
           workflowRunId: params.workflowRunId ?? null,
           sandbox,
           sandboxName: sandboxState.sandboxName ?? null,
-          profile: managedRuntimeProfile!,
+          profile: managedRuntimeProfile,
+          requestedProfileId,
+          resolvedProfileId,
           startupReporter,
         })
       : { notes: [] };
   const managedRuntimeNotes = managedRuntimeEnvironment.notes;
-
-  kickSandboxLifecycleWorkflow({
-    sessionId: params.sessionId,
-    reason: "sandbox-created",
-  });
 
   const skills = await loadSessionSkills({
     sessionId: params.sessionId,

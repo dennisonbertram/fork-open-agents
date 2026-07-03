@@ -71,13 +71,19 @@ describe("Phase 6 regressions", () => {
     expect(Object.keys(toolset)).not.toContain(PROPOSE_TOOL_NAME);
   });
 
-  // REGRESSION-4: managed-runtime coordinator mode never includes the authoring tool
-  // Catches: If pickTools for managed_runtime accidentally includes non-coordinator tools
-  it("managed_runtime mode excludes the authoring tool even when toolAuthoringEnabled=true", () => {
-    const toolset = getRuntimeModeToolPolicy("managed_runtime", undefined, {
+  // REGRESSION-4: managed-runtime coordinator mode includes the authoring
+  // tool only when toolAuthoringEnabled=true (Decision D5, epic #807: the
+  // coordinator allowlist explicitly allows propose_composio_tool as a
+  // config-write action). Catches both a silent-strip regression (D5 being
+  // reverted) and a leak regression (the tool appearing without the flag).
+  it("managed_runtime mode includes the authoring tool only when toolAuthoringEnabled=true (Decision D5)", () => {
+    const withFlag = getRuntimeModeToolPolicy("managed_runtime", undefined, {
       toolAuthoringEnabled: true,
     });
-    expect(Object.keys(toolset)).not.toContain(PROPOSE_TOOL_NAME);
+    expect(Object.keys(withFlag)).toContain(PROPOSE_TOOL_NAME);
+
+    const withoutFlag = getRuntimeModeToolPolicy("managed_runtime");
+    expect(Object.keys(withoutFlag)).not.toContain(PROPOSE_TOOL_NAME);
   });
 
   // REGRESSION-5: the tool name constant is stable

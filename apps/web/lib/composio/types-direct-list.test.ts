@@ -91,3 +91,41 @@ describe("normalizeChatComposioSelection — directToolkitSlugs one-wins rule", 
     expect(result).toEqual(defaultChatComposioSelection);
   });
 });
+
+describe("normalizeChatComposioSelection — explicit off sentinel survives normalization (#799, finding G1)", () => {
+  test("REG-OFF-001: mainProfileId null + directToolkitSlugs [] (the compact selector's 'Off' click) round-trips as an explicit empty array, not absent", () => {
+    // This is the EXACT payload composio-tool-selector-compact.tsx sends
+    // when a user clicks "Off". If normalizeChatComposioSelection collapses
+    // this back to {mainProfileId: null} (directToolkitSlugs absent),
+    // resolveComposioSlugsForChatMain can never distinguish "explicit off"
+    // from "never configured", and the bug this ticket fixes regresses.
+    const result = normalizeChatComposioSelection({
+      mainProfileId: null,
+      directToolkitSlugs: [],
+    });
+    expect(result.mainProfileId).toBeNull();
+    expect(result.directToolkitSlugs).toEqual([]);
+  });
+
+  test("REG-OFF-002: the explicit off sentinel still distinguishes from directToolkitSlugs entirely absent", () => {
+    const explicitOff = normalizeChatComposioSelection({
+      mainProfileId: null,
+      directToolkitSlugs: [],
+    });
+    const neverConfigured = normalizeChatComposioSelection({
+      mainProfileId: null,
+    });
+    expect(explicitOff.directToolkitSlugs).toEqual([]);
+    expect(neverConfigured.directToolkitSlugs).toBeUndefined();
+    expect(explicitOff).not.toEqual(neverConfigured);
+  });
+
+  test("REG-OFF-003: BT-S0-005's profile-fallback case is unaffected — a non-null mainProfileId still wins over an empty directToolkitSlugs", () => {
+    const result = normalizeChatComposioSelection({
+      mainProfileId: "profile-abc",
+      directToolkitSlugs: [],
+    });
+    expect(result.mainProfileId).toBe("profile-abc");
+    expect(result.directToolkitSlugs).toBeUndefined();
+  });
+});

@@ -519,7 +519,13 @@ export async function executeAgentStep(
     };
 
     // Resolve any Composio tools this step is granted (B-P2). Gated by the
-    // user's connected accounts + repo policy; non-fatal (skips on off/error).
+    // user's connected accounts + repo policy.
+    //
+    // #798 (loop parity): every non-ready outcome now emits a structured
+    // event matching the background-agent executor's vocabulary
+    // (agent-loop.step.composio.*), instead of the previous silent
+    // off/error skip. Still non-fatal — the step continues without
+    // Composio tools on off/error.
     let composioTools: import("ai").ToolSet | undefined;
     const toolkitSlugs = node.composioToolkitSlugs ?? [];
     if (toolkitSlugs.length > 0) {
@@ -533,6 +539,67 @@ export async function executeAgentStep(
       });
       if (composioResult.status === "ready") {
         composioTools = composioResult.tools;
+
+        if (composioResult.disconnectedToolkits.length > 0) {
+          await recordAgentLoopEvent({
+            loopRunId,
+            stepRunId,
+            nodeId: node.id,
+            eventName: "agent-loop.step.composio.not_connected",
+            status: "succeeded",
+            level: "warn",
+            summary: `Composio toolkits resolved but not connected: ${composioResult.disconnectedToolkits.join(", ")}.`,
+            payload: {
+              disconnectedToolkits: composioResult.disconnectedToolkits,
+            },
+            workflowRunId,
+          });
+        }
+      } else if (composioResult.status === "error") {
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId: node.id,
+          eventName: "agent-loop.step.composio.error",
+          status: "failed",
+          level: "warn",
+          summary: `Composio tool resolution failed: ${composioResult.message}`,
+          // Do NOT include raw error details that might contain secrets.
+          payload: { errorKind: composioResult.errorKind },
+          workflowRunId,
+        });
+      } else {
+        // #799 extends this switch with "not_in_repo_allowlist" (a non-null
+        // repo selectedToolkitSlugs allowlist dropped every requested slug)
+        // — distinct copy from "repo_policy_blocked" (denylist).
+        let offSummary: string;
+        if (composioResult.reason === "repo_policy_blocked") {
+          offSummary = `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+        } else if (composioResult.reason === "not_in_repo_allowlist") {
+          offSummary = `Composio tools not in repository allowlist: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+        } else {
+          offSummary =
+            "Composio tools requested but no toolkit slugs were selected.";
+        }
+        const includeBlockedSlugsInPayload =
+          composioResult.reason === "repo_policy_blocked" ||
+          composioResult.reason === "not_in_repo_allowlist";
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId: node.id,
+          eventName: "agent-loop.step.composio.off",
+          status: "succeeded",
+          level: "warn",
+          summary: offSummary,
+          payload: {
+            reason: composioResult.reason,
+            ...(includeBlockedSlugsInPayload
+              ? { blockedSlugs: composioResult.blockedSlugs ?? [] }
+              : {}),
+          },
+          workflowRunId,
+        });
       }
     }
 

@@ -1,6 +1,7 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import { getComposioClient } from "@/lib/composio/client";
 import { getComposioConfig } from "@/lib/composio/config";
+import { redactComposioErrorMessage } from "@/lib/composio/errors";
 
 export interface ComposioToolkitSummary {
   slug: string;
@@ -86,7 +87,9 @@ export async function GET() {
 
     return Response.json({ toolkits } satisfies ComposioToolkitsResponse);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactComposioErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
     return Response.json(
       { error: message || "Failed to load Composio toolkits" },
       { status: 502 },

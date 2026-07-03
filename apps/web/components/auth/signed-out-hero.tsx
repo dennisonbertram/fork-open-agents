@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { AlertCircle } from "lucide-react";
 import { SignInButton } from "@/components/auth/sign-in-button";
 import { AppMockup } from "@/components/landing/app-mockup";
 import { GitHubLink } from "@/components/landing/github-link";
@@ -10,9 +12,31 @@ import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
 
+/**
+ * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
+ * (set via `errorCallbackURL` in `SignInButton`; the code itself is a
+ * better-auth-internal value like `state_mismatch` or
+ * `please_restart_the_process` — deliberately not surfaced to the user, per
+ * the issue's plain-language copy requirement).
+ */
+function SignInDidNotCompleteBanner() {
+  return (
+    <div
+      role="alert"
+      aria-live="polite"
+      className="mt-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2.5 text-sm text-(--l-fg)"
+    >
+      <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+      <p>Sign-in didn&apos;t complete. Try again below.</p>
+    </div>
+  );
+}
+
 export function SignedOutHero() {
   const heroButtonsRef = useRef<HTMLDivElement>(null);
   const [heroButtonsVisible, setHeroButtonsVisible] = useState(true);
+  const searchParams = useSearchParams();
+  const signInErrorCode = searchParams.get("error");
 
   useEffect(() => {
     const el = heroButtonsRef.current;
@@ -41,18 +65,28 @@ export function SignedOutHero() {
                 Open Agents.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Spawn coding agents that run infinitely in the cloud. Powered by
-                AI SDK, Gateway, Sandbox, and Workflow SDK.
+                Describe what you want built, and an AI agent writes the code in
+                its own cloud sandbox — no local setup required.
               </p>
             </div>
 
             <div
               ref={heroButtonsRef}
-              className="mt-6 flex items-center gap-2 sm:mt-8"
+              className="mt-6 flex flex-col gap-2 sm:mt-8"
             >
-              <SignInButton size="lg" callbackUrl="/sessions" />
-              <GitHubLink>Open Source</GitHubLink>
+              <div className="flex items-center gap-2">
+                <SignInButton
+                  size="lg"
+                  callbackUrl="/get-started?next=/sessions"
+                />
+                <GitHubLink>Open Source</GitHubLink>
+              </div>
+              <p className="text-xs text-(--l-fg-3)">
+                Why Vercel? It&apos;s the identity provider for Open Agents —
+                one account to sign in, no separate password to create.
+              </p>
             </div>
+            {signInErrorCode ? <SignInDidNotCompleteBanner /> : null}
           </div>
 
           <div className="mx-auto mt-12 max-w-[1320px] px-4 sm:px-6 md:mt-20 md:px-0 overflow-hidden">
