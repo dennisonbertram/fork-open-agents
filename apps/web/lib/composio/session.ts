@@ -26,7 +26,10 @@ import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
 import { resolveComposioSlugsForChatMain } from "./resolve-chat-with-agent-row";
 import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
 import { getEffectiveRepoToolkitSlugs } from "./repo-toolkit-selection";
-import { applyRepoToolkitPolicy } from "./repo-policy";
+import {
+  applyRepoToolkitPolicy,
+  type RepoToolkitPolicyBlockedSlug,
+} from "./repo-policy";
 import {
   listComposioConnectedAccounts,
   type ComposioConnectedAccount,
@@ -48,6 +51,14 @@ export class ComposioSetupError extends Error {
 export type ResolvedComposioTools =
   | {
       status: "off";
+      /**
+       * Present when every requested direct-list slug was dropped by repo
+       * policy (#799, post-review fix) — distinguishes "the chat requested
+       * tools but the repo blocked all of them" from "nothing was
+       * configured at all". Undefined on the profile path and on the
+       * ordinary no-selection off outcome.
+       */
+      repoPolicyBlocked?: RepoToolkitPolicyBlockedSlug[];
     }
   | {
       status: "ready";
@@ -70,6 +81,14 @@ export type ResolvedComposioTools =
        * profile path. (#800)
        */
       expiredToolkits?: string[];
+      /**
+       * Direct-list slugs dropped by repo policy (allowlist and/or
+       * denylist) BEFORE resolution — a partial block: the chat still gets
+       * a ready outcome for the surviving slugs, but this field carries the
+       * typed evidence naming what was dropped and why (#799, post-review
+       * fix). Undefined on the profile path and when nothing was blocked.
+       */
+      repoPolicyBlocked?: RepoToolkitPolicyBlockedSlug[];
     };
 
 /**
@@ -304,10 +323,18 @@ export async function resolveComposioToolsForChat(params: {
     // produces the same result on every surface (finding E2). When every
     // requested slug is blocked, resolve to { status: "off" } WITHOUT
     // attempting any Composio session (no SDK/connected-accounts call).
+    //
+    // Post-review fix (#799 contract gap): policyResult.blocked was
+    // previously discarded — a partial block silently shrank the tool list
+    // with no trace, and an all-blocked outcome was a bare
+    // { status: "off" }, indistinguishable from "never configured". Both
+    // outcomes below now carry repoPolicyBlocked so the caller (chat.ts)
+    // can record a typed, visible degradation event.
     const sessionForRepoPolicy = await getSessionById(chat.sessionId);
     const repoOwnerForPolicy = sessionForRepoPolicy?.repoOwner;
     const repoNameForPolicy = sessionForRepoPolicy?.repoName;
     let policyFilteredSlugs = directSlugs;
+    let repoPolicyBlocked: RepoToolkitPolicyBlockedSlug[] = [];
     if (repoOwnerForPolicy && repoNameForPolicy) {
       const policyResult = await applyRepoToolkitPolicy({
         userId: params.userId,
@@ -316,10 +343,14 @@ export async function resolveComposioToolsForChat(params: {
         requestedSlugs: directSlugs,
       });
       policyFilteredSlugs = policyResult.allowed;
+      repoPolicyBlocked = policyResult.blocked;
     }
 
     if (policyFilteredSlugs.length === 0) {
-      return { status: "off" };
+      return {
+        status: "off",
+        ...(repoPolicyBlocked.length > 0 ? { repoPolicyBlocked } : {}),
+      };
     }
 
     const composio = getComposioClient();
@@ -373,7 +404,12 @@ export async function resolveComposioToolsForChat(params: {
       const disconnectedToolkits = (resolved.disconnectedToolkits ?? []).filter(
         (slug) => !expiredSet.has(slug),
       );
-      return { ...resolved, disconnectedToolkits, expiredToolkits };
+      return {
+        ...resolved,
+        disconnectedToolkits,
+        expiredToolkits,
+        ...(repoPolicyBlocked.length > 0 ? { repoPolicyBlocked } : {}),
+      };
     } catch (error) {
       throw toSetupError(error);
     }
