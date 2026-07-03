@@ -112,7 +112,9 @@ beforeEach(() => {
   listAccountsCalls.length = 0;
   createSessionSpy.mockClear();
   toolkitsGetImpl = (_slug: string) =>
-    Promise.resolve({ authConfigDetails: [{ name: "OAuth2", mode: "OAUTH2" }] });
+    Promise.resolve({
+      authConfigDetails: [{ name: "OAuth2", mode: "OAUTH2" }],
+    });
 });
 
 describe("computeAgentToolPreflight — predicted states (#802)", () => {
