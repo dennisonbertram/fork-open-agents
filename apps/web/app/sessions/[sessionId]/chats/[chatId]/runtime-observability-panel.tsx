@@ -616,6 +616,237 @@ function CommandRow({
   );
 }
 
+/**
+ * Rolls a profile run's setup + verification command observations up into a
+ * single header string, e.g. "Setup: 3/3 passed · Verification: 1/2 failed".
+ * A section with zero commands is omitted rather than shown as "0/0"; when
+ * both sections are empty this returns null (no rollup to show yet).
+ */
+export function getProfileRunRollupLabel(params: {
+  setupResults: ManagedRuntimeCommandObservationJson[];
+  verificationResults: ManagedRuntimeCommandObservationJson[];
+}): string | null {
+  const sections: string[] = [];
+
+  if (params.setupResults.length > 0) {
+    const passed = params.setupResults.filter(
+      (result) => result.status === "passed",
+    ).length;
+    const hasFailure = params.setupResults.some(
+      (result) => result.status === "failed",
+    );
+    sections.push(
+      `Setup: ${passed}/${params.setupResults.length} ${hasFailure ? "failed" : "passed"}`,
+    );
+  }
+
+  if (params.verificationResults.length > 0) {
+    const passed = params.verificationResults.filter(
+      (result) => result.status === "passed",
+    ).length;
+    const hasFailure = params.verificationResults.some(
+      (result) => result.status === "failed",
+    );
+    sections.push(
+      `Verification: ${passed}/${params.verificationResults.length} ${hasFailure ? "failed" : "passed"}`,
+    );
+  }
+
+  if (sections.length === 0) {
+    return null;
+  }
+
+  return sections.join(" · ");
+}
+
+/**
+ * Renders the mode row + Managed Profile section from the latest ProfileRun
+ * record (#815). Extracted as a standalone presenter so every state branch —
+ * loading, managed-but-no-run-yet, evidence-unavailable, failed, passed — is
+ * independently testable without mocking SWR.
+ *
+ * Priority order: loading > mismatch/status branches. The Inspector must
+ * never render "Classic" while data is loading or undefined — only when
+ * loaded data explicitly says `runtimeMode === "classic"`.
+ */
+export function ProfileRunSection({
+  runtimeMode,
+  latestProfileRun,
+  latestWorkflow,
+  isLoading,
+}: {
+  runtimeMode: RuntimeMode | null | undefined;
+  latestProfileRun: ManagedRuntimeProfileRunJson | null;
+  latestWorkflow: WorkflowRunJson | null;
+  isLoading?: boolean;
+}) {
+  const isManagedRuntime = runtimeMode === "managed_runtime";
+  const modeLabel = isLoading
+    ? "Loading…"
+    : isManagedRuntime
+      ? "Managed runtime"
+      : runtimeMode === "classic"
+        ? "Classic"
+        : "Loading…";
+  const modeStatus = isLoading ? "info" : isManagedRuntime ? "running" : "info";
+
+  const profileCommands = latestProfileRun
+    ? [
+        ...latestProfileRun.setupResults,
+        ...latestProfileRun.verificationResults,
+      ]
+    : [];
+  const rollupLabel = latestProfileRun
+    ? getProfileRunRollupLabel({
+        setupResults: latestProfileRun.setupResults,
+        verificationResults: latestProfileRun.verificationResults,
+      })
+    : null;
+  const mismatch =
+    latestProfileRun?.requestedProfileId &&
+    latestProfileRun?.resolvedProfileId &&
+    latestProfileRun.requestedProfileId !== latestProfileRun.resolvedProfileId
+      ? latestProfileRun
+      : null;
+
+  return (
+    <>
+      <Section title="Session Runtime">
+        <InfoRow
+          label="Mode"
+          value={
+            <span className="inline-flex items-center gap-1.5">
+              <StatusPill status={modeStatus} />
+              <span className="font-medium">{modeLabel}</span>
+            </span>
+          }
+        />
+        <InfoRow
+          label="Workflow"
+          value={
+            latestWorkflow ? (
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <StatusPill status={latestWorkflow.status} />
+                <span className="truncate font-mono">{latestWorkflow.id}</span>
+              </span>
+            ) : (
+              "No workflow recorded yet"
+            )
+          }
+        />
+        <InfoRow
+          label="Sandbox"
+          value={
+            latestWorkflow?.sandboxName ?? latestProfileRun?.sandboxName ?? "-"
+          }
+        />
+        <InfoRow
+          label="Profile Run"
+          value={latestProfileRun?.id ?? "No managed profile run yet"}
+        />
+      </Section>
+
+      <Section title="Managed Profile">
+        {isLoading ? (
+          <EmptyState>Loading profile run evidence…</EmptyState>
+        ) : latestProfileRun ? (
+          <>
+            {mismatch ? (
+              <div className="flex gap-2 border-b border-border/70 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                <p>
+                  Requested profile{" "}
+                  <span className="font-mono">
+                    {mismatch.requestedProfileId}
+                  </span>{" "}
+                  does not match resolved profile{" "}
+                  <span className="font-mono">
+                    {mismatch.resolvedProfileId}
+                  </span>
+                  .
+                </p>
+              </div>
+            ) : null}
+            <InfoRow
+              label="Profile"
+              value={`${latestProfileRun.profileDisplayName} · ${latestProfileRun.profileVersion}`}
+            />
+            <InfoRow
+              label="Status"
+              value={<StatusPill status={latestProfileRun.status} />}
+            />
+            <InfoRow
+              label="Expected"
+              value={latestProfileRun.expectedTools.join(", ") || "-"}
+            />
+            <InfoRow
+              label="Optional"
+              value={latestProfileRun.optionalTools.join(", ") || "-"}
+            />
+            {(latestProfileRun.status === "failed" ||
+              latestProfileRun.status === "blocked") &&
+            latestProfileRun.nextAction ? (
+              <div className="border-t border-border/70 px-3 py-2 text-xs">
+                <p className="font-medium text-foreground">
+                  {latestProfileRun.status === "blocked"
+                    ? "Profile verification blocked."
+                    : "Profile run failed."}
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {latestProfileRun.nextAction}
+                </p>
+              </div>
+            ) : null}
+            <ToolReasonList
+              label="Required tool reasons"
+              tools={latestProfileRun.expectedTools}
+            />
+            <ToolReasonList
+              label="Optional tool reasons"
+              tools={latestProfileRun.optionalTools}
+            />
+            {profileCommands.length > 0 ? (
+              <div className="border-t border-border/70">
+                {rollupLabel ? (
+                  <p className="border-b border-border/60 bg-muted/20 px-3 py-1.5 text-[11px] font-medium text-foreground">
+                    {rollupLabel}
+                  </p>
+                ) : null}
+                {profileCommands.map((command) => (
+                  <CommandRow
+                    key={`${latestProfileRun.id}:${command.commandId}:${command.startedAt}`}
+                    command={command}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState>
+                Profile setup has started but no command results are recorded
+                yet.
+              </EmptyState>
+            )}
+          </>
+        ) : isManagedRuntime && latestWorkflow ? (
+          <EmptyState>
+            Evidence unavailable: managed runtime ran for this chat, but no
+            profile run record was found. Re-run to capture evidence, or open
+            the Event Timeline below for the raw activity.
+          </EmptyState>
+        ) : isManagedRuntime ? (
+          <EmptyState>
+            Managed runtime profile setup has not run for this chat. Select
+            managed runtime before starting work to capture profile evidence.
+          </EmptyState>
+        ) : (
+          <EmptyState>
+            Classic runtime is active — no managed profile run applies.
+          </EmptyState>
+        )}
+      </Section>
+    </>
+  );
+}
+
 export function RuntimeObservabilityPanel({
   sessionId,
   chatId,
@@ -629,12 +860,6 @@ export function RuntimeObservabilityPanel({
   });
   const latestWorkflow = data?.workflowRuns[0] ?? null;
   const latestProfileRun = data?.profileRuns[0] ?? null;
-  const profileCommands = latestProfileRun
-    ? [
-        ...latestProfileRun.setupResults,
-        ...latestProfileRun.verificationResults,
-      ]
-    : [];
   const visibleBrowserRuns = data?.browserRuns.slice(0, 5) ?? [];
   const visibleEvents = data?.events.slice(0, 40) ?? [];
   const visibleEventRows = collapseDuplicateEvents(visibleEvents);
@@ -678,111 +903,17 @@ export function RuntimeObservabilityPanel({
             workers={data?.workers ?? []}
           />
 
-          <Section title="Session Runtime">
-            <InfoRow
-              label="Mode"
-              value={
-                <span className="inline-flex items-center gap-1.5">
-                  <StatusPill
-                    status={
-                      data?.runtimeMode === "managed_runtime"
-                        ? "running"
-                        : "info"
-                    }
-                  />
-                  <span className="font-medium">
-                    {data?.runtimeMode === "managed_runtime"
-                      ? "Managed runtime"
-                      : "Classic"}
-                  </span>
-                </span>
-              }
-            />
-            <InfoRow
-              label="Workflow"
-              value={
-                latestWorkflow ? (
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    <StatusPill status={latestWorkflow.status} />
-                    <span className="truncate font-mono">
-                      {latestWorkflow.id}
-                    </span>
-                  </span>
-                ) : (
-                  "No workflow recorded yet"
-                )
-              }
-            />
-            <InfoRow
-              label="Sandbox"
-              value={
-                latestWorkflow?.sandboxName ??
-                latestProfileRun?.sandboxName ??
-                "-"
-              }
-            />
-            <InfoRow
-              label="Profile Run"
-              value={latestProfileRun?.id ?? "No managed profile run yet"}
-            />
-          </Section>
+          <ProfileRunSection
+            isLoading={isLoading}
+            latestProfileRun={latestProfileRun}
+            latestWorkflow={latestWorkflow}
+            runtimeMode={data?.runtimeMode}
+          />
 
           <LikelyIssue events={data?.events ?? []} />
 
           <GoalLedgerSection goals={data?.workflowGoals ?? []} />
           <WorkflowArtifactsSection artifacts={data?.workflowArtifacts ?? []} />
-
-          <Section title="Managed Profile">
-            {latestProfileRun ? (
-              <>
-                <InfoRow
-                  label="Profile"
-                  value={`${latestProfileRun.profileDisplayName} · ${latestProfileRun.profileVersion}`}
-                />
-                <InfoRow
-                  label="Status"
-                  value={<StatusPill status={latestProfileRun.status} />}
-                />
-                <InfoRow
-                  label="Expected"
-                  value={latestProfileRun.expectedTools.join(", ") || "-"}
-                />
-                <InfoRow
-                  label="Optional"
-                  value={latestProfileRun.optionalTools.join(", ") || "-"}
-                />
-                <ToolReasonList
-                  label="Required tool reasons"
-                  tools={latestProfileRun.expectedTools}
-                />
-                <ToolReasonList
-                  label="Optional tool reasons"
-                  tools={latestProfileRun.optionalTools}
-                />
-                {profileCommands.length > 0 ? (
-                  <div className="border-t border-border/70">
-                    {profileCommands.map((command) => (
-                      <CommandRow
-                        key={`${latestProfileRun.id}:${command.commandId}:${command.startedAt}`}
-                        command={command}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <EmptyState>
-                    Profile setup has started but no command results are
-                    recorded yet.
-                  </EmptyState>
-                )}
-              </>
-            ) : (
-              <EmptyState>
-                Managed runtime profile setup has not run for this chat. Select
-                managed runtime before starting work to capture profile
-                evidence.
-              </EmptyState>
-            )}
-          </Section>
 
           <Section title="Services">
             {data?.services.length ? (

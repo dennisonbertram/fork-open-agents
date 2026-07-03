@@ -40,6 +40,13 @@ export type ManagedRuntimeCommandObservationJson = {
   finishedAt?: string;
 };
 
+export type ManagedRuntimeErrorKindJson =
+  | "profile_not_found"
+  | "setup_command_failed"
+  | "verification_failed"
+  | "setup_exec_error"
+  | "evidence_write_failed";
+
 export type ManagedRuntimeProfileRunJson = {
   id: string;
   sessionId: string;
@@ -50,7 +57,14 @@ export type ManagedRuntimeProfileRunJson = {
   profileId: string;
   profileVersion: string;
   profileDisplayName: string;
+  // Requested vs. resolved profile ids (MR-2): should be equal post-MR-2, but
+  // pre-existing records may diverge — surfaced explicitly rather than
+  // silently trusting resolvedProfileId (spine rule, #807).
+  requestedProfileId: string | null;
+  resolvedProfileId: string | null;
   status: string;
+  errorKind: ManagedRuntimeErrorKindJson | null;
+  nextAction: string | null;
   expectedTools: string[];
   optionalTools: string[];
   setupResults: ManagedRuntimeCommandObservationJson[];

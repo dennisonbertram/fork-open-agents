@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck } from "lucide-react";
+import { AlertTriangle, ShieldCheck } from "lucide-react";
 import type { ManagedRuntimeProfilesResponse } from "@/app/api/sessions/[sessionId]/managed-runtime/profiles/route";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +56,7 @@ export function RuntimeModeSelectorCompact({
   onManagedRuntimeProfileChange,
   onManagedProfileSaved,
   onManagedProfileDeleted,
+  onOpenInspector,
 }: {
   runtimeMode: RuntimeMode;
   managedRuntimeProfileId: string;
@@ -67,6 +68,7 @@ export function RuntimeModeSelectorCompact({
   onManagedRuntimeProfileChange: (profileId: string) => void;
   onManagedProfileSaved?: () => void;
   onManagedProfileDeleted?: (fallbackProfileId: string) => Promise<void>;
+  onOpenInspector?: () => void;
 }) {
   const isManagedRuntime = runtimeMode === "managed_runtime";
   const summary = getRuntimeModeSummary({
@@ -167,6 +169,10 @@ export function RuntimeModeSelectorCompact({
             </DropdownMenuRadioItem>
           ))}
         </DropdownMenuRadioGroup>
+        <RuntimeModeSelectorUntestedWarning
+          onOpenInspector={onOpenInspector}
+          selectedProfile={selectedProfile}
+        />
         {sessionId ? (
           <>
             <DropdownMenuSeparator />
@@ -187,6 +193,62 @@ export function RuntimeModeSelectorCompact({
         ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * A profile is only "Tested" once it has a setup_and_verify pass (Decision
+ * D6) — a verify-only pass, a failure, or no evidence at all all mean the
+ * setup commands were never proven and the profile is not yet ready.
+ */
+function isProfileConsideredTested(
+  profile: ManagedRuntimeProfileOption,
+): boolean {
+  if (profile.source !== "session") {
+    return true;
+  }
+
+  return (
+    profile.testStatus === "passed" &&
+    profile.lastTestScope === "setup_and_verify"
+  );
+}
+
+/**
+ * Inline warning shown when the selected profile's persisted state is not
+ * "Tested" (#815 §3). Selection stays possible — this warns, it does not
+ * block — the real gate is fail-closed at run time (MR-2). Links to the
+ * Runtime Inspector so the user can see the actual evidence.
+ *
+ * Exported separately so tests can render it directly — Radix
+ * DropdownMenuContent is portal-gated and not emitted by
+ * renderToStaticMarkup when closed.
+ */
+export function RuntimeModeSelectorUntestedWarning({
+  selectedProfile,
+  onOpenInspector,
+}: {
+  selectedProfile: ManagedRuntimeProfileOption | undefined;
+  onOpenInspector?: () => void;
+}) {
+  if (!selectedProfile || isProfileConsideredTested(selectedProfile)) {
+    return null;
+  }
+
+  return (
+    <div className="flex items-start gap-1.5 px-2 py-1.5 text-[11px] text-amber-700 dark:text-amber-300">
+      <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+      <p>
+        Not yet tested — run Setup + verify first.{" "}
+        <button
+          className="font-medium underline underline-offset-2"
+          onClick={onOpenInspector}
+          type="button"
+        >
+          Open Runtime Inspector
+        </button>
+      </p>
+    </div>
   );
 }
 

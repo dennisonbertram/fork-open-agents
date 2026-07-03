@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type {
+  ManagedRuntimeCommandObservationJson,
   ManagedRuntimeProfileRunJson,
   ManagedRuntimeWorkerJson,
   SessionEventJson,
@@ -8,6 +9,8 @@ import type {
 } from "./hooks/use-session-observability";
 import {
   getManagedRuntimeToolReason,
+  getProfileRunRollupLabel,
+  ProfileRunSection,
   RuntimeActorsSection,
 } from "./runtime-observability-panel";
 
@@ -49,7 +52,11 @@ function profileRun(
     profileId: "web-bun-agent-browser",
     profileVersion: "2026-05-23.2",
     profileDisplayName: "Web app with Bun and browser checks",
+    requestedProfileId: "web-bun-agent-browser",
+    resolvedProfileId: "web-bun-agent-browser",
     status: "running",
+    errorKind: null,
+    nextAction: null,
     expectedTools: ["bun", "agent-browser"],
     optionalTools: ["node", "npm"],
     setupResults: [],
@@ -235,5 +242,273 @@ describe("getManagedRuntimeToolReason", () => {
     expect(getManagedRuntimeToolReason("agent-browser")).toContain(
       "console or network errors",
     );
+  });
+});
+
+function command(
+  overrides: Partial<ManagedRuntimeCommandObservationJson> = {},
+): ManagedRuntimeCommandObservationJson {
+  return {
+    commandId: "setup-1",
+    label: "Install dependencies",
+    status: "passed",
+    required: true,
+    exitCode: 0,
+    durationMs: 1200,
+    summary: "Installed 42 packages.",
+    startedAt: "2026-05-26T20:00:00.000Z",
+    finishedAt: "2026-05-26T20:00:01.200Z",
+    ...overrides,
+  };
+}
+
+describe("getProfileRunRollupLabel", () => {
+  test("reports setup and verification pass/fail counts as 'Setup: 3/3 passed · Verification: 1/2 failed'", () => {
+    const label = getProfileRunRollupLabel({
+      setupResults: [
+        command({ commandId: "s1", status: "passed" }),
+        command({ commandId: "s2", status: "passed" }),
+        command({ commandId: "s3", status: "passed" }),
+      ],
+      verificationResults: [
+        command({ commandId: "v1", status: "passed" }),
+        command({ commandId: "v2", status: "failed" }),
+      ],
+    });
+
+    expect(label).toBe("Setup: 3/3 passed · Verification: 1/2 failed");
+  });
+
+  test("returns null when there are no command results yet", () => {
+    const label = getProfileRunRollupLabel({
+      setupResults: [],
+      verificationResults: [],
+    });
+
+    expect(label).toBeNull();
+  });
+
+  test("omits a section with zero commands rather than showing 0/0", () => {
+    const label = getProfileRunRollupLabel({
+      setupResults: [command({ commandId: "s1", status: "passed" })],
+      verificationResults: [],
+    });
+
+    expect(label).toBe("Setup: 1/1 passed");
+    expect(label).not.toContain("Verification");
+  });
+});
+
+describe("ProfileRunSection — mode row", () => {
+  test("renders a loading state instead of Classic while observability data is loading", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={true}
+        latestProfileRun={null}
+        latestWorkflow={null}
+        runtimeMode={undefined}
+      />,
+    );
+
+    expect(html).not.toContain("Classic");
+    expect(html.toLowerCase()).toContain("loading");
+  });
+
+  test("renders Classic only when loaded data explicitly says runtimeMode is classic", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={null}
+        latestWorkflow={null}
+        runtimeMode="classic"
+      />,
+    );
+
+    expect(html).toContain("Classic");
+  });
+
+  test("renders managed-but-no-run-yet state distinctly from evidence-unavailable", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={null}
+        latestWorkflow={null}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("Managed runtime");
+    expect(html).not.toContain("Evidence unavailable");
+    expect(html).toContain("has not run");
+  });
+
+  test("renders evidence-unavailable when managed mode has workflow activity but no ProfileRun row", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={null}
+        latestWorkflow={workflowRun({ status: "completed" })}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("Evidence unavailable");
+  });
+
+  test("renders the failed state with the typed next-action copy", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "failed",
+          errorKind: "setup_command_failed",
+          nextAction:
+            "Fix the failing setup command in the profile editor, then run setup again.",
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("failed");
+    expect(html).toContain(
+      "Fix the failing setup command in the profile editor, then run setup again.",
+    );
+  });
+
+  // Codex #839 P2: a required verification failure persists as status
+  // "blocked" (errorKind verification_failed) with a nextAction — the panel
+  // must surface that actionable copy, not only for "failed".
+  test("renders the blocked state with the typed next-action copy", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "blocked",
+          errorKind: "verification_failed",
+          nextAction:
+            "Fix the failing verification command in the profile editor, then re-run verification.",
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain(
+      "Fix the failing verification command in the profile editor, then re-run verification.",
+    );
+  });
+
+  test("renders the passed state", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({ status: "passed" })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("passed");
+  });
+
+  test("renders a rollup header above the per-command rows", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "passed",
+          setupResults: [
+            command({ commandId: "s1", status: "passed" }),
+            command({ commandId: "s2", status: "passed" }),
+          ],
+          verificationResults: [command({ commandId: "v1", status: "passed" })],
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("Setup: 2/2 passed · Verification: 1/1 passed");
+  });
+
+  test("renders an explicit requested-vs-resolved mismatch warning naming both ids", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "passed",
+          requestedProfileId: "custom-profile-a",
+          resolvedProfileId: "web-bun-agent-browser",
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain("custom-profile-a");
+    expect(html).toContain("web-bun-agent-browser");
+  });
+});
+
+// ── Regression ──────────────────────────────────────────────────────────────
+describe("ProfileRunSection regression", () => {
+  // Pins the concern raised in issue #815 §14: loading state must take
+  // priority over evidence-unavailable so the badge/panel never flickers
+  // "Evidence unavailable" during a normal load.
+  test("loading takes priority over evidence-unavailable even with a completed workflow and no run", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={true}
+        latestProfileRun={null}
+        latestWorkflow={workflowRun({ status: "completed" })}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).not.toContain("Evidence unavailable");
+  });
+
+  // Regression: if the rollup header computation is removed or short-circuited
+  // when there is a failure mixed with passes, the per-command detail rows
+  // would be the only signal again — this pins the header's presence and
+  // exact counts specifically for a run with both setup and verification
+  // failures, not just the all-passing case covered above.
+  test("rollup header still appears above per-command rows when setup has a failure", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "failed",
+          errorKind: "setup_command_failed",
+          setupResults: [
+            command({ commandId: "s1", status: "passed" }),
+            command({ commandId: "s2", status: "failed" }),
+            command({ commandId: "s3", status: "passed" }),
+          ],
+          verificationResults: [],
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    const rollupIndex = html.indexOf("Setup: 2/3 failed");
+    const firstCommandRowIndex = html.indexOf("Install dependencies");
+    expect(rollupIndex).toBeGreaterThan(-1);
+    expect(firstCommandRowIndex).toBeGreaterThan(-1);
+    expect(rollupIndex).toBeLessThan(firstCommandRowIndex);
+  });
+
+  // Regression: the top-level RuntimeObservabilityPanel must keep exporting
+  // ProfileRunSection's consuming component under its original name — if a
+  // future refactor renames or inlines RuntimeObservabilityPanel, every
+  // dynamic import call site (session-chat-content.tsx) breaks silently at
+  // runtime (dynamic imports do not fail typecheck the same way a static
+  // import would).
+  test("RuntimeObservabilityPanel is still exported from the module", async () => {
+    const mod = await import("./runtime-observability-panel");
+    expect(typeof mod.RuntimeObservabilityPanel).toBe("function");
+    expect(typeof mod.default).toBe("function");
   });
 });
