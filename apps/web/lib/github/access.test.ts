@@ -45,9 +45,7 @@ let mockSyncUserInstallations: (
   userToken: string,
   personalAccountLogin: string,
 ) => Promise<number> = async () => 0;
-let mockInstallationRowAfterResync:
-  | { installationId: number }
-  | undefined;
+let mockInstallationRowAfterResync: { installationId: number } | undefined;
 let syncUserInstallationsCallCount = 0;
 let getInstallationByAccountLoginCallCount = 0;
 
