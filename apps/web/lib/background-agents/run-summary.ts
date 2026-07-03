@@ -277,6 +277,17 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
               : "Composio tools blocked by repo policy.",
           ),
         );
+      } else if (reason === "not_in_repo_allowlist") {
+        // #799: a non-null repo selectedToolkitSlugs allowlist dropped every
+        // requested slug — distinct copy from the denylist ("blocked")
+        // case so operators can tell which policy axis caused the drop.
+        warnings.push(
+          truncate(
+            blockedSlugs.length > 0
+              ? `Composio tools not in repository allowlist: ${blockedSlugs.join(", ")}.`
+              : "Composio tools not in repository allowlist.",
+          ),
+        );
       } else {
         warnings.push(
           truncate(

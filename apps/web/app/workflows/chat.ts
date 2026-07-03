@@ -2616,6 +2616,55 @@ const runAgentStep = async (
         runtimeMode: agentOptions.runtimeMode ?? "classic",
       });
 
+      // #799 post-review fix: a repo-policy block (partial on a ready
+      // outcome, or total on an off outcome) previously left no trace at
+      // all — the tool list silently shrank, or an all-blocked chat looked
+      // identical to a never-configured one. Record a typed, visible
+      // degradation event whenever repoPolicyBlocked is non-empty, on
+      // EITHER outcome, before the ready-specific events below (so it is
+      // visible even when composioResult.status is "off" and none of those
+      // fire). Non-fatal: never throws; tools continue without the
+      // blocked slugs.
+      if (
+        (composioResult.status === "ready" ||
+          composioResult.status === "off") &&
+        composioResult.repoPolicyBlocked &&
+        composioResult.repoPolicyBlocked.length > 0
+      ) {
+        const blockedSlugs = composioResult.repoPolicyBlocked.map(
+          (b) => b.slug,
+        );
+        const reasons = Object.fromEntries(
+          composioResult.repoPolicyBlocked.map((b) => [b.slug, b.reason]),
+        );
+        // Summary MUST start with "Blocked toolkit for this repository: "
+        // so lib/composio/errors.ts's getComposioErrorKind classifies it as
+        // composio_repo_policy_blocked, and the runtime-observability
+        // panel's LikelyIssue card (composio.* + status "failed") renders
+        // it verbatim (#800).
+        await emitSessionEvent({
+          sessionId,
+          chatId,
+          userId,
+          source: "workflow",
+          actorType: "coordinator",
+          eventName: "composio.repo_policy.blocked",
+          status: "failed",
+          summary: `Blocked toolkit for this repository: ${composioResult.repoPolicyBlocked
+            .map((b) => `${b.slug} (${b.reason})`)
+            .join(", ")}.`,
+          requestId,
+          workflowRunId,
+          sandboxName: stepSandboxName,
+          managedRuntimeProfileRunId: stepManagedRuntimeProfileRunId,
+          payload: {
+            stepNumber,
+            blockedSlugs,
+            reasons,
+          },
+        });
+      }
+
       if (composioResult.status === "ready") {
         composioTools = composioResult.tools;
         await emitSessionEvent({

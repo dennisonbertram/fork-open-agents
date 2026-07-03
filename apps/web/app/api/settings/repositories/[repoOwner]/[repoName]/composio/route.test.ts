@@ -40,6 +40,34 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
   }),
 }));
 
+// ── Toolkit catalog mock (#799, finding B3) — used to validate
+// blockedToolkitSlugs against known toolkits, mirroring the toolkits route's
+// own catalog source (composio.toolkits.get). Configurable per-test so both
+// the happy path and the catalog-lookup-failure path can be exercised.
+let toolkitCatalogThrows: Error | null = null;
+const toolkitCatalogItems = [
+  { slug: "github", name: "GitHub" },
+  { slug: "gmail", name: "Gmail" },
+  { slug: "slack", name: "Slack" },
+];
+
+mock.module("@/lib/composio/config", () => ({
+  getComposioConfig: () => ({ configured: true, apiKey: "ak_test_key" }),
+}));
+
+mock.module("@/lib/composio/client", () => ({
+  getComposioClient: () => ({
+    toolkits: {
+      get: async () => {
+        if (toolkitCatalogThrows) {
+          throw toolkitCatalogThrows;
+        }
+        return { items: toolkitCatalogItems };
+      },
+    },
+  }),
+}));
+
 mock.module("@/lib/db/composio", () => ({
   listComposioToolProfiles: async () => [profile],
   getComposioAgentDefaults: async () => ({}),
@@ -107,6 +135,7 @@ describe("/api/settings/repositories/[repoOwner]/[repoName]/composio", () => {
   beforeEach(() => {
     authResult = { ok: true, userId: "user-1" };
     savedSettings = null;
+    toolkitCatalogThrows = null;
   });
 
   test("GET returns repo-scoped Composio policy options", async () => {
@@ -166,5 +195,63 @@ describe("/api/settings/repositories/[repoOwner]/[repoName]/composio", () => {
     );
 
     expect(response.status).toBe(400);
+  });
+
+  // ── #799, finding B3: reject unknown blockedToolkitSlugs at save time ────────
+
+  test("PATCH rejects an unrecognized blockedToolkitSlugs entry with 400 naming the slug", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      request({
+        inheritGlobalDefaults: true,
+        allowedProfileIds: [],
+        blockedToolkitSlugs: ["gmial"],
+        agentDefaults: {},
+      }),
+      context(),
+    );
+    const body = (await response.json()) as { error?: string };
+
+    expect(response.status).toBe(400);
+    expect(body.error).toContain("gmial");
+    expect(savedSettings).toBeNull();
+  });
+
+  test("PATCH accepts blockedToolkitSlugs that exist in the toolkit catalog even if the user has never connected them", async () => {
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      request({
+        inheritGlobalDefaults: true,
+        allowedProfileIds: [],
+        blockedToolkitSlugs: ["gmail"],
+        agentDefaults: {},
+      }),
+      context(),
+    );
+
+    expect(response.status).toBe(200);
+    expect(savedSettings).toMatchObject({ blockedToolkitSlugs: ["gmail"] });
+  });
+
+  test("PATCH surfaces an explicit failure when the toolkit catalog lookup itself fails", async () => {
+    toolkitCatalogThrows = new Error("Composio is unreachable");
+    const { PATCH } = await routeModulePromise;
+
+    const response = await PATCH(
+      request({
+        inheritGlobalDefaults: true,
+        allowedProfileIds: [],
+        blockedToolkitSlugs: ["gmail"],
+        agentDefaults: {},
+      }),
+      context(),
+    );
+
+    // Must not silently accept an unvalidated slug — the catalog lookup
+    // failure itself must be a visible, explicit error, not a 200.
+    expect(response.status).toBe(502);
+    expect(savedSettings).toBeNull();
   });
 });

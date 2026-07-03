@@ -569,6 +569,21 @@ export async function executeAgentStep(
           workflowRunId,
         });
       } else {
+        // #799 extends this switch with "not_in_repo_allowlist" (a non-null
+        // repo selectedToolkitSlugs allowlist dropped every requested slug)
+        // — distinct copy from "repo_policy_blocked" (denylist).
+        let offSummary: string;
+        if (composioResult.reason === "repo_policy_blocked") {
+          offSummary = `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+        } else if (composioResult.reason === "not_in_repo_allowlist") {
+          offSummary = `Composio tools not in repository allowlist: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+        } else {
+          offSummary =
+            "Composio tools requested but no toolkit slugs were selected.";
+        }
+        const includeBlockedSlugsInPayload =
+          composioResult.reason === "repo_policy_blocked" ||
+          composioResult.reason === "not_in_repo_allowlist";
         await recordAgentLoopEvent({
           loopRunId,
           stepRunId,
@@ -576,13 +591,10 @@ export async function executeAgentStep(
           eventName: "agent-loop.step.composio.off",
           status: "succeeded",
           level: "warn",
-          summary:
-            composioResult.reason === "repo_policy_blocked"
-              ? `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`
-              : "Composio tools requested but no toolkit slugs were selected.",
+          summary: offSummary,
           payload: {
             reason: composioResult.reason,
-            ...(composioResult.reason === "repo_policy_blocked"
+            ...(includeBlockedSlugsInPayload
               ? { blockedSlugs: composioResult.blockedSlugs ?? [] }
               : {}),
           },

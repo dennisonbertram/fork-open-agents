@@ -2,7 +2,9 @@
  * Pure precedence helper for resolving Composio tools for the chat MAIN agent.
  *
  * Implements the precedence rules for Part C (Phase 3):
- *   1. Explicit per-chat directToolkitSlugs → wins over agent row
+ *   0. Explicit per-chat directToolkitSlugs === [] → explicit "off"
+ *      sentinel, short-circuits past every lower tier (#799, finding G1)
+ *   1. Explicit per-chat directToolkitSlugs (non-empty) → wins over agent row
  *   2. Explicit per-chat mainProfileId      → wins over agent row
  *   3. Agent row composioToolkitSlugs (non-empty) → used as default
  *   4. Agent row composioProfileId          → used as default when no slugs
@@ -11,6 +13,12 @@
  * CRITICAL: With no agent row and no explicit selection this function returns
  * exactly {directSlugs: null, profileId: null}, which is byte-for-byte
  * identical to the existing behavior before Phase 3.
+ *
+ * The distinction between chatDirectSlugs === null ("never configured",
+ * inherit agent-row/repo defaults) and chatDirectSlugs === [] ("explicit
+ * off", the user picked zero tools for this chat) is load-bearing: only []
+ * short-circuits. Callers must not normalize null to [] or vice versa
+ * before calling this function.
  *
  * No I/O — pure function, fully unit-testable.
  */
@@ -65,6 +73,15 @@ export function resolveComposioSlugsForChatMain(
     agentRowComposioSlugs,
     agentRowComposioProfileId,
   } = input;
+
+  // Explicit "off" sentinel: chatDirectSlugs is a non-null EMPTY array. This
+  // means the user explicitly turned tools off for this chat — short-circuit
+  // to zero tools, skipping agent-row/repo fallback entirely (#799, finding
+  // G1). chatDirectSlugs === null (never configured) is NOT this case and
+  // falls through to the agent-row/repo tiers below, unchanged.
+  if (chatDirectSlugs != null && chatDirectSlugs.length === 0) {
+    return { directSlugs: [], profileId: null };
+  }
 
   // Explicit per-chat directSlugs wins (non-empty array only)
   const chatSlugsNonEmpty =
