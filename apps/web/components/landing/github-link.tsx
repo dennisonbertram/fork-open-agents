@@ -7,14 +7,23 @@ export function GitHubLink({
   children,
   variant = "ghost",
   size,
+  "aria-label": ariaLabel,
 }: {
   readonly children?: React.ReactNode;
   readonly variant?: ComponentProps<typeof Button>["variant"];
   readonly size?: ComponentProps<typeof Button>["size"];
+  readonly "aria-label"?: string;
 }) {
   return (
     <Button variant={variant} size={size ?? (children ? "lg" : "icon")} asChild>
-      <a href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+      <a
+        href={GITHUB_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={
+          ariaLabel ?? (children ? undefined : "Open Agents on GitHub")
+        }
+      >
         <GitHubIcon />
         {children}
       </a>

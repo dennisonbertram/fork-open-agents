@@ -160,6 +160,7 @@ mock.module("@/lib/db/managed-runtime-profile-drafts", () => ({
       status: params.status,
       testResults: params.testResults,
       testFailureMessage: params.testFailureMessage ?? null,
+      testScope: params.testScope ?? null,
       testedAt: new Date("2026-05-24T00:01:00.000Z"),
     };
   },
@@ -378,6 +379,107 @@ describe("/api/sessions/[sessionId]/managed-runtime/profile-drafts/[draftId]/tes
       status: "failed",
       required: false,
     });
+  });
+
+  // RED: today the route never persists or returns which scope (verify vs
+  // setup_and_verify) was actually executed.
+  test("persists and returns the executed test scope for a verify-only pass", async () => {
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(request(), routeContext());
+    const body = (await response.json()) as {
+      draft: { testScope: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.draft.testScope).toBe("verify");
+    expect(calls).toContainEqual(
+      expect.objectContaining({ fn: "finish", testScope: "verify" }),
+    );
+  });
+
+  test("persists and returns setup_and_verify as the executed test scope", async () => {
+    execResults = [
+      { success: true, exitCode: 0, stdout: "installed\n" },
+      { success: true, exitCode: 0, stdout: "1.2.3\n" },
+    ];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      request({ mode: "setup_and_verify" }),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      draft: { testScope: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.draft.testScope).toBe("setup_and_verify");
+    expect(calls).toContainEqual(
+      expect.objectContaining({ fn: "finish", testScope: "setup_and_verify" }),
+    );
+  });
+
+  // RED: today verify-mode does NOT break the loop on a required failure
+  // (route.ts:125-130 only breaks in setup_and_verify mode).
+  test("stops running remaining verification commands after a required failure in verify mode", async () => {
+    draftResult = {
+      ...draftRecord,
+      profileDraft: {
+        ...draftRecord.profileDraft,
+        verificationCommands: [
+          {
+            id: "verify-bun",
+            label: "Verify Bun",
+            description: "Verify Bun",
+            command: "bun --version",
+          },
+          {
+            id: "verify-node",
+            label: "Verify Node",
+            description: "Verify Node",
+            command: "node --version",
+          },
+        ],
+      },
+    };
+    execResults = [{ success: false, exitCode: 1, stderr: "bun missing\n" }];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(request(), routeContext());
+    const body = (await response.json()) as {
+      draft: { testResults: Array<{ commandId: string }> };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.draft.testResults).toHaveLength(1);
+    expect(calls.filter((call) => call.fn === "exec")).toHaveLength(1);
+  });
+
+  // RED: today the response never surfaces structured error fields for a
+  // required-command failure.
+  test("returns a structured error when a required setup command fails during setup_and_verify", async () => {
+    execResults = [{ success: false, exitCode: 1, stderr: "install failed\n" }];
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      request({ mode: "setup_and_verify" }),
+      routeContext(),
+    );
+    const body = (await response.json()) as {
+      draft: {
+        errorKind: string;
+        failureMessage: string;
+        failedCommandLabel: string;
+        nextAction: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.draft.errorKind).toBe("setup_command_failed");
+    expect(body.draft.failedCommandLabel).toBe("Install Bun");
+    expect(body.draft.failureMessage).toContain("Install Bun failed");
+    expect(body.draft.nextAction).toContain("setup command");
   });
 
   test("returns 404 when the draft is missing", async () => {

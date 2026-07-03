@@ -137,6 +137,13 @@ export async function updateManagedRuntimeProfileDraftDecision(params: {
   sessionId: string;
   draftId: string;
   output: SetupManagedRuntimeProfileOutput;
+  /**
+   * Persists `force_approved` (MR-1 column) when a draft is approved over a
+   * failed/absent test (Decision D6). Kept as its own param instead of a
+   * field on `output` because the output schema is owned by
+   * packages/agent, outside this ticket's file territory.
+   */
+  forceApproved?: boolean;
 }): Promise<ManagedRuntimeProfileDraft | undefined> {
   const now = new Date();
   const status =
@@ -158,6 +165,9 @@ export async function updateManagedRuntimeProfileDraftDecision(params: {
       status,
       userDecision: params.output.decision,
       userInstructions,
+      ...(params.forceApproved === undefined
+        ? {}
+        : { forceApproved: params.forceApproved }),
       updatedAt: now,
     })
     .where(
@@ -205,6 +215,11 @@ export async function finishManagedRuntimeProfileDraftTest(params: {
   status: "tested" | "needs_changes";
   testResults: ManagedRuntimeCommandObservation[];
   testFailureMessage?: string | null;
+  /**
+   * The scope actually executed (verify vs setup_and_verify — Decision D6),
+   * mirroring managedRuntimeSavedProfiles.lastTestScope for drafts.
+   */
+  testScope?: "verify" | "setup_and_verify" | null;
 }): Promise<ManagedRuntimeProfileDraft | undefined> {
   const now = new Date();
   const [draft] = await db
@@ -213,6 +228,7 @@ export async function finishManagedRuntimeProfileDraftTest(params: {
       status: params.status,
       testResults: params.testResults,
       testFailureMessage: params.testFailureMessage ?? null,
+      lastTestScope: params.testScope ?? null,
       testedAt: now,
       updatedAt: now,
     })

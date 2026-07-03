@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { Link as LinkIcon, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
+import useSWR from "swr";
 import { type ThemePreference, useTheme } from "@/app/providers";
+import type { RuntimeProfilesResponse } from "@/app/api/settings/runtime-profiles/route";
 import {
   DEFAULT_SANDBOX_TYPE,
   type SandboxType,
@@ -16,12 +17,15 @@ import { SettingsGroup, SettingRow } from "@/components/ui/settings-group";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { fetcher } from "@/lib/swr";
 import { useSession } from "@/hooks/use-session";
 import {
   type DiffMode,
@@ -32,7 +36,10 @@ import {
   type GlobalSkillRef,
 } from "@/lib/skills/global-skill-refs";
 import { SettingsSectionHeader } from "./_components/section-header";
-import { getSingleOptionPickerState } from "./preferences-helpers";
+import {
+  getSingleOptionPickerState,
+  groupRuntimeProfileOptions,
+} from "./preferences-helpers";
 
 // Re-export model section components so loading.tsx and layout.tsx keep working
 // without changing their import paths. The canonical definitions now live in
@@ -56,8 +63,6 @@ const DIFF_MODE_OPTIONS: Array<{ id: DiffMode; name: string }> = [
   { id: "unified", name: "Unified" },
   { id: "split", name: "Split" },
 ];
-
-const MANAGED_RUNTIME_PROFILE_OPTIONS = listManagedRuntimeProfiles();
 
 function isThemePreference(value: string): value is ThemePreference {
   return THEME_OPTIONS.some((option) => option.id === value);
@@ -207,6 +212,14 @@ function usePreferencesSectionState() {
   const { theme, setTheme } = useTheme();
   const { session } = useSession();
   const { preferences, loading, updatePreferences } = useUserPreferences();
+  // MR-4 (#812): source runtime profile options from the merged endpoint
+  // (built-ins + the caller's own user_default profiles) instead of the
+  // built-ins-only listManagedRuntimeProfiles() constant.
+  const { data: runtimeProfilesData } = useSWR<RuntimeProfilesResponse>(
+    "/api/settings/runtime-profiles",
+    fetcher,
+  );
+  const runtimeProfiles = runtimeProfilesData?.profiles ?? [];
   const [isSaving, setIsSaving] = useState(false);
   const [globalSkillSource, setGlobalSkillSource] = useState("");
   const [globalSkillName, setGlobalSkillName] = useState("");
@@ -388,6 +401,7 @@ function usePreferencesSectionState() {
     theme,
     preferences,
     loading,
+    runtimeProfiles,
     isSaving,
     globalSkillSource,
     setGlobalSkillSource,
@@ -421,6 +435,7 @@ export function PreferencesSection() {
   const {
     theme,
     preferences,
+    runtimeProfiles,
     isSaving,
     copiedPublicProfile,
     publicProfilePath,
@@ -443,17 +458,21 @@ export function PreferencesSection() {
     handleRemoveGlobalSkillRef,
   } = state;
 
-  const selectedRuntimeProfile = MANAGED_RUNTIME_PROFILE_OPTIONS.find(
+  const selectedRuntimeProfile = runtimeProfiles.find(
     (p) =>
       p.id ===
-      (preferences?.defaultManagedRuntimeProfileId ??
-        MANAGED_RUNTIME_PROFILE_OPTIONS[0]?.id),
+      (preferences?.defaultManagedRuntimeProfileId ?? runtimeProfiles[0]?.id),
   );
-  const managedRuntimePickerOptions = MANAGED_RUNTIME_PROFILE_OPTIONS.map(
-    (profile) => ({
+  const managedRuntimePickerOptions = runtimeProfiles.map((profile) => ({
+    id: profile.id,
+    name: profile.displayName,
+  }));
+  const managedRuntimeProfileGroups = groupRuntimeProfileOptions(
+    runtimeProfiles.map((profile) => ({
       id: profile.id,
-      name: profile.displayName,
-    }),
+      displayName: profile.displayName,
+      source: profile.source,
+    })),
   );
   const sandboxPickerState = getSingleOptionPickerState(SANDBOX_OPTIONS);
   const managedRuntimePickerState = getSingleOptionPickerState(
@@ -548,10 +567,15 @@ export function PreferencesSection() {
                   <SelectValue placeholder="Select a runtime profile" />
                 </SelectTrigger>
                 <SelectContent>
-                  {MANAGED_RUNTIME_PROFILE_OPTIONS.map((profile) => (
-                    <SelectItem key={profile.id} value={profile.id}>
-                      {profile.displayName}
-                    </SelectItem>
+                  {managedRuntimeProfileGroups.map((group) => (
+                    <SelectGroup key={group.label}>
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {group.options.map((option) => (
+                        <SelectItem key={option.id} value={option.id}>
+                          {option.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>

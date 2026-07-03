@@ -1,13 +1,15 @@
 import { prepareManagedRuntimeDemo } from "@/lib/dev/managed-runtime-demo";
 import { isTestAuthEnabled, setTestAuthCookie } from "@/lib/session/test-auth";
 
-export async function GET() {
+export async function GET(request: Request) {
   if (!isTestAuthEnabled()) {
     return Response.json({ error: "Not found" }, { status: 404 });
   }
 
   try {
-    const demo = await prepareManagedRuntimeDemo();
+    const { searchParams } = new URL(request.url);
+    const profileId = searchParams.get("profileId") ?? undefined;
+    const demo = await prepareManagedRuntimeDemo({ profileId });
     const response = Response.json(demo);
     setTestAuthCookie(response);
     return response;

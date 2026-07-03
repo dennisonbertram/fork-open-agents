@@ -1,5 +1,6 @@
 import path from "node:path";
 import { connectSandbox, type SandboxState } from "@open-agents/sandbox";
+import { DEFAULT_MANAGED_RUNTIME_PROFILE_ID } from "@open-agents/sandbox/managed-runtime-profiles";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import { chats, sessions, users } from "@/lib/db/schema";
@@ -18,6 +19,23 @@ import { TEST_AUTH_USER_ID } from "@/lib/session/test-auth";
 
 export const MANAGED_RUNTIME_DEMO_SESSION_ID = "managed-runtime-demo-session";
 export const MANAGED_RUNTIME_DEMO_CHAT_ID = "managed-runtime-demo-chat";
+
+export type PrepareManagedRuntimeDemoOptions = {
+  /**
+   * Runtime mode to seed the demo session with. Defaults to
+   * "managed_runtime" so the route named "managed-runtime-demo" actually
+   * demos the managed runtime path (#816). Callers that still need the
+   * legacy classic-mode demo can pass "classic" explicitly.
+   */
+  runtimeMode?: "classic" | "managed_runtime";
+  /**
+   * Managed runtime profile id to seed when runtimeMode is
+   * "managed_runtime". Defaults to the built-in web-bun-agent-browser
+   * profile; accepts a user_default profile id for callers that want to
+   * demo a saved profile.
+   */
+  profileId?: string;
+};
 
 const DEMO_PACKAGE_JSON = JSON.stringify(
   {
@@ -154,8 +172,11 @@ h1 {
 }
 `;
 
-async function seedDemoRecords(): Promise<void> {
+async function seedDemoRecords(
+  options: Required<PrepareManagedRuntimeDemoOptions>,
+): Promise<void> {
   const now = new Date();
+  const { runtimeMode, profileId } = options;
 
   await db
     .insert(users)
@@ -189,7 +210,8 @@ async function seedDemoRecords(): Promise<void> {
       title: "Managed Runtime Demo",
       status: "running",
       sandboxState: { type: "vercel" },
-      runtimeMode: "classic",
+      runtimeMode,
+      managedRuntimeProfileId: profileId,
       lifecycleState: "provisioning",
       lifecycleVersion: 0,
     })
@@ -198,7 +220,8 @@ async function seedDemoRecords(): Promise<void> {
       set: {
         title: "Managed Runtime Demo",
         status: "running",
-        runtimeMode: "classic",
+        runtimeMode,
+        managedRuntimeProfileId: profileId,
         updatedAt: now,
       },
     });
@@ -220,13 +243,18 @@ async function seedDemoRecords(): Promise<void> {
     });
 }
 
-export async function prepareManagedRuntimeDemo(): Promise<{
+export async function prepareManagedRuntimeDemo(
+  options: PrepareManagedRuntimeDemoOptions = {},
+): Promise<{
   sessionId: string;
   chatId: string;
   sessionUrl: string;
   sandboxState: SandboxState;
 }> {
-  await seedDemoRecords();
+  const runtimeMode = options.runtimeMode ?? "managed_runtime";
+  const profileId = options.profileId ?? DEFAULT_MANAGED_RUNTIME_PROFILE_ID;
+
+  await seedDemoRecords({ runtimeMode, profileId });
 
   const sandbox = await connectSandbox({
     state: {

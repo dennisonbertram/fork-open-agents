@@ -1,11 +1,18 @@
-export function Logo({ className }: { readonly className?: string }) {
+export function Logo({
+  className,
+  "aria-label": ariaLabel = "Open Agents",
+}: {
+  readonly className?: string;
+  readonly "aria-label"?: string;
+}) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 118 18"
       fill="none"
       className={className}
-      aria-label="Open Agents"
+      role="img"
+      aria-label={ariaLabel}
     >
       <path
         fill="currentColor"

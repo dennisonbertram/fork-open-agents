@@ -1,5 +1,5 @@
 import { getServerSession } from "@/lib/session/get-server-session";
-import { isManagedRuntimeProfileId } from "@open-agents/sandbox/managed-runtime-profiles";
+import { isKnownManagedRuntimeProfileReference } from "@/lib/db/managed-runtime-saved-profiles";
 import {
   getUserPreferences,
   type DiffMode,
@@ -69,9 +69,22 @@ export async function PATCH(req: Request) {
   }
 
   if (body.defaultManagedRuntimeProfileId !== undefined) {
-    if (!isManagedRuntimeProfileId(body.defaultManagedRuntimeProfileId)) {
+    // Preferences are account-level (no session context), so the
+    // session-scope arm of isKnownManagedRuntimeProfileReference's OR clause
+    // is a no-op here — only the built-in and owned user_default arms apply.
+    const isKnown = await isKnownManagedRuntimeProfileReference({
+      userId: session.user.id,
+      sessionId: "__preferences__",
+      profileId: body.defaultManagedRuntimeProfileId,
+    });
+    if (!isKnown) {
       return Response.json(
-        { error: "Invalid managed runtime profile" },
+        {
+          error: "Invalid managed runtime profile",
+          errorKind: "profile_not_found",
+          nextAction:
+            "This profile no longer exists. Choose another profile or recreate it.",
+        },
         { status: 400 },
       );
     }
