@@ -1,6 +1,14 @@
 import { getInstallationByAccountLogin } from "@/lib/db/installations";
+import {
+  logInstallationResyncAttempted,
+  logInstallationResyncFailed,
+  logInstallationResyncSucceeded,
+} from "./access-events";
 import { withScopedInstallationOctokit } from "./app";
 import { getUserOctokit } from "./client";
+import { syncUserInstallations } from "./sync";
+import { getUserGitHubToken } from "./token";
+import { getGitHubUsername } from "./users";
 
 export type RepoAccessDeniedReason =
   | "no_user_token"
@@ -37,6 +45,61 @@ function hasUserWritePermission(
   return Boolean(
     permissions?.admin || permissions?.maintain || permissions?.push,
   );
+}
+
+/**
+ * Best-effort re-sync of the user's GitHub App installations, used only when
+ * `verifyRepoAccess` finds no local installation row for the owner (issue
+ * #791). Mirrors the token + username lookup already used by the GitHub App
+ * callback route (`app/api/github/app/callback/route.ts`) rather than
+ * duplicating it. Never throws — any failure to resolve a token/username or
+ * to sync is caught and folded into a `false` return so the caller can fall
+ * back to the existing "no_installation" result.
+ */
+async function attemptInstallationResync(params: {
+  userId: string;
+  owner: string;
+}): Promise<boolean> {
+  const { userId, owner } = params;
+
+  const userToken = await getUserGitHubToken(userId);
+  if (!userToken) {
+    logInstallationResyncFailed({
+      userId,
+      owner,
+      errorKind: "resync_token_missing",
+    });
+    return false;
+  }
+
+  const username = await getGitHubUsername(userId);
+  if (!username) {
+    logInstallationResyncFailed({
+      userId,
+      owner,
+      errorKind: "resync_token_missing",
+    });
+    return false;
+  }
+
+  logInstallationResyncAttempted({ userId, owner });
+
+  try {
+    const syncedCount = await syncUserInstallations(
+      userId,
+      userToken,
+      username,
+    );
+    logInstallationResyncSucceeded({ userId, owner, syncedCount });
+    return true;
+  } catch {
+    logInstallationResyncFailed({
+      userId,
+      owner,
+      errorKind: "resync_sync_failed",
+    });
+    return false;
+  }
 }
 
 function getGitHubHttpStatus(error: unknown): number | null {
@@ -108,7 +171,16 @@ export async function verifyRepoAccess(params: {
   }
 
   // 2. check installation exists for this owner
-  const installation = await getInstallationByAccountLogin(userId, owner);
+  let installation = await getInstallationByAccountLogin(userId, owner);
+  if (!installation) {
+    // The local installations DB row can lag right after a fresh GitHub App
+    // install/callback (issue #791). Attempt one best-effort re-sync before
+    // giving up, then re-read — never retry more than once per call.
+    const resynced = await attemptInstallationResync({ userId, owner });
+    if (resynced) {
+      installation = await getInstallationByAccountLogin(userId, owner);
+    }
+  }
   if (!installation) {
     return { ok: false, reason: "no_installation" };
   }
