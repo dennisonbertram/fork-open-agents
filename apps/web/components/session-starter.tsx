@@ -8,7 +8,6 @@ import {
   Loader2,
   MessageSquare,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status";
 import { useRepoDefaults } from "@/hooks/use-repo-defaults";
@@ -26,9 +25,14 @@ import {
 } from "./sandbox-selector-compact";
 import {
   getButtonLabel,
+  getEffectiveRuntimeSelection,
+  getRuntimeModeLabel,
+  getRuntimeSelectionForSubmit,
   getSessionFooter,
   isSubmitBlocked,
+  type RuntimeSelection,
   type SessionMode,
+  type SessionRuntimeMode,
 } from "./session-starter-helpers";
 import { SessionStarterVercelSyncSection } from "./session-starter-vercel-sync-section";
 import { prepareSessionTitle } from "./session-starter-title";
@@ -44,6 +48,8 @@ interface SessionStarterProps {
     isNewBranch: boolean;
     fullClone: boolean;
     sandboxType: SandboxType;
+    runtimeMode: SessionRuntimeMode;
+    managedRuntimeProfileId?: string;
     autoCommitPush: boolean;
     autoCreatePr: boolean;
     vercelProject?: VercelProjectSelection | null;
@@ -90,6 +96,20 @@ export function SessionStarter({
     SANDBOX_OPTIONS.find((s) => s.id === sandboxType)?.name ?? sandboxType;
   const isRepoModeDisabled = sessionLoading;
 
+  // ── MR-4 (#812): New-Chat runtime picker ────────────────────────────────
+  // The Preferences default is stored only as a profile id (no separate
+  // "runtime mode" preference column exists), so the default mode is
+  // "classic" unless a repo default says otherwise — repoDefaults precedence
+  // is applied below once it loads.
+  const defaultManagedRuntimeProfileId =
+    preferences?.defaultManagedRuntimeProfileId ?? "web-bun-agent-browser";
+  // The picker below is always visible (fixes #812's silent-discard "Change"
+  // link, which used to navigate away to /settings/preferences and drop
+  // whatever the user had typed into the dialog). No navigation is needed to
+  // change the runtime, so nothing can be silently discarded.
+  const [userRuntimeSelection, setUserRuntimeSelection] =
+    useState<RuntimeSelection | null>(null);
+
   const shouldLoadVercelProjects =
     mode === "repo" &&
     !githubConnectionLoading &&
@@ -132,8 +152,10 @@ export function SessionStarter({
   // Fetch resolved repo defaults when a repo is selected in repo mode.
   // The result is used as a fallback in the effective-value chain below;
   // state variables stay null so user edits are never clobbered.
+  const repoDefaultsEnabled =
+    mode === "repo" && !!selectedOwner && !!selectedRepo;
   const { defaults: repoDefaults } = useRepoDefaults({
-    enabled: mode === "repo" && !!selectedOwner && !!selectedRepo,
+    enabled: repoDefaultsEnabled,
     repoOwner: selectedOwner,
     repoName: selectedRepo,
   });
@@ -215,6 +237,32 @@ export function SessionStarter({
     autoCommitPush ?? repoDefaults?.autoCommitPush ?? defaultAutoCommitPush;
   const effectiveAutoCreatePr =
     autoCreatePr ?? repoDefaults?.autoCreatePr ?? defaultAutoCreatePr;
+
+  // Decision D1: the New-Chat picker is prefilled from the resolved default
+  // (repo default takes precedence, same chain as autoCommitPush above) and
+  // an explicit in-dialog choice always wins. Choosing "classic"/"managed"
+  // here never flips any other, already-created session.
+  const effectiveRuntimeSelection = getEffectiveRuntimeSelection({
+    userSelection: userRuntimeSelection,
+    defaultRuntimeMode: repoDefaults?.runtimeMode ?? "classic",
+    defaultProfileId:
+      repoDefaults?.managedRuntimeProfileId ?? defaultManagedRuntimeProfileId,
+  });
+  // Codex #834 P2: repo defaults are "resolved" once they've loaded, or are
+  // simply not applicable (no repo selected yet) — there is nothing to wait
+  // for in either case. While repoDefaultsEnabled is true and the fetch is
+  // still loading/erroring, repoDefaults stays undefined, and
+  // effectiveRuntimeSelection above is only a not-yet-resolved "classic"
+  // fallback rather than a real choice.
+  const repoDefaultsResolved = !repoDefaultsEnabled || !!repoDefaults;
+  const activeManagedProfileId =
+    effectiveRuntimeSelection.managedRuntimeProfileId ??
+    defaultManagedRuntimeProfileId;
+  const runtimeModeLabel = getRuntimeModeLabel(
+    effectiveRuntimeSelection.runtimeMode,
+    activeManagedProfileId,
+  );
+
   const showVercelProjectSection =
     mode === "repo" &&
     !githubConnectionLoading &&
@@ -243,7 +291,20 @@ export function SessionStarter({
       }
     }
 
-    onSubmit({
+    // Codex #834 P2: only send runtimeMode/managedRuntimeProfileId as an
+    // explicit choice when the user actually chose it in the picker, or once
+    // repo defaults have resolved. Otherwise effectiveRuntimeSelection is
+    // just a not-yet-resolved "classic" fallback, and sending it explicitly
+    // would win over POST /api/sessions' repo-defaults precedence (body >
+    // repo defaults > system "classic"), silently overriding a saved
+    // managed_runtime repo default.
+    const runtimeSelectionForSubmit = getRuntimeSelectionForSubmit({
+      effectiveRuntimeSelection,
+      hasExplicitUserSelection: userRuntimeSelection !== null,
+      repoDefaultsResolved,
+    });
+
+    const submitPayload: Parameters<typeof onSubmit>[0] = {
       title: prepareSessionTitle(sessionTitle),
       repoOwner: mode === "repo" ? selectedOwner || undefined : undefined,
       repoName: mode === "repo" ? selectedRepo || undefined : undefined,
@@ -255,10 +316,23 @@ export function SessionStarter({
       isNewBranch: mode === "repo" ? isNewBranch : false,
       fullClone: mode === "repo" ? fullClone : false,
       sandboxType,
+      runtimeMode: effectiveRuntimeSelection.runtimeMode,
+      managedRuntimeProfileId:
+        effectiveRuntimeSelection.managedRuntimeProfileId,
       autoCommitPush: effectiveAutoCommitPush,
       autoCreatePr: effectiveAutoCommitPush ? effectiveAutoCreatePr : false,
       vercelProject,
-    });
+    };
+
+    if (!("runtimeMode" in runtimeSelectionForSubmit)) {
+      delete (submitPayload as { runtimeMode?: SessionRuntimeMode })
+        .runtimeMode;
+    }
+    if (!("managedRuntimeProfileId" in runtimeSelectionForSubmit)) {
+      delete submitPayload.managedRuntimeProfileId;
+    }
+
+    onSubmit(submitPayload);
   };
 
   const buttonLabel = getButtonLabel(mode, selectedOwner, selectedRepo);
@@ -350,6 +424,57 @@ export function SessionStarter({
             Start a new chat — no repository required.
           </p>
         )}
+
+        <div
+          role="radiogroup"
+          aria-label="How should the agent work?"
+          className="flex flex-col gap-2 rounded-lg border border-border/70 bg-muted/20 p-3 dark:border-white/10 dark:bg-white/[0.02]"
+        >
+          <p className="text-xs font-medium text-muted-foreground">
+            How should the agent work?
+          </p>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={effectiveRuntimeSelection.runtimeMode === "classic"}
+            onClick={() => setUserRuntimeSelection({ runtimeMode: "classic" })}
+            className={cn(
+              "rounded-md border px-3 py-2 text-left text-sm transition-colors",
+              effectiveRuntimeSelection.runtimeMode === "classic"
+                ? "border-foreground/40 bg-background font-medium"
+                : "border-border/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {getRuntimeModeLabel("classic", activeManagedProfileId)}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={
+              effectiveRuntimeSelection.runtimeMode === "managed_runtime"
+            }
+            onClick={() =>
+              setUserRuntimeSelection({
+                runtimeMode: "managed_runtime",
+                managedRuntimeProfileId:
+                  repoDefaults?.managedRuntimeProfileId ??
+                  defaultManagedRuntimeProfileId,
+              })
+            }
+            className={cn(
+              "rounded-md border px-3 py-2 text-left text-sm transition-colors",
+              effectiveRuntimeSelection.runtimeMode === "managed_runtime"
+                ? "border-foreground/40 bg-background font-medium"
+                : "border-border/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {getRuntimeModeLabel(
+              "managed_runtime",
+              repoDefaults?.managedRuntimeProfileId ??
+                defaultManagedRuntimeProfileId,
+            )}
+          </button>
+        </div>
 
         {mode === "repo" && !gitSettingsExpanded && (
           <button
@@ -461,22 +586,11 @@ export function SessionStarter({
           {isLoading ? "Creating session…" : buttonLabel}
         </button>
 
-        {mode === "empty" ? (
-          <p className="text-center text-xs text-muted-foreground">
-            {footerText}
-          </p>
-        ) : (
-          <p className="text-center text-xs text-muted-foreground">
-            {footerText}{" "}
-            <span className="text-muted-foreground/60">&middot;</span>{" "}
-            <Link
-              href="/settings/preferences"
-              className="text-muted-foreground underline decoration-muted-foreground/40 underline-offset-2 transition-colors hover:text-foreground hover:decoration-foreground/40"
-            >
-              Change
-            </Link>
-          </p>
-        )}
+        <p className="text-center text-xs text-muted-foreground">
+          {mode === "empty"
+            ? footerText
+            : `${footerText} · ${runtimeModeLabel}`}
+        </p>
       </div>
     </div>
   );

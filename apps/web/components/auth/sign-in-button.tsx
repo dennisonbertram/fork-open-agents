@@ -4,6 +4,10 @@ import { Loader2 } from "lucide-react";
 import { useState, type ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth/client";
+import { runAuthCta } from "@/lib/auth/run-auth-cta";
+import { AuthCtaError } from "./auth-cta-error";
+
+export const SIGN_IN_ERROR_MESSAGE = "Sign-in didn't start. Try again.";
 
 function VercelIcon({ className }: { className?: string }) {
   return (
@@ -45,6 +49,18 @@ export function SignInButton({
   ...props
 }: SignInButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // better-auth appends `?error=<code>` to whatever `errorCallbackURL` is
+  // given (see better-auth's oauth2/state.mjs), so this only needs to be the
+  // current page — the landing page (SignedOutHero) reads that `error`
+  // param and renders the "sign-in didn't complete" state.
+  function resolveErrorCallbackUrl(): string | undefined {
+    if (typeof window === "undefined") {
+      return undefined;
+    }
+    return `${window.location.origin}${window.location.pathname}`;
+  }
 
   function handleSignIn() {
     if (disabled || isLoading) {
@@ -53,23 +69,34 @@ export function SignInButton({
 
     const fallback = `${window.location.pathname}${window.location.search}${window.location.hash}`;
     const redirectPath = resolveRedirectPath(callbackUrl ?? fallback);
+    const errorCallbackURL = resolveErrorCallbackUrl();
 
-    setIsLoading(true);
-    authClient.signIn.social({
-      provider: "vercel",
-      callbackURL: redirectPath,
+    void runAuthCta({
+      cta: "vercel_signin",
+      errorMessage: SIGN_IN_ERROR_MESSAGE,
+      action: () =>
+        authClient.signIn.social({
+          provider: "vercel",
+          callbackURL: redirectPath,
+          ...(errorCallbackURL ? { errorCallbackURL } : {}),
+        }),
+      setPending: setIsLoading,
+      setError,
     });
   }
 
   return (
-    <Button
-      {...props}
-      aria-busy={isLoading}
-      disabled={disabled || isLoading}
-      onClick={handleSignIn}
-    >
-      {isLoading ? <Loader2 className="animate-spin" /> : <VercelIcon />}
-      {isLoading ? "Signing in..." : "Sign in with Vercel"}
-    </Button>
+    <div>
+      <Button
+        {...props}
+        aria-busy={isLoading}
+        disabled={disabled || isLoading}
+        onClick={handleSignIn}
+      >
+        {isLoading ? <Loader2 className="animate-spin" /> : <VercelIcon />}
+        {isLoading ? "Signing in..." : "Sign in with Vercel"}
+      </Button>
+      {error ? <AuthCtaError message={error} onRetry={handleSignIn} /> : null}
+    </div>
   );
 }

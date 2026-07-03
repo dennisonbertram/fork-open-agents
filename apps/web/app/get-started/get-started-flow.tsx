@@ -8,10 +8,14 @@ import { Check, Github, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useSession } from "@/hooks/use-session";
+import { AuthCtaError } from "@/components/auth/auth-cta-error";
 import { authClient } from "@/lib/auth/client";
+import { runAuthCta } from "@/lib/auth/run-auth-cta";
 import type { GitHubConnectStatus } from "@/lib/github/connect-status";
 import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { GitHubStatusNotice } from "./github-status-notice";
+
+export const GITHUB_LINK_ERROR_MESSAGE = "Couldn't connect GitHub. Try again.";
 
 type StepId = 1 | 2;
 
@@ -291,6 +295,7 @@ function GitHubConnectStep({
   onComplete: () => void;
 }) {
   const [isLinking, setIsLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const isConnected =
     !forceReconnect && hasGitHubAccount && hasGitHubInstallations;
   const shouldShowInstallStep =
@@ -378,6 +383,19 @@ function GitHubConnectStep({
   }
 
   // not linked
+  const handleLinkGitHub = () =>
+    runAuthCta({
+      cta: "github_link_get_started",
+      errorMessage: GITHUB_LINK_ERROR_MESSAGE,
+      action: () =>
+        authClient.linkSocial({
+          provider: "github",
+          callbackURL: githubPostLinkCallback,
+        }),
+      setPending: setIsLinking,
+      setError: setLinkError,
+    });
+
   return (
     <div className="space-y-3">
       {statusNotice}
@@ -389,13 +407,7 @@ function GitHubConnectStep({
       <Button
         variant="outline"
         disabled={isLinking}
-        onClick={async () => {
-          setIsLinking(true);
-          await authClient.linkSocial({
-            provider: "github",
-            callbackURL: githubPostLinkCallback,
-          });
-        }}
+        onClick={() => void handleLinkGitHub()}
         className="gap-2 border-zinc-700 bg-transparent text-zinc-300 hover:bg-white/5 hover:text-white"
       >
         {isLinking ? (
@@ -405,6 +417,12 @@ function GitHubConnectStep({
         )}
         {forceReconnect ? "Reconnect GitHub" : "Connect GitHub"}
       </Button>
+      {linkError ? (
+        <AuthCtaError
+          message={linkError}
+          onRetry={() => void handleLinkGitHub()}
+        />
+      ) : null}
     </div>
   );
 }
