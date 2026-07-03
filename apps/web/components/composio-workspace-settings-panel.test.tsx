@@ -106,3 +106,29 @@ describe("ComposioWorkspaceSettingsPanel — saved-vs-pending heading copy (#803
     expect(html).toMatch(/saved.*not.*unsaved|shows what.?s saved now/i);
   });
 });
+
+// #805 (epic #796 T9): the workspace panel is currently the ONLY mount point
+// for repo Composio policy, reachable only from an active session. It must
+// link out to the new discoverable per-repo Tools surface
+// (/settings/repositories/{owner}/{repo}) so a user who found this panel
+// can also reach the same controls without a session open, and so a user
+// who already blocked a tool here can go verify the effective status.
+describe("ComposioWorkspaceSettingsPanel — link to per-repo Tools surface (#805)", () => {
+  test("BT-WP-005: links to /settings/repositories/{owner}/{repo} when a repo is attached", async () => {
+    mockData = {
+      profiles: [],
+      profileOptions: [],
+      repositorySettings: null,
+    };
+    const { ComposioWorkspaceSettingsPanel } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      createElement(ComposioWorkspaceSettingsPanel, {
+        repoOwner: "acme",
+        repoName: "widgets",
+      }),
+    );
+
+    expect(html).toContain("/settings/repositories/acme/widgets");
+  });
+});

@@ -54,6 +54,7 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
       settingsNavItem("background-agents"),
+      settingsNavItem("repositories"),
       {
         id: "loops",
         label: "Loops",

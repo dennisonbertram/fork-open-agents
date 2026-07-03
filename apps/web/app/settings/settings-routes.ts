@@ -6,6 +6,7 @@ import {
   Boxes,
   Cable,
   Cpu,
+  FolderGit2,
   Lightbulb,
   Server,
   ShieldAlert,
@@ -31,6 +32,7 @@ export type SettingsRouteId =
   | "models"
   | "preferences"
   | "profile"
+  | "repositories"
   | "runtime-profiles"
   | "skills"
   | "usage";
@@ -112,6 +114,14 @@ export const SETTINGS_ROUTE_METADATA = {
       "Configure triggered agents that run on their own in a repository.",
     href: "/settings/background-agents",
     icon: Bot,
+    audience: "user",
+  },
+  repositories: {
+    title: "Repositories",
+    description:
+      "Per-repository defaults and tool access, including which tools agents can use in each repository.",
+    href: "/settings/repositories",
+    icon: FolderGit2,
     audience: "user",
   },
   "runtime-profiles": {
