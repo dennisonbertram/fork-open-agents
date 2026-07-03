@@ -344,6 +344,17 @@ export function LoopSettingsPanelContent({
         }
       />
 
+      <GuardrailNumberField
+        id="max-agent-turns"
+        label="Agent turns per step"
+        help={`Max model turns each agent step may take before the run fails. Default: ${GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep}. Server enforces a ceiling of ${GUARDRAIL_CEILINGS.maxAgentTurnsPerStep}.`}
+        value={guardrails.maxAgentTurnsPerStep}
+        placeholder={GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep}
+        ceiling={GUARDRAIL_CEILINGS.maxAgentTurnsPerStep}
+        error={fieldErrors["guardrails.maxAgentTurnsPerStep"]}
+        onChange={(v) => setGuardrailField("maxAgentTurnsPerStep", v)}
+      />
+
       <hr className="border-border" />
 
       {/* Watchdog (M3-01), labeled "Auto-recovery (watchdog)" for clarity */}

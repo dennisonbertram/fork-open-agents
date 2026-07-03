@@ -24,6 +24,7 @@ import {
   verifyRepoAccess,
   getRepoAccessErrorMessage,
 } from "@/lib/github/access";
+import { getBackgroundAgentMaxTurns } from "./config";
 import {
   mintInstallationToken,
   revokeInstallationToken,
@@ -76,12 +77,17 @@ import { resolveInferenceProfileModelSelection } from "@/lib/inference/profile-r
 
 const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
-// Action tools (github_push, github_open_pull_request, ...) now consume
-// steps alongside file/bash tools, so the old 8-step budget starved agents
-// that both edit files and open a PR. Raised to 16 to give action-heavy
-// runs enough room without materially increasing runaway-loop risk (the
-// unattended sanitizer + timeout still bound worst case).
-const DEFAULT_AGENT_MAX_STEPS = 16;
+
+/**
+ * Thrown when a background-agent run exhausts its openAgent turn budget
+ * (see getBackgroundAgentMaxTurns in config.ts) without finishing (#862).
+ */
+export class BackgroundAgentTurnBudgetExceededError extends Error {
+  constructor(readonly maxTurns: number) {
+    super(`Background agent exhausted ${maxTurns} agent turns.`);
+    this.name = "BackgroundAgentTurnBudgetExceededError";
+  }
+}
 
 /**
  * Maps each native GitHub action tool name to the `backgroundAgentOutputs.kind`
@@ -462,6 +468,8 @@ async function runBackgroundAgent(params: {
       "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
 
+  const maxTurns = getBackgroundAgentMaxTurns();
+
   await recordBackgroundAgentEvent({
     runId: params.runId,
     agentId: params.agentId,
@@ -473,13 +481,13 @@ async function runBackgroundAgent(params: {
     requestId: params.requestId,
     sandboxName: params.sandboxName,
     payload: {
-      maxSteps: DEFAULT_AGENT_MAX_STEPS,
+      maxSteps: maxTurns,
       timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
       modelId: params.recordedModelId,
     },
   });
 
-  for (let step = 1; step <= DEFAULT_AGENT_MAX_STEPS; step += 1) {
+  for (let step = 1; step <= maxTurns; step += 1) {
     const startedAt = Date.now();
     // Repair any approval-gated tool call the previous turn left without a
     // result before re-sending history — otherwise the provider rejects the
@@ -582,9 +590,7 @@ async function runBackgroundAgent(params: {
     }
   }
 
-  throw new Error(
-    `Background agent exhausted ${DEFAULT_AGENT_MAX_STEPS} steps.`,
-  );
+  throw new BackgroundAgentTurnBudgetExceededError(maxTurns);
 }
 
 /**
@@ -1292,7 +1298,10 @@ export async function executeBackgroundAgentRun(params: {
       workflowRunId: params.workflowRunId,
       requestId: run.requestId,
       sandboxName,
-      errorKind: "workflow_failed",
+      errorKind:
+        error instanceof BackgroundAgentTurnBudgetExceededError
+          ? "agent_turn_budget_exceeded"
+          : "workflow_failed",
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
     });

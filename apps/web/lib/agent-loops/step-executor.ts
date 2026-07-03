@@ -130,8 +130,15 @@ export async function executeAgentLoopStep(params: {
    * to executeAgentStep; ignored by other node kinds.
    */
   stepTimeoutMs?: number;
+  /**
+   * Resolved (default-applied, ceiling-clamped) internal openAgent.generate
+   * turn budget for agent_step nodes — see resolveGuardrails in chain.ts.
+   * Forwarded to executeAgentStep; ignored by other node kinds.
+   */
+  maxAgentTurnsPerStep?: number;
 }): Promise<StepExecutionResult> {
-  const { stepRunId, workflowRunId, stepTimeoutMs } = params;
+  const { stepRunId, workflowRunId, stepTimeoutMs, maxAgentTurnsPerStep } =
+    params;
   const startedAt = nowMs();
 
   // ── 1. Load step run + loop run + loop ─────────────────────────────────────
@@ -290,6 +297,7 @@ export async function executeAgentLoopStep(params: {
       startedAt,
       watchdogHint,
       stepTimeoutMs,
+      maxAgentTurnsPerStep,
     });
   }
 

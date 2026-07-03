@@ -102,6 +102,25 @@ export function validateLoopSettings(
       }
     }
 
+    if (g.maxAgentTurnsPerStep !== undefined) {
+      if (
+        g.maxAgentTurnsPerStep <= 0 ||
+        !Number.isInteger(g.maxAgentTurnsPerStep)
+      ) {
+        errors.push({
+          field: "guardrails.maxAgentTurnsPerStep",
+          message: "maxAgentTurnsPerStep must be a positive integer.",
+        });
+      } else if (
+        g.maxAgentTurnsPerStep > GUARDRAIL_CEILINGS.maxAgentTurnsPerStep
+      ) {
+        errors.push({
+          field: "guardrails.maxAgentTurnsPerStep",
+          message: `maxAgentTurnsPerStep cannot exceed the server ceiling of ${GUARDRAIL_CEILINGS.maxAgentTurnsPerStep}.`,
+        });
+      }
+    }
+
     // maxRunDurationMs has no server ceiling — only positivity check
     if (g.maxRunDurationMs !== undefined) {
       if (g.maxRunDurationMs <= 0 || !Number.isInteger(g.maxRunDurationMs)) {

@@ -21,6 +21,14 @@ export const GUARDRAIL_CEILINGS = {
   /** No server ceiling on maxRunDurationMs per the spec. */
   maxRunDurationMs: undefined as undefined,
   stepTimeoutMs: 30 * 60 * 1000, // 30 minutes
+  /**
+   * 4x the default, matching the maxStepsPerRun default:ceiling ratio.
+   * Bounds internal openAgent.generate turns within one agent_step; distinct
+   * from loop-level maxStepsPerRun. stepTimeoutMs is a whole-step wall-clock
+   * deadline computed before the turn loop, so more turns never extends
+   * wall-clock time.
+   */
+  maxAgentTurnsPerStep: 32,
 } as const;
 
 /** Default guardrail values applied when not specified. */
@@ -29,6 +37,8 @@ export const GUARDRAIL_DEFAULTS = {
   maxIterations: 10,
   maxRunDurationMs: 2 * 60 * 60 * 1000, // 2 hours
   stepTimeoutMs: 10 * 60 * 1000, // 10 minutes
+  /** Preserves the former AGENT_MAX_LOOP_STEPS=8 behavior for existing loops. */
+  maxAgentTurnsPerStep: 8,
 } as const;
 
 // ── Node position schema ───────────────────────────────────────────────────────
@@ -224,6 +234,7 @@ export const loopGuardrailsSchema = z
     maxIterations: z.number().int().positive().optional(),
     maxRunDurationMs: z.number().int().positive().optional(),
     stepTimeoutMs: z.number().int().positive().optional(),
+    maxAgentTurnsPerStep: z.number().int().positive().optional(),
   })
   .strict();
 
@@ -240,6 +251,8 @@ export type ResolvedGuardrails = {
   maxRunDurationMs: number;
   /** Agent invocation timeout for agent_step nodes, clamped to GUARDRAIL_CEILINGS.stepTimeoutMs (30 min). */
   stepTimeoutMs: number;
+  /** Internal openAgent.generate turns per agent_step, clamped to GUARDRAIL_CEILINGS.maxAgentTurnsPerStep (32). */
+  maxAgentTurnsPerStep: number;
 };
 
 // ── Error taxonomy ────────────────────────────────────────────────────────────
