@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   RuntimeModeSelectorCompact,
   RuntimeModeSelectorManageItem,
+  RuntimeModeSelectorUntestedWarning,
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
 
@@ -191,5 +192,121 @@ describe("RuntimeModeSelectorManageItem regression", () => {
     // The trigger must NOT be disabled — session profiles are editable
     // (disabled="" is how React renders disabled={true} in static markup)
     expect(html).not.toContain('disabled=""');
+  });
+});
+
+const untestedSessionProfile: ManagedRuntimeProfileOption = {
+  ...sessionProfile,
+  testStatus: "untested",
+  lastTestScope: null,
+};
+
+const verifyOnlySessionProfile: ManagedRuntimeProfileOption = {
+  ...sessionProfile,
+  testStatus: "passed",
+  lastTestScope: "verify",
+  testedAt: "2026-06-01T00:00:00.000Z",
+};
+
+const setupAndVerifyTestedProfile: ManagedRuntimeProfileOption = {
+  ...sessionProfile,
+  testStatus: "passed",
+  lastTestScope: "setup_and_verify",
+  testedAt: "2026-06-01T00:00:00.000Z",
+};
+
+describe("RuntimeModeSelectorUntestedWarning", () => {
+  // BT: selecting a profile whose persisted state is not "Tested"
+  // (setup_and_verify) shows an inline warning with a link to the Inspector.
+  test("shows a warning + Inspector link for an untested profile", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={untestedSessionProfile}
+      />,
+    );
+
+    expect(html).toContain("Not yet tested");
+    expect(html).toContain("<button");
+    expect(html.toLowerCase()).toContain("inspector");
+  });
+
+  test("shows a warning for a verify-only pass (setup was never proven)", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={verifyOnlySessionProfile}
+      />,
+    );
+
+    expect(html).toContain("Not yet tested");
+  });
+
+  test("renders nothing once the profile has a setup_and_verify pass", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={setupAndVerifyTestedProfile}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
+
+  test("renders nothing for built-in profiles (always considered ready)", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={profile}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
+
+  test("renders nothing when no profile is selected", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={undefined}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
+});
+
+describe("RuntimeModeSelectorCompact — untested warning wiring", () => {
+  // Selection must remain possible (warn, not block — fail-closed at run
+  // time is the real gate). Radix DropdownMenuContent is portal-gated and
+  // not emitted by renderToStaticMarkup when closed (same constraint
+  // documented on RuntimeModeSelectorManageItem above), so this is a
+  // compile-time contract test: the compound component accepts an untested
+  // profile and an onOpenInspector prop without type or render errors.
+  test("accepts an untested profile and onOpenInspector without throwing", () => {
+    expect(() =>
+      renderToStaticMarkup(
+        <RuntimeModeSelectorCompact
+          managedRuntimeProfileId={untestedSessionProfile.id}
+          onManagedRuntimeProfileChange={() => {}}
+          onOpenInspector={() => {}}
+          onRuntimeModeChange={() => {}}
+          profiles={[untestedSessionProfile]}
+          runtimeMode="managed_runtime"
+          selectedProfile={untestedSessionProfile}
+        />,
+      ),
+    ).not.toThrow();
+  });
+});
+
+// ── Regression ──────────────────────────────────────────────────────────────
+describe("RuntimeModeSelectorUntestedWarning regression", () => {
+  // Regression: if the component is removed or unexported, wiring into the
+  // selector silently disappears with no compile error at call sites that
+  // don't reference it directly.
+  test("RuntimeModeSelectorUntestedWarning is exported from the module", async () => {
+    const mod = await import("./runtime-mode-selector-compact");
+    expect(typeof mod.RuntimeModeSelectorUntestedWarning).toBe("function");
   });
 });
