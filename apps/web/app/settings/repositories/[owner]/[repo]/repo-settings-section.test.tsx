@@ -210,6 +210,39 @@ describe("RepoSettingsSection render", () => {
     expect(html).toContain("/settings/composio");
   });
 
+  // BT-SECT-010 (#805): the section renders the Composio effective-status
+  // list (allowed/blocked/selected/default_on/not_connected chips), not just
+  // the bare "Manage tools" link — red first because repositorySettings is
+  // not yet a prop the section understands.
+  test("BT-SECT-010: renders effective-status chips for every toolkit passed in", async () => {
+    const { RepoSettingsSection } = await sectionModule;
+    const html = renderToStaticMarkup(
+      <RepoSettingsSection
+        {...makeProps()}
+        toolStatuses={[
+          { slug: "github", name: "GitHub", status: "default_on" },
+          {
+            slug: "gmail",
+            name: "Gmail",
+            status: "blocked",
+            blockReason: "repo_policy_blocked",
+          },
+          { slug: "slack", name: "Slack", status: "selected" },
+          { slug: "linear", name: "Linear", status: "not_connected" },
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Gmail");
+    expect(html).toContain("Slack");
+    expect(html).toContain("Linear");
+    // Plain-language status text, not raw slug vocabulary
+    expect(html.toLowerCase()).toContain("blocked");
+    expect(html.toLowerCase()).toContain("not connected");
+    // The bare "Manage tools" link must still exist alongside the list
+    expect(html).toContain("/settings/composio");
+  });
+
   test("BT-SECT-009: Composio 'Manage tools' link has a resting underline affordance (not just hover)", async () => {
     const { RepoSettingsSection } = await sectionModule;
     const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);

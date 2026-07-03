@@ -75,6 +75,20 @@ mock.module("@/lib/github/repo-dashboard", () => ({
   }),
 }));
 
+// #805: repo Tools tab data loader — empty list by default so existing tests
+// stay focused on their own assertions.
+let repoToolStatuses: Array<{
+  slug: string;
+  name: string;
+  status: "allowed" | "blocked" | "selected" | "default_on" | "not_connected";
+  blockReason?: "not_in_repo_allowlist" | "repo_policy_blocked";
+}> = [];
+const getRepoToolsEffectiveStatuses = mock(async () => repoToolStatuses);
+
+mock.module("@/lib/composio/repo-tools-page-data", () => ({
+  getRepoToolsEffectiveStatuses,
+}));
+
 // Lazy-import the page after mocks are wired.
 const pageModulePromise = import("./page");
 
@@ -85,10 +99,12 @@ describe("RepoDashboardPage", () => {
     repoRuns = [];
     agentLoopsEnabled = false;
     mockLoops = [];
+    repoToolStatuses = [];
     redirect.mockClear();
     listRepoBackgroundAgents.mockClear();
     listBackgroundAgentRuns.mockClear();
     listAgentLoops.mockClear();
+    getRepoToolsEffectiveStatuses.mockClear();
   });
 
   // BT-001: unauthenticated visitor is redirected
@@ -136,9 +152,44 @@ describe("RepoDashboardPage", () => {
     expect(html).toContain("Pull Requests");
     expect(html).toContain("Issues");
     expect(html).toContain("Actions");
+    // #805: Tools tab is now part of the dashboard's tab set (deliberate
+    // update — not a silent pass; see REGRESSION-003 for the dedicated test).
+    expect(html).toContain("Tools");
     // "Project agents" still appears as the Overview counter label
     expect(html).toContain("Project agents");
     expect(html).toContain("Activity");
+  });
+
+  // REGRESSION-003 (#805): the repo dashboard must expose a discoverable
+  // "Tools" tab reachable without opening a chat session (finding W8 — the
+  // gmail-block journey). Tab content renders unconditionally under Radix
+  // Tabs + renderToStaticMarkup (same pattern as the other tab assertions
+  // in this file), so this is directly observable here.
+  test("REGRESSION-003: dashboard renders a discoverable Tools tab with toolkit statuses", async () => {
+    repoToolStatuses = [
+      { slug: "github", name: "GitHub", status: "default_on" },
+      {
+        slug: "gmail",
+        name: "Gmail",
+        status: "blocked",
+        blockReason: "repo_policy_blocked",
+      },
+    ];
+    const { default: RepoDashboardPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Tools");
+    expect(html).toContain("Gmail");
+    expect(getRepoToolsEffectiveStatuses).toHaveBeenCalledWith({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
   });
 
   // BT-004: Activity window shows run data; Overview shows counts

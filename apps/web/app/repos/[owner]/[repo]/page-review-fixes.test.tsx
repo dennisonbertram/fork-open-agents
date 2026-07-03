@@ -63,6 +63,13 @@ mock.module("@/lib/agent-loops/store", () => ({
   listAgentLoops: async () => [],
 }));
 
+// #805: repo Tools tab data loader — registered so the page module resolves;
+// this test file is not testing the Tools tab itself (see page.test.tsx and
+// tools-window.test.tsx for that coverage).
+mock.module("@/lib/composio/repo-tools-page-data", () => ({
+  getRepoToolsEffectiveStatuses: async () => [],
+}));
+
 const pageModulePromise = import("./page");
 
 describe("Page review-fix: BLOCKER 1 — partial-failure isolation in server component", () => {

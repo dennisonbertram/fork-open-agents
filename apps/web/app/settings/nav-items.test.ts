@@ -7,6 +7,10 @@ import {
   visibleNavGroups,
 } from "./nav-items";
 
+// #805: Repositories item must exist and resolve to the effective-status
+// view once a repo is chosen (behavior contract: "/settings nav includes a
+// Repositories entry that reaches the same effective-status view").
+
 describe("settings nav data", () => {
   test("groups are ordered Account, Tools, Insights, Admin", () => {
     expect(SETTINGS_NAV_GROUPS.map((g) => g.id)).toEqual([
@@ -139,6 +143,23 @@ describe("settings nav data", () => {
   test("NAV-009: loops nav item is active for nested routes /loops/[loopId]", () => {
     const item = findActiveNavItem("/loops/loop_abc123");
     expect(item?.id).toBe("loops");
+  });
+
+  // NAV-010 (#805): Repositories item exists in the tools group and points
+  // at the repositories index route.
+  test("NAV-010: repositories item is present in the tools group with href /settings/repositories", () => {
+    const item = findActiveNavItem("/settings/repositories");
+    expect(item?.id).toBe("repositories");
+    expect(item?.href).toBe("/settings/repositories");
+
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
+    expect(toolsGroup?.items.map((i) => i.id)).toContain("repositories");
+  });
+
+  // NAV-011 (#805): nested per-repo routes still resolve to the same nav item.
+  test("NAV-011: repositories item is active for nested per-repo routes", () => {
+    const item = findActiveNavItem("/settings/repositories/acme/widgets");
+    expect(item?.id).toBe("repositories");
   });
 
   test("learnings item lives in Insights and uses its route slug for active matching", () => {
