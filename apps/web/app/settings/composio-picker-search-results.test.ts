@@ -95,7 +95,7 @@ describe("buildPickerSearchResults — connected mode surfaces unconnected match
   test("BT-801-042: noAuth toolkit appears tagged connectable=false", () => {
     const results = buildPickerSearchResults({
       catalog: CATALOG,
-      connectedSlugs: new Set([]),
+      connectedSlugs: new Set(),
       source: "connected",
       query: "code",
     });
@@ -109,7 +109,7 @@ describe("buildPickerSearchResults — 'all' mode never tags connectable", () =>
   test("BT-801-043: source='all' returns gmail tagged connectable=false even though unconnected", () => {
     const results = buildPickerSearchResults({
       catalog: CATALOG,
-      connectedSlugs: new Set([]),
+      connectedSlugs: new Set(),
       source: "all",
       query: "gmail",
     });

@@ -27,7 +27,11 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 mock.module("swr", () => ({
   default: () => ({
-    data: { profiles: [], profileOptions: [], status: { configured: true, available: true } },
+    data: {
+      profiles: [],
+      profileOptions: [],
+      status: { configured: true, available: true },
+    },
     isLoading: false,
   }),
 }));

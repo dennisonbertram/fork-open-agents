@@ -4,16 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, CheckCircle2, Search, X } from "lucide-react";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
-import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { prettifyToolkitSlug } from "@/lib/composio/chat-tool-summary";
-import { filterToolkits } from "./composio-catalog-filter";
 import {
   mergeSelectedWithCatalog,
   toggleSlug,
 } from "./composio-toolkit-picker-helpers";
+import {
+  buildPickerSearchResults,
+  type PickerSearchResult,
+} from "./composio-picker-search-results";
 import {
   selectableToolkits,
   type ToolkitSource,
@@ -23,6 +26,8 @@ import {
   getToolkitConnectionState,
   isToolkitChipFlagged,
 } from "./composio-connection-state";
+import { useComposioConnect } from "./use-composio-connect";
+import { useComposioToolkitsCatalog } from "./use-composio-toolkits-catalog";
 
 export interface ComposioToolkitPickerProps {
   /** Currently selected toolkit slugs. Parent owns persistence. */
@@ -55,6 +60,14 @@ async function jsonFetcher<T>(url: string): Promise<T> {
     throw new Error(`Failed to load ${url}`);
   }
   return res.json() as Promise<T>;
+}
+
+function ToolkitLoadErrorState({ message }: { message: string }) {
+  return (
+    <p className="py-4 px-3 text-center text-xs text-destructive">
+      Couldn&apos;t load tools: {message}
+    </p>
+  );
 }
 
 function ToolkitRowSkeleton() {
@@ -92,18 +105,23 @@ export function ComposioToolkitPicker({
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [query]);
 
-  const { data: toolkitsData, isLoading: toolkitsLoading } =
-    useSWR<ComposioToolkitsResponse>(
-      "/api/composio/toolkits",
-      jsonFetcher<ComposioToolkitsResponse>,
+  const { loadState: toolkitsLoadState } = useComposioToolkitsCatalog();
+  const toolkitsLoading = toolkitsLoadState.status === "loading";
+  const allToolkits =
+    toolkitsLoadState.status === "loaded" ? toolkitsLoadState.toolkits : [];
+
+  const { data: accountsData, mutate: mutateAccounts } =
+    useSWR<ComposioConnectedAccountsResponse>(
+      "/api/composio/connected-accounts",
+      jsonFetcher<ComposioConnectedAccountsResponse>,
     );
 
-  const { data: accountsData } = useSWR<ComposioConnectedAccountsResponse>(
-    "/api/composio/connected-accounts",
-    jsonFetcher<ComposioConnectedAccountsResponse>,
-  );
+  const { connectState, connect } = useComposioConnect({
+    onConfirmed: () => {
+      void mutateAccounts();
+    },
+  });
 
-  const allToolkits = toolkitsData?.toolkits ?? [];
   const accountsUnavailable = accountsData?.unavailable === true;
   const toolkitStatusMap = buildToolkitStatusMap(accountsData?.accounts ?? []);
   // "has been connected" (any status, including expired) — still shown as
@@ -143,28 +161,43 @@ export function ComposioToolkitPicker({
     });
   };
 
-  // Derive the selectable set according to source mode
+  // Derive the selectable set according to source mode — this remains the
+  // strict "already usable" set (unchanged contract, composio-selectable-toolkits.ts),
+  // used only for the empty-connected-state gate below and exposed as a data
+  // attribute for tooling/tests, NOT for filtering search results anymore.
   const selectable = selectableToolkits({
     catalog: allToolkits,
     connectedSlugs,
     source,
   });
 
-  // Build catalog entries filtered by search query — applied over the selectable set
-  const filtered = filterToolkits(selectable, query);
+  // Build the search-result rows: every catalog match (not just the
+  // selectable subset), tagged `connectable` so an unconnected-but-real
+  // toolkit (e.g. "gmail" while only Slack is connected) still appears with
+  // a compact Connect affordance instead of vanishing from the results
+  // entirely (W9 / #736 item 2).
+  const searchResults: PickerSearchResult[] = buildPickerSearchResults({
+    catalog: allToolkits,
+    connectedSlugs,
+    source,
+    query,
+  });
 
   // Merge: unknown (legacy) slugs + catalog entries from the full catalog
   // (so selected chips always show correct metadata even in connected mode)
   const allEntries = mergeSelectedWithCatalog(selectedSlugs, allToolkits);
 
-  // For the result list: show filtered selectable entries + unknown (legacy) entries
+  // For the result list: show filtered search results + unknown (legacy) entries
   const unknownEntries = mergeSelectedWithCatalog(
     selectedSlugs,
     allToolkits,
   ).filter((e) => e.unknown);
-  const catalogRows = mergeSelectedWithCatalog(selectedSlugs, filtered).filter(
-    (e) => !e.unknown,
-  );
+  const selectedSlugSet = new Set(selectedSlugs);
+  const catalogRows = searchResults.map((result) => ({
+    ...result,
+    selected: selectedSlugSet.has(result.slug),
+    unknown: false as const,
+  }));
 
   const visibleRows = [...unknownEntries, ...catalogRows];
 
@@ -215,7 +248,20 @@ export function ComposioToolkitPicker({
   }, []);
 
   return (
-    <div className="space-y-1.5" ref={containerRef}>
+    <div
+      className="space-y-1.5"
+      ref={containerRef}
+      data-selectable-slugs={selectable.map((t) => t.slug).join(",")}
+    >
+      {/* Selection count — gives non-visual selection feedback (W6) in
+          addition to the checked-state visual on each row below. */}
+      {selectedEntries.length > 0 ? (
+        <p className="text-[11px] text-muted-foreground" aria-live="polite">
+          {selectedEntries.length}{" "}
+          {selectedEntries.length === 1 ? "tool" : "tools"} selected
+        </p>
+      ) : null}
+
       {/* Selected chips */}
       {selectedEntries.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
@@ -317,7 +363,9 @@ export function ComposioToolkitPicker({
             className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-md"
             onMouseDown={handleResultMouseDown}
           >
-            {toolkitsLoading ? (
+            {toolkitsLoadState.status === "error" ? (
+              <ToolkitLoadErrorState message={toolkitsLoadState.message} />
+            ) : toolkitsLoading ? (
               <div className="space-y-1 p-1">
                 {Array.from({ length: 5 }, (_, i) => (
                   <ToolkitRowSkeleton key={i} />
@@ -346,94 +394,131 @@ export function ComposioToolkitPicker({
                     entry.slug,
                     entry.unknown ?? false,
                   );
+                  const rowConnectable =
+                    "connectable" in entry && entry.connectable === true;
+                  const rowConnecting =
+                    (connectState.status === "connecting" ||
+                      connectState.status === "pending") &&
+                    connectState.slug === entry.slug;
+
                   return (
-                    <button
+                    <div
                       key={entry.slug}
-                      type="button"
                       role="option"
                       aria-selected={entry.selected}
-                      onClick={() => handleToggle(entry.slug)}
-                      disabled={disabled}
                       className={cn(
-                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm",
-                        "hover:bg-accent hover:text-accent-foreground",
-                        "disabled:cursor-not-allowed disabled:opacity-50",
+                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-sm",
                         entry.selected && "bg-accent/50",
                       )}
                     >
-                      {/* Logo or initials */}
-                      {entry.logo && !entry.unknown ? (
-                        // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
-                        <img
-                          src={entry.logo}
-                          alt=""
-                          width={16}
-                          height={16}
-                          referrerPolicy="no-referrer"
-                          className="h-4 w-4 rounded-sm object-contain shrink-0"
-                        />
-                      ) : (
-                        <div className="h-4 w-4 rounded-sm bg-muted shrink-0 flex items-center justify-center">
-                          <span className="text-[9px] font-medium text-muted-foreground uppercase">
-                            {prettifyToolkitSlug(entry.slug).slice(0, 2)}
-                          </span>
-                        </div>
-                      )}
-
-                      {/* Name */}
-                      <span className="min-w-0 flex-1 truncate">
-                        {entry.name}
-                      </span>
-
-                      {/* Unknown hint */}
-                      {entry.unknown ? (
-                        <span className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400">
-                          unknown
-                        </span>
-                      ) : null}
-
-                      {/* Connection state badge */}
-                      {rowState === "active" ? (
-                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
-                          <CheckCircle2 className="h-3 w-3" />
-                          Connected
-                        </span>
-                      ) : rowState === "expired" ? (
-                        <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
-                          <AlertTriangle className="h-3 w-3" />
-                          Expired — reconnect
-                        </span>
-                      ) : rowState === "unavailable" ? (
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          Can&apos;t check right now
-                        </span>
-                      ) : null}
-
-                      {/* Checkbox visual */}
-                      <span
+                      <button
+                        type="button"
+                        onClick={() =>
+                          rowConnectable ? undefined : handleToggle(entry.slug)
+                        }
+                        disabled={disabled || rowConnectable}
                         className={cn(
-                          "ml-auto h-4 w-4 shrink-0 rounded border",
-                          entry.selected
-                            ? "border-primary bg-primary text-primary-foreground flex items-center justify-center"
-                            : "border-border",
+                          "flex min-w-0 flex-1 items-center gap-2 rounded text-left",
+                          !rowConnectable &&
+                            "hover:bg-accent hover:text-accent-foreground",
+                          "disabled:cursor-not-allowed",
                         )}
-                        aria-hidden="true"
                       >
-                        {entry.selected && (
-                          <svg
-                            viewBox="0 0 8 8"
-                            className="h-2.5 w-2.5 fill-current"
-                          >
-                            <path
-                              d="M1 4l2 2 4-4"
-                              stroke="currentColor"
-                              strokeWidth="1.5"
-                              fill="none"
-                            />
-                          </svg>
+                        {/* Logo or initials */}
+                        {entry.logo && !entry.unknown ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- Remote Composio logos not compatible with next/image domain config
+                          <img
+                            src={entry.logo}
+                            alt=""
+                            width={16}
+                            height={16}
+                            referrerPolicy="no-referrer"
+                            className="h-4 w-4 rounded-sm object-contain shrink-0"
+                          />
+                        ) : (
+                          <div className="h-4 w-4 rounded-sm bg-muted shrink-0 flex items-center justify-center">
+                            <span className="text-[9px] font-medium text-muted-foreground uppercase">
+                              {prettifyToolkitSlug(entry.slug).slice(0, 2)}
+                            </span>
+                          </div>
                         )}
-                      </span>
-                    </button>
+
+                        {/* Name */}
+                        <span className="min-w-0 flex-1 truncate">
+                          {entry.name}
+                        </span>
+
+                        {/* Unknown hint */}
+                        {entry.unknown ? (
+                          <span className="shrink-0 text-[10px] text-amber-600 dark:text-amber-400">
+                            unknown
+                          </span>
+                        ) : null}
+
+                        {/* Connection state badge */}
+                        {rowState === "active" ? (
+                          <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-green-600 dark:text-green-400">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Connected
+                          </span>
+                        ) : rowState === "expired" ? (
+                          <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+                            <AlertTriangle className="h-3 w-3" />
+                            Expired — reconnect
+                          </span>
+                        ) : rowState === "unavailable" ? (
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            Can&apos;t check right now
+                          </span>
+                        ) : null}
+
+                        {/* Checkbox visual — omitted for connectable rows,
+                            which render a Connect button instead below. */}
+                        {rowConnectable ? null : (
+                          <span
+                            className={cn(
+                              "ml-auto h-4 w-4 shrink-0 rounded border",
+                              entry.selected
+                                ? "border-primary bg-primary text-primary-foreground flex items-center justify-center"
+                                : "border-border",
+                            )}
+                            aria-hidden="true"
+                          >
+                            {entry.selected && (
+                              <svg
+                                viewBox="0 0 8 8"
+                                className="h-2.5 w-2.5 fill-current"
+                              >
+                                <path
+                                  d="M1 4l2 2 4-4"
+                                  stroke="currentColor"
+                                  strokeWidth="1.5"
+                                  fill="none"
+                                />
+                              </svg>
+                            )}
+                          </span>
+                        )}
+                      </button>
+
+                      {/* Compact connect affordance for unconnected-but-real
+                          toolkits in source="connected" mode (W9 / #736 item 2) —
+                          the toolkit stays visible in search instead of
+                          disappearing into "No tools matching". */}
+                      {rowConnectable ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => void connect(entry.slug)}
+                          disabled={disabled || rowConnecting}
+                          className="h-6 shrink-0 text-[11px]"
+                        >
+                          {rowConnecting ? "Connecting…" : "Connect"}
+                        </Button>
+                      ) : null}
+                    </div>
                   );
                 })}
               </div>

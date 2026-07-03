@@ -96,7 +96,9 @@ describe("ComposioToolCatalog — catalog error/retry state (C2)", () => {
       "/api/composio/connected-accounts": { accounts: [] },
     };
     swrErrors = {
-      "/api/composio/toolkits": new Error("Failed to load /api/composio/toolkits"),
+      "/api/composio/toolkits": new Error(
+        "Failed to load /api/composio/toolkits",
+      ),
     };
 
     const { ComposioToolCatalog } = await modulePromise;
@@ -110,7 +112,7 @@ describe("ComposioToolCatalog — catalog error/retry state (C2)", () => {
 describe("ComposioToolCatalog — no optimistic success toast (C1)", () => {
   test("BT-801-022: source no longer calls toast.success for the connect flow", () => {
     const source = readFileSync(
-      new URL("./composio-tool-catalog.tsx", import.meta.url),
+      new URL("composio-tool-catalog.tsx", import.meta.url),
       "utf-8",
     );
     expect(source).not.toContain("toast.success");

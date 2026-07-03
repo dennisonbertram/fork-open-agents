@@ -86,7 +86,7 @@ describe("ComposioToolkitPicker — selection feedback (W6)", () => {
 });
 
 describe("ComposioToolkitPicker — unconnected toolkits visible in source='connected' search (W9)", () => {
-  test("BT-801-031: searching an unconnected slug surfaces a connect affordance instead of nothing", async () => {
+  test("BT-801-031: the strict selectable-set data attribute still excludes unconnected gmail (selectableToolkits contract unchanged)", async () => {
     swrResponses = {
       "/api/composio/toolkits": { toolkits: [GMAIL, SLACK] },
       "/api/composio/connected-accounts": {
@@ -97,14 +97,6 @@ describe("ComposioToolkitPicker — unconnected toolkits visible in source='conn
     };
 
     const { ComposioToolkitPicker } = await modulePromise;
-    // The dropdown only renders results while a query is active — simulate
-    // that by mounting with an internal query. Since useState's initial query
-    // is always "", we assert on the underlying selectable-set behavior via
-    // the exported pure helper (selectableToolkits) rather than requiring a
-    // live query interaction, and separately assert the component source
-    // wires that helper for source="connected" instead of the old
-    // connected-only filtering. Full interactive proof lives in
-    // composio-selectable-toolkits.test.ts (extended for this ticket).
     const html = renderToStaticMarkup(
       <ComposioToolkitPicker
         selectedSlugs={[]}
@@ -113,10 +105,19 @@ describe("ComposioToolkitPicker — unconnected toolkits visible in source='conn
       />,
     );
 
-    // Gmail must not be filtered out of the DOM entirely: even though the
-    // dropdown is closed at first paint (no active query), the picker's
-    // selectable-set data attribute must reflect that gmail (unconnected) is
-    // selectable — the same list rendered once a query opens the dropdown.
-    expect(html).toContain('data-selectable-slugs="gmail,slack"');
+    // selectableToolkits' locked-in contract (composio-selectable-toolkits.test.ts,
+    // BT-224-8-xxx) is unchanged by this ticket: "connected" mode's strict
+    // selectable set still excludes unconnected gmail.
+    expect(html).toContain('data-selectable-slugs="slack"');
   });
+
+  // The picker's dropdown only renders search results once a query is
+  // active (an intentional UX choice unrelated to this ticket — see the
+  // "Search-driven" comment in composio-toolkit-picker.tsx), so the
+  // interactive "type 'gmail', see a Connect row" path can't be proven
+  // under renderToStaticMarkup here (no DOM/testing-library in this repo,
+  // per repo-selector-compact.test.tsx). The actual row-building logic that
+  // decides gmail gets a connect affordance instead of being dropped from
+  // results is proven directly in composio-picker-search-results.test.ts
+  // (BT-801-040..044), which this component wires via buildPickerSearchResults.
 });

@@ -1,11 +1,9 @@
 "use client";
 
-import { AlertTriangle, CheckCircle2, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, RefreshCw, Search } from "lucide-react";
 import { useState } from "react";
-import { toast } from "sonner";
 import useSWR from "swr";
 import type { ComposioConnectedAccountsResponse } from "@/app/api/composio/connected-accounts/route";
-import type { ComposioToolkitsResponse } from "@/app/api/composio/toolkits/route";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -19,6 +17,8 @@ import {
   getToolkitConnectionState,
   type ComposioToolkitConnectionState,
 } from "./composio-connection-state";
+import { useComposioConnect } from "./use-composio-connect";
+import { useComposioToolkitsCatalog } from "./use-composio-toolkits-catalog";
 
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
@@ -50,6 +50,64 @@ function ToolkitCardSkeleton() {
   );
 }
 
+/**
+ * Visible error/retry state for the catalog section (C2) — replaces the
+ * previous silent `null` render when /api/composio/toolkits fails.
+ */
+function CatalogErrorState({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-6 text-center">
+      <p className="text-sm text-muted-foreground">
+        Couldn&apos;t load the tools catalog right now.
+      </p>
+      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+        <RefreshCw className="h-3.5 w-3.5" />
+        Retry
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Honest connect-progress copy shown under a card while a connect attempt is
+ * in flight for that toolkit (C1/W7). Renders nothing once idle/confirmed so
+ * the card falls back to its normal connection-state badge/CTA.
+ */
+function ConnectProgress({
+  connectState,
+}: {
+  connectState:
+    | { status: "connecting" | "pending"; slug: string }
+    | { status: "blocked"; slug: string }
+    | { status: "timed_out"; slug: string }
+    | { status: "failed_to_start"; slug: string; message: string };
+}) {
+  if (connectState.status === "blocked") {
+    return (
+      <p className="text-xs text-amber-600 dark:text-amber-400">
+        Your browser blocked the connect window — allow popups for this site and
+        try again.
+      </p>
+    );
+  }
+  if (connectState.status === "timed_out") {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Still waiting to confirm — refresh or check Composio if this
+        doesn&apos;t resolve.
+      </p>
+    );
+  }
+  if (connectState.status === "failed_to_start") {
+    return <p className="text-xs text-destructive">{connectState.message}</p>;
+  }
+  return (
+    <p className="text-xs text-muted-foreground">
+      Waiting for you to finish connecting in the new tab…
+    </p>
+  );
+}
+
 interface ToolkitCardProps {
   slug: string;
   name: string;
@@ -60,6 +118,7 @@ interface ToolkitCardProps {
   connectionState: ComposioToolkitConnectionState;
   onConnect: (slug: string) => Promise<void>;
   isConnecting: boolean;
+  connectProgress: ConnectStateForSlug | null;
 }
 
 function ToolkitCard({
@@ -72,6 +131,7 @@ function ToolkitCard({
   connectionState,
   onConnect,
   isConnecting,
+  connectProgress,
 }: ToolkitCardProps) {
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-card p-3 transition-shadow hover:shadow-sm">
@@ -102,8 +162,15 @@ function ToolkitCard({
         </p>
       ) : null}
 
-      <div className="mt-auto pt-1">
-        {connectionState === "active" ? (
+      <div className="mt-auto pt-1 space-y-1">
+        {connectProgress &&
+        (connectProgress.status === "connecting" ||
+          connectProgress.status === "pending" ||
+          connectProgress.status === "blocked" ||
+          connectProgress.status === "timed_out" ||
+          connectProgress.status === "failed_to_start") ? (
+          <ConnectProgress connectState={connectProgress} />
+        ) : connectionState === "active" ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
             <CheckCircle2 className="h-3 w-3" />
             Connected
@@ -134,16 +201,22 @@ function ToolkitCard({
         ) : noAuth ? (
           <p className="text-xs text-muted-foreground">No sign-in needed</p>
         ) : managedAuth ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void onConnect(slug)}
-            disabled={isConnecting}
-            className="h-7 text-xs"
-          >
-            Connect
-          </Button>
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void onConnect(slug)}
+              disabled={isConnecting}
+              className="h-7 text-xs"
+            >
+              Connect
+            </Button>
+            <p className="text-[10px] leading-tight text-muted-foreground">
+              Opens an external site to connect — come back to this tab
+              afterward.
+            </p>
+          </>
         ) : (
           <a
             href={COMPOSIO_DASHBOARD_URL}
@@ -159,6 +232,13 @@ function ToolkitCard({
   );
 }
 
+type ConnectStateForSlug =
+  | { status: "connecting" | "pending"; slug: string }
+  | { status: "confirmed"; slug: string }
+  | { status: "blocked"; slug: string }
+  | { status: "timed_out"; slug: string }
+  | { status: "failed_to_start"; slug: string; message: string };
+
 interface ToolkitGroupProps {
   label: string;
   toolkits: Array<{
@@ -172,6 +252,7 @@ interface ToolkitGroupProps {
   toolkitStatusMap: Map<string, string>;
   accountsUnavailable: boolean;
   connectingSlug: string | null;
+  connectState: ConnectStateForSlug | null;
   onConnect: (slug: string) => Promise<void>;
 }
 
@@ -181,6 +262,7 @@ function ToolkitGroup({
   toolkitStatusMap,
   accountsUnavailable,
   connectingSlug,
+  connectState,
   onConnect,
 }: ToolkitGroupProps) {
   if (toolkits.length === 0) return null;
@@ -210,6 +292,9 @@ function ToolkitGroup({
             }
             onConnect={onConnect}
             isConnecting={connectingSlug === toolkit.slug}
+            connectProgress={
+              connectState?.slug === toolkit.slug ? connectState : null
+            }
           />
         ))}
       </div>
@@ -219,21 +304,50 @@ function ToolkitGroup({
 
 export function ComposioToolCatalog() {
   const [query, setQuery] = useState("");
-  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
 
-  const { data: toolkitsData, isLoading: toolkitsLoading } =
-    useSWR<ComposioToolkitsResponse>(
-      "/api/composio/toolkits",
-      jsonFetcher<ComposioToolkitsResponse>,
+  const { loadState: toolkitsLoadState, error: toolkitsError } =
+    useComposioToolkitsCatalog();
+
+  const {
+    data: accountsData,
+    mutate: mutateAccounts,
+    error: accountsFetchError,
+  } = useSWR<ComposioConnectedAccountsResponse>(
+    "/api/composio/connected-accounts",
+    jsonFetcher<ComposioConnectedAccountsResponse>,
+  );
+
+  const { connectState, connect } = useComposioConnect({
+    onConfirmed: () => {
+      void mutateAccounts();
+    },
+  });
+
+  // Surface the underlying fetch error to the console (not swallow it) so
+  // agent-browser console/errors evidence during QA shows the real failure.
+  if (toolkitsError) {
+    // eslint-disable-next-line no-console -- intentional: surface real catalog fetch failures for debugging (issue #801)
+    console.error("Composio toolkits catalog failed to load", toolkitsError);
+  }
+  if (accountsFetchError) {
+    // eslint-disable-next-line no-console -- intentional: surface real connected-accounts fetch failures for debugging (issue #801)
+    console.error(
+      "Composio connected-accounts failed to load",
+      accountsFetchError,
     );
+  }
 
-  const { data: accountsData, mutate: mutateAccounts } =
-    useSWR<ComposioConnectedAccountsResponse>(
-      "/api/composio/connected-accounts",
-      jsonFetcher<ComposioConnectedAccountsResponse>,
+  if (toolkitsLoadState.status === "error") {
+    return (
+      <div className="space-y-3">
+        <CatalogErrorState onRetry={() => void mutateAccounts()} />
+      </div>
     );
+  }
 
-  const allToolkits = toolkitsData?.toolkits ?? [];
+  const allToolkits =
+    toolkitsLoadState.status === "loaded" ? toolkitsLoadState.toolkits : [];
+  const toolkitsLoading = toolkitsLoadState.status === "loading";
 
   // Don't render anything if catalog is empty (Composio not configured)
   if (!toolkitsLoading && allToolkits.length === 0) {
@@ -250,34 +364,12 @@ export function ComposioToolCatalog() {
 
   const isSearching = query.trim().length > 0;
 
-  async function handleConnect(slug: string) {
-    setConnectingSlug(slug);
-    try {
-      const res = await fetch("/api/composio/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ toolkitSlug: slug }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        redirectUrl?: string;
-        error?: string;
-      } | null;
-
-      if (!res.ok || !body?.redirectUrl) {
-        throw new Error(body?.error ?? "Failed to start connection");
-      }
-
-      window.open(body.redirectUrl, "_blank");
-      toast.success("Finish connecting in the new tab, then refresh");
-      await mutateAccounts();
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to start connection",
-      );
-    } finally {
-      setConnectingSlug(null);
-    }
-  }
+  const connectingSlug =
+    connectState.status === "connecting" || connectState.status === "pending"
+      ? connectState.slug
+      : null;
+  const connectStateForSlug: ConnectStateForSlug | null =
+    connectState.status === "idle" ? null : connectState;
 
   // Build the "connected" (pinned) group: cross-reference catalog by slug
   const catalogBySlug = new Map(allToolkits.map((t) => [t.slug, t]));
@@ -336,7 +428,9 @@ export function ComposioToolCatalog() {
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
                   {`Showing ${visible.length} of ${filtered.length} matching tools`}
-                  {hiddenCount > 0 ? " — refine your search to see all" : ""}
+                  {hiddenCount > 0
+                    ? ` — +${hiddenCount} more hidden, refine your search to see them`
+                    : ""}
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
                   {visible.map((toolkit) => (
@@ -357,8 +451,13 @@ export function ComposioToolCatalog() {
                               unavailable: accountsUnavailable,
                             })
                       }
-                      onConnect={handleConnect}
+                      onConnect={connect}
                       isConnecting={connectingSlug === toolkit.slug}
+                      connectProgress={
+                        connectStateForSlug?.slug === toolkit.slug
+                          ? connectStateForSlug
+                          : null
+                      }
                     />
                   ))}
                 </div>
@@ -378,7 +477,8 @@ export function ComposioToolCatalog() {
               toolkitStatusMap={toolkitStatusMap}
               accountsUnavailable={accountsUnavailable}
               connectingSlug={connectingSlug}
-              onConnect={handleConnect}
+              connectState={connectStateForSlug}
+              onConnect={connect}
             />
             <ToolkitGroup
               label="Suggested"
@@ -386,7 +486,8 @@ export function ComposioToolCatalog() {
               toolkitStatusMap={toolkitStatusMap}
               accountsUnavailable={accountsUnavailable}
               connectingSlug={connectingSlug}
-              onConnect={handleConnect}
+              connectState={connectStateForSlug}
+              onConnect={connect}
             />
             {connectedToolkits.length === 0 &&
             suggestedToolkits.length === 0 ? (
