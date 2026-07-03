@@ -25,6 +25,13 @@
  *   composio.create is never invoked, only list-style calls.
  * BT-802-008: mixed slugs resolve independently in one call (ready + blocked
  *   + not_connected + auth_expired all in the same request).
+ * BT-802-009 (Codex review on PR #849): a NO_AUTH toolkit (per Composio's
+ *   toolkit metadata, finding G9) with zero connected accounts predicts
+ *   "ready", not "not_connected" — matching resolveComposioToolsForToolkitList's
+ *   toolkitRequiresAuth exclusion (resolve-toolkit-list.ts), which the real
+ *   bg-run path applies via resolveComposioToolsForBgRun. Preflight must
+ *   reuse that same no-auth detection rather than treating every
+ *   zero-account slug as disconnected.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
@@ -62,6 +69,14 @@ const createSessionSpy = mock(async () => {
 });
 const listAccountsCalls: unknown[] = [];
 
+// Per-slug toolkit metadata for the no-auth detection path (BT-802-009).
+// Defaults to every slug requiring auth (real API shape: mode carries the
+// scheme identifier, name is a display label — see resolve-toolkit-list.ts).
+let toolkitsGetImpl: (
+  slug: string,
+) => Promise<{ authConfigDetails?: unknown }> = (_slug: string) =>
+  Promise.resolve({ authConfigDetails: [{ name: "OAuth2", mode: "OAUTH2" }] });
+
 mock.module("@/lib/composio/client", () => ({
   getComposioClient: () => ({
     connectedAccounts: {
@@ -72,6 +87,9 @@ mock.module("@/lib/composio/client", () => ({
         }
         return { items: listAccountsResult };
       },
+    },
+    toolkits: {
+      get: (slug: string) => toolkitsGetImpl(slug),
     },
     create: createSessionSpy,
   }),
@@ -93,6 +111,8 @@ beforeEach(() => {
   listAccountsError = null;
   listAccountsCalls.length = 0;
   createSessionSpy.mockClear();
+  toolkitsGetImpl = (_slug: string) =>
+    Promise.resolve({ authConfigDetails: [{ name: "OAuth2", mode: "OAUTH2" }] });
 });
 
 describe("computeAgentToolPreflight — predicted states (#802)", () => {
@@ -265,5 +285,31 @@ describe("computeAgentToolPreflight — predicted states (#802)", () => {
       { slug: "notion", predictedState: "not_connected" },
     ]);
     expect(createSessionSpy).not.toHaveBeenCalled();
+  });
+
+  test("BT-802-009: a NO_AUTH toolkit with zero connected accounts predicts ready, not not_connected", async () => {
+    listAccountsResult = [];
+    toolkitsGetImpl = (slug: string) =>
+      Promise.resolve(
+        slug === "weather"
+          ? { authConfigDetails: [{ name: "No Auth", mode: "NO_AUTH" }] }
+          : { authConfigDetails: [{ name: "GitHub OAuth", mode: "OAUTH2" }] },
+      );
+    const { computeAgentToolPreflight } = await toolPreflightModulePromise;
+
+    const result = await computeAgentToolPreflight({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+      // "weather" is a no-auth toolkit with no connected account; "linear"
+      // requires auth and also has no connected account — must stay
+      // not_connected while "weather" predicts ready.
+      slugs: ["weather", "linear"],
+    });
+
+    expect(result.toolkits).toEqual([
+      { slug: "weather", predictedState: "ready" },
+      { slug: "linear", predictedState: "not_connected" },
+    ]);
   });
 });
