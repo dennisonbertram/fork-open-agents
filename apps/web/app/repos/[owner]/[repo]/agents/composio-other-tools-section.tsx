@@ -39,10 +39,17 @@ export function ComposioOtherToolsSection({
           Connect Composio toolkits — Gmail, Slack, Linear, and more — to give
           this agent access beyond GitHub.{" "}
           <Link
-            href="/settings/background-agents"
+            href="/settings/composio"
             className="underline underline-offset-2 hover:text-foreground"
           >
             Connect accounts in Settings
+          </Link>
+          . Blocked or restricted for this repo? Check the{" "}
+          <Link
+            href={`/settings/repositories/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}`}
+            className="underline underline-offset-2 hover:text-foreground"
+          >
+            repository&apos;s tool access
           </Link>
           .
         </p>
@@ -54,7 +61,7 @@ export function ComposioOtherToolsSection({
         source="connected"
         repoOwner={repoOwner}
         repoName={repoName}
-        connectHint="Settings → Background agents"
+        connectHint="Settings → Composio"
       />
     </div>
   );

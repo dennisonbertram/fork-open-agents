@@ -8,6 +8,7 @@ import {
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
 import { getRepoDashboardData } from "@/lib/github/repo-dashboard";
+import { getRepoToolsEffectiveStatuses } from "@/lib/composio/repo-tools-page-data";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OverviewWindow, ActivityWindow } from "./dashboard-windows";
@@ -16,6 +17,7 @@ import {
   IssuesWindow,
   ActionsWindow,
 } from "./github-windows";
+import { ToolsWindow } from "./tools-window";
 
 export const metadata: Metadata = {
   title: "Repo dashboard",
@@ -37,10 +39,11 @@ export default async function RepoDashboardPage({
   const { owner, repo } = await params;
 
   // Fetch all data sources in parallel with independent failure isolation.
-  // A throw in agents/runs/dashboard must never break the entire page render.
-  // (Agents and loops detail live on the Project page; the dashboard only keeps
-  // the agent/run counts for the Overview summary plus recent Activity.)
-  const [agentsResult, runsResult, dashboardDataResult] =
+  // A throw in agents/runs/dashboard/tools must never break the entire page
+  // render. (Agents and loops detail live on the Project page; the
+  // dashboard only keeps the agent/run counts for the Overview summary plus
+  // recent Activity.)
+  const [agentsResult, runsResult, dashboardDataResult, toolStatusesResult] =
     await Promise.allSettled([
       listRepoBackgroundAgents({
         userId: session.user.id,
@@ -58,10 +61,17 @@ export default async function RepoDashboardPage({
         owner,
         repo,
       }),
+      getRepoToolsEffectiveStatuses({
+        userId: session.user.id,
+        repoOwner: owner,
+        repoName: repo,
+      }),
     ]);
 
   const agents = agentsResult.status === "fulfilled" ? agentsResult.value : [];
   const runs = runsResult.status === "fulfilled" ? runsResult.value : [];
+  const toolStatuses =
+    toolStatusesResult.status === "fulfilled" ? toolStatusesResult.value : [];
 
   const dashboardData =
     dashboardDataResult.status === "fulfilled"
@@ -138,6 +148,9 @@ export default async function RepoDashboardPage({
               <TabsTrigger value="actions" className="flex-1">
                 Actions
               </TabsTrigger>
+              <TabsTrigger value="tools" className="flex-1">
+                Tools
+              </TabsTrigger>
             </TabsList>
             <TabsContent value="pull-requests">
               <PullRequestsWindow
@@ -154,6 +167,13 @@ export default async function RepoDashboardPage({
                 summary={actionsSummary}
                 owner={owner}
                 repo={repo}
+              />
+            </TabsContent>
+            <TabsContent value="tools">
+              <ToolsWindow
+                repoOwner={owner}
+                repoName={repo}
+                toolStatuses={toolStatuses}
               />
             </TabsContent>
           </Tabs>

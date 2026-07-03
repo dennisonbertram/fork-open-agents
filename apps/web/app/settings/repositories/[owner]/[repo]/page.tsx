@@ -7,6 +7,7 @@ import { getVercelProjectLinkByRepo } from "@/lib/db/vercel-project-links";
 import { hasGitHubAccount } from "@/lib/github/users";
 import { getUserGitHubToken } from "@/lib/github/token";
 import { getInstallationsByUserId } from "@/lib/db/installations";
+import { getRepoToolsEffectiveStatuses } from "@/lib/composio/repo-tools-page-data";
 import { SettingsPageHeader } from "@/components/ui/settings-section";
 import { RepoSettingsSection } from "./repo-settings-section";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/status";
@@ -69,12 +70,18 @@ export default async function RepoSettingsPage({ params }: PageProps) {
 
   const userId = session.user.id;
 
-  const [resolved, raw, vercelLink, githubStatus] = await Promise.all([
-    resolveRepoDefaults({ userId, repoOwner: owner, repoName: repo }),
-    getRepositorySettings({ userId, repoOwner: owner, repoName: repo }),
-    getVercelProjectLinkByRepo(userId, owner, repo),
-    getGitHubStatusForUser(userId),
-  ]);
+  const [resolved, raw, vercelLink, githubStatus, toolStatusesResult] =
+    await Promise.all([
+      resolveRepoDefaults({ userId, repoOwner: owner, repoName: repo }),
+      getRepositorySettings({ userId, repoOwner: owner, repoName: repo }),
+      getVercelProjectLinkByRepo(userId, owner, repo),
+      getGitHubStatusForUser(userId),
+      getRepoToolsEffectiveStatuses({
+        userId,
+        repoOwner: owner,
+        repoName: repo,
+      }).catch(() => []),
+    ]);
 
   return (
     <>
@@ -92,6 +99,7 @@ export default async function RepoSettingsPage({ params }: PageProps) {
           vercel: vercelLink,
           composioHref: "/settings/composio",
         }}
+        toolStatuses={toolStatusesResult}
       />
     </>
   );

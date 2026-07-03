@@ -22,6 +22,8 @@ import type {
 } from "@/lib/repo-settings/resolve-repo-defaults";
 import type { VercelProjectSelection } from "@/lib/vercel/types";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/status";
+import type { RepoToolkitEffectiveStatus } from "@/lib/composio/repo-tools-effective-status";
+import { getRepoToolkitStatusCopy } from "@/lib/composio/repo-tools-status-copy";
 import {
   VCPU_OPTIONS,
   RUNTIME_MODE_OPTIONS,
@@ -40,6 +42,15 @@ export interface RepoSettingsSectionProps {
     vercel: VercelProjectSelection | null;
     composioHref: string;
   };
+  /**
+   * Server-computed effective per-repo tool status (#805, epic #796 T9) —
+   * one entry per relevant toolkit, sourced from
+   * deriveRepoToolkitEffectiveStatuses. Renders as a plain-language list
+   * alongside the existing bare "Manage tools" link; omitted (undefined) or
+   * empty renders no list, matching prior behavior for callers that haven't
+   * wired the loader yet.
+   */
+  toolStatuses?: RepoToolkitEffectiveStatus[];
   /** Override the default PATCH handler (e.g. dev-preview stub). */
   onSave?: (patch: Partial<RepoEditState>) => Promise<void>;
   /** Override the default DELETE/reset handler (e.g. dev-preview stub). */
@@ -111,6 +122,7 @@ export function RepoSettingsSection({
   resolved,
   raw,
   integrations,
+  toolStatuses = [],
   onSave,
   onReset,
 }: RepoSettingsSectionProps) {
@@ -591,6 +603,33 @@ export function RepoSettingsSection({
             Manage tools
           </Link>
         </SettingRow>
+
+        {/* #805: effective per-repo tool status list — reuses the shared
+            status-copy helper so this list never drifts from the repo
+            dashboard's Tools tab vocabulary. */}
+        {toolStatuses.length > 0 ? (
+          <SettingRow label="Tool access for this repository">
+            <div className="w-full space-y-1.5">
+              {toolStatuses.map((toolStatus) => {
+                const copy = getRepoToolkitStatusCopy(toolStatus);
+                return (
+                  <div
+                    key={toolStatus.slug}
+                    className="flex items-center justify-between gap-3 rounded-md border border-border/60 px-3 py-1.5"
+                  >
+                    <span className="truncate text-sm">{toolStatus.name}</span>
+                    <span
+                      className="shrink-0 text-xs font-medium text-muted-foreground"
+                      title={copy.explanation}
+                    >
+                      {copy.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </SettingRow>
+        ) : null}
       </SettingsGroup>
 
       {/* ── 5. Danger zone ────────────────────────────────────────────────── */}

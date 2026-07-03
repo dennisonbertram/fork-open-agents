@@ -40,6 +40,7 @@ describe("settings route metadata", () => {
       "models",
       "preferences",
       "profile",
+      "repositories",
       "runtime-profiles",
       "skills",
       "usage",

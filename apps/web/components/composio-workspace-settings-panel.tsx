@@ -215,7 +215,17 @@ export function ComposioWorkspaceSettingsPanel({
             </div>
 
             <div className="space-y-2 rounded-lg border border-border/70 p-3">
-              <Label>Tools for this repository</Label>
+              <div className="flex items-center justify-between gap-2">
+                <Label>Tools for this repository</Label>
+                {repoOwner && repoName ? (
+                  <Link
+                    href={`/settings/repositories/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}`}
+                    className="shrink-0 text-xs text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
+                  >
+                    View full Tools surface
+                  </Link>
+                ) : null}
+              </div>
               <FieldHelp>
                 Choose which connected tools agents can use in every chat on
                 this repository. Only tools connected globally are shown. GitHub

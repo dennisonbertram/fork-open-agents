@@ -129,7 +129,12 @@ describe("ComposioOtherToolsSection", () => {
     expect(html).toContain('data-disabled="true"');
   });
 
-  test("includes a link to /settings/background-agents", async () => {
+  // #805 (finding G7): the "Connect accounts" link previously pointed at
+  // /settings/background-agents — a mislink Composio accounts have nothing
+  // to do with. It must point at the actual Composio settings, and this
+  // section must ALSO link to the new per-repo Tools surface so a user
+  // blocked by repo policy here can find why.
+  test("includes a link to /settings/composio, not the /settings/background-agents mislink", async () => {
     const { ComposioOtherToolsSection } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -141,6 +146,22 @@ describe("ComposioOtherToolsSection", () => {
       />,
     );
 
-    expect(html).toContain("/settings/background-agents");
+    expect(html).toContain("/settings/composio");
+    expect(html).not.toContain("/settings/background-agents");
+  });
+
+  test("includes a link to the repo's per-repo Tools settings surface", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    expect(html).toContain("/settings/repositories/acme/widgets");
   });
 });

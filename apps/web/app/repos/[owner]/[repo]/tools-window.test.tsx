@@ -20,6 +20,7 @@ function makeStatuses(): RepoToolkitEffectiveStatus[] {
   return [
     { slug: "github", name: "GitHub", status: "default_on" },
     { slug: "slack", name: "Slack", status: "selected" },
+    { slug: "figma", name: "Figma", status: "allowed" },
     {
       slug: "gmail",
       name: "Gmail",
@@ -78,7 +79,7 @@ describe("ToolsWindow", () => {
     expect(html.toLowerCase()).toContain("not connected");
     // The two distinct block reasons must not collapse into identical copy
     expect(html).toContain("repo policy");
-    expect(html.toLowerCase()).toMatch(/not (in|part of) (the |this )?allowlist|not selected/);
+    expect(html.toLowerCase()).toMatch(/not in .*allowlist|not selected/);
   });
 
   test("BT-TW-004: not-connected toolkit links to connect, not a bare toggle", () => {

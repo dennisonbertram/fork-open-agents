@@ -162,10 +162,16 @@ describe("RepoDashboardPage", () => {
 
   // REGRESSION-003 (#805): the repo dashboard must expose a discoverable
   // "Tools" tab reachable without opening a chat session (finding W8 — the
-  // gmail-block journey). Tab content renders unconditionally under Radix
-  // Tabs + renderToStaticMarkup (same pattern as the other tab assertions
-  // in this file), so this is directly observable here.
-  test("REGRESSION-003: dashboard renders a discoverable Tools tab with toolkit statuses", async () => {
+  // gmail-block journey). Radix Tabs only renders the ACTIVE tab's content
+  // panel server-side (matches the existing PR/Issues/Actions tests in this
+  // file, which only assert their trigger labels + the active tab's
+  // content) — so this test asserts the "Tools" tab trigger is present and
+  // that the page's server component actually calls the shared status
+  // loader with the right repo identity. Full content-rendering coverage
+  // for the Tools panel itself (every status kind, empty state, connect
+  // links) lives in tools-window.test.tsx where the component is rendered
+  // directly and observable regardless of Tabs' active-tab gating.
+  test("REGRESSION-003: dashboard renders a discoverable Tools tab and loads its data", async () => {
     repoToolStatuses = [
       { slug: "github", name: "GitHub", status: "default_on" },
       {
@@ -183,8 +189,7 @@ describe("RepoDashboardPage", () => {
       }),
     );
 
-    expect(html).toContain("Tools");
-    expect(html).toContain("Gmail");
+    expect(html).toContain(">Tools<");
     expect(getRepoToolsEffectiveStatuses).toHaveBeenCalledWith({
       userId: "user-1",
       repoOwner: "acme",
