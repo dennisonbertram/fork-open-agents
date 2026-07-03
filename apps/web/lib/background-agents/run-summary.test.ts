@@ -372,6 +372,37 @@ describe("buildRunSummary", () => {
     expect(summary.warnings[0]).toBeTruthy();
   });
 
+  test("BT-008b (#799): not_in_repo_allowlist off-reason produces distinct copy from repo_policy_blocked, naming the dropped slugs", () => {
+    const run = makeRun({ status: "succeeded" });
+    const events: MinimalEvent[] = [
+      {
+        id: "ev-composio-allowlist-off",
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary: null,
+        errorKind: null,
+        payload: { reason: "not_in_repo_allowlist", blockedSlugs: ["gmail"] },
+      },
+    ];
+    const outputs: MinimalOutput[] = [];
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events,
+      outputs,
+      composioConfigured: true,
+    });
+
+    expect(summary.warnings).toHaveLength(1);
+    expect(summary.warnings[0]).toContain("gmail");
+    expect(summary.warnings[0]).toContain("allowlist");
+    // Must be distinguishable from the denylist ("blocked by repo policy")
+    // copy — an operator reading warnings[] needs to tell the two policy
+    // axes apart.
+    expect(summary.warnings[0]).not.toContain("blocked by repo policy");
+  });
+
   test("BT-009 (#798): succeeded run with a composio.not_connected event → warning names the disconnected toolkits", () => {
     const run = makeRun({ status: "succeeded" });
     const events: MinimalEvent[] = [
