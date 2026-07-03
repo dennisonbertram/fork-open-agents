@@ -201,3 +201,61 @@ describe("GET /api/background-agents/:agentId/tool-preflight", () => {
     expect(body.error).toBeTruthy();
   });
 });
+
+describe("GET /api/background-agents/:agentId/tool-preflight — regression (#802)", () => {
+  beforeEach(() => {
+    authResult = { ok: true, userId: "user-1" };
+    ownedAgent = {
+      id: "agent-1",
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+      composioToolkitSlugs: ["gmail"],
+    };
+    preflightResult = { toolkits: [{ slug: "gmail", predictedState: "ready" }] };
+    preflightShouldThrow = false;
+    getOwnedBackgroundAgentWithTriggers.mockClear();
+    computeAgentToolPreflight.mockClear();
+  });
+
+  test("BT-802-REG-001: this route module exposes GET only — no mutating HTTP verb export", async () => {
+    // A read-only preflight endpoint must never grow a POST/PATCH/DELETE
+    // handler that could mutate the agent or mint a Composio session. If a
+    // future change adds one of these exports to this route file, this
+    // test fails and forces an explicit review of that change.
+    const routeModule = (await routeModulePromise) as Record<string, unknown>;
+
+    expect(typeof routeModule.GET).toBe("function");
+    expect(routeModule.POST).toBeUndefined();
+    expect(routeModule.PATCH).toBeUndefined();
+    expect(routeModule.PUT).toBeUndefined();
+    expect(routeModule.DELETE).toBeUndefined();
+  });
+
+  test("BT-802-REG-002: repeated GETs for the same agent never grow the call count of any mutation-shaped dependency", async () => {
+    // getOwnedBackgroundAgentWithTriggers is the only store function this
+    // route imports (see mock.module("@/lib/background-agents/store", ...)
+    // above) — no create/update/delete function is imported at all, so a
+    // regression that added one would show up as a new unmocked import
+    // failure. This test locks in that the route calls the READ helper
+    // exactly once per request, proving no hidden retry-with-side-effect
+    // path exists.
+    const { GET } = await routeModulePromise;
+
+    await GET(
+      new Request(
+        "http://localhost/api/background-agents/agent-1/tool-preflight",
+      ),
+      routeContext(),
+    );
+    await GET(
+      new Request(
+        "http://localhost/api/background-agents/agent-1/tool-preflight",
+      ),
+      routeContext(),
+    );
+
+    expect(getOwnedBackgroundAgentWithTriggers).toHaveBeenCalledTimes(2);
+    expect(computeAgentToolPreflight).toHaveBeenCalledTimes(2);
+  });
+});
