@@ -1884,10 +1884,11 @@ export function SessionChatContent({
       { revalidateOnFocus: false },
     );
   // Compact goal summary — read-only; same SWR key as RuntimeObservabilityPanel
-  const { data: observabilityData } = useSessionObservability({
-    sessionId: session.id,
-    chatId: chatInfo.id,
-  });
+  const { data: observabilityData, isLoading: observabilityLoading } =
+    useSessionObservability({
+      sessionId: session.id,
+      chatId: chatInfo.id,
+    });
   const managedRuntimeProfiles = useMemo(
     () =>
       managedRuntimeProfilesData?.profiles ??
@@ -5007,6 +5008,7 @@ export function SessionChatContent({
                               sessionId={session.id}
                             />
                             <RuntimeStatusBadge
+                              isLoading={observabilityLoading}
                               latestProfileRun={
                                 observabilityData?.profileRuns[0] ?? null
                               }

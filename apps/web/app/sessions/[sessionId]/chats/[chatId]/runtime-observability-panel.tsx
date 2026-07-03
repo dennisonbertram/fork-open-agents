@@ -783,11 +783,14 @@ export function ProfileRunSection({
               label="Optional"
               value={latestProfileRun.optionalTools.join(", ") || "-"}
             />
-            {latestProfileRun.status === "failed" &&
+            {(latestProfileRun.status === "failed" ||
+              latestProfileRun.status === "blocked") &&
             latestProfileRun.nextAction ? (
               <div className="border-t border-border/70 px-3 py-2 text-xs">
                 <p className="font-medium text-foreground">
-                  Profile run failed.
+                  {latestProfileRun.status === "blocked"
+                    ? "Profile verification blocked."
+                    : "Profile run failed."}
                 </p>
                 <p className="mt-0.5 text-muted-foreground">
                   {latestProfileRun.nextAction}

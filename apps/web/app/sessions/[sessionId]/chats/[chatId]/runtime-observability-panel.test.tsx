@@ -376,6 +376,29 @@ describe("ProfileRunSection — mode row", () => {
     );
   });
 
+  // Codex #839 P2: a required verification failure persists as status
+  // "blocked" (errorKind verification_failed) with a nextAction — the panel
+  // must surface that actionable copy, not only for "failed".
+  test("renders the blocked state with the typed next-action copy", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "blocked",
+          errorKind: "verification_failed",
+          nextAction:
+            "Fix the failing verification command in the profile editor, then re-run verification.",
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    expect(html).toContain(
+      "Fix the failing verification command in the profile editor, then re-run verification.",
+    );
+  });
+
   test("renders the passed state", () => {
     const html = renderToStaticMarkup(
       <ProfileRunSection
