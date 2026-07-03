@@ -7,6 +7,7 @@ let authSession: {
 } | null;
 let hasLinkedGitHub = false;
 let installations: Array<{ installationId: number }> = [];
+let syncError: Error | null;
 
 mock.module("server-only", () => ({}));
 
@@ -33,7 +34,15 @@ mock.module("@/lib/db/installations", () => ({
 }));
 
 mock.module("@/lib/github/sync", () => ({
-  syncUserInstallations: async () => installations.length,
+  syncUserInstallations: async () => {
+    if (syncError) {
+      throw syncError;
+    }
+
+    return installations.length;
+  },
+  isGitHubInstallationsAuthError: (error: unknown) =>
+    error instanceof Error && error.message.includes(" 401 "),
 }));
 
 const routeModulePromise = import("./route");
@@ -63,6 +72,7 @@ describe("GET /api/github/app/install", () => {
     };
     hasLinkedGitHub = true;
     installations = [{ installationId: 1 }];
+    syncError = null;
 
     Object.assign(process.env, {
       NEXT_PUBLIC_GITHUB_APP_SLUG: "open-agents",
@@ -173,5 +183,47 @@ describe("GET /api/github/app/install", () => {
     const redirectUrl = new URL(location as string);
     expect(redirectUrl.origin).toBe("https://github.com");
     expect(redirectUrl.pathname).toContain("open-agents");
+  });
+
+  // Issue #783: a non-auth sync failure inside the zero-installations sync
+  // attempt must surface as sync_failed instead of silently falling through
+  // to the "no installations, go install" branch.
+  test("redirects to sync_failed when syncUserInstallations throws a non-auth error", async () => {
+    installations = [];
+    syncError = new Error("GitHub API 500 Internal Server Error");
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest("http://localhost/api/github/app/install?next=/sessions"),
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBeTruthy();
+    const redirectUrl = new URL(location as string);
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("sync_failed");
+  });
+
+  // Issue #783: an unlinked user hitting target_id must be redirected to
+  // not_linked before any github.com/apps/.../installations/new URL is built.
+  test("redirects unlinked user to not_linked before building a target_id install URL", async () => {
+    hasLinkedGitHub = false;
+    installations = [];
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      createRequest(
+        "http://localhost/api/github/app/install?target_id=123&next=/settings/connections",
+      ),
+    );
+
+    expect(response.status).toBe(307);
+    const location = response.headers.get("location");
+    expect(location).toBeTruthy();
+    const redirectUrl = new URL(location as string);
+    expect(redirectUrl.origin).not.toBe("https://github.com");
+    expect(redirectUrl.pathname).toBe("/get-started");
+    expect(redirectUrl.searchParams.get("github")).toBe("not_linked");
   });
 });

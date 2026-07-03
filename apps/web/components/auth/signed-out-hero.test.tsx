@@ -1,9 +1,9 @@
 /**
  * Tests for SignedOutHero's post-redirect "sign-in didn't complete" state
- * (#786).
+ * (#786) and its honest first-run copy (#787).
  *
- * Behavior contract: when the Vercel OAuth flow errors or is cancelled and
- * the user is redirected back to `/` with an `error=<code>` query param
+ * Behavior contract (#786): when the Vercel OAuth flow errors or is cancelled
+ * and the user is redirected back to `/` with an `error=<code>` query param
  * (emitted via better-auth's `errorCallbackURL`), the landing page must
  * render a designed banner instead of silence, with a retry CTA — no false
  * positives on the happy path (no `error` param).
@@ -12,9 +12,12 @@
  * BT-786-051: `error` param present — a "didn't complete" banner renders
  *             with a retry control.
  * BT-786-052: The banner is rendered regardless of which better-auth error
- *             code is present (state_mismatch, please_restart_the_process,
- *             internal_server_error, invalid_callback_request) — copy is
- *             generic, not provider-internal jargon.
+ *             code is present — copy is generic, not provider-internal jargon.
+ *
+ * Copy contract (#787): the hero subhead must describe what the product does
+ * in plain language, without unexplained proper nouns or an "infinitely"
+ * uptime claim the product doesn't back, and a short "why Vercel" explainer
+ * must appear near the sign-in CTA.
  */
 
 import { describe, expect, mock, test } from "bun:test";
@@ -58,5 +61,29 @@ describe("SignedOutHero — sign-in didn't complete state (#786)", () => {
 
     expect(html).not.toContain("please_restart_the_process");
     expect(html).toContain("didn&#x27;t complete");
+  });
+});
+
+describe("SignedOutHero - honest first-run copy (#787)", () => {
+  test("hero subhead does not claim agents run infinitely", async () => {
+    searchParamValue = null;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+    const html = renderToStaticMarkup(<SignedOutHero />);
+    expect(html).not.toContain("run infinitely");
+  });
+
+  test("hero subhead does not list unexplained platform jargon as one string", async () => {
+    searchParamValue = null;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+    const html = renderToStaticMarkup(<SignedOutHero />);
+    expect(html).not.toContain("AI SDK, Gateway, Sandbox, and Workflow SDK");
+  });
+
+  test("a short 'why Vercel' explainer appears near the Sign in with Vercel CTA", async () => {
+    searchParamValue = null;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+    const html = renderToStaticMarkup(<SignedOutHero />);
+    expect(html.toLowerCase()).toContain("vercel");
+    expect(html).toContain("Why Vercel");
   });
 });

@@ -9,13 +9,16 @@
  * - REG-002: normalizeCommandId is applied inside formToCreatePayload (id slug)
  * - REG-003: Invalid port string is caught before hitting the API
  * - REG-004: isValidCreatePayload correctly validates minimum verificationCommands requirement
- * - REG-005: parsePorts rejects fractional numbers as invalid ports
+ * - REG-005: a port string of "0" is rejected as invalid (not a fractional-port case)
+ * - REG-008: validateCreateForm never throws on the silent-first-create walk's exact
+ *   form state (empty verification commands) — it returns a field error instead
  */
 
 import { describe, expect, test } from "bun:test";
 import {
   formToCreatePayload,
   isValidCreatePayload,
+  validateCreateForm,
   type RuntimeProfileFormState,
 } from "./runtime-profile-payload";
 import type { ManagedRuntimeProfileCommand } from "@open-agents/sandbox/managed-runtime-profiles";
@@ -112,5 +115,22 @@ describe("runtime-profile-payload regression", () => {
   test("REG-007: valid form produces a payload that passes isValidCreatePayload", () => {
     const payload = formToCreatePayload(baseForm());
     expect(isValidCreatePayload(payload)).toBe(true);
+  });
+
+  // REG-008: the exact silent-first-create walk — a form that looks complete
+  // (displayName/description/setupCommands filled) but has an empty
+  // verificationCommands list, previously caused formToCreatePayload to throw
+  // and the section component to swallow that throw with no field message.
+  // validateCreateForm must surface a field-level error instead of throwing.
+  test("REG-008: a valid-looking form with empty verification commands never throws and reports a field error", () => {
+    const walkForm = baseForm({ verificationCommands: [] });
+
+    expect(() => validateCreateForm(walkForm)).not.toThrow();
+
+    const result = validateCreateForm(walkForm);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.fieldErrors.verificationCommands).toBeDefined();
+    }
   });
 });

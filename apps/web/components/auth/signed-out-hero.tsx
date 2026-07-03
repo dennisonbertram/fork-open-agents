@@ -65,20 +65,26 @@ export function SignedOutHero() {
                 Open Agents.
               </h1>
               <p className="mt-4 text-balance text-base leading-relaxed text-(--l-fg-2) sm:mt-6 sm:text-xl">
-                Spawn coding agents that run infinitely in the cloud. Powered by
-                AI SDK, Gateway, Sandbox, and Workflow SDK.
+                Describe what you want built, and an AI agent writes the code in
+                its own cloud sandbox — no local setup required.
               </p>
             </div>
 
             <div
               ref={heroButtonsRef}
-              className="mt-6 flex items-center gap-2 sm:mt-8"
+              className="mt-6 flex flex-col gap-2 sm:mt-8"
             >
-              <SignInButton
-                size="lg"
-                callbackUrl="/get-started?next=/sessions"
-              />
-              <GitHubLink>Open Source</GitHubLink>
+              <div className="flex items-center gap-2">
+                <SignInButton
+                  size="lg"
+                  callbackUrl="/get-started?next=/sessions"
+                />
+                <GitHubLink>Open Source</GitHubLink>
+              </div>
+              <p className="text-xs text-(--l-fg-3)">
+                Why Vercel? It&apos;s the identity provider for Open Agents —
+                one account to sign in, no separate password to create.
+              </p>
             </div>
             {signInErrorCode ? <SignInDidNotCompleteBanner /> : null}
           </div>
