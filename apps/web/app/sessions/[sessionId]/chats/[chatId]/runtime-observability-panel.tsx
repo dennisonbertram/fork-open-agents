@@ -688,14 +688,13 @@ export function ProfileRunSection({
       : runtimeMode === "classic"
         ? "Classic"
         : "Loading…";
-  const modeStatus = isLoading
-    ? "info"
-    : isManagedRuntime
-      ? "running"
-      : "info";
+  const modeStatus = isLoading ? "info" : isManagedRuntime ? "running" : "info";
 
   const profileCommands = latestProfileRun
-    ? [...latestProfileRun.setupResults, ...latestProfileRun.verificationResults]
+    ? [
+        ...latestProfileRun.setupResults,
+        ...latestProfileRun.verificationResults,
+      ]
     : [];
   const rollupLabel = latestProfileRun
     ? getProfileRunRollupLabel({
@@ -728,9 +727,7 @@ export function ProfileRunSection({
             latestWorkflow ? (
               <span className="inline-flex min-w-0 items-center gap-1.5">
                 <StatusPill status={latestWorkflow.status} />
-                <span className="truncate font-mono">
-                  {latestWorkflow.id}
-                </span>
+                <span className="truncate font-mono">{latestWorkflow.id}</span>
               </span>
             ) : (
               "No workflow recorded yet"
@@ -821,8 +818,8 @@ export function ProfileRunSection({
               </div>
             ) : (
               <EmptyState>
-                Profile setup has started but no command results are
-                recorded yet.
+                Profile setup has started but no command results are recorded
+                yet.
               </EmptyState>
             )}
           </>
@@ -835,8 +832,7 @@ export function ProfileRunSection({
         ) : isManagedRuntime ? (
           <EmptyState>
             Managed runtime profile setup has not run for this chat. Select
-            managed runtime before starting work to capture profile
-            evidence.
+            managed runtime before starting work to capture profile evidence.
           </EmptyState>
         ) : (
           <EmptyState>

@@ -399,9 +399,7 @@ describe("ProfileRunSection — mode row", () => {
             command({ commandId: "s1", status: "passed" }),
             command({ commandId: "s2", status: "passed" }),
           ],
-          verificationResults: [
-            command({ commandId: "v1", status: "passed" }),
-          ],
+          verificationResults: [command({ commandId: "v1", status: "passed" })],
         })}
         latestWorkflow={workflowRun()}
         runtimeMode="managed_runtime"
