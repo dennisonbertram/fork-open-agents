@@ -104,7 +104,8 @@ describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
 
     expect(html.toLowerCase()).not.toContain("reconnect your github account");
     expect(html.toLowerCase()).not.toContain("reconnect github");
-    expect(html.toLowerCase()).toContain("connect your github account");
+    expect(html.toLowerCase()).toContain("first you");
+    expect(html.toLowerCase()).toContain("verify your identity");
   });
 });
 

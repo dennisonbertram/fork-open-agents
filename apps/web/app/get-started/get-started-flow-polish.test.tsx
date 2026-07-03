@@ -93,6 +93,18 @@ describe("GetStartedFlow polish (#842) — finding 2: step 1 completion is deriv
   });
 });
 
+describe("GetStartedFlow polish (#842) — finding 3: step-1 Continue semantics", () => {
+  test("step 1's Continue button clarifies what continuing does (does not read as a bare 'Continue')", async () => {
+    searchParamValues = {};
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html).not.toContain(">Continue<");
+  });
+});
+
 describe("GetStartedFlow polish (#842) — finding 4: gate arrival context", () => {
   test("shows a one-line reason banner when arriving with an explicit next param (gate redirect)", async () => {
     searchParamValues = { next: "/sessions" };
