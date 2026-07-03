@@ -24,11 +24,34 @@ import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
 let searchParamValue: string | null = null;
+let nextParamValue: string | null = null;
 
 mock.module("next/navigation", () => ({
   useSearchParams: () => ({
-    get: (key: string) => (key === "error" ? searchParamValue : null),
+    get: (key: string) => {
+      if (key === "error") {
+        return searchParamValue;
+      }
+      if (key === "next") {
+        return nextParamValue;
+      }
+      return null;
+    },
   }),
+}));
+
+let capturedHeroSignInButtonCallbackUrl: string | undefined;
+
+// SignedOutHero renders SignInButton in multiple places (nav, hero, footer);
+// only the hero CTA (size="lg") is expected to carry the resolved `next`
+// destination, so key on that to avoid a later render overwriting it.
+mock.module("@/components/auth/sign-in-button", () => ({
+  SignInButton: (props: { size?: string; callbackUrl?: string }) => {
+    if (props.size === "lg") {
+      capturedHeroSignInButtonCallbackUrl = props.callbackUrl;
+    }
+    return <div data-testid="sign-in-button-stub" />;
+  },
 }));
 
 const signedOutHeroModulePromise = import("./signed-out-hero");
@@ -85,5 +108,51 @@ describe("SignedOutHero - honest first-run copy (#787)", () => {
     const html = renderToStaticMarkup(<SignedOutHero />);
     expect(html.toLowerCase()).toContain("vercel");
     expect(html).toContain("Why Vercel");
+  });
+});
+
+describe("SignedOutHero — preserves mobile deep-link destination through sign-in (#793)", () => {
+  test("forwards a valid path-only next param into SignInButton's callbackUrl", async () => {
+    searchParamValue = null;
+    nextParamValue = "/m/chat/some-id";
+    capturedHeroSignInButtonCallbackUrl = undefined;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    renderToStaticMarkup(<SignedOutHero />);
+
+    expect(capturedHeroSignInButtonCallbackUrl).toBe("/m/chat/some-id");
+  });
+
+  test("falls back to the default /get-started next when no next param is present", async () => {
+    searchParamValue = null;
+    nextParamValue = null;
+    capturedHeroSignInButtonCallbackUrl = undefined;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    renderToStaticMarkup(<SignedOutHero />);
+
+    expect(capturedHeroSignInButtonCallbackUrl).toBe("/get-started?next=/sessions");
+  });
+
+  test("rejects an absolute-URL next param and falls back to the default", async () => {
+    searchParamValue = null;
+    nextParamValue = "https://evil.example.com/phish";
+    capturedHeroSignInButtonCallbackUrl = undefined;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    renderToStaticMarkup(<SignedOutHero />);
+
+    expect(capturedHeroSignInButtonCallbackUrl).toBe("/get-started?next=/sessions");
+  });
+
+  test("rejects a protocol-relative next param and falls back to the default", async () => {
+    searchParamValue = null;
+    nextParamValue = "//evil.example.com/phish";
+    capturedHeroSignInButtonCallbackUrl = undefined;
+    const { SignedOutHero } = await signedOutHeroModulePromise;
+
+    renderToStaticMarkup(<SignedOutHero />);
+
+    expect(capturedHeroSignInButtonCallbackUrl).toBe("/get-started?next=/sessions");
   });
 });
