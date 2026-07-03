@@ -120,6 +120,31 @@ describe("resolveComposioToolsForChat — direct-slug path applies repo policy (
     }
   });
 
+  test("BT-SESS-RP-001b (post-review, #799 contract gap): a partial repo-policy block records a typed repoPolicyBlocked outcome naming gmail on the READY result", async () => {
+    // #799's first contract bullet: "the resolved tool set excludes Gmail
+    // (Slack remains available) and a typed repo_policy_blocked outcome is
+    // recorded naming gmail." Before this fix, policyResult.blocked was
+    // discarded — the ready outcome carried no evidence at all.
+    repoSettingsValues = {
+      selectedToolkitSlugs: null,
+      blockedToolkitSlugs: ["gmail"],
+    };
+
+    const { resolveComposioToolsForChat } = await import("./session");
+
+    const result = await resolveComposioToolsForChat({
+      userId: "user-rp-1b",
+      chatId: "chat-rp-1",
+    });
+
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.repoPolicyBlocked).toEqual([
+        { slug: "gmail", reason: "repo_policy_blocked" },
+      ]);
+    }
+  });
+
   test("BT-SESS-RP-002: non-null selectedToolkitSlugs allowlist drops a slug the denylist never mentioned", async () => {
     repoSettingsValues = {
       selectedToolkitSlugs: ["slack"],
@@ -177,5 +202,39 @@ describe("resolveComposioToolsForChat — direct-slug path applies repo policy (
 
     expect(result.status).toBe("off");
     expect(toolkitListCalled).toBe(false);
+  });
+
+  test("BT-SESS-RP-003b (post-review, #799 contract gap): an all-blocked outcome carries repoPolicyBlocked naming every dropped slug, distinguishing it from never-configured", async () => {
+    // Before this fix, an all-blocked repo policy and a chat that was simply
+    // never configured were both bare { status: "off" } — indistinguishable.
+    repoSettingsValues = {
+      selectedToolkitSlugs: null,
+      blockedToolkitSlugs: ["gmail", "slack"],
+    };
+
+    mock.module("@/lib/composio/resolve-toolkit-list", () => ({
+      resolveComposioToolsForToolkitList: () =>
+        Promise.reject(
+          new Error("must not be called when every slug is blocked"),
+        ),
+    }));
+
+    const { resolveComposioToolsForChat } = await import("./session");
+
+    const result = await resolveComposioToolsForChat({
+      userId: "user-rp-3b",
+      chatId: "chat-rp-1",
+    });
+
+    expect(result.status).toBe("off");
+    if (result.status === "off") {
+      expect(result.repoPolicyBlocked).toEqual(
+        expect.arrayContaining([
+          { slug: "gmail", reason: "repo_policy_blocked" },
+          { slug: "slack", reason: "repo_policy_blocked" },
+        ]),
+      );
+      expect(result.repoPolicyBlocked).toHaveLength(2);
+    }
   });
 });
