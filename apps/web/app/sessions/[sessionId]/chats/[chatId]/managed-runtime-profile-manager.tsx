@@ -44,6 +44,18 @@ type ProfileFormState = {
   verificationCommands: ManagedRuntimeProfileCommand[];
 };
 
+/**
+ * Structured test-route error surface (#814): `{ errorKind, failureMessage,
+ * failedCommandLabel?, nextAction? }` returned by both test routes instead
+ * of a generic error string.
+ */
+type StructuredTestError = {
+  errorKind: string;
+  failureMessage: string;
+  failedCommandLabel?: string;
+  nextAction?: string;
+};
+
 export function ManagedRuntimeProfileManager({
   sessionId,
   profile,
@@ -58,6 +70,9 @@ export function ManagedRuntimeProfileManager({
   const [sourceDraft, setSourceDraft] = useState<SourceDraftEvidence>();
   const [testEvidence, setTestEvidence] = useState<SavedProfileTestEvidence>();
   const [formState, setFormState] = useState<ProfileFormState | null>(null);
+  const [savedFormState, setSavedFormState] = useState<ProfileFormState | null>(
+    null,
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -65,6 +80,7 @@ export function ManagedRuntimeProfileManager({
     "verify" | "setup_and_verify" | null
   >(null);
   const [error, setError] = useState<string | null>(null);
+  const [testError, setTestError] = useState<StructuredTestError | null>(null);
 
   const canManage = profile?.source === "session";
 
@@ -92,7 +108,9 @@ export function ManagedRuntimeProfileManager({
         setLoadedProfile(body.profile);
         setSourceDraft(body.sourceDraft);
         setTestEvidence(body.testEvidence);
-        setFormState(profileToFormState(body.profile));
+        const nextFormState = profileToFormState(body.profile);
+        setFormState(nextFormState);
+        setSavedFormState(nextFormState);
       } catch (error) {
         if (abortController.signal.aborted) {
           return;
@@ -122,6 +140,9 @@ export function ManagedRuntimeProfileManager({
     sourceDraft,
     testEvidence,
   });
+  const unsavedEditsWarning = formState
+    ? getUnsavedEditsWarning({ formState, savedFormState })
+    : null;
 
   async function saveProfile() {
     if (!profile || !formState) {
@@ -149,7 +170,9 @@ export function ManagedRuntimeProfileManager({
       setLoadedProfile(body.profile);
       setSourceDraft(body.sourceDraft);
       setTestEvidence(body.testEvidence);
-      setFormState(profileToFormState(body.profile));
+      const nextFormState = profileToFormState(body.profile);
+      setFormState(nextFormState);
+      setSavedFormState(nextFormState);
       onProfileSaved();
       setOpen(false);
     } catch (error) {
@@ -199,6 +222,7 @@ export function ManagedRuntimeProfileManager({
 
     setTestMode(mode);
     setError(null);
+    setTestError(null);
     try {
       const response = await fetch(
         `/api/sessions/${sessionId}/managed-runtime/profiles/${profile.id}/test`,
@@ -208,20 +232,21 @@ export function ManagedRuntimeProfileManager({
           body: JSON.stringify({ mode }),
         },
       );
-      const body = (await response.json()) as
-        | {
-            profile: EditableProfile;
-            testEvidence?: SavedProfileTestEvidence;
-            error?: string;
-          }
-        | { error?: string };
-      if (!response.ok || !("profile" in body)) {
-        throw new Error(getErrorMessage(body, "Failed to test profile"));
+      const body = (await response.json()) as ProfileTestResponseBody;
+      const outcome = resolveProfileTestOutcome({
+        responseOk: response.ok,
+        body,
+      });
+      if (!outcome.ok) {
+        throw new Error(outcome.message);
       }
-      setLoadedProfile(body.profile);
-      setTestEvidence(body.testEvidence);
+      setLoadedProfile(outcome.profile);
+      setTestEvidence(outcome.testEvidence);
       setSourceDraft(undefined);
-      setFormState(profileToFormState(body.profile));
+      const nextFormState = profileToFormState(outcome.profile);
+      setFormState(nextFormState);
+      setSavedFormState(nextFormState);
+      setTestError(outcome.testError);
       onProfileSaved();
     } catch (error) {
       setError(
@@ -270,7 +295,27 @@ export function ManagedRuntimeProfileManager({
                 {evidenceNotice}
               </p>
             ) : null}
+            {unsavedEditsWarning ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 text-xs dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                {unsavedEditsWarning}
+              </p>
+            ) : null}
+            {testError ? (
+              <StructuredTestErrorNotice testError={testError} />
+            ) : null}
             <div className="flex flex-wrap gap-2 rounded-md border bg-muted/20 p-3">
+              {/* Decision D6: "Run setup + verify" is the primary action —
+                  only a setup_and_verify pass earns the "Tested" badge. */}
+              <Button
+                disabled={isBusy || Boolean(testMode) || !loadedProfile}
+                onClick={() => void testProfile("setup_and_verify")}
+                size="sm"
+                type="button"
+              >
+                {testMode === "setup_and_verify"
+                  ? "Running setup + verify..."
+                  : "Run setup + verify"}
+              </Button>
               <Button
                 disabled={isBusy || Boolean(testMode) || !loadedProfile}
                 onClick={() => void testProfile("verify")}
@@ -278,18 +323,7 @@ export function ManagedRuntimeProfileManager({
                 type="button"
                 variant="secondary"
               >
-                {testMode === "verify" ? "Testing..." : "Test profile"}
-              </Button>
-              <Button
-                disabled={isBusy || Boolean(testMode) || !loadedProfile}
-                onClick={() => void testProfile("setup_and_verify")}
-                size="sm"
-                type="button"
-                variant="secondary"
-              >
-                {testMode === "setup_and_verify"
-                  ? "Running setup..."
-                  : "Run setup + test"}
+                {testMode === "verify" ? "Verifying..." : "Verify only"}
               </Button>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -618,6 +652,26 @@ function SourceDraftEvidence({ draft }: { draft: SourceDraftEvidence }) {
   );
 }
 
+function StructuredTestErrorNotice({
+  testError,
+}: {
+  testError: StructuredTestError;
+}) {
+  return (
+    <div className="space-y-1 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs">
+      <p className="font-medium text-destructive">
+        {testError.failedCommandLabel
+          ? `${testError.failedCommandLabel} failed`
+          : "Test failed"}
+      </p>
+      <p className="text-destructive">{testError.failureMessage}</p>
+      {testError.nextAction ? (
+        <p className="text-muted-foreground">{testError.nextAction}</p>
+      ) : null}
+    </div>
+  );
+}
+
 function SavedProfileTestEvidence({
   evidence,
 }: {
@@ -683,6 +737,28 @@ function SavedProfileTestEvidence({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Warns that "Test" runs the SAVED profile, not the in-progress form edits
+ * (#814). Previously the manager tested the saved state while silently
+ * ignoring unsaved edits, so a user could believe their edited-but-unsaved
+ * commands were the ones actually tested.
+ */
+export function getUnsavedEditsWarning(params: {
+  formState: ProfileFormState;
+  savedFormState: ProfileFormState | null;
+}): string | null {
+  if (!params.savedFormState) {
+    return null;
+  }
+
+  const isSame =
+    JSON.stringify(params.formState) === JSON.stringify(params.savedFormState);
+
+  return isSame
+    ? null
+    : "You have unsaved edits — Test runs the saved profile.";
 }
 
 export function getProfileManagerEvidenceNotice({
@@ -847,6 +923,62 @@ function getErrorMessage(value: unknown, fallback: string): string {
     }
   }
   return fallback;
+}
+
+type ProfileTestResponseBody =
+  | {
+      profile: EditableProfile;
+      testEvidence?: SavedProfileTestEvidence & Partial<StructuredTestError>;
+      error?: string;
+    }
+  | { error?: string };
+
+type ProfileTestOutcome =
+  | {
+      ok: true;
+      profile: EditableProfile;
+      testEvidence?: SavedProfileTestEvidence & Partial<StructuredTestError>;
+      testError: StructuredTestError | null;
+    }
+  | { ok: false; message: string };
+
+/**
+ * Resolves the saved-profile test route's response into either a structured
+ * success outcome (test evidence + error, when present) or a
+ * thrown-error-equivalent message — without throwing before structured
+ * `testEvidence` can be read (Codex #833 P2: the route returns HTTP 500 with
+ * `{ profile, testEvidence: { errorKind, failureMessage, nextAction } }` on
+ * a non-sandbox-unavailable failure; a 500 status alone must not discard
+ * that evidence).
+ */
+export function resolveProfileTestOutcome(params: {
+  responseOk: boolean;
+  body: ProfileTestResponseBody;
+}): ProfileTestOutcome {
+  const { body } = params;
+  if (!("profile" in body) || !body.profile) {
+    return {
+      ok: false,
+      message: getErrorMessage(body, "Failed to test profile"),
+    };
+  }
+
+  const testError =
+    body.testEvidence?.errorKind && body.testEvidence.failureMessage
+      ? {
+          errorKind: body.testEvidence.errorKind,
+          failureMessage: body.testEvidence.failureMessage,
+          failedCommandLabel: body.testEvidence.failedCommandLabel,
+          nextAction: body.testEvidence.nextAction,
+        }
+      : null;
+
+  return {
+    ok: true,
+    profile: body.profile,
+    testEvidence: body.testEvidence,
+    testError,
+  };
 }
 
 function parsePorts(value: string): number[] {

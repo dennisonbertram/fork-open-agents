@@ -13,6 +13,11 @@ import { applyDraftAsSessionManagedRuntimeProfile } from "@/lib/db/managed-runti
 
 const updateDraftRequestSchema = z.object({
   output: setupManagedRuntimeProfileOutputSchema,
+  // Decision D6: "Approve anyway" over a failed/absent test persists this
+  // flag (MR-1's force_approved column) so the UI can show "Approved
+  // without passing test" instead of silently treating the override as a
+  // normal approval.
+  forceApproved: z.boolean().optional(),
 });
 
 export async function GET(
@@ -83,6 +88,7 @@ export async function PATCH(
     sessionId,
     draftId,
     output: parsedBody.data.output,
+    forceApproved: parsedBody.data.forceApproved,
   });
   if (!draft) {
     return Response.json({ error: "Profile draft not found" }, { status: 404 });

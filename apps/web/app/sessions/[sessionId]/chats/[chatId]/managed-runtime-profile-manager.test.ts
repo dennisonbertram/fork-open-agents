@@ -2,10 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   addCommand,
   getProfileManagerEvidenceNotice,
+  getUnsavedEditsWarning,
   normalizeCommandId,
   normalizeCommands,
   parseOptionalPositiveInteger,
   removeCommand,
+  resolveProfileTestOutcome,
   updateCommand,
 } from "./managed-runtime-profile-manager";
 
@@ -171,6 +173,167 @@ describe("managed runtime profile manager helpers", () => {
     expect(added[1]?.id).toBe("setup-commands-2");
     expect(updated[1]?.label).toBe("Verify");
     expect(removed).toEqual([updated[1]]);
+  });
+
+  // RED: today the manager tests the SAVED state and never warns when the
+  // in-progress form edits differ from the loaded/saved profile, so a user
+  // can believe an edited-but-unsaved profile was tested.
+  test("warns that Test runs the saved profile when the form has unsaved edits", () => {
+    const savedFormState = {
+      displayName: "Bun app",
+      description: "Install and verify Bun",
+      expectedTools: "bun",
+      optionalTools: "",
+      defaultPorts: "3000",
+      setupCommands: [
+        {
+          id: "install-bun",
+          label: "Install Bun",
+          description: "Install Bun",
+          command: "bun --version",
+        },
+      ],
+      verificationCommands: [
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+      ],
+    };
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: { ...savedFormState, displayName: "Bun app (edited)" },
+        savedFormState,
+      }),
+    ).toBe("You have unsaved edits — Test runs the saved profile.");
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: savedFormState,
+        savedFormState,
+      }),
+    ).toBeNull();
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: savedFormState,
+        savedFormState: null,
+      }),
+    ).toBeNull();
+  });
+
+  // Regression: an edit to a command ROW (not just top-level fields like
+  // displayName) must also trigger the warning. This would fail if a future
+  // change compared only the top-level scalar fields and ignored
+  // setupCommands/verificationCommands.
+  test("warns on unsaved edits to a command row, not just top-level fields", () => {
+    const savedFormState = {
+      displayName: "Bun app",
+      description: "Install and verify Bun",
+      expectedTools: "bun",
+      optionalTools: "",
+      defaultPorts: "3000",
+      setupCommands: [
+        {
+          id: "install-bun",
+          label: "Install Bun",
+          description: "Install Bun",
+          command: "bun --version",
+        },
+      ],
+      verificationCommands: [
+        {
+          id: "verify-bun",
+          label: "Verify Bun",
+          description: "Verify Bun",
+          command: "bun --version",
+        },
+      ],
+    };
+
+    const editedFormState = {
+      ...savedFormState,
+      verificationCommands: [
+        {
+          ...savedFormState.verificationCommands[0],
+          command: "bun --revision",
+        },
+      ],
+    };
+
+    expect(
+      getUnsavedEditsWarning({
+        formState: editedFormState,
+        savedFormState,
+      }),
+    ).toBe("You have unsaved edits — Test runs the saved profile.");
+  });
+
+  // RED: today `testProfile` throws a generic "Failed to test profile"
+  // message whenever `!response.ok`, before it ever looks at the route's
+  // structured `testEvidence` (errorKind/failureMessage/nextAction). A
+  // non-sandbox-unavailable test failure (HTTP 500 with structured evidence)
+  // must still surface the command-specific guidance instead of a plain
+  // string.
+  test("surfaces structured test evidence from a non-ok response instead of throwing", () => {
+    const outcome = resolveProfileTestOutcome({
+      responseOk: false,
+      body: {
+        profile: {
+          id: "session-profile-draft-1",
+          version: "edited-2026-05-24T00:00:00.000Z",
+          displayName: "Bun app",
+          description: "Install and verify Bun",
+          setupCommands: [],
+          verificationCommands: [],
+          expectedTools: ["bun"],
+          optionalTools: [],
+          defaultPorts: [3000],
+        },
+        error: "Failed to test managed runtime profile",
+        testEvidence: {
+          status: "failed",
+          testFailureMessage: "boom",
+          testResults: [],
+          testedAt: null,
+          errorKind: "setup_exec_error",
+          failureMessage: "boom",
+          nextAction: "Resume the sandbox and try again.",
+        },
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("expected structured outcome, got a thrown-error result");
+    }
+    expect(outcome.testError).toEqual({
+      errorKind: "setup_exec_error",
+      failureMessage: "boom",
+      failedCommandLabel: undefined,
+      nextAction: "Resume the sandbox and try again.",
+    });
+    expect(outcome.profile.id).toBe("session-profile-draft-1");
+  });
+
+  test("still throws a generic error when a non-ok response carries no structured evidence", () => {
+    const outcome = resolveProfileTestOutcome({
+      responseOk: false,
+      body: {
+        error: "Resume the sandbox before testing managed runtime profiles.",
+      },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("expected a thrown-error result");
+    }
+    expect(outcome.message).toBe(
+      "Resume the sandbox before testing managed runtime profiles.",
+    );
   });
 
   test("keeps one command row and normalizes ids and timeout inputs", () => {
