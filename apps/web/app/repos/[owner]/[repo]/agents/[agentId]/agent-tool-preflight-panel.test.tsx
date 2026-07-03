@@ -52,7 +52,8 @@ mock.module("swr", () => ({
   }),
 }));
 
-const { AgentToolPreflightPanel } = await import("./agent-tool-preflight-panel");
+const { AgentToolPreflightPanel } =
+  await import("./agent-tool-preflight-panel");
 
 beforeEach(() => {
   swrData = undefined;
@@ -69,10 +70,7 @@ describe("AgentToolPreflightPanel — predicted states (#802)", () => {
     swrLoading = false;
 
     const html = renderToStaticMarkup(
-      <AgentToolPreflightPanel
-        agentId="agent-1"
-        configuredSlugs={["gmail"]}
-      />,
+      <AgentToolPreflightPanel agentId="agent-1" configuredSlugs={["gmail"]} />,
     );
 
     expect(html).toContain("Ready");
@@ -93,10 +91,7 @@ describe("AgentToolPreflightPanel — predicted states (#802)", () => {
     swrLoading = false;
 
     const html = renderToStaticMarkup(
-      <AgentToolPreflightPanel
-        agentId="agent-1"
-        configuredSlugs={["slack"]}
-      />,
+      <AgentToolPreflightPanel agentId="agent-1" configuredSlugs={["slack"]} />,
     );
 
     expect(html).toContain("Blocked by repo policy");
@@ -135,10 +130,7 @@ describe("AgentToolPreflightPanel — predicted states (#802)", () => {
     swrLoading = false;
 
     const html = renderToStaticMarkup(
-      <AgentToolPreflightPanel
-        agentId="agent-1"
-        configuredSlugs={["gmail"]}
-      />,
+      <AgentToolPreflightPanel agentId="agent-1" configuredSlugs={["gmail"]} />,
     );
 
     expect(html).toContain("Not connected");
@@ -173,10 +165,7 @@ describe("AgentToolPreflightPanel — predicted states (#802)", () => {
     swrLoading = false;
 
     const html = renderToStaticMarkup(
-      <AgentToolPreflightPanel
-        agentId="agent-1"
-        configuredSlugs={["gmail"]}
-      />,
+      <AgentToolPreflightPanel agentId="agent-1" configuredSlugs={["gmail"]} />,
     );
 
     expect(html).toContain("Unavailable in this runtime mode");

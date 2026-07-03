@@ -35,7 +35,8 @@ const STATE_LABEL: Record<AgentToolPreflightPredictedState, string> = {
 };
 
 const STATE_CHIP_CLASS: Record<AgentToolPreflightPredictedState, string> = {
-  ready: "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+  ready:
+    "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
   blocked_by_repo_policy:
     "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   not_connected: "border-border bg-muted/40 text-muted-foreground",
@@ -204,8 +205,8 @@ export function AgentToolPreflightPanel({
           ) && (
             <div className="border-b border-border bg-amber-500/5 px-4 py-2">
               <p className="text-xs text-amber-700 dark:text-amber-300">
-                Composio unreachable — predicted status could not be
-                confirmed for any toolkit below.
+                Composio unreachable — predicted status could not be confirmed
+                for any toolkit below.
               </p>
               <Button
                 type="button"

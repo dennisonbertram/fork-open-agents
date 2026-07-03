@@ -154,7 +154,9 @@ describe("GET /api/background-agents/:agentId/tool-preflight", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { toolkits: PreflightToolkitResult[] };
+    const body = (await response.json()) as {
+      toolkits: PreflightToolkitResult[];
+    };
     expect(body.toolkits).toEqual([]);
     // No dry-run call is needed for an empty slug list.
     expect(computeAgentToolPreflight).not.toHaveBeenCalled();
@@ -171,7 +173,9 @@ describe("GET /api/background-agents/:agentId/tool-preflight", () => {
     );
 
     expect(response.status).toBe(200);
-    const body = (await response.json()) as { toolkits: PreflightToolkitResult[] };
+    const body = (await response.json()) as {
+      toolkits: PreflightToolkitResult[];
+    };
     expect(body.toolkits).toEqual([
       { slug: "gmail", predictedState: "ready" },
       { slug: "linear", predictedState: "auth_expired" },
@@ -212,7 +216,9 @@ describe("GET /api/background-agents/:agentId/tool-preflight — regression (#80
       repoName: "widgets",
       composioToolkitSlugs: ["gmail"],
     };
-    preflightResult = { toolkits: [{ slug: "gmail", predictedState: "ready" }] };
+    preflightResult = {
+      toolkits: [{ slug: "gmail", predictedState: "ready" }],
+    };
     preflightShouldThrow = false;
     getOwnedBackgroundAgentWithTriggers.mockClear();
     computeAgentToolPreflight.mockClear();
