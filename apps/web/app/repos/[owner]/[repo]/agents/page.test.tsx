@@ -266,4 +266,45 @@ describe("RepoAgentsPage", () => {
     expect(recentRunsHtml).toContain("Issue #42 triaged");
     expect(recentRunsHtml).toContain("Issue triage");
   });
+
+  // Regression: a run referencing an agent that no longer appears in the
+  // roster (deleted agent, or agentId null on an older/loop-owned run) must
+  // not crash the page render — it should fall back to an honest label
+  // instead of an unhandled Map lookup failure.
+  test("REGRESSION-803-009: a run with an unknown or missing agentId renders a fallback label instead of crashing", async () => {
+    repoAgents = [
+      {
+        id: "agent-1",
+        name: "Deploy smoke",
+        status: "enabled",
+        instructions: "Run smoke checks after deployments.",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-orphaned",
+        agentId: "agent-deleted",
+        triggerKind: "schedule.cron",
+        status: "succeeded",
+        payloadSummary: { title: "Orphaned run" },
+        externalId: "delivery-orphan",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-05-27T12:00:00.000Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    const recentRunsHtml = html.slice(html.indexOf("Recent runs"));
+    expect(recentRunsHtml).toContain("Orphaned run");
+    expect(recentRunsHtml).toContain("Unknown agent");
+  });
 });
