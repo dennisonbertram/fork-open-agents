@@ -1,6 +1,44 @@
+import { desc, eq } from "drizzle-orm";
 import type { Session } from "./types";
 import { auth } from "@/lib/auth/config";
+import { db } from "@/lib/db/client";
+import { accounts } from "@/lib/db/schema";
+import {
+  logSessionProviderResolved,
+  logSessionProviderUnknown,
+} from "./resolve-session-events";
 import { getTestAuthSessionFromCookieHeader } from "./test-auth";
+
+const SUPPORTED_AUTH_PROVIDERS = new Set<Session["authProvider"]>([
+  "vercel",
+  "github",
+]);
+
+function isSupportedAuthProvider(
+  providerId: string,
+): providerId is Session["authProvider"] {
+  return SUPPORTED_AUTH_PROVIDERS.has(providerId as Session["authProvider"]);
+}
+
+async function resolveAuthProvider(
+  userId: string,
+): Promise<Session["authProvider"] | undefined> {
+  const rows = await db
+    .select({ providerId: accounts.providerId })
+    .from(accounts)
+    .where(eq(accounts.userId, userId))
+    .orderBy(desc(accounts.updatedAt))
+    .limit(1);
+
+  const providerId = rows[0]?.providerId;
+  if (providerId && isSupportedAuthProvider(providerId)) {
+    logSessionProviderResolved({ userId, providerId });
+    return providerId;
+  }
+
+  logSessionProviderUnknown({ userId });
+  return undefined;
+}
 
 function extractUsername(user: {
   name?: string | null;
@@ -43,9 +81,14 @@ export async function resolveSessionFromHeaders(
     return undefined;
   }
 
+  const authProvider = await resolveAuthProvider(baSession.user.id);
+  if (!authProvider) {
+    return undefined;
+  }
+
   return {
     created: baSession.session.createdAt.getTime(),
-    authProvider: "vercel",
+    authProvider,
     user: {
       id: baSession.user.id,
       username: extractUsername(baSession.user),
