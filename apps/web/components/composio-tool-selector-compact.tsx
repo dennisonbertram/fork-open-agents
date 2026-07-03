@@ -4,7 +4,10 @@ import { Github, Settings } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
-import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
+import {
+  SELECTED_NOT_CONNECTED_CAPTION,
+  summarizeChatTools,
+} from "@/lib/composio/chat-tool-summary";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
@@ -141,6 +144,9 @@ export function ComposioToolSelectorCompact({
 
         <p className="mb-2 text-xs font-semibold text-foreground">
           Tools this chat can use
+        </p>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          {SELECTED_NOT_CONNECTED_CAPTION}
         </p>
 
         {/* Direct toolkit picker — "Choose specific tools" */}

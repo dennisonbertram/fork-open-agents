@@ -3,6 +3,7 @@
  * Extracted so they can be unit-tested independently of React.
  */
 import type { ComposioAgentKey } from "@/lib/composio/types";
+import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
 
 // ── profileRowSummary ──────────────────────────────────────────────────────
 
@@ -53,6 +54,19 @@ export function profileRowSummary(
   const overflow = Math.max(0, toolkitSlugs.length - MAX_VISIBLE_LOGOS);
 
   return { logos, overflow };
+}
+
+/**
+ * Visible tool-name text for a collapsed profile row (#803 item 8, W3).
+ *
+ * Profile rows previously showed only a logo strip (icons) plus a bare
+ * count ("No tools" / "1 tool" / "{n} tools"). This renders the same
+ * prettified names used elsewhere (`summarizeChatTools`) as text, so a
+ * screen-reader user and a sighted user scanning quickly both see e.g.
+ * "Gmail, Slack +1 more" as visible text, not only icons.
+ */
+export function profileRowToolNamesText(toolkitSlugs: string[]): string {
+  return summarizeChatTools(toolkitSlugs, 3);
 }
 
 /**
