@@ -213,6 +213,56 @@ describe("resolveComposioToolsForBgRun — typed outcome contract", () => {
     }
   });
 
+  test("BT-CT-002b (#799, finding G2): non-null selectedToolkitSlugs allowlist drops a slug never mentioned by blockedToolkitSlugs", async () => {
+    repoSettingsValues = {
+      selectedToolkitSlugs: ["slack"],
+      blockedToolkitSlugs: [],
+    };
+
+    const { resolveComposioToolsForBgRun } = await composioToolsModulePromise;
+
+    const result = await resolveComposioToolsForBgRun({
+      agentId: "agent-1",
+      runId: "run-1",
+      userId: "user-1",
+      slugs: ["slack", "gmail"],
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
+
+    // Today filterSlugsByRepoPolicy only checks blockedToolkitSlugs, so gmail
+    // (not in the non-null allowlist) survives unfiltered — this must change.
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.toolkitSlugs).toEqual(["slack"]);
+      expect(result.toolkitSlugs).not.toContain("gmail");
+    }
+  });
+
+  test("BT-CT-002c (#799): allowlist drop is reported via the resolver's off reason when it drops every slug", async () => {
+    repoSettingsValues = {
+      selectedToolkitSlugs: ["slack"],
+      blockedToolkitSlugs: [],
+    };
+
+    const { resolveComposioToolsForBgRun } = await composioToolsModulePromise;
+
+    const result = await resolveComposioToolsForBgRun({
+      agentId: "agent-1",
+      runId: "run-1",
+      userId: "user-1",
+      slugs: ["gmail"],
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
+
+    expect(result.status).toBe("off");
+    if (result.status === "off") {
+      expect(result.reason).toBe("not_in_repo_allowlist");
+      expect(result.blockedSlugs).toEqual(["gmail"]);
+    }
+  });
+
   test("BT-CT-003: COMPOSIO_API_KEY not configured -> typed error, no untyped error field", async () => {
     configured = false;
 

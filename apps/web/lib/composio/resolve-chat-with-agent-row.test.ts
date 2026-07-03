@@ -181,21 +181,58 @@ describe("resolveComposioSlugsForChatMain — agent row as default", () => {
   });
 });
 
-// ── BT-C-004: Regression — explicit empty array is NOT treated as "no selection"
+// ── BT-C-004: explicit empty array is an EXPLICIT "off" sentinel (#799) ────────
 
-describe("resolveComposioSlugsForChatMain — empty array edge case", () => {
-  it("BT-C-004: explicit empty chatDirectSlugs array is treated as null (no selection)", () => {
-    // The chat composio selection doesn't store empty arrays as meaningful —
-    // null and [] are both treated as "no selection" at the chat level.
-    // This is the existing behavior that must not change.
+describe("resolveComposioSlugsForChatMain — explicit off sentinel", () => {
+  it("BT-C-004: explicit empty chatDirectSlugs array short-circuits to off, even when agent row has a non-empty default", () => {
+    // Per #799: [] means the user explicitly turned tools off for this chat.
+    // It must NOT fall through to the agent-row default (that was the bug —
+    // finding G1 — where a user's explicit "Off" was silently re-enabled).
     const input: ChatMainComposioInput = {
-      chatDirectSlugs: [], // empty array = same as null
+      chatDirectSlugs: [], // explicit off, NOT the same as null
       chatMainProfileId: null,
       agentRowComposioSlugs: ["github"],
       agentRowComposioProfileId: null,
     };
     const result = resolveComposioSlugsForChatMain(input);
-    // Empty chat slugs should not block agent row from being used
+    expect(result.directSlugs).toEqual([]);
+    expect(result.profileId).toBeNull();
+  });
+
+  it("BT-C-004b: explicit off also short-circuits past an agent-row profileId default", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: [],
+      chatMainProfileId: null,
+      agentRowComposioSlugs: null,
+      agentRowComposioProfileId: "agent-profile-id",
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toEqual([]);
+    expect(result.profileId).toBeNull();
+  });
+
+  it("BT-C-004c: explicit off also short-circuits past repo-level selected slugs", () => {
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: [],
+      chatMainProfileId: null,
+      agentRowComposioSlugs: null,
+      agentRowComposioProfileId: null,
+      repoSelectedSlugs: ["github"],
+    };
+    const result = resolveComposioSlugsForChatMain(input);
+    expect(result.directSlugs).toEqual([]);
+    expect(result.profileId).toBeNull();
+  });
+
+  it("BT-C-004d: chatDirectSlugs === null (never configured) still inherits the agent-row default — only [] short-circuits", () => {
+    // Regression guard for the distinction the fix must preserve: null !== [].
+    const input: ChatMainComposioInput = {
+      chatDirectSlugs: null,
+      chatMainProfileId: null,
+      agentRowComposioSlugs: ["github"],
+      agentRowComposioProfileId: null,
+    };
+    const result = resolveComposioSlugsForChatMain(input);
     expect(result.directSlugs).toEqual(["github"]);
   });
 });
