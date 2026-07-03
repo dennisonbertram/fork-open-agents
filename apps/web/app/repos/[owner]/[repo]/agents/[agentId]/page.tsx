@@ -13,6 +13,7 @@ import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
 import type { TriggerKind } from "@/lib/background-agents/agent-spec";
 import { ScheduleVisual } from "../schedule-visual";
+import { AgentToolPreflightPanel } from "./agent-tool-preflight-panel";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -154,6 +155,12 @@ export default async function AgentDetailPage({
             </Button>
           </div>
         </div>
+
+        {/* Next run: tool availability (preflight, #802) */}
+        <AgentToolPreflightPanel
+          agentId={agentId}
+          configuredSlugs={agent.composioToolkitSlugs ?? []}
+        />
 
         {/* Current state */}
         <section className="rounded-md border border-border">

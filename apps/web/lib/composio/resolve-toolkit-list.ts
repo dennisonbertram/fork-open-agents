@@ -14,12 +14,7 @@ export type ToolkitListCacheRow = {
   composioSessionId: string;
 };
 
-type ComposioClientLike = {
-  create: (
-    userId: string,
-    config: ToolRouterCreateSessionConfig,
-  ) => Promise<{ sessionId: string; tools: () => Promise<ToolSet> }>;
-  use: (sessionId: string) => Promise<{ tools: () => Promise<ToolSet> }>;
+export type ComposioToolkitMetadataClientLike = {
   /**
    * Toolkit metadata lookup, used to detect toolkits that don't require a
    * connected account (finding G9) so they are never falsely reported as
@@ -37,6 +32,14 @@ type ComposioClientLike = {
     get: (slug: string) => Promise<{ authConfigDetails?: unknown }>;
   };
 };
+
+type ComposioClientLike = {
+  create: (
+    userId: string,
+    config: ToolRouterCreateSessionConfig,
+  ) => Promise<{ sessionId: string; tools: () => Promise<ToolSet> }>;
+  use: (sessionId: string) => Promise<{ tools: () => Promise<ToolSet> }>;
+} & ComposioToolkitMetadataClientLike;
 
 const NO_AUTH_SCHEME = "NO_AUTH";
 
@@ -104,9 +107,15 @@ export type ResolveComposioToolsForToolkitListParams = {
  * Defensive: if the toolkit metadata lookup is unavailable or fails, assume
  * auth IS required (today's behavior) rather than silently hiding a real
  * disconnected-toolkit warning.
+ *
+ * Exported (#802, Codex review on PR #849) so callers outside this file —
+ * currently the agent tool preflight (lib/background-agents/tool-preflight.ts)
+ * — can apply the IDENTICAL no-auth exclusion the real bg-run path uses,
+ * instead of re-deriving their own (and silently drifting from this one).
+ * This file remains the canonical source for the check.
  */
-async function toolkitRequiresAuth(
-  composio: ComposioClientLike,
+export async function toolkitRequiresAuth(
+  composio: ComposioToolkitMetadataClientLike,
   slug: string,
 ): Promise<boolean> {
   if (!composio.toolkits) {
