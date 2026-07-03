@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   getManagedRuntimeProfile,
+  getManagedRuntimeSnapshotCommands,
   isManagedRuntimeProfileId,
   listManagedRuntimeProfiles,
   normalizeManagedRuntimeProfileId,
@@ -48,6 +49,26 @@ describe("managed runtime profiles", () => {
     expect(isManagedRuntimeProfileId("unknown-profile")).toBe(false);
     expect(normalizeManagedRuntimeProfileId("unknown-profile")).toBe(
       "web-bun-agent-browser",
+    );
+  });
+
+  test("#811 (D3): setupScript is removed from the profile contract — setupCommands is the one source of truth", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    expect("setupScript" in profile).toBe(false);
+  });
+
+  test("#811 (D3): snapshot commands derive from setupCommands, not a removed setupScript", () => {
+    const profile = getManagedRuntimeProfile("web-bun-agent-browser");
+    const snapshotCommands = getManagedRuntimeSnapshotCommands(profile);
+
+    for (const setupCommand of profile.setupCommands) {
+      expect(snapshotCommands).toContain(setupCommand.command);
+    }
+    for (const verificationCommand of profile.verificationCommands) {
+      expect(snapshotCommands).toContain(verificationCommand.command);
+    }
+    expect(snapshotCommands).toHaveLength(
+      profile.setupCommands.length + profile.verificationCommands.length,
     );
   });
 });

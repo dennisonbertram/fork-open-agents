@@ -32,6 +32,7 @@ export function useGitHubConnectionStatus(
     reason: data?.reason ?? null,
     hasInstallations: data?.hasInstallations ?? false,
     reconnectRequired: data?.status === "reconnect_required",
+    syncDegraded: data?.status === "sync_degraded",
     isLoading: shouldFetch && isLoading,
     error: error instanceof Error ? error.message : null,
     refresh: mutate,

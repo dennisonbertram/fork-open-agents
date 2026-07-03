@@ -11,14 +11,13 @@ mock.module("server-only", () => ({}));
 
 // ---- store mocks ----
 const dbUpdate = mock(async () => undefined);
+const dbSet = mock((_values: unknown) => ({ where: dbUpdate }));
 const recordEventMock = mock(async () => undefined);
 
 mock.module("@/lib/db/client", () => ({
   db: {
     update: mock(() => ({
-      set: mock(() => ({
-        where: dbUpdate,
-      })),
+      set: dbSet,
     })),
   },
 }));
@@ -50,6 +49,7 @@ describe("persistRunSummary", () => {
       blocked: [],
       artifacts: [],
       next: [],
+      warnings: [],
     };
 
     await expect(
@@ -57,6 +57,36 @@ describe("persistRunSummary", () => {
     ).resolves.toBeUndefined();
 
     expect(dbUpdate).toHaveBeenCalled();
+  });
+
+  // #798: warnings[] must round-trip through persistence like every other
+  // summary array — this is a plain jsonb field (RunSummary.warnings), not a
+  // new column, so persisting it is just passing it through unchanged.
+  test("REGRESSION-004 (#798): warnings[] round-trips through persistRunSummary without data loss", async () => {
+    const summary = {
+      headline: "Run succeeded",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: ["Composio was off: no toolkit slugs were selected."],
+    };
+
+    await expect(
+      persistRunSummary({ runId: "run-1", summary }),
+    ).resolves.toBeUndefined();
+
+    // Assert the exact value passed to db.update(...).set(...) — this is
+    // what would silently drop `warnings` if the persist layer whitelisted
+    // fields instead of passing the summary through as-is.
+    expect(dbSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resultSummary: expect.objectContaining({
+          warnings: ["Composio was off: no toolkit slugs were selected."],
+        }),
+      }),
+    );
   });
 });
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { needsOnboarding } from "@/lib/onboarding";
 import { GetStartedFlow } from "./get-started-flow";
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 interface GetStartedPageProps {
   searchParams: Promise<{
     step?: string | string[];
+    next?: string | string[];
   }>;
 }
 
@@ -35,11 +37,12 @@ export default async function GetStartedPage({
 
   const resolvedSearchParams = await searchParams;
   const requestedStep = getSingleSearchParam(resolvedSearchParams.step);
+  const requestedNext = getSingleSearchParam(resolvedSearchParams.next);
 
   const onboarding = await needsOnboarding(session.user.id);
 
   if (!onboarding && requestedStep !== "github") {
-    redirect("/sessions");
+    redirect(sanitizeInternalRedirect(requestedNext, "/sessions"));
   }
 
   return <GetStartedFlow />;

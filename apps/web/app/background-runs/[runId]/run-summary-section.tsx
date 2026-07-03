@@ -50,6 +50,10 @@ function ArtifactItem({ artifact }: { artifact: RunSummaryArtifact }) {
 }
 
 export function RunSummarySection({ summary }: RunSummarySectionProps) {
+  // Defensive default: rows persisted before #798 shipped may not have a
+  // `warnings` key in their stored JSON at all (jsonb, no migration/backfill).
+  const warnings = summary.warnings ?? [];
+
   return (
     <section className="rounded-md border border-border">
       <div className="border-b border-border px-4 py-3">
@@ -59,6 +63,23 @@ export function RunSummarySection({ summary }: RunSummarySectionProps) {
         <p className="font-medium text-sm">{summary.headline}</p>
         <SummaryList label="Checked" items={summary.checked} />
         <SummaryList label="Changed" items={summary.changed} />
+        {warnings.length > 0 && (
+          <div>
+            <p className="text-[10px] font-medium uppercase text-muted-foreground">
+              Warnings
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {warnings.map((item, i) => (
+                <li
+                  key={i}
+                  className="text-sm text-amber-700 dark:text-amber-300"
+                >
+                  {item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {summary.blocked.length > 0 && (
           <div>
             <p className="text-[10px] font-medium uppercase text-muted-foreground">

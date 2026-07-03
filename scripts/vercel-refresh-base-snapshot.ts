@@ -9,11 +9,8 @@
  *   bun run scripts/vercel-refresh-base-snapshot.ts --from snap_123 --command "apt-get install -y ripgrep"
  */
 
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import {
   DEFAULT_BASE_SNAPSHOT_COMMAND_TIMEOUT_MS,
-  type RefreshBaseSnapshotFile,
   refreshBaseSnapshot,
 } from "../packages/sandbox/vercel";
 import {
@@ -177,28 +174,12 @@ async function main() {
           parsed.managedRuntimeProfileId ?? DEFAULT_MANAGED_RUNTIME_PROFILE_ID,
         )
       : null;
-  const profileSetupFiles: RefreshBaseSnapshotFile[] =
-    managedRuntimeProfile?.setupScript
-      ? [
-          {
-            path: managedRuntimeProfile.setupScript.sandboxPath,
-            content: readFileSync(
-              path.join(
-                process.cwd(),
-                managedRuntimeProfile.setupScript.repoPath,
-              ),
-              "utf-8",
-            ),
-            executable: true,
-          },
-        ]
-      : [];
 
   const result = await refreshBaseSnapshot({
     baseSnapshotId: parsed.fromStandardRuntime
       ? undefined
       : (parsed.baseSnapshotId ?? DEFAULT_SANDBOX_BASE_SNAPSHOT_ID),
-    files: profileSetupFiles,
+    files: [],
     commands: [
       ...(managedRuntimeProfile
         ? getManagedRuntimeSnapshotCommands(managedRuntimeProfile)

@@ -61,3 +61,55 @@ export function addGitHubStepParamIfGetStarted(url: URL): void {
     url.searchParams.set("step", "github");
   }
 }
+
+const GITHUB_CONNECT_SUCCESS_STATUSES = new Set<GitHubConnectStatus>([
+  "account_connected",
+  "app_installed",
+]);
+
+/**
+ * Resolves the final redirect target for a GitHub connect/install return
+ * (`post-link`, `install`, `callback` routes), given the resolved
+ * `github=<status>` value that route is about to emit.
+ *
+ * Non-success statuses (anything other than `account_connected` /
+ * `app_installed`) always land on `/get-started` carrying `github=<status>`,
+ * `step=github`, and `next=<sanitizedNext>` — regardless of what the caller's
+ * own next/redirect target was — so the get-started client can render the
+ * status notice. Without this, a failure/pending status returning to a
+ * non-/get-started target (e.g. bare `/sessions`) would have its status
+ * silently dropped by the `/sessions` onboarding gate, which cannot read
+ * query params (see PR #829 comment 3516151659).
+ *
+ * Success statuses keep the existing behavior: redirect to the sanitized
+ * `next` target with the status appended (plus `step=github` if that next
+ * target happens to be `/get-started`).
+ */
+export function resolveGitHubReturnTarget(
+  status: GitHubConnectStatus | string,
+  sanitizedNext: string,
+  requestUrl: string,
+  options: { missingInstallationId?: boolean } = {},
+): URL {
+  const isSuccess =
+    isKnownGitHubConnectStatus(status) &&
+    GITHUB_CONNECT_SUCCESS_STATUSES.has(status);
+
+  const targetUrl = isSuccess
+    ? new URL(sanitizedNext, requestUrl)
+    : new URL("/get-started", requestUrl);
+
+  targetUrl.searchParams.set("github", status);
+
+  if (!isSuccess) {
+    targetUrl.searchParams.set("next", sanitizedNext);
+  }
+
+  if (options.missingInstallationId) {
+    targetUrl.searchParams.set("missing_installation_id", "1");
+  }
+
+  addGitHubStepParamIfGetStarted(targetUrl);
+
+  return targetUrl;
+}
