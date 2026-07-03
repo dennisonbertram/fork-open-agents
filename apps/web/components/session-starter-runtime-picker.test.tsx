@@ -132,4 +132,22 @@ describe("SessionStarter runtime picker (MR-4/#812)", () => {
       );
     expect(hasOldDiscardLink).toBe(false);
   });
+
+  // Codex #834 P2 regression: handleSubmit must run its runtime selection
+  // through getRuntimeSelectionForSubmit before calling onSubmit. If this
+  // wiring is ever removed while the pure helper stays correct in isolation
+  // (see session-starter-helpers.test.ts), the onSubmit payload would go
+  // back to always sending the unresolved "classic" fallback as an explicit
+  // runtimeMode, silently overriding a saved managed_runtime repo default.
+  test("Codex #834 P2: handleSubmit routes the runtime selection through getRuntimeSelectionForSubmit before calling onSubmit", () => {
+    const source = readFileSync(
+      resolve(import.meta.dir, "session-starter.tsx"),
+      "utf8",
+    );
+
+    expect(source).toContain("getRuntimeSelectionForSubmit(");
+    // The helper's result must gate whether runtimeMode/managedRuntimeProfileId
+    // survive on the object actually passed to onSubmit.
+    expect(source).toMatch(/runtimeSelectionForSubmit/);
+  });
 });
