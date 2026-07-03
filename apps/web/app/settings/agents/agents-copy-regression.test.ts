@@ -22,4 +22,12 @@ describe("agents-copy — regression", () => {
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).toContain("Settings");
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).toContain("Composio");
   });
+
+  // Codex P2-1 on PR #851: catches a regression back to "assign one here" —
+  // this page's editor (agents-section.tsx) has no profile-selector control,
+  // only a toolkit picker, so the hint must not claim assignment happens
+  // "here".
+  test("REGRESSION-003 hint does not point at a nonexistent profile picker on this page", () => {
+    expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).not.toMatch(/assign one here/i);
+  });
 });

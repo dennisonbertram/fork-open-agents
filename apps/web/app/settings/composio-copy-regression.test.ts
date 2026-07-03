@@ -26,6 +26,16 @@ describe("composio copy — regression", () => {
     );
   });
 
+  // Codex P2-2 on PR #851: catches a regression back to the overpromise that
+  // background agents/loops "use those tools automatically" via a profile.
+  // Verified false against executor.ts (agent.composioToolkitSlugs only) and
+  // agent-step.ts (node.composioToolkitSlugs only) — profiles are chat-only.
+  test("REGRESSION-005 tool-profiles description does not claim background agents/loops consume a profile automatically", () => {
+    expect(TOOL_PROFILES_DESCRIPTION).not.toMatch(
+      /background agents and loops use those tools automatically/i,
+    );
+  });
+
   test("REGRESSION-002 empty tool-profiles state is not the bare old one-liner", () => {
     expect(EMPTY_TOOL_PROFILES_TEXT).not.toBe(
       "No tool profiles yet. Create one to bundle tools for an agent.",
