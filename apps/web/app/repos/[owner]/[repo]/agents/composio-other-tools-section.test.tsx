@@ -165,4 +165,22 @@ describe("ComposioOtherToolsSection", () => {
     expect(html).toContain("Composio");
     expect(html).not.toContain("Background agents");
   });
+
+  // #805 (epic #796 T9): this section must ALSO link to the new per-repo
+  // Tools surface so a user blocked by repo policy here can find why —
+  // distinct from the /settings/composio account-connection link above.
+  test("#805: includes a link to the repo's per-repo Tools settings surface", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    expect(html).toContain("/settings/repositories/acme/widgets");
+  });
 });
