@@ -55,6 +55,21 @@ describe("Composio errorKind 7-value taxonomy (#800)", () => {
     );
   });
 
+  test("REG-799: classifies the chat composio.repo_policy.blocked event's multi-slug, reason-suffixed summary format (post-review fix)", () => {
+    // Exact summary format emitted by apps/web/app/workflows/chat.ts's
+    // composio.repo_policy.blocked event (#799 post-review). Proves the
+    // substring classifier still matches when the message names multiple
+    // slugs with their per-slug reason in parens, not just the single-slug
+    // form the profile-path ComposioSetupError uses.
+    const error = new Error(
+      "Blocked toolkit for this repository: gmail (repo_policy_blocked), slack (not_in_repo_allowlist).",
+    );
+    expect(getComposioErrorKind(error)).toBe("composio_repo_policy_blocked");
+    expect(getComposioUserFacingError(error)).toBe(
+      "Blocked toolkit for this repository: gmail (repo_policy_blocked), slack (not_in_repo_allowlist).",
+    );
+  });
+
   test("classifies not-connected (never connected) toolkits", () => {
     const error = new Error("No connected account for toolkit gmail.");
     expect(getComposioErrorKind(error)).toBe("composio_not_connected");
