@@ -96,6 +96,14 @@ mock.module("@/lib/repo-settings/resolve-repo-defaults", () => ({
   mergeRepoDefaults: () => mockResolvedRepoDefaults,
 }));
 
+// MR-4 (#812): the real module has `import "server-only"` and would throw
+// under bun:test's client-module guard if left unmocked. All ids used in
+// this file's fixtures are treated as known/owned so existing P4 precedence
+// assertions are unaffected by the new reference check.
+mock.module("@/lib/db/managed-runtime-saved-profiles", () => ({
+  isKnownManagedRuntimeProfileReference: async () => true,
+}));
+
 mock.module("@/lib/db/vercel-project-links", () => ({
   getVercelProjectLinkByRepo: async () => null,
   upsertVercelProjectLink: async () => undefined,
