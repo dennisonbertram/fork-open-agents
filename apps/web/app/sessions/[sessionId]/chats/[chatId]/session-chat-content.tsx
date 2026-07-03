@@ -192,6 +192,7 @@ import {
   RuntimeModeSelectorCompact,
   getRuntimeModeSummary,
 } from "./runtime-mode-selector-compact";
+import { RuntimeStatusBadge } from "./runtime-status-badge";
 import { WorkflowPickerCompact } from "./workflow-picker-compact";
 import { SessionHeaderPrActions } from "./session-header-pr-actions";
 import {
@@ -4991,6 +4992,7 @@ export function SessionChatContent({
                                   },
                                 );
                               }}
+                              onOpenInspector={openRuntimePanel}
                               onRuntimeModeChange={(value) => {
                                 void updateRuntimeMode(value).catch((error) => {
                                   console.error(
@@ -5003,6 +5005,13 @@ export function SessionChatContent({
                               runtimeMode={session.runtimeMode}
                               selectedProfile={selectedManagedRuntimeProfile}
                               sessionId={session.id}
+                            />
+                            <RuntimeStatusBadge
+                              latestProfileRun={
+                                observabilityData?.profileRuns[0] ?? null
+                              }
+                              onOpenInspector={openRuntimePanel}
+                              runtimeMode={session.runtimeMode}
                             />
                             <WorkflowPickerCompact
                               disabled={isArchived || isChatInFlight}
