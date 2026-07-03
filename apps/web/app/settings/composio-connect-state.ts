@@ -75,3 +75,49 @@ export function deriveConnectPollOutcome(
   }
   return "pending";
 }
+
+/**
+ * All possible `useComposioConnect` connect-state statuses, for
+ * `isTerminalConnectFailure`'s exhaustive parameter type.
+ */
+export type ConnectStateStatus =
+  | "idle"
+  | "connecting"
+  | "pending"
+  | "confirmed"
+  | "timed_out"
+  | "blocked"
+  | "failed_to_start";
+
+/** The subset of ConnectStateStatus that isTerminalConnectFailure narrows to. */
+export type TerminalConnectFailureStatus =
+  | "blocked"
+  | "timed_out"
+  | "failed_to_start";
+
+/**
+ * A "terminal failure" is a connect-state status the poll/popup flow will
+ * never move on from by itself — the user must be given an actionable way
+ * to try again. Used by the catalog/picker UI to decide whether a
+ * Connect/Reconnect affordance must be restored alongside the failure copy
+ * (Codex P2-2 on PR #847): previously, `blocked`/`timed_out`/`failed_to_start`
+ * rendered only explanatory text with no button to click, even though the
+ * copy said "try again".
+ *
+ * `connecting`/`pending` are deliberately NOT terminal — a connect attempt
+ * is genuinely in flight for those, and offering a second Connect button
+ * would let the user fire an overlapping duplicate attempt.
+ *
+ * Declared as a type predicate so callers get automatic TS narrowing (e.g.
+ * `ConnectProgress`'s prop type, which does not accept "confirmed"/"idle")
+ * instead of needing an unsafe cast at the call site.
+ */
+export function isTerminalConnectFailure(
+  status: ConnectStateStatus,
+): status is TerminalConnectFailureStatus {
+  return (
+    status === "blocked" ||
+    status === "timed_out" ||
+    status === "failed_to_start"
+  );
+}

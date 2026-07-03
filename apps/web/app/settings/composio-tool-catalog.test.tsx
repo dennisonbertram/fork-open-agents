@@ -21,6 +21,11 @@
  * BT-801-022: the component's source no longer calls `toast.success` for the
  *             connect flow (C1 — replaced by the honest pending/confirmed
  *             state from useComposioConnect).
+ * BT-801-P2-2-006: a terminal connect failure (blocked) for a specific
+ *                  toolkit slug still renders that card's Connect button
+ *                  (not swallowed by the failure-copy-only branch) — proves
+ *                  the Codex P2-2 fix at the rendered-markup level, not just
+ *                  a source-string check.
  */
 import { describe, expect, mock, test } from "bun:test";
 import { readFileSync } from "node:fs";
@@ -65,9 +70,13 @@ mock.module("sonner", () => ({
   },
 }));
 
+let mockConnectState: { status: string; slug?: string; message?: string } = {
+  status: "idle",
+};
+
 mock.module("./use-composio-connect", () => ({
   useComposioConnect: () => ({
-    connectState: { status: "idle" },
+    connectState: mockConnectState,
     connect: async () => undefined,
   }),
 }));
@@ -81,11 +90,62 @@ describe("ComposioToolCatalog — visible name text (W5)", () => {
       "/api/composio/connected-accounts": { accounts: [] },
     };
     swrErrors = {};
+    mockConnectState = { status: "idle" };
 
     const { ComposioToolCatalog } = await modulePromise;
     const html = renderToStaticMarkup(<ComposioToolCatalog />);
 
     expect(html).toContain(">Slack<");
+  });
+});
+
+describe("ComposioToolCatalog — terminal connect failure restores the Connect button (P2-2)", () => {
+  test("BT-801-P2-2-006: a 'blocked' connect state for slack still renders a clickable Connect button on slack's card", async () => {
+    swrResponses = {
+      "/api/composio/toolkits": { toolkits: [SLACK] },
+      "/api/composio/connected-accounts": { accounts: [] },
+    };
+    swrErrors = {};
+    mockConnectState = { status: "blocked", slug: "slack" };
+
+    const { ComposioToolCatalog } = await modulePromise;
+    const html = renderToStaticMarkup(<ComposioToolCatalog />);
+
+    // The failure copy is still shown...
+    expect(html).toContain("Your browser blocked the connect window");
+    // ...AND the Connect button is restored, not swallowed by the failure
+    // branch (the pre-fix bug: only the copy rendered, no way to retry).
+    expect(html).toContain(">Connect<");
+  });
+
+  test("BT-801-P2-2-007: a 'timed_out' connect state for slack still renders a clickable Connect button", async () => {
+    swrResponses = {
+      "/api/composio/toolkits": { toolkits: [SLACK] },
+      "/api/composio/connected-accounts": { accounts: [] },
+    };
+    swrErrors = {};
+    mockConnectState = { status: "timed_out", slug: "slack" };
+
+    const { ComposioToolCatalog } = await modulePromise;
+    const html = renderToStaticMarkup(<ComposioToolCatalog />);
+
+    expect(html).toContain("Still waiting to confirm");
+    expect(html).toContain(">Connect<");
+  });
+
+  test("a 'pending' (in-flight) connect state does NOT render a duplicate Connect button", async () => {
+    swrResponses = {
+      "/api/composio/toolkits": { toolkits: [SLACK] },
+      "/api/composio/connected-accounts": { accounts: [] },
+    };
+    swrErrors = {};
+    mockConnectState = { status: "pending", slug: "slack" };
+
+    const { ComposioToolCatalog } = await modulePromise;
+    const html = renderToStaticMarkup(<ComposioToolCatalog />);
+
+    expect(html).toContain("Waiting for you to finish connecting");
+    expect(html).not.toContain(">Connect<");
   });
 });
 
@@ -100,6 +160,7 @@ describe("ComposioToolCatalog — catalog error/retry state (C2)", () => {
         "Failed to load /api/composio/toolkits",
       ),
     };
+    mockConnectState = { status: "idle" };
 
     const { ComposioToolCatalog } = await modulePromise;
     const html = renderToStaticMarkup(<ComposioToolCatalog />);

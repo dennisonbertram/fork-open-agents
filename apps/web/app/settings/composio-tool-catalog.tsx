@@ -17,6 +17,7 @@ import {
   getToolkitConnectionState,
   type ComposioToolkitConnectionState,
 } from "./composio-connection-state";
+import { isTerminalConnectFailure } from "./composio-connect-state";
 import { useComposioConnect } from "./use-composio-connect";
 import { useComposioToolkitsCatalog } from "./use-composio-toolkits-catalog";
 
@@ -70,18 +71,21 @@ function CatalogErrorState({ onRetry }: { onRetry: () => void }) {
 
 /**
  * Honest connect-progress copy shown under a card while a connect attempt is
- * in flight for that toolkit (C1/W7). Renders nothing once idle/confirmed so
- * the card falls back to its normal connection-state badge/CTA.
+ * in flight for that toolkit, or after it reaches a terminal failure
+ * (blocked / timed_out / failed_to_start — C1/W7/P2-2). The caller (the
+ * ToolkitCard CTA area) is responsible for only ever passing "idle" or
+ * "confirmed" a `null` connectState instead — this component's own
+ * fallback branch for those statuses exists purely as a defensive no-render,
+ * not an expected call path.
  */
 function ConnectProgress({
   connectState,
 }: {
-  connectState:
-    | { status: "connecting" | "pending"; slug: string }
-    | { status: "blocked"; slug: string }
-    | { status: "timed_out"; slug: string }
-    | { status: "failed_to_start"; slug: string; message: string };
+  connectState: ConnectStateForSlug;
 }) {
+  if (connectState.status === "confirmed") {
+    return null;
+  }
   if (connectState.status === "blocked") {
     return (
       <p className="text-xs text-amber-600 dark:text-amber-400">
@@ -163,69 +167,81 @@ function ToolkitCard({
       ) : null}
 
       <div className="mt-auto pt-1 space-y-1">
+        {/* Terminal connect failures (blocked / timed_out / failed_to_start)
+            show their explanatory copy AND fall through to the normal
+            connection-state CTA below, so "try again" always has an
+            actionable Connect/Reconnect button to click (Codex P2-2 on PR
+            #847) — only a genuinely in-flight attempt (connecting/pending)
+            suppresses the CTA entirely, to avoid a duplicate overlapping
+            connect click. */}
         {connectProgress &&
         (connectProgress.status === "connecting" ||
-          connectProgress.status === "pending" ||
-          connectProgress.status === "blocked" ||
-          connectProgress.status === "timed_out" ||
-          connectProgress.status === "failed_to_start") ? (
+          connectProgress.status === "pending") ? (
           <ConnectProgress connectState={connectProgress} />
-        ) : connectionState === "active" ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
-            <CheckCircle2 className="h-3 w-3" />
-            Connected
-          </span>
-        ) : connectionState === "expired" ? (
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
-              <AlertTriangle className="h-3 w-3" />
-              Expired — reconnect
-            </span>
-            {managedAuth ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void onConnect(slug)}
-                disabled={isConnecting}
-                className="h-7 text-xs"
-              >
-                Reconnect
-              </Button>
-            ) : null}
-          </div>
-        ) : connectionState === "unavailable" ? (
-          <p className="text-xs text-muted-foreground">
-            Can&apos;t check right now
-          </p>
-        ) : noAuth ? (
-          <p className="text-xs text-muted-foreground">No sign-in needed</p>
-        ) : managedAuth ? (
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void onConnect(slug)}
-              disabled={isConnecting}
-              className="h-7 text-xs"
-            >
-              Connect
-            </Button>
-            <p className="text-[10px] leading-tight text-muted-foreground">
-              Opens an external site to connect — come back to this tab
-              afterward.
-            </p>
-          </>
         ) : (
-          <a
-            href={COMPOSIO_DASHBOARD_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
-          >
-            Set up in Composio
-          </a>
+          <>
+            {connectProgress &&
+            isTerminalConnectFailure(connectProgress.status) ? (
+              <ConnectProgress connectState={connectProgress} />
+            ) : null}
+            {connectionState === "active" ? (
+              <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
+                <CheckCircle2 className="h-3 w-3" />
+                Connected
+              </span>
+            ) : connectionState === "expired" ? (
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+                  <AlertTriangle className="h-3 w-3" />
+                  Expired — reconnect
+                </span>
+                {managedAuth ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void onConnect(slug)}
+                    disabled={isConnecting}
+                    className="h-7 text-xs"
+                  >
+                    Reconnect
+                  </Button>
+                ) : null}
+              </div>
+            ) : connectionState === "unavailable" ? (
+              <p className="text-xs text-muted-foreground">
+                Can&apos;t check right now
+              </p>
+            ) : noAuth ? (
+              <p className="text-xs text-muted-foreground">No sign-in needed</p>
+            ) : managedAuth ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void onConnect(slug)}
+                  disabled={isConnecting}
+                  className="h-7 text-xs"
+                >
+                  Connect
+                </Button>
+                <p className="text-[10px] leading-tight text-muted-foreground">
+                  Opens an external site to connect — come back to this tab
+                  afterward.
+                </p>
+              </>
+            ) : (
+              <a
+                href={COMPOSIO_DASHBOARD_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+              >
+                Set up in Composio
+              </a>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -305,8 +321,11 @@ function ToolkitGroup({
 export function ComposioToolCatalog() {
   const [query, setQuery] = useState("");
 
-  const { loadState: toolkitsLoadState, error: toolkitsError } =
-    useComposioToolkitsCatalog();
+  const {
+    loadState: toolkitsLoadState,
+    error: toolkitsError,
+    mutate: mutateToolkits,
+  } = useComposioToolkitsCatalog();
 
   const {
     data: accountsData,
@@ -340,7 +359,16 @@ export function ComposioToolCatalog() {
   if (toolkitsLoadState.status === "error") {
     return (
       <div className="space-y-3">
-        <CatalogErrorState onRetry={() => void mutateAccounts()} />
+        <CatalogErrorState
+          onRetry={() => {
+            // Retry must revalidate the fetch that actually failed
+            // (the toolkits catalog) — also revalidating connected-accounts
+            // is reasonable since both feed this same section, but it must
+            // never be the ONLY thing retry does (Codex P2-1 on PR #847).
+            void mutateToolkits();
+            void mutateAccounts();
+          }}
+        />
       </div>
     );
   }

@@ -77,11 +77,15 @@ describe("regression: composio-tool-catalog.tsx's Retry button targets the toolk
     // from useComposioToolkitsCatalog and calls it from onRetry — proving
     // the retry path is no longer wired exclusively to mutateAccounts.
     expect(source).toContain("mutateToolkits");
-    const onRetryLine = source
-      .split("\n")
-      .find((line) => line.includes("onRetry="));
-    expect(onRetryLine).toBeDefined();
-    expect(onRetryLine).toContain("mutateToolkits");
+
+    // onRetry's JSX prop opens a multi-line arrow function body, so scan a
+    // window of lines starting at the `onRetry=` line rather than requiring
+    // the mutate call on that exact line.
+    const lines = source.split("\n");
+    const onRetryIndex = lines.findIndex((line) => line.includes("onRetry="));
+    expect(onRetryIndex).toBeGreaterThan(-1);
+    const onRetryBody = lines.slice(onRetryIndex, onRetryIndex + 8).join("\n");
+    expect(onRetryBody).toContain("mutateToolkits");
   });
 });
 

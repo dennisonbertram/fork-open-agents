@@ -66,7 +66,7 @@ export function deriveCatalogLoadState(
  * own `useSWR` call, so their loading/error handling can't drift apart.
  */
 export function useComposioToolkitsCatalog() {
-  const { data, error, isLoading } = useSWR<ComposioToolkitsResponse>(
+  const { data, error, isLoading, mutate } = useSWR<ComposioToolkitsResponse>(
     "/api/composio/toolkits",
     jsonFetcher<ComposioToolkitsResponse>,
   );
@@ -76,5 +76,12 @@ export function useComposioToolkitsCatalog() {
     data,
     error,
     isLoading,
+    /**
+     * Revalidates the toolkits catalog itself — the actual fetch a caller's
+     * "Retry" action needs to re-run when the catalog failed to load (Codex
+     * P2-1 on PR #847: a retry button that only revalidated
+     * connected-accounts left the real toolkits error on screen).
+     */
+    mutate,
   };
 }
