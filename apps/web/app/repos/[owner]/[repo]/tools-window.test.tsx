@@ -10,6 +10,12 @@
  *   allow/block toggle implying the tool would work if unblocked.
  *
  * #805, epic #796 T9 — red first: ToolsWindow does not exist yet.
+ *
+ * Codex P2-2 (PR #848): an expired toolkit must render distinctly — never
+ * merged into an "available"-looking chip — with a reconnect action, not a
+ * bare "Connect" link (the account already exists; it needs reconnecting).
+ * BT-TW-006: expired status renders "Expired — reconnect" copy and a
+ *   Reconnect link, distinct from the healthy-looking chips.
  */
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -99,5 +105,26 @@ describe("ToolsWindow", () => {
       <ToolsWindow repoOwner="acme" repoName="widgets" toolStatuses={[]} />,
     );
     expect(html.toLowerCase()).toContain("connect");
+  });
+
+  test("BT-TW-006: expired toolkit shows reconnect copy and a distinct reconnect action link", () => {
+    const html = renderToStaticMarkup(
+      <ToolsWindow
+        repoOwner="acme"
+        repoName="widgets"
+        toolStatuses={[
+          { slug: "asana", name: "Asana", status: "expired" },
+          ...makeStatuses(),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("Asana");
+    expect(html.toLowerCase()).toContain("expired");
+    // A dedicated reconnect action link, distinct from the not-connected
+    // "Connect" link elsewhere on the page.
+    expect(html).toMatch(
+      /<a[^>]*href="\/settings\/composio"[^>]*>Reconnect<\/a>/,
+    );
   });
 });

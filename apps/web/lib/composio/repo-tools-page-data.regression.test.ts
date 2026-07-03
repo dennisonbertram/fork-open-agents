@@ -26,12 +26,21 @@
  *   returns an empty list without calling applyRepoToolkitPolicy at all —
  *   guards against an accidental policy call with an empty requestedSlugs
  *   array causing spurious DB reads.
+ *
+ * Codex P2-3 (PR #848): the catalog's noAuth flag must be threaded through
+ * the loader into the derivation call, not discarded at this call site.
+ * REG-RTPD-006: a no-auth catalog toolkit with zero connected accounts does
+ *   NOT render not_connected — it renders per the normal policy/allowlist
+ *   rules (default_on/allowed/selected), proving the loader actually wires
+ *   noAuth through end to end (distinct from the pure-function-level test
+ *   in repo-tools-effective-status.test.ts, which never touches this
+ *   loader's catalog-to-derivation wiring).
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
-type CatalogToolkit = { slug: string; name: string };
+type CatalogToolkit = { slug: string; name: string; noAuth?: boolean };
 type RepoSettingsValues = {
   selectedToolkitSlugs: string[] | null;
   blockedToolkitSlugs: string[];
@@ -211,5 +220,26 @@ describe("REGRESSION: getRepoToolsEffectiveStatuses loader wiring", () => {
 
     expect(result).toEqual([]);
     expect(applyRepoToolkitPolicyCallCount).toBe(0);
+  });
+
+  test("REG-RTPD-006: a no-auth catalog toolkit with zero connected accounts is not not_connected", async () => {
+    catalogToolkits = [
+      { slug: "github", name: "GitHub" },
+      { slug: "publicapi", name: "Public API", noAuth: true },
+    ];
+    connectedAccounts = [{ toolkitSlug: "github", status: "ACTIVE" }];
+    repoSettingsValues = null;
+
+    const { getRepoToolsEffectiveStatuses } = await modulePromise;
+
+    const result = await getRepoToolsEffectiveStatuses({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "widgets",
+    });
+
+    const publicapi = result.find((r) => r.slug === "publicapi");
+    expect(publicapi).toBeDefined();
+    expect(publicapi?.status).not.toBe("not_connected");
   });
 });

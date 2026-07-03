@@ -7,6 +7,17 @@
  * BT-SECT-006: danger-zone destructive button is disabled until typed confirmation matches
  * BT-SECT-007: integration rows render connected vs not-connected state
  * BT-SECT-008: Composio link points to /settings/composio
+ *
+ * Codex P2-1 (PR #848): "Manage tool access" on the repo dashboard's Tools
+ * tab links to this page, but this page previously only rendered read-only
+ * effective-status chips — no editor, no PATCH writer. That breaks #805's
+ * protected path ("block Gmail for exactly one repo and SEE it enforced —
+ * from the repo page"): a user can see status here but cannot change it.
+ * BT-SECT-011: this page mounts the actual policy EDITOR (the shared
+ *   ComposioWorkspaceSettingsPanel component, the same PATCH-wired core used
+ *   by the sessions workspace panel), not just a read-only list.
+ * BT-SECT-012: the editor is given this page's repoOwner/repoName (not the
+ *   session-workspace's nullable pair) so it targets the correct repo.
  */
 import { describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -28,6 +39,48 @@ mock.module("@open-agents/sandbox/managed-runtime-profiles", () => ({
     },
   ],
   isManagedRuntimeProfileId: (id: unknown) => id === "web-bun-agent-browser",
+}));
+
+const refresh = mock(() => undefined);
+mock.module("next/navigation", () => ({
+  useRouter: () => ({ refresh }),
+}));
+
+// Mock the shared editor panel (has its own SWR/fetch dependencies covered
+// by composio-workspace-settings-panel.test.tsx) so this file only asserts
+// that RepoSettingsSection mounts it with the right props. Captures the
+// onSaved callback via a set/get pair (rather than a directly-assigned
+// field, which TS's control-flow narrowing collapses to `never` across the
+// reset-then-reassign pattern in the test below) so we can invoke it
+// directly — the panel's own save flow is not observable under
+// renderToStaticMarkup (no DOM/useEffect), but the callback ITSELF is a
+// plain prop we can call synchronously here.
+let onSavedRef: (() => void) | undefined;
+function setOnSaved(fn: (() => void) | undefined) {
+  onSavedRef = fn;
+}
+function getOnSaved(): (() => void) | undefined {
+  return onSavedRef;
+}
+mock.module("@/components/composio-workspace-settings-panel", () => ({
+  ComposioWorkspaceSettingsPanel: ({
+    repoOwner,
+    repoName,
+    onSaved,
+  }: {
+    repoOwner: string | null;
+    repoName: string | null;
+    onSaved?: () => void;
+  }) => {
+    setOnSaved(onSaved);
+    return (
+      <div
+        data-testid="composio-workspace-settings-panel"
+        data-repo-owner={repoOwner ?? ""}
+        data-repo-name={repoName ?? ""}
+      />
+    );
+  },
 }));
 
 // Import after mocks
@@ -241,6 +294,41 @@ describe("RepoSettingsSection render", () => {
     expect(html.toLowerCase()).toContain("not connected");
     // The bare "Manage tools" link must still exist alongside the list
     expect(html).toContain("/settings/composio");
+  });
+
+  // Codex P2-1 (PR #848): the page must mount the ACTUAL policy editor, not
+  // just a status list. Reuses the shared ComposioWorkspaceSettingsPanel
+  // (the same PATCH-wired core already used by the sessions workspace
+  // panel) rather than a second implementation.
+  test("BT-SECT-011: mounts the shared ComposioWorkspaceSettingsPanel editor", async () => {
+    const { RepoSettingsSection } = await sectionModule;
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
+
+    expect(html).toContain("composio-workspace-settings-panel");
+  });
+
+  test("BT-SECT-012: the editor panel receives this page's repoOwner/repoName", async () => {
+    const { RepoSettingsSection } = await sectionModule;
+    const html = renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
+
+    expect(html).toContain('data-repo-owner="acme"');
+    expect(html).toContain('data-repo-name="web"');
+  });
+
+  // Codex P2-1: "make the effective-status chips refresh after save" — the
+  // section wires the editor's onSaved callback to router.refresh() so the
+  // server-rendered toolStatuses prop re-fetches after a successful save,
+  // without requiring a full page reload.
+  test("BT-SECT-013: passes an onSaved callback that triggers router.refresh()", async () => {
+    setOnSaved(undefined);
+    refresh.mockClear();
+    const { RepoSettingsSection } = await sectionModule;
+    renderToStaticMarkup(<RepoSettingsSection {...makeProps()} />);
+
+    const onSaved = getOnSaved();
+    expect(typeof onSaved).toBe("function");
+    onSaved?.();
+    expect(refresh).toHaveBeenCalled();
   });
 
   test("BT-SECT-009: Composio 'Manage tools' link has a resting underline affordance (not just hover)", async () => {
