@@ -86,7 +86,7 @@ export const SETTINGS_ROUTE_METADATA = {
   composio: {
     title: "Composio",
     description:
-      "Connect external tools so your agents can use them in a chat.",
+      "Connect external tools like Gmail, Slack, and Linear so your chats and background agents can use them.",
     href: "/settings/composio",
     icon: Blocks,
     audience: "user",
