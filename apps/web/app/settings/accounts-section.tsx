@@ -43,9 +43,11 @@ import { useGitHubConnectionStatus } from "@/hooks/use-github-connection-status"
 import { useSession } from "@/hooks/use-session";
 import { unlinkGitHub } from "@/lib/github/actions/connection";
 import { authClient } from "@/lib/auth/client";
+import { runAuthCta } from "@/lib/auth/run-auth-cta";
 import type { GitHubConnectionReason } from "@/lib/github/status";
 import { fetcher } from "@/lib/swr";
 import { AccountsDisconnectDialogBody } from "./accounts-disconnect-dialog";
+import { AuthCtaError } from "@/components/auth/auth-cta-error";
 import {
   getGitHubManageUrl,
   resolveConnectionButtonStatus,
@@ -54,6 +56,8 @@ import {
 
 const GITHUB_OAUTH_CALLBACK =
   "/api/github/post-link?next=/settings/connections";
+
+export const GITHUB_LINK_ERROR_MESSAGE = "Couldn't connect GitHub. Try again.";
 
 interface GitHubUserProfile {
   githubId: number;
@@ -558,34 +562,47 @@ export function AccountsSection() {
   );
 }
 
-function NotConnectedState() {
+export function NotConnectedState() {
   const [isLinking, setIsLinking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleConnect = () =>
+    runAuthCta({
+      cta: "github_link_settings",
+      errorMessage: GITHUB_LINK_ERROR_MESSAGE,
+      action: () =>
+        authClient.linkSocial({
+          provider: "github",
+          callbackURL: GITHUB_OAUTH_CALLBACK,
+        }),
+      setPending: setIsLinking,
+      setError,
+    });
 
   return (
-    <div className="flex items-center justify-between">
-      <p className="text-sm text-muted-foreground">
-        No GitHub account connected
-      </p>
-      <Button
-        variant="outline"
-        size="sm"
-        className="shrink-0 gap-1"
-        disabled={isLinking}
-        onClick={async () => {
-          setIsLinking(true);
-          await authClient.linkSocial({
-            provider: "github",
-            callbackURL: GITHUB_OAUTH_CALLBACK,
-          });
-        }}
-      >
-        Connect
-        {isLinking ? (
-          <Loader2 className="size-3 animate-spin" />
-        ) : (
-          <ArrowUpRight className="size-3" />
-        )}
-      </Button>
+    <div>
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">
+          No GitHub account connected
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="shrink-0 gap-1"
+          disabled={isLinking}
+          onClick={() => void handleConnect()}
+        >
+          Connect
+          {isLinking ? (
+            <Loader2 className="size-3 animate-spin" />
+          ) : (
+            <ArrowUpRight className="size-3" />
+          )}
+        </Button>
+      </div>
+      {error ? (
+        <AuthCtaError message={error} onRetry={() => void handleConnect()} />
+      ) : null}
     </div>
   );
 }

@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildManagedRuntimeProfileRevisionInstructions,
+  formatManagedRuntimeTestError,
   getApproveButtonLabel,
+  getForceApprovedLabel,
   getProfileApprovalWarning,
   getRevisionPlaceholder,
+  resolveDraftTestOutcome,
 } from "./managed-runtime-profile-builder-renderer";
 
 describe("managed runtime profile builder revision instructions", () => {
@@ -108,5 +111,101 @@ describe("managed runtime profile builder revision instructions", () => {
     expect(
       getRevisionPlaceholder(["Which package manager should be used?"]),
     ).toBe("Answer the questions or describe what the agent should change");
+  });
+
+  // RED: today there is no evidenced label for a draft that was approved
+  // over a failed/absent test (force_approved from MR-1's column).
+  test("labels a draft as approved without passing a test when force-approved", () => {
+    expect(
+      getForceApprovedLabel({
+        id: "draft-1",
+        status: "approved",
+        testedAt: null,
+        forceApproved: true,
+      }),
+    ).toBe("Approved without passing test");
+    expect(
+      getForceApprovedLabel({
+        id: "draft-1",
+        status: "approved",
+        testedAt: "2026-05-24T00:00:00.000Z",
+        forceApproved: false,
+      }),
+    ).toBeNull();
+  });
+
+  // RED: today the test-route error is a generic string; this pins the
+  // structured-error rendering contract (failed command + first actionable
+  // line + next step).
+  test("formats structured test errors with the failed command and next step", () => {
+    const formatted = formatManagedRuntimeTestError({
+      errorKind: "setup_command_failed",
+      failureMessage: "Install Bun failed.",
+      failedCommandLabel: "Install Bun",
+      nextAction:
+        "Fix the failing setup command in the profile editor, then run setup again.",
+    });
+
+    expect(formatted).toContain("Install Bun");
+    expect(formatted).toContain("Install Bun failed.");
+    expect(formatted).toContain(
+      "Fix the failing setup command in the profile editor, then run setup again.",
+    );
+  });
+
+  test("returns null when there is no structured test error", () => {
+    expect(formatManagedRuntimeTestError(undefined)).toBeNull();
+  });
+
+  // RED: today `testDraft` throws on `!response.ok` before ever reading the
+  // draft test route's structured `draft` (errorKind/failureMessage/
+  // nextAction) on its catch-path 500 response, so a sandbox/connect
+  // execution error discards the actionable guidance and only shows the
+  // generic persistence error.
+  test("surfaces the structured draft test error from a non-ok response instead of throwing", () => {
+    const outcome = resolveDraftTestOutcome({
+      responseOk: false,
+      body: {
+        draft: {
+          id: "draft-1",
+          status: "needs_changes",
+          testFailureMessage: "boom",
+          testResults: [],
+          testedAt: null,
+          testScope: "verify",
+          errorKind: "setup_exec_error",
+          failureMessage: "boom",
+          nextAction: "Resume the sandbox and try again.",
+        },
+        error: "Failed to test managed runtime profile draft",
+      },
+    });
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) {
+      throw new Error("expected structured outcome, got a thrown-error result");
+    }
+    expect(outcome.draft.id).toBe("draft-1");
+    expect(outcome.testError).toEqual({
+      errorKind: "setup_exec_error",
+      failureMessage: "boom",
+      failedCommandLabel: undefined,
+      nextAction: "Resume the sandbox and try again.",
+    });
+  });
+
+  test("still throws a generic error when a non-ok draft test response carries no structured draft", () => {
+    const outcome = resolveDraftTestOutcome({
+      responseOk: false,
+      body: { error: "Sandbox is unavailable. Please resume sandbox." },
+    });
+
+    expect(outcome.ok).toBe(false);
+    if (outcome.ok) {
+      throw new Error("expected a thrown-error result");
+    }
+    expect(outcome.message).toBe(
+      "Sandbox is unavailable. Please resume sandbox.",
+    );
   });
 });

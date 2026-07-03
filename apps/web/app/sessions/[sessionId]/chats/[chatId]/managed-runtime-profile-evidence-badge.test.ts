@@ -28,11 +28,12 @@ describe("managed runtime profile evidence badge", () => {
     ).toBeNull();
   });
 
-  test("labels session profiles with passing evidence as tested", () => {
+  test("labels session profiles with a passing setup_and_verify test as tested", () => {
     const view = getManagedRuntimeProfileEvidenceBadgeView({
       ...baseProfile,
       testStatus: "passed",
       testedAt: "2026-05-24T00:01:00.000Z",
+      lastTestScope: "setup_and_verify",
     });
 
     expect(view).toMatchObject({
@@ -40,6 +41,23 @@ describe("managed runtime profile evidence badge", () => {
     });
     expect(view?.title).toContain("Tested");
     expect(view?.className).toContain("emerald");
+  });
+
+  // RED: today the badge grants "Tested" from any passing evidence
+  // regardless of scope, so a verify-only pass over-promises that setup was
+  // also tested (Decision D6).
+  test("labels a passing verify-only test as verified on current sandbox, not tested", () => {
+    const view = getManagedRuntimeProfileEvidenceBadgeView({
+      ...baseProfile,
+      testStatus: "passed",
+      testedAt: "2026-05-24T00:01:00.000Z",
+      lastTestScope: "verify",
+    });
+
+    expect(view).toMatchObject({
+      label: "Verified on current sandbox — setup not tested",
+    });
+    expect(view?.className).not.toContain("emerald");
   });
 
   test("labels failing evidence as needing changes", () => {

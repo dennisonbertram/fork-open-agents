@@ -127,3 +127,79 @@ describe("GetStartedFlow - regression: buildGitHubReconnectUrl integration (#781
     expect(html.toLowerCase()).not.toContain("github connected");
   });
 });
+
+describe("GitHubConnectStep — pending/error/retry (#786)", () => {
+  // This repo's test setup has no DOM/testing-library (see
+  // repo-selector-compact.test.tsx docstring), so the interactive
+  // try/catch/finally contract is verified as pure async logic mirroring the
+  // component's shape via the shared `runAuthCta` helper, while idle-state
+  // markup is verified via renderToStaticMarkup.
+
+  test("BT-786-040: rejection resets isLinking to false and sets a visible error (mirrors runAuthCta contract)", async () => {
+    const { runAuthCta } = await import("@/lib/auth/run-auth-cta");
+    const state: { isLinking: boolean; error: string | null } = {
+      isLinking: false,
+      error: null,
+    };
+
+    await runAuthCta({
+      cta: "github_link_get_started",
+      errorMessage: "Couldn't connect GitHub. Try again.",
+      action: () => Promise.reject(new Error("network down")),
+      setPending: (value) => {
+        state.isLinking = value;
+      },
+      setError: (value) => {
+        state.error = value;
+      },
+    });
+
+    expect(state.isLinking).toBe(false);
+    expect(state.error).toBe("Couldn't connect GitHub. Try again.");
+  });
+
+  test("BT-786-041: retrying re-invokes the action and clears a prior error on success", async () => {
+    const { retryAuthCta } = await import("@/lib/auth/run-auth-cta");
+    let calls = 0;
+    const state: { isLinking: boolean; error: string | null } = {
+      isLinking: false,
+      error: "Couldn't connect GitHub. Try again.",
+    };
+
+    await retryAuthCta({
+      cta: "github_link_get_started",
+      errorMessage: "Couldn't connect GitHub. Try again.",
+      action: () => {
+        calls += 1;
+        return Promise.resolve();
+      },
+      setPending: (value) => {
+        state.isLinking = value;
+      },
+      setError: (value) => {
+        state.error = value;
+      },
+    });
+
+    expect(calls).toBe(1);
+    expect(state.error).toBeNull();
+  });
+
+  test("BT-786-042: not-linked idle markup renders Connect GitHub with no error text", async () => {
+    searchParamValues = {};
+    sessionState = { hasGitHubAccount: false, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+
+    expect(html).toContain("Connect GitHub");
+    expect(html).not.toContain("Try again");
+  });
+
+  test("BT-786-043: the module exports the shared GITHUB_LINK_ERROR_MESSAGE (implementation marker)", async () => {
+    const flowModule = await flowModulePromise;
+    expect(flowModule.GITHUB_LINK_ERROR_MESSAGE).toBe(
+      "Couldn't connect GitHub. Try again.",
+    );
+  });
+});
