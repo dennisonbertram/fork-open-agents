@@ -14,6 +14,8 @@ let authSession:
     }
   | undefined;
 
+let accountRows: { providerId: string }[] = [];
+
 mock.module("server-only", () => ({}));
 
 mock.module("@/lib/auth/config", () => ({
@@ -24,6 +26,20 @@ mock.module("@/lib/auth/config", () => ({
         return authSession;
       },
     },
+  },
+}));
+
+mock.module("@/lib/db/client", () => ({
+  db: {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () => accountRows,
+          }),
+        }),
+      }),
+    }),
   },
 }));
 
@@ -43,6 +59,7 @@ describe("resolveSessionFromHeaders", () => {
   beforeEach(() => {
     getSessionCalls = 0;
     authSession = undefined;
+    accountRows = [];
     delete process.env.OPEN_AGENTS_ENABLE_TEST_AUTH;
   });
 
@@ -76,6 +93,7 @@ describe("resolveSessionFromHeaders", () => {
         image: "https://example.com/avatar.png",
       },
     };
+    accountRows = [{ providerId: "vercel" }];
 
     const session = await resolveSessionFromHeaders(
       headers({ cookie: "better-auth.session_token=value" }),
@@ -92,6 +110,44 @@ describe("resolveSessionFromHeaders", () => {
         avatar: "https://example.com/avatar.png",
       },
     });
+  });
+
+  test("resolves authProvider to github for a GitHub-originated session", async () => {
+    authSession = {
+      session: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
+      user: {
+        id: "user-2",
+        username: "octocat",
+        email: "octocat@example.com",
+        image: "https://example.com/octocat.png",
+      },
+    };
+    accountRows = [{ providerId: "github" }];
+
+    const session = await resolveSessionFromHeaders(
+      headers({ cookie: "better-auth.session_token=value" }),
+    );
+
+    expect(session?.authProvider).toBe("github");
+  });
+
+  test("falls back to undefined session when the account provider is unrecognized", async () => {
+    authSession = {
+      session: { createdAt: new Date("2026-01-01T00:00:00.000Z") },
+      user: {
+        id: "user-3",
+        username: "mystery",
+        email: "mystery@example.com",
+        image: null,
+      },
+    };
+    accountRows = [{ providerId: "email" }];
+
+    const session = await resolveSessionFromHeaders(
+      headers({ cookie: "better-auth.session_token=value" }),
+    );
+
+    expect(session).toBeUndefined();
   });
 
   test("delegates to Better Auth when authorization credentials are present", async () => {
