@@ -129,12 +129,11 @@ describe("ComposioOtherToolsSection", () => {
     expect(html).toContain('data-disabled="true"');
   });
 
-  // #805 (finding G7): the "Connect accounts" link previously pointed at
-  // /settings/background-agents — a mislink Composio accounts have nothing
-  // to do with. It must point at the actual Composio settings, and this
-  // section must ALSO link to the new per-repo Tools surface so a user
-  // blocked by repo policy here can find why.
-  test("includes a link to /settings/composio, not the /settings/background-agents mislink", async () => {
+  // BT-801-050 (#801, finding G7): the agent-builder "Other tools" link and
+  // connectHint previously pointed at /settings/background-agents, which is
+  // NOT the Composio settings page — a naive user following it lands on the
+  // wrong page. Fixed to point at /settings/composio with matching copy.
+  test("BT-801-050: includes a link to /settings/composio, not /settings/background-agents", async () => {
     const { ComposioOtherToolsSection } = await modulePromise;
 
     const html = renderToStaticMarkup(
@@ -146,11 +145,31 @@ describe("ComposioOtherToolsSection", () => {
       />,
     );
 
-    expect(html).toContain("/settings/composio");
+    expect(html).toContain('href="/settings/composio"');
     expect(html).not.toContain("/settings/background-agents");
   });
 
-  test("includes a link to the repo's per-repo Tools settings surface", async () => {
+  test("BT-801-051: connectHint passed to the picker says 'Settings → Composio', not 'Background agents'", async () => {
+    const { ComposioOtherToolsSection } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <ComposioOtherToolsSection
+        selectedSlugs={[]}
+        onChange={noop}
+        repoOwner="acme"
+        repoName="widgets"
+      />,
+    );
+
+    expect(html).toContain("Settings");
+    expect(html).toContain("Composio");
+    expect(html).not.toContain("Background agents");
+  });
+
+  // #805 (epic #796 T9): this section must ALSO link to the new per-repo
+  // Tools surface so a user blocked by repo policy here can find why —
+  // distinct from the /settings/composio account-connection link above.
+  test("#805: includes a link to the repo's per-repo Tools settings surface", async () => {
     const { ComposioOtherToolsSection } = await modulePromise;
 
     const html = renderToStaticMarkup(

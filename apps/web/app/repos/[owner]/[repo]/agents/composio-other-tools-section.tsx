@@ -44,7 +44,9 @@ export function ComposioOtherToolsSection({
           >
             Connect accounts in Settings
           </Link>
-          . Blocked or restricted for this repo? Check the{" "}
+          . Unconnected tools you search for here can also be connected
+          directly, without leaving this page. Blocked or restricted for this
+          repo? Check the{" "}
           <Link
             href={`/settings/repositories/${encodeURIComponent(repoOwner)}/${encodeURIComponent(repoName)}`}
             className="underline underline-offset-2 hover:text-foreground"

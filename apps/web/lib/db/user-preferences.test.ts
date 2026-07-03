@@ -51,8 +51,38 @@ describe("toUserPreferencesData", () => {
     });
 
     expect(result.defaultSandboxType).toBe("vercel");
-    expect(result.defaultManagedRuntimeProfileId).toBe("web-bun-agent-browser");
+    // The read path preserves the stored profile id verbatim — it must NOT
+    // coerce a non-built-in (e.g. user_default) id back to the built-in
+    // default. Validity is enforced on write (isKnownManagedRuntimeProfileReference)
+    // and at resolution time (typed profile_not_found), and the delete lifecycle
+    // resets a dangling reference — so read-time coercion silently hid a user's
+    // chosen default (epic #807 activation bug found in Phase-4 live proof).
+    expect(result.defaultManagedRuntimeProfileId).toBe("unknown-profile");
     expect(result.defaultDiffMode).toBe("unified");
+  });
+
+  test("preserves a stored user_default managed runtime profile id (no read-time coercion)", async () => {
+    const { toUserPreferencesData } = await userPreferencesModulePromise;
+
+    const result = toUserPreferencesData({
+      defaultModelId: "openai/gpt-5",
+      defaultSubagentModelId: null,
+      defaultSandboxType: "vercel",
+      defaultManagedRuntimeProfileId: "user-profile-q3aF0YyQtUrXLiSPTgChv",
+      defaultDiffMode: "unified",
+      autoCommitPush: false,
+      autoCreatePr: false,
+      alertsEnabled: true,
+      alertSoundEnabled: true,
+      publicUsageEnabled: false,
+      globalSkillRefs: [],
+      modelVariants: [],
+      enabledModelIds: [],
+    });
+
+    expect(result.defaultManagedRuntimeProfileId).toBe(
+      "user-profile-q3aF0YyQtUrXLiSPTgChv",
+    );
   });
 
   test("normalizes legacy hybrid sandbox types to vercel", async () => {
