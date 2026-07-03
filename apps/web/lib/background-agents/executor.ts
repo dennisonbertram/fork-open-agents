@@ -1180,6 +1180,22 @@ export async function executeBackgroundAgentRun(params: {
       // silent no-op (finding A1). Non-fatal: the run continues without
       // Composio tools; status stays "succeeded" here because this event
       // does not by itself represent a run failure.
+      //
+      // #799 extends this switch with "not_in_repo_allowlist" (a non-null
+      // repo selectedToolkitSlugs allowlist dropped every requested slug) —
+      // distinct copy from "repo_policy_blocked" (denylist) so operators can
+      // tell which policy axis caused the drop.
+      let offSummary: string;
+      if (composioResult.reason === "repo_policy_blocked") {
+        offSummary = `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+      } else if (composioResult.reason === "not_in_repo_allowlist") {
+        offSummary = `Composio tools not in repository allowlist: ${(composioResult.blockedSlugs ?? []).join(", ")}.`;
+      } else {
+        offSummary = "Composio tools requested but no toolkit slugs were selected.";
+      }
+      const includeBlockedSlugsInPayload =
+        composioResult.reason === "repo_policy_blocked" ||
+        composioResult.reason === "not_in_repo_allowlist";
       await recordBackgroundAgentEvent({
         runId: run.id,
         agentId: run.agentId,
@@ -1187,16 +1203,13 @@ export async function executeBackgroundAgentRun(params: {
         eventName: "background-agent.composio.off",
         status: "succeeded",
         level: "warn",
-        summary:
-          composioResult.reason === "repo_policy_blocked"
-            ? `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`
-            : "Composio tools requested but no toolkit slugs were selected.",
+        summary: offSummary,
         workflowRunId: params.workflowRunId,
         requestId: run.requestId,
         sandboxName,
         payload: {
           reason: composioResult.reason,
-          ...(composioResult.reason === "repo_policy_blocked"
+          ...(includeBlockedSlugsInPayload
             ? { blockedSlugs: composioResult.blockedSlugs ?? [] }
             : {}),
         },

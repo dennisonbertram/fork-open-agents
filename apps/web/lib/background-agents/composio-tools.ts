@@ -13,10 +13,7 @@ import {
   listComposioConnectedAccounts,
   type ComposioConnectedAccount,
 } from "@/lib/composio/connected-accounts";
-import {
-  getRepositoryComposioSettings,
-  getRepositoryComposioSettingsValues,
-} from "@/lib/db/composio";
+import { applyRepoToolkitPolicy } from "@/lib/composio/repo-policy";
 
 // ---------------------------------------------------------------------------
 // Internal: connected-account state (shared helper — full status, one fetch)
@@ -152,40 +149,6 @@ async function touchBgRunToolSession(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Repo-policy slug filter
-// ---------------------------------------------------------------------------
-
-/**
- * Filters the provided toolkit slugs through the repository's blocked-toolkit
- * list. Returns only slugs that the repository policy permits.
- *
- * Mirrors the slug-level gate in applyRepositoryComposioPolicy (composio/db.ts).
- */
-async function filterSlugsByRepoPolicy(params: {
-  userId: string;
-  slugs: string[];
-  repoOwner: string;
-  repoName: string;
-}): Promise<string[]> {
-  const settings = await getRepositoryComposioSettings({
-    userId: params.userId,
-    repoOwner: params.repoOwner,
-    repoName: params.repoName,
-  });
-  const settingsValues = getRepositoryComposioSettingsValues(settings);
-  if (!settingsValues) {
-    // No repo policy configured — all slugs are allowed
-    return params.slugs;
-  }
-
-  const blockedSlugs = new Set(
-    settingsValues.blockedToolkitSlugs.map((s) => s.toLowerCase()),
-  );
-
-  return params.slugs.filter((slug) => !blockedSlugs.has(slug.toLowerCase()));
-}
-
-// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -221,11 +184,13 @@ export type ResolveComposioToolsForBgRunErrorKind =
  * Reasons the resolver can report an "off" (no tools) outcome.
  *
  * The union is intentionally extensible: the repo-policy ticket (#799) adds
- * "not_in_repo_allowlist" when a non-null repo allowlist drops slugs.
+ * "not_in_repo_allowlist" when a non-null repo allowlist drops every
+ * requested slug.
  */
 export type ResolveComposioToolsForBgRunOffReason =
   | "no_slugs_selected"
-  | "repo_policy_blocked";
+  | "repo_policy_blocked"
+  | "not_in_repo_allowlist";
 
 export type ResolveComposioToolsForBgRunResult =
   | {
@@ -266,9 +231,12 @@ export type ResolveComposioToolsForBgRunResult =
  * Resolve Composio tools for a background agent run.
  *
  * - Empty slugs → { status: "off", reason: "no_slugs_selected" }.
- * - Repo policy blocks every requested slug → { status: "off",
- *   reason: "repo_policy_blocked", blockedSlugs } (surviving slugs, if any,
- *   proceed to resolution below).
+ * - Repo policy (allowlist + denylist, via the shared applyRepoToolkitPolicy
+ *   resolver, #799) blocks every requested slug → { status: "off", reason,
+ *   blockedSlugs } (surviving slugs, if any, proceed to resolution below).
+ *   reason is "repo_policy_blocked" if any dropped slug was denylisted
+ *   (denylist wins on overlap), else "not_in_repo_allowlist" when every drop
+ *   was purely an allowlist miss.
  * - Uses backgroundAgentToolSessions as the per-run cache (not the chat cache).
  * - Never logs secrets or API keys.
  */
@@ -281,18 +249,22 @@ export async function resolveComposioToolsForBgRun(
     return { status: "off", reason: "no_slugs_selected" };
   }
 
-  // Gate by repo policy (blocked toolkit slugs)
-  const gatedSlugs = await filterSlugsByRepoPolicy({
+  // Gate by repo policy (allowlist + denylist, shared resolver — #799)
+  const policyResult = await applyRepoToolkitPolicy({
     userId,
-    slugs,
     repoOwner,
     repoName,
+    requestedSlugs: slugs,
   });
+  const gatedSlugs = policyResult.allowed;
 
   if (gatedSlugs.length === 0) {
+    const anyDenylisted = policyResult.blocked.some(
+      (b) => b.reason === "repo_policy_blocked",
+    );
     return {
       status: "off",
-      reason: "repo_policy_blocked",
+      reason: anyDenylisted ? "repo_policy_blocked" : "not_in_repo_allowlist",
       blockedSlugs: slugs,
     };
   }

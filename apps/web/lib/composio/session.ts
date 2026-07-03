@@ -26,6 +26,7 @@ import { resolveComposioToolsForToolkitList } from "./resolve-toolkit-list";
 import { resolveComposioSlugsForChatMain } from "./resolve-chat-with-agent-row";
 import { resolveAgentForRole } from "@/lib/agents/resolve-agent";
 import { getEffectiveRepoToolkitSlugs } from "./repo-toolkit-selection";
+import { applyRepoToolkitPolicy } from "./repo-policy";
 import {
   listComposioConnectedAccounts,
   type ComposioConnectedAccount,
@@ -279,7 +280,11 @@ export async function resolveComposioToolsForChat(params: {
     ? (resolvedForMain?.directSlugs ?? null)
     : null;
 
-  if (directSlugs) {
+  // directSlugs === [] is the explicit "off" sentinel (#799, finding G1) —
+  // an empty array is truthy in JS, so this must be a length check, not a
+  // truthiness check, or an explicit "Off" selection would still enter the
+  // direct-list branch below instead of resolving to { status: "off" }.
+  if (directSlugs && directSlugs.length > 0) {
     if ((params.runtimeMode ?? "classic") !== "classic") {
       throw new ComposioSetupError(
         "Composio tools are currently available only in classic runtime mode.",
@@ -293,6 +298,30 @@ export async function resolveComposioToolsForChat(params: {
       );
     }
 
+    // Repo-policy gate (#799, finding A5): the direct-slug path previously
+    // applied NO repo policy at all. Route it through the SAME shared
+    // resolver background agents and loops use, so the same repo config
+    // produces the same result on every surface (finding E2). When every
+    // requested slug is blocked, resolve to { status: "off" } WITHOUT
+    // attempting any Composio session (no SDK/connected-accounts call).
+    const sessionForRepoPolicy = await getSessionById(chat.sessionId);
+    const repoOwnerForPolicy = sessionForRepoPolicy?.repoOwner;
+    const repoNameForPolicy = sessionForRepoPolicy?.repoName;
+    let policyFilteredSlugs = directSlugs;
+    if (repoOwnerForPolicy && repoNameForPolicy) {
+      const policyResult = await applyRepoToolkitPolicy({
+        userId: params.userId,
+        repoOwner: repoOwnerForPolicy,
+        repoName: repoNameForPolicy,
+        requestedSlugs: directSlugs,
+      });
+      policyFilteredSlugs = policyResult.allowed;
+    }
+
+    if (policyFilteredSlugs.length === 0) {
+      return { status: "off" };
+    }
+
     const composio = getComposioClient();
     const syntheticProfileId = "direct";
     const agentKey = params.agentKey ?? "main";
@@ -304,14 +333,14 @@ export async function resolveComposioToolsForChat(params: {
     const { connectedAccountIdsByToolkit, accountsByToolkit } =
       await resolveConnectedAccountState(composio, params.userId);
     const expiredToolkits = computeExpiredToolkits(
-      directSlugs,
+      policyFilteredSlugs,
       accountsByToolkit,
     );
 
     try {
       const resolved = await resolveComposioToolsForToolkitList({
         userId: params.userId,
-        slugs: directSlugs,
+        slugs: policyFilteredSlugs,
         composio,
         connectedAccountIdsByToolkit,
         getCachedSession: (configHash) =>
