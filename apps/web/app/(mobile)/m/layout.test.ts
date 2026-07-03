@@ -40,9 +40,9 @@ describe("MobileLayout unauthenticated redirect", () => {
     mockHeaderValue = "/m/chat/some-id";
     const { default: MobileLayout } = await import("./layout");
 
-    await expect(
-      MobileLayout({ children: null }),
-    ).rejects.toThrow("redirect:/?next=%2Fm%2Fchat%2Fsome-id");
+    await expect(MobileLayout({ children: null })).rejects.toThrow(
+      "redirect:/?next=%2Fm%2Fchat%2Fsome-id",
+    );
 
     expect(redirect).toHaveBeenCalledWith("/?next=%2Fm%2Fchat%2Fsome-id");
   });

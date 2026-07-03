@@ -20,10 +20,7 @@ export function proxy(request: NextRequest) {
   // reads with `headers()`.
   if (pathname === "/m" || pathname.startsWith("/m/")) {
     const requestHeaders = new Headers(request.headers);
-    requestHeaders.set(
-      "x-invoke-path",
-      `${pathname}${request.nextUrl.search}`,
-    );
+    requestHeaders.set("x-invoke-path", `${pathname}${request.nextUrl.search}`);
     return NextResponse.next({ request: { headers: requestHeaders } });
   }
 

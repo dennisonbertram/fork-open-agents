@@ -142,7 +142,9 @@ describe("SignedOutHero — preserves mobile deep-link destination through sign-
 
     renderToStaticMarkup(<SignedOutHero />);
 
-    expect(heroSignInButtonCapture.callbackUrl).toBe("/get-started?next=/sessions");
+    expect(heroSignInButtonCapture.callbackUrl).toBe(
+      "/get-started?next=/sessions",
+    );
   });
 
   test("rejects an absolute-URL next param and falls back to the default", async () => {
@@ -153,7 +155,9 @@ describe("SignedOutHero — preserves mobile deep-link destination through sign-
 
     renderToStaticMarkup(<SignedOutHero />);
 
-    expect(heroSignInButtonCapture.callbackUrl).toBe("/get-started?next=/sessions");
+    expect(heroSignInButtonCapture.callbackUrl).toBe(
+      "/get-started?next=/sessions",
+    );
   });
 
   test("rejects a protocol-relative next param and falls back to the default", async () => {
@@ -164,6 +168,8 @@ describe("SignedOutHero — preserves mobile deep-link destination through sign-
 
     renderToStaticMarkup(<SignedOutHero />);
 
-    expect(heroSignInButtonCapture.callbackUrl).toBe("/get-started?next=/sessions");
+    expect(heroSignInButtonCapture.callbackUrl).toBe(
+      "/get-started?next=/sessions",
+    );
   });
 });

@@ -31,9 +31,7 @@ export default async function MobileLayout({ children }: MobileLayoutProps) {
   if (!session?.user) {
     const requestHeaders = await headers();
     const originalPath = requestHeaders.get("x-invoke-path");
-    redirect(
-      originalPath ? `/?next=${encodeURIComponent(originalPath)}` : "/",
-    );
+    redirect(originalPath ? `/?next=${encodeURIComponent(originalPath)}` : "/");
   }
 
   return (

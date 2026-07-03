@@ -60,9 +60,7 @@ export function SignedOutHero() {
   const [heroButtonsVisible, setHeroButtonsVisible] = useState(true);
   const searchParams = useSearchParams();
   const signInErrorCode = searchParams.get("error");
-  const signInCallbackUrl = resolveSignInCallbackUrl(
-    searchParams.get("next"),
-  );
+  const signInCallbackUrl = resolveSignInCallbackUrl(searchParams.get("next"));
 
   useEffect(() => {
     const el = heroButtonsRef.current;
