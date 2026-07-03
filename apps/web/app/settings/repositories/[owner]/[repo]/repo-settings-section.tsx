@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Loader2, RotateCcw } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime-profiles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,6 +25,7 @@ import type { VercelProjectSelection } from "@/lib/vercel/types";
 import type { GitHubConnectionStatusResponse } from "@/lib/github/status";
 import type { RepoToolkitEffectiveStatus } from "@/lib/composio/repo-tools-effective-status";
 import { getRepoToolkitStatusCopy } from "@/lib/composio/repo-tools-status-copy";
+import { ComposioWorkspaceSettingsPanel } from "@/components/composio-workspace-settings-panel";
 import {
   VCPU_OPTIONS,
   RUNTIME_MODE_OPTIONS,
@@ -126,6 +128,7 @@ export function RepoSettingsSection({
   onSave,
   onReset,
 }: RepoSettingsSectionProps) {
+  const router = useRouter();
   // Local edit state seeded from raw nullable row
   const [state, setState] = useState<RepoEditState>(() =>
     seedEditState(resolved, raw),
@@ -606,7 +609,9 @@ export function RepoSettingsSection({
 
         {/* #805: effective per-repo tool status list — reuses the shared
             status-copy helper so this list never drifts from the repo
-            dashboard's Tools tab vocabulary. */}
+            dashboard's Tools tab vocabulary. Read-only quick-glance summary;
+            the actual EDIT controls live in the "Tool access" group below
+            (Codex P2-1, PR #848). */}
         {toolStatuses.length > 0 ? (
           <SettingRow label="Tool access for this repository">
             <div className="w-full space-y-1.5">
@@ -630,6 +635,28 @@ export function RepoSettingsSection({
             </div>
           </SettingRow>
         ) : null}
+      </SettingsGroup>
+
+      {/* ── 4b. Tool access (editable) ─────────────────────────────────────
+          Codex P2-1 (PR #848): the repo dashboard's "Manage tool access"
+          link previously landed here to find only the read-only chip list
+          above — no editor, no PATCH writer. This mounts the SAME
+          PATCH-wired policy editor already used by the sessions workspace
+          panel (ComposioWorkspaceSettingsPanel), so there is one
+          implementation of "edit repo Composio policy," not two. onSaved
+          triggers a server-component refresh so the read-only chips above
+          reflect the change without a full page reload. */}
+      <SettingsGroup
+        title="Tool access"
+        description="Block or select which connected tools agents can use in this repository — the same rules editable from an active chat session's workspace settings."
+      >
+        <div className="w-full">
+          <ComposioWorkspaceSettingsPanel
+            repoOwner={owner}
+            repoName={repo}
+            onSaved={() => router.refresh()}
+          />
+        </div>
       </SettingsGroup>
 
       {/* ── 5. Danger zone ────────────────────────────────────────────────── */}

@@ -43,6 +43,11 @@ import {
  * — every requested slug still gets a status ("not_connected" when
  * connection state can't be determined, rather than crashing the repo
  * dashboard render).
+ *
+ * Codex P2-3 (PR #848): the catalog's `noAuth` flag is threaded through to
+ * `deriveRepoToolkitEffectiveStatuses` as `noAuthSlugs` — a no-auth toolkit
+ * (works without a connected account) must never render "not_connected"
+ * merely because it has no connected-account row.
  */
 export async function getRepoToolsEffectiveStatuses(params: {
   userId: string;
@@ -60,6 +65,12 @@ export async function getRepoToolsEffectiveStatuses(params: {
   const catalogToolkits = catalogResult.ok ? catalogResult.toolkits : [];
   const namesBySlug: Record<string, string> = Object.fromEntries(
     catalogToolkits.map((toolkit) => [toolkit.slug, toolkit.name]),
+  );
+  // Codex P2-3: preserve the catalog's noAuth flag per slug so the
+  // derivation can skip the connection check for toolkits that are usable
+  // without a connected account.
+  const noAuthSlugs = new Set(
+    catalogToolkits.filter((toolkit) => toolkit.noAuth).map((t) => t.slug),
   );
 
   // Union: catalog slugs + any slug already referenced by this repo's policy
@@ -100,6 +111,7 @@ export async function getRepoToolsEffectiveStatuses(params: {
     selectedToolkitSlugs: settingsValues?.selectedToolkitSlugs ?? null,
     policyResult,
     connectionStateBySlug,
+    noAuthSlugs,
   });
 }
 

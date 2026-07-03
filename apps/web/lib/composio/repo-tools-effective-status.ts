@@ -45,6 +45,26 @@ import type { ComposioToolkitConnectionState } from "@/app/settings/composio-con
  * empty-array repo is excluded by applyRepoToolkitPolicy's allowlist check
  * and therefore reports "blocked" (not_in_repo_allowlist), never
  * "default_on".
+ *
+ * Codex P2-2 (PR #848, honest-connection-state fix): an EXPIRED connected
+ * account must never be reported as "allowed"/"selected"/"default_on" —
+ * those statuses claim the tool actually works right now, which is false
+ * for an expired connection. "expired" is its own effective-status kind,
+ * checked after "blocked" (a block still wins — policy is checked first)
+ * but before every other branch, so an allowed-but-expired toolkit always
+ * surfaces the reconnect-needed state instead of a false "available" claim.
+ * An "other" (INITIATED/FAILED) connection state is treated the same as
+ * not_connected — mirrors the existing precedent in
+ * composio-toolkit-picker.tsx, which also collapses "other" into "not
+ * connected" copy rather than inventing a third ambiguous bucket.
+ *
+ * Codex P2-3 (PR #848): a no-auth toolkit (works without a connected
+ * account) must never render "not_connected" merely because it has no
+ * connected-account row. `noAuthSlugs` marks which requested slugs are
+ * no-auth so the connection check is skipped entirely for them — they fall
+ * straight through to the normal allowed/selected/default_on rules below,
+ * exactly as if they were "connected". noAuth does NOT bypass repo policy:
+ * a blocked no-auth toolkit still reports "blocked".
  */
 
 export type RepoToolkitEffectiveStatusKind =
@@ -52,7 +72,8 @@ export type RepoToolkitEffectiveStatusKind =
   | "blocked"
   | "selected"
   | "default_on"
-  | "not_connected";
+  | "not_connected"
+  | "expired";
 
 export type RepoToolkitEffectiveStatus = {
   slug: string;
@@ -72,18 +93,25 @@ export type RepoToolkitEffectiveStatusInput = {
   policyResult: RepoToolkitPolicyResult;
   /** Per-slug connection state from getToolkitConnectionState/buildToolkitStatusMap. */
   connectionStateBySlug: Map<string, ComposioToolkitConnectionState>;
+  /**
+   * Slugs that are no-auth toolkits (usable without a connected account —
+   * see the catalog's `noAuth` flag). The connection check is skipped
+   * entirely for these slugs (Codex P2-3).
+   */
+  noAuthSlugs?: ReadonlySet<string>;
 };
 
-const CONNECTED_STATES: ReadonlySet<ComposioToolkitConnectionState> = new Set([
-  "active",
-  "expired",
-  "other",
-]);
-
-function isConnected(
+/**
+ * Only an ACTIVE account is a genuinely working connection. EXPIRED is
+ * surfaced as its own "expired" status (Codex P2-2); "other" (INITIATED,
+ * FAILED, etc.) is treated as not usable, same as no connection at all —
+ * this repo-tools surface never claims a non-ACTIVE account means the tool
+ * works.
+ */
+function isActivelyConnected(
   state: ComposioToolkitConnectionState | undefined,
 ): boolean {
-  return state !== undefined && CONNECTED_STATES.has(state);
+  return state === "active";
 }
 
 export function deriveRepoToolkitEffectiveStatuses(
@@ -95,6 +123,7 @@ export function deriveRepoToolkitEffectiveStatuses(
     selectedToolkitSlugs,
     policyResult,
     connectionStateBySlug,
+    noAuthSlugs,
   } = input;
 
   const blockedBySlug = new Map(
@@ -112,9 +141,16 @@ export function deriveRepoToolkitEffectiveStatuses(
       return { slug, name, status: "blocked" as const, blockReason };
     }
 
-    const connected = isConnected(connectionStateBySlug.get(slug));
-    if (!connected) {
-      return { slug, name, status: "not_connected" as const };
+    const isNoAuth = noAuthSlugs?.has(slug) ?? false;
+    const connectionState = connectionStateBySlug.get(slug);
+
+    if (!isNoAuth) {
+      if (connectionState === "expired") {
+        return { slug, name, status: "expired" as const };
+      }
+      if (!isActivelyConnected(connectionState)) {
+        return { slug, name, status: "not_connected" as const };
+      }
     }
 
     if (allowlistSet) {
@@ -126,8 +162,8 @@ export function deriveRepoToolkitEffectiveStatuses(
     }
 
     // selectedToolkitSlugs === null: never configured. GitHub gets the
-    // resolver's default-on-if-connected treatment; every other connected,
-    // unrestricted toolkit is generically "allowed".
+    // resolver's default-on-if-connected treatment; every other connected
+    // (or no-auth), unrestricted toolkit is generically "allowed".
     if (slug.toLowerCase() === "github") {
       return { slug, name, status: "default_on" as const };
     }

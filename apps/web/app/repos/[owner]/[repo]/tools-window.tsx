@@ -5,15 +5,16 @@ import { getRepoToolkitStatusCopy } from "@/lib/composio/repo-tools-status-copy"
 /**
  * Repo dashboard "Tools" tab (#805, epic #796 T9 — discoverable per-repo
  * Tools surface). Renders every relevant toolkit with one effective status
- * (allowed / blocked+rule / selected / default-on / not-connected), sourced
- * server-side from deriveRepoToolkitEffectiveStatuses so this component
- * never recomputes policy or connection state itself.
+ * (allowed / blocked+rule / selected / default-on / expired / not-connected),
+ * sourced server-side from deriveRepoToolkitEffectiveStatuses so this
+ * component never recomputes policy or connection state itself.
  *
  * This is a read-only view: the allow/block EDIT controls live on the
- * settings/repositories page (RepoToolsEditor), which shares the same
- * status-copy helpers. This tab's job is discoverability — a user reaches a
- * Tools view from the repo page without opening a chat session (finding
- * W8) — and it links to the editable surface for making changes.
+ * settings/repositories page (RepoSettingsSection, via the shared
+ * ComposioWorkspaceSettingsPanel editor — Codex P2-1, PR #848), which shares
+ * the same status-copy helpers. This tab's job is discoverability — a user
+ * reaches a Tools view from the repo page without opening a chat session
+ * (finding W8) — and it links to the editable surface for making changes.
  */
 
 type ToolsWindowProps = {
@@ -32,6 +33,10 @@ const STATUS_BADGE_CLASSES: Record<string, string> = {
   blocked:
     "border-destructive/40 bg-destructive/10 text-destructive dark:text-destructive",
   not_connected: "border-border bg-muted/40 text-muted-foreground",
+  // Codex P2-2: expired must never look "healthy" — amber, matching the
+  // existing "needs reconnect" treatment elsewhere (composio-toolkit-picker.tsx).
+  expired:
+    "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-400",
 };
 
 export function ToolsWindow({
@@ -104,6 +109,14 @@ export function ToolsWindow({
                       className="text-xs text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
                     >
                       Connect
+                    </Link>
+                  ) : null}
+                  {toolStatus.status === "expired" ? (
+                    <Link
+                      href="/settings/composio"
+                      className="text-xs text-primary underline decoration-primary/50 underline-offset-2 hover:decoration-primary"
+                    >
+                      Reconnect
                     </Link>
                   ) : null}
                 </div>

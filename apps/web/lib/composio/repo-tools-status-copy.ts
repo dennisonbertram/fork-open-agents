@@ -41,6 +41,11 @@ const STATUS_COPY: Record<
     explanation:
       "No account connected yet — connect it before agents can use it here.",
   },
+  expired: {
+    label: "Expired — reconnect",
+    explanation:
+      "The connected account expired — reconnect it before agents can use it here.",
+  },
 };
 
 export function getRepoToolkitStatusCopy(

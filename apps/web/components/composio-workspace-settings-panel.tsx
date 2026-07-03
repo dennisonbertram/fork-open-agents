@@ -16,6 +16,13 @@ import { computeSelectedToolkitSlugsForSave } from "./composio-workspace-setting
 type ComposioWorkspaceSettingsPanelProps = {
   repoOwner: string | null;
   repoName: string | null;
+  /**
+   * Called after a successful save (Codex P2-1, PR #848). Lets a host page
+   * that also server-renders effective-status data (e.g. RepoSettingsSection)
+   * refresh that data so the status chips reflect the change without a full
+   * page reload.
+   */
+  onSaved?: () => void;
 };
 
 async function fetchRepositoryPolicy(url: string) {
@@ -46,6 +53,7 @@ function isRepositoryPolicyResponse(
 export function ComposioWorkspaceSettingsPanel({
   repoOwner,
   repoName,
+  onSaved,
 }: ComposioWorkspaceSettingsPanelProps) {
   const policyUrl =
     repoOwner && repoName
@@ -142,6 +150,7 @@ export function ComposioWorkspaceSettingsPanel({
       }
       await mutate(body, { revalidate: false });
       setStatus("Workspace access rules saved.");
+      onSaved?.();
     } catch (saveError) {
       setActionError(
         saveError instanceof Error
