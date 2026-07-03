@@ -309,4 +309,20 @@ describe("RuntimeModeSelectorUntestedWarning regression", () => {
     const mod = await import("./runtime-mode-selector-compact");
     expect(typeof mod.RuntimeModeSelectorUntestedWarning).toBe("function");
   });
+
+  // Regression: Decision D6 says only a setup_and_verify pass earns "Tested".
+  // If the gate is loosened to just `testStatus === "passed"` (ignoring
+  // lastTestScope), a verify-only pass would wrongly suppress the warning —
+  // silently hiding that the profile's setup commands were never proven.
+  test("still warns for a passed testStatus when lastTestScope is verify-only", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeModeSelectorUntestedWarning
+        onOpenInspector={() => {}}
+        selectedProfile={verifyOnlySessionProfile}
+      />,
+    );
+
+    expect(html).not.toBe("");
+    expect(html).toContain("Not yet tested");
+  });
 });

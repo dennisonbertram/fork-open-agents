@@ -163,4 +163,33 @@ describe("RuntimeStatusBadge regression", () => {
     expect(view?.label).not.toContain("Evidence unavailable");
     expect(view?.label).toContain("Loading");
   });
+
+  // Regression: if the mismatch-detection condition drifts (e.g. someone
+  // "simplifies" it to just `resolvedProfileId` truthiness), a real
+  // requested === resolved run would wrongly render a mismatch warning.
+  // This guards the negative case explicitly, not just the positive one
+  // covered above.
+  test("does not render a mismatch warning when requested and resolved ids match", () => {
+    const view = getRuntimeStatusBadgeView({
+      runtimeMode: "managed_runtime",
+      latestProfileRun: profileRun({
+        status: "passed",
+        requestedProfileId: "web-bun-agent-browser",
+        resolvedProfileId: "web-bun-agent-browser",
+      }),
+    });
+
+    expect(view?.mismatch).toBeNull();
+  });
+
+  // Regression: session-chat-content.tsx imports RuntimeStatusBadge as a
+  // named export via a static import (not a dynamic one, unlike the
+  // Inspector panel) — if the export is renamed or removed, the composer
+  // silently stops rendering the badge everywhere with no runtime error
+  // surfaced to the user.
+  test("RuntimeStatusBadge is exported from the module", async () => {
+    const mod = await import("./runtime-status-badge");
+    expect(typeof mod.RuntimeStatusBadge).toBe("function");
+    expect(typeof mod.default).toBe("function");
+  });
 });

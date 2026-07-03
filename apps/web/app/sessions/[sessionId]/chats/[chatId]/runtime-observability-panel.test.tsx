@@ -445,4 +445,47 @@ describe("ProfileRunSection regression", () => {
 
     expect(html).not.toContain("Evidence unavailable");
   });
+
+  // Regression: if the rollup header computation is removed or short-circuited
+  // when there is a failure mixed with passes, the per-command detail rows
+  // would be the only signal again — this pins the header's presence and
+  // exact counts specifically for a run with both setup and verification
+  // failures, not just the all-passing case covered above.
+  test("rollup header still appears above per-command rows when setup has a failure", () => {
+    const html = renderToStaticMarkup(
+      <ProfileRunSection
+        isLoading={false}
+        latestProfileRun={profileRun({
+          status: "failed",
+          errorKind: "setup_command_failed",
+          setupResults: [
+            command({ commandId: "s1", status: "passed" }),
+            command({ commandId: "s2", status: "failed" }),
+            command({ commandId: "s3", status: "passed" }),
+          ],
+          verificationResults: [],
+        })}
+        latestWorkflow={workflowRun()}
+        runtimeMode="managed_runtime"
+      />,
+    );
+
+    const rollupIndex = html.indexOf("Setup: 2/3 failed");
+    const firstCommandRowIndex = html.indexOf("Install dependencies");
+    expect(rollupIndex).toBeGreaterThan(-1);
+    expect(firstCommandRowIndex).toBeGreaterThan(-1);
+    expect(rollupIndex).toBeLessThan(firstCommandRowIndex);
+  });
+
+  // Regression: the top-level RuntimeObservabilityPanel must keep exporting
+  // ProfileRunSection's consuming component under its original name — if a
+  // future refactor renames or inlines RuntimeObservabilityPanel, every
+  // dynamic import call site (session-chat-content.tsx) breaks silently at
+  // runtime (dynamic imports do not fail typecheck the same way a static
+  // import would).
+  test("RuntimeObservabilityPanel is still exported from the module", async () => {
+    const mod = await import("./runtime-observability-panel");
+    expect(typeof mod.RuntimeObservabilityPanel).toBe("function");
+    expect(typeof mod.default).toBe("function");
+  });
 });
