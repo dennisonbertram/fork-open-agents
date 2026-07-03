@@ -417,7 +417,8 @@ describe("BackgroundRunDetail", () => {
         ...detailData().run,
         status: "failed",
         errorKind: "permission_missing",
-        errorMessage: "GitHub App installation lacks contents:write for acme/widgets.",
+        errorMessage:
+          "GitHub App installation lacks contents:write for acme/widgets.",
         finishedAt: "2026-05-27T12:03:00.000Z",
       },
     });

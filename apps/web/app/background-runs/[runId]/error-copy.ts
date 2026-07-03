@@ -70,12 +70,12 @@ function knownCopy(
     case "agent_disabled":
       return {
         whatHappened: "This background agent is turned off.",
-        whatToDo: "Re-enable the agent in the repo agents dashboard, then retry.",
+        whatToDo:
+          "Re-enable the agent in the repo agents dashboard, then retry.",
       };
     case "permission_missing":
       return {
-        whatHappened:
-          "The agent doesn't have write access to this repository.",
+        whatHappened: "The agent doesn't have write access to this repository.",
         whatToDo:
           "Connect GitHub or ask a repository admin to grant write access.",
         actionHref: GITHUB_SETTINGS_HREF,
@@ -103,10 +103,8 @@ function knownCopy(
       };
     case "checks_failed":
       return {
-        whatHappened:
-          "Required checks did not pass for this run's changes.",
-        whatToDo:
-          "Review the failing checks, fix them, then retry the run.",
+        whatHappened: "Required checks did not pass for this run's changes.",
+        whatToDo: "Review the failing checks, fix them, then retry the run.",
       };
     case "pr_creation_failed":
       return {
@@ -117,8 +115,7 @@ function knownCopy(
     case "model_resolution_failed":
       return {
         whatHappened: "The configured model couldn't be resolved for this run.",
-        whatToDo:
-          "Check the agent's model configuration, then retry the run.",
+        whatToDo: "Check the agent's model configuration, then retry the run.",
       };
     case "webhook_signature_invalid":
       return {
@@ -131,7 +128,9 @@ function knownCopy(
       // ALL_KNOWN_BACKGROUND_RUN_ERROR_KINDS without a case above, this
       // fails to compile.
       const _exhaustive: never = kind;
-      throw new Error(`Unhandled known background run error kind: ${_exhaustive}`);
+      throw new Error(
+        `Unhandled known background run error kind: ${_exhaustive}`,
+      );
     }
   }
 }

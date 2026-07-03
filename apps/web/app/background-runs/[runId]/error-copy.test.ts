@@ -16,7 +16,9 @@ describe("getBackgroundRunErrorCopy", () => {
   });
 
   it("falls back to an honest generic message for an unknown kind", () => {
-    const copy = getBackgroundRunErrorCopy("some_future_kind_nobody_mapped_yet");
+    const copy = getBackgroundRunErrorCopy(
+      "some_future_kind_nobody_mapped_yet",
+    );
     expect(copy.isKnown).toBe(false);
     expect(copy.whatHappened).toBeTruthy();
     expect(copy.whatToDo).toBeTruthy();
