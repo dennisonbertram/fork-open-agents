@@ -705,9 +705,10 @@ describe("BT-346-06: tool-loop max iterations exceeded → typed workflow_failed
     });
 
     expect(result.outcome).toBe("failure");
-    expect(result.errorKind).toBe("workflow_failed");
+    // #862: turn exhaustion now records its own errorKind, not workflow_failed.
+    expect(result.errorKind).toBe("turn_budget_exceeded");
     // Error message must mention the bound
-    expect(result.errorMessage).toContain("steps");
+    expect(result.errorMessage).toContain("turns");
   });
 
   test("BT-346-06: sandbox disposed even when max iterations exceeded", async () => {

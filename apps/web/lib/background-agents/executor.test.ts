@@ -804,4 +804,64 @@ describe("executeBackgroundAgentRun", () => {
       }),
     );
   });
+
+  describe("agent-turn budget (#862)", () => {
+    const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
+
+    afterEach(() => {
+      if (originalMaxTurns === undefined) {
+        delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+      } else {
+        process.env.BACKGROUND_AGENT_MAX_TURNS = originalMaxTurns;
+      }
+    });
+
+    test("exhausting the default 16-turn budget records errorKind agent_turn_budget_exceeded", async () => {
+      delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+        status: "failed",
+        errorKind: "agent_turn_budget_exceeded",
+      });
+      expect(recordedStatusUpdates().at(-1)).toMatchObject({
+        status: "failed",
+        errorKind: "agent_turn_budget_exceeded",
+      });
+      expect(generate.mock.calls.length).toBe(16);
+    });
+
+    test("BACKGROUND_AGENT_MAX_TURNS overrides the default turn budget", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "3";
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(generate.mock.calls.length).toBe(3);
+    });
+  });
 });
