@@ -181,6 +181,7 @@ describe("GET /api/background-agents/:agentId/tool-preflight", () => {
       repoOwner: "acme",
       repoName: "widgets",
       slugs: ["gmail", "linear"],
+      agentId: "agent-1",
     });
   });
 
