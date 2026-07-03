@@ -11,6 +11,29 @@ import { LandingFeatures } from "@/components/landing/features";
 import { LandingFooter } from "@/components/landing/footer";
 import { LandingNav } from "@/components/landing/nav";
 import { Stage } from "@/components/landing/stage";
+import { sanitizeInternalRedirect } from "@/lib/redirect-safety";
+
+/**
+ * Default sign-in destination when no `next` param is present — unchanged
+ * from the pre-#793 hardcoded behavior.
+ */
+const DEFAULT_SIGN_IN_CALLBACK_URL = "/get-started?next=/sessions";
+
+/**
+ * #793: a signed-out visitor to a `/m/*` deep link is redirected here by
+ * `MobileLayout` with `?next=<original mobile path>` so the destination
+ * survives the desktop landing page. Resolve that `next` param (when present
+ * and same-origin/path-only — reusing the existing `sanitizeInternalRedirect`
+ * guard, no new open-redirect surface) as the sign-in CTA's callback target;
+ * otherwise keep the existing default `/get-started?next=/sessions` flow.
+ */
+function resolveSignInCallbackUrl(nextParam: string | null): string {
+  if (!nextParam) {
+    return DEFAULT_SIGN_IN_CALLBACK_URL;
+  }
+
+  return sanitizeInternalRedirect(nextParam, DEFAULT_SIGN_IN_CALLBACK_URL);
+}
 
 /**
  * Renders when the Vercel OAuth flow redirects back with `?error=<code>`
@@ -37,6 +60,9 @@ export function SignedOutHero() {
   const [heroButtonsVisible, setHeroButtonsVisible] = useState(true);
   const searchParams = useSearchParams();
   const signInErrorCode = searchParams.get("error");
+  const signInCallbackUrl = resolveSignInCallbackUrl(
+    searchParams.get("next"),
+  );
 
   useEffect(() => {
     const el = heroButtonsRef.current;
@@ -75,10 +101,7 @@ export function SignedOutHero() {
               className="mt-6 flex flex-col gap-2 sm:mt-8"
             >
               <div className="flex items-center gap-2">
-                <SignInButton
-                  size="lg"
-                  callbackUrl="/get-started?next=/sessions"
-                />
+                <SignInButton size="lg" callbackUrl={signInCallbackUrl} />
                 <GitHubLink>Open Source</GitHubLink>
               </div>
               <p className="text-xs text-(--l-fg-3)">
