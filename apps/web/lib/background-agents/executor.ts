@@ -41,6 +41,7 @@ import {
 } from "@/lib/db/schema";
 import {
   getBackgroundAgentRunWithAgent,
+  listBackgroundAgentComposioEvents,
   listBackgroundAgentEvents,
   listBackgroundAgentOutputs,
   recordBackgroundAgentEvent,
@@ -53,7 +54,7 @@ import {
   type BackgroundAgentWriteScope as GitHubToolsWriteScope,
 } from "./github-action-tools";
 import { mergeExtraTools } from "@/app/workflows/merge-extra-tools";
-import { buildRunSummary } from "./run-summary";
+import { buildRunSummary, mergeEventsForSummary } from "./run-summary";
 import {
   persistRunSummary,
   recordSummaryFailedEvent,
@@ -282,9 +283,15 @@ async function buildAndPersistRunSummary(params: {
   agentId: string | null;
   userId: string;
 }) {
-  const [freshRun, events, outputs] = await Promise.all([
+  const [freshRun, cappedEvents, composioEvents, outputs] = await Promise.all([
     getBackgroundAgentRunWithAgent(params.runId),
     listBackgroundAgentEvents(params.runId),
+    // #798 defect fix (Codex review P2-1): listBackgroundAgentEvents is a
+    // bounded newest-200 slice. Composio resolution emits EARLY in a run,
+    // so on a run with >200 total events, the composio events can fall off
+    // that slice entirely — merge in an uncapped, composio-scoped fetch so
+    // buildRunSummary never silently loses them.
+    listBackgroundAgentComposioEvents(params.runId),
     listBackgroundAgentOutputs(params.runId),
   ]);
 
@@ -292,10 +299,18 @@ async function buildAndPersistRunSummary(params: {
     return;
   }
 
+  const events = mergeEventsForSummary(cappedEvents, composioEvents);
+
   const summary = buildRunSummary({
     run: freshRun.run,
     events,
     outputs,
+    // #798 defect fix: whether this run's agent had Composio toolkits
+    // configured, gating run-summary.ts's "never resolved" copy. `agent`
+    // is null when the row's left join finds no match (e.g. the owning
+    // agent was deleted) — default to false (silence over noise) since we
+    // genuinely cannot know in that case.
+    composioConfigured: (freshRun.agent?.composioToolkitSlugs.length ?? 0) > 0,
   });
 
   await persistRunSummary({ runId: params.runId, summary });
@@ -1117,6 +1132,27 @@ export async function executeBackgroundAgentRun(params: {
           disconnectedToolkits: composioResult.disconnectedToolkits,
         },
       });
+
+      // #798: surface toolkits that resolved but have no ACTIVE connected
+      // account — previously discarded entirely (finding A4). Additive to
+      // .resolved, not a replacement: the run still has (partial) tools.
+      if (composioResult.disconnectedToolkits.length > 0) {
+        await recordBackgroundAgentEvent({
+          runId: run.id,
+          agentId: run.agentId,
+          userId: run.userId,
+          eventName: "background-agent.composio.not_connected",
+          status: "succeeded",
+          level: "warn",
+          summary: `Composio toolkits resolved but not connected: ${composioResult.disconnectedToolkits.join(", ")}.`,
+          workflowRunId: params.workflowRunId,
+          requestId: run.requestId,
+          sandboxName,
+          payload: {
+            disconnectedToolkits: composioResult.disconnectedToolkits,
+          },
+        });
+      }
     } else if (composioResult.status === "error") {
       await recordBackgroundAgentEvent({
         runId: run.id,
@@ -1129,18 +1165,43 @@ export async function executeBackgroundAgentRun(params: {
         workflowRunId: params.workflowRunId,
         requestId: run.requestId,
         sandboxName,
+        // #798: errorKind is now recorded so run-summary.ts can surface it
+        // in warnings[] regardless of the run's terminal status.
+        errorKind: composioResult.errorKind,
         payload: {
           // Do NOT include error details that might contain secrets
           toolkitSlugsRequested: agentToolkitSlugs,
         },
       });
       // Non-fatal: run continues without Composio tools.
+    } else {
+      // #798: composioResult.status === "off" — every non-ready, non-error
+      // resolver outcome now emits a named event instead of the previous
+      // silent no-op (finding A1). Non-fatal: the run continues without
+      // Composio tools; status stays "succeeded" here because this event
+      // does not by itself represent a run failure.
+      await recordBackgroundAgentEvent({
+        runId: run.id,
+        agentId: run.agentId,
+        userId: run.userId,
+        eventName: "background-agent.composio.off",
+        status: "succeeded",
+        level: "warn",
+        summary:
+          composioResult.reason === "repo_policy_blocked"
+            ? `Composio tools blocked by repo policy: ${(composioResult.blockedSlugs ?? []).join(", ")}.`
+            : "Composio tools requested but no toolkit slugs were selected.",
+        workflowRunId: params.workflowRunId,
+        requestId: run.requestId,
+        sandboxName,
+        payload: {
+          reason: composioResult.reason,
+          ...(composioResult.reason === "repo_policy_blocked"
+            ? { blockedSlugs: composioResult.blockedSlugs ?? [] }
+            : {}),
+        },
+      });
     }
-    // composioResult.status === "off": today's behavior is unchanged — no
-    // event is emitted for "off" outcomes. Emitting a named event for every
-    // non-ready outcome (including "off") is the make-degradations-visible
-    // ticket's job (#798), which consumes composioResult.reason /
-    // blockedSlugs once it lands.
   }
 
   // ── Resolve native GitHub action tools, filtered by the agent's toggles ──

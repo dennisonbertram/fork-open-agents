@@ -45,7 +45,12 @@ import { unlinkGitHub } from "@/lib/github/actions/connection";
 import { authClient } from "@/lib/auth/client";
 import type { GitHubConnectionReason } from "@/lib/github/status";
 import { fetcher } from "@/lib/swr";
-import { shouldAutoExpandOrgs } from "./accounts-helpers";
+import { AccountsDisconnectDialogBody } from "./accounts-disconnect-dialog";
+import {
+  getGitHubManageUrl,
+  resolveConnectionButtonStatus,
+  shouldAutoExpandOrgs,
+} from "./accounts-helpers";
 
 const GITHUB_OAUTH_CALLBACK =
   "/api/github/post-link?next=/settings/connections";
@@ -332,16 +337,20 @@ function OrgRow({ org }: { org: OrgInstallStatus }) {
 /**
  * Connection status dropdown button:
  * • Connected  → green dot, dropdown: manage on github, re-authenticate, disconnect
+ * • Degraded   → amber dot ("Unverified"): the status check itself failed
+ *   (sync_degraded) — retry the check; reconnecting cannot fix it
  * • Reconnect  → amber dot, dropdown: re-authenticate, disconnect
  * • Not connected → plain "Connect" button, no dropdown
  */
 function ConnectionStatusButton({
   status,
   onReconnect,
+  onRetryCheck,
   onDisconnect,
   unlinking,
 }: {
-  status: "connected" | "reconnect" | "not_connected";
+  status: "connected" | "degraded" | "reconnect" | "not_connected";
+  onRetryCheck?: () => void;
   configureUrl?: string | null;
   onReconnect?: () => void;
   onDisconnect: () => void;
@@ -363,11 +372,14 @@ function ConnectionStatusButton({
 
   const isConnected = status === "connected";
   const dotColor = isConnected ? "bg-green-500" : "bg-amber-500";
-  const label = isConnected ? "Connected" : "Reconnect";
-  const clientId = process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID;
-  const manageUrl = clientId
-    ? `https://github.com/settings/connections/applications/${clientId}`
-    : null;
+  const label = isConnected
+    ? "Connected"
+    : status === "degraded"
+      ? "Unverified"
+      : "Reconnect";
+  const manageUrl = getGitHubManageUrl(
+    process.env.NEXT_PUBLIC_GITHUB_CLIENT_ID,
+  );
 
   return (
     <DropdownMenu>
@@ -390,6 +402,11 @@ function ConnectionStatusButton({
               Manage on GitHub
               <ExternalLink className="size-3.5 text-muted-foreground" />
             </Link>
+          </DropdownMenuItem>
+        ) : null}
+        {status === "degraded" && onRetryCheck ? (
+          <DropdownMenuItem onClick={onRetryCheck}>
+            Retry connection check
           </DropdownMenuItem>
         ) : null}
         <DropdownMenuItem onClick={onReconnect}>
@@ -415,6 +432,7 @@ export function AccountsSection() {
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const {
     reconnectRequired,
+    syncDegraded,
     reason,
     isLoading: connectionStatusLoading,
     refresh: refreshConnectionStatus,
@@ -500,8 +518,10 @@ export function AccountsSection() {
           <ConnectedState
             data={connectionData}
             reconnectRequired={requiresReconnect}
+            syncDegraded={syncDegraded}
             reconnectReason={reason}
             onDisconnect={() => setDisconnectOpen(true)}
+            onRetryConnectionCheck={() => void refreshConnectionStatus()}
             unlinking={unlinking}
           />
         ) : (
@@ -515,8 +535,7 @@ export function AccountsSection() {
           <DialogHeader>
             <DialogTitle>Disconnect GitHub?</DialogTitle>
             <DialogDescription>
-              This will unlink your GitHub account and remove all app
-              installations. You can reconnect at any time.
+              <AccountsDisconnectDialogBody />
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -633,14 +652,18 @@ function ConnectionLoadingSkeleton() {
 function ConnectedState({
   data,
   reconnectRequired,
+  syncDegraded,
   reconnectReason,
   onDisconnect,
+  onRetryConnectionCheck,
   unlinking,
 }: {
   data: ConnectionStatusResponse;
   reconnectRequired: boolean;
+  syncDegraded: boolean;
   reconnectReason: GitHubConnectionReason | null;
   onDisconnect: () => void;
+  onRetryConnectionCheck: () => void;
   unlinking: boolean;
 }) {
   // combine personal account + orgs into a single list
@@ -685,12 +708,22 @@ function ConnectedState({
                 Your GitHub connection has been disconnected.
               </p>
             ) : null}
+            {!reconnectRequired && syncDegraded ? (
+              <p className="inline-flex items-center gap-1 text-xs text-amber-500">
+                <AlertCircle className="size-3" />
+                We couldn&apos;t verify your GitHub connection just now.
+              </p>
+            ) : null}
           </div>
         </div>
 
         <ConnectionStatusButton
-          status={reconnectRequired ? "reconnect" : "connected"}
+          status={resolveConnectionButtonStatus({
+            reconnectRequired,
+            syncDegraded,
+          })}
           onReconnect={() => void startGitHubReconnect(reconnectReason)}
+          onRetryCheck={onRetryConnectionCheck}
           onDisconnect={onDisconnect}
           unlinking={unlinking}
         />

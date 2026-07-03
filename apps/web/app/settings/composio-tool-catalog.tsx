@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, Search } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Search } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import useSWR from "swr";
@@ -14,6 +14,11 @@ import {
   POPULAR_TOOLKIT_SLUGS,
   selectSuggestedToolkits,
 } from "./composio-catalog-suggested";
+import {
+  buildToolkitStatusMap,
+  getToolkitConnectionState,
+  type ComposioToolkitConnectionState,
+} from "./composio-connection-state";
 
 const COMPOSIO_DASHBOARD_URL = "https://app.composio.dev";
 
@@ -52,7 +57,7 @@ interface ToolkitCardProps {
   logo: string | null;
   managedAuth: boolean;
   noAuth: boolean;
-  isConnected: boolean;
+  connectionState: ComposioToolkitConnectionState;
   onConnect: (slug: string) => Promise<void>;
   isConnecting: boolean;
 }
@@ -64,7 +69,7 @@ function ToolkitCard({
   logo,
   managedAuth,
   noAuth,
-  isConnected,
+  connectionState,
   onConnect,
   isConnecting,
 }: ToolkitCardProps) {
@@ -98,11 +103,34 @@ function ToolkitCard({
       ) : null}
 
       <div className="mt-auto pt-1">
-        {isConnected ? (
+        {connectionState === "active" ? (
           <span className="inline-flex items-center gap-1 rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-xs font-medium text-green-700 dark:border-green-800 dark:bg-green-950/30 dark:text-green-400">
             <CheckCircle2 className="h-3 w-3" />
             Connected
           </span>
+        ) : connectionState === "expired" ? (
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              Expired — reconnect
+            </span>
+            {managedAuth ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void onConnect(slug)}
+                disabled={isConnecting}
+                className="h-7 text-xs"
+              >
+                Reconnect
+              </Button>
+            ) : null}
+          </div>
+        ) : connectionState === "unavailable" ? (
+          <p className="text-xs text-muted-foreground">
+            Can&apos;t check right now
+          </p>
         ) : noAuth ? (
           <p className="text-xs text-muted-foreground">No sign-in needed</p>
         ) : managedAuth ? (
@@ -141,7 +169,8 @@ interface ToolkitGroupProps {
     managedAuth: boolean;
     noAuth: boolean;
   }>;
-  connectedSlugs: Set<string>;
+  toolkitStatusMap: Map<string, string>;
+  accountsUnavailable: boolean;
   connectingSlug: string | null;
   onConnect: (slug: string) => Promise<void>;
 }
@@ -149,7 +178,8 @@ interface ToolkitGroupProps {
 function ToolkitGroup({
   label,
   toolkits,
-  connectedSlugs,
+  toolkitStatusMap,
+  accountsUnavailable,
   connectingSlug,
   onConnect,
 }: ToolkitGroupProps) {
@@ -169,7 +199,15 @@ function ToolkitGroup({
             logo={toolkit.logo}
             managedAuth={toolkit.managedAuth}
             noAuth={toolkit.noAuth}
-            isConnected={connectedSlugs.has(toolkit.slug)}
+            connectionState={
+              toolkit.noAuth
+                ? "active"
+                : getToolkitConnectionState({
+                    slug: toolkit.slug,
+                    statusMap: toolkitStatusMap,
+                    unavailable: accountsUnavailable,
+                  })
+            }
             onConnect={onConnect}
             isConnecting={connectingSlug === toolkit.slug}
           />
@@ -202,9 +240,13 @@ export function ComposioToolCatalog() {
     return null;
   }
 
-  const connectedSlugs = new Set(
-    (accountsData?.accounts ?? []).map((a) => a.toolkitSlug),
-  );
+  const toolkitStatusMap = buildToolkitStatusMap(accountsData?.accounts ?? []);
+  const accountsUnavailable = accountsData?.unavailable === true;
+  // "has been connected" (any status, including expired) — used to decide
+  // group membership (pinned "Connected" group, excluded from "Suggested").
+  // The badge/CTA rendered for each card still distinguishes active vs
+  // expired vs other via connectionState (#800).
+  const connectedSlugs = new Set(toolkitStatusMap.keys());
 
   const isSearching = query.trim().length > 0;
 
@@ -306,7 +348,15 @@ export function ComposioToolCatalog() {
                       logo={toolkit.logo}
                       managedAuth={toolkit.managedAuth}
                       noAuth={toolkit.noAuth}
-                      isConnected={connectedSlugs.has(toolkit.slug)}
+                      connectionState={
+                        toolkit.noAuth
+                          ? "active"
+                          : getToolkitConnectionState({
+                              slug: toolkit.slug,
+                              statusMap: toolkitStatusMap,
+                              unavailable: accountsUnavailable,
+                            })
+                      }
                       onConnect={handleConnect}
                       isConnecting={connectingSlug === toolkit.slug}
                     />
@@ -325,14 +375,16 @@ export function ComposioToolCatalog() {
             <ToolkitGroup
               label="Connected"
               toolkits={connectedToolkits}
-              connectedSlugs={connectedSlugs}
+              toolkitStatusMap={toolkitStatusMap}
+              accountsUnavailable={accountsUnavailable}
               connectingSlug={connectingSlug}
               onConnect={handleConnect}
             />
             <ToolkitGroup
               label="Suggested"
               toolkits={suggestedToolkits}
-              connectedSlugs={connectedSlugs}
+              toolkitStatusMap={toolkitStatusMap}
+              accountsUnavailable={accountsUnavailable}
               connectingSlug={connectingSlug}
               onConnect={handleConnect}
             />
