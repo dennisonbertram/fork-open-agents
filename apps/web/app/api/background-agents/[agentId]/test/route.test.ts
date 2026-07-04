@@ -176,4 +176,30 @@ describe("POST /api/background-agents/[agentId]/test", () => {
     expect(response.status).toBe(200);
     expect(body.skipReason).toBe("agent_disabled");
   });
+
+  // #861: pins the pass-through for the repo-allowlist skip reason so the
+  // bare Response.json(result) in the success branch can never regress.
+  test("surfaces the skip reason when the repo is not allowlisted", async () => {
+    dispatchManualBackgroundAgentTest.mockImplementationOnce(async () => ({
+      enabled: true,
+      matched: 0,
+      created: 0,
+      duplicates: 0,
+      runIds: [],
+      loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
+    }));
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/background-agents/agent-1/test", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.skipReason).toBe("repo_not_allowlisted");
+  });
 });

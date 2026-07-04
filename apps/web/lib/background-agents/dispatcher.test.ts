@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { BackgroundAgentWithTriggers } from "./store";
 import type { NormalizedBackgroundTriggerEvent } from "./types";
 
@@ -656,6 +656,7 @@ describe("dispatchManualBackgroundAgentTest", () => {
   test("does not create a manual test run outside the configured repo allowlist", async () => {
     process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/other";
     const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
 
     const result = await dispatchManualBackgroundAgentTest({
       agent,
@@ -669,9 +670,19 @@ describe("dispatchManualBackgroundAgentTest", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[background-agents] manual test skipped",
+      expect.objectContaining({
+        eventName: "background-agent.manual_test.skipped",
+        agentId: agent.id,
+        skipReason: "repo_not_allowlisted",
+      }),
+    );
+    warnSpy.mockRestore();
   });
 
   // #743: manual-test guard — a disabled agent must never run, even via the
