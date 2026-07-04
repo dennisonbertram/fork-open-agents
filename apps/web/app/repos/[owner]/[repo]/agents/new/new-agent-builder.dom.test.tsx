@@ -10,6 +10,7 @@
 import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { useState } from "react";
 import {
   buildAgentPayload,
   defaultForm,
@@ -47,31 +48,46 @@ mock.module("../template-picker", () => ({
 mock.module("../agent-spec-editor", () => ({
   AgentSpecEditor: ({
     createdAgentId,
+    testRunId,
     onSave,
+    onRunTest,
   }: {
     createdAgentId: string | null;
+    testRunId: string | null;
     onSave: (payload: unknown) => void | Promise<void>;
-  }) => (
-    <div>
-      <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
-      <button
-        onClick={() =>
-          void onSave(
-            buildAgentPayload({
-              ...defaultForm,
-              name: "Nightly triage",
-              repoOwner: "acme",
-              repoName: "widgets",
-              instructions: "Triage new issues",
-            }),
-          )
-        }
-        type="button"
-      >
-        Save agent
-      </button>
-    </div>
-  ),
+    onRunTest: () => void | Promise<void>;
+  }) => {
+    const [enabled, setEnabled] = useState(false);
+    return (
+      <div>
+        <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
+        <span data-testid="test-run-id">{testRunId ?? "none"}</span>
+        <button
+          onClick={() =>
+            void onSave(
+              buildAgentPayload({
+                ...defaultForm,
+                name: "Nightly triage",
+                repoOwner: "acme",
+                repoName: "widgets",
+                instructions: "Triage new issues",
+                enabled,
+              }),
+            )
+          }
+          type="button"
+        >
+          Save agent
+        </button>
+        <button onClick={() => setEnabled(true)} type="button">
+          Enable agent
+        </button>
+        <button onClick={() => void onRunTest()} type="button">
+          Run a test
+        </button>
+      </div>
+    );
+  },
 }));
 
 let fetchResult: { ok: boolean; json: () => Promise<unknown> } = {
@@ -158,12 +174,12 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     // First save succeeded — success status panel is visible.
     expect(await q.findByRole("status")).toBeTruthy();
 
-    // Second save fails.
+    // Second save fails (now via PATCH, since createdAgentId is set).
     fetchResult = { ok: false, json: async () => ({}) };
     await userClick(q.getByRole("button", { name: /save agent/i }));
 
     const alert = await q.findByRole("alert");
-    expect(alert.textContent).toContain("Failed to create background agent");
+    expect(alert.textContent).toContain("Failed to update background agent");
     expect(q.queryByRole("status")).toBeNull();
   });
 
@@ -181,5 +197,190 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     expect((await q.findByTestId("created-agent-id")).textContent).toBe(
       "agent-123",
     );
+  });
+});
+
+describe("NewAgentBuilder — second save updates instead of duplicating (#860)", () => {
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+    globalFetch.mockClear();
+    fetchResult = {
+      ok: true,
+      json: async () => ({ agent: { id: "agent-123" } }),
+    };
+  });
+
+  test("two Saves: one POST then one PATCH, never two POSTs", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    expect(globalFetch).toHaveBeenCalledTimes(2);
+    const [firstUrl, firstOpts] = globalFetch.mock.calls[0] as [
+      string,
+      { method: string },
+    ];
+    const [secondUrl, secondOpts] = globalFetch.mock.calls[1] as [
+      string,
+      { method: string },
+    ];
+    expect(firstUrl).toBe("/api/background-agents");
+    expect(firstOpts.method).toBe("POST");
+    expect(secondUrl).toBe("/api/background-agents/agent-123");
+    expect(secondOpts.method).toBe("PATCH");
+  });
+
+  test("toggle Enabled then Save PATCHes with status enabled", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /enable agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    const [secondUrl, secondOpts] = globalFetch.mock.calls[1] as [
+      string,
+      { method: string; body: string },
+    ];
+    expect(secondUrl).toBe("/api/background-agents/agent-123");
+    expect(secondOpts.method).toBe("PATCH");
+    expect(JSON.parse(secondOpts.body).status).toBe("enabled");
+  });
+
+  test("second save shows update feedback distinct from create", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    expect(toastSuccess).toHaveBeenCalledTimes(2);
+    expect(toastSuccess).toHaveBeenLastCalledWith("Agent updated.");
+
+    const status = await q.findByRole("status");
+    expect(status.textContent).toContain("Agent updated");
+  });
+});
+
+describe("NewAgentBuilder — run-test skip feedback (#861)", () => {
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+    globalFetch.mockClear();
+    fetchResult = {
+      ok: true,
+      json: async () => ({ agent: { id: "agent-123" } }),
+    };
+  });
+
+  test.each([
+    [
+      "agent_disabled",
+      "This agent is disabled — enable it above, then run the test again.",
+    ],
+    [
+      "no_enabled_trigger",
+      "This agent has no enabled trigger to test — add or enable one first.",
+    ],
+    [
+      "repo_not_allowlisted",
+      "This repository isn't allowlisted for background agents — check Background agent settings.",
+    ],
+  ])(
+    "skipReason %s renders a prominent alert with the mapped copy",
+    async (skipReason, expectedCopy) => {
+      const { NewAgentBuilder } = await builderPromise;
+
+      const { container } = render(
+        <NewAgentBuilder owner="acme" repo="widgets" />,
+      );
+      const q = within(container);
+
+      await userClick(q.getByRole("button", { name: /start blank/i }));
+      await userClick(q.getByRole("button", { name: /save agent/i }));
+
+      fetchResult = {
+        ok: true,
+        json: async () => ({
+          enabled: true,
+          matched: 0,
+          created: 0,
+          duplicates: 0,
+          runIds: [],
+          skipReason,
+        }),
+      };
+      await userClick(q.getByRole("button", { name: /run a test/i }));
+
+      const alert = await q.findByRole("alert");
+      expect(alert.textContent).toContain(expectedCopy);
+      expect((await q.findByTestId("test-run-id")).textContent).toBe("none");
+    },
+  );
+
+  test("feature-disabled 403 renders the backend error message as an alert", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    fetchResult = {
+      ok: false,
+      json: async () => ({ error: "Background agents are disabled" }),
+    };
+    await userClick(q.getByRole("button", { name: /run a test/i }));
+
+    const alert = await q.findByRole("alert");
+    expect(alert.textContent).toContain("Background agents are disabled");
+  });
+
+  test("a successful run: no alert, test-run-id becomes the created run id", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    fetchResult = {
+      ok: true,
+      json: async () => ({
+        enabled: true,
+        matched: 1,
+        created: 1,
+        duplicates: 0,
+        runIds: ["run-9"],
+      }),
+    };
+    await userClick(q.getByRole("button", { name: /run a test/i }));
+
+    expect((await q.findByTestId("test-run-id")).textContent).toBe("run-9");
+    expect(q.queryByRole("alert")).toBeNull();
   });
 });
