@@ -48,15 +48,20 @@ mock.module("../template-picker", () => ({
 mock.module("../agent-spec-editor", () => ({
   AgentSpecEditor: ({
     createdAgentId,
+    testRunId,
     onSave,
+    onRunTest,
   }: {
     createdAgentId: string | null;
+    testRunId: string | null;
     onSave: (payload: unknown) => void | Promise<void>;
+    onRunTest: () => void | Promise<void>;
   }) => {
     const [enabled, setEnabled] = useState(false);
     return (
       <div>
         <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
+        <span data-testid="test-run-id">{testRunId ?? "none"}</span>
         <button
           onClick={() =>
             void onSave(
@@ -76,6 +81,9 @@ mock.module("../agent-spec-editor", () => ({
         </button>
         <button onClick={() => setEnabled(true)} type="button">
           Enable agent
+        </button>
+        <button onClick={() => void onRunTest()} type="button">
+          Run a test
         </button>
       </div>
     );
@@ -269,5 +277,110 @@ describe("NewAgentBuilder — second save updates instead of duplicating (#860)"
 
     const status = await q.findByRole("status");
     expect(status.textContent).toContain("Agent updated");
+  });
+});
+
+describe("NewAgentBuilder — run-test skip feedback (#861)", () => {
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+    globalFetch.mockClear();
+    fetchResult = {
+      ok: true,
+      json: async () => ({ agent: { id: "agent-123" } }),
+    };
+  });
+
+  test.each([
+    [
+      "agent_disabled",
+      "This agent is disabled — enable it above, then run the test again.",
+    ],
+    [
+      "no_enabled_trigger",
+      "This agent has no enabled trigger to test — add or enable one first.",
+    ],
+    [
+      "repo_not_allowlisted",
+      "This repository isn't allowlisted for background agents — check Background agent settings.",
+    ],
+  ])(
+    "skipReason %s renders a prominent alert with the mapped copy",
+    async (skipReason, expectedCopy) => {
+      const { NewAgentBuilder } = await builderPromise;
+
+      const { container } = render(
+        <NewAgentBuilder owner="acme" repo="widgets" />,
+      );
+      const q = within(container);
+
+      await userClick(q.getByRole("button", { name: /start blank/i }));
+      await userClick(q.getByRole("button", { name: /save agent/i }));
+
+      fetchResult = {
+        ok: true,
+        json: async () => ({
+          enabled: true,
+          matched: 0,
+          created: 0,
+          duplicates: 0,
+          runIds: [],
+          skipReason,
+        }),
+      };
+      await userClick(q.getByRole("button", { name: /run a test/i }));
+
+      const alert = await q.findByRole("alert");
+      expect(alert.textContent).toContain(expectedCopy);
+      expect((await q.findByTestId("test-run-id")).textContent).toBe("none");
+    },
+  );
+
+  test("feature-disabled 403 renders the backend error message as an alert", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    fetchResult = {
+      ok: false,
+      json: async () => ({ error: "Background agents are disabled" }),
+    };
+    await userClick(q.getByRole("button", { name: /run a test/i }));
+
+    const alert = await q.findByRole("alert");
+    expect(alert.textContent).toContain("Background agents are disabled");
+  });
+
+  test("a successful run: no alert, test-run-id becomes the created run id", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    fetchResult = {
+      ok: true,
+      json: async () => ({
+        enabled: true,
+        matched: 1,
+        created: 1,
+        duplicates: 0,
+        runIds: ["run-9"],
+      }),
+    };
+    await userClick(q.getByRole("button", { name: /run a test/i }));
+
+    expect((await q.findByTestId("test-run-id")).textContent).toBe("run-9");
+    expect(q.queryByRole("alert")).toBeNull();
   });
 });
