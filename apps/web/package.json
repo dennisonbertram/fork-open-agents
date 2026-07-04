@@ -30,6 +30,7 @@
     "background-agents:seed-installation": "bun run scripts/background-agent-seed-installation.ts",
     "background-agents:webhook-proof": "bun run scripts/background-agent-webhook-proof.ts",
     "composio:smoke": "bun run scripts/composio-smoke.ts",
+    "loops:journey-proof": "bun run scripts/agent-loop-journey-proof.ts",
     "preview:smoke": "bun run scripts/preview-smoke.ts"
   },
   "dependencies": {
