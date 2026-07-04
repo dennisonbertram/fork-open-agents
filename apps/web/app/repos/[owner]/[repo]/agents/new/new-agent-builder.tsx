@@ -269,7 +269,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
-      {createdAgentId && (
+      {createdAgentId && !saveError && (
         <div
           className="rounded-lg border border-border bg-muted/20 p-4 text-sm"
           role="status"
