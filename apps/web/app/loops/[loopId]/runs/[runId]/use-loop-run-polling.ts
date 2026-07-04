@@ -14,7 +14,7 @@
  * time-since-last-success so the UI can honestly show staleness instead of
  * a false liveness claim.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import useSWR from "swr";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import { getLoopRunLiveness, type LoopRunLiveness } from "./run-liveness";
@@ -113,6 +113,38 @@ export function useLoopRunPolling(
   const [lastSuccessAtMs, setLastSuccessAtMs] = useState(() => Date.now());
   const [nowMs, setNowMs] = useState(() => Date.now());
 
+  // #880 follow-up: this must stay referentially stable across renders
+  // driven only by the liveness ticker (setNowMs, below) — SWR 2.4.1's
+  // polling effect depends on `refreshInterval`'s identity and tears down +
+  // restarts its timer whenever that identity changes. An inline arrow
+  // function here would get a new identity on every ~1s tick, resetting the
+  // 2s poll timer before it ever elapses and starving polling entirely.
+  //
+  // A naive "just wrap it in useCallback" fix trades one bug for a worse
+  // one: SWR invokes this callback with `latest` = the *raw* cache entry
+  // (not the fallback-merged `data`), which is still `undefined` the very
+  // first time it's called (synchronously at mount, before the initial
+  // fetch resolves). The pre-existing, always-fresh-identity callback
+  // "self-healed" that bootstrap gap by accident — every data-driven
+  // re-render tore the polling effect down and reran `next()` with
+  // freshly-populated cache data. A permanently stable callback loses that
+  // accidental recovery path, so it must fall back to `initialData` (a
+  // stable prop, not ticker-driven state) whenever `latest` hasn't loaded
+  // yet, letting SWR's own execute()->next() recursion carry the correct
+  // interval forward from the first tick onward. `initialData` and
+  // `refreshIntervalMs` are the only true dependencies — neither changes
+  // when the ticker fires — so the callback identity survives every
+  // ticker-driven re-render.
+  const { refreshIntervalMs } = options;
+  const getRefreshInterval = useCallback(
+    (latest: GetAgentLoopRunDetailResponse | undefined) => {
+      const status = latest?.run.status ?? initialData.run.status;
+      const base = computeLoopRunRefreshInterval(status);
+      return base === 0 ? 0 : (refreshIntervalMs ?? base);
+    },
+    [refreshIntervalMs, initialData],
+  );
+
   const swr = useSWR<GetAgentLoopRunDetailResponse>(
     `/api/agent-loop-runs/${runId}`,
     (url: string) =>
@@ -122,10 +154,7 @@ export function useLoopRunPolling(
       }),
     {
       fallbackData: initialData,
-      refreshInterval: (latest) => {
-        const base = computeLoopRunRefreshInterval(latest?.run.status);
-        return base === 0 ? 0 : (options.refreshIntervalMs ?? base);
-      },
+      refreshInterval: getRefreshInterval,
       errorRetryInterval: options.errorRetryIntervalMs ?? POLL_INTERVAL_MS,
       ...(options.dedupingIntervalMs !== undefined
         ? { dedupingInterval: options.dedupingIntervalMs }
