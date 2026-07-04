@@ -42,9 +42,15 @@ function baseConfig(overrides: Partial<JourneyConfig> = {}): JourneyConfig {
   };
 }
 
-type Router = (method: string, pathname: string) => Response | Promise<Response>;
+type Router = (
+  method: string,
+  pathname: string,
+) => Response | Promise<Response>;
 
-function makeFetch(router: Router, recorded: Array<{ method: string; url: string; headers: Headers }>) {
+function makeFetch(
+  router: Router,
+  recorded: Array<{ method: string; url: string; headers: Headers }>,
+) {
   return (async (url: string | URL, init?: RequestInit) => {
     const parsed = new URL(url);
     const method = init?.method ?? "GET";
@@ -377,7 +383,8 @@ describe("background-agent-journey-proof", () => {
       expect(
         recorded.some(
           (r) =>
-            r.method === "DELETE" && r.url === "/api/background-agents/agent-j1",
+            r.method === "DELETE" &&
+            r.url === "/api/background-agents/agent-j1",
         ),
       ).toBe(true);
     });
@@ -494,7 +501,8 @@ describe("background-agent-journey-proof", () => {
       expect(summary.cleanup).toBe("failed");
       expect(
         logLines.some(
-          (line) => line.includes("WARNING: cleanup failed") &&
+          (line) =>
+            line.includes("WARNING: cleanup failed") &&
             line.includes("agent-j1"),
         ),
       ).toBe(true);
@@ -530,7 +538,8 @@ describe("background-agent-journey-proof", () => {
       expect(
         recorded.some(
           (r) =>
-            r.method === "DELETE" && r.url === "/api/background-agents/agent-j1",
+            r.method === "DELETE" &&
+            r.url === "/api/background-agents/agent-j1",
         ),
       ).toBe(true);
     });

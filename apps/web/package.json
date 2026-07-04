@@ -24,6 +24,7 @@
     "background-agents:env-audit": "bun run scripts/background-agent-vercel-env-audit.ts",
     "background-agents:github-app-readiness": "bun run scripts/background-agent-github-app-readiness.ts",
     "background-agents:github-webhook-proof": "bun run scripts/background-agent-github-webhook-proof.ts",
+    "background-agents:journey-proof": "bun run scripts/background-agent-journey-proof.ts",
     "background-agents:live-proof-preflight": "bun run scripts/background-agent-live-proof-preflight.ts",
     "background-agents:test-proof": "bun run scripts/background-agent-test-proof.ts",
     "background-agents:seed-installation": "bun run scripts/background-agent-seed-installation.ts",
