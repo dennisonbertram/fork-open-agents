@@ -10,18 +10,11 @@ import {
 } from "@/lib/background-agents/agent-spec";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import { AgentSpecEditor } from "../../agent-spec-editor";
+import { manualTestSkipMessages } from "../../manual-test-feedback";
+import type { ManualTestResponse } from "../../manual-test-feedback";
 
 // Re-export for testing
 export { buildAgentPayload as buildEditPatch };
-
-type ManualTestResponse = {
-  enabled: boolean;
-  matched: number;
-  created: number;
-  duplicates: number;
-  runIds: string[];
-  error?: string;
-};
 
 type AgentEditFormProps = {
   agent: BackgroundAgentWithTriggers;
@@ -104,6 +97,10 @@ export function AgentEditForm({
         setRunError(body.error ?? "Failed to start test run");
         return;
       }
+      if (body.skipReason) {
+        setRunError(manualTestSkipMessages[body.skipReason]);
+        return;
+      }
       const runId = body.runIds[0];
       if (!runId) {
         setRunError("No background run was created for this test");
@@ -154,9 +151,12 @@ export function AgentEditForm({
         </p>
       )}
       {runError && (
-        <p className="text-sm text-destructive" role="alert">
+        <div
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+          role="alert"
+        >
           {runError}
-        </p>
+        </div>
       )}
     </div>
   );

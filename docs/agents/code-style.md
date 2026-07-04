@@ -61,6 +61,49 @@ Detailed coding conventions, tool implementation patterns, and common patterns f
 - Test files use `.test.ts` suffix
 - Colocate tests with source files
 
+### DOM-interaction tests
+
+Most `apps/web` component tests render with `react-dom/server`'s
+`renderToStaticMarkup` and assert on the resulting HTML string — this
+requires no DOM and is the default for read-only render checks. When a test
+needs to click something and assert on the resulting `fetch` call or visible
+accessible feedback, use the DOM-interaction convention instead:
+
+- Name the file `*.dom.test.tsx` (e.g. `agent-card.dom.test.tsx`). This
+  opts the file into a happy-dom environment; plain `*.test.tsx` files are
+  unaffected and keep using `renderToStaticMarkup`.
+- Import `@/tests/dom` as the **first** import in the file, before any React
+  or `@testing-library` import — its side-effect registration must run
+  before those modules are evaluated.
+- Never import `screen` from `@testing-library/dom` or
+  `@testing-library/react`. It binds `document` at module-evaluation time,
+  and under Bun's import hoisting that can happen before the DOM is
+  registered, permanently breaking `screen.getByRole(...)`. Use the query
+  functions returned from `render(...)` instead (`getByRole`,
+  `findByRole`, etc.) — they bind lazily and are exported from `@/tests/dom`.
+- Drive interactions with `userClick(element)` from `@/tests/dom` rather
+  than raw `fireEvent.click`. It wraps the click in `act()`, which is
+  required for state updates from async click handlers to reach
+  `waitFor`/`findByRole` under CI's pinned Bun version.
+- Call `registerDomTestHooks()` from `@/tests/dom` at the top level of the
+  test file itself (not from within `describe`/`test`). Registering the
+  `afterEach(cleanup)` hook from an *imported* helper module silently no-ops
+  under CI's pinned Bun 1.2.14, leaking rendered DOM across tests in the
+  same file — it must be called from the test file's own module scope.
+- Scope queries to the render's own container via `within(container)`
+  (destructure `container` from `render(...)`'s return value) rather than
+  querying the ambient `document.body`. This keeps any accidental cleanup
+  leakage from silently matching a stale render from an earlier test.
+- Assert feedback by accessible role (e.g. `getByRole("alert")`), not by
+  substring — this keeps the test enforcing accessible markup, not just
+  visible text.
+- Multi-file test runs must use `bun run test` (or `bun test --isolate
+  <dir>`), never a bare multi-file `bun test <dir>` — happy-dom globals are
+  process-global and would leak into later files in the same process
+  otherwise, the same hazard class `mock.module` already requires isolation
+  for.
+- Exemplar: `apps/web/app/repos/[owner]/[repo]/agents/agent-card.dom.test.tsx`.
+
 ## Bun APIs
 
 - Prefer Bun APIs over Node when available:

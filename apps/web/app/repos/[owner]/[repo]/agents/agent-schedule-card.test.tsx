@@ -124,4 +124,21 @@ describe("AgentScheduleCard", () => {
     expect(html).toContain("Last run");
     expect(html).toMatch(/Jun|2026/);
   });
+
+  test("BT-863: renders lastRunAt via the shared UTC-labeled formatter", async () => {
+    const { AgentScheduleCard } = await componentModulePromise;
+
+    const trigger: AgentScheduleTrigger = {
+      id: "trigger-863",
+      schedule: "0 9 * * *",
+      status: "enabled",
+      lastRunAt: new Date("2026-07-03T21:20:00Z"),
+      nextRunAt: null,
+      lastSkipReason: null,
+    };
+
+    const html = renderToStaticMarkup(<AgentScheduleCard trigger={trigger} />);
+
+    expect(html).toContain("Jul 3, 2026, 9:20 PM UTC");
+  });
 });

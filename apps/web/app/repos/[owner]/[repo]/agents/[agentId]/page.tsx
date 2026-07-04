@@ -7,12 +7,14 @@ import {
   getOwnedBackgroundAgentWithTriggers,
   listBackgroundAgentRuns,
 } from "@/lib/background-agents/store";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
 import { formatTriggerLabel } from "@/lib/background-agents/trigger-label";
 import type { TriggerKind } from "@/lib/background-agents/agent-spec";
 import { ScheduleVisual } from "../schedule-visual";
+import { AgentToolPreflightPanel } from "./agent-tool-preflight-panel";
 
 // ---- Types ------------------------------------------------------------------
 
@@ -57,15 +59,8 @@ function RunStatusPill({ status }: { status: string }) {
   );
 }
 
-function formatDate(value: Date | null | undefined): string {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    year: "numeric",
-  }).format(value instanceof Date ? value : new Date(value));
+function formatDate(value: Date | string | null | undefined): string {
+  return formatRunTimestamp(value);
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {
@@ -154,6 +149,12 @@ export default async function AgentDetailPage({
             </Button>
           </div>
         </div>
+
+        {/* Next run: tool availability (preflight, #802) */}
+        <AgentToolPreflightPanel
+          agentId={agentId}
+          configuredSlugs={agent.composioToolkitSlugs ?? []}
+        />
 
         {/* Current state */}
         <section className="rounded-md border border-border">

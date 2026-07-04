@@ -16,6 +16,10 @@ import { listManagedRuntimeProfiles } from "@open-agents/sandbox/managed-runtime
 import { AgentConfigFields } from "@/components/agent-config-fields";
 import { useModelOptions } from "@/hooks/use-model-options";
 import {
+  EXTERNAL_TOOLS_NONE_ASSIGNED_HINT,
+  EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL,
+} from "./agents-copy";
+import {
   INHERIT_SENTINEL,
   fromSelectValue,
   toSelectValue,
@@ -349,8 +353,16 @@ function AgentCard({
         />
         <FieldCell
           label="External tools"
-          value={row.toolsLabel === "None" ? "None connected" : row.toolsLabel}
-          hint="Built-in file editing &amp; commands are always on."
+          value={
+            row.toolsLabel === "None"
+              ? EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL
+              : row.toolsLabel
+          }
+          hint={
+            row.toolsLabel === "None"
+              ? EXTERNAL_TOOLS_NONE_ASSIGNED_HINT
+              : "Built-in file editing &amp; commands are always on."
+          }
           isCustom={row.toolsCustom}
         />
         <FieldCell

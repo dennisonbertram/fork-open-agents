@@ -41,4 +41,16 @@ describe("LoopSettingsPanelContent — jargon-free section headers (#768)", () =
     expect(html).toContain("Auto-recovery (watchdog)");
     expect(html).not.toMatch(/>Watchdog</);
   });
+
+  test("BT-LSP-003: Safety limits section renders the Agent turns per step field (#862)", () => {
+    const html = renderToStaticMarkup(
+      <LoopSettingsPanelContent
+        loopId="loop_1"
+        initialName="My loop"
+        onClose={() => undefined}
+      />,
+    );
+
+    expect(html).toContain("Agent turns per step");
+  });
 });

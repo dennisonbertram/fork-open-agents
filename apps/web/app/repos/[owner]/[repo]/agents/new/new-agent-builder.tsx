@@ -3,6 +3,7 @@
 import { PlugZap, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
@@ -23,17 +24,11 @@ import {
   type AgentTemplate,
   type BlankTemplate,
 } from "../agent-templates";
+import { manualTestSkipMessages } from "../manual-test-feedback";
+import type { ManualTestResponse } from "../manual-test-feedback";
 import { TemplatePicker } from "../template-picker";
 import { submitNewAgent } from "./create-agent-request";
-
-type ManualTestResponse = {
-  enabled: boolean;
-  matched: number;
-  created: number;
-  duplicates: number;
-  runIds: string[];
-  error?: string;
-};
+import { submitAgentUpdate } from "./update-agent-request";
 
 type BackgroundAgentRepoReadiness = {
   ready: boolean;
@@ -128,8 +123,11 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
     AgentTemplate | BlankTemplate | null
   >(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [testAlert, setTestAlert] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
+  const [saveVerb, setSaveVerb] = useState<"created" | "updated">("created");
 
   const {
     data: readinessData,
@@ -148,14 +146,22 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
-    const result = await submitNewAgent(payload);
+    setSaveError(null);
+    setTestAlert(null);
+    const isUpdate = createdAgentId !== null;
+    const result = isUpdate
+      ? await submitAgentUpdate(createdAgentId, payload)
+      : await submitNewAgent(payload);
     if (result.ok) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage("Agent created successfully.");
+      setSaveVerb(isUpdate ? "updated" : "created");
+      toast.success(
+        isUpdate ? "Agent updated." : "Agent created successfully.",
+      );
     } else {
-      setMessage(result.error);
+      setSaveError(result.error);
     }
   }
 
@@ -165,6 +171,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       return;
     }
     setMessage(null);
+    setTestAlert(null);
     try {
       const response = await fetch(
         `/api/background-agents/${createdAgentId}/test`,
@@ -172,16 +179,22 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       );
       const body = (await response.json()) as ManualTestResponse;
       if (!response.ok) {
-        throw new Error(body.error ?? "Failed to start test");
+        setTestAlert(body.error ?? "Failed to start test");
+        return;
+      }
+      if (body.skipReason) {
+        setTestAlert(manualTestSkipMessages[body.skipReason]);
+        return;
       }
       const runId = body.runIds[0];
       if (!runId) {
-        throw new Error("No background run was created for this test");
+        setTestAlert("No background run was created for this test");
+        return;
       }
       // Stay on page — show inline console
       setTestRunId(runId);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to run test");
+      setTestAlert(err instanceof Error ? err.message : "Failed to run test");
     }
   }
 
@@ -266,6 +279,36 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
+      {createdAgentId && !saveError && (
+        <div
+          className="rounded-lg border border-border bg-muted/20 p-4 text-sm"
+          role="status"
+        >
+          <p>
+            {saveVerb === "updated"
+              ? "Agent updated."
+              : "Agent created successfully."}
+          </p>
+          <Button asChild className="mt-2" size="sm" variant="outline">
+            <Link href={`/repos/${owner}/${repo}/agents/${createdAgentId}`}>
+              View agent
+            </Link>
+          </Button>
+        </div>
+      )}
+      {saveError && (
+        <p className="text-sm text-destructive" role="alert">
+          {saveError}
+        </p>
+      )}
+      {testAlert && (
+        <div
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+          role="alert"
+        >
+          {testAlert}
+        </div>
+      )}
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
   );

@@ -14,6 +14,7 @@ import type {
 import { loopDefinitionSchema } from "@/lib/agent-loops/types";
 import { getLoopErrorCopy, sanitizeErrorDetail } from "@/app/loops/error-copy";
 import { getRunCompletionLabel } from "../../run-completion-label";
+import { getTurnBudgetProof } from "./turn-budget-proof";
 import { loopRunsListSwrKey, useLoopRunPolling } from "./use-loop-run-polling";
 import { RunActions } from "./run-actions";
 import { RunGraph } from "./run-graph";
@@ -380,6 +381,12 @@ export function RunDetail({
             label="Steps"
             value={`${run.stepCount}${guardrails?.maxStepsPerRun ? ` / ${guardrails.maxStepsPerRun}` : ""}`}
           />
+          {(() => {
+            const turnProof = getTurnBudgetProof(run.errorKind, guardrails);
+            return turnProof ? (
+              <ProofItem label={turnProof.label} value={turnProof.value} />
+            ) : null;
+          })()}
           <ProofItem
             label="Duration"
             value={formatDuration(run.startedAt, run.finishedAt)}

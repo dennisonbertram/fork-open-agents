@@ -4,7 +4,10 @@ import { Github, Settings } from "lucide-react";
 import Link from "next/link";
 import useSWR from "swr";
 import type { ComposioSettingsResponse } from "@/app/api/settings/composio/route";
-import { summarizeChatTools } from "@/lib/composio/chat-tool-summary";
+import {
+  SELECTED_NOT_CONNECTED_CAPTION,
+  summarizeChatTools,
+} from "@/lib/composio/chat-tool-summary";
 import type { ChatComposioSelection } from "@/lib/composio/types";
 import { cn } from "@/lib/utils";
 import { ComposioToolkitPicker } from "@/app/settings/composio-toolkit-picker";
@@ -86,14 +89,26 @@ export function ComposioToolSelectorCompact({
     ? ""
     : (selection.mainProfileId ?? "off");
 
+  // Selection-count feedback for the trigger's accessible label (W6) — a
+  // screen-reader user (or a sighted user before hovering the title tooltip)
+  // gets a persistent, non-transient indication of how many tools are
+  // selected, not just an icon stack.
+  const selectionCountLabel =
+    activeToolkits.length > 0
+      ? `${activeToolkits.length} ${activeToolkits.length === 1 ? "tool" : "tools"} selected`
+      : null;
+  const triggerLabel = selectionCountLabel
+    ? `Select external tools — ${selectionCountLabel}`
+    : "Select external tools";
+
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
           disabled={isDisabled}
-          aria-label="Select external tools"
-          title={disabledReason ?? "Select external tools"}
+          aria-label={triggerLabel}
+          title={disabledReason ?? triggerLabel}
           className={cn(
             "flex h-8 max-w-[180px] items-center gap-1.5 rounded-md px-2.5 text-sm text-neutral-500 transition-colors hover:bg-white/5 hover:text-neutral-300 disabled:pointer-events-none disabled:opacity-60",
             (selectedProfile || hasDirectSlugs) && "text-foreground",
@@ -129,6 +144,9 @@ export function ComposioToolSelectorCompact({
 
         <p className="mb-2 text-xs font-semibold text-foreground">
           Tools this chat can use
+        </p>
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          {SELECTED_NOT_CONNECTED_CAPTION}
         </p>
 
         {/* Direct toolkit picker — "Choose specific tools" */}

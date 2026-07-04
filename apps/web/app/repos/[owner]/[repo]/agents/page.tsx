@@ -6,6 +6,7 @@ import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { BackgroundAgentRun } from "@/lib/db/schema";
@@ -41,15 +42,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function formatDate(value: Date | null) {
-  if (!value) {
-    return "-";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(value);
+  return formatRunTimestamp(value);
 }
 
 function findLatestRunForAgent(
@@ -82,6 +75,11 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
 
   // Slice runs to 5 for the "Recent runs" peek
   const recentRuns = runs.slice(0, 5);
+
+  // Agent-name lookup for the "Recent runs" rows (#803 item 9, W11) — a repo
+  // with multiple agents needs each run row to say which agent produced it.
+  // Uses the already-fetched `agents` list; no new query.
+  const agentNameById = new Map(agents.map((agent) => [agent.id, agent.name]));
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
@@ -165,6 +163,10 @@ export default async function RepoAgentsPage({ params }: RepoAgentsPageProps) {
                       {run.payloadSummary.title ??
                         run.payloadSummary.message ??
                         run.externalId}
+                    </p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">
+                      {(run.agentId ? agentNameById.get(run.agentId) : null) ??
+                        "Unknown agent"}
                     </p>
                     <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
                       {run.sha ?? run.ref ?? run.branch ?? "no ref"}

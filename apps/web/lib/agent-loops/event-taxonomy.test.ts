@@ -106,6 +106,11 @@ const M1_TAXONOMY: Array<{
     description: "Agent completed within step",
   },
   {
+    name: "agent-loop.step.agent.turn.completed",
+    description:
+      "Per-turn heartbeat within an agent step's internal generate loop (#863)",
+  },
+  {
     name: "agent-loop.step.check.completed",
     description: "Check command completed",
   },

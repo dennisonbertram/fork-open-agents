@@ -40,10 +40,20 @@ describe("settings route metadata", () => {
       "models",
       "preferences",
       "profile",
+      "repositories",
       "runtime-profiles",
       "skills",
       "usage",
     ]);
+  });
+
+  // BT-803-ROUTES-001 (#803 item 1): the Composio nav description must
+  // mention both chats and background agents/loops — not just "in a chat" —
+  // so a naive reader learns tools are usable outside chat too (W11).
+  test("composio nav description mentions both chats and background agents", () => {
+    const meta = getSettingsRouteMetadata("composio");
+    expect(meta.description).toMatch(/chats?/i);
+    expect(meta.description).toMatch(/background agents?/i);
   });
 
   test.each([
