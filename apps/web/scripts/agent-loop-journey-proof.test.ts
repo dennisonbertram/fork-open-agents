@@ -277,16 +277,10 @@ describe("agent-loop-journey-proof", () => {
             loop: { id: "loop-j1", status: "active" },
           });
         }
-        if (
-          method === "POST" &&
-          pathname === "/api/agent-loops/loop-j1/runs"
-        ) {
+        if (method === "POST" && pathname === "/api/agent-loops/loop-j1/runs") {
           return jsonResponse(202, { runId: "run-1", created: true });
         }
-        if (
-          method === "GET" &&
-          pathname === "/api/agent-loop-runs/run-1"
-        ) {
+        if (method === "GET" && pathname === "/api/agent-loop-runs/run-1") {
           pollCount += 1;
           if (pollCount === 1) {
             return jsonResponse(200, {
@@ -356,10 +350,7 @@ describe("agent-loop-journey-proof", () => {
             loop: { id: "loop-j1", status: "active" },
           });
         }
-        if (
-          method === "POST" &&
-          pathname === "/api/agent-loops/loop-j1/runs"
-        ) {
+        if (method === "POST" && pathname === "/api/agent-loops/loop-j1/runs") {
           return jsonResponse(502, {
             success: false,
             errorKind: "dispatch_failed",
@@ -376,7 +367,10 @@ describe("agent-loop-journey-proof", () => {
         throw new Error(`Unexpected request ${method} ${pathname}`);
       }, recorded);
 
-      const summary = await runJourney(baseConfig(), { fetchImpl, log: () => {} });
+      const summary = await runJourney(baseConfig(), {
+        fetchImpl,
+        log: () => {},
+      });
       expect(summary.journey).toBe("failed");
       expect(summary.failedStep).toBe("dispatch");
       expect(summary.cleanup).toBe("deleted");
@@ -396,10 +390,7 @@ describe("agent-loop-journey-proof", () => {
             loop: { id: "loop-j1", status: "active" },
           });
         }
-        if (
-          method === "POST" &&
-          pathname === "/api/agent-loops/loop-j1/runs"
-        ) {
+        if (method === "POST" && pathname === "/api/agent-loops/loop-j1/runs") {
           return jsonResponse(202, { runId: "run-1", created: true });
         }
         if (method === "GET" && pathname === "/api/agent-loop-runs/run-1") {
@@ -440,7 +431,10 @@ describe("agent-loop-journey-proof", () => {
         throw new Error(`Unexpected request ${method} ${pathname}`);
       }, recorded);
 
-      const summary = await runJourney(baseConfig(), { fetchImpl, log: () => {} });
+      const summary = await runJourney(baseConfig(), {
+        fetchImpl,
+        log: () => {},
+      });
       expect(summary.journey).toBe("failed");
       expect(summary.failedStep).toBe("create");
       expect(summary.cleanup).toBe("skipped");
@@ -465,7 +459,10 @@ describe("agent-loop-journey-proof", () => {
         throw new Error(`Unexpected request ${method} ${pathname}`);
       }, recorded);
 
-      const summary = await runJourney(baseConfig(), { fetchImpl, log: () => {} });
+      const summary = await runJourney(baseConfig(), {
+        fetchImpl,
+        log: () => {},
+      });
       expect(summary.journey).toBe("failed");
       expect(summary.failedStep).toBe("confirm-draft");
       expect(summary.cleanup).toBe("deleted");
@@ -485,10 +482,7 @@ describe("agent-loop-journey-proof", () => {
             loop: { id: "loop-j1", status: "active" },
           });
         }
-        if (
-          method === "POST" &&
-          pathname === "/api/agent-loops/loop-j1/runs"
-        ) {
+        if (method === "POST" && pathname === "/api/agent-loops/loop-j1/runs") {
           return jsonResponse(202, { runId: "run-1", created: true });
         }
         if (method === "GET" && pathname === "/api/agent-loop-runs/run-1") {
@@ -528,10 +522,7 @@ describe("agent-loop-journey-proof", () => {
             loop: { id: "loop-j1", status: "active" },
           });
         }
-        if (
-          method === "POST" &&
-          pathname === "/api/agent-loops/loop-j1/runs"
-        ) {
+        if (method === "POST" && pathname === "/api/agent-loops/loop-j1/runs") {
           return jsonResponse(202, { runId: "run-1", created: true });
         }
         if (method === "GET" && pathname === "/api/agent-loop-runs/run-1") {
@@ -552,7 +543,10 @@ describe("agent-loop-journey-proof", () => {
         throw new Error(`Unexpected request ${method} ${pathname}`);
       }, recorded);
 
-      const summary = await runJourney(baseConfig(), { fetchImpl, log: () => {} });
+      const summary = await runJourney(baseConfig(), {
+        fetchImpl,
+        log: () => {},
+      });
       expect(summary.journey).toBe("passed");
       expect(summary.cleanup).toBe("failed");
     });
