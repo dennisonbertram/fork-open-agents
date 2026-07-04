@@ -542,8 +542,9 @@ describe("REG-346-05: max-iterations bound prevents infinite loop", () => {
 
     // The regression: without the bound this would call generate() forever
     expect(result.outcome).toBe("failure");
-    expect(result.errorKind).toBe("workflow_failed");
-    // generate() was called at most AGENT_MAX_LOOP_STEPS (8) times
+    // #862: turn exhaustion now records its own errorKind, not workflow_failed.
+    expect(result.errorKind).toBe("turn_budget_exceeded");
+    // generate() was called at most the default maxAgentTurnsPerStep (8) times
     expect(regOpenAgentCallCount).toBeLessThanOrEqual(8);
     // Sandbox must be disposed
     expect(regSandboxStopMock.mock.calls.length).toBe(1);

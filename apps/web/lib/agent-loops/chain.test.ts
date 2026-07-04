@@ -1105,6 +1105,30 @@ describe("BT-C05: guardrails", () => {
     const callArgs = call?.[0] as { stepTimeoutMs?: number };
     expect(callArgs.stepTimeoutMs).toBe(GUARDRAIL_CEILINGS.stepTimeoutMs);
   });
+
+  test("BT-C05: resolveGuardrails defaults maxAgentTurnsPerStep to 8 (#862)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const resolved = resolveGuardrails(null);
+    expect(resolved.maxAgentTurnsPerStep).toBe(8);
+  });
+
+  test("BT-C05: resolveGuardrails clamps maxAgentTurnsPerStep to the ceiling of 32 (#862)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const resolved = resolveGuardrails({ maxAgentTurnsPerStep: 500 });
+    expect(resolved.maxAgentTurnsPerStep).toBe(32);
+  });
+
+  test("BT-C05: resolveGuardrails passes through a valid user maxAgentTurnsPerStep (#862)", async () => {
+    const { resolveGuardrails } = await chainPromise;
+    const resolved = resolveGuardrails({ maxAgentTurnsPerStep: 12 });
+    expect(resolved.maxAgentTurnsPerStep).toBe(12);
+  });
+
+  test("BT-C05: loopGuardrailsSchema accepts maxAgentTurnsPerStep (#862)", async () => {
+    const { loopGuardrailsSchema } = await import("./types");
+    const result = loopGuardrailsSchema.safeParse({ maxAgentTurnsPerStep: 12 });
+    expect(result.success).toBe(true);
+  });
 });
 
 // ── BT-C06: Cooperative — paused/cancelled before execution ──────────────────

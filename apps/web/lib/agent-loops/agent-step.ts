@@ -12,9 +12,9 @@
  *   4. Record agent-loop.step.sandbox.started event.
  *   5. Build prompt via buildLoopStepPrompt.
  *   6. Run openAgent in a bounded loop:
- *        Loop until finishReason !== "tool-calls", up to AGENT_MAX_LOOP_STEPS.
+ *        Loop until finishReason !== "tool-calls", up to maxAgentTurnsPerStep.
  *        Each iteration appends response messages so the next call sees
- *        tool results.  Exhausting the bound → typed workflow_failed failure.
+ *        tool results.  Exhausting the bound → typed turn_budget_exceeded failure.
  *        AbortError / timeout → typed workflow_failed failure.
  *   7. Record agent-loop.step.agent.completed event with usage summary.
  *   8. Read /tmp/loop-step-output.json from sandbox:
@@ -98,6 +98,7 @@ import {
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import { GUARDRAIL_CEILINGS, GUARDRAIL_DEFAULTS } from "./types";
 import type { AgentStepNode } from "./types";
 import type { StepExecutionResult } from "./step-executor";
 import type { Sandbox } from "@open-agents/sandbox";
@@ -122,15 +123,6 @@ const CHECK_COMMAND_TIMEOUT_MS = 120_000;
 /** Path inside the sandbox where the agent writes its output JSON. */
 const STEP_OUTPUT_PATH = "/tmp/loop-step-output.json";
 
-/**
- * Maximum number of openAgent.generate iterations before giving up.
- * Mirrors the DEFAULT_AGENT_MAX_STEPS bound used by runMutationAgent in
- * background-agents/executor.ts.  A single call may return "tool-calls"
- * (meaning the model wants to see tool results before continuing); we loop
- * until finishReason is no longer "tool-calls" or we exhaust this bound.
- */
-const AGENT_MAX_LOOP_STEPS = 8;
-
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type AgentStepParams = {
@@ -149,6 +141,14 @@ export type AgentStepParams = {
    * AGENT_STEP_TIMEOUT_MS when omitted (e.g. direct unit-test calls).
    */
   stepTimeoutMs?: number;
+  /**
+   * Resolved (default-applied, ceiling-clamped) internal openAgent.generate
+   * turn budget for this step — see resolveGuardrails in chain.ts. Falls
+   * back to GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep for direct unit-test
+   * calls; Math.min against GUARDRAIL_CEILINGS is the hard server-side
+   * backstop.
+   */
+  maxAgentTurnsPerStep?: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -282,6 +282,7 @@ async function recordAgentStepFailure(params: {
   startedAt: number;
   errorKind: string;
   errorMessage: string;
+  payloadExtras?: Record<string, unknown>;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
@@ -308,6 +309,7 @@ async function recordAgentStepFailure(params: {
       errorMessage: params.errorMessage,
       nodeKind: params.nodeKind,
       attempt: params.attempt,
+      ...params.payloadExtras,
     },
     workflowRunId: params.workflowRunId,
   });
@@ -342,6 +344,10 @@ export async function executeAgentStep(
     watchdogHint,
     stepTimeoutMs = AGENT_STEP_TIMEOUT_MS,
   } = params;
+  const maxAgentTurns = Math.min(
+    params.maxAgentTurnsPerStep ?? GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep,
+    GUARDRAIL_CEILINGS.maxAgentTurnsPerStep,
+  );
 
   const sandboxName = buildSandboxName(stepRunId);
 
@@ -490,7 +496,7 @@ export async function executeAgentStep(
     // A single generate call may return finishReason "tool-calls", meaning
     // the model wants to see tool results before it is done. We keep looping
     // until finishReason is no longer "tool-calls", or until we exceed
-    // AGENT_MAX_LOOP_STEPS. This mirrors the runMutationAgent pattern in
+    // maxAgentTurnsPerStep. This mirrors the runMutationAgent pattern in
     // background-agents/executor.ts.
 
     let agentResult: Awaited<ReturnType<typeof openAgent.generate>>;
@@ -609,7 +615,7 @@ export async function executeAgentStep(
     // stepTimeoutMs is the budget for the WHOLE step, not each individual
     // openAgent.generate call. Compute a single deadline before the loop and
     // pass each call only the remaining budget — otherwise a step configured
-    // at e.g. 30 minutes could run up to AGENT_MAX_LOOP_STEPS x 30 minutes if
+    // at e.g. 30 minutes could run up to maxAgentTurns x 30 minutes if
     // every iteration reset the timeout to the full stepTimeoutMs.
     const deadlineAt = Date.now() + stepTimeoutMs;
 
@@ -648,11 +654,15 @@ export async function executeAgentStep(
           break;
         }
 
-        if (loopStep >= AGENT_MAX_LOOP_STEPS) {
+        if (loopStep >= maxAgentTurns) {
           return await recordAgentStepFailure({
             ...failureCtx,
-            errorKind: "workflow_failed",
-            errorMessage: `Agent step exhausted ${AGENT_MAX_LOOP_STEPS} steps without finishing`,
+            errorKind: "turn_budget_exceeded",
+            errorMessage: `Agent step exhausted ${maxAgentTurns} agent turns without finishing`,
+            payloadExtras: {
+              turnsUsed: loopStep,
+              maxAgentTurnsPerStep: maxAgentTurns,
+            },
           });
         }
       }

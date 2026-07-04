@@ -1695,6 +1695,101 @@ describe("BT-S25: configurable stepTimeoutMs is passed to the agent invocation",
   });
 });
 
+// ── BT-S30: agent-turn budget (#862) ─────────────────────────────────────────
+
+describe("BT-S30: agent-turn budget (#862)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S30a: configured maxAgentTurnsPerStep bounds the tool-call loop and reports turn_budget_exceeded", async () => {
+    openAgentResult = {
+      ...openAgentResult,
+      finishReason: "tool-calls",
+    };
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      maxAgentTurnsPerStep: 3,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("turn_budget_exceeded");
+    expect(openAgentGenerateMock.mock.calls.length).toBe(3);
+  });
+
+  test("BT-S30b: a larger configured budget allows more turns to succeed", async () => {
+    let callCount = 0;
+    openAgentGenerateMock.mockImplementation(async (_params: unknown) => {
+      callCount++;
+      if (callCount < 10) {
+        return {
+          ...openAgentResult,
+          finishReason: "tool-calls" as const,
+        };
+      }
+      return openAgentResult;
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      maxAgentTurnsPerStep: 12,
+    });
+
+    expect(result.outcome).toBe("success");
+  });
+
+  test("BT-S30c: omitted param exhausts at the default of 8 with turn_budget_exceeded and payload extras", async () => {
+    openAgentResult = {
+      ...openAgentResult,
+      finishReason: "tool-calls",
+    };
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("turn_budget_exceeded");
+    expect(openAgentGenerateMock.mock.calls.length).toBe(8);
+
+    const failedEvent = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.failed",
+    );
+    expect(failedEvent?.payload).toMatchObject({
+      turnsUsed: 8,
+      maxAgentTurnsPerStep: 8,
+    });
+  });
+});
+
 // ── BT-S26/S27/S28 (#798): loop-parity Composio degradation events ──────────
 // Today (pre-#798) an off/error resolver outcome for a loop step is dropped
 // silently — zero events recorded. These tests assert the loop step emits a

@@ -91,6 +91,9 @@ export function resolveGuardrails(
     userGuardrails?.maxRunDurationMs ?? GUARDRAIL_DEFAULTS.maxRunDurationMs;
   const stepTimeout =
     userGuardrails?.stepTimeoutMs ?? GUARDRAIL_DEFAULTS.stepTimeoutMs;
+  const agentTurns =
+    userGuardrails?.maxAgentTurnsPerStep ??
+    GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep;
 
   return {
     maxStepsPerRun: Math.min(steps, GUARDRAIL_CEILINGS.maxStepsPerRun),
@@ -98,6 +101,10 @@ export function resolveGuardrails(
     // No server ceiling on maxRunDurationMs per spec — apply as-is
     maxRunDurationMs: duration,
     stepTimeoutMs: Math.min(stepTimeout, GUARDRAIL_CEILINGS.stepTimeoutMs),
+    maxAgentTurnsPerStep: Math.min(
+      agentTurns,
+      GUARDRAIL_CEILINGS.maxAgentTurnsPerStep,
+    ),
   };
 }
 
@@ -288,6 +295,7 @@ export async function runAgentLoopStep(
     stepRunId,
     workflowRunId,
     stepTimeoutMs: guardrails.stepTimeoutMs,
+    maxAgentTurnsPerStep: guardrails.maxAgentTurnsPerStep,
   });
 
   // ── 5b. Re-check run status after execution ────────────────────────────────

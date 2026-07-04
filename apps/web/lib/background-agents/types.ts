@@ -55,6 +55,7 @@ export const backgroundAgentErrorKinds = [
   "pr_creation_failed",
   "model_resolution_failed",
   "webhook_signature_invalid",
+  "agent_turn_budget_exceeded",
 ] as const;
 
 export type BackgroundAgentErrorKind =
