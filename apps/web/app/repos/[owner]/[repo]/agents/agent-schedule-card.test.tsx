@@ -139,6 +139,6 @@ describe("AgentScheduleCard", () => {
 
     const html = renderToStaticMarkup(<AgentScheduleCard trigger={trigger} />);
 
-    expect(html).toContain("Jul 3, 2026 at 9:20 PM UTC");
+    expect(html).toContain("Jul 3, 2026, 9:20 PM UTC");
   });
 });
