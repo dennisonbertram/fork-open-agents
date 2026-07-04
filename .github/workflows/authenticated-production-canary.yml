@@ -16,7 +16,7 @@ concurrency:
 jobs:
   authenticated-production-canary:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
 
     steps:
       - name: Checkout
@@ -33,6 +33,7 @@ jobs:
       - name: Run authenticated canary
         id: canary
         continue-on-error: true
+        shell: bash
         env:
           PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
           PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
@@ -41,21 +42,55 @@ jobs:
         run: |
           bun run --cwd apps/web ops:authenticated-canary 2>&1 | tee canary.log
 
+      - name: Run background-agent journey proof
+        id: background_journey
+        continue-on-error: true
+        shell: bash
+        env:
+          PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
+          PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
+          PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}
+          PRODUCTION_CANARY_AUTH_COOKIE: ${{ secrets.PRODUCTION_CANARY_AUTH_COOKIE }}
+        run: |
+          bun run --cwd apps/web ops:canary-journey -- background-agents 2>&1 | tee background-agent-journey.log
+
+      - name: Run agent-loop journey proof
+        id: loops_journey
+        continue-on-error: true
+        shell: bash
+        env:
+          PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
+          PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
+          PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}
+          PRODUCTION_CANARY_AUTH_COOKIE: ${{ secrets.PRODUCTION_CANARY_AUTH_COOKIE }}
+        run: |
+          bun run --cwd apps/web ops:canary-journey -- loops 2>&1 | tee loops-journey.log
+
       - name: Alert on canary failure
-        if: steps.canary.outcome == 'failure'
+        if: steps.canary.outcome == 'failure' || steps.background_journey.outcome == 'failure' || steps.loops_journey.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          failed_checks=""
+          if [ "${{ steps.canary.outcome }}" = "failure" ]; then
+            failed_checks="${failed_checks}account-status "
+          fi
+          if [ "${{ steps.background_journey.outcome }}" = "failure" ]; then
+            failed_checks="${failed_checks}background-agents-journey "
+          fi
+          if [ "${{ steps.loops_journey.outcome }}" = "failure" ]; then
+            failed_checks="${failed_checks}loops-journey "
+          fi
           bun run --cwd apps/web ops:alert -- \
             --source authenticated-canary \
             --environment production \
             --status failing \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --commit-sha "${{ github.sha }}" \
-            --summary "$(tail -n 60 canary.log)"
+            --summary "Failed checks: ${failed_checks}. $(tail -n 40 canary.log 2>/dev/null) $(tail -n 40 background-agent-journey.log 2>/dev/null) $(tail -n 40 loops-journey.log 2>/dev/null)"
 
       - name: Mark canary recovery
-        if: steps.canary.outcome == 'success'
+        if: steps.canary.outcome == 'success' && steps.background_journey.outcome == 'success' && steps.loops_journey.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -65,8 +100,8 @@ jobs:
             --status recovered \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --commit-sha "${{ github.sha }}" \
-            --summary "Authenticated canary passed or is blocked by explicit configuration."
+            --summary "Authenticated canary and journey proofs passed or are blocked by explicit configuration."
 
-      - name: Fail workflow when canary failed
-        if: steps.canary.outcome == 'failure'
+      - name: Fail workflow when any canary check failed
+        if: steps.canary.outcome == 'failure' || steps.background_journey.outcome == 'failure' || steps.loops_journey.outcome == 'failure'
         run: exit 1
