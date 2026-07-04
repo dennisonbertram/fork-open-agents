@@ -10,6 +10,7 @@
 import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { useState } from "react";
 import {
   buildAgentPayload,
   defaultForm,
@@ -51,27 +52,34 @@ mock.module("../agent-spec-editor", () => ({
   }: {
     createdAgentId: string | null;
     onSave: (payload: unknown) => void | Promise<void>;
-  }) => (
-    <div>
-      <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
-      <button
-        onClick={() =>
-          void onSave(
-            buildAgentPayload({
-              ...defaultForm,
-              name: "Nightly triage",
-              repoOwner: "acme",
-              repoName: "widgets",
-              instructions: "Triage new issues",
-            }),
-          )
-        }
-        type="button"
-      >
-        Save agent
-      </button>
-    </div>
-  ),
+  }) => {
+    const [enabled, setEnabled] = useState(false);
+    return (
+      <div>
+        <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
+        <button
+          onClick={() =>
+            void onSave(
+              buildAgentPayload({
+                ...defaultForm,
+                name: "Nightly triage",
+                repoOwner: "acme",
+                repoName: "widgets",
+                instructions: "Triage new issues",
+                enabled,
+              }),
+            )
+          }
+          type="button"
+        >
+          Save agent
+        </button>
+        <button onClick={() => setEnabled(true)} type="button">
+          Enable agent
+        </button>
+      </div>
+    );
+  },
 }));
 
 let fetchResult: { ok: boolean; json: () => Promise<unknown> } = {
@@ -181,5 +189,85 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     expect((await q.findByTestId("created-agent-id")).textContent).toBe(
       "agent-123",
     );
+  });
+});
+
+describe("NewAgentBuilder — second save updates instead of duplicating (#860)", () => {
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+    globalFetch.mockClear();
+    fetchResult = {
+      ok: true,
+      json: async () => ({ agent: { id: "agent-123" } }),
+    };
+  });
+
+  test("two Saves: one POST then one PATCH, never two POSTs", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    expect(globalFetch).toHaveBeenCalledTimes(2);
+    const [firstUrl, firstOpts] = globalFetch.mock.calls[0] as [
+      string,
+      { method: string },
+    ];
+    const [secondUrl, secondOpts] = globalFetch.mock.calls[1] as [
+      string,
+      { method: string },
+    ];
+    expect(firstUrl).toBe("/api/background-agents");
+    expect(firstOpts.method).toBe("POST");
+    expect(secondUrl).toBe("/api/background-agents/agent-123");
+    expect(secondOpts.method).toBe("PATCH");
+  });
+
+  test("toggle Enabled then Save PATCHes with status enabled", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /enable agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    const [secondUrl, secondOpts] = globalFetch.mock.calls[1] as [
+      string,
+      { method: string; body: string },
+    ];
+    expect(secondUrl).toBe("/api/background-agents/agent-123");
+    expect(secondOpts.method).toBe("PATCH");
+    expect(JSON.parse(secondOpts.body).status).toBe("enabled");
+  });
+
+  test("second save shows update feedback distinct from create", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    expect(toastSuccess).toHaveBeenCalledTimes(2);
+    expect(toastSuccess).toHaveBeenLastCalledWith("Agent updated.");
+
+    const status = await q.findByRole("status");
+    expect(status.textContent).toContain("Agent updated");
   });
 });
