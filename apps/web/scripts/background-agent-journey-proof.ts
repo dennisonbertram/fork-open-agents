@@ -353,6 +353,11 @@ async function cleanupAgent(
     log(
       `cleanup: agentId=${agentId} deleted=true verifiedAbsent=${verifiedAbsent}`,
     );
+    if (!verifiedAbsent) {
+      throw new BackgroundAgentJourneyProofError(
+        `Delete background agent returned success but agent ${agentId} still appears in the agent list (absence check failed).`,
+      );
+    }
     return "deleted";
   } catch (cleanupError) {
     const message =
