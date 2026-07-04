@@ -250,7 +250,10 @@ export function RunDetail({
 }: {
   initialData: GetAgentLoopRunDetailResponse;
 }) {
-  const { data, error } = useLoopRunPolling(initialData.run.id, initialData);
+  const { data, error, liveness } = useLoopRunPolling(
+    initialData.run.id,
+    initialData,
+  );
   const detail = data ?? initialData;
   const { run, loop, steps, events, watchdogRuns } = detail;
 
@@ -352,15 +355,24 @@ export function RunDetail({
             <p className="mt-1 truncate font-mono text-sm text-muted-foreground">
               {run.id}
             </p>
-            {error && (
+            {Boolean(error) && (
               <p className="mt-2 text-xs text-destructive">
                 Live refresh failed. Last known state is shown.
               </p>
             )}
           </div>
-          {isActive && (
+          {liveness.kind === "live" && (
             <span className="text-xs text-muted-foreground">
-              Refreshing every 2s
+              Updated {liveness.secondsSinceUpdate}s ago · refreshing every 2s
+            </span>
+          )}
+          {liveness.kind === "stalled" && (
+            <span
+              role="status"
+              className="text-xs font-medium text-amber-700 dark:text-amber-300"
+            >
+              Live updates stalled — last update {liveness.secondsSinceUpdate}s
+              ago. Shown data may be out of date.
             </span>
           )}
         </div>

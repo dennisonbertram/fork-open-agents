@@ -12,10 +12,13 @@ import {
   GUARDRAIL_CEILINGS,
   GUARDRAIL_DEFAULTS,
 } from "@/lib/agent-loops/types";
+import { updateAgentLoopBodySchema } from "@/lib/agent-loops/request-schemas";
 import {
+  buildInitialLoopSettings,
+  settingsToUpdatePayload,
   validateLoopSettings,
-  WATCHDOG_RETRY_BUDGET_MAX,
   WATCHDOG_RETRY_BUDGET_DEFAULT,
+  WATCHDOG_RETRY_BUDGET_MAX,
 } from "./loop-settings-panel";
 
 describe("BT-M2-LS-01: validateLoopSettings — guardrail ceiling enforcement", () => {
@@ -232,5 +235,102 @@ describe("BT-M2-LS-05: validateLoopSettings — maxAgentTurnsPerStep (#862)", ()
       guardrails: { maxAgentTurnsPerStep: 12 },
     });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("buildInitialLoopSettings (#877)", () => {
+  it("maps all provided props", () => {
+    const state = buildInitialLoopSettings({
+      loopName: "My loop",
+      loopDescription: "A loop",
+      loopGuardrails: { maxAgentTurnsPerStep: 8 },
+      watchdogEnabled: true,
+      watchdogInstructions: "Never retry deploys.",
+      watchdogRetryBudget: 3,
+    });
+    expect(state).toEqual({
+      name: "My loop",
+      description: "A loop",
+      guardrails: { maxAgentTurnsPerStep: 8 },
+      watchdogEnabled: true,
+      watchdogInstructions: "Never retry deploys.",
+      watchdogRetryBudget: 3,
+    });
+  });
+
+  it("defaults missing optional props", () => {
+    const state = buildInitialLoopSettings({ loopName: "My loop" });
+    expect(state).toEqual({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: WATCHDOG_RETRY_BUDGET_DEFAULT,
+    });
+  });
+});
+
+describe("settingsToUpdatePayload (#877)", () => {
+  it("sends guardrails: null when the guardrails set is empty (clears the column)", () => {
+    const payload = settingsToUpdatePayload({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    expect(payload.guardrails).toBeNull();
+  });
+
+  it("sends description: null when description is empty", () => {
+    const payload = settingsToUpdatePayload({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    expect(payload.description).toBeNull();
+  });
+
+  it("sends watchdogInstructions: null when watchdog is disabled, even if text was typed", () => {
+    const payload = settingsToUpdatePayload({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "Never retry deploys.",
+      watchdogRetryBudget: 2,
+    });
+    expect(payload.watchdogInstructions).toBeNull();
+  });
+
+  it("preserves non-empty guardrails and enabled-watchdog instructions", () => {
+    const payload = settingsToUpdatePayload({
+      name: "My loop",
+      description: "A loop",
+      guardrails: { maxAgentTurnsPerStep: 24 },
+      watchdogEnabled: true,
+      watchdogInstructions: "Never retry deploys.",
+      watchdogRetryBudget: 3,
+    });
+    expect(payload.guardrails).toEqual({ maxAgentTurnsPerStep: 24 });
+    expect(payload.watchdogInstructions).toBe("Never retry deploys.");
+  });
+
+  it("the payload's keys all parse under updateAgentLoopBodySchema's .strict()", () => {
+    const payload = settingsToUpdatePayload({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    const result = updateAgentLoopBodySchema.safeParse(payload);
+    expect(result.success).toBe(true);
   });
 });

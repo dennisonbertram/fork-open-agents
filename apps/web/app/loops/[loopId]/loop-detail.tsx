@@ -30,6 +30,7 @@ import { StatusPill } from "./status-pill";
 import { getGuardrailLabel } from "./guardrail-labels";
 import { getScheduleTruthLine } from "./schedule-truth-line";
 import { getRunCompletionLabel } from "./run-completion-label";
+import { getRunHistoryEmptyState } from "./run-history-empty-state";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -288,7 +289,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               {loop.repoOwner}/{loop.repoName}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div id="loop-run-now" className="flex items-center gap-2">
             <Link href={`/loops/${loopId}/builder`}>
               <Button variant="outline" size="sm">
                 <Workflow className="mr-2 h-4 w-4" />
@@ -347,14 +348,16 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {/* Run history */}
-            <section className="rounded-md border border-border">
+            <section
+              id="loop-run-history"
+              className="rounded-md border border-border"
+            >
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Run history</h2>
               </div>
               {runs.length === 0 ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">
-                  No runs yet. Click &ldquo;Run now&rdquo; to start the first
-                  run.
+                  {getRunHistoryEmptyState(loop.status)}
                 </div>
               ) : (
                 <div className="divide-y divide-border">
@@ -405,7 +408,10 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
 
           <aside className="space-y-6">
             {/* Status control */}
-            <section className="rounded-md border border-border">
+            <section
+              id="loop-status-section"
+              className="rounded-md border border-border"
+            >
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Loop status</h2>
               </div>
@@ -451,14 +457,16 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
             </section>
 
             {/* Trigger manager (#762) */}
-            <LoopTriggersCard
-              loopId={loopId}
-              loopStatus={loop.status}
-              triggers={triggers}
-              onTriggersChanged={() => {
-                void mutateTriggersData();
-              }}
-            />
+            <div id="loop-triggers-section">
+              <LoopTriggersCard
+                loopId={loopId}
+                loopStatus={loop.status}
+                triggers={triggers}
+                onTriggersChanged={() => {
+                  void mutateTriggersData();
+                }}
+              />
+            </div>
 
             {/* Guardrails */}
             {loop.guardrails && (
