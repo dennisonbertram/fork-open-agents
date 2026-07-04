@@ -14,7 +14,7 @@
  *   6. Run openAgent in a bounded loop:
  *        Loop until finishReason !== "tool-calls", up to maxAgentTurnsPerStep.
  *        Each iteration appends response messages so the next call sees
- *        tool results.  Exhausting the bound → typed workflow_failed failure.
+ *        tool results.  Exhausting the bound → typed turn_budget_exceeded failure.
  *        AbortError / timeout → typed workflow_failed failure.
  *   7. Record agent-loop.step.agent.completed event with usage summary.
  *   8. Read /tmp/loop-step-output.json from sandbox:

@@ -814,6 +814,27 @@ describe("executeBackgroundAgentRun", () => {
       } else {
         process.env.BACKGROUND_AGENT_MAX_TURNS = originalMaxTurns;
       }
+      // mockClear() (file-level beforeEach) does not undo mockImplementation;
+      // these tests permanently replace it with a tool-calls responder, which
+      // otherwise leaks into every later test in this file.
+      generate.mockImplementation(async () => ({
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        response: {
+          messages: [],
+        },
+        steps: [],
+        usage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+        totalUsage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+      }));
     });
 
     test("exhausting the default 16-turn budget records errorKind agent_turn_budget_exceeded", async () => {

@@ -11,7 +11,7 @@
  *
  * Finding 2 — bounded tool-loop until the agent finishes (P1):
  *   BT-346-05: generate returning tool-calls N times then stop → loop continues to completion and output is read
- *   BT-346-06: bound exceeded → typed failure (workflow_failed with clear message)
+ *   BT-346-06: bound exceeded → typed failure (turn_budget_exceeded with clear message)
  *   BT-346-07: step timeout is still enforced (AbortError → workflow_failed)
  *
  * Finding 3 — commit failure must fail the step (P1):
@@ -672,7 +672,7 @@ describe("BT-346-05: generate returning tool-calls then stop → loop runs to co
   });
 });
 
-describe("BT-346-06: tool-loop max iterations exceeded → typed workflow_failed failure", () => {
+describe("BT-346-06: tool-loop max iterations exceeded → typed turn_budget_exceeded failure", () => {
   beforeEach(() => {
     resetMocks();
     hasUncommittedChangesResult = false;
@@ -691,7 +691,7 @@ describe("BT-346-06: tool-loop max iterations exceeded → typed workflow_failed
     }));
   });
 
-  test("BT-346-06: exhausting max iterations → workflow_failed failure", async () => {
+  test("BT-346-06: exhausting max iterations → turn_budget_exceeded failure", async () => {
     const result = await executeAgentStep({
       stepRunId: "step-p1-1",
       workflowRunId: "wf-p1-1",
