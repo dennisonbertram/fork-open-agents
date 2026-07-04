@@ -7,15 +7,13 @@
  * exemplar this file follows.
  */
 
-import {
-  registerDomTestHooks,
-  render,
-  userClick,
-  within,
-} from "@/tests/dom";
+import { registerDomTestHooks, render, userClick, within } from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import { buildAgentPayload, defaultForm } from "@/lib/background-agents/agent-spec";
+import {
+  buildAgentPayload,
+  defaultForm,
+} from "@/lib/background-agents/agent-spec";
 import { getBlankTemplate } from "../agent-templates";
 
 registerDomTestHooks();
@@ -39,11 +37,7 @@ mock.module("swr", () => ({
 }));
 
 mock.module("../template-picker", () => ({
-  TemplatePicker: ({
-    onSelect,
-  }: {
-    onSelect: (template: unknown) => void;
-  }) => (
+  TemplatePicker: ({ onSelect }: { onSelect: (template: unknown) => void }) => (
     <button onClick={() => onSelect(getBlankTemplate())} type="button">
       Start blank
     </button>
@@ -125,7 +119,9 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     expect(status.textContent).toContain("Agent created");
 
     const link = within(status).getByRole("link", { name: /view agent/i });
-    expect(link.getAttribute("href")).toBe("/repos/acme/widgets/agents/agent-123");
+    expect(link.getAttribute("href")).toBe(
+      "/repos/acme/widgets/agents/agent-123",
+    );
 
     expect(toastSuccess).toHaveBeenCalledWith("Agent created successfully.");
   });
@@ -159,8 +155,8 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     await userClick(q.getByRole("button", { name: /start blank/i }));
     await userClick(q.getByRole("button", { name: /save agent/i }));
 
-    expect(
-      (await q.findByTestId("created-agent-id")).textContent,
-    ).toBe("agent-123");
+    expect((await q.findByTestId("created-agent-id")).textContent).toBe(
+      "agent-123",
+    );
   });
 });
