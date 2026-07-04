@@ -4,13 +4,17 @@
  * loop-settings-panel.tsx — Gear button in the builder top bar opens a docked
  * panel for editing loop-level settings: name, description, guardrails, and watchdog.
  *
- * Saves via PATCH /api/agent-loops/[loopId] which supports name, description,
- * guardrails, and watchdog fields (M3-01) in updateAgentLoopBodySchema.
+ * #877: this panel used to hold its own local state and its own "Save
+ * settings" fetch, completely disconnected from the header Save button and
+ * the builder's isDirty flag. Every field now reads/writes the shared
+ * builder store (`store.getState().updateSettings`), so editing any field
+ * marks the header dirty and the header Save persists it in one PATCH
+ * alongside the graph definition (see builder-canvas.tsx's handleSave).
  */
 
 import { useState } from "react";
 import { Settings } from "lucide-react";
-import { toast } from "sonner";
+import { useStore } from "zustand";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -22,10 +26,10 @@ import {
   type LoopGuardrails,
 } from "@/lib/agent-loops/types";
 import {
-  validateLoopSettings,
   WATCHDOG_RETRY_BUDGET_DEFAULT,
   WATCHDOG_RETRY_BUDGET_MAX,
 } from "./loop-settings-panel";
+import type { CreateLoopBuilderStoreReturn } from "./use-loop-builder";
 import { cn } from "@/lib/utils";
 
 // ── Duration helpers — the UI works in minutes; guardrails are stored in ms ───
@@ -123,124 +127,45 @@ function GuardrailNumberField({
 // ── LoopSettingsPanelContent ──────────────────────────────────────────────────
 
 export type LoopSettingsPanelContentProps = {
-  loopId: string;
-  initialName: string;
-  initialDescription?: string | null;
-  initialGuardrails?: LoopGuardrails;
-  initialWatchdogEnabled?: boolean;
-  initialWatchdogInstructions?: string | null;
-  initialWatchdogRetryBudget?: number;
+  store: CreateLoopBuilderStoreReturn;
   onClose: () => void;
 };
 
 export function LoopSettingsPanelContent({
-  loopId,
-  initialName,
-  initialDescription,
-  initialGuardrails,
-  initialWatchdogEnabled = false,
-  initialWatchdogInstructions,
-  initialWatchdogRetryBudget,
+  store,
   onClose,
 }: LoopSettingsPanelContentProps) {
-  const [name, setName] = useState(initialName);
-  const [description, setDescription] = useState(initialDescription ?? "");
-  const [guardrails, setGuardrails] = useState<Partial<LoopGuardrails>>(
-    initialGuardrails ?? {},
-  );
-  const [watchdogEnabled, setWatchdogEnabled] = useState(
-    initialWatchdogEnabled,
-  );
-  const [watchdogInstructions, setWatchdogInstructions] = useState(
-    initialWatchdogInstructions ?? "",
-  );
-  const [watchdogRetryBudget, setWatchdogRetryBudget] = useState<number>(
-    initialWatchdogRetryBudget ?? WATCHDOG_RETRY_BUDGET_DEFAULT,
-  );
-  const [saving, setSaving] = useState(false);
-  const [fieldErrors, setFieldErrors] = useState<
-    Record<string, string | undefined>
-  >({});
+  const settings = useStore(store, (s) => s.settings);
+  const fieldErrors = useStore(store, (s) => s.settingsErrors);
+  const updateSettings = useStore(store, (s) => s.updateSettings);
+
+  const {
+    name,
+    description,
+    guardrails,
+    watchdogEnabled,
+    watchdogInstructions,
+    watchdogRetryBudget,
+  } = settings;
 
   function setGuardrailField(
     key: GuardrailFieldKey,
     value: number | undefined,
   ) {
-    setGuardrails((prev) => {
-      if (value === undefined) {
-        const next = { ...prev };
-        delete next[key];
-        return next;
-      }
-      return { ...prev, [key]: value };
+    const nextGuardrails = { ...guardrails };
+    if (value === undefined) {
+      delete nextGuardrails[key];
+    } else {
+      nextGuardrails[key] = value;
+    }
+    updateSettings({ guardrails: nextGuardrails });
+    // updateSettings only clears the "guardrails" error key; also clear the
+    // nested per-field guardrail error explicitly.
+    const current = store.getState().settingsErrors;
+    store.getState().setSettingsErrors({
+      ...current,
+      [`guardrails.${key}`]: undefined,
     });
-    // Clear field error on change
-    setFieldErrors((prev) => ({ ...prev, [`guardrails.${key}`]: undefined }));
-  }
-
-  async function handleSave() {
-    const input = {
-      name,
-      description: description || null,
-      guardrails:
-        Object.keys(guardrails).length > 0
-          ? (guardrails as LoopGuardrails)
-          : undefined,
-      watchdog: {
-        watchdogEnabled,
-        watchdogInstructions: watchdogInstructions || null,
-        watchdogRetryBudget,
-      },
-    };
-
-    const result = validateLoopSettings(input);
-    if (!result.ok) {
-      const errors: Record<string, string> = {};
-      for (const err of result.errors) {
-        errors[err.field] = err.message;
-      }
-      setFieldErrors(errors);
-      return;
-    }
-
-    // Build the API payload — flatten watchdog fields for the PATCH endpoint
-    const apiPayload = {
-      name,
-      description: description || null,
-      guardrails:
-        Object.keys(guardrails).length > 0
-          ? (guardrails as LoopGuardrails)
-          : undefined,
-      watchdogEnabled,
-      watchdogInstructions: watchdogEnabled
-        ? watchdogInstructions || null
-        : null,
-      watchdogRetryBudget,
-    };
-
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/agent-loops/${loopId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(apiPayload),
-      });
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message ?? "Failed to save settings.");
-        return;
-      }
-
-      toast.success("Settings saved.");
-      onClose();
-    } catch {
-      toast.error("Failed to save settings.");
-    } finally {
-      setSaving(false);
-    }
   }
 
   return (
@@ -254,10 +179,7 @@ export function LoopSettingsPanelContent({
           className={cn(fieldErrors["name"] ? "border-destructive" : undefined)}
           aria-invalid={fieldErrors["name"] ? true : undefined}
           value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            setFieldErrors((prev) => ({ ...prev, name: undefined }));
-          }}
+          onChange={(e) => updateSettings({ name: e.target.value })}
         />
         {fieldErrors["name"] ? (
           <FieldError message={fieldErrors["name"]!} />
@@ -273,7 +195,7 @@ export function LoopSettingsPanelContent({
           id="settings-description"
           className="min-h-[60px] resize-y"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => updateSettings({ description: e.target.value })}
           placeholder="What does this loop do?"
         />
       </div>
@@ -380,7 +302,9 @@ export function LoopSettingsPanelContent({
         <Switch
           id="watchdog-enabled"
           checked={watchdogEnabled}
-          onCheckedChange={setWatchdogEnabled}
+          onCheckedChange={(checked) =>
+            updateSettings({ watchdogEnabled: checked })
+          }
         />
       </div>
 
@@ -395,7 +319,9 @@ export function LoopSettingsPanelContent({
               id="watchdog-instructions"
               className="min-h-[60px] resize-y"
               value={watchdogInstructions}
-              onChange={(e) => setWatchdogInstructions(e.target.value)}
+              onChange={(e) =>
+                updateSettings({ watchdogInstructions: e.target.value })
+              }
               placeholder="e.g. Never retry deploy steps."
             />
             <FieldHelp>
@@ -423,15 +349,11 @@ export function LoopSettingsPanelContent({
               max={WATCHDOG_RETRY_BUDGET_MAX}
               onChange={(e) => {
                 const n = parseInt(e.target.value, 10);
-                setWatchdogRetryBudget(
-                  Number.isNaN(n)
-                    ? WATCHDOG_RETRY_BUDGET_DEFAULT
+                updateSettings({
+                  watchdogRetryBudget: Number.isNaN(n)
+                    ? watchdogRetryBudget
                     : Math.max(0, Math.min(n, WATCHDOG_RETRY_BUDGET_MAX)),
-                );
-                setFieldErrors((prev) => ({
-                  ...prev,
-                  "watchdog.watchdogRetryBudget": undefined,
-                }));
+                });
               }}
             />
             {fieldErrors["watchdog.watchdogRetryBudget"] ? (
@@ -449,17 +371,13 @@ export function LoopSettingsPanelContent({
         </>
       )}
 
-      {/* Save */}
-      <div className="flex gap-2">
-        <Button
-          className="flex-1"
-          onClick={() => void handleSave()}
-          disabled={saving}
-        >
-          {saving ? "Saving…" : "Save settings"}
-        </Button>
-        <Button variant="ghost" onClick={onClose} disabled={saving}>
-          Cancel
+      {/* Footer — the header top-bar Save button persists these settings */}
+      <div className="flex flex-col gap-2">
+        <p className="text-[11px] text-muted-foreground">
+          Changes are saved with the Save button in the top bar.
+        </p>
+        <Button variant="ghost" onClick={onClose}>
+          Close
         </Button>
       </div>
     </div>
@@ -469,25 +387,10 @@ export function LoopSettingsPanelContent({
 // ── LoopSettingsPanel ─────────────────────────────────────────────────────────
 
 export type LoopSettingsPanelProps = {
-  loopId: string;
-  loopName: string;
-  loopDescription?: string | null;
-  guardrails?: LoopGuardrails;
-  /** M3-01 watchdog settings */
-  watchdogEnabled?: boolean;
-  watchdogInstructions?: string | null;
-  watchdogRetryBudget?: number;
+  store: CreateLoopBuilderStoreReturn;
 };
 
-export function LoopSettingsPanel({
-  loopId,
-  loopName,
-  loopDescription,
-  guardrails,
-  watchdogEnabled,
-  watchdogInstructions,
-  watchdogRetryBudget,
-}: LoopSettingsPanelProps) {
+export function LoopSettingsPanel({ store }: LoopSettingsPanelProps) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -520,13 +423,7 @@ export function LoopSettingsPanel({
           </div>
           <div className="flex-1 overflow-y-auto">
             <LoopSettingsPanelContent
-              loopId={loopId}
-              initialName={loopName}
-              initialDescription={loopDescription}
-              initialGuardrails={guardrails}
-              initialWatchdogEnabled={watchdogEnabled}
-              initialWatchdogInstructions={watchdogInstructions}
-              initialWatchdogRetryBudget={watchdogRetryBudget}
+              store={store}
               onClose={() => setOpen(false)}
             />
           </div>

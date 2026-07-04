@@ -599,3 +599,87 @@ describe("createLoopBuilderStore — addNode auto-connect (insert-into-edge)", (
     expect(store.getState().nodes).toHaveLength(4); // start, end, a, b
   });
 });
+
+describe("createLoopBuilderStore — settings slice (#877)", () => {
+  it("initializeSettings seeds settings without marking the store dirty", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initialize(VALID_DEF);
+    store.getState().initializeSettings({
+      name: "My loop",
+      description: "desc",
+      guardrails: { maxAgentTurnsPerStep: 8 },
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    expect(store.getState().isDirty).toBe(false);
+    expect(store.getState().settings.name).toBe("My loop");
+  });
+
+  it("updateSettings({ name }) merges the patch and marks the store dirty", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initializeSettings({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    store.getState().updateSettings({ name: "Renamed loop" });
+    expect(store.getState().isDirty).toBe(true);
+    expect(store.getState().settings.name).toBe("Renamed loop");
+  });
+
+  it("updateSettings({ guardrails }) replaces the guardrails object wholesale and marks dirty", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initializeSettings({
+      name: "My loop",
+      description: "",
+      guardrails: { maxAgentTurnsPerStep: 8, maxStepsPerRun: 10 },
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    store
+      .getState()
+      .updateSettings({ guardrails: { maxAgentTurnsPerStep: 24 } });
+    expect(store.getState().isDirty).toBe(true);
+    expect(store.getState().settings.guardrails).toEqual({
+      maxAgentTurnsPerStep: 24,
+    });
+    // maxStepsPerRun is gone — the whole object was replaced, not merged.
+    expect(store.getState().settings.guardrails.maxStepsPerRun).toBeUndefined();
+  });
+
+  it("markClean after a settings edit keeps the edited settings but clears isDirty", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initializeSettings({
+      name: "My loop",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    store.getState().updateSettings({ name: "Renamed loop" });
+    store.getState().markClean();
+    expect(store.getState().isDirty).toBe(false);
+    expect(store.getState().settings.name).toBe("Renamed loop");
+  });
+
+  it("updateSettings clears the settingsErrors key(s) it patches", () => {
+    const store = createLoopBuilderStore();
+    store.getState().initializeSettings({
+      name: "",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: 2,
+    });
+    store.getState().setSettingsErrors({ name: "Name is required." });
+    store.getState().updateSettings({ name: "Renamed loop" });
+    expect(store.getState().settingsErrors["name"]).toBeUndefined();
+  });
+});

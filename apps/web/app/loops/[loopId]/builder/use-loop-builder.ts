@@ -25,6 +25,10 @@ import {
   type LoopFlowEdge,
   type LoopFlowNode,
 } from "./definition-mapping";
+import {
+  WATCHDOG_RETRY_BUDGET_DEFAULT,
+  type LoopSettingsState,
+} from "./loop-settings-panel";
 
 // ── Legal when values by source kind ─────────────────────────────────────────
 
@@ -41,9 +45,20 @@ export interface LoopBuilderState {
   isDirty: boolean;
   validationErrors: LoopValidationError[];
 
+  // Loop settings (#877) — lifted out of the settings panel so the header
+  // Save button is the single save path and single dirty-state source.
+  settings: LoopSettingsState;
+  settingsErrors: Record<string, string | undefined>;
+
   // Lifecycle
   initialize: (def: LoopDefinition) => void;
   markClean: () => void;
+
+  /** Seeds the settings slice without marking the store dirty. */
+  initializeSettings: (settings: LoopSettingsState) => void;
+  /** Merges a partial settings patch, marks dirty, and clears patched-field errors. */
+  updateSettings: (patch: Partial<LoopSettingsState>) => void;
+  setSettingsErrors: (errors: Record<string, string | undefined>) => void;
 
   // React Flow handlers
   onNodesChange: (changes: NodeChange<LoopFlowNode>[]) => void;
@@ -180,6 +195,37 @@ export function createLoopBuilderStore() {
     edges: [],
     isDirty: false,
     validationErrors: [],
+    settings: {
+      name: "",
+      description: "",
+      guardrails: {},
+      watchdogEnabled: false,
+      watchdogInstructions: "",
+      watchdogRetryBudget: WATCHDOG_RETRY_BUDGET_DEFAULT,
+    },
+    settingsErrors: {},
+
+    initializeSettings(settings) {
+      set({ settings, settingsErrors: {} });
+    },
+
+    updateSettings(patch) {
+      set((state) => {
+        const nextErrors = { ...state.settingsErrors };
+        for (const key of Object.keys(patch)) {
+          nextErrors[key] = undefined;
+        }
+        return {
+          settings: { ...state.settings, ...patch },
+          settingsErrors: nextErrors,
+          isDirty: true,
+        };
+      });
+    },
+
+    setSettingsErrors(errors) {
+      set({ settingsErrors: errors });
+    },
 
     initialize(def) {
       const { nodes, edges } = definitionToFlow(def);
