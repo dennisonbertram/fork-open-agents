@@ -407,7 +407,11 @@ export function AgentCard({ agent, latestRun, owner, repo }: AgentCardProps) {
         </div>
       )}
 
-      {message && <p className="mt-2 text-xs text-destructive">{message}</p>}
+      {message && (
+        <p role="alert" className="mt-2 text-xs text-destructive">
+          {message}
+        </p>
+      )}
     </div>
   );
 }

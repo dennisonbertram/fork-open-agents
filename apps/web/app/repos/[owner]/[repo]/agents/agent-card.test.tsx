@@ -9,15 +9,17 @@
  * BT-167-004: Status matrix — paused (disabled) agent shows "Paused" + "Resume" control
  * BT-167-005: Status matrix — needs-setup shows setup guidance
  * BT-167-006: Run now dispatches to test/dispatch route and routes to /background-runs/:runId
+ *   — implemented in agent-card.dom.test.tsx (needs a real DOM to click/assert on).
  * BT-167-007: Pause/Resume fires PATCH with {status: "disabled"/"enabled"}, config preserved
+ *   — implemented in agent-card.dom.test.tsx (needs a real DOM to click/assert on).
  * BT-167-008: Scheduled agents show last/next run from AgentScheduleCard
  * BT-167-009: Agent detail link present for each card
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
 import type { RunSummaryArtifact } from "@/lib/background-agents/run-summary";
+import { makeAgent } from "./agent-card.fixtures";
 
 // --- Mocks -------------------------------------------------------------------
 
@@ -58,56 +60,6 @@ const globalFetch = mock(async (_url: string, _opts?: unknown) => fetchResult);
 global.fetch = globalFetch;
 
 // --- Helpers -----------------------------------------------------------------
-
-function makeAgent(
-  overrides: Partial<BackgroundAgentWithTriggers> = {},
-): BackgroundAgentWithTriggers {
-  return {
-    id: "agent-1",
-    userId: "user-1",
-    name: "Deploy Smoke",
-    description: null,
-    status: "enabled",
-    repoOwner: "acme",
-    repoName: "widgets",
-    instructions: "Run smoke checks after deployments.",
-    permissions: {},
-    checkCommand: null,
-    composioToolkitSlugs: [],
-    builtinToolNames: null,
-    githubActions: {
-      open_pull_request: true,
-      comment_on_pr_or_issue: true,
-    },
-    writeScope: { mode: "this_repo" },
-    requireCiGreenForMerge: true,
-    modelId: null,
-    runBudgetPerTarget: 10,
-    createdAt: new Date("2026-01-01"),
-    updatedAt: new Date("2026-01-01"),
-    triggers: [
-      {
-        id: "trigger-1",
-        agentId: "agent-1",
-        loopId: null,
-        userId: "user-1",
-        name: "On deployment",
-        kind: "github.deployment_status",
-        status: "enabled",
-        conditions: {},
-        schedule: null,
-        webhookPublicId: null,
-        webhookSecretHash: null,
-        lastRunAt: null,
-        nextRunAt: null,
-        lastSkipReason: null,
-        createdAt: new Date("2026-01-01"),
-        updatedAt: new Date("2026-01-01"),
-      },
-    ],
-    ...overrides,
-  };
-}
 
 type AgentRun = {
   id: string;
