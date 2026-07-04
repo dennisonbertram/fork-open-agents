@@ -34,4 +34,9 @@ describe("formatRunTimestamp (#863)", () => {
   test("an invalid date string falls back to the default '-'", () => {
     expect(formatRunTimestamp("not-a-date")).toBe("-");
   });
+
+  test("never contains a narrow no-break space (U+202F) before AM/PM", () => {
+    const result = formatRunTimestamp(new Date("2026-07-03T21:20:00Z"));
+    expect(result).not.toContain(" ");
+  });
 });

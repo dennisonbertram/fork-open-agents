@@ -47,7 +47,7 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
 
 // Some ICU builds emit a narrow no-break space (U+202F) before AM/PM instead
 // of a regular space; normalize so output is stable across runtimes.
-const NARROW_NO_BREAK_SPACE = " ";
+const NARROW_NO_BREAK_SPACE = "\u202F";
 
 export function formatRunTimestamp(
   value: Date | string | null | undefined,
