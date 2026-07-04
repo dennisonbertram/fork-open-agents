@@ -197,3 +197,40 @@ describe("BT-M2-LS-04: validateLoopSettings — watchdog validation (M3-01)", ()
     expect(result.ok).toBe(true);
   });
 });
+
+describe("BT-M2-LS-05: validateLoopSettings — maxAgentTurnsPerStep (#862)", () => {
+  it("BT-M2-LS-05a: value above ceiling returns error", () => {
+    const result = validateLoopSettings({
+      name: "My loop",
+      guardrails: { maxAgentTurnsPerStep: 33 },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors[0]?.field).toBe("guardrails.maxAgentTurnsPerStep");
+    }
+  });
+
+  it("BT-M2-LS-05b: zero value returns error", () => {
+    const result = validateLoopSettings({
+      name: "My loop",
+      guardrails: { maxAgentTurnsPerStep: 0 },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("BT-M2-LS-05c: non-integer value returns error", () => {
+    const result = validateLoopSettings({
+      name: "My loop",
+      guardrails: { maxAgentTurnsPerStep: 2.5 },
+    });
+    expect(result.ok).toBe(false);
+  });
+
+  it("BT-M2-LS-05d: valid value passes", () => {
+    const result = validateLoopSettings({
+      name: "My loop",
+      guardrails: { maxAgentTurnsPerStep: 12 },
+    });
+    expect(result.ok).toBe(true);
+  });
+});
