@@ -138,7 +138,7 @@ function parsePositiveInt(
   return parsed;
 }
 
-function getBaseUrl(env: Env): URL {
+export function getBaseUrl(env: Env): URL {
   const rawUrl = requireEnv(env, "BACKGROUND_AGENT_PROOF_BASE_URL");
   try {
     const url = new URL(rawUrl);
@@ -181,7 +181,9 @@ export function getProofConfig(env: Env): TestProofConfig {
   };
 }
 
-function authHeaders(config: TestProofConfig): Headers {
+export function buildProofAuthHeaders(
+  config: Pick<TestProofConfig, "cookie" | "bypassSecret">,
+): Headers {
   const headers = new Headers({
     "Content-Type": "application/json",
     "User-Agent": "open-agents-background-agent-test-proof/1.0",
@@ -368,11 +370,15 @@ async function fetchJson(
   url: URL,
   init: RequestInit,
   timeoutMs: number,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<{ status: number; body: string; parsed: unknown }> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
+    const response = await fetchImpl(url, {
+      ...init,
+      signal: controller.signal,
+    });
     const body = await response.text();
     let parsed: unknown;
     try {
@@ -396,11 +402,12 @@ async function fetchJson(
 async function postTestTrigger(
   config: TestProofConfig,
   requestId: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<TestDispatchResult> {
   // Pass the Headers object directly — spreading a Headers into a plain object
   // drops the headers (object spread uses own properties, not the iterator),
   // which would silently strip the auth cookie.
-  const headers = authHeaders(config);
+  const headers = buildProofAuthHeaders(config);
   headers.set("x-request-id", requestId);
   const { status, parsed } = await fetchJson(
     testEndpoint(config),
@@ -410,6 +417,7 @@ async function postTestTrigger(
       body: JSON.stringify({}),
     },
     REQUEST_TIMEOUT_MS,
+    fetchImpl,
   );
 
   if (status < 200 || status >= 300) {
@@ -427,11 +435,13 @@ async function postTestTrigger(
 async function fetchRunSnapshot(
   config: TestProofConfig,
   runId: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<RunSnapshot> {
   const { status, parsed } = await fetchJson(
     runEndpoint(config, runId),
-    { method: "GET", headers: authHeaders(config) },
+    { method: "GET", headers: buildProofAuthHeaders(config) },
     REQUEST_TIMEOUT_MS,
+    fetchImpl,
   );
   if (status < 200 || status >= 300) {
     throw new BackgroundAgentTestProofError(
@@ -448,9 +458,10 @@ function sleep(ms: number): Promise<void> {
 async function pollRunUntilTerminal(
   config: TestProofConfig,
   runId: string,
+  fetchImpl: typeof fetch = fetch,
 ): Promise<RunSnapshot> {
   const startedAt = Date.now();
-  let snapshot = await fetchRunSnapshot(config, runId);
+  let snapshot = await fetchRunSnapshot(config, runId, fetchImpl);
   while (!isTerminalStatus(snapshot.run.status)) {
     const elapsed = Date.now() - startedAt;
     if (elapsed > config.timeoutMs) {
@@ -459,32 +470,57 @@ async function pollRunUntilTerminal(
       );
     }
     await sleep(config.pollIntervalMs);
-    snapshot = await fetchRunSnapshot(config, runId);
+    snapshot = await fetchRunSnapshot(config, runId, fetchImpl);
   }
   return snapshot;
+}
+
+/**
+ * Dispatch a manual test trigger and poll the resulting run to a terminal
+ * status. Extracted (#864) so the journey-proof harness can reuse the exact
+ * same evidence lines and hard-deadline semantics instead of duplicating
+ * this logic.
+ */
+export async function dispatchAndPollToTerminal(
+  config: TestProofConfig,
+  options?: {
+    requestId?: string;
+    log?: (line: string) => void;
+    fetchImpl?: typeof fetch;
+  },
+): Promise<{
+  dispatch: TestDispatchResult;
+  snapshot: RunSnapshot;
+  elapsedMs: number;
+}> {
+  const log = options?.log ?? console.log;
+  const fetchImpl = options?.fetchImpl ?? fetch;
+  const requestId = options?.requestId ?? `test-proof-${randomUUID()}`;
+  const startedAt = Date.now();
+
+  const dispatch = await postTestTrigger(config, requestId, fetchImpl);
+  assertTestDispatch(dispatch);
+  const runId = dispatch.runIds[0];
+  log(
+    `dispatch: matched=${dispatch.matched} created=${dispatch.created} duplicates=${dispatch.duplicates} runId=${runId}`,
+  );
+
+  log(
+    `Polling run ${runId} until terminal status (timeout ${config.timeoutMs}ms).`,
+  );
+  const snapshot = await pollRunUntilTerminal(config, runId, fetchImpl);
+  return { dispatch, snapshot, elapsedMs: Date.now() - startedAt };
 }
 
 async function main(): Promise<void> {
   loadLocalEnv();
   const config = getProofConfig(process.env);
-  const requestId = `test-proof-${randomUUID()}`;
-  const startedAt = Date.now();
 
   console.log(
     `Posting manual test trigger for agent ${config.agentId} to ${config.baseUrl.origin}.`,
   );
-  const dispatch = await postTestTrigger(config, requestId);
-  assertTestDispatch(dispatch);
-  const runId = dispatch.runIds[0];
-  console.log(
-    `dispatch: matched=${dispatch.matched} created=${dispatch.created} duplicates=${dispatch.duplicates} runId=${runId}`,
-  );
-
-  console.log(
-    `Polling run ${runId} until terminal status (timeout ${config.timeoutMs}ms).`,
-  );
-  const snapshot = await pollRunUntilTerminal(config, runId);
-  console.log(summarizeRun(snapshot, Date.now() - startedAt));
+  const { snapshot, elapsedMs } = await dispatchAndPollToTerminal(config);
+  console.log(summarizeRun(snapshot, elapsedMs));
 
   // Assert the run is real proof, not a false positive: a workflow_failed run
   // or a terminal run with no workflow.started event means the execution path
@@ -492,7 +528,7 @@ async function main(): Promise<void> {
   assertProofRun(snapshot, { requireSucceeded: config.requireSucceeded });
 
   console.log(
-    `Background agent test proof passed. Inspect run ${runId} at /background-runs/${runId}.`,
+    `Background agent test proof passed. Inspect run ${snapshot.run.id} at /background-runs/${snapshot.run.id}.`,
   );
 }
 

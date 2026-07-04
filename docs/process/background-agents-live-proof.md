@@ -233,6 +233,98 @@ Expected result:
 This complements the webhook-proof and github-webhook-proof harnesses, which
 prove trigger delivery and idempotency but do not wait for the run to complete.
 
+## Full Journey Proof (create → enable → dispatch → terminal → cleanup)
+
+`background-agents:test-proof` (above) needs an existing, already-enabled
+agent — it proves "dispatch and run" but not "create an agent, enable it,
+and have it actually run". `background-agents:journey-proof` is a superset
+that also exercises `POST /api/background-agents` (create) and
+`DELETE /api/background-agents/[agentId]` (cleanup): it creates a disposable
+agent scoped to a disposable repo, confirms it starts `disabled`, enables it,
+dispatches a manual test via the same dispatch/poll core as
+`background-agents:test-proof` (identical evidence lines), asserts the
+terminal run is real proof (`assertProofRun`), and deletes the agent in a
+`finally` block regardless of whether the run passed or failed.
+
+```bash
+BACKGROUND_AGENT_PROOF_BASE_URL=https://<target-host> \
+BACKGROUND_AGENT_PROOF_COOKIE='<authenticated-session-cookie>' \
+BACKGROUND_AGENT_JOURNEY_REPO_OWNER=<disposable-repo-owner> \
+BACKGROUND_AGENT_JOURNEY_REPO_NAME=<disposable-repo-name> \
+bun run --cwd apps/web background-agents:journey-proof
+```
+
+Env vars:
+
+| Variable | Required | Default | Notes |
+| --- | --- | --- | --- |
+| `BACKGROUND_AGENT_PROOF_BASE_URL` | yes | — | http(s) target origin |
+| `BACKGROUND_AGENT_PROOF_COOKIE` | yes | — | authenticated session cookie |
+| `BACKGROUND_AGENT_JOURNEY_REPO_OWNER` | yes | — | disposable repo owner; **no default — never point this at a real/production repo** |
+| `BACKGROUND_AGENT_JOURNEY_REPO_NAME` | yes | — | disposable repo name |
+| `BACKGROUND_AGENT_JOURNEY_TIMEOUT_MS` | no | `120000` | run-completion timeout |
+| `BACKGROUND_AGENT_PROOF_POLL_MS` | no | `2000` | poll interval |
+| `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` | no | `false` | fail unless the run succeeded |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | no | — | preview protection bypass |
+
+Precondition: the target repo must already be listed in
+`BACKGROUND_AGENTS_ALLOWED_REPOS` and `BACKGROUND_AGENTS_ENABLED=true` in the
+target environment — this harness does not, and must not, widen the
+allowlist. The disposable agent uses the same disposable repo this doc's
+Safety Rules already designate, and a single `github.issue` trigger gated on
+a label (`journey-proof-never`) that is never actually applied, so a leaked
+agent (e.g. cleanup interrupted mid-run) cannot self-fire; `githubActions` is
+sent as `{}` so no GitHub write action is ever enabled.
+
+**Hard-deadline semantics**: a run that has not reached a terminal status by
+the deadline is a journey FAILURE — "still running" never reads as success,
+even with the default `REQUIRE_SUCCEEDED=false`. Cleanup is still attempted
+after any failure.
+
+**Cleanup-warning semantics**: cleanup runs in a `finally` block regardless
+of the journey's outcome. If the journey passed but the `DELETE` (or the
+follow-up list-absence check) failed, the harness prints a loud
+`WARNING: cleanup failed — manually delete agent <agentId> (...)` line and
+sets `"cleanup":"failed"` in the final `journey-summary` JSON line — this is
+NOT a failure exit (exit code stays `0`). If the journey itself failed AND
+cleanup failed, the process exits `1` and both failures are reported.
+
+**Leak-detection debug recipe** — "did the last journey-proof run leak an
+agent?": `GET /api/background-agents` against the target and look for stale
+`"Journey proof <ISO timestamp>"` rows scoped to the disposable repo older
+than the harness's own timeout.
+
+Decisions recorded for this harness (issue #864):
+
+- Script name: `background-agent-journey-proof.ts` /
+  `background-agents:journey-proof` (superset of `test-proof`, not a
+  replacement).
+- Uses the SAME disposable repo as `test-proof`, via
+  `BACKGROUND_AGENT_JOURNEY_REPO_OWNER`/`_REPO_NAME` (required, no default).
+- CI/preview gating is explicitly out of scope for this harness — that is
+  #866's job. This harness accepts any base URL via
+  `BACKGROUND_AGENT_PROOF_BASE_URL` (plus the optional
+  `VERCEL_AUTOMATION_BYPASS_SECRET`), exactly like `test-proof`, so #866 can
+  point it at a preview deployment's `github.event.deployment_status.target_url`
+  without any change to this script.
+- Trigger kind: `github.issue` with `conditions.labels: ["journey-proof-never"]`
+  (there is no "manual" trigger kind — `dispatchManualBackgroundAgentTest`
+  dispatches the agent's first enabled trigger regardless of its
+  conditions, so this inert trigger still lets the manual test fire).
+- `githubActions: {}` is sent explicitly in the create payload (omitting it
+  would apply `defaultGithubActions`, enabling real PR/comment writes).
+- Since `GET /api/background-agents/[agentId]` has no handler, "the agent no
+  longer exists" is verified via `GET /api/background-agents` (list) and
+  asserting the created agent id is absent, not via a 404 on the
+  single-agent route.
+
+**Note for #866**: when wiring this harness into
+`authenticated-production-canary.yml` or a preview-deployment canary,
+`preview-smoke.yml` resolves the preview URL via
+`github.event.deployment_status.target_url` — pass that value straight
+through as `BACKGROUND_AGENT_PROOF_BASE_URL` for this harness, the same way
+`test-proof` already accepts it.
+
 ## Generic Signed Webhook Proof
 
 Run the generic `webhook.error` fixture against the configured hosted target:
