@@ -26,6 +26,7 @@ import {
 } from "../agent-templates";
 import { TemplatePicker } from "../template-picker";
 import { submitNewAgent } from "./create-agent-request";
+import { submitAgentUpdate } from "./update-agent-request";
 
 type ManualTestResponse = {
   enabled: boolean;
@@ -132,6 +133,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
+  const [saveVerb, setSaveVerb] = useState<"created" | "updated">("created");
 
   const {
     data: readinessData,
@@ -151,12 +153,16 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
     setSaveError(null);
-    const result = await submitNewAgent(payload);
+    const isUpdate = createdAgentId !== null;
+    const result = isUpdate
+      ? await submitAgentUpdate(createdAgentId, payload)
+      : await submitNewAgent(payload);
     if (result.ok) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      toast.success("Agent created successfully.");
+      setSaveVerb(isUpdate ? "updated" : "created");
+      toast.success(isUpdate ? "Agent updated." : "Agent created successfully.");
     } else {
       setSaveError(result.error);
     }
@@ -274,7 +280,11 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
           className="rounded-lg border border-border bg-muted/20 p-4 text-sm"
           role="status"
         >
-          <p>Agent created successfully.</p>
+          <p>
+            {saveVerb === "updated"
+              ? "Agent updated."
+              : "Agent created successfully."}
+          </p>
           <Button asChild className="mt-2" size="sm" variant="outline">
             <Link href={`/repos/${owner}/${repo}/agents/${createdAgentId}`}>
               View agent

@@ -166,12 +166,12 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     // First save succeeded — success status panel is visible.
     expect(await q.findByRole("status")).toBeTruthy();
 
-    // Second save fails.
+    // Second save fails (now via PATCH, since createdAgentId is set).
     fetchResult = { ok: false, json: async () => ({}) };
     await userClick(q.getByRole("button", { name: /save agent/i }));
 
     const alert = await q.findByRole("alert");
-    expect(alert.textContent).toContain("Failed to create background agent");
+    expect(alert.textContent).toContain("Failed to update background agent");
     expect(q.queryByRole("status")).toBeNull();
   });
 
