@@ -18,7 +18,9 @@ import type { CanaryConfig } from "./ops-authenticated-canary";
 
 export type CanaryJourneyKind = "background-agents" | "loops";
 
-export class CanaryJourneyGateError extends Error {}
+export class CanaryJourneyGateError extends Error {
+  override readonly name = "CanaryJourneyGateError";
+}
 
 export function parseJourneyKind(argv: string[]): CanaryJourneyKind {
   const [kind] = argv;
@@ -83,10 +85,7 @@ export function formatBlockedResult(kind: CanaryJourneyKind): string {
   ].join("\n");
 }
 
-type SpawnFn = (
-  cmd: string[],
-  env: Record<string, string>,
-) => Promise<number>;
+type SpawnFn = (cmd: string[], env: Record<string, string>) => Promise<number>;
 
 async function defaultSpawn(
   cmd: string[],

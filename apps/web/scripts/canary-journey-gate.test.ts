@@ -83,8 +83,7 @@ describe("canary-journey-gate", () => {
 
   test("runCanaryJourneyCli spawns and propagates exit code when configured", async () => {
     const logs: string[] = [];
-    let spawnArgs: { cmd: string[]; env: Record<string, string> } | null =
-      null;
+    let spawnArgs: { cmd: string[]; env: Record<string, string> } | undefined;
     const exitCode = await runCanaryJourneyCli({
       argv: ["background-agents"],
       env: {
@@ -100,7 +99,7 @@ describe("canary-journey-gate", () => {
       },
     });
     expect(exitCode).toBe(1);
-    expect(spawnArgs).not.toBeNull();
+    expect(spawnArgs).not.toBeUndefined();
     expect(spawnArgs?.cmd.join(" ")).toContain(
       "scripts/background-agent-journey-proof.ts",
     );

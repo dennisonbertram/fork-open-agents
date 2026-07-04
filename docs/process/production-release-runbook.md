@@ -166,18 +166,73 @@ manually. It checks `/`, `/api/auth/info`, and `/api/models` against the stable
 production URL. Failures call the alert sink and then fail the workflow.
 
 `Authenticated Production Canary` runs every six hours and can also be
-dispatched manually. It is blocked by configuration until these values are set
-for a disposable production test identity:
+dispatched manually. It has three legs — `account-status` (the original
+authenticated account status/diagnosis proof), `background-agents-journey`
+(the full create/enable/dispatch/cleanup background-agent journey from
+`background-agents:journey-proof`), and `loops-journey` (the equivalent
+agent-loop journey from `loops:journey-proof`) — all gated by the same four
+values for a disposable production test identity. Each leg runs as an
+independent `continue-on-error: true` step; the workflow only fails if at
+least one leg's step outcome is `failure`.
 
-```env
-PRODUCTION_CANARY_REPO=owner/repo
-PRODUCTION_CANARY_IDENTITY=label-for-test-user
-PRODUCTION_CANARY_AUTH_COOKIE=<GitHub Actions secret>
-```
+Provisioning (all four values are required for any leg to run for real;
+otherwise every leg reports `blocked_by_configuration`, which is not a
+failure):
 
-The canary first proves the authenticated account status route, then the account
-diagnosis route. It reports `blocked_by_configuration` instead of partially
-mutating production when the disposable identity or repo is missing.
+- GitHub Actions **variables** (repo settings → Secrets and variables →
+  Actions → Variables):
+  - `PRODUCTION_URL` — optional; the workflow falls back to the stable
+    production URL if unset.
+  - `PRODUCTION_CANARY_REPO` — `owner/repo` of the disposable repo used for
+    both the background-agent and loop journeys.
+  - `PRODUCTION_CANARY_IDENTITY` — a human-readable label for the disposable
+    test user (not a secret, just identifies which account the cookie
+    belongs to).
+- GitHub Actions **secret**:
+  - `PRODUCTION_CANARY_AUTH_COOKIE` — the disposable identity's Better Auth
+    session cookie. Set it from stdin, never argv or shell history:
+    `gh secret set PRODUCTION_CANARY_AUTH_COOKIE --repo dennisonbertram/fork-open-agents`
+    then paste the cookie value and press Ctrl-D.
+
+Minting the cookie safely: sign in to production as the disposable identity
+in a private/incognito browser window, then copy the Better Auth session
+cookie from devtools (the full `Cookie` header value works — the harnesses
+send it verbatim). The local dev-only `open_agents_test_user_id` test-auth
+cookie does **not** work in production, because
+`OPEN_AGENTS_ENABLE_TEST_AUTH` is unset there — a real authenticated session
+cookie is required. `apps/web/lib/auth/config.ts` does not override
+better-auth's default session lifetime, so verify the actual expiry and set
+a rotation reminder shorter than it; never paste the cookie value into
+issues, PRs, or logs.
+
+Production prerequisites for the two journey legs (beyond the four values
+above): the disposable repo must be present in both
+`BACKGROUND_AGENTS_ALLOWED_REPOS` and `AGENT_LOOPS_ALLOWED_REPOS`,
+`AGENT_LOOPS_ENABLED=true` must be set in the production Vercel environment,
+and the GitHub App must be installed on the disposable repo.
+
+Debugging blocked vs. failed: open the step log for the leg in question and
+look for the literal line `Status: blocked_by_configuration` — that means the
+leg was skipped because configuration is unset, not that it failed a real
+check. A green checkmark at the workflow level can mean either "passed" or
+"blocked by configuration"; only the step logs distinguish them.
+
+Failure classification: both journey legs intentionally run with
+`BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` /
+`LOOP_JOURNEY_PROOF_REQUIRE_SUCCEEDED` unset, so any run that reaches a
+typed terminal status counts as journey-passed — the canary proves the
+journey *mechanics* (create/enable/dispatch/poll/cleanup reach a terminal
+state), not that every run *succeeds*. Only broken mechanics (a
+`dispatch_failed`/`workflow_failed`/`turn_budget_exceeded` status, or a
+missing started event, or no terminal state reached by the deadline) fail a
+leg.
+
+Known residual gap: the agent-loop journey can legitimately take up to ~20
+minutes; if the job's overall 40-minute timeout is hit mid-journey, GitHub
+Actions cancels the in-flight steps (outcome `cancelled`, not `failure`), so
+the alert step is skipped and no deduped issue is filed even though the run
+shows red in the Actions UI — treat a cancelled/timed-out run as equivalent
+to a failure when reviewing it manually.
 
 ## Alert Sink
 
