@@ -88,7 +88,8 @@ Required evidence:
 ### Level 3: Production Proof
 
 A journey-harness run against production, ideally via the scheduled canary
-(`bun run --cwd apps/web ops:canary-journey`,
+(`bun run --cwd apps/web ops:canary-journey -- background-agents` or
+`bun run --cwd apps/web ops:canary-journey -- loops`,
 `apps/web/scripts/canary-journey-gate.ts`,
 `.github/workflows/authenticated-production-canary.yml`).
 
