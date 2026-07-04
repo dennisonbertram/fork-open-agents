@@ -225,8 +225,8 @@ export async function runAgentLoopStep(
     loopRun.definitionSnapshot,
   );
   const guardrails = resolveGuardrails({
-    ...(definitionGuardrails ?? {}),
-    ...(columnGuardrails ?? {}),
+    ...definitionGuardrails,
+    ...columnGuardrails,
   });
   const nodeId = ctx.stepRun.nodeId;
 

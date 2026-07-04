@@ -12,7 +12,11 @@
  */
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
-import type { AgentLoop, AgentLoopRun, AgentLoopStepRun } from "@/lib/db/schema";
+import type {
+  AgentLoop,
+  AgentLoopRun,
+  AgentLoopStepRun,
+} from "@/lib/db/schema";
 
 mock.module("server-only", () => ({}));
 
@@ -84,7 +88,9 @@ function makeLoop(
   };
 }
 
-function makeStepRun(overrides: Partial<AgentLoopStepRun> = {}): AgentLoopStepRun {
+function makeStepRun(
+  overrides: Partial<AgentLoopStepRun> = {},
+): AgentLoopStepRun {
   return {
     id: "step-run-1",
     loopRunId: "loop-run-1",
@@ -109,7 +115,9 @@ let currentStepRun: AgentLoopStepRun;
 // ── Store mock: capture createAgentLoopRun's definitionSnapshot input ──────────
 
 mock.module("./store", () => ({
-  getOwnedAgentLoop: mock(async (_params: { userId: string; loopId: string }) => fixtureLoop),
+  getOwnedAgentLoop: mock(
+    async (_params: { userId: string; loopId: string }) => fixtureLoop,
+  ),
   hasActiveRunForLoop: mock(async (_loopId: string) => null),
   createAgentLoopRun: mock(
     async (input: {
@@ -146,7 +154,12 @@ mock.module("./store", () => ({
     },
   ),
   createAgentLoopStepRun: mock(
-    async (input: { loopRunId: string; nodeId: string; nodeKind: string; attempt?: number }) => {
+    async (input: {
+      loopRunId: string;
+      nodeId: string;
+      nodeKind: string;
+      attempt?: number;
+    }) => {
       currentStepRun = makeStepRun({
         id: "step-run-1",
         loopRunId: input.loopRunId,
@@ -158,11 +171,19 @@ mock.module("./store", () => ({
     },
   ),
   setInitialStepPointer: mock(async () => undefined),
-  recordAgentLoopEvent: mock(async (input: unknown) => ({ id: "evt-1", ...(input as object) })),
-  updateAgentLoopRunStatus: mock(async (input: { runId: string; status: string }) => {
-    currentLoopRun = { ...currentLoopRun, status: input.status as AgentLoopRun["status"] };
-    return currentLoopRun;
-  }),
+  recordAgentLoopEvent: mock(async (input: unknown) => ({
+    id: "evt-1",
+    ...(input as object),
+  })),
+  updateAgentLoopRunStatus: mock(
+    async (input: { runId: string; status: string }) => {
+      currentLoopRun = {
+        ...currentLoopRun,
+        status: input.status as AgentLoopRun["status"],
+      };
+      return currentLoopRun;
+    },
+  ),
   conditionallyTransitionRunStatus: mock(
     async (params: { runId: string; toStatus: AgentLoopRun["status"] }) => {
       currentLoopRun = { ...currentLoopRun, status: params.toStatus };
@@ -187,7 +208,11 @@ mock.module("./store", () => ({
   createAgentLoopWatchdogRun: mock(async () => ({ id: "wd-run-1" })),
   updateAgentLoopWatchdogRun: mock(async () => undefined),
   countWatchdogRetryDecisions: mock(async () => 0),
-  retryCurrentStepForWatchdog: mock(async () => ({ id: "new-step-1", attempt: 2, nodeId: "n1" })),
+  retryCurrentStepForWatchdog: mock(async () => ({
+    id: "new-step-1",
+    attempt: 2,
+    nodeId: "n1",
+  })),
   pauseLoopRunSystem: mock(async () => undefined),
   advanceToFailureEdge: mock(async () => true),
   dispatchStepWorkflow: mock(async () => undefined),
@@ -201,7 +226,11 @@ mock.module("./watchdog", () => ({
 
 mock.module("./step-executor", () => ({
   executeAgentLoopStep: mock(
-    async (params: { stepRunId: string; workflowRunId: string; maxAgentTurnsPerStep?: number }) => {
+    async (params: {
+      stepRunId: string;
+      workflowRunId: string;
+      maxAgentTurnsPerStep?: number;
+    }) => {
       capturedExecutorParams.push(params);
       return { outcome: "success" };
     },
@@ -209,7 +238,7 @@ mock.module("./step-executor", () => ({
 }));
 
 mock.module("workflow/api", () => ({
-  start: mock(async (_workflow: unknown, args: [{ stepRunId: string }]) => {
+  start: mock(async (_workflow: unknown, _args: [{ stepRunId: string }]) => {
     return { runId: "wf-1" };
   }),
 }));
@@ -238,15 +267,23 @@ beforeEach(() => {
 
 describe("#879: definition-embedded guardrails honored at dispatch", () => {
   test("RED (production replay): manual dispatch + run honors embedded maxAgentTurnsPerStep=24", async () => {
-    fixtureLoop = makeLoop({ guardrails: null, definition: makeDefinition({ maxAgentTurnsPerStep: 24 }) });
+    fixtureLoop = makeLoop({
+      guardrails: null,
+      definition: makeDefinition({ maxAgentTurnsPerStep: 24 }),
+    });
 
     const { dispatchManualAgentLoopStart } = await bridgePromise;
     const { runAgentLoopStep } = await chainPromise;
 
-    const result = await dispatchManualAgentLoopStart({ userId: "user-1", loopId: "loop-1" });
+    const result = await dispatchManualAgentLoopStart({
+      userId: "user-1",
+      loopId: "loop-1",
+    });
 
     expect(result.created).toBe(true);
-    expect(capturedDefinitionSnapshot?.guardrails).toEqual({ maxAgentTurnsPerStep: 24 });
+    expect(capturedDefinitionSnapshot?.guardrails).toEqual({
+      maxAgentTurnsPerStep: 24,
+    });
 
     await runAgentLoopStep({ stepRunId: "step-run-1", workflowRunId: "wf-1" });
 
