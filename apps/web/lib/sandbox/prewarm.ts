@@ -83,7 +83,9 @@ export async function prewarmSessionSandbox(params: {
     type AccessOutcome =
       | {
           ok: true;
-          setupToken: Awaited<ReturnType<typeof mintInstallationToken>> | undefined;
+          setupToken:
+            | Awaited<ReturnType<typeof mintInstallationToken>>
+            | undefined;
         }
       | { ok: false; result: PrewarmResult };
 

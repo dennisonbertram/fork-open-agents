@@ -58,11 +58,13 @@ export function buildSkillDiscoveryCommand(directories: string[]): string {
     '  [ -d "$dir" ] || continue',
     '  for sub in "$dir"/*/; do',
     '    [ -d "$sub" ] || continue',
-    '    sub="${sub%/}"',
-    '    if [ -f "$sub/SKILL.md" ]; then',
-    '      f="$sub/SKILL.md"',
-    '    elif [ -f "$sub/skill.md" ]; then',
-    '      f="$sub/skill.md"',
+    // $sub keeps its trailing slash from the glob, so plain concatenation
+    // yields "dir/SKILL.md" without any ${} parameter expansion (which the
+    // no-template-curly-in-string lint rule rejects inside plain strings).
+    '    if [ -f "$sub"SKILL.md ]; then',
+    '      f="$sub"SKILL.md',
+    '    elif [ -f "$sub"skill.md ]; then',
+    '      f="$sub"skill.md',
     "    else",
     "      continue",
     "    fi",
@@ -78,7 +80,9 @@ export function buildSkillDiscoveryCommand(directories: string[]): string {
  * Parse the combined stdout produced by buildSkillDiscoveryCommand() into
  * one entry per discovered skill file, in the order they were printed.
  */
-export function parseSkillDiscoveryOutput(stdout: string): DiscoveredSkillFile[] {
+export function parseSkillDiscoveryOutput(
+  stdout: string,
+): DiscoveredSkillFile[] {
   const markerRegex = new RegExp(
     `${DISCOVERY_MARKER_PREFIX}(.+?)${DISCOVERY_MARKER_SUFFIX}\\n`,
     "g",
@@ -359,7 +363,11 @@ async function discoverSkillsFast(
   const seenNames = new Set<string>();
 
   for (const file of parseSkillDiscoveryOutput(result.stdout)) {
-    const metadata = toSkillMetadata(file.skillDir, file.filename, file.content);
+    const metadata = toSkillMetadata(
+      file.skillDir,
+      file.filename,
+      file.content,
+    );
     if (!metadata) continue;
     addSkillIfEligible(metadata, skills, seenNames);
   }

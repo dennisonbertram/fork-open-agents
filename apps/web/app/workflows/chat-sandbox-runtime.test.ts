@@ -428,7 +428,8 @@ const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
 beforeEach(() => {
   connectSandboxSpy.mockClear();
   connectSandboxSpy.mockImplementation(
-    async (_params: Record<string, unknown>) => fakeSandbox as unknown as Sandbox,
+    async (_params: Record<string, unknown>) =>
+      fakeSandbox as unknown as Sandbox,
   );
   execSpy.mockClear();
   startManagedRuntimeProfileRunSpy.mockClear();

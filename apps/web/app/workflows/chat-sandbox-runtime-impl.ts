@@ -1156,7 +1156,9 @@ export async function resolveChatSandboxRuntime(params: {
       // stale-state recreate via createIfMissing.
       const access = await accessPromise;
       if (!access.ok) {
-        throw new Error(getRepoAccessErrorMessage(access.reason));
+        throw new Error(getRepoAccessErrorMessage(access.reason), {
+          cause: error,
+        });
       }
 
       setupToken = await mintInstallationToken({
