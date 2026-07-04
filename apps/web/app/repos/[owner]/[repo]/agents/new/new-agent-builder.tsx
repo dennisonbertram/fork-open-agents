@@ -24,18 +24,11 @@ import {
   type AgentTemplate,
   type BlankTemplate,
 } from "../agent-templates";
+import { manualTestSkipMessages } from "../manual-test-feedback";
+import type { ManualTestResponse } from "../manual-test-feedback";
 import { TemplatePicker } from "../template-picker";
 import { submitNewAgent } from "./create-agent-request";
 import { submitAgentUpdate } from "./update-agent-request";
-
-type ManualTestResponse = {
-  enabled: boolean;
-  matched: number;
-  created: number;
-  duplicates: number;
-  runIds: string[];
-  error?: string;
-};
 
 type BackgroundAgentRepoReadiness = {
   ready: boolean;
@@ -131,6 +124,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   >(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [testAlert, setTestAlert] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
   const [saveVerb, setSaveVerb] = useState<"created" | "updated">("created");
@@ -153,6 +147,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
     setSaveError(null);
+    setTestAlert(null);
     const isUpdate = createdAgentId !== null;
     const result = isUpdate
       ? await submitAgentUpdate(createdAgentId, payload)
@@ -176,6 +171,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       return;
     }
     setMessage(null);
+    setTestAlert(null);
     try {
       const response = await fetch(
         `/api/background-agents/${createdAgentId}/test`,
@@ -183,16 +179,22 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       );
       const body = (await response.json()) as ManualTestResponse;
       if (!response.ok) {
-        throw new Error(body.error ?? "Failed to start test");
+        setTestAlert(body.error ?? "Failed to start test");
+        return;
+      }
+      if (body.skipReason) {
+        setTestAlert(manualTestSkipMessages[body.skipReason]);
+        return;
       }
       const runId = body.runIds[0];
       if (!runId) {
-        throw new Error("No background run was created for this test");
+        setTestAlert("No background run was created for this test");
+        return;
       }
       // Stay on page — show inline console
       setTestRunId(runId);
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : "Failed to run test");
+      setTestAlert(err instanceof Error ? err.message : "Failed to run test");
     }
   }
 
@@ -298,6 +300,14 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         <p className="text-sm text-destructive" role="alert">
           {saveError}
         </p>
+      )}
+      {testAlert && (
+        <div
+          className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive"
+          role="alert"
+        >
+          {testAlert}
+        </div>
       )}
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>

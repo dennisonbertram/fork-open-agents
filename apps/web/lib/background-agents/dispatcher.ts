@@ -43,10 +43,11 @@ export type BackgroundDispatchResult = {
   loopRunIds: string[];
   /**
    * Set when nothing ran because the request was refused before matching —
-   * e.g. a manual test against a disabled agent (#743). Callers (the test
-   * API route) surface this so the operator sees WHY nothing ran.
+   * e.g. a manual test against a disabled agent (#743) or a manual test
+   * against a repo outside the allowlist (#861). Callers (the test API
+   * route) surface this so the operator sees WHY nothing ran.
    */
-  skipReason?: "agent_disabled" | "no_enabled_trigger";
+  skipReason?: "agent_disabled" | "no_enabled_trigger" | "repo_not_allowlisted";
 };
 
 type WorkflowStartFailureInput = {
@@ -453,6 +454,28 @@ export async function dispatchWebhookErrorEvent(params: {
   };
 }
 
+/**
+ * #861: the skip happens before any run row exists, so there's no runId to
+ * attach a persisted event to yet — mirrors the isRunBudgetExhausted
+ * runId-less constraint documented above. A structured console.warn keeps
+ * this operator-grep-able instead of silent.
+ */
+function warnManualTestSkipped(
+  params: {
+    agent: BackgroundAgentWithTriggers;
+    requestId?: string | null;
+  },
+  skipReason: NonNullable<BackgroundDispatchResult["skipReason"]>,
+) {
+  console.warn("[background-agents] manual test skipped", {
+    eventName: "background-agent.manual_test.skipped",
+    agentId: params.agent.id,
+    userId: params.agent.userId,
+    skipReason,
+    requestId: params.requestId ?? null,
+  });
+}
+
 export async function dispatchManualBackgroundAgentTest(params: {
   agent: BackgroundAgentWithTriggers;
   requestId?: string | null;
@@ -471,6 +494,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
   // #743: a disabled agent must never run, even via the manual Test button —
   // it can trigger real GitHub/PR mutations if it slips through.
   if (params.agent.status !== "enabled") {
+    warnManualTestSkipped(params, "agent_disabled");
     return {
       enabled: true,
       matched: 0,
@@ -488,6 +512,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
     (item) => item.status === "enabled",
   );
   if (!trigger) {
+    warnManualTestSkipped(params, "no_enabled_trigger");
     return {
       enabled: true,
       matched: 0,
@@ -501,6 +526,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
   if (
     !isBackgroundAgentRepoAllowed(params.agent.repoOwner, params.agent.repoName)
   ) {
+    warnManualTestSkipped(params, "repo_not_allowlisted");
     return {
       enabled: true,
       matched: 0,
@@ -508,6 +534,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     };
   }
 
