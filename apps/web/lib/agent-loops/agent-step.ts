@@ -14,7 +14,10 @@
  *   6. Run openAgent in a bounded loop:
  *        Loop until finishReason !== "tool-calls", up to maxAgentTurnsPerStep.
  *        Each iteration appends response messages so the next call sees
- *        tool results.  Exhausting the bound → typed turn_budget_exceeded failure.
+ *        tool results, then records an agent-loop.step.agent.turn.completed
+ *        heartbeat event (turn number, finish reason, duration, tool call
+ *        count, usage) — emitted on every turn, including the final one
+ *        (#863). Exhausting the bound → typed turn_budget_exceeded failure.
  *        AbortError / timeout → typed workflow_failed failure.
  *   7. Record agent-loop.step.agent.completed event with usage summary.
  *   8. Read /tmp/loop-step-output.json from sandbox:
@@ -637,6 +640,7 @@ export async function executeAgentStep(
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        const turnStartedAt = Date.now();
         agentResult = await openAgent.generate({
           messages: agentMessages,
           options: agentOptions,
@@ -648,6 +652,34 @@ export async function executeAgentStep(
         if (agentResult.response?.messages?.length) {
           agentMessages.push(...agentResult.response.messages);
         }
+
+        // Per-turn heartbeat: emitted on EVERY turn (including the final one)
+        // so a run in progress shows incremental activity instead of sitting
+        // static until the whole internal generate loop completes. Mirrors
+        // executor.ts's background-agent.agent.step.completed payload shape.
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId: node.id,
+          eventName: "agent-loop.step.agent.turn.completed",
+          status: "succeeded",
+          level: "info",
+          summary: `Agent turn ${loopStep} completed (finishReason: ${agentResult.finishReason})`,
+          payload: {
+            turn: loopStep,
+            maxAgentTurnsPerStep: maxAgentTurns,
+            finishReason: agentResult.finishReason,
+            rawFinishReason: agentResult.rawFinishReason ?? null,
+            durationMs: Date.now() - turnStartedAt,
+            toolCallCount: agentResult.steps.reduce(
+              (c, s) => c + s.toolCalls.length,
+              0,
+            ),
+            usage: agentResult.usage,
+            totalUsage: agentResult.totalUsage,
+          },
+          workflowRunId,
+        });
 
         if (agentResult.finishReason !== "tool-calls") {
           // Agent has stopped requesting tool calls — exit loop.

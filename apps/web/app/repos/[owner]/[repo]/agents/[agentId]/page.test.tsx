@@ -296,4 +296,30 @@ describe("AgentDetailPage", () => {
     expect(html.toLowerCase()).not.toContain("chat history");
     expect(html.toLowerCase()).not.toContain("conversation");
   });
+
+  // #863: this page's trigger/run timestamps must render in the SAME
+  // explicit, labeled UTC treatment as the agent list and schedule card, so
+  // the same instant never shows two different wall-clock times.
+  test("BT-863: run createdAt and trigger lastRunAt render via the shared UTC-labeled formatter", async () => {
+    (
+      mockAgent as { triggers: Array<Record<string, unknown>> }
+    ).triggers[0]!.lastRunAt = new Date("2026-07-03T21:20:00Z");
+    (mockRuns[0] as Record<string, unknown>).createdAt = new Date(
+      "2026-07-03T21:20:00Z",
+    );
+
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await AgentDetailPage({
+        params: Promise.resolve({
+          owner: "acme",
+          repo: "widgets",
+          agentId: "agent-1",
+        }),
+      }),
+    );
+
+    expect(html).toContain("Jul 3, 2026, 9:20 PM UTC");
+  });
 });

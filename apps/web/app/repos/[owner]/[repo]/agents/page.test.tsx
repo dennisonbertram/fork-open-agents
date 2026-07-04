@@ -307,4 +307,41 @@ describe("RepoAgentsPage", () => {
     expect(recentRunsHtml).toContain("Orphaned run");
     expect(recentRunsHtml).toContain("Unknown agent");
   });
+
+  // #863: the run list must render the same instant in the same explicit,
+  // labeled UTC treatment as the schedule card and agent detail page.
+  test("BT-863: recent-runs row renders createdAt via the shared UTC-labeled formatter", async () => {
+    repoAgents = [
+      {
+        id: "agent-1",
+        name: "Deploy smoke",
+        status: "enabled",
+        instructions: "Run smoke checks after deployments.",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-863",
+        agentId: "agent-1",
+        triggerKind: "schedule.cron",
+        status: "succeeded",
+        payloadSummary: { title: "Timezone parity run" },
+        externalId: "delivery-863",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-07-03T21:20:00Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Jul 3, 2026, 9:20 PM UTC");
+  });
 });

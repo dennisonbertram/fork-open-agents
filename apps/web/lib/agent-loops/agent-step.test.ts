@@ -1886,3 +1886,147 @@ describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => 
     expect(payload?.["disconnectedToolkits"]).toEqual(["slack"]);
   });
 });
+
+// ── BT-S31: per-turn heartbeat events (#863) ─────────────────────────────────
+// Today the internal generate loop only emits one event
+// (agent-loop.step.agent.completed) AFTER the whole loop finishes. These
+// tests assert a per-turn agent-loop.step.agent.turn.completed heartbeat is
+// recorded on every turn, including the final one, mirroring executor.ts's
+// background-agent.agent.step.completed shape.
+
+describe("BT-S31: per-turn heartbeat events (#863)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("BT-S31a: a 3-turn run records exactly 3 turn.completed events, in order, before agent.completed", async () => {
+    let callCount = 0;
+    openAgentGenerateMock.mockImplementation(async (_params: unknown) => {
+      callCount++;
+      if (callCount < 3) {
+        return {
+          finishReason: "tool-calls" as const,
+          rawFinishReason: "tool_use",
+          steps: [{ toolCalls: [{ toolCallId: `call-${callCount}` }] }],
+          response: { messages: [] },
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          totalUsage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+          },
+        };
+      }
+      return {
+        finishReason: "stop" as const,
+        rawFinishReason: "end_turn",
+        steps: [{ toolCalls: [] }],
+        response: { messages: [] },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      };
+    });
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const turnEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.step.agent.turn.completed",
+    );
+    expect(turnEvents.length).toBe(3);
+
+    turnEvents.forEach((event, index) => {
+      const payload = event.payload as Record<string, unknown>;
+      expect(payload["turn"]).toBe(index + 1);
+      expect(typeof payload["durationMs"]).toBe("number");
+      expect(typeof payload["toolCallCount"]).toBe("number");
+      expect(payload["maxAgentTurnsPerStep"]).toBeDefined();
+      expect(payload["usage"]).toBeDefined();
+      expect(event.loopRunId).toBe("loop-run-1");
+      expect(event.stepRunId).toBe("step-run-1");
+      expect(event.nodeId).toBe("agent-node-1");
+      expect(event.workflowRunId).toBe("wf-run-1");
+      expect(event.status).toBe("succeeded");
+      expect(event.level).toBe("info");
+    });
+
+    expect(turnEvents.map((e) => e.payload as Record<string, unknown>)).toEqual(
+      [
+        expect.objectContaining({ finishReason: "tool-calls" }),
+        expect.objectContaining({ finishReason: "tool-calls" }),
+        expect.objectContaining({ finishReason: "stop" }),
+      ],
+    );
+
+    const lastTurnIndex = recordedEvents.lastIndexOf(
+      turnEvents[turnEvents.length - 1],
+    );
+    const completedIndex = recordedEvents.findIndex(
+      (e) => e.eventName === "agent-loop.step.agent.completed",
+    );
+    expect(completedIndex).toBeGreaterThan(-1);
+    expect(lastTurnIndex).toBeLessThan(completedIndex);
+  });
+
+  test("BT-S31b: turn-budget exhaustion still records a turn.completed heartbeat per turn", async () => {
+    openAgentResult = {
+      ...openAgentResult,
+      finishReason: "tool-calls",
+    };
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      maxAgentTurnsPerStep: 3,
+    });
+
+    expect(result.outcome).toBe("failure");
+    expect(result.errorKind).toBe("turn_budget_exceeded");
+
+    const turnEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.step.agent.turn.completed",
+    );
+    expect(turnEvents.length).toBe(3);
+  });
+
+  test("BT-S31c: turn.completed payloads never leak node instructions", async () => {
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const turnEvents = recordedEvents.filter(
+      (e) => e.eventName === "agent-loop.step.agent.turn.completed",
+    );
+    expect(turnEvents.length).toBeGreaterThan(0);
+    for (const event of turnEvents) {
+      expect(JSON.stringify(event.payload)).not.toContain("Do the work");
+    }
+  });
+});
