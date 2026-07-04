@@ -108,6 +108,43 @@ function makeHungStub() {
   return { stub, counter, signals };
 }
 
+/**
+ * A fetch stub that resolves immediately with a fresh "running" run detail
+ * payload, so the run stays active (and therefore polling) across every
+ * tick. Used to isolate the refresh-interval-identity regression from the
+ * separate hung-fetch/timeout scenarios above.
+ */
+function makeFastStub(runId: string) {
+  const counter = { callCount: 0 };
+  const stub = (() => {
+    counter.callCount++;
+    return Promise.resolve(
+      new Response(JSON.stringify(makeRunDetail(runId)), { status: 200 }),
+    );
+  }) as unknown as typeof fetch;
+  return { stub, counter };
+}
+
+function LivenessTickerProbe({
+  runId,
+  initialData,
+  stub,
+}: {
+  runId: string;
+  initialData: GetAgentLoopRunDetailResponse;
+  stub: typeof fetch;
+}) {
+  useLoopRunPolling(runId, initialData, {
+    fetchImpl: stub,
+    timeoutMs: 5000,
+    refreshIntervalMs: 80,
+    dedupingIntervalMs: 5,
+    errorRetryIntervalMs: 80,
+    nowTickMs: 10,
+  });
+  return <div />;
+}
+
 describe("useLoopRunPolling wedge fix (#880)", () => {
   test("a hung poll fetch does not wedge subsequent ticks", async () => {
     const runId = "run_wedge_a1";
@@ -159,5 +196,43 @@ describe("useLoopRunPolling wedge fix (#880)", () => {
         ).toBeTruthy(),
       { timeout: 4000 },
     );
+  });
+
+  // #880 follow-up (reviewer finding on PR #889): the 1s liveness ticker
+  // (setNowMs) re-renders the hook every tick, and the `refreshInterval`
+  // option passed to useSWR must stay referentially stable across those
+  // re-renders. SWR 2.4.1's polling effect depends on `refreshInterval`
+  // identity (see swr/dist/index/index.mjs's polling useIsomorphicLayoutEffect
+  // deps: [refreshInterval, refreshWhenHidden, refreshWhenOffline, key]) and
+  // tears down + restarts its setTimeout whenever that identity changes. An
+  // inline `refreshInterval: (latest) => ...` callback gets a new identity
+  // every render, so a ticker firing faster than the poll interval resets the
+  // poll timer before it ever elapses — polling starves. This test uses a
+  // ticker (nowTickMs=10) faster than the poll interval (refreshIntervalMs=80)
+  // and a fast-resolving fetch stub (no hang/timeout involved) to isolate
+  // exactly that identity-churn pathology.
+  test("polling keeps firing on cadence while the liveness ticker is running", async () => {
+    const runId = "run_ticker_b1";
+    const { stub, counter } = makeFastStub(runId);
+    const initialData = makeRunDetail(runId);
+
+    render(
+      <SWRConfig value={{ provider: () => new Map() }}>
+        <LivenessTickerProbe
+          runId={runId}
+          initialData={initialData}
+          stub={stub}
+        />
+      </SWRConfig>,
+    );
+
+    // With a stable refreshInterval, ~4 polls comfortably land within 80ms *
+    // 4 = 320ms of scheduling; give it a generous real-time budget. If the
+    // refreshInterval callback is re-created on every ticker tick (the bug),
+    // the poll timer never survives to fire and callCount gets stuck at the
+    // single initial fetch — this assertion times out instead of passing.
+    await waitFor(() => expect(counter.callCount).toBeGreaterThanOrEqual(4), {
+      timeout: 3000,
+    });
   });
 });
