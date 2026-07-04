@@ -201,3 +201,9 @@ When adding a new export to a shared store/module, grep for all `mock.module` fa
 ## Stranded reviewed fixes (#859, 2026-07-03)
 
 - **A reviewed one-line fix (`toast` import on `new-agent-builder.tsx`, commit `2d5498f4`) sat unmerged on a feature branch carrying unrelated work (`feat/native-github-tool-actions`, TASK-740 scope) instead of landing on `develop`.** An implementer who diffs the working tree against that branch sees the fix already present and wrongly concludes the issue is resolved, or reimplements against a stale mental model of "already fixed." Always branch fresh off `origin/develop` for issue work and verify the pre-fix reference state there (`git show origin/develop:<path>`) rather than trusting the checked-out working tree. This issue's fix was reimplemented from scratch on a `develop`-based branch rather than cherry-picked, to avoid dragging in the unrelated branch's history.
+
+## Deployed Feature Proof Standard (#868, 2026-07-03)
+
+- **Why PRs #676/#705 stranded**: both carried a broad agent-builder redesign with a small, correct user-facing fix buried inside, and nothing forced a same-session merge — they sat `OPEN`/`CONFLICTING` against `develop` for weeks while the underlying bug (commit `2d5498f4`, on `feat/native-github-tool-actions`) stayed live in production.
+- **What changed**: the fixes were reimplemented small and standalone (#859 → PR #871, #860 → PR #872), merged to `develop`, and shipped to `main` via release PR #875, verified with `git merge-base --is-ancestor <sha> origin/main`. #676 and #705 are now superseded and recommended for closure by the release coordinator.
+- **Read the standard before opening or closing user-facing work**: the rules that prevent recurrence — proof levels, the no-stranded-fixes rule, the user feedback contract, and the `git merge-base` Definition-of-Done check — are codified in `docs/process/deployed-feature-proof-standard.md`.
