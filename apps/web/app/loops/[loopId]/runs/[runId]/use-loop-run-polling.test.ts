@@ -66,3 +66,57 @@ describe("loopRunsListSwrKey", () => {
     expect(loopRunsListSwrKey("loop_1")).toBe("/api/agent-loops/loop_1/runs");
   });
 });
+
+// #880 — a poll fetch that never resolves must not wedge polling forever.
+describe("fetchRunDetailWithTimeout", () => {
+  test("a never-resolving fetchImpl rejects with a timeout error and aborts the signal", async () => {
+    const { fetchRunDetailWithTimeout } = await pollingModulePromise;
+
+    let capturedSignal: AbortSignal | undefined;
+    const hungFetch = ((_input: RequestInfo | URL, init?: RequestInit) => {
+      capturedSignal = init?.signal ?? undefined;
+      return new Promise<Response>(() => {
+        // never resolves
+      });
+    }) as unknown as typeof fetch;
+
+    await expect(
+      fetchRunDetailWithTimeout("/api/agent-loop-runs/run_1", {
+        fetchImpl: hungFetch,
+        timeoutMs: 20,
+      }),
+    ).rejects.toThrow(/timed out/);
+
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
+  test("a non-ok response throws 'Failed to load run detail'", async () => {
+    const { fetchRunDetailWithTimeout } = await pollingModulePromise;
+
+    const failingFetch = (() =>
+      Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
+
+    await expect(
+      fetchRunDetailWithTimeout("/api/agent-loop-runs/run_1", {
+        fetchImpl: failingFetch,
+        timeoutMs: 1000,
+      }),
+    ).rejects.toThrow("Failed to load run detail");
+  });
+
+  test("a successful response parses JSON", async () => {
+    const { fetchRunDetailWithTimeout } = await pollingModulePromise;
+
+    const okFetch = (() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), { status: 200 }),
+      )) as unknown as typeof fetch;
+
+    const result = await fetchRunDetailWithTimeout(
+      "/api/agent-loop-runs/run_1",
+      { fetchImpl: okFetch, timeoutMs: 1000 },
+    );
+
+    expect(result).toEqual({ ok: true });
+  });
+});
