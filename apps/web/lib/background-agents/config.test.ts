@@ -87,4 +87,22 @@ describe("background agent config", () => {
     process.env.BACKGROUND_AGENT_MAX_TURNS = "-3";
     expect(getBackgroundAgentMaxTurns()).toBe(16);
   });
+
+  test("getBackgroundAgentMaxTurns falls back to the default for a decimal value instead of truncating (#862)", async () => {
+    const { getBackgroundAgentMaxTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_TURNS = "2.5";
+    expect(getBackgroundAgentMaxTurns()).toBe(16);
+  });
+
+  test("getBackgroundAgentMaxTurns falls back to the default for a numeric prefix with trailing text instead of truncating (#862)", async () => {
+    const { getBackgroundAgentMaxTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_TURNS = "20turns";
+    expect(getBackgroundAgentMaxTurns()).toBe(16);
+  });
+
+  test("getBackgroundAgentMaxTurns tolerates surrounding whitespace around an otherwise valid integer (#862)", async () => {
+    const { getBackgroundAgentMaxTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_TURNS = " 12 ";
+    expect(getBackgroundAgentMaxTurns()).toBe(12);
+  });
 });
