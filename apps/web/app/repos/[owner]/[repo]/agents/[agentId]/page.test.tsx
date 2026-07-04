@@ -301,8 +301,9 @@ describe("AgentDetailPage", () => {
   // explicit, labeled UTC treatment as the agent list and schedule card, so
   // the same instant never shows two different wall-clock times.
   test("BT-863: run createdAt and trigger lastRunAt render via the shared UTC-labeled formatter", async () => {
-    (mockAgent as { triggers: Array<Record<string, unknown>> }).triggers[0]!.lastRunAt =
-      new Date("2026-07-03T21:20:00Z");
+    (
+      mockAgent as { triggers: Array<Record<string, unknown>> }
+    ).triggers[0]!.lastRunAt = new Date("2026-07-03T21:20:00Z");
     (mockRuns[0] as Record<string, unknown>).createdAt = new Date(
       "2026-07-03T21:20:00Z",
     );
