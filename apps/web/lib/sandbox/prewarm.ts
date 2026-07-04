@@ -78,18 +78,27 @@ export async function prewarmSessionSandbox(params: {
 
   // ── Provisioning ───────────────────────────────────────────────────────────
   try {
-    const gitUser = await getGitUser(userId);
     const sandboxInputState = buildSandboxState(session);
 
-    let setupToken:
-      | Awaited<ReturnType<typeof mintInstallationToken>>
-      | undefined;
+    type AccessOutcome =
+      | {
+          ok: true;
+          setupToken: Awaited<ReturnType<typeof mintInstallationToken>> | undefined;
+        }
+      | { ok: false; result: PrewarmResult };
 
-    if (session.cloneUrl) {
+    const resolveAccessAndToken = async (): Promise<AccessOutcome> => {
+      if (!session.cloneUrl) {
+        return { ok: true, setupToken: undefined };
+      }
+
       if (!session.repoOwner || !session.repoName) {
         return {
-          status: "failed",
-          reason: "Session is missing repository metadata",
+          ok: false,
+          result: {
+            status: "failed",
+            reason: "Session is missing repository metadata",
+          },
         };
       }
 
@@ -101,17 +110,35 @@ export async function prewarmSessionSandbox(params: {
 
       if (!access.ok) {
         return {
-          status: "failed",
-          reason: getRepoAccessErrorMessage(access.reason),
+          ok: false,
+          result: {
+            status: "failed",
+            reason: getRepoAccessErrorMessage(access.reason),
+          },
         };
       }
 
-      setupToken = await mintInstallationToken({
+      const setupToken = await mintInstallationToken({
         installationId: access.installationId,
         repositoryIds: [access.repositoryId],
         permissions: { contents: "read" },
       });
+
+      return { ok: true, setupToken };
+    };
+
+    // getGitUser has no dependency on repo access / token minting, so run it
+    // concurrently with that chain instead of waiting on it first.
+    const [gitUser, accessOutcome] = await Promise.all([
+      getGitUser(userId),
+      resolveAccessAndToken(),
+    ]);
+
+    if (!accessOutcome.ok) {
+      return accessOutcome.result;
     }
+
+    const setupToken = accessOutcome.setupToken;
 
     let sandbox: Awaited<ReturnType<typeof connectSandbox>>;
     try {
@@ -132,7 +159,9 @@ export async function prewarmSessionSandbox(params: {
       });
     } finally {
       if (setupToken) {
-        await revokeInstallationToken(setupToken.token);
+        void revokeInstallationToken(setupToken.token).catch((err) => {
+          console.error("[prewarm] Failed to revoke setup token:", err);
+        });
       }
     }
 
