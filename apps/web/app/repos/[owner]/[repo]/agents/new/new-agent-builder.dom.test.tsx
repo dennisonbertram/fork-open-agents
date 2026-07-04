@@ -144,6 +144,29 @@ describe("NewAgentBuilder — save feedback (#859)", () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  test("a later failed save suppresses the stale success status panel", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    // First save succeeded — success status panel is visible.
+    expect(await q.findByRole("status")).toBeTruthy();
+
+    // Second save fails.
+    fetchResult = { ok: false, json: async () => ({}) };
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+
+    const alert = await q.findByRole("alert");
+    expect(alert.textContent).toContain("Failed to create background agent");
+    expect(q.queryByRole("status")).toBeNull();
+  });
+
   test("stays on the page after save so Run a test enables", async () => {
     const { NewAgentBuilder } = await builderPromise;
 
