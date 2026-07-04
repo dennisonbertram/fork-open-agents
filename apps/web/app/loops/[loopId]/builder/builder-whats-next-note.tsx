@@ -59,10 +59,7 @@ export function BuilderWhatsNextNote({
           Add a trigger
         </Link>{" "}
         (or{" "}
-        <Link
-          href={`/loops/${loopId}#loop-run-now`}
-          className={LINK_CLASSNAME}
-        >
+        <Link href={`/loops/${loopId}#loop-run-now`} className={LINK_CLASSNAME}>
           Run now
         </Link>
         ) →{" "}

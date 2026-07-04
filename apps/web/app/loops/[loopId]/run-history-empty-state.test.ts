@@ -26,9 +26,7 @@ describe("getRunHistoryEmptyState", () => {
 
       expect(copy).not.toContain("Click");
       expect(copy).toContain("Active");
-      expect(copy).not.toBe(
-        "Loop must be in active status to run manually.",
-      );
+      expect(copy).not.toBe("Loop must be in active status to run manually.");
     },
   );
 });
