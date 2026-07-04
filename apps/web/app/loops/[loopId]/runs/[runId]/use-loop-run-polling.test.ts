@@ -94,7 +94,9 @@ describe("fetchRunDetailWithTimeout", () => {
     const { fetchRunDetailWithTimeout } = await pollingModulePromise;
 
     const failingFetch = (() =>
-      Promise.resolve(new Response(null, { status: 500 }))) as unknown as typeof fetch;
+      Promise.resolve(
+        new Response(null, { status: 500 }),
+      )) as unknown as typeof fetch;
 
     await expect(
       fetchRunDetailWithTimeout("/api/agent-loop-runs/run_1", {
@@ -117,6 +119,6 @@ describe("fetchRunDetailWithTimeout", () => {
       { fetchImpl: okFetch, timeoutMs: 1000 },
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result as unknown).toEqual({ ok: true });
   });
 });

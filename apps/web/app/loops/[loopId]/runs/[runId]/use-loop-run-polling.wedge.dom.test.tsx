@@ -25,9 +25,7 @@ import { useLoopRunPolling } from "./use-loop-run-polling";
 
 registerDomTestHooks();
 
-function makeRunDetail(
-  runId: string,
-): GetAgentLoopRunDetailResponse {
+function makeRunDetail(runId: string): GetAgentLoopRunDetailResponse {
   return {
     run: {
       id: runId,
@@ -98,28 +96,22 @@ afterEach(() => {
 });
 
 function makeHungStub() {
+  const counter = { callCount: 0 };
   const signals: (AbortSignal | undefined)[] = [];
-  let callCount = 0;
   const stub = ((_input: RequestInfo | URL, init?: RequestInit) => {
-    callCount++;
+    counter.callCount++;
     signals.push(init?.signal ?? undefined);
     return new Promise<Response>(() => {
       // never resolves — simulates the production "pending forever" fetch
     });
   }) as unknown as typeof fetch;
-  return {
-    stub,
-    get callCount() {
-      return callCount;
-    },
-    signals,
-  };
+  return { stub, counter, signals };
 }
 
 describe("useLoopRunPolling wedge fix (#880)", () => {
   test("a hung poll fetch does not wedge subsequent ticks", async () => {
     const runId = "run_wedge_a1";
-    const { stub, ...counter } = makeHungStub();
+    const { stub, counter } = makeHungStub();
     const initialData = makeRunDetail(runId);
 
     render(
@@ -135,7 +127,7 @@ describe("useLoopRunPolling wedge fix (#880)", () => {
 
   test("a tick exceeding the timeout is aborted", async () => {
     const runId = "run_wedge_a2";
-    const { stub, ...counter } = makeHungStub();
+    const { stub, signals } = makeHungStub();
     const initialData = makeRunDetail(runId);
 
     render(
@@ -144,7 +136,7 @@ describe("useLoopRunPolling wedge fix (#880)", () => {
       </SWRConfig>,
     );
 
-    await waitFor(() => expect(counter.signals[0]?.aborted).toBe(true), {
+    await waitFor(() => expect(signals[0]?.aborted).toBe(true), {
       timeout: 4000,
     });
   });

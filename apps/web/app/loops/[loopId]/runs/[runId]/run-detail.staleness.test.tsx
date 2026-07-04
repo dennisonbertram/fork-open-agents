@@ -36,7 +36,11 @@ type Liveness =
 let mockLiveness: Liveness = { kind: "terminal" };
 
 mock.module("./use-loop-run-polling", () => ({
-  useLoopRunPolling: () => ({ data: undefined, error: null, liveness: mockLiveness }),
+  useLoopRunPolling: () => ({
+    data: undefined,
+    error: null,
+    liveness: mockLiveness,
+  }),
   loopRunsListSwrKey: (id: string) => `/api/agent-loops/${id}/runs`,
 }));
 

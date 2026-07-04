@@ -8,10 +8,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import {
-  getLoopRunLiveness,
-  STALE_AFTER_MS,
-} from "./run-liveness";
+import { getLoopRunLiveness, STALE_AFTER_MS } from "./run-liveness";
 
 describe("getLoopRunLiveness", () => {
   test("isActive=false returns terminal regardless of timing", () => {
@@ -26,7 +23,11 @@ describe("getLoopRunLiveness", () => {
 
   test("active + delta 0 returns live with secondsSinceUpdate 0", () => {
     expect(
-      getLoopRunLiveness({ isActive: true, lastSuccessAtMs: 5000, nowMs: 5000 }),
+      getLoopRunLiveness({
+        isActive: true,
+        lastSuccessAtMs: 5000,
+        nowMs: 5000,
+      }),
     ).toEqual({ kind: "live", secondsSinceUpdate: 0 });
   });
 
@@ -44,7 +45,11 @@ describe("getLoopRunLiveness", () => {
   test("active + delta staleAfterMs + 1 is stalled", () => {
     const lastSuccessAtMs = 0;
     const nowMs = STALE_AFTER_MS + 1;
-    const result = getLoopRunLiveness({ isActive: true, lastSuccessAtMs, nowMs });
+    const result = getLoopRunLiveness({
+      isActive: true,
+      lastSuccessAtMs,
+      nowMs,
+    });
     expect(result.kind).toBe("stalled");
   });
 
