@@ -3,6 +3,7 @@
 import { PlugZap, Settings2 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
@@ -128,6 +129,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
     AgentTemplate | BlankTemplate | null
   >(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
 
@@ -148,14 +150,15 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setMessage(null);
+    setSaveError(null);
     const result = await submitNewAgent(payload);
     if (result.ok) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
-      setMessage("Agent created successfully.");
+      toast.success("Agent created successfully.");
     } else {
-      setMessage(result.error);
+      setSaveError(result.error);
     }
   }
 
@@ -266,6 +269,24 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         onSave={handleSave}
         onRunTest={handleRunTest}
       />
+      {createdAgentId && !saveError && (
+        <div
+          className="rounded-lg border border-border bg-muted/20 p-4 text-sm"
+          role="status"
+        >
+          <p>Agent created successfully.</p>
+          <Button asChild className="mt-2" size="sm" variant="outline">
+            <Link href={`/repos/${owner}/${repo}/agents/${createdAgentId}`}>
+              View agent
+            </Link>
+          </Button>
+        </div>
+      )}
+      {saveError && (
+        <p className="text-sm text-destructive" role="alert">
+          {saveError}
+        </p>
+      )}
       {message && <p className="text-xs text-muted-foreground">{message}</p>}
     </div>
   );
