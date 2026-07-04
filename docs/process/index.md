@@ -39,6 +39,9 @@ Start here:
   Staff UI/tooling.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
+- [Deployed Feature Proof Standard](deployed-feature-proof-standard.md) -
+  proof levels, no-stranded-fixes rule, and DoD evidence for any user-facing
+  feature or bug fix.
 - [Isolated Worker Live Proof](isolated-worker-live-proof.md) - operator smoke
   for delegated isolated workspace evidence.
 - [Delegated Worker Cleanup And Recovery](delegated-worker-cleanup-recovery.md)
