@@ -162,7 +162,9 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
       setSaveVerb(isUpdate ? "updated" : "created");
-      toast.success(isUpdate ? "Agent updated." : "Agent created successfully.");
+      toast.success(
+        isUpdate ? "Agent updated." : "Agent created successfully.",
+      );
     } else {
       setSaveError(result.error);
     }

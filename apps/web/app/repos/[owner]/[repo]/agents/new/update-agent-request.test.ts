@@ -49,7 +49,11 @@ describe("submitAgentUpdate", () => {
 
   test("surfaces a bare error message when there are no field details (404)", async () => {
     const fetchImpl = (async () =>
-      jsonResponse({ error: "Background agent not found" }, false, 404)) as unknown as typeof fetch;
+      jsonResponse(
+        { error: "Background agent not found" },
+        false,
+        404,
+      )) as unknown as typeof fetch;
 
     const result = await submitAgentUpdate("agent-1", {}, fetchImpl);
 
