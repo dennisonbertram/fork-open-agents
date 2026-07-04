@@ -4,13 +4,13 @@ import { formatRunTimestamp } from "./format-run-timestamp";
 describe("formatRunTimestamp (#863)", () => {
   test("formats a Date instance in explicit UTC with the zone label", () => {
     expect(formatRunTimestamp(new Date("2026-07-03T21:20:00Z"))).toBe(
-      "Jul 3, 2026, 9:20 PM UTC",
+      "Jul 3, 2026 at 9:20 PM UTC",
     );
   });
 
   test("formats an ISO string input identically to the equivalent Date", () => {
     expect(formatRunTimestamp("2026-07-03T21:20:00.000Z")).toBe(
-      "Jul 3, 2026, 9:20 PM UTC",
+      "Jul 3, 2026 at 9:20 PM UTC",
     );
   });
 

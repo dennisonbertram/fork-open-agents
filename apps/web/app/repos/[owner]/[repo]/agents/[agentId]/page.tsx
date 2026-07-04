@@ -7,6 +7,7 @@ import {
   getOwnedBackgroundAgentWithTriggers,
   listBackgroundAgentRuns,
 } from "@/lib/background-agents/store";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { RunSummary } from "@/lib/background-agents/run-summary";
@@ -58,15 +59,8 @@ function RunStatusPill({ status }: { status: string }) {
   );
 }
 
-function formatDate(value: Date | null | undefined): string {
-  if (!value) return "-";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    year: "numeric",
-  }).format(value instanceof Date ? value : new Date(value));
+function formatDate(value: Date | string | null | undefined): string {
+  return formatRunTimestamp(value);
 }
 
 function SectionHeader({ children }: { children: React.ReactNode }) {

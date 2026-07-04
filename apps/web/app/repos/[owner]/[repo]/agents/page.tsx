@@ -6,6 +6,7 @@ import {
   listBackgroundAgentRuns,
   listRepoBackgroundAgents,
 } from "@/lib/background-agents/store";
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
 import { getServerSession } from "@/lib/session/get-server-session";
 import { cn } from "@/lib/utils";
 import type { BackgroundAgentRun } from "@/lib/db/schema";
@@ -41,15 +42,7 @@ function StatusPill({ status }: { status: string }) {
 }
 
 function formatDate(value: Date | null) {
-  if (!value) {
-    return "-";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(value);
+  return formatRunTimestamp(value);
 }
 
 function findLatestRunForAgent(
