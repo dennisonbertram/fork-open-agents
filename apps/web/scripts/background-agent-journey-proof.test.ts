@@ -508,6 +508,88 @@ describe("background-agent-journey-proof", () => {
       ).toBe(true);
     });
 
+    test("DELETE succeeds but the absence check still finds the agent is a cleanup failure, not success", async () => {
+      const config = baseConfig();
+      const recorded: Array<{ method: string; url: string; headers: Headers }> =
+        [];
+      let runCallCount = 0;
+      const router: Router = (method, pathname) => {
+        if (method === "POST" && pathname === "/api/background-agents") {
+          return jsonResponse(201, {
+            agent: { id: "agent-j1", status: "disabled" },
+          });
+        }
+        if (
+          method === "PATCH" &&
+          pathname === "/api/background-agents/agent-j1"
+        ) {
+          return jsonResponse(200, {
+            agent: { id: "agent-j1", status: "enabled" },
+          });
+        }
+        if (
+          method === "POST" &&
+          pathname === "/api/background-agents/agent-j1/test"
+        ) {
+          return jsonResponse(200, {
+            enabled: true,
+            matched: 1,
+            created: 1,
+            duplicates: 0,
+            runIds: ["run-1"],
+            loopRunIds: [],
+          });
+        }
+        if (
+          method === "GET" &&
+          pathname === "/api/background-agent-runs/run-1"
+        ) {
+          runCallCount += 1;
+          if (runCallCount === 1) {
+            return jsonResponse(200, {
+              run: { id: "run-1", status: "running" },
+              events: [],
+              outputs: [],
+            });
+          }
+          return jsonResponse(200, {
+            run: { id: "run-1", status: "succeeded" },
+            events: [{ eventName: "background-agent.workflow.started" }],
+            outputs: [],
+          });
+        }
+        if (
+          method === "DELETE" &&
+          pathname === "/api/background-agents/agent-j1"
+        ) {
+          return jsonResponse(200, { success: true });
+        }
+        if (method === "GET" && pathname === "/api/background-agents") {
+          // DELETE returned 2xx, but the agent still shows up in the list —
+          // the absence check failed even though the delete call "succeeded".
+          return jsonResponse(200, { agents: [{ id: "agent-j1" }] });
+        }
+        throw new Error(`Unexpected request: ${method} ${pathname}`);
+      };
+      const fetchImpl = makeFetch(router, recorded);
+      const logLines: string[] = [];
+
+      const summary = await runJourney(config, {
+        fetchImpl,
+        log: (line) => logLines.push(line),
+      });
+
+      expect(summary.journey).toBe("passed");
+      expect(summary.cleanup).toBe("failed");
+      expect(
+        logLines.some(
+          (line) =>
+            line.includes("WARNING: cleanup failed") &&
+            line.includes("agent-j1"),
+        ),
+      ).toBe(true);
+    });
+
     test("confirm-disabled guard fails the journey but still cleans up", async () => {
       const config = baseConfig();
       const recorded: Array<{ method: string; url: string; headers: Headers }> =
