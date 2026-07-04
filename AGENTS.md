@@ -20,6 +20,7 @@ or detailed procedures here; put that material in `docs/agents`,
 - [Authenticated Local UI Smoke](docs/process/development-workflow.md#authenticated-local-ui-smoke)
 - [Observability Discipline](docs/process/observability-discipline.md)
 - [Managed Runtime Proof Standard](docs/process/managed-runtime-proof-standard.md)
+- [Deployed Feature Proof Standard](docs/process/deployed-feature-proof-standard.md)
 - [Production Release Runbook](docs/process/production-release-runbook.md)
 
 ## Repository Ownership And Upstream Policy

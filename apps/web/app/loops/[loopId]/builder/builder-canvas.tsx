@@ -525,6 +525,7 @@ function BuilderCanvasInner({
         </div>
 
         <BuilderWhatsNextNote
+          loopId={loopId}
           dismissed={whatsNextDismissed}
           onDismiss={() => setWhatsNextDismissed(true)}
         />
