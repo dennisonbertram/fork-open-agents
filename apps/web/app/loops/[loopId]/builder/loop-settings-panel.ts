@@ -37,6 +37,70 @@ export type LoopSettingsValidationResult =
   | { ok: true }
   | { ok: false; errors: LoopSettingsValidationError[] };
 
+/**
+ * Store-backed loop-settings state (#877). Lifted out of the settings panel's
+ * local useState so the header Save button (single dirty-state / single save
+ * path) can persist it alongside the graph definition.
+ */
+export type LoopSettingsState = {
+  name: string;
+  description: string;
+  guardrails: Partial<LoopGuardrails>;
+  watchdogEnabled: boolean;
+  watchdogInstructions: string;
+  watchdogRetryBudget: number;
+};
+
+export type BuildInitialLoopSettingsProps = {
+  loopName: string;
+  loopDescription?: string | null;
+  loopGuardrails?: LoopGuardrails;
+  watchdogEnabled?: boolean;
+  watchdogInstructions?: string | null;
+  watchdogRetryBudget?: number;
+};
+
+/** Maps BuilderCanvas props into the initial settings-panel state. */
+export function buildInitialLoopSettings(
+  props: BuildInitialLoopSettingsProps,
+): LoopSettingsState {
+  return {
+    name: props.loopName,
+    description: props.loopDescription ?? "",
+    guardrails: props.loopGuardrails ?? {},
+    watchdogEnabled: props.watchdogEnabled ?? false,
+    watchdogInstructions: props.watchdogInstructions ?? "",
+    watchdogRetryBudget:
+      props.watchdogRetryBudget ?? WATCHDOG_RETRY_BUDGET_DEFAULT,
+  };
+}
+
+/**
+ * Builds the settings portion of the PATCH /api/agent-loops/:id body.
+ * Empty guardrails send `null` (not undefined) so a fully-cleared guardrails
+ * set actually clears the column instead of silently keeping stale values.
+ */
+export function settingsToUpdatePayload(state: LoopSettingsState): {
+  name: string;
+  description: string | null;
+  guardrails: LoopGuardrails | null;
+  watchdogEnabled: boolean;
+  watchdogInstructions: string | null;
+  watchdogRetryBudget: number;
+} {
+  const hasGuardrails = Object.keys(state.guardrails).length > 0;
+  return {
+    name: state.name,
+    description: state.description || null,
+    guardrails: hasGuardrails ? (state.guardrails as LoopGuardrails) : null,
+    watchdogEnabled: state.watchdogEnabled,
+    watchdogInstructions: state.watchdogEnabled
+      ? state.watchdogInstructions || null
+      : null,
+    watchdogRetryBudget: state.watchdogRetryBudget,
+  };
+}
+
 // ── Validation ─────────────────────────────────────────────────────────────────
 
 /**

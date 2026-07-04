@@ -15,7 +15,14 @@
  * the first import below (@/tests/dom). This must remain the FIRST import.
  */
 
-import { registerDomTestHooks, render, within, fireEvent, act, userClick } from "@/tests/dom";
+import {
+  registerDomTestHooks,
+  render,
+  within,
+  fireEvent,
+  act,
+  userClick,
+} from "@/tests/dom";
 
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
@@ -31,7 +38,9 @@ mock.module("@xyflow/react", () => ({
   ReactFlowProvider: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
-  Panel: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+  Panel: ({ children }: { children?: React.ReactNode }) => (
+    <div>{children}</div>
+  ),
   ViewportPortal: ({ children }: { children?: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -92,6 +101,29 @@ global.fetch = globalFetch;
 
 const canvasPromise = import("./builder-canvas");
 
+/**
+ * Types into a controlled text/number input under happy-dom.
+ *
+ * `fireEvent.change`/`fireEvent.input` alone do not trigger React 19's
+ * onChange under this project's happy-dom harness for text/number inputs
+ * (verified empirically: works for click/checkbox-driven onChange, not for
+ * text inputs — no existing *.dom.test.tsx in this repo exercises typing
+ * into a text input, only clicks). Using the native value setter plus an
+ * "input" event, a keyUp, and a "change" event together reliably reaches
+ * React's ChangeEventPlugin in this environment.
+ */
+function typeIntoInput(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  input.focus();
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  fireEvent.keyUp(input, { key: value.slice(-1) || "a" });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 const VALID_DEF: LoopDefinition = {
   nodes: [
     { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
@@ -127,9 +159,10 @@ describe("BuilderCanvas — Loop settings dirty-state wiring (#877)", () => {
     await userClick(q.getByRole("button", { name: "Loop settings" }));
 
     await act(async () => {
-      fireEvent.change(q.getByLabelText("Agent turns per step"), {
-        target: { value: "24" },
-      });
+      typeIntoInput(
+        q.getByLabelText("Agent turns per step") as HTMLInputElement,
+        "24",
+      );
     });
 
     const save = q.getByRole("button", { name: "Save" }) as HTMLButtonElement;
@@ -167,9 +200,10 @@ describe("BuilderCanvas — Loop settings dirty-state wiring (#877)", () => {
     await userClick(q.getByRole("button", { name: "Loop settings" }));
 
     await act(async () => {
-      fireEvent.change(q.getByLabelText("Max steps per run"), {
-        target: { value: "40" },
-      });
+      typeIntoInput(
+        q.getByLabelText("Max steps per run") as HTMLInputElement,
+        "40",
+      );
     });
 
     const save = q.getByRole("button", { name: "Save" }) as HTMLButtonElement;
@@ -198,9 +232,10 @@ describe("BuilderCanvas — Loop settings dirty-state wiring (#877)", () => {
     await userClick(q.getByRole("button", { name: "Loop settings" }));
 
     await act(async () => {
-      fireEvent.change(q.getByLabelText("Name"), {
-        target: { value: "Renamed loop" },
-      });
+      typeIntoInput(
+        q.getByLabelText("Name") as HTMLInputElement,
+        "Renamed loop",
+      );
     });
 
     const save = q.getByRole("button", { name: "Save" }) as HTMLButtonElement;
