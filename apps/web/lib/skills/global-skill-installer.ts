@@ -58,8 +58,13 @@ export async function installGlobalSkills(params: {
         outcome: "started",
       });
 
+      // Pick the package runner that actually exists in the sandbox. The
+      // project's base snapshot is bun-based (bun/bunx present, no node/npx),
+      // so a hardcoded `npx` fails with "npx: command not found". Prefer bunx,
+      // fall back to npx for the no-base-snapshot node runtime. The skills CLI
+      // runs identically under either runner.
       const result = await params.sandbox.exec(
-        `HOME=${shellEscape(homeDirectory)} npx skills add ${shellEscape(globalSkillRef.source)} --skill ${shellEscape(globalSkillRef.skillName)} --agent amp -g -y --copy`,
+        `HOME=${shellEscape(homeDirectory)} $(command -v bunx || command -v npx) skills add ${shellEscape(globalSkillRef.source)} --skill ${shellEscape(globalSkillRef.skillName)} --agent amp -g -y --copy`,
         params.sandbox.workingDirectory,
         GLOBAL_SKILLS_INSTALL_TIMEOUT_MS,
       );
