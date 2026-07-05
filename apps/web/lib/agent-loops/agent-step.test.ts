@@ -1790,6 +1790,124 @@ describe("BT-S30: agent-turn budget (#862)", () => {
   });
 });
 
+// ── BT-S32: budget-aware turn nudge (#891) ──────────────────────────────────
+
+describe("BT-S32: budget-aware turn nudge (#891)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  const ci = (i: number) => {
+    const call = openAgentGenerateMock.mock.calls[i]?.[0] as
+      | { options?: { customInstructions?: string } }
+      | undefined;
+    return call?.options?.customInstructions ?? "";
+  };
+
+  test("BT-S32a: turn counter is present in the first turn's customInstructions", async () => {
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(ci(0)).toContain("Turn 1 of 8");
+  });
+
+  test("BT-S32b: wrap-up nudge fires at the threshold and is recorded on failure", async () => {
+    openAgentResult = {
+      ...openAgentResult,
+      finishReason: "tool-calls",
+    };
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      maxAgentTurnsPerStep: 5,
+    });
+
+    expect(result.errorKind).toBe("turn_budget_exceeded");
+    expect(openAgentGenerateMock.mock.calls.length).toBe(5);
+
+    expect(ci(0)).toContain("Turn 1 of 5");
+    expect(ci(0)).not.toContain("Stop exploring");
+    expect(ci(2)).toContain("Turn 3 of 5");
+    expect(ci(2)).toContain("Stop exploring");
+
+    const failed = recordedEvents.find(
+      (e) => e.eventName === "agent-loop.step.failed",
+    );
+    expect(failed?.payload).toMatchObject({
+      turnsUsed: 5,
+      maxAgentTurnsPerStep: 5,
+      wrapUpIssued: true,
+    });
+  });
+
+  test("BT-S32c: agent converges once the wrap-up nudge is seen", async () => {
+    openAgentGenerateMock.mockImplementation(async (params: unknown) => {
+      const instructions =
+        (params as { options?: { customInstructions?: string } }).options
+          ?.customInstructions ?? "";
+      if (instructions.includes("Stop exploring")) {
+        return {
+          finishReason: "stop",
+          rawFinishReason: "end_turn",
+          steps: [{ toolCalls: [] }],
+          response: { messages: [] },
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+          totalUsage: {
+            promptTokens: 10,
+            completionTokens: 5,
+            totalTokens: 15,
+          },
+        };
+      }
+      return {
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        steps: [{ toolCalls: [{ toolCallId: "c" }] }],
+        response: { messages: [] },
+        usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+        totalUsage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      };
+    });
+
+    const result = await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode() as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      maxAgentTurnsPerStep: 8,
+    });
+
+    expect(result.outcome).toBe("success");
+    expect(openAgentGenerateMock.mock.calls.length).toBe(6);
+  });
+});
+
 // ── BT-S26/S27/S28 (#798): loop-parity Composio degradation events ──────────
 // Today (pre-#798) an off/error resolver outcome for a loop step is dropped
 // silently — zero events recorded. These tests assert the loop step emits a

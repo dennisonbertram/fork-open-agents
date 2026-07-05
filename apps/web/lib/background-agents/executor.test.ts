@@ -885,4 +885,210 @@ describe("executeBackgroundAgentRun", () => {
       expect(generate.mock.calls.length).toBe(3);
     });
   });
+
+  describe("budget-aware turn nudge (#896)", () => {
+    const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
+
+    afterEach(() => {
+      if (originalMaxTurns === undefined) {
+        delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+      } else {
+        process.env.BACKGROUND_AGENT_MAX_TURNS = originalMaxTurns;
+      }
+      // mockClear() (file-level beforeEach) does not undo mockImplementation;
+      // these tests permanently replace it with a tool-calls responder, which
+      // otherwise leaks into every later test in this file.
+      generate.mockImplementation(async () => ({
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        response: {
+          messages: [],
+        },
+        steps: [],
+        usage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+        totalUsage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+      }));
+    });
+
+    function joinedMessageContents(calls: unknown[][]): string {
+      return calls
+        .map((call) => {
+          const input = call[0] as
+            | { messages?: Array<{ content?: unknown }> }
+            | undefined;
+          const messages = input?.messages ?? [];
+          return messages
+            .map((message) =>
+              typeof message.content === "string" ? message.content : "",
+            )
+            .join(" ");
+        })
+        .join(" ");
+    }
+
+    // Isolates the ephemeral per-turn note (the LAST message of the LAST
+    // generate() call) from the persistent runbook prompt, which always
+    // mentions "push"/"pull request" regardless of the agent's enabled
+    // tools — joinedMessageContents would false-positive on that prompt.
+    function lastInjectedNote(calls: unknown[][]): string {
+      const lastCall = calls.at(-1);
+      const input = lastCall?.[0] as
+        | { messages?: Array<{ content?: unknown }> }
+        | undefined;
+      const messages = input?.messages ?? [];
+      const lastMessage = messages.at(-1);
+      return typeof lastMessage?.content === "string"
+        ? lastMessage.content
+        : "";
+    }
+
+    test("the turn-N prompt/context contains the budget counter", async () => {
+      delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(joinedMessageContents(generate.mock.calls)).toContain(
+        "Turn 1 of 16",
+      );
+    });
+
+    test("injects the wrap-up instruction at the threshold for a push+PR agent", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      currentAgent = buildAgent({
+        githubActions: { open_pull_request: true, push: true },
+      });
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      const note = lastInjectedNote(generate.mock.calls);
+      expect(note).toContain("Stop exploring now and finalize");
+      expect(note).toContain("commit and push your changes");
+      expect(note).toContain("open the pull request");
+    });
+
+    test("uses comment/finalize wrap-up guidance for a comment-only agent (no push, no open_pull_request)", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      currentAgent = buildAgent({
+        githubActions: { comment_on_pr_or_issue: true },
+      });
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      const note = lastInjectedNote(generate.mock.calls);
+      expect(note).toContain("Stop exploring now and finalize");
+      expect(note).not.toContain("push");
+      expect(note).not.toContain("pull request");
+      expect(note).toContain(
+        "post your review/comment now with your findings and conclusions",
+      );
+    });
+
+    test("tool-calls until nudged then finishes within budget", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      const respond = (...args: unknown[]) => {
+        const input = args[0] as
+          | { messages?: Array<{ content?: unknown }> }
+          | undefined;
+        const messages = input?.messages ?? [];
+        const wrapUpSeen = messages.some(
+          (message) =>
+            typeof message.content === "string" &&
+            message.content.includes("Stop exploring now and finalize"),
+        );
+        if (wrapUpSeen) {
+          return Promise.resolve({
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            response: { messages: [] },
+            steps: [],
+            usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+            totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+          });
+        }
+        return Promise.resolve({
+          finishReason: "tool-calls",
+          rawFinishReason: "tool_use",
+          response: { messages: [] },
+          steps: [],
+          usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+          totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        });
+      };
+      generate.mockImplementation(
+        respond as unknown as Parameters<typeof generate.mockImplementation>[0],
+      );
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+      expect(recordedStatusUpdates().at(-1)).toMatchObject({
+        status: "succeeded",
+      });
+      expect(generate.mock.calls.length).toBeLessThanOrEqual(4);
+    });
+
+    test("failure event records wrapUpIssued when the budget is exhausted", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "3";
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+        status: "failed",
+        errorKind: "agent_turn_budget_exceeded",
+        payload: { wrapUpIssued: true },
+      });
+    });
+  });
 });

@@ -126,6 +126,18 @@ const CHECK_COMMAND_TIMEOUT_MS = 120_000;
 /** Path inside the sandbox where the agent writes its output JSON. */
 const STEP_OUTPUT_PATH = "/tmp/loop-step-output.json";
 
+/**
+ * Number of turns remaining at (and below) which the wrap-up nudge is
+ * injected into the per-turn customInstructions (#891). A single named
+ * constant satisfies "configurable" per the issue; a per-loop setting is
+ * out of scope.
+ */
+const WRAP_UP_THRESHOLD_TURNS = 2;
+
+/** Base per-step instructions, before the per-turn budget block is appended. */
+const BASE_STEP_CUSTOM_INSTRUCTIONS =
+  "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.";
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type AgentStepParams = {
@@ -162,6 +174,34 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+/**
+ * Build the per-turn customInstructions for the agent step loop (#891).
+ *
+ * Every turn is told the current turn number and the total budget so
+ * open-ended instructions can converge instead of burning every turn
+ * exploring. Once turnsRemaining drops to WRAP_UP_THRESHOLD_TURNS or below,
+ * a wrap-up nudge instructs the agent to stop exploring and write its
+ * output JSON now with findings so far.
+ */
+function buildBudgetAwareInstructions({
+  turn,
+  maxTurns,
+}: {
+  turn: number;
+  maxTurns: number;
+}): { instructions: string; wrapUp: boolean } {
+  const turnsRemaining = maxTurns - turn;
+  const wrapUp = turnsRemaining <= WRAP_UP_THRESHOLD_TURNS;
+
+  let instructions = `${BASE_STEP_CUSTOM_INSTRUCTIONS}\n\n## Turn Budget\nTurn ${turn} of ${maxTurns}.`;
+
+  if (wrapUp) {
+    instructions += `\n\n## Wrap up now\nStop exploring. Write the step's required output JSON to ${STEP_OUTPUT_PATH} now with the findings you have so far.`;
+  }
+
+  return { instructions, wrapUp };
 }
 
 /**
@@ -523,8 +563,7 @@ export async function executeAgentStep(
       unattended: true,
       // Pre-approved built-in tools for this step. null = default policy.
       allowedBuiltinToolNames: node.builtinToolNames ?? null,
-      customInstructions:
-        "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
+      customInstructions: BASE_STEP_CUSTOM_INSTRUCTIONS,
     };
 
     // Resolve any Composio tools this step is granted (B-P2). Gated by the
@@ -624,6 +663,7 @@ export async function executeAgentStep(
 
     try {
       let loopStep = 0;
+      let wrapUpIssued = false;
       while (true) {
         loopStep++;
 
@@ -636,6 +676,14 @@ export async function executeAgentStep(
           });
         }
 
+        const budget = buildBudgetAwareInstructions({
+          turn: loopStep,
+          maxTurns: maxAgentTurns,
+        });
+        if (budget.wrapUp) {
+          wrapUpIssued = true;
+        }
+
         // Repair any approval-gated tool call the previous turn left without a
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
@@ -643,7 +691,7 @@ export async function executeAgentStep(
         const turnStartedAt = Date.now();
         agentResult = await openAgent.generate({
           messages: agentMessages,
-          options: agentOptions,
+          options: { ...agentOptions, customInstructions: budget.instructions },
           timeout: { totalMs: Math.max(1, remainingMs) },
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
@@ -694,6 +742,7 @@ export async function executeAgentStep(
             payloadExtras: {
               turnsUsed: loopStep,
               maxAgentTurnsPerStep: maxAgentTurns,
+              wrapUpIssued,
             },
           });
         }
