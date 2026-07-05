@@ -1287,6 +1287,16 @@ export async function resolveChatSandboxRuntime(params: {
     }
   }
 
+  // User skills materialize whenever the VM may lack them:
+  //  - a cold resume (expectsColdStart) — re-materialize so skill selections
+  //    toggled while hibernated take effect; there is no live-sync path;
+  //  - a freshly created OR recreated workspace (didSetupWorkspace via
+  //    wasCreated), including the warm-404 recreate where expectsColdStart is
+  //    false but the VM is brand new and has no user skills yet.
+  // The only case that skips is a warm per-message reconnect to the same live
+  // VM (expectsColdStart false, wasCreated false), which already has them.
+  const shouldRefreshUserSkills = expectsColdStart || didSetupWorkspace;
+
   await Promise.all([
     updateSession(params.sessionId, {
       sandboxState,
@@ -1305,10 +1315,7 @@ export async function resolveChatSandboxRuntime(params: {
       sessionId: params.sessionId,
       sandboxName: sandboxState.sandboxName ?? null,
       sandbox,
-      // User skills are re-materialized on every cold resume (not just fresh
-      // creates) so that skill selections toggled while the sandbox was
-      // hibernated take effect on resume — there is no live-sync path.
-      didSetupWorkspace: expectsColdStart,
+      didSetupWorkspace: shouldRefreshUserSkills,
     }),
   ]);
 

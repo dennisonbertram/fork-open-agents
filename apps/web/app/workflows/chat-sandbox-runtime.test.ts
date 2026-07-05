@@ -331,8 +331,11 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
   installGlobalSkills: installGlobalSkillsSpy,
 }));
 
+const installSessionUserSkillsSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 mock.module("@/lib/skills/session-user-skills", () => ({
-  installSessionUserSkills: async () => undefined,
+  installSessionUserSkills: installSessionUserSkillsSpy,
 }));
 
 mock.module("@/lib/skills-cache", () => ({
@@ -467,6 +470,7 @@ beforeEach(() => {
   resolveManagedRuntimeProfileSpy.mockClear();
   emitSessionEventSpy.mockClear();
   installGlobalSkillsSpy.mockClear();
+  installSessionUserSkillsSpy.mockClear();
   connectedSandboxWasCreated = undefined;
   verifyRepoAccessSpy.mockClear();
   mintInstallationTokenSpy.mockClear();
@@ -1204,6 +1208,36 @@ describe("resolveChatSandboxRuntime", () => {
         options: { createIfMissing: boolean };
       };
       expect(secondCallArgs.options.createIfMissing).toBe(true);
+    });
+
+    test("recreated evicted warm sandbox materializes user skills (fresh VM has none)", async () => {
+      // First connect (warm) 404s; the recreate produces a brand-new VM
+      // (wasCreated=true). Even though expectsColdStart is false on the warm
+      // path, the fresh VM has no user-authored skills, so they must install.
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("status code 404");
+      });
+      connectSandboxSpy.mockImplementationOnce(
+        async () =>
+          ({ ...fakeSandbox, wasCreated: true }) as unknown as Sandbox,
+      );
+      const session = makeRepoSession({
+        id: "session-warm-recreate-userskills",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-recreate-userskills",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+      expect(installSessionUserSkillsSpy).toHaveBeenCalledTimes(1);
+      expect(installSessionUserSkillsSpy.mock.calls.at(0)?.[0]).toMatchObject({
+        didSetupWorkspace: true,
+      });
     });
 
     test("404 fallback still fails closed if repo access was revoked", async () => {
