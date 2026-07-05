@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  isRecreatableSandboxError,
-  isSandboxNotFoundError,
-} from "./utils";
+import { isRecreatableSandboxError, isSandboxNotFoundError } from "./utils";
 
 describe("isSandboxNotFoundError (strict)", () => {
   test("matches status code 404 and the sandbox-specific not-found phrase", () => {
