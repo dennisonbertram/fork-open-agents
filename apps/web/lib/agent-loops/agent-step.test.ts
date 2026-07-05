@@ -1800,12 +1800,12 @@ describe("BT-S32: budget-aware turn nudge (#891)", () => {
     currentLoop = makeLoop();
   });
 
-  const ci = (i: number) =>
-    (
-      openAgentGenerateMock.mock.calls[i]?.[0] as {
-        options?: { customInstructions?: string };
-      }
-    ).options?.customInstructions ?? "";
+  const ci = (i: number) => {
+    const call = openAgentGenerateMock.mock.calls[i]?.[0] as
+      | { options?: { customInstructions?: string } }
+      | undefined;
+    return call?.options?.customInstructions ?? "";
+  };
 
   test("BT-S32a: turn counter is present in the first turn's customInstructions", async () => {
     const result = await executeAgentStep({
