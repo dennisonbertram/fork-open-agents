@@ -22,7 +22,13 @@ type FakeSandbox = Pick<
 > & {
   getState?: () => SandboxState;
   exec: Sandbox["exec"];
+  wasCreated?: boolean;
 };
+
+// Controls the wasCreated flag on the sandbox returned by connectSandbox.
+// undefined models a legacy sandbox implementation that cannot distinguish
+// create-vs-resume; true models a fresh create; false models a warm resume.
+let connectedSandboxWasCreated: boolean | undefined;
 
 const ACTIVE_SANDBOX_STATE: SandboxState = {
   type: "vercel",
@@ -46,7 +52,11 @@ const fakeSandbox: FakeSandbox = {
 };
 
 const connectSandboxSpy = mock(
-  async (_params: Record<string, unknown>) => fakeSandbox as unknown as Sandbox,
+  async (_params: Record<string, unknown>) =>
+    ({
+      ...fakeSandbox,
+      wasCreated: connectedSandboxWasCreated,
+    }) as unknown as Sandbox,
 );
 
 // ── Configurable exec spy for setup/verification command behavior ──────────────
@@ -264,8 +274,11 @@ mock.module("@/lib/skills/directories", () => ({
   getSandboxSkillDirectories: async () => [],
 }));
 
+const installGlobalSkillsSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 mock.module("@/lib/skills/global-skill-installer", () => ({
-  installGlobalSkills: async () => undefined,
+  installGlobalSkills: installGlobalSkillsSpy,
 }));
 
 mock.module("@/lib/skills/session-user-skills", () => ({
@@ -396,6 +409,8 @@ beforeEach(() => {
   finishManagedRuntimeProfileRunSpy.mockClear();
   resolveManagedRuntimeProfileSpy.mockClear();
   emitSessionEventSpy.mockClear();
+  installGlobalSkillsSpy.mockClear();
+  connectedSandboxWasCreated = undefined;
   capturedStartupMessages.length = 0;
   startManagedRuntimeProfileRunShouldFail = false;
   execImpl = () =>
@@ -534,6 +549,64 @@ describe("resolveChatSandboxRuntime", () => {
         expect(result.sandboxState.type).toBe("vercel");
         expect(typeof result.sandboxState.sandboxName).toBe("string");
       }
+    });
+  });
+
+  describe("BT-009: skip global-skill reinstall on warm resume (fast restart)", () => {
+    test("does NOT reinstall global skills when the sandbox was resumed (wasCreated=false)", async () => {
+      const session = makeRepoSession({
+        id: "session-resumed",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = false;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-resume",
+      });
+
+      // Snapshot already contains the global skills — reinstalling them blocks
+      // the user's turn on per-skill `npx skills add` work for no benefit.
+      expect(installGlobalSkillsSpy).not.toHaveBeenCalled();
+    });
+
+    test("DOES install global skills on a fresh create (wasCreated=true)", async () => {
+      const session = makeRepoSession({
+        id: "session-created",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = true;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-create",
+      });
+
+      expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("REG-009: legacy sandbox without wasCreated falls back to installing on cold start", async () => {
+      const session = makeRepoSession({
+        id: "session-legacy",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = undefined;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-legacy",
+      });
+
+      // sandboxState here is not "running", so the pre-connect cold-start
+      // heuristic is true; a sandbox that cannot report wasCreated must preserve
+      // the prior install-on-cold-start behavior.
+      expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
     });
   });
 

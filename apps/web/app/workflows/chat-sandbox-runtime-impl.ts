@@ -932,7 +932,12 @@ export async function resolveChatSandboxRuntime(params: {
     } satisfies SandboxFreeRuntime;
   }
 
-  const didSetupWorkspace = !isSandboxActive(session.sandboxState);
+  // Pre-connect heuristic: we cannot yet know whether connectSandbox will
+  // create a fresh workspace or resume an existing snapshot, so we derive an
+  // expectation from persisted state for the startup messages that must print
+  // before connect. The authoritative signal (sandbox.wasCreated) is applied
+  // after connect below.
+  const expectsColdStart = !isSandboxActive(session.sandboxState);
   const startupReporter = new WorkspaceStartupReporter(
     session.runtimeMode === "managed_runtime"
       ? "Preparing sandbox and managed runtime"
@@ -940,7 +945,7 @@ export async function resolveChatSandboxRuntime(params: {
     sendWorkspaceStatus,
   );
   const sandboxInputState = buildSandboxState(session);
-  if (didSetupWorkspace) {
+  if (expectsColdStart) {
     await startupReporter.send("Setting up the workspace...", [
       `Session: ${session.id}`,
       `Sandbox name: ${sandboxInputState.sandboxName ?? "ephemeral"}`,
@@ -1030,7 +1035,7 @@ export async function resolveChatSandboxRuntime(params: {
     if (!access.ok) {
       throw new Error(getRepoAccessErrorMessage(access.reason));
     }
-    if (didSetupWorkspace) {
+    if (expectsColdStart) {
       await startupReporter.send("Repository access verified.", [
         `GitHub installation: ${access.installationId}`,
         `Repository id: ${access.repositoryId}`,
@@ -1046,7 +1051,7 @@ export async function resolveChatSandboxRuntime(params: {
 
   let sandbox: Sandbox;
   try {
-    if (didSetupWorkspace) {
+    if (expectsColdStart) {
       await startupReporter.send("Starting the sandbox...", [
         DEFAULT_SANDBOX_BASE_SNAPSHOT_ID
           ? `Base snapshot: ${DEFAULT_SANDBOX_BASE_SNAPSHOT_ID}`
@@ -1082,14 +1087,22 @@ export async function resolveChatSandboxRuntime(params: {
     ? rawSandboxState
     : sandboxInputState;
 
-  if (didSetupWorkspace) {
+  // Authoritative first-create signal. A resumed sandbox (wasCreated === false)
+  // already contains globally-installed skills and the bootstrapped workspace in
+  // its snapshot, so re-running that setup only slows the resume. Fall back to
+  // the pre-connect heuristic when the implementation cannot report wasCreated.
+  const didSetupWorkspace = sandbox.wasCreated ?? expectsColdStart;
+
+  if (expectsColdStart) {
     await startupReporter.send("Sandbox is ready.", [
       `Sandbox session: ${sandboxState.sandboxName ?? sandboxState.sandboxId ?? "unknown"}`,
       `Working directory: ${sandbox.workingDirectory}`,
       sandbox.currentBranch ? `Current branch: ${sandbox.currentBranch}` : "",
     ]);
+    // Only narrate a skill install when one will actually run — a warm resume
+    // (didSetupWorkspace === false) reuses the snapshot's skills.
     const globalSkillRefs = session.globalSkillRefs ?? [];
-    if (globalSkillRefs.length > 0) {
+    if (didSetupWorkspace && globalSkillRefs.length > 0) {
       await startupReporter.send("Installing session skills...", [
         `Global skills: ${globalSkillRefs.join(", ")}`,
       ]);
@@ -1114,11 +1127,14 @@ export async function resolveChatSandboxRuntime(params: {
       sessionId: params.sessionId,
       sandboxName: sandboxState.sandboxName ?? null,
       sandbox,
-      didSetupWorkspace,
+      // User skills are re-materialized on every cold resume (not just fresh
+      // creates) so that skill selections toggled while the sandbox was
+      // hibernated take effect on resume — there is no live-sync path.
+      didSetupWorkspace: expectsColdStart,
     }),
   ]);
 
-  if (didSetupWorkspace) {
+  if (expectsColdStart) {
     await startupReporter.send("Workspace setup finished.", [
       "Session sandbox state saved.",
       "Workspace skills cache refreshed.",
