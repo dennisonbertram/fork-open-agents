@@ -1138,6 +1138,14 @@ export async function resolveChatSandboxRuntime(params: {
         },
       });
 
+      // Security: the warm path mints no installation token, so
+      // VercelSandbox.connect does not run its credential-broker clear (it only
+      // clears when a githubToken is supplied). If a prior withTemporaryGitHubAuth
+      // or setup cleanup failed — or a worker crashed mid-broker — a stale
+      // GitHub network policy could still be active on this VM. Clear it before
+      // any agent command runs, without minting a token.
+      await sandbox.setGitHubAuthToken?.();
+
       const access = await accessPromise;
       if (!access.ok) {
         throw new Error(getRepoAccessErrorMessage(access.reason));

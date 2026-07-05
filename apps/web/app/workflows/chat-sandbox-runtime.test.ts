@@ -22,7 +22,12 @@ type FakeSandbox = Pick<
 > & {
   getState?: () => SandboxState;
   exec: Sandbox["exec"];
+  setGitHubAuthToken?: (token?: string) => Promise<void>;
 };
+
+// Spy for the sandbox-side GitHub credential-broker clear. The warm reconnect
+// path must clear any stale brokering policy (with no token) before commands run.
+const setGitHubAuthTokenSpy = mock(async (_token?: string) => undefined);
 
 const ACTIVE_SANDBOX_STATE: SandboxState = {
   type: "vercel",
@@ -50,6 +55,7 @@ const fakeSandbox: FakeSandbox = {
   currentBranch: "main",
   environmentDetails: "test env",
   getState: () => ACTIVE_SANDBOX_STATE,
+  setGitHubAuthToken: setGitHubAuthTokenSpy,
   exec: async () => ({
     success: true,
     exitCode: 0,
@@ -442,6 +448,7 @@ beforeEach(() => {
   mintInstallationTokenSpy.mockClear();
   revokeInstallationTokenSpy.mockClear();
   getGitHubUserProfileSpy.mockClear();
+  setGitHubAuthTokenSpy.mockClear();
   verifyRepoAccessResult = {
     ok: true,
     installationId: 1,
@@ -1007,6 +1014,27 @@ describe("resolveChatSandboxRuntime", () => {
       // give any stray fire-and-forget revoke a tick to (not) happen.
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(revokeInstallationTokenSpy).not.toHaveBeenCalled();
+    });
+
+    test("clears stale GitHub credential brokering on the warm sandbox (no token minted)", async () => {
+      const session = makeRepoSession({
+        id: "session-warm-clear",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-clear",
+      });
+
+      // The warm path mints no token, so connect skips its own clear; the
+      // runtime must clear the broker itself (undefined token) before any
+      // agent command can run on the reconnected VM.
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+      expect(setGitHubAuthTokenSpy).toHaveBeenCalledTimes(1);
+      expect(setGitHubAuthTokenSpy.mock.calls.at(0)?.[0]).toBeUndefined();
     });
 
     test("rejects when verifyRepoAccess resolves not-ok even though connect succeeded", async () => {

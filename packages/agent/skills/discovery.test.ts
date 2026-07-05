@@ -308,6 +308,31 @@ describe("discoverSkills fallback to sequential discovery", () => {
     expect(skills[0]?.name).toBe("foo");
   });
 
+  test("falls back when a skill's frontmatter exceeds the head-byte cap without a closing marker", async () => {
+    // Simulate `head -c 2048` cutting off a skill whose frontmatter (long
+    // description / allowed-tools) extends past the cap: the captured head has
+    // an opening `---` but no closing `---`, and reaches the byte cap. The fast
+    // path must not silently drop it — it should fall back to the full readFile.
+    const truncatedHead = `---\nname: big\ndescription: ${"x".repeat(2100)}`;
+    const { sandbox, counters } = makeFakeSandbox({
+      execImpl: async () => ({
+        success: true,
+        exitCode: 0,
+        stdout: `${marker("/workspace/skills/foo/SKILL.md")}${truncatedHead}`,
+        stderr: "",
+        truncated: false,
+      }),
+      slowPathFs,
+    });
+
+    const skills = await discoverSkills(sandbox, ["/workspace/skills"]);
+
+    expect(counters.exec).toBe(1);
+    expect(counters.readFile).toBeGreaterThan(0);
+    expect(skills).toHaveLength(1);
+    expect(skills[0]?.name).toBe("foo");
+  });
+
   test("falls back when exec returns truncated=true", async () => {
     const { sandbox, counters } = makeFakeSandbox({
       execImpl: async () => ({

@@ -368,7 +368,21 @@ async function discoverSkillsFast(
       file.filename,
       file.content,
     );
-    if (!metadata) continue;
+    if (!metadata) {
+      // A skill file whose captured head reached the byte cap may carry
+      // frontmatter that extends past DISCOVERY_HEAD_BYTES — the fast path
+      // never sees its closing `---`, so parsing fails even though the skill
+      // is valid. Rather than silently drop it, fall back to the sequential
+      // path, which reads the full file. Genuinely invalid files under the cap
+      // are correctly skipped (they parse-fail without hitting the cap).
+      if (Buffer.byteLength(file.content, "utf8") >= DISCOVERY_HEAD_BYTES) {
+        console.warn(
+          `Skill discovery fast path saw ${file.skillDir}/${file.filename} at the ${DISCOVERY_HEAD_BYTES}-byte head cap without parseable frontmatter; falling back to per-file discovery.`,
+        );
+        return null;
+      }
+      continue;
+    }
     addSkillIfEligible(metadata, skills, seenNames);
   }
 
