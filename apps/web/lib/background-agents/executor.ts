@@ -494,14 +494,17 @@ const GIT_PROGRESS_PROBE_TIMEOUT_MS = 15_000;
 async function probeGitFingerprint(sandbox: Sandbox): Promise<string | null> {
   try {
     const result = await sandbox.exec(
+      // A complete working-state fingerprint: committed HEAD + file states +
+      // UNSTAGED tracked diffs + STAGED (index) tracked diffs + UNTRACKED file
+      // contents. Each piece closes a false-stall gap: git status --porcelain
+      // alone reports the same "M path"/"?? path" regardless of content, so
+      // both `git diff` (unstaged) and `git diff --cached` (staged) are needed
+      // for tracked edits, and ls-files|cat is needed for untracked contents
+      // (git diff omits those).
       "git rev-parse HEAD && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
         "git status --porcelain && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
         "git diff && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
-        // `git diff` omits UNTRACKED file contents, so an agent productively
-        // editing a brand-new unstaged file would keep the same fingerprint
-        // (git status only ever reports "?? path") and be falsely flagged as
-        // stalled. Concatenate untracked (non-ignored) file contents so those
-        // edits move the fingerprint too.
+        "git diff --cached && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
         "git ls-files --others --exclude-standard -z | xargs -0 -r cat 2>/dev/null",
       sandbox.workingDirectory,
       GIT_PROGRESS_PROBE_TIMEOUT_MS,
