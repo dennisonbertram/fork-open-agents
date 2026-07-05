@@ -49,8 +49,8 @@ import {
 import {
   getResumableSandboxName,
   getSessionSandboxName,
+  isRecreatableSandboxError,
   isSandboxActive,
-  isSandboxNotFoundError,
 } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
@@ -1156,7 +1156,7 @@ export async function resolveChatSandboxRuntime(params: {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!isSandboxNotFoundError(message)) {
+      if (!isRecreatableSandboxError(message)) {
         throw error;
       }
 
