@@ -101,6 +101,25 @@ export function isSandboxNotFoundError(message: string): boolean {
 }
 
 /**
+ * Lenient not-found check for the warm-reconnect recreate decision.
+ *
+ * Unlike the strict {@link isSandboxNotFoundError} (which requires the
+ * sandbox-specific phrase to avoid misclassifying other resources), this also
+ * matches a bare "not found". In the warm-reconnect path the failing resource
+ * is the named sandbox itself, and the Vercel SDK may report an evicted sandbox
+ * with a generic message (e.g. "Not Found") — mirrors the leniency in
+ * packages/sandbox/vercel/connect.ts. A false positive here is safe: it only
+ * routes to the cold recreate path (createIfMissing), whereas being too strict
+ * would rethrow and block the session on a genuinely evicted sandbox.
+ */
+export function isRecreatableSandboxError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("status code 404") || normalized.includes("not found")
+  );
+}
+
+/**
  * Check if an error message indicates the sandbox VM is permanently unavailable.
  */
 export function isSandboxUnavailableError(message: string): boolean {

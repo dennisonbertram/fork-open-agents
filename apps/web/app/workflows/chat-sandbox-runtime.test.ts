@@ -22,7 +22,18 @@ type FakeSandbox = Pick<
 > & {
   getState?: () => SandboxState;
   exec: Sandbox["exec"];
+  wasCreated?: boolean;
+  setGitHubAuthToken?: (token?: string) => Promise<void>;
 };
+
+// Controls the wasCreated flag on the sandbox returned by connectSandbox.
+// undefined models a legacy sandbox implementation that cannot distinguish
+// create-vs-resume; true models a fresh create; false models a warm resume.
+let connectedSandboxWasCreated: boolean | undefined;
+
+// Spy for the sandbox-side GitHub credential-broker clear. The warm reconnect
+// path must clear any stale brokering policy (with no token) before commands run.
+const setGitHubAuthTokenSpy = mock(async (_token?: string) => undefined);
 
 const ACTIVE_SANDBOX_STATE: SandboxState = {
   type: "vercel",
@@ -31,11 +42,26 @@ const ACTIVE_SANDBOX_STATE: SandboxState = {
   expiresAt: Date.now() + 60_000,
 };
 
+// The mocked `isSandboxActive` below (see the "@/lib/sandbox/utils" mock)
+// treats a `status: "running"` field as "the sandbox is live" — that's what
+// makes resolveChatSandboxRuntime take the warm-reconnect path
+// (didSetupWorkspace === false). ACTIVE_SANDBOX_STATE above deliberately
+// lacks that field, so every existing test using it exercises the cold
+// (didSetupWorkspace === true) path despite its name.
+const WARM_ACTIVE_SANDBOX_STATE = {
+  type: "vercel",
+  sandboxName: "session_warm-session",
+  sandboxId: "sbx_warm",
+  expiresAt: Date.now() + 60_000,
+  status: "running",
+} as unknown as SandboxState;
+
 const fakeSandbox: FakeSandbox = {
   workingDirectory: "/vercel/sandbox",
   currentBranch: "main",
   environmentDetails: "test env",
   getState: () => ACTIVE_SANDBOX_STATE,
+  setGitHubAuthToken: setGitHubAuthTokenSpy,
   exec: async () => ({
     success: true,
     exitCode: 0,
@@ -46,7 +72,11 @@ const fakeSandbox: FakeSandbox = {
 };
 
 const connectSandboxSpy = mock(
-  async (_params: Record<string, unknown>) => fakeSandbox as unknown as Sandbox,
+  async (_params: Record<string, unknown>) =>
+    ({
+      ...fakeSandbox,
+      wasCreated: connectedSandboxWasCreated,
+    }) as unknown as Sandbox,
 );
 
 // ── Configurable exec spy for setup/verification command behavior ──────────────
@@ -97,26 +127,43 @@ mock.module("@/lib/db/sessions", () => ({
   updateSession: async () => undefined,
 }));
 
+type VerifyRepoAccessResult =
+  | { ok: true; installationId: number; repositoryId: number }
+  | { ok: false; reason: string };
+
+let verifyRepoAccessResult: VerifyRepoAccessResult = {
+  ok: true,
+  installationId: 1,
+  repositoryId: 1,
+};
+
+const verifyRepoAccessSpy = mock(
+  async (_params: Record<string, unknown>) => verifyRepoAccessResult,
+);
+
 mock.module("@/lib/github/access", () => ({
-  verifyRepoAccess: async () => ({
-    ok: true,
-    installationId: 1,
-    repositoryId: 1,
-  }),
+  verifyRepoAccess: verifyRepoAccessSpy,
   getRepoAccessErrorMessage: () => "repo access error",
 }));
 
-mock.module("@/lib/github/app", () => ({
-  mintInstallationToken: async () => ({
+const mintInstallationTokenSpy = mock(
+  async (_params: Record<string, unknown>) => ({
     token: "fake-token",
     tokenId: "tok_1",
     expiresAt: new Date(),
   }),
-  revokeInstallationToken: async () => undefined,
+);
+const revokeInstallationTokenSpy = mock(async (_token: string) => undefined);
+
+mock.module("@/lib/github/app", () => ({
+  mintInstallationToken: mintInstallationTokenSpy,
+  revokeInstallationToken: revokeInstallationTokenSpy,
 }));
 
+const getGitHubUserProfileSpy = mock(async (_userId: string) => null);
+
 mock.module("@/lib/github/users", () => ({
-  getGitHubUserProfile: async () => null,
+  getGitHubUserProfile: getGitHubUserProfileSpy,
 }));
 
 const emitSessionEventSpy = mock(
@@ -258,18 +305,37 @@ mock.module("@/lib/sandbox/utils", () => ({
       (state as Record<string, unknown>).status === "running"
     );
   },
+  isSandboxNotFoundError: (message: string) => {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("status code 404") ||
+      normalized.includes("sandbox not found")
+    );
+  },
+  isRecreatableSandboxError: (message: string) => {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("status code 404") || normalized.includes("not found")
+    );
+  },
 }));
 
 mock.module("@/lib/skills/directories", () => ({
   getSandboxSkillDirectories: async () => [],
 }));
 
+const installGlobalSkillsSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 mock.module("@/lib/skills/global-skill-installer", () => ({
-  installGlobalSkills: async () => undefined,
+  installGlobalSkills: installGlobalSkillsSpy,
 }));
 
+const installSessionUserSkillsSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 mock.module("@/lib/skills/session-user-skills", () => ({
-  installSessionUserSkills: async () => undefined,
+  installSessionUserSkills: installSessionUserSkillsSpy,
 }));
 
 mock.module("@/lib/skills-cache", () => ({
@@ -389,6 +455,13 @@ const { resolveChatSandboxRuntime } = await import("./chat-sandbox-runtime");
 
 beforeEach(() => {
   connectSandboxSpy.mockClear();
+  connectSandboxSpy.mockImplementation(
+    async (_params: Record<string, unknown>) =>
+      ({
+        ...fakeSandbox,
+        wasCreated: connectedSandboxWasCreated,
+      }) as unknown as Sandbox,
+  );
   execSpy.mockClear();
   startManagedRuntimeProfileRunSpy.mockClear();
   appendManagedRuntimeSetupResultSpy.mockClear();
@@ -396,6 +469,19 @@ beforeEach(() => {
   finishManagedRuntimeProfileRunSpy.mockClear();
   resolveManagedRuntimeProfileSpy.mockClear();
   emitSessionEventSpy.mockClear();
+  installGlobalSkillsSpy.mockClear();
+  installSessionUserSkillsSpy.mockClear();
+  connectedSandboxWasCreated = undefined;
+  verifyRepoAccessSpy.mockClear();
+  mintInstallationTokenSpy.mockClear();
+  revokeInstallationTokenSpy.mockClear();
+  getGitHubUserProfileSpy.mockClear();
+  setGitHubAuthTokenSpy.mockClear();
+  verifyRepoAccessResult = {
+    ok: true,
+    installationId: 1,
+    repositoryId: 1,
+  };
   capturedStartupMessages.length = 0;
   startManagedRuntimeProfileRunShouldFail = false;
   execImpl = () =>
@@ -534,6 +620,64 @@ describe("resolveChatSandboxRuntime", () => {
         expect(result.sandboxState.type).toBe("vercel");
         expect(typeof result.sandboxState.sandboxName).toBe("string");
       }
+    });
+  });
+
+  describe("BT-009: skip global-skill reinstall on warm resume (fast restart)", () => {
+    test("does NOT reinstall global skills when the sandbox was resumed (wasCreated=false)", async () => {
+      const session = makeRepoSession({
+        id: "session-resumed",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = false;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-resume",
+      });
+
+      // Snapshot already contains the global skills — reinstalling them blocks
+      // the user's turn on per-skill `npx skills add` work for no benefit.
+      expect(installGlobalSkillsSpy).not.toHaveBeenCalled();
+    });
+
+    test("DOES install global skills on a fresh create (wasCreated=true)", async () => {
+      const session = makeRepoSession({
+        id: "session-created",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = true;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-create",
+      });
+
+      expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("REG-009: legacy sandbox without wasCreated falls back to installing on cold start", async () => {
+      const session = makeRepoSession({
+        id: "session-legacy",
+        globalSkillRefs: ["acme/skills/formatter"],
+      });
+      testSessionById[session.id] = session;
+      connectedSandboxWasCreated = undefined;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-legacy",
+      });
+
+      // sandboxState here is not "running", so the pre-connect cold-start
+      // heuristic is true; a sandbox that cannot report wasCreated must preserve
+      // the prior install-on-cold-start behavior.
+      expect(installGlobalSkillsSpy).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -924,6 +1068,248 @@ describe("resolveChatSandboxRuntime", () => {
         return arg.eventName === "managed_runtime.profile.evidence_unavailable";
       });
       expect(evidenceEventCall).toBeDefined();
+    });
+  });
+
+  describe("warm reconnect path (didSetupWorkspace === false, cloneUrl set): no GitHub token round-trip", () => {
+    test("reconnects without minting or revoking an installation token, but still verifies repo access", async () => {
+      const session = makeRepoSession({
+        id: "session-warm-1",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-1",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+      expect(verifyRepoAccessSpy).toHaveBeenCalledTimes(1);
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+
+      const callArgs = connectSandboxSpy.mock.calls.at(0)?.[0] as {
+        options: { githubToken?: string; createIfMissing: boolean };
+      };
+      expect(callArgs.options.githubToken).toBeUndefined();
+      expect(callArgs.options.createIfMissing).toBe(false);
+
+      // Nothing was ever minted, so nothing should ever be revoked either —
+      // give any stray fire-and-forget revoke a tick to (not) happen.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(revokeInstallationTokenSpy).not.toHaveBeenCalled();
+    });
+
+    test("clears stale GitHub credential brokering on the warm sandbox (no token minted)", async () => {
+      const session = makeRepoSession({
+        id: "session-warm-clear",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-clear",
+      });
+
+      // The warm path mints no token, so connect skips its own clear; the
+      // runtime must clear the broker itself (undefined token) before any
+      // agent command can run on the reconnected VM.
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+      expect(setGitHubAuthTokenSpy).toHaveBeenCalledTimes(1);
+      expect(setGitHubAuthTokenSpy.mock.calls.at(0)?.[0]).toBeUndefined();
+    });
+
+    test("rejects when verifyRepoAccess resolves not-ok even though connect succeeded", async () => {
+      verifyRepoAccessResult = { ok: false, reason: "revoked" };
+      const session = makeRepoSession({
+        id: "session-warm-2",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-warm-2",
+        }),
+      ).rejects.toThrow("repo access error");
+
+      // The connect itself succeeded — it's the security gate that failed.
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+    });
+
+    test("falls back to the cold flow (mint + recreate) when the warm connect 404s", async () => {
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("Sandbox fetch failed with status code 404");
+      });
+      const session = makeRepoSession({
+        id: "session-warm-404",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-404",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(verifyRepoAccessSpy).toHaveBeenCalledTimes(1);
+      expect(mintInstallationTokenSpy).toHaveBeenCalledTimes(1);
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+
+      const secondCallArgs = connectSandboxSpy.mock.calls.at(1)?.[0] as {
+        options: {
+          githubToken?: string;
+          gitUser?: unknown;
+          createIfMissing: boolean;
+        };
+      };
+      expect(secondCallArgs.options.githubToken).toBe("fake-token");
+      expect(secondCallArgs.options.gitUser).toBeDefined();
+      expect(secondCallArgs.options.createIfMissing).toBe(true);
+
+      // The token minted for the recreate is still revoked eventually, even
+      // though revocation is now fire-and-forget rather than awaited.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(revokeInstallationTokenSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("falls back to recreate on a bare 'Not Found' eviction error (not just status code 404)", async () => {
+      // The Vercel SDK can report an evicted sandbox with a generic message
+      // lacking "status code 404". The recreate decision must still fire —
+      // being too strict would rethrow and block the session.
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("Not Found");
+      });
+      const session = makeRepoSession({
+        id: "session-warm-notfound",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-notfound",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+      expect(mintInstallationTokenSpy).toHaveBeenCalledTimes(1);
+      const secondCallArgs = connectSandboxSpy.mock.calls.at(1)?.[0] as {
+        options: { createIfMissing: boolean };
+      };
+      expect(secondCallArgs.options.createIfMissing).toBe(true);
+    });
+
+    test("recreated evicted warm sandbox materializes user skills (fresh VM has none)", async () => {
+      // First connect (warm) 404s; the recreate produces a brand-new VM
+      // (wasCreated=true). Even though expectsColdStart is false on the warm
+      // path, the fresh VM has no user-authored skills, so they must install.
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("status code 404");
+      });
+      connectSandboxSpy.mockImplementationOnce(
+        async () =>
+          ({ ...fakeSandbox, wasCreated: true }) as unknown as Sandbox,
+      );
+      const session = makeRepoSession({
+        id: "session-warm-recreate-userskills",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-recreate-userskills",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+      expect(installSessionUserSkillsSpy).toHaveBeenCalledTimes(1);
+      expect(installSessionUserSkillsSpy.mock.calls.at(0)?.[0]).toMatchObject({
+        didSetupWorkspace: true,
+      });
+    });
+
+    test("404 fallback still fails closed if repo access was revoked", async () => {
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("Sandbox fetch failed with status code 404");
+      });
+      verifyRepoAccessResult = { ok: false, reason: "revoked" };
+      const session = makeRepoSession({
+        id: "session-warm-404-revoked",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-warm-404-revoked",
+        }),
+      ).rejects.toThrow("repo access error");
+
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+      // Only the initial (404ing) connect attempt — no recreate once access
+      // is known to be revoked.
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("cold path (didSetupWorkspace === true) is unchanged", () => {
+    test("mints a token, passes it to connectSandbox, and eventually revokes it", async () => {
+      const session = makeRepoSession({ id: "session-cold-1" });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-cold-1",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(verifyRepoAccessSpy).toHaveBeenCalledTimes(1);
+      expect(mintInstallationTokenSpy).toHaveBeenCalledTimes(1);
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(1);
+
+      const callArgs = connectSandboxSpy.mock.calls.at(0)?.[0] as {
+        options: { githubToken?: string; createIfMissing: boolean };
+      };
+      expect(callArgs.options.githubToken).toBe("fake-token");
+      expect(callArgs.options.createIfMissing).toBe(true);
+
+      // Revocation is fire-and-forget now, so give it a tick to complete
+      // rather than asserting it happened before resolveChatSandboxRuntime
+      // returned.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(revokeInstallationTokenSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("rejects when verifyRepoAccess resolves not-ok before ever minting a token", async () => {
+      verifyRepoAccessResult = { ok: false, reason: "revoked" };
+      const session = makeRepoSession({ id: "session-cold-2" });
+      testSessionById[session.id] = session;
+
+      await expect(
+        resolveChatSandboxRuntime({
+          userId: "user-1",
+          sessionId: session.id,
+          assistantId: "asst-cold-2",
+        }),
+      ).rejects.toThrow("repo access error");
+
+      expect(mintInstallationTokenSpy).not.toHaveBeenCalled();
+      expect(connectSandboxSpy).not.toHaveBeenCalled();
     });
   });
 });

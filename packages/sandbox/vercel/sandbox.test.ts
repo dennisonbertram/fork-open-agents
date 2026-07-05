@@ -318,6 +318,22 @@ describe("VercelSandbox persistence", () => {
     );
   });
 
+  test("marks connect() as a resume (wasCreated is false)", async () => {
+    const sandbox = await sandboxModule.VercelSandbox.connect("session_123", {
+      remainingTimeout: 0,
+    });
+
+    expect(sandbox.wasCreated).toBe(false);
+  });
+
+  test("marks create() as a fresh workspace (wasCreated is true)", async () => {
+    const sandbox = await sandboxModule.VercelSandbox.create({
+      name: "session_123",
+    });
+
+    expect(sandbox.wasCreated).toBe(true);
+  });
+
   test("derives resumed expiresAt without the provider stop buffer", async () => {
     const startedAt = new Date();
     currentSessionStateFactory = () => ({

@@ -27,8 +27,44 @@ export const DEFAULT_SANDBOX_VCPUS = isHobbyResourceProfile() ? 1 : 4;
 /** Manual extension duration for explicit fallback flows (20 minutes) */
 export const EXTEND_TIMEOUT_DURATION_MS = 20 * 60 * 1000;
 
-/** Inactivity window before lifecycle hibernates an idle sandbox (30 minutes) */
-export const SANDBOX_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+/** Default inactivity window before lifecycle hibernates an idle sandbox (30 minutes) */
+const DEFAULT_SANDBOX_INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+
+/** Lower bound so a misconfigured value can't hibernate almost immediately (60 seconds) */
+const MIN_SANDBOX_INACTIVITY_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * Resolve the inactivity window from an operator-provided value.
+ *
+ * A longer window keeps an idle sandbox resumable (fast restarts) at the cost
+ * of provisioned-memory billing for the extra idle wall-clock. The effective
+ * ceiling is still the sandbox session expiry (see getLifecycleDueAtMs), so
+ * this only controls the idle-hibernation tail. Invalid, empty, zero, or
+ * negative input falls back to the 30-minute default; values between 0 and the
+ * 60s floor are clamped up to the floor.
+ */
+export function resolveSandboxInactivityTimeoutMs(
+  raw: string | undefined,
+): number {
+  if (raw === undefined) {
+    return DEFAULT_SANDBOX_INACTIVITY_TIMEOUT_MS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_SANDBOX_INACTIVITY_TIMEOUT_MS;
+  }
+
+  return Math.max(parsed, MIN_SANDBOX_INACTIVITY_TIMEOUT_MS);
+}
+
+/**
+ * Inactivity window before lifecycle hibernates an idle sandbox.
+ * Defaults to 30 minutes; override with SANDBOX_INACTIVITY_TIMEOUT_MS (ms).
+ */
+export const SANDBOX_INACTIVITY_TIMEOUT_MS = resolveSandboxInactivityTimeoutMs(
+  process.env.SANDBOX_INACTIVITY_TIMEOUT_MS,
+);
 
 /** Buffer for sandbox expiry checks (10 seconds) */
 export const SANDBOX_EXPIRES_BUFFER_MS = 10 * 1000;

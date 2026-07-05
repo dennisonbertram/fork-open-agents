@@ -83,6 +83,17 @@ export interface Sandbox {
   readonly type: SandboxType;
 
   /**
+   * True when this connection created a brand-new workspace (fresh VM /
+   * filesystem) rather than attaching to or resuming an existing one.
+   *
+   * Callers use this to skip one-time setup work (skill installs, workspace
+   * bootstrap) that a resumed snapshot already contains. Optional so that
+   * implementations which cannot distinguish create-vs-resume leave it
+   * `undefined` and callers fall back to their prior heuristic.
+   */
+  readonly wasCreated?: boolean;
+
+  /**
    * The working directory for this sandbox.
    */
   readonly workingDirectory: string;
