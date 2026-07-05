@@ -312,6 +312,12 @@ mock.module("@/lib/sandbox/utils", () => ({
       normalized.includes("sandbox not found")
     );
   },
+  isRecreatableSandboxError: (message: string) => {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("status code 404") || normalized.includes("not found")
+    );
+  },
 }));
 
 mock.module("@/lib/skills/directories", () => ({
@@ -325,8 +331,11 @@ mock.module("@/lib/skills/global-skill-installer", () => ({
   installGlobalSkills: installGlobalSkillsSpy,
 }));
 
+const installSessionUserSkillsSpy = mock(
+  async (_params: Record<string, unknown>) => undefined,
+);
 mock.module("@/lib/skills/session-user-skills", () => ({
-  installSessionUserSkills: async () => undefined,
+  installSessionUserSkills: installSessionUserSkillsSpy,
 }));
 
 mock.module("@/lib/skills-cache", () => ({
@@ -461,6 +470,7 @@ beforeEach(() => {
   resolveManagedRuntimeProfileSpy.mockClear();
   emitSessionEventSpy.mockClear();
   installGlobalSkillsSpy.mockClear();
+  installSessionUserSkillsSpy.mockClear();
   connectedSandboxWasCreated = undefined;
   verifyRepoAccessSpy.mockClear();
   mintInstallationTokenSpy.mockClear();
@@ -1170,6 +1180,64 @@ describe("resolveChatSandboxRuntime", () => {
       // though revocation is now fire-and-forget rather than awaited.
       await new Promise((resolve) => setTimeout(resolve, 0));
       expect(revokeInstallationTokenSpy).toHaveBeenCalledTimes(1);
+    });
+
+    test("falls back to recreate on a bare 'Not Found' eviction error (not just status code 404)", async () => {
+      // The Vercel SDK can report an evicted sandbox with a generic message
+      // lacking "status code 404". The recreate decision must still fire —
+      // being too strict would rethrow and block the session.
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("Not Found");
+      });
+      const session = makeRepoSession({
+        id: "session-warm-notfound",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      const result = await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-notfound",
+      });
+
+      expect(result.mode).toBe("sandbox");
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+      expect(mintInstallationTokenSpy).toHaveBeenCalledTimes(1);
+      const secondCallArgs = connectSandboxSpy.mock.calls.at(1)?.[0] as {
+        options: { createIfMissing: boolean };
+      };
+      expect(secondCallArgs.options.createIfMissing).toBe(true);
+    });
+
+    test("recreated evicted warm sandbox materializes user skills (fresh VM has none)", async () => {
+      // First connect (warm) 404s; the recreate produces a brand-new VM
+      // (wasCreated=true). Even though expectsColdStart is false on the warm
+      // path, the fresh VM has no user-authored skills, so they must install.
+      connectSandboxSpy.mockImplementationOnce(async () => {
+        throw new Error("status code 404");
+      });
+      connectSandboxSpy.mockImplementationOnce(
+        async () =>
+          ({ ...fakeSandbox, wasCreated: true }) as unknown as Sandbox,
+      );
+      const session = makeRepoSession({
+        id: "session-warm-recreate-userskills",
+        sandboxState: WARM_ACTIVE_SANDBOX_STATE,
+      });
+      testSessionById[session.id] = session;
+
+      await resolveChatSandboxRuntime({
+        userId: "user-1",
+        sessionId: session.id,
+        assistantId: "asst-warm-recreate-userskills",
+      });
+
+      expect(connectSandboxSpy).toHaveBeenCalledTimes(2);
+      expect(installSessionUserSkillsSpy).toHaveBeenCalledTimes(1);
+      expect(installSessionUserSkillsSpy.mock.calls.at(0)?.[0]).toMatchObject({
+        didSetupWorkspace: true,
+      });
     });
 
     test("404 fallback still fails closed if repo access was revoked", async () => {
