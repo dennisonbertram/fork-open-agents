@@ -337,6 +337,10 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       next.push("Grant required GitHub App permissions and re-trigger");
     } else if (kind === "sandbox_unavailable") {
       next.push("Retry the run; sandbox may have been temporarily unavailable");
+    } else if (kind === "agent_stalled") {
+      next.push(
+        "Agent stalled — review the stuck-report comment for what it tried and the decision it needs, then re-trigger.",
+      );
     } else {
       next.push("Review error details and re-trigger");
     }

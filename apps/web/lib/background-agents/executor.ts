@@ -28,9 +28,19 @@ import {
   getBackgroundAgentHardTurnCap,
   getBackgroundAgentMaxStaleTurns,
   getBackgroundAgentRepetitionThreshold,
+  getBackgroundAgentStallFinalizeTurns,
+  getBackgroundAgentStallGraceTurns,
 } from "./config";
 import { createProgressBudget } from "./progress-budget";
 import { detectRepetition, hashTurnToolCalls } from "./action-repetition";
+import {
+  BackgroundAgentStalledError,
+  buildReplanNudgeNote,
+  buildStallFinalizeInstruction,
+  createStallEscalation,
+  resolveWrapUpCapability,
+  type StallTrigger,
+} from "./stall-escalation";
 import { createHash } from "node:crypto";
 import {
   mintInstallationToken,
@@ -86,20 +96,12 @@ const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
 
 /**
- * Thrown when a background-agent run is stopped by any of three budgets:
- * - the no-progress (git-delta) budget (#914, primary): `limit` consecutive
- *   turns with no change to the sandbox git working tree
- *   (getBackgroundAgentMaxStaleTurns in config.ts).
- * - the action-repetition / cycle-detection budget (#915): the agent keeps
- *   issuing the same whole-turn tool-call signature, or cycling through a
- *   short repeating loop of tool calls, even while the git tree keeps
- *   changing (getBackgroundAgentRepetitionThreshold in config.ts). Reuses
- *   this same error/kind as an interim measure — the background-agents epic
- *   Task 3 will replace this with a softer "agent_stalled" outcome instead
- *   of a hard kill.
- * - the opt-in absolute hard turn ceiling (#862, only enforced when
- *   BACKGROUND_AGENT_MAX_TURNS is explicitly set;
- *   getBackgroundAgentHardTurnCap in config.ts).
+ * Thrown ONLY by the opt-in absolute hard turn ceiling (#862, enforced when
+ * BACKGROUND_AGENT_MAX_TURNS is explicitly set; getBackgroundAgentHardTurnCap
+ * in config.ts). As of #916, the progress-based stall path (no-progress
+ * git-delta budget, #914, and action-repetition / cycle detection, #915) no
+ * longer throws this error — it escalates through
+ * BackgroundAgentStalledError below instead of hard-killing the run.
  */
 export class BackgroundAgentTurnBudgetExceededError extends Error {
   constructor(
@@ -115,27 +117,6 @@ export class BackgroundAgentTurnBudgetExceededError extends Error {
 // Number of turns remaining at which the executor stops encouraging further
 // exploration and instead tells the agent to wrap up (#896).
 const WRAP_UP_TURNS_REMAINING_THRESHOLD = 2;
-
-/**
- * Which wrap-up instruction applies to this run, derived from the agent's
- * enabled GitHub action tools (#896 follow-up, P2 review finding). A
- * reviewer/comment-only or read-only agent must never be told to push or
- * open a pull request — it has no such tool and would waste its remaining
- * turn budget attempting an unavailable GitHub action.
- */
-type WrapUpCapability = "push_or_pr" | "comment_only" | "read_only";
-
-function resolveWrapUpCapability(
-  toggles: GitHubActionToggles,
-): WrapUpCapability {
-  if (toggles.openPullRequest || toggles.push) {
-    return "push_or_pr";
-  }
-  if (toggles.commentOnPrOrIssue) {
-    return "comment_only";
-  }
-  return "read_only";
-}
 
 /**
  * Builds the ephemeral per-turn budget note appended to the message history
@@ -634,6 +615,23 @@ async function runBackgroundAgent(params: {
   const RECENT_TOOL_SIGNATURES_CAP = 16;
   const recentToolSignatures: string[] = [];
 
+  // (#916) Escalate-and-commit on stall: replaces the hard kill previously
+  // thrown directly off the progress-budget/repetition verdicts below.
+  const stallGraceTurns = getBackgroundAgentStallGraceTurns();
+  const stallFinalizeTurns = getBackgroundAgentStallFinalizeTurns();
+  const stallEscalation = createStallEscalation({
+    graceTurns: stallGraceTurns,
+    finalizeTurns: stallFinalizeTurns,
+  });
+  const wrapUpCapability = resolveWrapUpCapability(params.githubActionToggles);
+  // One-shot: consumed by the very next turn's note, then cleared.
+  let pendingStallNudge = false;
+  // Set once escalation.observe() returns "escalate"; persists (and the
+  // finalize note keeps being used) until the run terminates.
+  let isEscalatingStall = false;
+  let stallTrigger: StallTrigger | null = null;
+  let lastStaleTurns = 0;
+
   await recordBackgroundAgentEvent({
     runId: params.runId,
     agentId: params.agentId,
@@ -651,6 +649,8 @@ async function runBackgroundAgent(params: {
       maxStaleTurns,
       hardTurnCap,
       repetitionThreshold,
+      stallGraceTurns,
+      stallFinalizeTurns,
       timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
       modelId: params.recordedModelId,
     },
@@ -697,13 +697,29 @@ async function runBackgroundAgent(params: {
     }
     messages = sanitized;
 
-    const { note, wrapUp } = buildTurnBudgetNote(
-      step,
-      hardTurnCap,
-      params.githubActionToggles,
-    );
-    if (wrapUp) {
-      wrapUpIssued = true;
+    // (#916) Note precedence: an active stall escalation takes over the
+    // per-turn note entirely — finalize instruction while escalating, else
+    // the one-shot re-plan nudge right after a stall is first detected,
+    // else the existing turn-budget note.
+    let note: string;
+    if (isEscalatingStall) {
+      note = buildStallFinalizeInstruction(
+        wrapUpCapability,
+        stallTrigger ?? "git_stale",
+      );
+    } else if (pendingStallNudge) {
+      note = buildReplanNudgeNote();
+      pendingStallNudge = false;
+    } else {
+      const built = buildTurnBudgetNote(
+        step,
+        hardTurnCap,
+        params.githubActionToggles,
+      );
+      note = built.note;
+      if (built.wrapUp) {
+        wrapUpIssued = true;
+      }
     }
     const turnMessages: ModelMessage[] = [
       ...messages,
@@ -763,6 +779,17 @@ async function runBackgroundAgent(params: {
     messages.push(...result.response.messages);
 
     if (result.finishReason !== "tool-calls") {
+      // (#916) A stall that was escalated and then stops naturally (the
+      // agent used its finalize turns to commit/push/comment and then
+      // stopped issuing tool calls) is still a stalled outcome, not a
+      // success — the run needed the escalation to get here.
+      if (isEscalatingStall) {
+        throw new BackgroundAgentStalledError(
+          stallTrigger ?? "git_stale",
+          wrapUpCapability,
+          lastStaleTurns,
+        );
+      }
       await recordBackgroundAgentEvent({
         runId: params.runId,
         agentId: params.agentId,
@@ -789,6 +816,7 @@ async function runBackgroundAgent(params: {
     const { staleTurns, changed, verdict } = progressBudget.observeTurn({
       gitFingerprint,
     });
+    lastStaleTurns = staleTurns;
 
     await recordBackgroundAgentEvent({
       runId: params.runId,
@@ -852,10 +880,63 @@ async function runBackgroundAgent(params: {
       }
     }
 
-    if (verdict === "stop" || repetitionStop) {
-      throw new BackgroundAgentTurnBudgetExceededError(
-        verdict === "stop" ? maxStaleTurns : repetitionThreshold,
-        wrapUpIssued,
+    // (#916) Feed both stall signals into the escalation state machine
+    // instead of hard-killing the run directly. A "false" observation
+    // (progress resumed) lets a run that recovers after a nudge continue
+    // without ever escalating.
+    const stalled = verdict === "stop" || repetitionStop;
+    const trigger: StallTrigger | null = repetitionStop
+      ? "repetition"
+      : verdict === "stop"
+        ? "git_stale"
+        : null;
+    const escalationResult = stallEscalation.observe({ stalled, trigger });
+
+    if (escalationResult.action === "nudge") {
+      pendingStallNudge = true;
+      await recordBackgroundAgentEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        eventName: "background-agent.progress.nudge_issued",
+        status: "succeeded",
+        level: "info",
+        summary: `Turn ${step}: agent appears stalled (${escalationResult.trigger}); nudged to re-plan.`,
+        workflowRunId: params.workflowRunId,
+        requestId: params.requestId,
+        sandboxName: params.sandboxName,
+        payload: {
+          step,
+          staleTurns,
+          trigger: escalationResult.trigger,
+          capability: wrapUpCapability,
+        },
+      });
+    } else if (escalationResult.action === "escalate") {
+      isEscalatingStall = true;
+      stallTrigger = escalationResult.trigger;
+      await recordBackgroundAgentEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        eventName: "background-agent.progress.escalated",
+        status: "succeeded",
+        level: "warn",
+        summary: `Turn ${step}: stall escalated (${escalationResult.trigger}); instructing the agent to finalize.`,
+        workflowRunId: params.workflowRunId,
+        requestId: params.requestId,
+        sandboxName: params.sandboxName,
+        payload: {
+          step,
+          staleTurns,
+          trigger: escalationResult.trigger,
+          capability: wrapUpCapability,
+        },
+      });
+    } else if (escalationResult.action === "terminate") {
+      throw new BackgroundAgentStalledError(
+        escalationResult.trigger ?? stallTrigger ?? "git_stale",
+        wrapUpCapability,
         staleTurns,
       );
     }
@@ -1569,21 +1650,32 @@ export async function executeBackgroundAgentRun(params: {
       requestId: run.requestId,
       sandboxName,
       errorKind:
-        error instanceof BackgroundAgentTurnBudgetExceededError
-          ? "agent_turn_budget_exceeded"
-          : "workflow_failed",
+        error instanceof BackgroundAgentStalledError
+          ? "agent_stalled"
+          : error instanceof BackgroundAgentTurnBudgetExceededError
+            ? "agent_turn_budget_exceeded"
+            : "workflow_failed",
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
-      ...(error instanceof BackgroundAgentTurnBudgetExceededError
+      ...(error instanceof BackgroundAgentStalledError
         ? {
             payload: {
-              wrapUpIssued: error.wrapUpIssued,
-              ...(error.staleTurns !== undefined
-                ? { staleTurns: error.staleTurns }
-                : {}),
+              trigger: error.trigger,
+              capability: error.capability,
+              staleTurns: error.staleTurns,
+              nudgeIssued: error.nudgeIssued,
             },
           }
-        : {}),
+        : error instanceof BackgroundAgentTurnBudgetExceededError
+          ? {
+              payload: {
+                wrapUpIssued: error.wrapUpIssued,
+                ...(error.staleTurns !== undefined
+                  ? { staleTurns: error.staleTurns }
+                  : {}),
+              },
+            }
+          : {}),
     });
     return;
   }

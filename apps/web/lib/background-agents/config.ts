@@ -171,3 +171,60 @@ export function getBackgroundAgentRepetitionThreshold(): number {
 
   return parsed;
 }
+
+/**
+ * Default number of consecutive stalled turns tolerated AFTER the initial
+ * re-plan nudge before a stalled background-agent run is escalated to the
+ * tool-aware "finalize now" instruction (#916). This is a STARTING VALUE to
+ * tune from real background_agent_events `background-agent.progress.*`
+ * data, not a validated target.
+ */
+export const DEFAULT_BACKGROUND_AGENT_STALL_GRACE_TURNS = 5;
+
+/**
+ * Operator override for the post-nudge grace window via
+ * BACKGROUND_AGENT_STALL_GRACE_TURNS (#916). Falls back to the default for a
+ * missing, non-numeric, non-integer, or non-positive value. Mirrors the
+ * strict-parse pattern of getBackgroundAgentMaxStaleTurns.
+ */
+export function getBackgroundAgentStallGraceTurns(): number {
+  const raw = process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return DEFAULT_BACKGROUND_AGENT_STALL_GRACE_TURNS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_BACKGROUND_AGENT_STALL_GRACE_TURNS;
+  }
+
+  return parsed;
+}
+
+/**
+ * Default number of turns an escalated (stalled) background-agent run gets
+ * to commit/push and/or post a stuck-report comment before the run is
+ * terminated (#916). This is a STARTING VALUE to tune from real
+ * background_agent_events data, not a validated target.
+ */
+export const DEFAULT_BACKGROUND_AGENT_STALL_FINALIZE_TURNS = 3;
+
+/**
+ * Operator override for the post-escalation finalize window via
+ * BACKGROUND_AGENT_STALL_FINALIZE_TURNS (#916). Falls back to the default
+ * for a missing, non-numeric, non-integer, or non-positive value. Mirrors
+ * the strict-parse pattern of getBackgroundAgentMaxStaleTurns.
+ */
+export function getBackgroundAgentStallFinalizeTurns(): number {
+  const raw = process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return DEFAULT_BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+  }
+
+  return parsed;
+}
