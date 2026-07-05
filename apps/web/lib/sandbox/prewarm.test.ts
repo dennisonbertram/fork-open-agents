@@ -38,6 +38,7 @@ type FakeSandbox = Pick<
 > & {
   getState?: () => SandboxState;
   exec: Sandbox["exec"];
+  wasCreated?: boolean;
 };
 
 const fakeSandbox: FakeSandbox = {
@@ -159,6 +160,10 @@ mock.module("@/app/workflows/chat-sandbox-runtime", () => ({
     sandbox: Sandbox;
     didSetupWorkspace: boolean;
   }) => {
+    // Faithful to the real installer: a no-op when didSetupWorkspace is false.
+    if (!params.didSetupWorkspace) {
+      return;
+    }
     return spies.installGlobalSkills({
       sandbox: params.sandbox,
       globalSkillRefs: params.session.globalSkillRefs ?? [],
@@ -418,6 +423,30 @@ describe("prewarmSessionSandbox", () => {
         sessionId: session.id,
         reason: "sandbox-created",
       });
+    });
+  });
+
+  describe("BT-011: warm resume skips global-skill reinstall", () => {
+    test("does not reinstall global skills when connect resumes an existing sandbox (wasCreated=false), but still refreshes user skills", async () => {
+      const session = makeTestSession();
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.isSandboxActive.mockImplementation(() => false);
+      spies.connectSandbox.mockImplementationOnce(
+        async () =>
+          ({ ...fakeSandbox, wasCreated: false }) as unknown as Sandbox,
+      );
+
+      const result = await prewarmSessionSandbox({
+        sessionId: session.id,
+        userId: "user-1",
+      });
+
+      expect(result.status).toBe("prewarmed");
+      expect(spies.connectSandbox).toHaveBeenCalledTimes(1);
+      // Snapshot already carries the global skills — do not pay to reinstall.
+      expect(spies.installGlobalSkills).not.toHaveBeenCalled();
+      // User skills still refresh so hibernated-toggle changes take effect.
+      expect(spies.installSessionUserSkills).toHaveBeenCalledTimes(1);
     });
   });
 

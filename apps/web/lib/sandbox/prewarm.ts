@@ -183,7 +183,10 @@ export async function prewarmSessionSandbox(params: {
       installSessionGlobalSkills({
         session,
         sandbox,
-        didSetupWorkspace: true,
+        // Skip the expensive per-skill `npx skills add` reinstall when the
+        // sandbox was resumed from a snapshot that already contains them.
+        // Fall back to installing when the backend cannot report wasCreated.
+        didSetupWorkspace: sandbox.wasCreated ?? true,
       }),
       installSessionUserSkills({
         userId,
