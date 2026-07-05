@@ -496,7 +496,13 @@ async function probeGitFingerprint(sandbox: Sandbox): Promise<string | null> {
     const result = await sandbox.exec(
       "git rev-parse HEAD && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
         "git status --porcelain && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
-        "git diff",
+        "git diff && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
+        // `git diff` omits UNTRACKED file contents, so an agent productively
+        // editing a brand-new unstaged file would keep the same fingerprint
+        // (git status only ever reports "?? path") and be falsely flagged as
+        // stalled. Concatenate untracked (non-ignored) file contents so those
+        // edits move the fingerprint too.
+        "git ls-files --others --exclude-standard -z | xargs -0 -r cat 2>/dev/null",
       sandbox.workingDirectory,
       GIT_PROGRESS_PROBE_TIMEOUT_MS,
     );
