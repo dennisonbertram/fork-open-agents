@@ -79,13 +79,13 @@ describe("installGlobalSkills", () => {
       },
       {
         command:
-          "HOME='/root' npx skills add 'vercel/ai' --skill 'ai-sdk' --agent amp -g -y --copy",
+          "HOME='/root' $(command -v bunx || command -v npx) skills add 'vercel/ai' --skill 'ai-sdk' --agent amp -g -y --copy",
         cwd: "/workspace",
         timeoutMs: 120_000,
       },
       {
         command:
-          "HOME='/root' npx skills add 'vercel/workflow' --skill 'workflow' --agent amp -g -y --copy",
+          "HOME='/root' $(command -v bunx || command -v npx) skills add 'vercel/workflow' --skill 'workflow' --agent amp -g -y --copy",
         cwd: "/workspace",
         timeoutMs: 120_000,
       },
