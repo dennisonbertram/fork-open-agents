@@ -11,6 +11,10 @@ import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { cn } from "@/lib/utils";
+import {
+  RunMetadataTable,
+  type RunMetadataRow,
+} from "@/components/run-metadata-table";
 import { RunSummarySection } from "./run-summary-section";
 import { useBackgroundRunEventSource } from "./use-background-run-event-source";
 import type {
@@ -65,26 +69,6 @@ function formatDate(value: string | null) {
     minute: "2-digit",
     second: "2-digit",
   }).format(new Date(value));
-}
-
-function ProofItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-muted/20 px-3 py-2">
-      <p className="text-[10px] font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 truncate font-mono text-xs">{value}</p>
-    </div>
-  );
-}
-
-function DebugRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="grid gap-1 px-4 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="break-all font-mono text-xs">{value ?? "-"}</span>
-    </div>
-  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -235,6 +219,79 @@ function formatRunTarget(run: SerializedBackgroundRun) {
     return run.deploymentUrl;
   }
   return run.externalId;
+}
+
+// ── Run metadata rows (#895) ─────────────────────────────────────────────────
+
+/**
+ * Proof-strip rows for the terminal-style RunMetadataTable, replacing the
+ * old content-sized ProofItem card grid. Every row here is already a STABLE
+ * field on the run (nullable fields fall through to RunMetadataTable's "—"
+ * placeholder instead of disappearing). Cost is genuinely conditional (only
+ * derivable when an event payload carries a cost) and is appended last, at a
+ * stable trailing position.
+ */
+function buildProofStripRows(
+  run: SerializedBackgroundRun,
+  agent: SerializedBackgroundAgent | null,
+  events: SerializedBackgroundEvent[],
+  outputs: SerializedBackgroundOutput[],
+  runCost: string | null,
+): RunMetadataRow[] {
+  const rows: RunMetadataRow[] = [
+    { key: "status", label: "Status", value: run.status },
+    { key: "trigger", label: "Trigger", value: run.triggerKind },
+    {
+      key: "repository",
+      label: "Repository",
+      value: `${run.repoOwner}/${run.repoName}`,
+    },
+    { key: "ref", label: "Ref", value: run.sha ?? run.ref ?? run.branch },
+    { key: "sandbox", label: "Sandbox", value: run.sandboxName },
+    {
+      key: "permissions",
+      label: "Permissions",
+      value: formatPermissionSummary(agent),
+    },
+    {
+      key: "checks",
+      label: "Checks",
+      value: formatCheckSummary(events, agent),
+    },
+    { key: "output", label: "Output", value: formatOutputSummary(outputs) },
+    {
+      key: "duration",
+      label: "Duration",
+      value: formatDuration(run.startedAt, run.finishedAt),
+    },
+  ];
+
+  if (runCost) {
+    rows.push({ key: "cost", label: "Cost", value: runCost });
+  }
+
+  return rows;
+}
+
+/** Debug sidebar rows — same stable-placeholder terminal-style treatment. */
+function buildDebugRows(run: SerializedBackgroundRun): RunMetadataRow[] {
+  return [
+    { key: "run-id", label: "Run ID", value: run.id },
+    { key: "request-id", label: "Request ID", value: run.requestId },
+    { key: "workflow-run", label: "Workflow Run", value: run.workflowRunId },
+    {
+      key: "idempotency-key",
+      label: "Idempotency Key",
+      value: run.idempotencyKey,
+    },
+    { key: "source", label: "Source", value: run.source },
+    { key: "external-event", label: "External Event", value: run.externalId },
+    {
+      key: "trigger-target",
+      label: "Trigger Target",
+      value: formatRunTarget(run),
+    },
+  ];
 }
 
 function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
@@ -404,30 +461,9 @@ export function BackgroundRunDetail({
           )}
         </div>
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <ProofItem label="Status" value={run.status} />
-          <ProofItem label="Trigger" value={run.triggerKind} />
-          <ProofItem
-            label="Repository"
-            value={`${run.repoOwner}/${run.repoName}`}
-          />
-          <ProofItem
-            label="Ref"
-            value={run.sha ?? run.ref ?? run.branch ?? "-"}
-          />
-          <ProofItem label="Sandbox" value={run.sandboxName ?? "-"} />
-          <ProofItem
-            label="Permissions"
-            value={formatPermissionSummary(agent)}
-          />
-          <ProofItem label="Checks" value={formatCheckSummary(events, agent)} />
-          <ProofItem label="Output" value={formatOutputSummary(outputs)} />
-          <ProofItem
-            label="Duration"
-            value={formatDuration(run.startedAt, run.finishedAt)}
-          />
-          {runCost && <ProofItem label="Cost" value={runCost} />}
-        </section>
+        <RunMetadataTable
+          rows={buildProofStripRows(run, agent, events, outputs, runCost)}
+        />
 
         <section className="rounded-md border border-border">
           <div className="border-b border-border px-4 py-3">
@@ -598,20 +634,7 @@ export function BackgroundRunDetail({
               </div>
             </section>
 
-            <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Debug</h2>
-              </div>
-              <div className="divide-y divide-border text-sm">
-                <DebugRow label="Run ID" value={run.id} />
-                <DebugRow label="Request ID" value={run.requestId} />
-                <DebugRow label="Workflow Run" value={run.workflowRunId} />
-                <DebugRow label="Idempotency Key" value={run.idempotencyKey} />
-                <DebugRow label="Source" value={run.source} />
-                <DebugRow label="External Event" value={run.externalId} />
-                <DebugRow label="Trigger Target" value={formatRunTarget(run)} />
-              </div>
-            </section>
+            <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
 
             <section className="rounded-md border border-border">
               <div className="border-b border-border px-4 py-3">
