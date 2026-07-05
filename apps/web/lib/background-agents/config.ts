@@ -141,3 +141,33 @@ export function getBackgroundAgentMaxStaleTurns(): number {
 
   return parsed;
 }
+
+/**
+ * Default number of consecutive turns whose whole-turn tool-call signature
+ * repeats identically (or forms a short A/B-style cycle) before a
+ * background-agent run is flagged as stalled (#915). This is a STARTING
+ * VALUE to tune from real background_agent_events
+ * `background-agent.progress.repetition_detected` data, not a validated
+ * target.
+ */
+export const DEFAULT_BACKGROUND_AGENT_REPETITION_THRESHOLD = 6;
+
+/**
+ * Operator override for the action-repetition budget via
+ * BACKGROUND_AGENT_REPETITION_THRESHOLD (#915). Falls back to the default
+ * for a missing, non-numeric, non-integer, or non-positive value. Mirrors
+ * the strict-parse pattern of getBackgroundAgentMaxStaleTurns.
+ */
+export function getBackgroundAgentRepetitionThreshold(): number {
+  const raw = process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return DEFAULT_BACKGROUND_AGENT_REPETITION_THRESHOLD;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_BACKGROUND_AGENT_REPETITION_THRESHOLD;
+  }
+
+  return parsed;
+}

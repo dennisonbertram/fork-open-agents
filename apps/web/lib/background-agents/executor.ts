@@ -27,8 +27,10 @@ import {
 import {
   getBackgroundAgentHardTurnCap,
   getBackgroundAgentMaxStaleTurns,
+  getBackgroundAgentRepetitionThreshold,
 } from "./config";
 import { createProgressBudget } from "./progress-budget";
+import { detectRepetition, hashTurnToolCalls } from "./action-repetition";
 import { createHash } from "node:crypto";
 import {
   mintInstallationToken,
@@ -84,10 +86,17 @@ const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
 
 /**
- * Thrown when a background-agent run is stopped by either budget:
+ * Thrown when a background-agent run is stopped by any of three budgets:
  * - the no-progress (git-delta) budget (#914, primary): `limit` consecutive
  *   turns with no change to the sandbox git working tree
  *   (getBackgroundAgentMaxStaleTurns in config.ts).
+ * - the action-repetition / cycle-detection budget (#915): the agent keeps
+ *   issuing the same whole-turn tool-call signature, or cycling through a
+ *   short repeating loop of tool calls, even while the git tree keeps
+ *   changing (getBackgroundAgentRepetitionThreshold in config.ts). Reuses
+ *   this same error/kind as an interim measure — the background-agents epic
+ *   Task 3 will replace this with a softer "agent_stalled" outcome instead
+ *   of a hard kill.
  * - the opt-in absolute hard turn ceiling (#862, only enforced when
  *   BACKGROUND_AGENT_MAX_TURNS is explicitly set;
  *   getBackgroundAgentHardTurnCap in config.ts).
@@ -616,6 +625,14 @@ async function runBackgroundAgent(params: {
     maxStaleTurns,
     initialFingerprint,
   });
+  // (#915) Action-repetition / cycle detection: a second, independent
+  // in-memory signal that ORs into the same stop path as the git-delta
+  // budget above. Bounded ring buffer — only the most recent window of
+  // whole-turn tool-call signatures is kept, both for memory and because
+  // detectRepetition only ever looks at a short trailing window.
+  const repetitionThreshold = getBackgroundAgentRepetitionThreshold();
+  const RECENT_TOOL_SIGNATURES_CAP = 16;
+  const recentToolSignatures: string[] = [];
 
   await recordBackgroundAgentEvent({
     runId: params.runId,
@@ -633,6 +650,7 @@ async function runBackgroundAgent(params: {
       maxSteps: hardTurnCap,
       maxStaleTurns,
       hardTurnCap,
+      repetitionThreshold,
       timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
       modelId: params.recordedModelId,
     },
@@ -793,9 +811,50 @@ async function runBackgroundAgent(params: {
       },
     });
 
-    if (verdict === "stop") {
+    // (#915) Independent second signal: feed this turn's whole-turn
+    // tool-call signature into the repetition/cycle detector regardless of
+    // the git-delta verdict above — a run can keep the git tree churning
+    // every turn (never tripping the budget above) while still being stuck
+    // repeating, or cycling through, the same tool call(s).
+    const allToolCalls = result.steps.flatMap((item) => item.toolCalls);
+    const turnSignature = hashTurnToolCalls(allToolCalls);
+    let repetitionStop = false;
+    if (turnSignature !== null) {
+      recentToolSignatures.push(turnSignature);
+      if (recentToolSignatures.length > RECENT_TOOL_SIGNATURES_CAP) {
+        recentToolSignatures.shift();
+      }
+      const rep = detectRepetition(recentToolSignatures, {
+        repeatThreshold: repetitionThreshold,
+      });
+      if (rep.flagged) {
+        repetitionStop = true;
+        await recordBackgroundAgentEvent({
+          runId: params.runId,
+          agentId: params.agentId,
+          userId: params.userId,
+          eventName: "background-agent.progress.repetition_detected",
+          status: "succeeded",
+          level: "warn",
+          summary: `Turn ${step}: detected a ${rep.reason} pattern in the agent's tool calls.`,
+          workflowRunId: params.workflowRunId,
+          requestId: params.requestId,
+          sandboxName: params.sandboxName,
+          payload: {
+            step,
+            // Tool NAME only — never raw args/input, which are folded into
+            // the (irreversible) signature hash above and never surfaced.
+            toolName: allToolCalls[0]?.toolName ?? "unknown",
+            repeatCount: rep.repeatCount,
+            cycleLength: rep.cycleLength,
+          },
+        });
+      }
+    }
+
+    if (verdict === "stop" || repetitionStop) {
       throw new BackgroundAgentTurnBudgetExceededError(
-        maxStaleTurns,
+        verdict === "stop" ? maxStaleTurns : repetitionThreshold,
         wrapUpIssued,
         staleTurns,
       );
