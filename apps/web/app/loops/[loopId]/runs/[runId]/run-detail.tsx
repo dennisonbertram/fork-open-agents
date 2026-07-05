@@ -1,10 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ChevronRight, Clock3, Copy } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock3 } from "lucide-react";
 import Link from "next/link";
 import { mutate as globalMutate } from "swr";
 import { cn } from "@/lib/utils";
+import {
+  RunMetadataTable,
+  type RunMetadataRow,
+} from "@/components/run-metadata-table";
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
 import type {
   AgentLoopEvent,
@@ -57,6 +61,95 @@ function formatDuration(
   return formatDurationMs(ms);
 }
 
+// ── Run metadata rows (#895) ─────────────────────────────────────────────────
+
+/**
+ * Proof-strip rows for the terminal-style RunMetadataTable. Status, Source,
+ * Repository, Iterations, Steps, Duration, Workflow Run, Request ID, and
+ * Current Node are a STABLE row set — a not-yet-known workflowRunId /
+ * requestId / currentNodeId still renders its row with a "—" placeholder
+ * (RunMetadataTable) rather than the row disappearing and re-packing the
+ * layout as the run progresses. The turn-budget proof row is genuinely
+ * conditional (only present for a `turn_budget_exceeded` error) and is
+ * appended last, at a stable trailing position, so it never reflows the
+ * rows above it.
+ */
+function buildProofStripRows(
+  run: GetAgentLoopRunDetailResponse["run"],
+  loop: GetAgentLoopRunDetailResponse["loop"],
+  guardrails: Record<string, unknown> | null | undefined,
+): RunMetadataRow[] {
+  const rows: RunMetadataRow[] = [
+    { key: "status", label: "Status", value: run.status },
+    { key: "source", label: "Source", value: run.source },
+    {
+      key: "repository",
+      label: "Repository",
+      value: `${loop.repoOwner}/${loop.repoName}`,
+    },
+    {
+      key: "iterations",
+      label: "Iterations",
+      value: `${run.iterationCount}${guardrails?.maxIterations ? ` / ${guardrails.maxIterations}` : ""}`,
+    },
+    {
+      key: "steps",
+      label: "Steps",
+      value: `${run.stepCount}${guardrails?.maxStepsPerRun ? ` / ${guardrails.maxStepsPerRun}` : ""}`,
+    },
+    {
+      key: "duration",
+      label: "Duration",
+      value: formatDuration(run.startedAt, run.finishedAt),
+    },
+    {
+      key: "workflow-run",
+      label: "Workflow Run",
+      value: run.workflowRunId,
+      copyable: true,
+    },
+    {
+      key: "request-id",
+      label: "Request ID",
+      value: run.requestId,
+      copyable: true,
+    },
+    { key: "current-node", label: "Current Node", value: run.currentNodeId },
+  ];
+
+  const turnProof = getTurnBudgetProof(run.errorKind, guardrails);
+  if (turnProof) {
+    rows.push({
+      key: "turn-budget",
+      label: turnProof.label,
+      value: turnProof.value,
+    });
+  }
+
+  return rows;
+}
+
+/** Correlation-IDs debug rows — same stable-placeholder treatment. */
+function buildCorrelationIdRows(
+  run: GetAgentLoopRunDetailResponse["run"],
+): RunMetadataRow[] {
+  return [
+    { key: "loop-run-id", label: "Loop Run ID", value: run.id },
+    { key: "loop-id", label: "Loop ID", value: run.loopId },
+    {
+      key: "workflow-run-id",
+      label: "Workflow Run ID",
+      value: run.workflowRunId,
+    },
+    { key: "request-id", label: "Request ID", value: run.requestId },
+    {
+      key: "idempotency-key",
+      label: "Idempotency Key",
+      value: run.idempotencyKey,
+    },
+  ];
+}
+
 // ── Status pill ───────────────────────────────────────────────────────────────
 
 function StatusPill({ status }: { status: string }) {
@@ -77,39 +170,6 @@ function StatusPill({ status }: { status: string }) {
     >
       {status.replaceAll("_", " ")}
     </span>
-  );
-}
-
-// ── Proof strip item ──────────────────────────────────────────────────────────
-
-function ProofItem({
-  label,
-  value,
-  copyable,
-}: {
-  label: string;
-  value: string;
-  copyable?: boolean;
-}) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-muted/20 px-3 py-2">
-      <p className="text-[10px] font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <div className="mt-1 flex items-center gap-1">
-        <p className="truncate font-mono text-xs">{value}</p>
-        {copyable && (
-          <button
-            type="button"
-            onClick={() => void navigator.clipboard.writeText(value)}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label={`Copy ${label}`}
-          >
-            <Copy className="h-3 w-3" />
-          </button>
-        )}
-      </div>
-    </div>
   );
 }
 
@@ -378,45 +438,7 @@ export function RunDetail({
         </div>
 
         {/* Proof strip */}
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
-          <ProofItem label="Status" value={run.status} />
-          <ProofItem label="Source" value={run.source} />
-          <ProofItem
-            label="Repository"
-            value={`${loop.repoOwner}/${loop.repoName}`}
-          />
-          <ProofItem
-            label="Iterations"
-            value={`${run.iterationCount}${guardrails?.maxIterations ? ` / ${guardrails.maxIterations}` : ""}`}
-          />
-          <ProofItem
-            label="Steps"
-            value={`${run.stepCount}${guardrails?.maxStepsPerRun ? ` / ${guardrails.maxStepsPerRun}` : ""}`}
-          />
-          {(() => {
-            const turnProof = getTurnBudgetProof(run.errorKind, guardrails);
-            return turnProof ? (
-              <ProofItem label={turnProof.label} value={turnProof.value} />
-            ) : null;
-          })()}
-          <ProofItem
-            label="Duration"
-            value={formatDuration(run.startedAt, run.finishedAt)}
-          />
-          {run.workflowRunId && (
-            <ProofItem
-              label="Workflow Run"
-              value={run.workflowRunId}
-              copyable
-            />
-          )}
-          {run.requestId && (
-            <ProofItem label="Request ID" value={run.requestId} copyable />
-          )}
-          {run.currentNodeId && (
-            <ProofItem label="Current Node" value={run.currentNodeId} />
-          )}
-        </section>
+        <RunMetadataTable rows={buildProofStripRows(run, loop, guardrails)} />
 
         {/* Run actions */}
         <RunActions
@@ -581,27 +603,10 @@ export function RunDetail({
         </section>
 
         {/* Debug sidebar */}
-        <section className="rounded-md border border-border">
-          <div className="border-b border-border px-4 py-3">
-            <h2 className="text-sm font-medium">Correlation IDs</h2>
-          </div>
-          <div className="divide-y divide-border text-sm">
-            {[
-              { label: "Loop Run ID", value: run.id },
-              { label: "Loop ID", value: run.loopId },
-              { label: "Workflow Run ID", value: run.workflowRunId },
-              { label: "Request ID", value: run.requestId },
-              { label: "Idempotency Key", value: run.idempotencyKey },
-            ].map(({ label, value }) => (
-              <div key={label} className="grid gap-1 px-4 py-2">
-                <span className="text-muted-foreground">{label}</span>
-                <span className="break-all font-mono text-xs">
-                  {value ?? "-"}
-                </span>
-              </div>
-            ))}
-          </div>
-        </section>
+        <RunMetadataTable
+          heading="Correlation IDs"
+          rows={buildCorrelationIdRows(run)}
+        />
       </div>
     </main>
   );
