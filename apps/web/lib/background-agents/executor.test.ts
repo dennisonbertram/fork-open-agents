@@ -885,4 +885,158 @@ describe("executeBackgroundAgentRun", () => {
       expect(generate.mock.calls.length).toBe(3);
     });
   });
+
+  describe("budget-aware turn nudge (#896)", () => {
+    const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
+
+    afterEach(() => {
+      if (originalMaxTurns === undefined) {
+        delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+      } else {
+        process.env.BACKGROUND_AGENT_MAX_TURNS = originalMaxTurns;
+      }
+      // mockClear() (file-level beforeEach) does not undo mockImplementation;
+      // these tests permanently replace it with a tool-calls responder, which
+      // otherwise leaks into every later test in this file.
+      generate.mockImplementation(async () => ({
+        finishReason: "stop",
+        rawFinishReason: "stop",
+        response: {
+          messages: [],
+        },
+        steps: [],
+        usage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+        totalUsage: {
+          inputTokens: 12,
+          outputTokens: 8,
+          totalTokens: 20,
+        },
+      }));
+    });
+
+    function joinedMessageContents(
+      calls: typeof generate.mock.calls,
+    ): string {
+      return calls
+        .map(([input]) => {
+          const messages =
+            (input as { messages?: Array<{ content?: unknown }> })
+              .messages ?? [];
+          return messages
+            .map((message) =>
+              typeof message.content === "string" ? message.content : "",
+            )
+            .join(" ");
+        })
+        .join(" ");
+    }
+
+    test("the turn-N prompt/context contains the budget counter", async () => {
+      delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(joinedMessageContents(generate.mock.calls)).toContain(
+        "Turn 1 of 16",
+      );
+    });
+
+    test("injects the wrap-up instruction at the threshold", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(joinedMessageContents(generate.mock.calls)).toContain(
+        "Stop exploring now and finalize",
+      );
+    });
+
+    test("tool-calls until nudged then finishes within budget", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      generate.mockImplementation(async (input: unknown) => {
+        const messages =
+          (input as { messages?: Array<{ content?: unknown }> }).messages ??
+          [];
+        const wrapUpSeen = messages.some(
+          (message) =>
+            typeof message.content === "string" &&
+            message.content.includes("Stop exploring now and finalize"),
+        );
+        if (wrapUpSeen) {
+          return {
+            finishReason: "stop",
+            rawFinishReason: "stop",
+            response: { messages: [] },
+            steps: [],
+            usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+            totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+          };
+        }
+        return {
+          finishReason: "tool-calls",
+          rawFinishReason: "tool_use",
+          response: { messages: [] },
+          steps: [],
+          usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+          totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        };
+      });
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+      expect(recordedStatusUpdates().at(-1)).toMatchObject({
+        status: "succeeded",
+      });
+      expect(generate.mock.calls.length).toBeLessThanOrEqual(4);
+    });
+
+    test("failure event records wrapUpIssued when the budget is exhausted", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "3";
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+        status: "failed",
+        errorKind: "agent_turn_budget_exceeded",
+        payload: { wrapUpIssued: true },
+      });
+    });
+  });
 });
