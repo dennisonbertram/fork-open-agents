@@ -806,4 +806,55 @@ describe("mergeEventsForSummary (#798 P2-1)", () => {
     const combined = [...summary.warnings, ...summary.next].join(" ");
     expect(combined.toLowerCase()).not.toContain("never resolved");
   });
+
+  // ---------------------------------------------------------------------------
+  // #916: escalate-and-commit-on-stall — agent_stalled errorKind
+  // ---------------------------------------------------------------------------
+
+  test("#916: failed run with errorKind agent_stalled — headline/blocked name it, next guides to the stuck-report comment", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "agent_stalled",
+      errorMessage: "Background agent stalled (git_stale) after escalation.",
+    });
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events: [],
+      outputs: [],
+      composioConfigured: false,
+    });
+
+    expect(summary.headline).toContain("agent_stalled");
+    expect(summary.blocked.some((b) => b.includes("agent_stalled"))).toBe(true);
+    expect(
+      summary.next.some(
+        (n) =>
+          n.toLowerCase().includes("stuck-report") ||
+          n.toLowerCase().includes("stuck report"),
+      ),
+    ).toBe(true);
+  });
+
+  // Data-compat regression (regression-discipline.md): a historical row with
+  // the pre-#916 errorKind must still summarize without throwing.
+  test("#916 data-compat: a historical row with errorKind agent_turn_budget_exceeded still summarizes without throwing", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "agent_turn_budget_exceeded",
+      errorMessage: "Background agent exhausted 20 agent turns.",
+    });
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events: [],
+      outputs: [],
+      composioConfigured: false,
+    });
+
+    expect(summary.headline).toContain("agent_turn_budget_exceeded");
+    expect(
+      summary.blocked.some((b) => b.includes("agent_turn_budget_exceeded")),
+    ).toBe(true);
+  });
 });

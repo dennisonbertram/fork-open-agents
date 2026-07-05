@@ -837,11 +837,12 @@ describe("executeBackgroundAgentRun", () => {
       }));
     });
 
-    // (#914) With no default total-turn cap, a run that never progresses
-    // (the mock sandbox's git probe always returns the same "ok" stdout) is
-    // now stopped by the no-progress (git-delta) budget at its default
-    // (20 stale turns), not a fixed 16-turn count.
-    test("a stalled run (no git-tree change) exhausts the default no-progress budget and records errorKind agent_turn_budget_exceeded", async () => {
+    // (#916) With no default total-turn cap, a run that never progresses
+    // (the mock sandbox's git probe always returns the same "ok" stdout)
+    // hits the no-progress budget's default (20 stale turns), then escalates
+    // through the default grace (5) and finalize (3) windows before
+    // terminating as agent_stalled, rather than hard-killing immediately.
+    test("a stalled run (no git-tree change) exhausts the default no-progress budget, escalates, and terminates as agent_stalled", async () => {
       delete process.env.BACKGROUND_AGENT_MAX_TURNS;
       generate.mockImplementation(async () => ({
         finishReason: "tool-calls",
@@ -858,15 +859,21 @@ describe("executeBackgroundAgentRun", () => {
         workflowRunId: "workflow-1",
       });
 
+      expect(
+        recordedEvent("background-agent.progress.nudge_issued"),
+      ).toBeTruthy();
+      expect(recordedEvent("background-agent.progress.escalated")).toBeTruthy();
       expect(recordedEvent("background-agent.run.failed")).toMatchObject({
         status: "failed",
-        errorKind: "agent_turn_budget_exceeded",
+        errorKind: "agent_stalled",
       });
       expect(recordedStatusUpdates().at(-1)).toMatchObject({
         status: "failed",
-        errorKind: "agent_turn_budget_exceeded",
+        errorKind: "agent_stalled",
       });
-      expect(generate.mock.calls.length).toBe(20);
+      // 20 turns to first stall + 5-turn default grace + 3-turn default
+      // finalize window = 28 total generate() calls before termination.
+      expect(generate.mock.calls.length).toBe(28);
     });
 
     test("BACKGROUND_AGENT_MAX_TURNS overrides the default turn budget", async () => {

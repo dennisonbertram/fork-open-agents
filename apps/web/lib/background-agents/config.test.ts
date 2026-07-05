@@ -7,6 +7,9 @@ const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
 const originalMaxStaleTurns = process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
 const originalRepetitionThreshold =
   process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
+const originalStallGraceTurns = process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
+const originalStallFinalizeTurns =
+  process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
 const modulePromise = import("./config");
 
 describe("background agent config", () => {
@@ -31,6 +34,17 @@ describe("background agent config", () => {
     } else {
       process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD =
         originalRepetitionThreshold;
+    }
+    if (originalStallGraceTurns === undefined) {
+      delete process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
+    } else {
+      process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = originalStallGraceTurns;
+    }
+    if (originalStallFinalizeTurns === undefined) {
+      delete process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+    } else {
+      process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS =
+        originalStallFinalizeTurns;
     }
   });
 
@@ -232,5 +246,77 @@ describe("background agent config", () => {
     const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
     process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "";
     expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentStallGraceTurns defaults to 5 when unset (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    delete process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
+    expect(getBackgroundAgentStallGraceTurns()).toBe(5);
+  });
+
+  test("getBackgroundAgentStallGraceTurns passes through a valid override (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "2";
+    expect(getBackgroundAgentStallGraceTurns()).toBe(2);
+  });
+
+  test("getBackgroundAgentStallGraceTurns falls back to the default for non-numeric input (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "abc";
+    expect(getBackgroundAgentStallGraceTurns()).toBe(5);
+  });
+
+  test("getBackgroundAgentStallGraceTurns falls back to the default for zero (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "0";
+    expect(getBackgroundAgentStallGraceTurns()).toBe(5);
+  });
+
+  test("getBackgroundAgentStallGraceTurns falls back to the default for a negative value (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "-3";
+    expect(getBackgroundAgentStallGraceTurns()).toBe(5);
+  });
+
+  test("getBackgroundAgentStallGraceTurns falls back to the default for a decimal value (#916)", async () => {
+    const { getBackgroundAgentStallGraceTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "2.5";
+    expect(getBackgroundAgentStallGraceTurns()).toBe(5);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns defaults to 3 when unset (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    delete process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns passes through a valid override (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "2";
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(2);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns falls back to the default for non-numeric input (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "abc";
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns falls back to the default for zero (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "0";
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns falls back to the default for a negative value (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "-3";
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
+  });
+
+  test("getBackgroundAgentStallFinalizeTurns falls back to the default for a decimal value (#916)", async () => {
+    const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "2.5";
+    expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
   });
 });

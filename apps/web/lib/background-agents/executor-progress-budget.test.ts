@@ -363,6 +363,9 @@ const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
 const originalMaxStaleTurns = process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
 const originalRepetitionThreshold =
   process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
+const originalStallGraceTurns = process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
+const originalStallFinalizeTurns =
+  process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
 
 function buildRun(
   overrides: Partial<BackgroundAgentRun> = {},
@@ -504,6 +507,17 @@ afterEach(() => {
     process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD =
       originalRepetitionThreshold;
   }
+  if (originalStallGraceTurns === undefined) {
+    delete process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
+  } else {
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = originalStallGraceTurns;
+  }
+  if (originalStallFinalizeTurns === undefined) {
+    delete process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+  } else {
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS =
+      originalStallFinalizeTurns;
+  }
 });
 
 afterAll(() => {
@@ -535,9 +549,15 @@ describe("no-progress (git-delta) turn budget (#914)", () => {
     expect(generate.mock.calls.length).toBe(31);
   });
 
-  test("a frozen working tree stalls at exactly the configured stale-turn cap", async () => {
+  // (#916) A stall no longer hard-kills the run at the stale-turn cap — it
+  // nudges, then (after the grace window) escalates to a finalize
+  // instruction, then terminates with errorKind agent_stalled only once the
+  // finalize window elapses without recovery.
+  test("a frozen working tree escalates past the stale-turn cap and terminates as agent_stalled", async () => {
     delete process.env.BACKGROUND_AGENT_MAX_TURNS;
     process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "5";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "2";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "2";
     gitProbeMode = "frozen";
     generate.mockImplementation(async () => TOOL_CALLS_RESULT);
 
@@ -547,11 +567,35 @@ describe("no-progress (git-delta) turn budget (#914)", () => {
       workflowRunId: "workflow-1",
     });
 
+    // Turn 5: stale-turn cap first reached -> nudge. Turns 6-7: grace (2) ->
+    // escalate on turn 7. Turns 8-9: finalize window (2) -> terminate on 9.
+    expect(
+      recordedEvent("background-agent.progress.nudge_issued"),
+    ).toMatchObject({
+      level: "info",
+      payload: {
+        trigger: "git_stale",
+        staleTurns: 5,
+        capability: "push_or_pr",
+      },
+    });
+    expect(recordedEvent("background-agent.progress.escalated")).toMatchObject({
+      level: "warn",
+      payload: {
+        trigger: "git_stale",
+        staleTurns: 7,
+        capability: "push_or_pr",
+      },
+    });
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       status: "failed",
-      errorKind: "agent_turn_budget_exceeded",
+      errorKind: "agent_stalled",
     });
-    expect(generate.mock.calls.length).toBe(5);
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "agent_stalled",
+    });
+    expect(generate.mock.calls.length).toBe(9);
   });
 
   test("emits background-agent.progress.observed once per continuing turn, hashing the fingerprint", async () => {
@@ -631,10 +675,15 @@ describe("no-progress (git-delta) turn budget (#914)", () => {
 });
 
 describe("action-repetition / cycle detection (#915)", () => {
-  test("a repeated tool-call turn feeds the stall verdict even while the git tree keeps changing", async () => {
+  // (#916) Repetition-driven stall also escalates rather than hard-killing:
+  // nudge on first detection, escalate after the grace window, terminate as
+  // agent_stalled (trigger "repetition") after the finalize window.
+  test("a repeated tool-call turn feeds the stall verdict, escalates, and terminates as agent_stalled (trigger repetition)", async () => {
     delete process.env.BACKGROUND_AGENT_MAX_TURNS;
     delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
     process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "4";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "1";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "1";
     gitProbeMode = "changing";
 
     const REPEATED_TOOL_CALLS_RESULT = {
@@ -660,7 +709,9 @@ describe("action-repetition / cycle detection (#915)", () => {
       workflowRunId: "workflow-1",
     });
 
-    expect(generate.mock.calls.length).toBe(4);
+    // Turn 4: repetition first detected -> nudge. Turn 5: grace (1) ->
+    // escalate. Turn 6: finalize window (1) -> terminate.
+    expect(generate.mock.calls.length).toBe(6);
 
     const repetitionEvent = recordedEvent(
       "background-agent.progress.repetition_detected",
@@ -677,9 +728,16 @@ describe("action-repetition / cycle detection (#915)", () => {
     expect(payload.cycleLength).toBeNull();
     expect(JSON.stringify(payload)).not.toContain("bun test");
 
+    expect(
+      recordedEvent("background-agent.progress.nudge_issued"),
+    ).toMatchObject({ payload: { trigger: "repetition" } });
+    expect(recordedEvent("background-agent.progress.escalated")).toMatchObject({
+      payload: { trigger: "repetition" },
+    });
     expect(recordedEvent("background-agent.run.failed")).toMatchObject({
       status: "failed",
-      errorKind: "agent_turn_budget_exceeded",
+      errorKind: "agent_stalled",
+      payload: { trigger: "repetition", nudgeIssued: true },
     });
   });
 
@@ -729,5 +787,150 @@ describe("action-repetition / cycle detection (#915)", () => {
     ).toBeUndefined();
     expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
     expect(recordedEvent("background-agent.agent.completed")).toBeTruthy();
+  });
+});
+
+describe("escalate-and-commit on stall (#916)", () => {
+  function injectedNoteAtCall(calls: unknown[][], index: number): string {
+    const call = calls[index];
+    const input = call?.[0] as
+      | { messages?: Array<{ content?: unknown }> }
+      | undefined;
+    const messages = input?.messages ?? [];
+    const lastMessage = messages.at(-1);
+    return typeof lastMessage?.content === "string" ? lastMessage.content : "";
+  }
+
+  test("the turn after a first-detected stall carries the re-plan nudge note", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "3";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "5";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "5";
+    gitProbeMode = "frozen";
+    generate.mockImplementation(async () => TOOL_CALLS_RESULT);
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    // Turn 3 first hits the stale cap and triggers a nudge; turn 4's prompt
+    // carries the ephemeral re-plan note.
+    const noteOnTurnFour = injectedNoteAtCall(generate.mock.calls, 3);
+    expect(noteOnTurnFour.toLowerCase()).toContain("re-plan");
+  });
+
+  test("the turn after the grace window carries the tool-aware finalize instruction (push+PR agent)", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "3";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "1";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "5";
+    currentAgent = buildAgent({
+      githubActions: { open_pull_request: true, push: true },
+    });
+    gitProbeMode = "frozen";
+    generate.mockImplementation(async () => TOOL_CALLS_RESULT);
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    // Turn 3: nudge. Turn 4: grace(1) elapses -> escalate. Turn 5's prompt
+    // carries the finalize instruction.
+    const noteOnTurnFive = injectedNoteAtCall(generate.mock.calls, 4);
+    expect(noteOnTurnFive.toLowerCase()).toContain("commit and push");
+    expect(noteOnTurnFive.toLowerCase()).toContain("open");
+    expect(noteOnTurnFive).toContain("what you attempted");
+  });
+
+  test("the finalize instruction for a comment-only agent has no push/pull-request language", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "3";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "1";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "5";
+    currentAgent = buildAgent({
+      githubActions: { comment_on_pr_or_issue: true },
+    });
+    gitProbeMode = "frozen";
+    generate.mockImplementation(async () => TOOL_CALLS_RESULT);
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    const noteOnTurnFive = injectedNoteAtCall(generate.mock.calls, 4);
+    expect(noteOnTurnFive.toLowerCase()).not.toContain("push");
+    expect(noteOnTurnFive.toLowerCase()).not.toContain("pull request");
+    expect(noteOnTurnFive.toLowerCase()).toContain("comment");
+    expect(noteOnTurnFive).toContain("what you attempted");
+  });
+
+  test("a natural stop (agent stops issuing tool calls) while escalating terminates as agent_stalled instead of succeeding", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "3";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "1";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "5";
+    gitProbeMode = "frozen";
+    let step = 0;
+    generate.mockImplementation(async () => {
+      step += 1;
+      // Turns 1-2: tool-calls (building the stale streak). Turn 3: stale cap
+      // hit -> nudge. Turn 4: grace(1) elapses -> escalate. Turn 5: the
+      // agent, given the finalize instruction, stops naturally after
+      // (presumably) committing/commenting via its own tool calls in this
+      // same turn's response.
+      return step >= 5 ? STOP_RESULT : TOOL_CALLS_RESULT;
+    });
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(recordedEvent("background-agent.agent.completed")).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "agent_stalled",
+    });
+    expect(generate.mock.calls.length).toBe(5);
+  });
+
+  test("recovers without failing when the git tree starts changing again after a nudge", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = "3";
+    process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS = "2";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "2";
+    gitProbeMode = "frozen";
+
+    let step = 0;
+    generate.mockImplementation(async () => {
+      step += 1;
+      // Turns 1-3 frozen (stale cap hit at turn 3 -> nudge). Turn 4 onward:
+      // flip to a changing tree, recovering before escalation, then stop.
+      if (step === 4) {
+        gitProbeMode = "changing";
+      }
+      return step >= 6 ? STOP_RESULT : TOOL_CALLS_RESULT;
+    });
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(
+      recordedEvent("background-agent.progress.escalated"),
+    ).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "succeeded",
+    });
   });
 });
