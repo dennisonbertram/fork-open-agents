@@ -83,10 +83,86 @@ const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
  * (see getBackgroundAgentMaxTurns in config.ts) without finishing (#862).
  */
 export class BackgroundAgentTurnBudgetExceededError extends Error {
-  constructor(readonly maxTurns: number) {
+  constructor(
+    readonly maxTurns: number,
+    readonly wrapUpIssued: boolean = false,
+  ) {
     super(`Background agent exhausted ${maxTurns} agent turns.`);
     this.name = "BackgroundAgentTurnBudgetExceededError";
   }
+}
+
+// Number of turns remaining at which the executor stops encouraging further
+// exploration and instead tells the agent to wrap up (#896).
+const WRAP_UP_TURNS_REMAINING_THRESHOLD = 2;
+
+/**
+ * Which wrap-up instruction applies to this run, derived from the agent's
+ * enabled GitHub action tools (#896 follow-up, P2 review finding). A
+ * reviewer/comment-only or read-only agent must never be told to push or
+ * open a pull request — it has no such tool and would waste its remaining
+ * turn budget attempting an unavailable GitHub action.
+ */
+type WrapUpCapability = "push_or_pr" | "comment_only" | "read_only";
+
+function resolveWrapUpCapability(
+  toggles: GitHubActionToggles,
+): WrapUpCapability {
+  if (toggles.openPullRequest || toggles.push) {
+    return "push_or_pr";
+  }
+  if (toggles.commentOnPrOrIssue) {
+    return "comment_only";
+  }
+  return "read_only";
+}
+
+/**
+ * Builds the ephemeral per-turn budget note appended to the message history
+ * sent to `openAgent.generate` (never persisted into canonical history, so
+ * the counter is recomputed fresh each turn — see #896). The wrap-up
+ * instruction is tool-aware: it only tells the agent to use GitHub actions
+ * it actually has enabled (#896 follow-up).
+ */
+function buildTurnBudgetNote(
+  step: number,
+  maxTurns: number,
+  githubActionToggles: GitHubActionToggles,
+): { note: string; wrapUp: boolean } {
+  const remaining = Math.max(maxTurns - step + 1, 1);
+  const wrapUp = remaining <= WRAP_UP_TURNS_REMAINING_THRESHOLD;
+
+  if (!wrapUp) {
+    return {
+      note:
+        `Turn ${step} of ${maxTurns}. Keep this turn focused on concrete ` +
+        "progress toward the deliverable.",
+      wrapUp: false,
+    };
+  }
+
+  const capability = resolveWrapUpCapability(githubActionToggles);
+  let instruction: string;
+  if (capability === "push_or_pr") {
+    instruction =
+      "commit and push your changes, then open the pull request or " +
+      "complete the named deliverable with the progress made so far. " +
+      "Do not start any new investigation.";
+  } else if (capability === "comment_only") {
+    instruction =
+      "post your review/comment now with your findings and conclusions; " +
+      "do not start new work.";
+  } else {
+    instruction =
+      "finalize your output now using the tools available to you; " +
+      "summarize what you accomplished, then stop — do not begin new " +
+      "exploration.";
+  }
+
+  return {
+    note: `Turn ${step} of ${maxTurns}. Stop exploring now and finalize: ${instruction}`,
+    wrapUp: true,
+  };
 }
 
 /**
@@ -235,6 +311,7 @@ async function recordFailure(params: {
   sandboxName?: string | null;
   errorKind: string;
   summary: string;
+  payload?: Record<string, unknown>;
 }) {
   await updateBackgroundAgentRunStatus({
     runId: params.runId,
@@ -256,6 +333,7 @@ async function recordFailure(params: {
     requestId: params.requestId,
     sandboxName: params.sandboxName ?? null,
     errorKind: params.errorKind,
+    ...(params.payload ? { payload: params.payload } : {}),
   });
 
   // Summary generation must never change the run status.
@@ -434,6 +512,10 @@ async function runBackgroundAgent(params: {
   sandboxName: string;
   sandbox: Sandbox;
   prompt: string;
+  /** Resolved enabled GitHub action toggles for this run (#896 follow-up):
+   * drives the tool-aware wrap-up nudge so it never tells the agent to use
+   * a GitHub action it doesn't have. */
+  githubActionToggles: GitHubActionToggles;
   /** Merged Composio + native GitHub tools to inject into the agent loop. */
   extraTools?: import("ai").ToolSet;
   /** Pre-approved built-in tool names. null/absent = default policy. */
@@ -487,6 +569,8 @@ async function runBackgroundAgent(params: {
     },
   });
 
+  let wrapUpIssued = false;
+
   for (let step = 1; step <= maxTurns; step += 1) {
     const startedAt = Date.now();
     // Repair any approval-gated tool call the previous turn left without a
@@ -518,8 +602,21 @@ async function runBackgroundAgent(params: {
     }
     messages = sanitized;
 
+    const { note, wrapUp } = buildTurnBudgetNote(
+      step,
+      maxTurns,
+      params.githubActionToggles,
+    );
+    if (wrapUp) {
+      wrapUpIssued = true;
+    }
+    const turnMessages: ModelMessage[] = [
+      ...messages,
+      { role: "user", content: note },
+    ];
+
     const result = await openAgent.generate({
-      messages,
+      messages: turnMessages,
       options,
       ...(params.extraTools ? { tools: params.extraTools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
@@ -590,7 +687,7 @@ async function runBackgroundAgent(params: {
     }
   }
 
-  throw new BackgroundAgentTurnBudgetExceededError(maxTurns);
+  throw new BackgroundAgentTurnBudgetExceededError(maxTurns, wrapUpIssued);
 }
 
 /**
@@ -1285,6 +1382,7 @@ export async function executeBackgroundAgentRun(params: {
           agent.githubActions,
         ),
       }),
+      githubActionToggles,
       extraTools,
       allowedBuiltinToolNames: agent.builtinToolNames ?? null,
       modelSelection: resolvedModelSelection,
@@ -1304,6 +1402,9 @@ export async function executeBackgroundAgentRun(params: {
           : "workflow_failed",
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
+      ...(error instanceof BackgroundAgentTurnBudgetExceededError
+        ? { payload: { wrapUpIssued: error.wrapUpIssued } }
+        : {}),
     });
     return;
   }
