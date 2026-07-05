@@ -83,10 +83,48 @@ const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
  * (see getBackgroundAgentMaxTurns in config.ts) without finishing (#862).
  */
 export class BackgroundAgentTurnBudgetExceededError extends Error {
-  constructor(readonly maxTurns: number) {
+  constructor(
+    readonly maxTurns: number,
+    readonly wrapUpIssued: boolean = false,
+  ) {
     super(`Background agent exhausted ${maxTurns} agent turns.`);
     this.name = "BackgroundAgentTurnBudgetExceededError";
   }
+}
+
+// Number of turns remaining at which the executor stops encouraging further
+// exploration and instead tells the agent to wrap up (#896).
+const WRAP_UP_TURNS_REMAINING_THRESHOLD = 2;
+
+/**
+ * Builds the ephemeral per-turn budget note appended to the message history
+ * sent to `openAgent.generate` (never persisted into canonical history, so
+ * the counter is recomputed fresh each turn — see #896).
+ */
+function buildTurnBudgetNote(
+  step: number,
+  maxTurns: number,
+): { note: string; wrapUp: boolean } {
+  const remaining = Math.max(maxTurns - step + 1, 1);
+  const wrapUp = remaining <= WRAP_UP_TURNS_REMAINING_THRESHOLD;
+
+  if (wrapUp) {
+    return {
+      note:
+        `Turn ${step} of ${maxTurns}. Stop exploring now and finalize: ` +
+        "commit and push your changes, then open the pull request or " +
+        "complete the named deliverable with the progress made so far. " +
+        "Do not start any new investigation.",
+      wrapUp: true,
+    };
+  }
+
+  return {
+    note:
+      `Turn ${step} of ${maxTurns}. Keep this turn focused on concrete ` +
+      "progress toward the deliverable.",
+    wrapUp: false,
+  };
 }
 
 /**
@@ -235,6 +273,7 @@ async function recordFailure(params: {
   sandboxName?: string | null;
   errorKind: string;
   summary: string;
+  payload?: Record<string, unknown>;
 }) {
   await updateBackgroundAgentRunStatus({
     runId: params.runId,
@@ -256,6 +295,7 @@ async function recordFailure(params: {
     requestId: params.requestId,
     sandboxName: params.sandboxName ?? null,
     errorKind: params.errorKind,
+    ...(params.payload ? { payload: params.payload } : {}),
   });
 
   // Summary generation must never change the run status.
@@ -487,6 +527,8 @@ async function runBackgroundAgent(params: {
     },
   });
 
+  let wrapUpIssued = false;
+
   for (let step = 1; step <= maxTurns; step += 1) {
     const startedAt = Date.now();
     // Repair any approval-gated tool call the previous turn left without a
@@ -518,8 +560,17 @@ async function runBackgroundAgent(params: {
     }
     messages = sanitized;
 
+    const { note, wrapUp } = buildTurnBudgetNote(step, maxTurns);
+    if (wrapUp) {
+      wrapUpIssued = true;
+    }
+    const turnMessages: ModelMessage[] = [
+      ...messages,
+      { role: "user", content: note },
+    ];
+
     const result = await openAgent.generate({
-      messages,
+      messages: turnMessages,
       options,
       ...(params.extraTools ? { tools: params.extraTools } : {}),
       timeout: { totalMs: DEFAULT_AGENT_TIMEOUT_MS },
@@ -590,7 +641,7 @@ async function runBackgroundAgent(params: {
     }
   }
 
-  throw new BackgroundAgentTurnBudgetExceededError(maxTurns);
+  throw new BackgroundAgentTurnBudgetExceededError(maxTurns, wrapUpIssued);
 }
 
 /**
@@ -1304,6 +1355,9 @@ export async function executeBackgroundAgentRun(params: {
           : "workflow_failed",
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
+      ...(error instanceof BackgroundAgentTurnBudgetExceededError
+        ? { payload: { wrapUpIssued: error.wrapUpIssued } }
+        : {}),
     });
     return;
   }
