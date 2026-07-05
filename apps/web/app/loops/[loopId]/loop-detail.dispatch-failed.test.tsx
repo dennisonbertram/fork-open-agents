@@ -106,7 +106,7 @@ describe("BT-DF-03: handleRunNow surfaces dispatch_failed (502) as a typed failu
 
   test("BT-DF-03b: loop-detail.tsx source implements the 502 branch with the exact spec copy", () => {
     const source = readFileSync(
-      join(import.meta.dir, "loop-detail.tsx"),
+      join(import.meta.dir, "use-loop-run-now.ts"),
       "utf-8",
     );
     expect(source).toContain("res.status === 502");

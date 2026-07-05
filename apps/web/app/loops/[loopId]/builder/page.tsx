@@ -45,6 +45,7 @@ export default async function BuilderPage({ params }: BuilderPageProps) {
       loopId={loopId}
       loopName={loop.name}
       loopDescription={loop.description}
+      loopStatus={loop.status}
       loopGuardrails={
         loop.guardrails as
           | import("@/lib/agent-loops/types").LoopGuardrails
