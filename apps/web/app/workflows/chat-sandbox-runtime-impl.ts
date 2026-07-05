@@ -50,6 +50,7 @@ import {
   getResumableSandboxName,
   getSessionSandboxName,
   isSandboxActive,
+  isSandboxNotFoundError,
 } from "@/lib/sandbox/utils";
 import { getSandboxSkillDirectories } from "@/lib/skills/directories";
 import { installGlobalSkills } from "@/lib/skills/global-skill-installer";
@@ -384,7 +385,13 @@ async function ensureManagedRuntimeEnvironment(params: {
       }),
       [`$ ${setupCommand.command}`],
     );
-    await emitSessionEvent({
+    // The "started" observability event is independent of the exec call
+    // below — fire it without awaiting so it overlaps with the (often much
+    // slower) command execution instead of serializing a network round trip
+    // ahead of it. Any failure to emit is logged, never fails the turn; the
+    // promise is awaited (settled) below before this command's handling
+    // completes, on both the success and exec-error paths.
+    const emitStarted = emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
       userId: params.userId,
@@ -402,6 +409,11 @@ async function ensureManagedRuntimeEnvironment(params: {
         required: setupCommand.required ?? true,
         timeoutMs: setupCommand.timeoutMs ?? 120_000,
       },
+    }).catch((emitError) => {
+      console.error(
+        "[managed-runtime] Failed to emit started event:",
+        emitError,
+      );
     });
 
     const commandStartedAt = new Date();
@@ -413,6 +425,10 @@ async function ensureManagedRuntimeEnvironment(params: {
         setupCommand.timeoutMs ?? 120_000,
       );
     } catch (error) {
+      // Settle the started-event write before handling the exec error —
+      // every observability write for this command must be settled before
+      // the function throws.
+      await emitStarted;
       const message =
         error instanceof Error
           ? error.message
@@ -495,47 +511,55 @@ async function ensureManagedRuntimeEnvironment(params: {
       finishedAt: commandFinishedAt,
       result,
     });
-    await params.startupReporter.appendCommandResult({
-      message: result.success
-        ? `Managed runtime setup passed: ${setupCommand.label}.`
-        : `Managed runtime setup failed: ${setupCommand.label}.`,
-      command: setupCommand.command,
-      exitCode: result.exitCode,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    });
-
-    if (profileRunId) {
-      try {
-        await appendManagedRuntimeSetupResult({
+    // The append-observation write and the succeeded/failed event are each
+    // independent of one another and of the reporter write — run them
+    // concurrently (each keeps its own existing error handling, so one
+    // failing never blocks the others from being attempted), then settle
+    // everything (including the started-event promise from above) before
+    // this command's handling completes.
+    const appendResultTask = profileRunId
+      ? appendManagedRuntimeSetupResult({
           profileRunId,
           observation,
-        });
-      } catch (error) {
-        console.error(
-          "[managed-runtime] Failed to append setup observation:",
-          error,
-        );
-      }
-    }
-    await emitSessionEvent({
-      sessionId: params.session.id,
-      chatId: params.chatId ?? null,
-      userId: params.userId,
-      source: "managed_runtime",
-      actorType: "sandbox",
-      eventName: result.success
-        ? "managed_runtime.profile.setup.command.succeeded"
-        : "managed_runtime.profile.setup.command.failed",
-      status: result.success ? "succeeded" : "failed",
-      summary: result.success
-        ? `Setup command passed: ${setupCommand.label}`
-        : `Setup command failed: ${setupCommand.label}`,
-      workflowRunId: params.workflowRunId ?? null,
-      sandboxName: params.sandboxName ?? null,
-      managedRuntimeProfileRunId: profileRunId ?? null,
-      payload: observation,
-    });
+        }).catch((error) => {
+          console.error(
+            "[managed-runtime] Failed to append setup observation:",
+            error,
+          );
+        })
+      : Promise.resolve();
+
+    await Promise.all([
+      emitStarted,
+      params.startupReporter.appendCommandResult({
+        message: result.success
+          ? `Managed runtime setup passed: ${setupCommand.label}.`
+          : `Managed runtime setup failed: ${setupCommand.label}.`,
+        command: setupCommand.command,
+        exitCode: result.exitCode,
+        stdout: result.stdout,
+        stderr: result.stderr,
+      }),
+      appendResultTask,
+      emitSessionEvent({
+        sessionId: params.session.id,
+        chatId: params.chatId ?? null,
+        userId: params.userId,
+        source: "managed_runtime",
+        actorType: "sandbox",
+        eventName: result.success
+          ? "managed_runtime.profile.setup.command.succeeded"
+          : "managed_runtime.profile.setup.command.failed",
+        status: result.success ? "succeeded" : "failed",
+        summary: result.success
+          ? `Setup command passed: ${setupCommand.label}`
+          : `Setup command failed: ${setupCommand.label}`,
+        workflowRunId: params.workflowRunId ?? null,
+        sandboxName: params.sandboxName ?? null,
+        managedRuntimeProfileRunId: profileRunId ?? null,
+        payload: observation,
+      }),
+    ]);
 
     if (!result.success) {
       const summary = [result.stderr, result.stdout]
@@ -626,7 +650,10 @@ async function ensureManagedRuntimeEnvironment(params: {
       }),
       [`$ ${verificationCommand.command}`],
     );
-    await emitSessionEvent({
+    // See the setup-loop comment above: fire the "started" event without
+    // awaiting so it overlaps with the exec call instead of serializing a
+    // network round trip ahead of it. Settled below on every path.
+    const emitStarted = emitSessionEvent({
       sessionId: params.session.id,
       chatId: params.chatId ?? null,
       userId: params.userId,
@@ -644,6 +671,11 @@ async function ensureManagedRuntimeEnvironment(params: {
         required: verificationCommand.required ?? true,
         timeoutMs: verificationCommand.timeoutMs ?? 30_000,
       },
+    }).catch((emitError) => {
+      console.error(
+        "[managed-runtime] Failed to emit started event:",
+        emitError,
+      );
     });
     const commandStartedAt = new Date();
     let result: Awaited<ReturnType<typeof params.sandbox.exec>>;
@@ -654,6 +686,8 @@ async function ensureManagedRuntimeEnvironment(params: {
         verificationCommand.timeoutMs ?? 30_000,
       );
     } catch (error) {
+      // Settle the started-event write before handling the exec error.
+      await emitStarted;
       const message =
         error instanceof Error
           ? error.message
@@ -740,7 +774,12 @@ async function ensureManagedRuntimeEnvironment(params: {
       finishedAt: commandFinishedAt,
       result,
     });
-    await params.startupReporter.appendCommandResult({
+    // appendCommandResult and the append-observation write are common to all
+    // three outcomes below (succeeded/skipped/required-failed); kick both off
+    // now so they overlap with whichever outcome-specific write follows
+    // instead of serializing ahead of it. Each keeps its own existing error
+    // handling, so one failing never blocks the others from being attempted.
+    const appendCommandResultTask = params.startupReporter.appendCommandResult({
       message: result.success
         ? `Managed runtime verification passed: ${verificationCommand.label}.`
         : `Managed runtime verification finished: ${verificationCommand.label}.`,
@@ -750,57 +789,69 @@ async function ensureManagedRuntimeEnvironment(params: {
       stderr: result.stderr,
     });
 
-    if (profileRunId) {
-      try {
-        await appendManagedRuntimeVerificationResult({
+    const appendResultTask = profileRunId
+      ? appendManagedRuntimeVerificationResult({
           profileRunId,
           observation,
-        });
-      } catch (error) {
-        console.error(
-          "[managed-runtime] Failed to append verification observation:",
-          error,
-        );
-      }
-    }
+        }).catch((error) => {
+          console.error(
+            "[managed-runtime] Failed to append verification observation:",
+            error,
+          );
+        })
+      : Promise.resolve();
 
     if (result.success) {
       notes.push(`Verified: ${verificationCommand.label}.`);
-      await emitSessionEvent({
-        sessionId: params.session.id,
-        chatId: params.chatId ?? null,
-        userId: params.userId,
-        source: "managed_runtime",
-        actorType: "sandbox",
-        eventName: "managed_runtime.profile.verify.command.succeeded",
-        status: "succeeded",
-        summary: `Verification passed: ${verificationCommand.label}`,
-        workflowRunId: params.workflowRunId ?? null,
-        sandboxName: params.sandboxName ?? null,
-        managedRuntimeProfileRunId: profileRunId ?? null,
-        payload: observation,
-      });
+      await Promise.all([
+        emitStarted,
+        appendCommandResultTask,
+        appendResultTask,
+        emitSessionEvent({
+          sessionId: params.session.id,
+          chatId: params.chatId ?? null,
+          userId: params.userId,
+          source: "managed_runtime",
+          actorType: "sandbox",
+          eventName: "managed_runtime.profile.verify.command.succeeded",
+          status: "succeeded",
+          summary: `Verification passed: ${verificationCommand.label}`,
+          workflowRunId: params.workflowRunId ?? null,
+          sandboxName: params.sandboxName ?? null,
+          managedRuntimeProfileRunId: profileRunId ?? null,
+          payload: observation,
+        }),
+      ]);
       continue;
     }
 
     if (verificationCommand.required === false) {
       notes.push(`Optional tool unavailable: ${verificationCommand.label}.`);
-      await emitSessionEvent({
-        sessionId: params.session.id,
-        chatId: params.chatId ?? null,
-        userId: params.userId,
-        source: "managed_runtime",
-        actorType: "sandbox",
-        eventName: "managed_runtime.profile.verify.command.skipped",
-        status: "skipped",
-        summary: `Optional verification unavailable: ${verificationCommand.label}`,
-        workflowRunId: params.workflowRunId ?? null,
-        sandboxName: params.sandboxName ?? null,
-        managedRuntimeProfileRunId: profileRunId ?? null,
-        payload: observation,
-      });
+      await Promise.all([
+        emitStarted,
+        appendCommandResultTask,
+        appendResultTask,
+        emitSessionEvent({
+          sessionId: params.session.id,
+          chatId: params.chatId ?? null,
+          userId: params.userId,
+          source: "managed_runtime",
+          actorType: "sandbox",
+          eventName: "managed_runtime.profile.verify.command.skipped",
+          status: "skipped",
+          summary: `Optional verification unavailable: ${verificationCommand.label}`,
+          workflowRunId: params.workflowRunId ?? null,
+          sandboxName: params.sandboxName ?? null,
+          managedRuntimeProfileRunId: profileRunId ?? null,
+          payload: observation,
+        }),
+      ]);
       continue;
     }
+
+    // Required-failure path: ordering below is unchanged (fail-closed), but
+    // this command's own observability writes must still be settled first.
+    await Promise.all([emitStarted, appendCommandResultTask, appendResultTask]);
 
     notes.push(
       `Required profile verification failed: ${verificationCommand.label}.`,
@@ -894,6 +945,26 @@ async function ensureManagedRuntimeEnvironment(params: {
     },
   });
   return { notes, profileRunId };
+}
+
+/**
+ * Validate + extract the repo identity needed for a GitHub-backed session.
+ * Throws synchronously (same as the original inline guard) when cloneUrl is
+ * set but the owner/repo metadata is missing. Returns undefined when the
+ * session has no repo at all. Narrowing repoOwner/repoName to non-null
+ * strings inside this function (rather than at each call site) keeps the
+ * callers free of redundant guards or non-null assertions.
+ */
+function getRequiredRepoIdentity(
+  session: SessionRecord,
+): { owner: string; repo: string } | undefined {
+  if (!session.cloneUrl) {
+    return undefined;
+  }
+  if (!session.repoOwner || !session.repoName) {
+    throw new Error("Session is missing repository metadata");
+  }
+  return { owner: session.repoOwner, repo: session.repoName };
 }
 
 export async function resolveChatSandboxRuntime(params: {
@@ -1019,38 +1090,149 @@ export async function resolveChatSandboxRuntime(params: {
       ? managedRuntimeProfile.defaultPorts
       : DEFAULT_SANDBOX_PORTS;
 
-  const gitUser = await getGitUser(params.userId);
-  let setupToken: ScopedInstallationToken | undefined;
+  // Throws synchronously (before any connect attempt) if cloneUrl is set but
+  // owner/repo metadata is missing — same fail-fast guard as before.
+  const repoIdentity = getRequiredRepoIdentity(session);
 
-  if (session.cloneUrl) {
-    if (!session.repoOwner || !session.repoName) {
-      throw new Error("Session is missing repository metadata");
-    }
+  const connectOptionsBase = {
+    timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
+    vcpus: DEFAULT_SANDBOX_VCPUS,
+    ports: sandboxPorts,
+    baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
+    persistent: true,
+    resume: true,
+    // Default shallow clone; opt into full git history per session.
+    ...(session.fullClone ? { cloneDepth: 0 } : {}),
+  };
 
-    const access = await verifyRepoAccess({
-      userId: params.userId,
-      owner: session.repoOwner,
-      repo: session.repoName,
-    });
-    if (!access.ok) {
-      throw new Error(getRepoAccessErrorMessage(access.reason));
-    }
-    if (expectsColdStart) {
-      await startupReporter.send("Repository access verified.", [
-        `GitHub installation: ${access.installationId}`,
-        `Repository id: ${access.repositoryId}`,
-      ]);
-    }
-
-    setupToken = await mintInstallationToken({
-      installationId: access.installationId,
-      repositoryIds: [access.repositoryId],
-      permissions: { contents: "read" },
+  function fireAndForgetRevoke(token: string): void {
+    // Scoped contents:read, short-lived; revocation is hygiene, not a gate —
+    // never make the turn wait on it.
+    void revokeInstallationToken(token).catch((err) => {
+      console.error("Failed to revoke installation token:", err);
     });
   }
 
+  let setupToken: ScopedInstallationToken | undefined;
   let sandbox: Sandbox;
-  try {
+  if (repoIdentity && !expectsColdStart) {
+    // WARM PATH: reconnecting to an already-live VM. No installation token
+    // is minted here — the token was only ever needed to clear a brokering
+    // network policy on the sandbox side, and withTemporaryGitHubAuth
+    // (packages/sandbox/git.ts) already clears that policy in its `finally`
+    // regardless of whether a token is supplied. verifyRepoAccess remains a
+    // security gate and still runs (and still fails the turn) on every
+    // message, including here — it's just no longer serialized ahead of the
+    // connect, since the two are independent.
+    const accessPromise = verifyRepoAccess({
+      userId: params.userId,
+      owner: repoIdentity.owner,
+      repo: repoIdentity.repo,
+    });
+    // Avoid an unhandled-rejection warning while connect is in flight; the
+    // real result (or rejection) is awaited below once connect settles.
+    accessPromise.catch(() => {});
+
+    try {
+      sandbox = await connectSandbox({
+        state: sandboxInputState,
+        options: {
+          ...connectOptionsBase,
+          createIfMissing: false,
+        },
+      });
+
+      // Security: the warm path mints no installation token, so
+      // VercelSandbox.connect does not run its credential-broker clear (it only
+      // clears when a githubToken is supplied). If a prior withTemporaryGitHubAuth
+      // or setup cleanup failed — or a worker crashed mid-broker — a stale
+      // GitHub network policy could still be active on this VM. Clear it before
+      // any agent command runs, without minting a token.
+      await sandbox.setGitHubAuthToken?.();
+
+      const access = await accessPromise;
+      if (!access.ok) {
+        throw new Error(getRepoAccessErrorMessage(access.reason));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!isSandboxNotFoundError(message)) {
+        throw error;
+      }
+
+      // The DB said this sandbox was active, but the VM itself is gone
+      // (evicted/expired out from under us) — fall back to the cold flow:
+      // mint a token and recreate + re-clone. The recreate produces a fresh VM
+      // (sandbox.wasCreated === true), so the post-connect didSetupWorkspace
+      // below is true and the skills-install branch runs — a fresh re-cloned
+      // workspace has no snapshot to reuse, so it genuinely needs its skills.
+      const access = await accessPromise;
+      if (!access.ok) {
+        throw new Error(getRepoAccessErrorMessage(access.reason), {
+          cause: error,
+        });
+      }
+
+      setupToken = await mintInstallationToken({
+        installationId: access.installationId,
+        repositoryIds: [access.repositoryId],
+        permissions: { contents: "read" },
+      });
+      const gitUser = await getGitUser(params.userId);
+
+      try {
+        sandbox = await connectSandbox({
+          state: sandboxInputState,
+          options: {
+            ...connectOptionsBase,
+            githubToken: setupToken.token,
+            gitUser,
+            createIfMissing: true,
+          },
+        });
+      } finally {
+        fireAndForgetRevoke(setupToken.token);
+      }
+    }
+  } else {
+    // COLD PATH (didSetupWorkspace === true), or a session with no repo at
+    // all (cloneUrl unset) on either path.
+    let gitUser: Awaited<ReturnType<typeof getGitUser>>;
+
+    if (repoIdentity) {
+      // getGitUser is independent of the verify-then-mint chain — overlap
+      // them instead of serializing gitUser ahead of the repo-access round
+      // trip.
+      const [resolvedGitUser, resolvedToken] = await Promise.all([
+        getGitUser(params.userId),
+        (async () => {
+          const access = await verifyRepoAccess({
+            userId: params.userId,
+            owner: repoIdentity.owner,
+            repo: repoIdentity.repo,
+          });
+          if (!access.ok) {
+            throw new Error(getRepoAccessErrorMessage(access.reason));
+          }
+          if (expectsColdStart) {
+            await startupReporter.send("Repository access verified.", [
+              `GitHub installation: ${access.installationId}`,
+              `Repository id: ${access.repositoryId}`,
+            ]);
+          }
+          return mintInstallationToken({
+            installationId: access.installationId,
+            repositoryIds: [access.repositoryId],
+            permissions: { contents: "read" },
+          });
+        })(),
+      ]);
+      gitUser = resolvedGitUser;
+      setupToken = resolvedToken;
+    } else {
+      gitUser = await getGitUser(params.userId);
+    }
+
     if (expectsColdStart) {
       await startupReporter.send("Starting the sandbox...", [
         DEFAULT_SANDBOX_BASE_SNAPSHOT_ID
@@ -1060,25 +1242,21 @@ export async function resolveChatSandboxRuntime(params: {
         `vCPUs: ${DEFAULT_SANDBOX_VCPUS}`,
       ]);
     }
-    sandbox = await connectSandbox({
-      state: sandboxInputState,
-      options: {
-        githubToken: setupToken?.token,
-        gitUser,
-        timeout: DEFAULT_SANDBOX_TIMEOUT_MS,
-        vcpus: DEFAULT_SANDBOX_VCPUS,
-        ports: sandboxPorts,
-        baseSnapshotId: DEFAULT_SANDBOX_BASE_SNAPSHOT_ID,
-        persistent: true,
-        resume: true,
-        createIfMissing: true,
-        // Default shallow clone; opt into full git history per session.
-        ...(session.fullClone ? { cloneDepth: 0 } : {}),
-      },
-    });
-  } finally {
-    if (setupToken) {
-      await revokeInstallationToken(setupToken.token);
+
+    try {
+      sandbox = await connectSandbox({
+        state: sandboxInputState,
+        options: {
+          ...connectOptionsBase,
+          githubToken: setupToken?.token,
+          gitUser,
+          createIfMissing: true,
+        },
+      });
+    } finally {
+      if (setupToken) {
+        fireAndForgetRevoke(setupToken.token);
+      }
     }
   }
 

@@ -81,6 +81,10 @@ const spies = {
     expiresAt: new Date(),
   })),
   revokeInstallationToken: mock(async () => undefined),
+  getGitUser: mock(async (_userId: string) => ({
+    name: "Test User",
+    email: "test@example.com",
+  })),
   getGitHubUserProfile: mock(async () => null as null),
   installGlobalSkills: mock(async (_params: unknown) => undefined),
   installSessionUserSkills: mock(async () => undefined),
@@ -150,10 +154,7 @@ mock.module("@/app/workflows/chat-sandbox-runtime", () => ({
     type: "vercel" as const,
     sandboxName: `session_${session.id}`,
   }),
-  getGitUser: async (_userId: string) => ({
-    name: "Test User",
-    email: "test@example.com",
-  }),
+  getGitUser: spies.getGitUser,
   installSessionGlobalSkills: async (params: {
     session: ReturnType<typeof makeTestSession>;
     sandbox: Sandbox;
@@ -536,6 +537,93 @@ describe("prewarmSessionSandbox", () => {
       expect(spies.revokeInstallationToken).toHaveBeenCalledTimes(1);
       // Failed gracefully
       expect(result.status).toBe("failed");
+    });
+  });
+
+  describe("BT-011: getGitUser runs concurrently with the repo-access/token chain", () => {
+    test("both getGitUser and verifyRepoAccess start before either finishes, and prewarm still returns prewarmed", async () => {
+      const session = makeTestSession();
+      spies.getSessionById.mockImplementationOnce(async () => session);
+
+      const callOrder: string[] = [];
+      spies.getGitUser.mockImplementationOnce(async (_userId: string) => {
+        callOrder.push("getGitUser:start");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        callOrder.push("getGitUser:end");
+        return { name: "Test User", email: "test@example.com" };
+      });
+      spies.verifyRepoAccess.mockImplementationOnce(async () => {
+        callOrder.push("verifyRepoAccess:start");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        callOrder.push("verifyRepoAccess:end");
+        return {
+          ok: true as const,
+          installationId: 42,
+          repositoryId: 99,
+        };
+      });
+
+      const result = await prewarmSessionSandbox({
+        sessionId: session.id,
+        userId: "user-1",
+      });
+
+      expect(result.status).toBe("prewarmed");
+      expect(spies.getGitUser).toHaveBeenCalledTimes(1);
+      expect(spies.verifyRepoAccess).toHaveBeenCalledTimes(1);
+      // If the two were run sequentially, the first call would fully finish
+      // (both its start and end) before the second call ever starts. Running
+      // concurrently means both starts happen before either end.
+      expect(callOrder.slice(0, 2).sort()).toEqual(
+        ["getGitUser:start", "verifyRepoAccess:start"].sort(),
+      );
+    });
+  });
+
+  describe("BT-012: fire-and-forget token revocation", () => {
+    test("a revoke failure is caught and logged, and does not fail an otherwise successful prewarm", async () => {
+      const session = makeTestSession();
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.revokeInstallationToken.mockImplementationOnce(async () => {
+        throw new Error("revoke failed");
+      });
+
+      const result = await prewarmSessionSandbox({
+        sessionId: session.id,
+        userId: "user-1",
+      });
+
+      expect(result.status).toBe("prewarmed");
+
+      // Give the fire-and-forget revoke a tick to run and be caught.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(spies.revokeInstallationToken).toHaveBeenCalledTimes(1);
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "[prewarm] Failed to revoke setup token:",
+        expect.any(Error),
+      );
+    });
+
+    test("when connectSandbox rejects, revokeInstallationToken is still eventually called", async () => {
+      const session = makeTestSession();
+      spies.getSessionById.mockImplementationOnce(async () => session);
+      spies.connectSandbox.mockImplementationOnce(async () => {
+        throw new Error("connect failed");
+      });
+
+      const result = await prewarmSessionSandbox({
+        sessionId: session.id,
+        userId: "user-1",
+      });
+
+      expect(result.status).toBe("failed");
+
+      // revokeInstallationToken is fired-and-forgotten; allow a tick for it
+      // to be invoked before asserting.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(spies.revokeInstallationToken).toHaveBeenCalledTimes(1);
     });
   });
 
