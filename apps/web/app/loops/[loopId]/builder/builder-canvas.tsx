@@ -45,6 +45,7 @@ import {
   GitBranch,
   ListChecks,
   Lock,
+  Play,
   Save,
 } from "lucide-react";
 import Link from "next/link";
@@ -74,7 +75,10 @@ import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import { buildBuilderGuidance } from "./builder-guidance";
 import { BuilderWhatsNextNote } from "./builder-whats-next-note";
 import { TemplateTriggerNudge } from "../template-trigger-nudge";
+import { StatusPill } from "../status-pill";
+import { useLoopRunNow } from "../use-loop-run-now";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
+import type { AgentLoop } from "@/lib/db/schema";
 import type { LoopFlowEdge } from "./definition-mapping";
 
 const edgeTypes = {
@@ -152,12 +156,14 @@ type PendingNodeDelete = {
 type BuilderCanvasInnerProps = {
   loopId: string;
   loopName: string;
+  loopStatus: AgentLoop["status"];
   store: ReturnType<typeof createLoopBuilderStore>;
 };
 
 function BuilderCanvasInner({
   loopId,
   loopName,
+  loopStatus,
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
@@ -184,6 +190,14 @@ function BuilderCanvasInner({
   const updateEdgeWhen = useStore(store, (s) => s.updateEdgeWhen);
   const settings = useStore(store, (s) => s.settings);
   const setSettingsErrors = useStore(store, (s) => s.setSettingsErrors);
+
+  const { runNow, runningNow } = useLoopRunNow({
+    loopId,
+    onActiveRun: () =>
+      toast.error(
+        "This loop already has an active or paused run — wait for it to finish or open the loop to manage it.",
+      ),
+  });
 
   const [saving, setSaving] = useState(false);
   const [whatsNextDismissed, setWhatsNextDismissed] = useState(false);
@@ -507,6 +521,33 @@ function BuilderCanvasInner({
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <StatusPill status={loopStatus} />
+            <Link href={`/loops/${loopId}`}>
+              <Button variant="outline" size="sm">
+                View loop
+              </Button>
+            </Link>
+            {loopStatus === "active" ? (
+              <Button
+                size="sm"
+                onClick={() => void runNow()}
+                disabled={runningNow}
+              >
+                <Play className="mr-1.5 size-3.5" />
+                {runningNow ? "Starting…" : "Run now"}
+              </Button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" disabled>
+                  <Play className="mr-1.5 size-3.5" />
+                  Run now
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  Set to Active to run
+                </span>
+              </div>
+            )}
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
             <ErrorIndicator errors={validationErrors} />
             <LoopSettingsPanel store={store} />
             <Button
@@ -752,6 +793,7 @@ type BuilderCanvasProps = {
   loopId: string;
   loopName: string;
   loopDescription?: string | null;
+  loopStatus?: AgentLoop["status"];
   loopGuardrails?: LoopGuardrails;
   watchdogEnabled?: boolean;
   watchdogInstructions?: string | null;
@@ -763,6 +805,7 @@ export function BuilderCanvas({
   loopId,
   loopName,
   loopDescription,
+  loopStatus = "draft",
   loopGuardrails,
   watchdogEnabled,
   watchdogInstructions,
@@ -815,6 +858,7 @@ export function BuilderCanvas({
       <BuilderCanvasInner
         loopId={loopId}
         loopName={loopName}
+        loopStatus={loopStatus}
         store={storeRef.current}
       />
     </ReactFlowProvider>
