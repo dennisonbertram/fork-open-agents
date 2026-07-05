@@ -1,21 +1,20 @@
 "use client";
 
-import {
-  ArrowLeft,
-  Bot,
-  CheckCircle2,
-  Clock3,
-  ExternalLink,
-} from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { cn } from "@/lib/utils";
 import {
   RunMetadataTable,
   type RunMetadataRow,
 } from "@/components/run-metadata-table";
 import { RunSummarySection } from "./run-summary-section";
+import { LiveTimeline } from "./live-timeline";
+import {
+  StatusPill,
+  formatDate,
+  stringifyPayloadValue,
+} from "./timeline-format";
 import { useBackgroundRunEventSource } from "./use-background-run-event-source";
 import type {
   BackgroundRunDetailData,
@@ -39,50 +38,8 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium capitalize",
-        status === "succeeded" || status === "created"
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : status === "failed"
-            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-            : status === "running" || status === "queued"
-              ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              : "border-border bg-muted/40 text-muted-foreground",
-      )}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return "-";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringifyPayloadValue(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value.trim() || null;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return null;
 }
 
 function formatDuration(startedAt: string | null, finishedAt: string | null) {
@@ -294,40 +251,6 @@ function buildDebugRows(run: SerializedBackgroundRun): RunMetadataRow[] {
   ];
 }
 
-function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
-  const command = stringifyPayloadValue(event.payload.command);
-  const stdout = stringifyPayloadValue(event.payload.stdout);
-  const stderr = stringifyPayloadValue(event.payload.stderr);
-  const durationMs = stringifyPayloadValue(event.payload.durationMs);
-
-  if (!(command || stdout || stderr || durationMs)) {
-    return null;
-  }
-
-  return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3 text-xs">
-      {command && (
-        <p className="truncate font-mono text-muted-foreground">{command}</p>
-      )}
-      {durationMs && (
-        <p className="font-mono text-[10px] text-muted-foreground">
-          {durationMs}ms
-        </p>
-      )}
-      {stdout && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[11px]">
-          {stdout}
-        </pre>
-      )}
-      {stderr && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-red-500/5 p-2 font-mono text-[11px] text-red-700 dark:text-red-300">
-          {stderr}
-        </pre>
-      )}
-    </div>
-  );
-}
-
 const STREAM_STATUS_LABELS: Record<StreamStatus, string> = {
   idle: "",
   connecting: "Connecting to live stream…",
@@ -412,6 +335,15 @@ export function BackgroundRunDetail({
   const isLive = run.status === "queued" || run.status === "running";
   const streamStatusLabel =
     sseEnabled && isLive ? STREAM_STATUS_LABELS[sseStatus] : null;
+  const timelineStatusLabel = isLive
+    ? sseEnabled
+      ? sseStatus === "live"
+        ? "Streaming"
+        : sseStatus === "connecting" || sseStatus === "reconnecting"
+          ? "Connecting"
+          : "Refreshing"
+      : "Refreshing"
+    : null;
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
@@ -528,72 +460,11 @@ export function BackgroundRunDetail({
             {run.resultSummary ? (
               <RunSummarySection summary={run.resultSummary} />
             ) : null}
-            <section className="rounded-md border border-border">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Live timeline</h2>
-                {isLive && (
-                  <span className="text-xs text-muted-foreground">
-                    {sseEnabled
-                      ? sseStatus === "live"
-                        ? "Streaming"
-                        : sseStatus === "connecting" ||
-                            sseStatus === "reconnecting"
-                          ? "Connecting"
-                          : "Refreshing"
-                      : "Refreshing"}
-                  </span>
-                )}
-              </div>
-              {events.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">
-                  No events recorded.
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {events.map((event) => (
-                    <div key={event.id} className="grid gap-3 px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {event.summary ?? event.eventName}
-                          </p>
-                          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                            {event.eventName}
-                          </p>
-                        </div>
-                        <StatusPill status={event.status} />
-                      </div>
-                      <CommandOutput event={event} />
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                        <Clock3 className="h-3 w-3" />
-                        <span>{formatDate(event.createdAt)}</span>
-                        {event.workflowRunId && (
-                          <span className="font-mono">
-                            workflow {event.workflowRunId}
-                          </span>
-                        )}
-                        {event.requestId && (
-                          <span className="font-mono">
-                            request {event.requestId}
-                          </span>
-                        )}
-                        {event.sandboxName && (
-                          <span className="font-mono">
-                            sandbox {event.sandboxName}
-                          </span>
-                        )}
-                        <span className="font-mono">
-                          redaction {event.redactionStatus}
-                        </span>
-                        {event.errorKind && (
-                          <span className="font-mono">{event.errorKind}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <LiveTimeline
+              events={events}
+              isLive={isLive}
+              statusLabel={timelineStatusLabel}
+            />
           </div>
 
           <aside className="space-y-6">
