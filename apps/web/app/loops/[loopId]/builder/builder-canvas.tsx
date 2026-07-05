@@ -476,6 +476,17 @@ function BuilderCanvasInner({
     ? legalWhenValues(pickerSourceNodeId)
     : [];
 
+  // Run now must reflect the persisted definition, not in-memory builder
+  // edits (the runs endpoint dispatches from the saved loop.definition). If
+  // the loop isn't active, that takes priority; otherwise, unsaved or
+  // invalid edits block the run until Save clears them (#894).
+  const runNowBlockedReason =
+    loopStatus === "active"
+      ? isDirty || validationErrors.length > 0
+        ? "Save your changes first"
+        : null
+      : "Set to Active to run";
+
   return (
     <BuilderErrorContext.Provider value={errorsById}>
       <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -527,7 +538,17 @@ function BuilderCanvasInner({
                 View loop
               </Button>
             </Link>
-            {loopStatus === "active" ? (
+            {runNowBlockedReason ? (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" disabled>
+                  <Play className="mr-1.5 size-3.5" />
+                  Run now
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  {runNowBlockedReason}
+                </span>
+              </div>
+            ) : (
               <Button
                 size="sm"
                 onClick={() => void runNow()}
@@ -536,16 +557,6 @@ function BuilderCanvasInner({
                 <Play className="mr-1.5 size-3.5" />
                 {runningNow ? "Starting…" : "Run now"}
               </Button>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <Button size="sm" disabled>
-                  <Play className="mr-1.5 size-3.5" />
-                  Run now
-                </Button>
-                <span className="text-[11px] text-muted-foreground">
-                  Set to Active to run
-                </span>
-              </div>
             )}
             <span className="mx-1 h-5 w-px bg-border" aria-hidden />
             <ErrorIndicator errors={validationErrors} />
