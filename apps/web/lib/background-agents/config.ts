@@ -64,6 +64,12 @@ export const BACKGROUND_AGENT_MAX_TURNS_CEILING = 64;
 const POSITIVE_INTEGER_PATTERN = /^\d+$/;
 
 /**
+ * @deprecated (#914) The turn loop no longer consumes this as its primary
+ * budget — see getBackgroundAgentMaxStaleTurns for the no-progress
+ * (git-delta) budget that replaced it, and getBackgroundAgentHardTurnCap for
+ * the opt-in absolute ceiling BACKGROUND_AGENT_MAX_TURNS now controls.
+ * Retained only for backward compatibility (existing callers/tests).
+ *
  * Operator override for the background-agent turn budget via
  * BACKGROUND_AGENT_MAX_TURNS. Falls back to the default for a missing,
  * non-numeric, non-integer, or non-positive value; clamps to the ceiling.
@@ -83,4 +89,55 @@ export function getBackgroundAgentMaxTurns(): number {
   }
 
   return Math.min(parsed, BACKGROUND_AGENT_MAX_TURNS_CEILING);
+}
+
+/**
+ * (#914) BACKGROUND_AGENT_MAX_TURNS is repurposed as an OPT-IN absolute hard
+ * ceiling — a runaway safety fuse, not the primary budget. When unset (the
+ * default), there is no total-turn cap; only the no-progress (git-delta)
+ * budget below applies. Returns null when unset or invalid; clamps a set
+ * value to BACKGROUND_AGENT_MAX_TURNS_CEILING.
+ */
+export function getBackgroundAgentHardTurnCap(): number | null {
+  const raw = process.env.BACKGROUND_AGENT_MAX_TURNS?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return null;
+  }
+
+  return Math.min(parsed, BACKGROUND_AGENT_MAX_TURNS_CEILING);
+}
+
+/**
+ * Default number of consecutive no-progress (unchanged git working-tree
+ * fingerprint) turns a background-agent run tolerates before being stopped
+ * (#914). This is a STARTING VALUE to tune from real
+ * background_agent_events data, not a validated target — the epic's
+ * estimate range was ~20-25; 20 is picked as the conservative end of that
+ * range.
+ */
+export const DEFAULT_BACKGROUND_AGENT_MAX_STALE_TURNS = 20;
+
+/**
+ * Operator override for the no-progress budget via
+ * BACKGROUND_AGENT_MAX_STALE_TURNS (#914). Falls back to the default for a
+ * missing, non-numeric, non-integer, or non-positive value. Mirrors the
+ * strict-parse pattern of getBackgroundAgentMaxTurns.
+ */
+export function getBackgroundAgentMaxStaleTurns(): number {
+  const raw = process.env.BACKGROUND_AGENT_MAX_STALE_TURNS?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return DEFAULT_BACKGROUND_AGENT_MAX_STALE_TURNS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_BACKGROUND_AGENT_MAX_STALE_TURNS;
+  }
+
+  return parsed;
 }
