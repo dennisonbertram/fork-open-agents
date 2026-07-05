@@ -83,9 +83,7 @@ describe("RunMetadataTable (#895)", () => {
     );
     const q = within(container);
 
-    expect(
-      q.getByRole("button", { name: "Copy Workflow Run" }),
-    ).toBeTruthy();
+    expect(q.getByRole("button", { name: "Copy Workflow Run" })).toBeTruthy();
   });
 
   test("copy control renders for a Request ID row once a value exists", () => {
@@ -145,8 +143,6 @@ describe("RunMetadataTable (#895)", () => {
 
     expect(q.getByText("Correlation IDs")).toBeTruthy();
     // One bordered container wraps everything — not N separate card borders.
-    expect(container.querySelectorAll(".border.border-border").length).toBe(
-      1,
-    );
+    expect(container.querySelectorAll(".border.border-border").length).toBe(1);
   });
 });
