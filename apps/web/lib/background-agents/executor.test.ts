@@ -918,14 +918,13 @@ describe("executeBackgroundAgentRun", () => {
       }));
     });
 
-    function joinedMessageContents(
-      calls: typeof generate.mock.calls,
-    ): string {
+    function joinedMessageContents(calls: unknown[][]): string {
       return calls
-        .map(([input]) => {
-          const messages =
-            (input as { messages?: Array<{ content?: unknown }> })
-              .messages ?? [];
+        .map((call) => {
+          const input = call[0] as
+            | { messages?: Array<{ content?: unknown }> }
+            | undefined;
+          const messages = input?.messages ?? [];
           return messages
             .map((message) =>
               typeof message.content === "string" ? message.content : "",
@@ -973,34 +972,38 @@ describe("executeBackgroundAgentRun", () => {
 
     test("tool-calls until nudged then finishes within budget", async () => {
       process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
-      generate.mockImplementation(async (input: unknown) => {
-        const messages =
-          (input as { messages?: Array<{ content?: unknown }> }).messages ??
-          [];
+      const respond = (...args: unknown[]) => {
+        const input = args[0] as
+          | { messages?: Array<{ content?: unknown }> }
+          | undefined;
+        const messages = input?.messages ?? [];
         const wrapUpSeen = messages.some(
           (message) =>
             typeof message.content === "string" &&
             message.content.includes("Stop exploring now and finalize"),
         );
         if (wrapUpSeen) {
-          return {
+          return Promise.resolve({
             finishReason: "stop",
             rawFinishReason: "stop",
             response: { messages: [] },
             steps: [],
             usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
             totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
-          };
+          });
         }
-        return {
+        return Promise.resolve({
           finishReason: "tool-calls",
           rawFinishReason: "tool_use",
           response: { messages: [] },
           steps: [],
           usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
           totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
-        };
-      });
+        });
+      };
+      generate.mockImplementation(
+        respond as unknown as Parameters<typeof generate.mockImplementation>[0],
+      );
 
       const { executeBackgroundAgentRun } = await executorModulePromise;
       await executeBackgroundAgentRun({
