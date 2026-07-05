@@ -837,7 +837,11 @@ describe("executeBackgroundAgentRun", () => {
       }));
     });
 
-    test("exhausting the default 16-turn budget records errorKind agent_turn_budget_exceeded", async () => {
+    // (#914) With no default total-turn cap, a run that never progresses
+    // (the mock sandbox's git probe always returns the same "ok" stdout) is
+    // now stopped by the no-progress (git-delta) budget at its default
+    // (20 stale turns), not a fixed 16-turn count.
+    test("a stalled run (no git-tree change) exhausts the default no-progress budget and records errorKind agent_turn_budget_exceeded", async () => {
       delete process.env.BACKGROUND_AGENT_MAX_TURNS;
       generate.mockImplementation(async () => ({
         finishReason: "tool-calls",
@@ -862,7 +866,7 @@ describe("executeBackgroundAgentRun", () => {
         status: "failed",
         errorKind: "agent_turn_budget_exceeded",
       });
-      expect(generate.mock.calls.length).toBe(16);
+      expect(generate.mock.calls.length).toBe(20);
     });
 
     test("BACKGROUND_AGENT_MAX_TURNS overrides the default turn budget", async () => {
@@ -950,7 +954,9 @@ describe("executeBackgroundAgentRun", () => {
         : "";
     }
 
-    test("the turn-N prompt/context contains the budget counter", async () => {
+    // (#914) With BACKGROUND_AGENT_MAX_TURNS unset, there is no hard turn
+    // ceiling, so the per-turn note drops the "of Y" framing.
+    test("the turn-N prompt/context contains the unset-cap budget counter", async () => {
       delete process.env.BACKGROUND_AGENT_MAX_TURNS;
 
       const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -959,9 +965,7 @@ describe("executeBackgroundAgentRun", () => {
         workflowRunId: "workflow-1",
       });
 
-      expect(joinedMessageContents(generate.mock.calls)).toContain(
-        "Turn 1 of 16",
-      );
+      expect(joinedMessageContents(generate.mock.calls)).toContain("Turn 1.");
     });
 
     test("injects the wrap-up instruction at the threshold for a push+PR agent", async () => {

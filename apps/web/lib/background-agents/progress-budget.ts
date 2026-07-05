@@ -35,7 +35,8 @@ export function createProgressBudget(config: {
 }): {
   observeTurn(input: { gitFingerprint: string | null }): ProgressObservation;
 } {
-  let previousFingerprint: string | null | undefined = config.initialFingerprint;
+  let previousFingerprint: string | null | undefined =
+    config.initialFingerprint;
   let staleTurns = 0;
 
   function verdictFor(count: number): ProgressVerdict {

@@ -24,7 +24,12 @@ import {
   verifyRepoAccess,
   getRepoAccessErrorMessage,
 } from "@/lib/github/access";
-import { getBackgroundAgentMaxTurns } from "./config";
+import {
+  getBackgroundAgentHardTurnCap,
+  getBackgroundAgentMaxStaleTurns,
+} from "./config";
+import { createProgressBudget } from "./progress-budget";
+import { createHash } from "node:crypto";
 import {
   mintInstallationToken,
   revokeInstallationToken,
@@ -79,15 +84,21 @@ const DEFAULT_CHECK_TIMEOUT_MS = 120_000;
 const DEFAULT_AGENT_TIMEOUT_MS = 600_000;
 
 /**
- * Thrown when a background-agent run exhausts its openAgent turn budget
- * (see getBackgroundAgentMaxTurns in config.ts) without finishing (#862).
+ * Thrown when a background-agent run is stopped by either budget:
+ * - the no-progress (git-delta) budget (#914, primary): `limit` consecutive
+ *   turns with no change to the sandbox git working tree
+ *   (getBackgroundAgentMaxStaleTurns in config.ts).
+ * - the opt-in absolute hard turn ceiling (#862, only enforced when
+ *   BACKGROUND_AGENT_MAX_TURNS is explicitly set;
+ *   getBackgroundAgentHardTurnCap in config.ts).
  */
 export class BackgroundAgentTurnBudgetExceededError extends Error {
   constructor(
-    readonly maxTurns: number,
+    readonly limit: number,
     readonly wrapUpIssued: boolean = false,
+    readonly staleTurns?: number,
   ) {
-    super(`Background agent exhausted ${maxTurns} agent turns.`);
+    super(`Background agent exhausted ${limit} agent turns.`);
     this.name = "BackgroundAgentTurnBudgetExceededError";
   }
 }
@@ -123,19 +134,32 @@ function resolveWrapUpCapability(
  * the counter is recomputed fresh each turn — see #896). The wrap-up
  * instruction is tool-aware: it only tells the agent to use GitHub actions
  * it actually has enabled (#896 follow-up).
+ *
+ * `hardTurnCap` is null unless BACKGROUND_AGENT_MAX_TURNS is explicitly set
+ * (#914): with no cap there is no "of Y" framing and no wrap-up nudge tied to
+ * turn count — the no-progress budget is what actually stops the run.
  */
 function buildTurnBudgetNote(
   step: number,
-  maxTurns: number,
+  hardTurnCap: number | null,
   githubActionToggles: GitHubActionToggles,
 ): { note: string; wrapUp: boolean } {
-  const remaining = Math.max(maxTurns - step + 1, 1);
+  if (hardTurnCap === null) {
+    return {
+      note:
+        `Turn ${step}. Keep this turn focused on concrete progress toward ` +
+        "the deliverable.",
+      wrapUp: false,
+    };
+  }
+
+  const remaining = Math.max(hardTurnCap - step + 1, 1);
   const wrapUp = remaining <= WRAP_UP_TURNS_REMAINING_THRESHOLD;
 
   if (!wrapUp) {
     return {
       note:
-        `Turn ${step} of ${maxTurns}. Keep this turn focused on concrete ` +
+        `Turn ${step} of ${hardTurnCap}. Keep this turn focused on concrete ` +
         "progress toward the deliverable.",
       wrapUp: false,
     };
@@ -160,7 +184,7 @@ function buildTurnBudgetNote(
   }
 
   return {
-    note: `Turn ${step} of ${maxTurns}. Stop exploring now and finalize: ${instruction}`,
+    note: `Turn ${step} of ${hardTurnCap}. Stop exploring now and finalize: ${instruction}`,
     wrapUp: true,
   };
 }
@@ -462,6 +486,38 @@ async function execObservedCommand(params: {
   return result;
 }
 
+const GIT_PROGRESS_PROBE_TIMEOUT_MS = 15_000;
+
+/**
+ * Cheap per-turn probe for the no-progress (git-delta) budget (#914):
+ * combines HEAD sha, porcelain status, and diff into one sandbox.exec call
+ * (deliberately NOT routed through execObservedCommand, which would emit
+ * .started/.completed events per sub-command and cost 6 events/turn — this
+ * is one exec + one background-agent.progress.observed event per turn) and
+ * hashes the raw stdout to sha256 so no diff content is ever logged.
+ *
+ * Returns null on any probe failure (non-zero exit or thrown error) — the
+ * progress budget treats null as "unknown, not stale" rather than failing
+ * the run over a sandbox/tooling hiccup.
+ */
+async function probeGitFingerprint(sandbox: Sandbox): Promise<string | null> {
+  try {
+    const result = await sandbox.exec(
+      "git rev-parse HEAD && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
+        "git status --porcelain && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
+        "git diff",
+      sandbox.workingDirectory,
+      GIT_PROGRESS_PROBE_TIMEOUT_MS,
+    );
+    if (!result.success) {
+      return null;
+    }
+    return createHash("sha256").update(result.stdout).digest("hex");
+  } catch {
+    return null;
+  }
+}
+
 function getSandboxState(sandbox: Sandbox): SandboxState {
   const state = sandbox.getState?.();
   if (!state || typeof state !== "object") {
@@ -550,7 +606,16 @@ async function runBackgroundAgent(params: {
       "You are running inside an unattended background-agent workflow. Work autonomously, keep changes scoped, and finish with a concise summary.",
   };
 
-  const maxTurns = getBackgroundAgentMaxTurns();
+  // (#914) BACKGROUND_AGENT_MAX_TURNS is now an opt-in absolute hard ceiling
+  // — null (no cap) unless an operator explicitly sets it. The primary
+  // budget is the no-progress (git-delta) budget below.
+  const hardTurnCap = getBackgroundAgentHardTurnCap();
+  const maxStaleTurns = getBackgroundAgentMaxStaleTurns();
+  const initialFingerprint = await probeGitFingerprint(params.sandbox);
+  const progressBudget = createProgressBudget({
+    maxStaleTurns,
+    initialFingerprint,
+  });
 
   await recordBackgroundAgentEvent({
     runId: params.runId,
@@ -563,15 +628,27 @@ async function runBackgroundAgent(params: {
     requestId: params.requestId,
     sandboxName: params.sandboxName,
     payload: {
-      maxSteps: maxTurns,
+      // Retained for back-compat dashboards: null now that there is no
+      // default total-turn cap.
+      maxSteps: hardTurnCap,
+      maxStaleTurns,
+      hardTurnCap,
       timeoutMs: DEFAULT_AGENT_TIMEOUT_MS,
       modelId: params.recordedModelId,
     },
   });
 
   let wrapUpIssued = false;
+  let step = 0;
 
-  for (let step = 1; step <= maxTurns; step += 1) {
+  for (;;) {
+    step += 1;
+    if (hardTurnCap !== null && step > hardTurnCap) {
+      throw new BackgroundAgentTurnBudgetExceededError(
+        hardTurnCap,
+        wrapUpIssued,
+      );
+    }
     const startedAt = Date.now();
     // Repair any approval-gated tool call the previous turn left without a
     // result before re-sending history — otherwise the provider rejects the
@@ -604,7 +681,7 @@ async function runBackgroundAgent(params: {
 
     const { note, wrapUp } = buildTurnBudgetNote(
       step,
-      maxTurns,
+      hardTurnCap,
       params.githubActionToggles,
     );
     if (wrapUp) {
@@ -685,9 +762,45 @@ async function runBackgroundAgent(params: {
       });
       return;
     }
-  }
 
-  throw new BackgroundAgentTurnBudgetExceededError(maxTurns, wrapUpIssued);
+    // The agent is continuing (finishReason === "tool-calls"): probe the
+    // sandbox git working tree and feed it to the no-progress budget (#914).
+    // A probe failure degrades to null (treated as "unknown, not stale" by
+    // createProgressBudget) rather than failing the run.
+    const gitFingerprint = await probeGitFingerprint(params.sandbox);
+    const { staleTurns, changed, verdict } = progressBudget.observeTurn({
+      gitFingerprint,
+    });
+
+    await recordBackgroundAgentEvent({
+      runId: params.runId,
+      agentId: params.agentId,
+      userId: params.userId,
+      eventName: "background-agent.progress.observed",
+      status: "succeeded",
+      summary: changed
+        ? `Turn ${step}: git working tree changed.`
+        : `Turn ${step}: no git working-tree change (staleTurns=${staleTurns}).`,
+      workflowRunId: params.workflowRunId,
+      requestId: params.requestId,
+      sandboxName: params.sandboxName,
+      payload: {
+        step,
+        gitFingerprint,
+        changed,
+        staleTurns,
+        maxStaleTurns,
+      },
+    });
+
+    if (verdict === "stop") {
+      throw new BackgroundAgentTurnBudgetExceededError(
+        maxStaleTurns,
+        wrapUpIssued,
+        staleTurns,
+      );
+    }
+  }
 }
 
 /**
@@ -1403,7 +1516,14 @@ export async function executeBackgroundAgentRun(params: {
       summary:
         error instanceof Error ? error.message : "Background agent failed.",
       ...(error instanceof BackgroundAgentTurnBudgetExceededError
-        ? { payload: { wrapUpIssued: error.wrapUpIssued } }
+        ? {
+            payload: {
+              wrapUpIssued: error.wrapUpIssued,
+              ...(error.staleTurns !== undefined
+                ? { staleTurns: error.staleTurns }
+                : {}),
+            },
+          }
         : {}),
     });
     return;
