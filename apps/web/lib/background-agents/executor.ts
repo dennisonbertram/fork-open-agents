@@ -494,21 +494,34 @@ const GIT_PROGRESS_PROBE_TIMEOUT_MS = 15_000;
 async function probeGitFingerprint(sandbox: Sandbox): Promise<string | null> {
   try {
     const result = await sandbox.exec(
-      "git rev-parse HEAD && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
-        "git status --porcelain && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
-        "git diff && printf '\\n---OA_PROGRESS_PROBE---\\n' && " +
-        // `git diff` omits UNTRACKED file contents, so an agent productively
-        // editing a brand-new unstaged file would keep the same fingerprint
-        // (git status only ever reports "?? path") and be falsely flagged as
-        // stalled. Concatenate untracked (non-ignored) file contents so those
-        // edits move the fingerprint too.
-        "git ls-files --others --exclude-standard -z | xargs -0 -r cat 2>/dev/null",
+      // A complete working-state fingerprint: committed HEAD + file states +
+      // UNSTAGED tracked diffs + STAGED (index) tracked diffs + UNTRACKED file
+      // contents. Each piece closes a false-stall gap: git status --porcelain
+      // alone reports the same "M path"/"?? path" regardless of content, so
+      // both `git diff` (unstaged) and `git diff --cached` (staged) are needed
+      // for tracked edits, and ls-files|cat is needed for untracked contents
+      // (git diff omits those).
+      //
+      // The whole thing is hashed INSIDE the sandbox (`| sha256sum`) so the
+      // command returns a tiny fixed-size digest. sandbox.exec truncates stdout
+      // to 50k chars; hashing app-side would let a large diff push later
+      // sections (staged/untracked) past the cap, freezing the fingerprint
+      // while the index changes. The OA_PROGRESS_PROBE markers keep the
+      // sections unambiguous within the hashed stream.
+      "{ git rev-parse HEAD; printf '\\n---OA_PROGRESS_PROBE---\\n'; " +
+        "git status --porcelain; printf '\\n---OA_PROGRESS_PROBE---\\n'; " +
+        "git diff; printf '\\n---OA_PROGRESS_PROBE---\\n'; " +
+        "git diff --cached; printf '\\n---OA_PROGRESS_PROBE---\\n'; " +
+        "git ls-files --others --exclude-standard -z | xargs -0 -r cat; } " +
+        "2>/dev/null | sha256sum",
       sandbox.workingDirectory,
       GIT_PROGRESS_PROBE_TIMEOUT_MS,
     );
     if (!result.success) {
       return null;
     }
+    // result.stdout is the in-sandbox digest (never truncated); re-hash for a
+    // stable, fixed-length fingerprint regardless of the sha256sum output shape.
     return createHash("sha256").update(result.stdout).digest("hex");
   } catch {
     return null;
