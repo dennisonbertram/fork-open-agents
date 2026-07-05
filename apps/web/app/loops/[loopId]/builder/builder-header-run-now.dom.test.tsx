@@ -12,6 +12,7 @@ import {
   registerDomTestHooks,
   render,
   within,
+  fireEvent,
   act,
   userClick,
 } from "@/tests/dom";
@@ -95,6 +96,27 @@ global.fetch = globalFetch;
 
 const canvasPromise = import("./builder-canvas");
 
+/**
+ * Types into a controlled text/number input under happy-dom.
+ *
+ * `fireEvent.change`/`fireEvent.input` alone do not trigger React 19's
+ * onChange under this project's happy-dom harness for text/number inputs.
+ * Using the native value setter plus an "input" event, a keyUp, and a
+ * "change" event together reliably reaches React's ChangeEventPlugin in
+ * this environment (see builder-settings-save.dom.test.tsx).
+ */
+function typeIntoInput(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    window.HTMLInputElement.prototype,
+    "value",
+  )?.set;
+  input.focus();
+  setter?.call(input, value);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+  fireEvent.keyUp(input, { key: value.slice(-1) || "a" });
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+}
+
 const VALID_DEF: LoopDefinition = {
   nodes: [
     { id: "start-1", kind: "start", label: "Start", position: { x: 0, y: 0 } },
@@ -174,6 +196,37 @@ describe("BuilderCanvas — header path-forward affordances (#894)", () => {
     expect(post?.opts?.method).toBe("POST");
     expect(routerPush).toHaveBeenCalledWith("/loops/loop-1/runs/run-xyz");
     expect(toastSuccess).toHaveBeenCalledWith("Run started");
+  });
+
+  test("active loop with unsaved builder edits: Run now is disabled with a Save your changes first reason", async () => {
+    const { BuilderCanvas } = await canvasPromise;
+    const { container } = render(
+      <BuilderCanvas
+        loopId="loop-1"
+        loopName="My loop"
+        loopDescription=""
+        loopStatus="active"
+        definition={VALID_DEF}
+      />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: "Loop settings" }));
+
+    await act(async () => {
+      typeIntoInput(
+        q.getByLabelText("Name") as HTMLInputElement,
+        "Renamed loop",
+      );
+    });
+
+    expect(q.getByText("Unsaved changes")).toBeTruthy();
+
+    const btn = q.getByRole("button", {
+      name: "Run now",
+    }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(true);
+    expect(q.getByText("Save your changes first")).toBeTruthy();
   });
 
   test("dismissing the What happens next banner keeps the header status/View loop/Run now", async () => {
