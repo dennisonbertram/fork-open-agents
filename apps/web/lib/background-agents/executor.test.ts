@@ -934,6 +934,22 @@ describe("executeBackgroundAgentRun", () => {
         .join(" ");
     }
 
+    // Isolates the ephemeral per-turn note (the LAST message of the LAST
+    // generate() call) from the persistent runbook prompt, which always
+    // mentions "push"/"pull request" regardless of the agent's enabled
+    // tools — joinedMessageContents would false-positive on that prompt.
+    function lastInjectedNote(calls: unknown[][]): string {
+      const lastCall = calls.at(-1);
+      const input = lastCall?.[0] as
+        | { messages?: Array<{ content?: unknown }> }
+        | undefined;
+      const messages = input?.messages ?? [];
+      const lastMessage = messages.at(-1);
+      return typeof lastMessage?.content === "string"
+        ? lastMessage.content
+        : "";
+    }
+
     test("the turn-N prompt/context contains the budget counter", async () => {
       delete process.env.BACKGROUND_AGENT_MAX_TURNS;
 
@@ -948,8 +964,11 @@ describe("executeBackgroundAgentRun", () => {
       );
     });
 
-    test("injects the wrap-up instruction at the threshold", async () => {
+    test("injects the wrap-up instruction at the threshold for a push+PR agent", async () => {
       process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      currentAgent = buildAgent({
+        githubActions: { open_pull_request: true, push: true },
+      });
       generate.mockImplementation(async () => ({
         finishReason: "tool-calls",
         rawFinishReason: "tool_use",
@@ -965,8 +984,38 @@ describe("executeBackgroundAgentRun", () => {
         workflowRunId: "workflow-1",
       });
 
-      expect(joinedMessageContents(generate.mock.calls)).toContain(
-        "Stop exploring now and finalize",
+      const note = lastInjectedNote(generate.mock.calls);
+      expect(note).toContain("Stop exploring now and finalize");
+      expect(note).toContain("commit and push your changes");
+      expect(note).toContain("open the pull request");
+    });
+
+    test("uses comment/finalize wrap-up guidance for a comment-only agent (no push, no open_pull_request)", async () => {
+      process.env.BACKGROUND_AGENT_MAX_TURNS = "4";
+      currentAgent = buildAgent({
+        githubActions: { comment_on_pr_or_issue: true },
+      });
+      generate.mockImplementation(async () => ({
+        finishReason: "tool-calls",
+        rawFinishReason: "tool_use",
+        response: { messages: [] },
+        steps: [],
+        usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+        totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
+      }));
+
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "workflow-1",
+      });
+
+      const note = lastInjectedNote(generate.mock.calls);
+      expect(note).toContain("Stop exploring now and finalize");
+      expect(note).not.toContain("push");
+      expect(note).not.toContain("pull request");
+      expect(note).toContain(
+        "post your review/comment now with your findings and conclusions",
       );
     });
 
