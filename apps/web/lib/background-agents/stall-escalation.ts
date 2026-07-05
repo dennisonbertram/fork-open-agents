@@ -98,10 +98,23 @@ export function createStallEscalation(config: {
   finalizeTurns: number;
 }): {
   observe(input: StallEscalationObservation): StallEscalationResult;
+  forceEscalate(nextTrigger: StallTrigger): void;
 } {
   let stage: Stage = "running";
   let turnsInStage = 0;
   let trigger: StallTrigger | null = null;
+
+  /**
+   * Jump straight to the escalating stage, skipping the nudge and grace
+   * window. Used by the token-fuse backstop (#917): a runaway-cost breach is
+   * not a "maybe re-plan" situation — the agent is told to finalize
+   * immediately, then the normal finalize-turns countdown terminates the run.
+   */
+  function forceEscalate(nextTrigger: StallTrigger): void {
+    stage = "escalating";
+    turnsInStage = 0;
+    trigger = nextTrigger;
+  }
 
   function observe(input: StallEscalationObservation): StallEscalationResult {
     if (stage === "escalating") {
@@ -141,7 +154,7 @@ export function createStallEscalation(config: {
     return { action: "continue", stage, trigger: null };
   }
 
-  return { observe };
+  return { observe, forceEscalate };
 }
 
 /**

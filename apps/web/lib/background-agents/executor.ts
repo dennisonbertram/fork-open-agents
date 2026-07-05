@@ -26,6 +26,7 @@ import {
 } from "@/lib/github/access";
 import {
   getBackgroundAgentHardTurnCap,
+  getBackgroundAgentMaxRunTokens,
   getBackgroundAgentMaxStaleTurns,
   getBackgroundAgentRepetitionThreshold,
   getBackgroundAgentStallFinalizeTurns,
@@ -631,6 +632,12 @@ async function runBackgroundAgent(params: {
   let isEscalatingStall = false;
   let stallTrigger: StallTrigger | null = null;
   let lastStaleTurns = 0;
+  // (#917) Runaway-COST fuse: accumulate token usage across turns and, if it
+  // breaches the (deliberately high) per-run ceiling, force-escalate through
+  // the same commit-and-finalize path as a stall — a cost backstop, not a
+  // work limit.
+  const maxRunTokens = getBackgroundAgentMaxRunTokens();
+  let runTokens = 0;
 
   await recordBackgroundAgentEvent({
     runId: params.runId,
@@ -774,6 +781,56 @@ async function runBackgroundAgent(params: {
         },
         toolCallCount,
       });
+      // (#917) Accumulate toward the per-run token fuse.
+      runTokens +=
+        (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
+    }
+
+    // (#917) Runaway-cost fuse: once accumulated tokens breach the ceiling,
+    // force-escalate through the stall path (fire once). The agent still gets
+    // its finalize turns to commit/push/comment; the run then terminates as
+    // token_budget_exceeded rather than being hard-killed with work discarded.
+    let fuseFiredThisTurn = false;
+    if (!isEscalatingStall && runTokens >= maxRunTokens) {
+      fuseFiredThisTurn = true;
+      await recordBackgroundAgentEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        eventName: "background-agent.progress.token_fuse",
+        status: "succeeded",
+        level: "warn",
+        summary: `Turn ${step}: per-run token fuse tripped (accumulatedTokens=${runTokens} >= ceiling=${maxRunTokens}).`,
+        workflowRunId: params.workflowRunId,
+        requestId: params.requestId,
+        sandboxName: params.sandboxName,
+        payload: {
+          step,
+          accumulatedTokens: runTokens,
+          ceiling: maxRunTokens,
+        },
+      });
+      stallEscalation.forceEscalate("token_fuse");
+      isEscalatingStall = true;
+      stallTrigger = "token_fuse";
+      await recordBackgroundAgentEvent({
+        runId: params.runId,
+        agentId: params.agentId,
+        userId: params.userId,
+        eventName: "background-agent.progress.escalated",
+        status: "succeeded",
+        level: "warn",
+        summary: `Turn ${step}: stall escalated (token_fuse); instructing the agent to finalize.`,
+        workflowRunId: params.workflowRunId,
+        requestId: params.requestId,
+        sandboxName: params.sandboxName,
+        payload: {
+          step,
+          staleTurns: lastStaleTurns,
+          trigger: "token_fuse",
+          capability: wrapUpCapability,
+        },
+      });
     }
 
     messages.push(...result.response.messages);
@@ -878,6 +935,15 @@ async function runBackgroundAgent(params: {
           },
         });
       }
+    }
+
+    // (#917) On the turn the token fuse fires, skip the stall observation so
+    // the escalating countdown starts on the NEXT turn — this gives the agent
+    // its finalize turns to commit/push before termination, matching the
+    // normal escalate flow (an observe()-driven "escalate" never terminates
+    // the same turn either).
+    if (fuseFiredThisTurn) {
+      continue;
     }
 
     // (#916) Feed both stall signals into the escalation state machine
@@ -1651,7 +1717,9 @@ export async function executeBackgroundAgentRun(params: {
       sandboxName,
       errorKind:
         error instanceof BackgroundAgentStalledError
-          ? "agent_stalled"
+          ? error.trigger === "token_fuse"
+            ? "token_budget_exceeded"
+            : "agent_stalled"
           : error instanceof BackgroundAgentTurnBudgetExceededError
             ? "agent_turn_budget_exceeded"
             : "workflow_failed",

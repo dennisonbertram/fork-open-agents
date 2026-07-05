@@ -67,6 +67,12 @@ export const backgroundAgentErrorKinds = [
   // agent_turn_budget_exceeded: work already committed/pushed/commented by
   // the agent's finalize turns is preserved, not discarded.
   "agent_stalled",
+  // (#917) A background-agent run whose accumulated token usage breached the
+  // per-run token fuse (BACKGROUND_AGENT_MAX_RUN_TOKENS) — a runaway-COST
+  // backstop, not a work limit. Routes through the same escalate-and-commit
+  // path as agent_stalled (work is preserved), but surfaces distinctly so
+  // operators can review cost/runaway rather than a progress stall.
+  "token_budget_exceeded",
 ] as const;
 
 export type BackgroundAgentErrorKind =

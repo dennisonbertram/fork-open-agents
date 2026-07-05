@@ -228,3 +228,33 @@ export function getBackgroundAgentStallFinalizeTurns(): number {
 
   return parsed;
 }
+
+/**
+ * Default per-run token ceiling (#917) — a runaway-COST fuse, not a work
+ * limit. Set deliberately high (50M tokens) so a normal long, productive run
+ * never trips it; it exists only to stop a pathological run (provider bug,
+ * prompt explosion) from accumulating unbounded spend with no human watching.
+ * This is a STARTING VALUE to tune from real usage_events /
+ * background_agent_events data, not a validated target.
+ */
+export const DEFAULT_BACKGROUND_AGENT_MAX_RUN_TOKENS = 50_000_000;
+
+/**
+ * Operator override for the per-run token fuse via
+ * BACKGROUND_AGENT_MAX_RUN_TOKENS (#917). Falls back to the default for a
+ * missing, non-numeric, non-integer, or non-positive value. Mirrors the
+ * strict-parse pattern of the other background-agent getters.
+ */
+export function getBackgroundAgentMaxRunTokens(): number {
+  const raw = process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS?.trim();
+  if (!raw || !POSITIVE_INTEGER_PATTERN.test(raw)) {
+    return DEFAULT_BACKGROUND_AGENT_MAX_RUN_TOKENS;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    return DEFAULT_BACKGROUND_AGENT_MAX_RUN_TOKENS;
+  }
+
+  return parsed;
+}

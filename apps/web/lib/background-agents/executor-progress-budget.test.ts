@@ -366,6 +366,7 @@ const originalRepetitionThreshold =
 const originalStallGraceTurns = process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
 const originalStallFinalizeTurns =
   process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+const originalMaxRunTokens = process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS;
 
 function buildRun(
   overrides: Partial<BackgroundAgentRun> = {},
@@ -517,6 +518,11 @@ afterEach(() => {
   } else {
     process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS =
       originalStallFinalizeTurns;
+  }
+  if (originalMaxRunTokens === undefined) {
+    delete process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS;
+  } else {
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = originalMaxRunTokens;
   }
 });
 
@@ -671,6 +677,76 @@ describe("no-progress (git-delta) turn budget (#914)", () => {
       errorKind: "agent_turn_budget_exceeded",
     });
     expect(generate.mock.calls.length).toBe(3);
+  });
+});
+
+describe("high token backstop fuse (#917)", () => {
+  test("breach escalates with trigger token_fuse and terminates as token_budget_exceeded", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "50";
+    process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "1";
+    gitProbeMode = "changing";
+    generate.mockImplementation(async () => TOOL_CALLS_RESULT);
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(recordedEvent("background-agent.progress.token_fuse")).toMatchObject(
+      {
+        level: "warn",
+        payload: {
+          ceiling: 50,
+        },
+      },
+    );
+    const fuseEvent = recordedEvent("background-agent.progress.token_fuse");
+    expect(
+      (fuseEvent?.payload as { accumulatedTokens?: number })?.accumulatedTokens,
+    ).toBeGreaterThanOrEqual(50);
+
+    expect(recordedEvent("background-agent.progress.escalated")).toMatchObject({
+      payload: { trigger: "token_fuse" },
+    });
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "token_budget_exceeded",
+      payload: { trigger: "token_fuse" },
+    });
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "failed",
+      errorKind: "token_budget_exceeded",
+    });
+    expect(generate.mock.calls.length).toBe(4);
+  });
+
+  test("a run just under the ceiling completes normally", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "1000000";
+    gitProbeMode = "changing";
+    let step = 0;
+    generate.mockImplementation(async () => {
+      step += 1;
+      return step >= 3 ? STOP_RESULT : TOOL_CALLS_RESULT;
+    });
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(
+      recordedEvent("background-agent.progress.token_fuse"),
+    ).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+    expect(recordedStatusUpdates().at(-1)).toMatchObject({
+      status: "succeeded",
+    });
   });
 });
 

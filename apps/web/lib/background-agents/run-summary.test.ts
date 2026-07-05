@@ -836,6 +836,38 @@ describe("mergeEventsForSummary (#798 P2-1)", () => {
     ).toBe(true);
   });
 
+  // ---------------------------------------------------------------------------
+  // #917: high per-run token backstop fuse — token_budget_exceeded errorKind
+  // ---------------------------------------------------------------------------
+
+  test("#917: failed run with errorKind token_budget_exceeded — headline/blocked name it, next guides to cost/runaway review", () => {
+    const run = makeRun({
+      status: "failed",
+      errorKind: "token_budget_exceeded",
+      errorMessage: "Background agent stalled (token_fuse) after escalation.",
+    });
+
+    const summary: RunSummary = buildRunSummary({
+      run,
+      events: [],
+      outputs: [],
+      composioConfigured: false,
+    });
+
+    expect(summary.headline).toContain("token_budget_exceeded");
+    expect(
+      summary.blocked.some((b) => b.includes("token_budget_exceeded")),
+    ).toBe(true);
+    expect(
+      summary.next.some(
+        (n) =>
+          n.toLowerCase().includes("token") &&
+          (n.toLowerCase().includes("cost") ||
+            n.toLowerCase().includes("runaway")),
+      ),
+    ).toBe(true);
+  });
+
   // Data-compat regression (regression-discipline.md): a historical row with
   // the pre-#916 errorKind must still summarize without throwing.
   test("#916 data-compat: a historical row with errorKind agent_turn_budget_exceeded still summarizes without throwing", () => {

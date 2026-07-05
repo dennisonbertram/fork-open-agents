@@ -10,6 +10,7 @@ const originalRepetitionThreshold =
 const originalStallGraceTurns = process.env.BACKGROUND_AGENT_STALL_GRACE_TURNS;
 const originalStallFinalizeTurns =
   process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS;
+const originalMaxRunTokens = process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS;
 const modulePromise = import("./config");
 
 describe("background agent config", () => {
@@ -45,6 +46,11 @@ describe("background agent config", () => {
     } else {
       process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS =
         originalStallFinalizeTurns;
+    }
+    if (originalMaxRunTokens === undefined) {
+      delete process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS;
+    } else {
+      process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = originalMaxRunTokens;
     }
   });
 
@@ -318,5 +324,47 @@ describe("background agent config", () => {
     const { getBackgroundAgentStallFinalizeTurns } = await modulePromise;
     process.env.BACKGROUND_AGENT_STALL_FINALIZE_TURNS = "2.5";
     expect(getBackgroundAgentStallFinalizeTurns()).toBe(3);
+  });
+
+  test("getBackgroundAgentMaxRunTokens defaults to 50_000_000 when unset (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    delete process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS;
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens passes through a valid override (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "250000";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(250_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens falls back to the default for a decimal value (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "2.5";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens falls back to the default for non-numeric input (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "lots";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens falls back to the default for zero (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "0";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens falls back to the default for a negative value (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "-5";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
+  });
+
+  test("getBackgroundAgentMaxRunTokens falls back to the default for empty input (#917)", async () => {
+    const { getBackgroundAgentMaxRunTokens } = await modulePromise;
+    process.env.BACKGROUND_AGENT_MAX_RUN_TOKENS = "";
+    expect(getBackgroundAgentMaxRunTokens()).toBe(50_000_000);
   });
 });

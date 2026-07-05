@@ -88,6 +88,24 @@ describe("createStallEscalation", () => {
     expect(renudged.action).toBe("nudge");
   });
 
+  test("forceEscalate (#917) jumps straight to the escalating stage, skipping nudge/grace", () => {
+    const escalation = createStallEscalation({
+      graceTurns: 5,
+      finalizeTurns: 2,
+    });
+
+    escalation.forceEscalate("token_fuse");
+
+    const first = escalation.observe({ stalled: false, trigger: null });
+    expect(first.action).toBe("finalize");
+    expect(first.stage).toBe("escalating");
+    expect(first.trigger).toBe("token_fuse");
+
+    const terminated = escalation.observe({ stalled: false, trigger: null });
+    expect(terminated.action).toBe("terminate");
+    expect(terminated.trigger).toBe("token_fuse");
+  });
+
   test("escalating ignores the stalled input and counts down regardless", () => {
     const escalation = createStallEscalation({
       graceTurns: 1,
