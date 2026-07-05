@@ -5,6 +5,8 @@ mock.module("server-only", () => ({}));
 const originalAllowedRepos = process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
 const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
 const originalMaxStaleTurns = process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+const originalRepetitionThreshold =
+  process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
 const modulePromise = import("./config");
 
 describe("background agent config", () => {
@@ -23,6 +25,12 @@ describe("background agent config", () => {
       delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
     } else {
       process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = originalMaxStaleTurns;
+    }
+    if (originalRepetitionThreshold === undefined) {
+      delete process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
+    } else {
+      process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD =
+        originalRepetitionThreshold;
     }
   });
 
@@ -182,5 +190,47 @@ describe("background agent config", () => {
     const { getBackgroundAgentMaxStaleTurns } = await modulePromise;
     process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = " 12 ";
     expect(getBackgroundAgentMaxStaleTurns()).toBe(12);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold defaults to 6 when unset (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    delete process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold passes through a valid override (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "4";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(4);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold falls back to the default for a decimal value (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "2.5";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold falls back to the default for non-numeric input (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "abc";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold falls back to the default for zero (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "0";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold falls back to the default for a negative value (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "-3";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
+  });
+
+  test("getBackgroundAgentRepetitionThreshold falls back to the default for empty input (#915)", async () => {
+    const { getBackgroundAgentRepetitionThreshold } = await modulePromise;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "";
+    expect(getBackgroundAgentRepetitionThreshold()).toBe(6);
   });
 });

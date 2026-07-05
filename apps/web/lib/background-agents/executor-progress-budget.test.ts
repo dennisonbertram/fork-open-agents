@@ -210,7 +210,26 @@ const getGitHubUserProfile = mock(async () => ({
   externalUserId: "1",
 }));
 
-const TOOL_CALLS_RESULT = {
+type MockToolCall = {
+  type: string;
+  toolCallId: string;
+  toolName: string;
+  input: Record<string, unknown>;
+};
+type MockGenerateResult = {
+  finishReason: string;
+  rawFinishReason: string;
+  response: { messages: unknown[] };
+  steps: Array<{ toolCalls: MockToolCall[] }>;
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+  totalUsage: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+  };
+};
+
+const TOOL_CALLS_RESULT: MockGenerateResult = {
   finishReason: "tool-calls",
   rawFinishReason: "tool_use",
   response: { messages: [] },
@@ -218,7 +237,7 @@ const TOOL_CALLS_RESULT = {
   usage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
   totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
 };
-const STOP_RESULT = {
+const STOP_RESULT: MockGenerateResult = {
   finishReason: "stop",
   rawFinishReason: "stop",
   response: { messages: [] },
@@ -227,7 +246,7 @@ const STOP_RESULT = {
   totalUsage: { inputTokens: 12, outputTokens: 8, totalTokens: 20 },
 };
 
-const generate = mock(async () => STOP_RESULT);
+const generate = mock(async (): Promise<MockGenerateResult> => STOP_RESULT);
 
 const listBackgroundAgentEvents = mock(async () => []);
 const listBackgroundAgentComposioEvents = mock(async () => []);
@@ -342,6 +361,8 @@ const executorModulePromise = import("./executor");
 const originalAppUrl = process.env.NEXT_PUBLIC_APP_URL;
 const originalMaxTurns = process.env.BACKGROUND_AGENT_MAX_TURNS;
 const originalMaxStaleTurns = process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+const originalRepetitionThreshold =
+  process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
 
 function buildRun(
   overrides: Partial<BackgroundAgentRun> = {},
@@ -477,6 +498,12 @@ afterEach(() => {
   } else {
     process.env.BACKGROUND_AGENT_MAX_STALE_TURNS = originalMaxStaleTurns;
   }
+  if (originalRepetitionThreshold === undefined) {
+    delete process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD;
+  } else {
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD =
+      originalRepetitionThreshold;
+  }
 });
 
 afterAll(() => {
@@ -600,5 +627,107 @@ describe("no-progress (git-delta) turn budget (#914)", () => {
       errorKind: "agent_turn_budget_exceeded",
     });
     expect(generate.mock.calls.length).toBe(3);
+  });
+});
+
+describe("action-repetition / cycle detection (#915)", () => {
+  test("a repeated tool-call turn feeds the stall verdict even while the git tree keeps changing", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "4";
+    gitProbeMode = "changing";
+
+    const REPEATED_TOOL_CALLS_RESULT = {
+      ...TOOL_CALLS_RESULT,
+      steps: [
+        {
+          toolCalls: [
+            {
+              type: "tool-call",
+              toolCallId: "t",
+              toolName: "bash",
+              input: { command: "bun test" },
+            },
+          ],
+        },
+      ],
+    };
+    generate.mockImplementation(async () => REPEATED_TOOL_CALLS_RESULT);
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(generate.mock.calls.length).toBe(4);
+
+    const repetitionEvent = recordedEvent(
+      "background-agent.progress.repetition_detected",
+    );
+    expect(repetitionEvent).toBeTruthy();
+    expect(repetitionEvent).toMatchObject({ level: "warn" });
+    const payload = repetitionEvent?.payload as {
+      toolName?: string;
+      repeatCount?: number;
+      cycleLength?: number | null;
+    };
+    expect(payload.toolName).toBe("bash");
+    expect(payload.repeatCount).toBe(4);
+    expect(payload.cycleLength).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain("bun test");
+
+    expect(recordedEvent("background-agent.run.failed")).toMatchObject({
+      status: "failed",
+      errorKind: "agent_turn_budget_exceeded",
+    });
+  });
+
+  test("repeated check command interleaved with distinct edits stays green (false-positive guard)", async () => {
+    delete process.env.BACKGROUND_AGENT_MAX_TURNS;
+    delete process.env.BACKGROUND_AGENT_MAX_STALE_TURNS;
+    process.env.BACKGROUND_AGENT_REPETITION_THRESHOLD = "3";
+    gitProbeMode = "changing";
+
+    let step = 0;
+    generate.mockImplementation(async () => {
+      step += 1;
+      if (step > 3) {
+        return STOP_RESULT;
+      }
+      return {
+        ...TOOL_CALLS_RESULT,
+        steps: [
+          {
+            toolCalls: [
+              {
+                type: "tool-call",
+                toolCallId: `edit-${step}`,
+                toolName: "edit_file",
+                input: { path: `file-${step}.ts`, content: `content-${step}` },
+              },
+              {
+                type: "tool-call",
+                toolCallId: `test-${step}`,
+                toolName: "bash",
+                input: { command: "bun test" },
+              },
+            ],
+          },
+        ],
+      };
+    });
+
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "workflow-1",
+    });
+
+    expect(
+      recordedEvent("background-agent.progress.repetition_detected"),
+    ).toBeUndefined();
+    expect(recordedEvent("background-agent.run.failed")).toBeUndefined();
+    expect(recordedEvent("background-agent.agent.completed")).toBeTruthy();
   });
 });
