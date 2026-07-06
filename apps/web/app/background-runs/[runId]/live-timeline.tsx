@@ -13,9 +13,11 @@ function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
   const command = stringifyPayloadValue(event.payload.command);
   const stdout = stringifyPayloadValue(event.payload.stdout);
   const stderr = stringifyPayloadValue(event.payload.stderr);
-  const durationMs = stringifyPayloadValue(event.payload.durationMs);
 
-  if (!(command || stdout || stderr || durationMs)) {
+  // Duration is shown inline in the event footer, not here — an event whose
+  // only payload is a durationMs should render no box at all (avoids an
+  // orphaned "14642ms" panel with no context).
+  if (!(command || stdout || stderr)) {
     return null;
   }
 
@@ -26,9 +28,6 @@ function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
           <span className="select-none text-zinc-600">$ </span>
           {command}
         </p>
-      )}
-      {durationMs && (
-        <p className="font-mono text-[10px] text-zinc-500">{durationMs}ms</p>
       )}
       {stdout && (
         <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all rounded bg-black/60 p-2 font-mono text-[11px] text-zinc-300">
@@ -122,44 +121,49 @@ export function LiveTimeline({
         <div
           ref={scrollRef}
           onScroll={handleScroll}
-          className="max-h-[32rem] space-y-2 overflow-y-auto overflow-x-hidden rounded-b-md bg-zinc-950 p-3"
+          className="max-h-[32rem] min-h-[20rem] space-y-2 overflow-y-auto overflow-x-hidden rounded-b-md bg-zinc-950 p-3"
         >
-          {ordered.map((event) => (
-            <div
-              key={event.id}
-              className="min-w-0 rounded border border-white/5 bg-white/[0.02] px-3 py-2"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <p className="break-words text-[13px] font-medium text-zinc-100">
-                    {event.summary ?? event.eventName}
-                  </p>
-                  <p className="mt-0.5 break-all font-mono text-[10px] text-zinc-500">
-                    {event.eventName}
-                  </p>
+          {ordered.map((event) => {
+            const durationMs = stringifyPayloadValue(event.payload.durationMs);
+            return (
+              <div
+                key={event.id}
+                className="min-w-0 rounded border border-white/5 bg-white/[0.02] px-3 py-2"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-[13px] font-medium text-zinc-100">
+                      {event.summary ?? event.eventName}
+                    </p>
+                    <p className="mt-0.5 break-all font-mono text-[10px] text-zinc-500">
+                      {event.eventName}
+                    </p>
+                  </div>
+                  <StatusPill status={event.status} />
                 </div>
-                <StatusPill status={event.status} />
+                <CommandOutput event={event} />
+                {/* Only what VARIES per event: time, duration, and anomalies.
+                    Run-level metadata (workflow run, request id, sandbox) lives
+                    once in the Run/Debug sidebar; redaction is surfaced only
+                    when it is NOT "passed". */}
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-zinc-500">
+                  <Clock3 className="h-3 w-3 shrink-0" />
+                  <span>{formatDate(event.createdAt)}</span>
+                  {durationMs && (
+                    <span className="text-zinc-600">· {durationMs}ms</span>
+                  )}
+                  {event.redactionStatus !== "passed" && (
+                    <span className="text-amber-400">
+                      redaction {event.redactionStatus}
+                    </span>
+                  )}
+                  {event.errorKind && (
+                    <span className="text-red-400">{event.errorKind}</span>
+                  )}
+                </div>
               </div>
-              <CommandOutput event={event} />
-              <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-zinc-500">
-                <Clock3 className="h-3 w-3 shrink-0" />
-                <span>{formatDate(event.createdAt)}</span>
-                {event.workflowRunId && (
-                  <span className="break-all">
-                    workflow {event.workflowRunId}
-                  </span>
-                )}
-                {event.requestId && (
-                  <span className="break-all">request {event.requestId}</span>
-                )}
-                {event.sandboxName && (
-                  <span className="break-all">sandbox {event.sandboxName}</span>
-                )}
-                <span>redaction {event.redactionStatus}</span>
-                {event.errorKind && <span>{event.errorKind}</span>}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>
