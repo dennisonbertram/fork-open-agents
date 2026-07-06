@@ -65,12 +65,28 @@ export function LiveTimeline({
 
   const ordered = useMemo(
     () =>
-      [...events].sort(
-        (a, b) =>
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
-      ),
+      [...events].sort((a, b) => {
+        // Prefer the monotonic per-run `sequence` (the stream endpoint orders
+        // by it); two events can share a createdAt for fast/concurrent writes,
+        // in which case sorting by timestamp alone would fall back to arbitrary
+        // API order. Fall back to createdAt for legacy rows without a sequence.
+        if (typeof a.sequence === "number" && typeof b.sequence === "number") {
+          return a.sequence - b.sequence;
+        }
+        return (
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      }),
     [events],
   );
+
+  // Identify the newest event so auto-scroll follows it even when the event
+  // count is capped (the non-SSE poll returns a newest-200 window, so
+  // `ordered.length` can stay 200 while newer rows replace older ones).
+  const newest = ordered.at(-1);
+  const newestKey = newest
+    ? `${newest.sequence ?? newest.createdAt}:${newest.id}`
+    : null;
 
   // Auto-scroll to the newest event, but only when the viewer is already
   // pinned to the bottom (so scrolling up to inspect history isn't interrupted).
@@ -79,7 +95,7 @@ export function LiveTimeline({
     if (el && stickToBottom.current) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [ordered.length]);
+  }, [newestKey]);
 
   const handleScroll = () => {
     const el = scrollRef.current;

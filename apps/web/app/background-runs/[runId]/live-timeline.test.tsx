@@ -41,6 +41,32 @@ describe("LiveTimeline", () => {
     expect(html.indexOf("NEWER")).toBeGreaterThan(html.indexOf("OLDER"));
   });
 
+  test("orders by monotonic sequence when present, not just createdAt", () => {
+    const html = renderToStaticMarkup(
+      <LiveTimeline
+        isLive
+        statusLabel="Refreshing"
+        events={[
+          // Same createdAt; sequence says SEQ5 is newer than SEQ2. Passed out
+          // of order — sort must use sequence, not the arbitrary API order.
+          evt({
+            id: "b",
+            createdAt: "2026-07-05T19:38:02Z",
+            sequence: 5,
+            summary: "SEQ5",
+          }),
+          evt({
+            id: "a",
+            createdAt: "2026-07-05T19:38:02Z",
+            sequence: 2,
+            summary: "SEQ2",
+          }),
+        ]}
+      />,
+    );
+    expect(html.indexOf("SEQ5")).toBeGreaterThan(html.indexOf("SEQ2"));
+  });
+
   test("contains overflow the long command without clipping or horizontal overflow", () => {
     const html = renderToStaticMarkup(
       <LiveTimeline
