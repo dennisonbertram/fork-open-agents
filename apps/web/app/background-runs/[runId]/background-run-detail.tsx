@@ -330,7 +330,35 @@ export function BackgroundRunDetail({
     return [...detail.events, ...extra];
   }, [sseEnabled, detail.events, streamEvents]);
 
-  const { run, events } = { run: mergedRun, events: mergedEvents };
+  // Backfill run-level identifiers (workflow run / sandbox / request id) from
+  // the stream events when the run object itself hasn't been populated yet.
+  // With SSE enabled, SWR polling is suppressed and `mergedRun` only picks up
+  // the terminal status — so a queued run opened before the executor set these
+  // fields would otherwise show them nowhere (they were removed from the
+  // per-event footer to cut noise, and the sidebar's copy is still null).
+  const runWithLiveIds: SerializedBackgroundRun = useMemo(() => {
+    if (
+      mergedRun.workflowRunId &&
+      mergedRun.sandboxName &&
+      mergedRun.requestId
+    ) {
+      return mergedRun;
+    }
+    let workflowRunId = mergedRun.workflowRunId;
+    let sandboxName = mergedRun.sandboxName;
+    let requestId = mergedRun.requestId;
+    for (const event of mergedEvents) {
+      workflowRunId ||= event.workflowRunId;
+      sandboxName ||= event.sandboxName;
+      requestId ||= event.requestId;
+      if (workflowRunId && sandboxName && requestId) {
+        break;
+      }
+    }
+    return { ...mergedRun, workflowRunId, sandboxName, requestId };
+  }, [mergedRun, mergedEvents]);
+
+  const { run, events } = { run: runWithLiveIds, events: mergedEvents };
   const runCost = formatRunCost(events);
   const isLive = run.status === "queued" || run.status === "running";
   const streamStatusLabel =
@@ -508,15 +536,20 @@ export function BackgroundRunDetail({
             <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
 
             <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Outputs</h2>
+                {outputs.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {outputs.length}
+                  </span>
+                )}
               </div>
               {outputs.length === 0 ? (
                 <div className="p-4 text-sm text-muted-foreground">
                   No outputs recorded.
                 </div>
               ) : (
-                <div className="divide-y divide-border">
+                <div className="max-h-[24rem] divide-y divide-border overflow-y-auto">
                   {outputs.map((output) => (
                     <div key={output.id} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-3">
