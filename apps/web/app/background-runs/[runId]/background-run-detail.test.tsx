@@ -117,14 +117,15 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("bun --bun run ci");
     expect(html).toContain("1234ms");
     expect(html).toContain("all tests passed");
-    expect(html).toContain("workflow workflow-1");
-    expect(html).toContain("sandbox background_agent_run_123");
+    // Run-level metadata (workflow run, request id, sandbox) is shown ONCE in
+    // the Run/Debug sidebar + proof strip, not repeated on every timeline event.
+    expect(html).toContain("workflow-1");
+    expect(html).toContain("background_agent_run_123");
     expect(html).toContain("Debug");
     expect(html).toContain("agent-1:trigger-1:delivery-123");
     expect(html).toContain("delivery-123");
     expect(html).toContain("req_123");
     expect(html).toContain("PR #7");
-    expect(html).toContain("redaction passed");
     expect(html).toContain("https://github.com/acme/widgets/pull/42");
     expect(html).toContain("#42");
     expect(html).toContain("ready_pr");

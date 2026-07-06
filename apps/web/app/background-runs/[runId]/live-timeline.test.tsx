@@ -97,6 +97,43 @@ describe("LiveTimeline", () => {
     );
   });
 
+  test("strips repeated run-level metadata per event; surfaces only anomalies + inline duration", () => {
+    const html = renderToStaticMarkup(
+      <LiveTimeline
+        isLive
+        statusLabel="Refreshing"
+        events={[
+          evt({
+            id: "a",
+            createdAt: "2026-07-05T19:38:02Z",
+            summary: "step",
+            workflowRunId: "wrun_X",
+            sandboxName: "sbx_Y",
+            requestId: "req_Z",
+            redactionStatus: "passed",
+            payload: { durationMs: 8456 },
+          }),
+          evt({
+            id: "b",
+            createdAt: "2026-07-05T19:38:03Z",
+            summary: "leaky",
+            redactionStatus: "failed",
+          }),
+        ]}
+      />,
+    );
+    // Run-level constants are NOT repeated on each event (they live in the
+    // Run/Debug sidebar).
+    expect(html).not.toContain("workflow wrun_X");
+    expect(html).not.toContain("sandbox sbx_Y");
+    expect(html).not.toContain("request req_Z");
+    // A "passed" redaction is noise (hidden); a non-passed one is surfaced.
+    expect(html).not.toContain("redaction passed");
+    expect(html).toContain("redaction failed");
+    // Duration is shown inline as supplemental info, not an orphan box.
+    expect(html).toContain("8456ms");
+  });
+
   test("renders empty state when there are no events", () => {
     const html = renderToStaticMarkup(
       <LiveTimeline isLive={false} statusLabel={null} events={[]} />,

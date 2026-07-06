@@ -508,15 +508,20 @@ export function BackgroundRunDetail({
             <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
 
             <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Outputs</h2>
+                {outputs.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {outputs.length}
+                  </span>
+                )}
               </div>
               {outputs.length === 0 ? (
                 <div className="p-4 text-sm text-muted-foreground">
                   No outputs recorded.
                 </div>
               ) : (
-                <div className="divide-y divide-border">
+                <div className="max-h-[24rem] divide-y divide-border overflow-y-auto">
                   {outputs.map((output) => (
                     <div key={output.id} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-3">
