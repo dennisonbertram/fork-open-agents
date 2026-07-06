@@ -330,7 +330,35 @@ export function BackgroundRunDetail({
     return [...detail.events, ...extra];
   }, [sseEnabled, detail.events, streamEvents]);
 
-  const { run, events } = { run: mergedRun, events: mergedEvents };
+  // Backfill run-level identifiers (workflow run / sandbox / request id) from
+  // the stream events when the run object itself hasn't been populated yet.
+  // With SSE enabled, SWR polling is suppressed and `mergedRun` only picks up
+  // the terminal status — so a queued run opened before the executor set these
+  // fields would otherwise show them nowhere (they were removed from the
+  // per-event footer to cut noise, and the sidebar's copy is still null).
+  const runWithLiveIds: SerializedBackgroundRun = useMemo(() => {
+    if (
+      mergedRun.workflowRunId &&
+      mergedRun.sandboxName &&
+      mergedRun.requestId
+    ) {
+      return mergedRun;
+    }
+    let workflowRunId = mergedRun.workflowRunId;
+    let sandboxName = mergedRun.sandboxName;
+    let requestId = mergedRun.requestId;
+    for (const event of mergedEvents) {
+      workflowRunId ||= event.workflowRunId;
+      sandboxName ||= event.sandboxName;
+      requestId ||= event.requestId;
+      if (workflowRunId && sandboxName && requestId) {
+        break;
+      }
+    }
+    return { ...mergedRun, workflowRunId, sandboxName, requestId };
+  }, [mergedRun, mergedEvents]);
+
+  const { run, events } = { run: runWithLiveIds, events: mergedEvents };
   const runCost = formatRunCost(events);
   const isLive = run.status === "queued" || run.status === "running";
   const streamStatusLabel =
