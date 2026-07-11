@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeRunsRefreshInterval,
   fetchRunsWithTimeout,
+  shouldShowRunsPollingPaused,
 } from "./use-runs-list";
 
 describe("Runs list polling", () => {
@@ -41,5 +42,17 @@ describe("Runs list polling", () => {
     await expect(
       fetchRunsWithTimeout("/api/runs", { fetchImpl, timeoutMs: 5 }),
     ).rejects.toThrow();
+  });
+
+  test("never shows a paused-live-updates claim for waiting or completed data", () => {
+    expect(
+      shouldShowRunsPollingPaused(
+        [{ state: "waiting" }, { state: "finished" }],
+        true,
+      ),
+    ).toBe(false);
+    expect(shouldShowRunsPollingPaused([{ state: "running" }], true)).toBe(
+      true,
+    );
   });
 });

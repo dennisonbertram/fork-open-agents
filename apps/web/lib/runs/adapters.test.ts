@@ -86,6 +86,11 @@ describe("normalized run adapters", () => {
         startedAt: null,
         finishedAt: "2026-07-11T10:05:00.000Z",
       },
+      progress: {
+        currentStepId: null,
+        completedSteps: 0,
+        totalSteps: 1,
+      },
     });
   });
 

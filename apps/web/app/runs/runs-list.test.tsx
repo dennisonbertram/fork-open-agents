@@ -48,6 +48,41 @@ function populatedState() {
             outputUrl: null,
           },
         },
+        {
+          id: "agent_loop:loop-run-1",
+          source: "agent_loop",
+          sourceId: "loop-run-1",
+          nativeStatus: "completed",
+          nativeSource: "manual",
+          title: "Validate release",
+          state: "finished",
+          outcome: "succeeded",
+          health: "ok",
+          attentionReasons: [],
+          repository: { owner: "acme", name: "shop" },
+          detailUrl: "/loops/loop-1/runs/loop-run-1",
+          timestamps: {
+            createdAt: "2026-07-11T09:00:00.000Z",
+            updatedAt: "2026-07-11T09:30:00.000Z",
+            startedAt: "2026-07-11T09:05:00.000Z",
+            finishedAt: "2026-07-11T09:30:00.000Z",
+          },
+          metadata: {},
+          automation: { source: "agent_loop", sourceId: "loop-1" },
+          automationName: "Validate release",
+          trigger: { id: null, source: "manual", kind: null },
+          progress: {
+            currentStepId: null,
+            completedSteps: 3,
+            totalSteps: null,
+          },
+          evidence: {
+            requestId: "request-2",
+            workflowRunId: null,
+            sandboxName: null,
+            outputUrl: null,
+          },
+        },
       ],
       sourceStatus: [
         { source: "background_agent", status: "ok", itemCount: 1 },
@@ -88,12 +123,19 @@ describe("RunsList", () => {
     expect(html).toContain("Running");
     expect(html).toContain("Needs attention");
     expect(html).toContain("Single-step");
+    expect(html).toContain("Background agent");
+    expect(html).toContain("Agent loop");
+    expect(html).toContain("Multi-step");
     expect(html).toContain("acme/shop");
     expect(html).toContain("github.pull_request");
     expect(html).toContain("Some run history is unavailable");
     expect(html).toContain('href="/background-runs/bg-1"');
+    expect(html).toContain('href="/loops/loop-1/runs/loop-run-1"');
+    expect(html).toContain("Created Jul 11");
+    expect(html).toContain("Updated Jul 11");
     expect(html).toContain("automationSource=background_agent");
     expect(html).toContain("repoOwner=acme");
+    expect(html).toContain("triggerId=trigger-1");
   });
 
   test.each([

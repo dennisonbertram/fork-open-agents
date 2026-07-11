@@ -175,7 +175,11 @@ describe("Runs source loaders", () => {
   test("binds the authenticated owner in both source queries", async () => {
     const { createDbRunSourceLoaders } = await storePromise;
     const loaders = createDbRunSourceLoaders({ userId: "user-1" });
-    const query = { filters: { view: "all" as const }, limit: 26 };
+    const query = {
+      filters: { view: "all" as const },
+      limit: 26,
+      now: new Date("2026-07-11T12:00:00.000Z"),
+    };
 
     await loaders.background_agent(query);
     await loaders.agent_loop(query);
@@ -225,7 +229,11 @@ describe("Runs source loaders", () => {
     const { createDbRunSourceLoaders } = await storePromise;
     const items = await createDbRunSourceLoaders({
       userId: "user-1",
-    }).background_agent({ filters: { view: "all" }, limit: 26 });
+    }).background_agent({
+      filters: { view: "all" },
+      limit: 26,
+      now: new Date("2026-07-11T12:00:00.000Z"),
+    });
     const query = records.find(
       (record) => record.fromTable === backgroundAgentRuns,
     );
