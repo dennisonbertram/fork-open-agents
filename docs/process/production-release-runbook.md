@@ -171,13 +171,26 @@ authenticated account status/diagnosis proof), `background-agents-journey`
 (the full create/enable/dispatch/cleanup background-agent journey from
 `background-agents:journey-proof`), and `loops-journey` (the equivalent
 agent-loop journey from `loops:journey-proof`) — all gated by the same four
-values for a disposable production test identity. Each leg runs as an
-independent `continue-on-error: true` step; the workflow only fails if at
-least one leg's step outcome is `failure`.
+values for a disposable production test identity. Scheduled and manually
+dispatched monitoring always sets `PRODUCTION_CANARY_REQUIRE_CONFIG=true`.
+Each leg runs as an independent `continue-on-error: true` step so aggregation
+can still run, but it captures the real command exit before the pipeline and
+exports one of these classifications:
+
+- exit `0`: `passed` — the journey actually executed and passed;
+- exit `1`: `failed` — an executed journey failed or timed out;
+- exit `2`: `blocked_by_configuration` — required configuration was missing or
+  malformed, so no production proof occurred.
+
+The always-run aggregator writes all three classifications and the workflow run
+URL to the GitHub step summary. It opens/updates the deduplicated alert for a
+failed or blocked leg, and a final gate keeps the workflow red unless all three
+classifications are `passed`. Local CLI diagnostics remain backward compatible:
+without strict mode a configuration block is printed loudly but exits `0`.
 
 Provisioning (all four values are required for any leg to run for real;
-otherwise every leg reports `blocked_by_configuration`, which is not a
-failure):
+otherwise every production-monitor leg reports `blocked_by_configuration`, the
+workflow remains red, and no recovery/proof claim is emitted):
 
 - GitHub Actions **variables** (repo settings → Secrets and variables →
   Actions → Variables):
@@ -215,11 +228,17 @@ mixed with repository entries. Exact `*` is a deliberate allow-all override;
 do not use it to bypass repository inventory before a release. Readiness
 reports only policy state and valid-entry count, never raw malformed values.
 
-Debugging blocked vs. failed: open the step log for the leg in question and
-look for the literal line `Status: blocked_by_configuration` — that means the
-leg was skipped because configuration is unset, not that it failed a real
-check. A green checkmark at the workflow level can mean either "passed" or
-"blocked by configuration"; only the step logs distinguish them.
+Debugging blocked vs. failed: inspect the workflow step summary first, which
+lists `account-status`, `background-agents-journey`, and `loops-journey` with
+their safe classification and workflow run URL. `blocked_by_configuration`
+means the leg was skipped because configuration was missing or malformed;
+`failed` means a configured journey executed and failed/timed out, or the step
+could not export a valid classification. Then inspect only the named leg and
+the deduplicated production-ops issue. Never print the cookie or headers.
+
+Recovery is emitted only when all three classifications are `passed`, using the
+copy "All three authenticated production canary journeys passed." A blocked leg
+is never treated as recovered, green, or production proof.
 
 Failure classification: both journey legs intentionally run with
 `BACKGROUND_AGENT_PROOF_REQUIRE_SUCCEEDED` /
