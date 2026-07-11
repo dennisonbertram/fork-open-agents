@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
+mock.module("server-only", () => ({}));
+
 const getOwnedBackgroundAgentRunWithAgent = mock(
   async (): Promise<unknown> => undefined,
 );
 const listBackgroundAgentEvents = mock(async (): Promise<unknown[]> => []);
 const listBackgroundAgentOutputs = mock(async (): Promise<unknown[]> => []);
+const getOwnedAgentLoopRunWithLoop = mock(
+  async (): Promise<unknown> => undefined,
+);
 const getAgentLoopRunWithLoop = mock(async (): Promise<unknown> => undefined);
 const listAgentLoopComposioEvents = mock(async (): Promise<unknown[]> => []);
 const listAgentLoopEvents = mock(async (): Promise<unknown[]> => []);
@@ -18,6 +23,7 @@ mock.module("@/lib/background-agents/store", () => ({
 }));
 
 mock.module("@/lib/agent-loops/store", () => ({
+  getOwnedAgentLoopRunWithLoop,
   getAgentLoopRunWithLoop,
   listAgentLoopComposioEvents,
   listAgentLoopEvents,
@@ -36,6 +42,8 @@ beforeEach(() => {
   listBackgroundAgentOutputs.mockResolvedValue([]);
   getAgentLoopRunWithLoop.mockReset();
   getAgentLoopRunWithLoop.mockResolvedValue(undefined);
+  getOwnedAgentLoopRunWithLoop.mockReset();
+  getOwnedAgentLoopRunWithLoop.mockResolvedValue(undefined);
   listAgentLoopComposioEvents.mockReset();
   listAgentLoopComposioEvents.mockResolvedValue([]);
   listAgentLoopEvents.mockReset();
@@ -61,10 +69,6 @@ describe("owned Run detail loaders", () => {
   });
 
   test("wrong-user loop ids return the same null result without probing child evidence", async () => {
-    getAgentLoopRunWithLoop.mockResolvedValue({
-      run: { id: "run-1", userId: "user-2" },
-      loop: { id: "loop-1" },
-    });
     const { loadOwnedLoopRunDetail } = await loadersModule;
 
     const result = await loadOwnedLoopRunDetail({
@@ -73,6 +77,11 @@ describe("owned Run detail loaders", () => {
     });
 
     expect(result).toBeNull();
+    expect(getOwnedAgentLoopRunWithLoop).toHaveBeenCalledWith({
+      userId: "user-1",
+      runId: "run-1",
+    });
+    expect(getAgentLoopRunWithLoop).not.toHaveBeenCalled();
     expect(listAgentLoopComposioEvents).not.toHaveBeenCalled();
     expect(listAgentLoopEvents).not.toHaveBeenCalled();
     expect(listStepRunsForRun).not.toHaveBeenCalled();
@@ -80,7 +89,7 @@ describe("owned Run detail loaders", () => {
   });
 
   test("owned loop first render merges source-scoped Composio evidence like the poll API", async () => {
-    getAgentLoopRunWithLoop.mockResolvedValue({
+    getOwnedAgentLoopRunWithLoop.mockResolvedValue({
       run: { id: "run-1", userId: "user-1" },
       loop: {
         id: "loop-1",
@@ -99,7 +108,10 @@ describe("owned Run detail loaders", () => {
       runId: "run-1",
     });
 
-    expect(result?.events).toEqual([{ id: "event-1" }, { id: "composio-1" }]);
+    expect(result?.events.map((event) => event.id)).toEqual([
+      "event-1",
+      "composio-1",
+    ]);
     expect(listAgentLoopComposioEvents).toHaveBeenCalledWith("run-1");
   });
 });

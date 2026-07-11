@@ -1,6 +1,14 @@
 import { act, registerDomTestHooks, render, waitFor } from "@/tests/dom";
 
-import { afterAll, beforeAll, describe, expect, mock, test } from "bun:test";
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  mock,
+  test,
+} from "bun:test";
 import type { BackgroundRunDetailData } from "./types";
 
 registerDomTestHooks();
@@ -96,6 +104,11 @@ beforeAll(() => {
   globalThis.fetch = fetchDetail as unknown as typeof fetch;
 });
 
+beforeEach(() => {
+  fetchDetail.mockReset();
+  fetchDetail.mockImplementation(async () => Response.json(finalData));
+});
+
 afterAll(() => {
   globalThis.fetch = originalFetch;
   if (originalSseFlag === undefined) {
@@ -122,8 +135,27 @@ describe("background terminal SSE evidence", () => {
         "/api/background-agent-runs/run-1",
       );
       expect(view.getByText("Run succeeded — created PR #43")).toBeTruthy();
-      expect(view.getByText("ready_pr")).toBeTruthy();
+      expect(view.getAllByText("ready_pr").length).toBeGreaterThan(0);
       expect(view.getByText("workflow-final")).toBeTruthy();
+    });
+  });
+
+  test("keeps existing evidence and surfaces a final-refresh failure", async () => {
+    fetchDetail.mockRejectedValueOnce(new Error("temporary failure"));
+    const { BackgroundRunDetail } = await detailModule;
+    const view = render(<BackgroundRunDetail initialData={initialData} />);
+
+    await act(async () => {
+      onTerminal?.("succeeded");
+    });
+
+    await waitFor(() => {
+      expect(
+        view.getByText(
+          "Final evidence refresh failed. Last known evidence is shown.",
+        ),
+      ).toBeTruthy();
+      expect(view.getByText("No outputs recorded.")).toBeTruthy();
     });
   });
 });

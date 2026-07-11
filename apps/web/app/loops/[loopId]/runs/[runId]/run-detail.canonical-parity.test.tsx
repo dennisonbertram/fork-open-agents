@@ -117,7 +117,7 @@ function makeDetail(
         stepRunId: "step-1",
         nodeId: "start",
         eventName: "agent-loop.step.composio.not_connected",
-        status: "warning",
+        status: "failed",
         level: "warn",
         summary: "Tool unavailable",
         payload: { disconnectedToolkits: ["slack"] },

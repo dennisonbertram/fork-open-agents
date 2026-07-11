@@ -31,6 +31,7 @@ describe("Run detail summary adapters", () => {
         errorKind: null,
         errorMessage: "token=raw-secret",
         createdAt: "2026-07-11T10:00:00.000Z",
+        updatedAt: "2026-07-11T10:00:00.000Z",
         startedAt: "2026-07-11T10:01:00.000Z",
         finishedAt: null,
       },
@@ -58,11 +59,15 @@ describe("Run detail summary adapters", () => {
       outputs: [],
     } satisfies BackgroundRunDetailData;
 
-    const summary = buildBackgroundRunDetailSummary(data);
+    const summary = buildBackgroundRunDetailSummary(data, {
+      now: new Date("2026-07-11T18:00:00.000Z"),
+    });
     const serialized = JSON.stringify(summary);
 
     expect(summary.automation.name).toBe("Review PRs");
     expect(summary.evidence.workflowRunId).toBe("workflow-1");
+    expect(summary.health).toBe("needs_attention");
+    expect(summary.attentionReasons).toContain("stale");
     expect(serialized).not.toContain("raw-secret");
     expect(serialized).not.toContain("private prompt");
     expect(serialized).not.toContain("curl");
@@ -113,5 +118,50 @@ describe("Run detail summary adapters", () => {
     expect(serialized).not.toContain("private loop prompt");
     expect(serialized).not.toContain("raw-token");
     expect(serialized).not.toContain("maxIterations");
+  });
+
+  test("queued loops use the same stale attention window as the Runs list", () => {
+    const data = {
+      run: {
+        id: "run-3",
+        loopId: "loop-1",
+        userId: "user-1",
+        status: "queued",
+        definitionSnapshot: { nodes: [], edges: [] },
+        currentNodeId: null,
+        currentStepRunId: null,
+        iterationCount: 0,
+        stepCount: 0,
+        context: {},
+        source: "manual",
+        triggerId: null,
+        idempotencyKey: "key-3",
+        errorKind: null,
+        errorMessage: null,
+        workflowRunId: null,
+        requestId: null,
+        startedAt: null,
+        finishedAt: null,
+        createdAt: new Date("2026-07-11T10:00:00.000Z"),
+        updatedAt: new Date("2026-07-11T10:00:00.000Z"),
+      },
+      loop: {
+        id: "loop-1",
+        name: "Release safely",
+        repoOwner: "acme",
+        repoName: "shop",
+        guardrails: null,
+      },
+      steps: [],
+      events: [],
+      watchdogRuns: [],
+    } satisfies GetAgentLoopRunDetailResponse;
+
+    const summary = buildLoopRunDetailSummary(data, {
+      now: new Date("2026-07-11T18:00:00.000Z"),
+    });
+
+    expect(summary.health).toBe("needs_attention");
+    expect(summary.attentionReasons).toEqual(["stale"]);
   });
 });
