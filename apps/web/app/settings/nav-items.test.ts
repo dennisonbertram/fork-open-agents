@@ -146,6 +146,16 @@ describe("settings nav data", () => {
     expect(item?.id).toBe("loops");
   });
 
+  test("NAV-012: Automations replaces duplicate background-agent and Loops entries", () => {
+    const toolsGroup = SETTINGS_NAV_GROUPS.find((group) => group.id === "tools");
+    const ids = toolsGroup?.items.map((item) => item.id);
+
+    expect(ids).toContain("automations");
+    expect(ids).not.toContain("background-agents");
+    expect(ids).not.toContain("loops");
+    expect(findActiveNavItem("/automations")?.label).toBe("Automations");
+  });
+
   // NAV-010 (#805): Repositories item exists in the tools group and points
   // at the repositories index route.
   test("NAV-010: repositories item is present in the tools group with href /settings/repositories", () => {
