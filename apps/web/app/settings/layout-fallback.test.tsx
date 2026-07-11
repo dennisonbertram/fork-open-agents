@@ -56,7 +56,7 @@ describe("Settings layout fallback metadata", () => {
     const { default: SettingsLayout } = await layoutModulePromise;
 
     const html = renderToStaticMarkup(
-      createElement(SettingsLayout, { children: "settings-content" }),
+      <SettingsLayout>settings-content</SettingsLayout>,
     );
 
     expect(html).toContain("Background agents");

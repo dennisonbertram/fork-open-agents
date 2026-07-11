@@ -20,13 +20,10 @@ import { ComposioSectionSkeleton } from "./composio-section";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
-import { findActiveNavItem } from "./nav-items";
+import { findActiveNavItem, resolveSettingsFallbackRouteId } from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 import { SettingsPageHeader } from "./_components/page-header";
-import {
-  getSettingsRouteMetadata,
-  type SettingsRouteId,
-} from "./settings-routes";
+import { getSettingsRouteMetadata } from "./settings-routes";
 import { SettingsNav } from "./settings-nav";
 import { SkillsSectionSkeleton } from "./skills/skills-section";
 
@@ -184,10 +181,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isAdmin } = useSession();
   const activeItem = findActiveNavItem(pathname);
-  const fallbackRouteId =
-    activeItem?.id && activeItem.id !== "loops"
-      ? (activeItem.id as SettingsRouteId)
-      : "profile";
+  const fallbackRouteId = resolveSettingsFallbackRouteId(pathname);
   const fallbackRoute = getSettingsRouteMetadata(fallbackRouteId);
   const fallbackContent =
     activeItem?.id === "connections" ? (

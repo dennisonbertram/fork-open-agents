@@ -111,3 +111,16 @@ export function findActiveNavItem(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
 }
+
+/**
+ * Resolve metadata for the Settings auth-loading fallback. External product
+ * destinations may own nav state without being SettingsRouteId values.
+ */
+export function resolveSettingsFallbackRouteId(
+  pathname: string,
+  groups = SETTINGS_NAV_GROUPS,
+): SettingsRouteId {
+  const activeId = findActiveNavItem(pathname, groups)?.id;
+  if (activeId === "automations") return "background-agents";
+  return (activeId as SettingsRouteId | undefined) ?? "profile";
+}
