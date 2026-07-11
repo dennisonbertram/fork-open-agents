@@ -14,7 +14,10 @@ import type {
   AutomationSourceStatus,
   ListAutomationsResponse,
 } from "@/lib/automations/types";
-import { canonicalNewAutomationUrl } from "@/lib/automations/definition-routes";
+import {
+  canonicalNewAutomationUrl,
+  canonicalNewLoopAutomationUrl,
+} from "@/lib/automations/definition-routes";
 import { cn } from "@/lib/utils";
 
 type AutomationsListProps = {
@@ -42,14 +45,12 @@ function createLinks(filters: AutomationFilters) {
   if (!filters.repository) {
     return {
       single: canonicalNewAutomationUrl(),
-      multi: "/loops/new",
+      multi: canonicalNewLoopAutomationUrl(),
     };
   }
-  const owner = encodeURIComponent(filters.repository.owner);
-  const name = encodeURIComponent(filters.repository.name);
   return {
     single: canonicalNewAutomationUrl(filters.repository),
-    multi: `/loops/new?repoOwner=${owner}&repoName=${name}`,
+    multi: canonicalNewLoopAutomationUrl(filters.repository),
   };
 }
 

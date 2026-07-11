@@ -1,4 +1,5 @@
 import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
+import { canonicalLoopAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import type { BackgroundRunDetailData } from "@/app/background-runs/[runId]/types";
 import {
   DEFAULT_RUN_STALE_AFTER_MS,
@@ -58,7 +59,10 @@ function toIso(value: Date | string | null): string | null {
   return value ? new Date(value).toISOString() : null;
 }
 
-type SummaryOptions = { now?: Date };
+type SummaryOptions = {
+  now?: Date;
+  variant?: "legacy" | "canonical";
+};
 
 function isStale(value: Date | string, options: SummaryOptions): boolean {
   const updatedAt = new Date(value).getTime();
@@ -133,7 +137,10 @@ export function buildLoopRunDetailSummary(
     automation: {
       name: loop.name,
       sourceId: loop.id,
-      href: `/loops/${encodeURIComponent(loop.id)}`,
+      href:
+        options.variant === "canonical"
+          ? canonicalLoopAutomationDetailUrl(loop.id)
+          : `/loops/${encodeURIComponent(loop.id)}`,
     },
     repository: {
       owner: loop.repoOwner,

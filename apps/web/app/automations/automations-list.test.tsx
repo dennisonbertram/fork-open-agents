@@ -130,11 +130,12 @@ describe("AutomationsList", () => {
     expect(html).toContain("Needs attention");
   });
 
-  test("routes create actions through the canonical single-step Automation entry", () => {
+  test("routes create actions through canonical Automation entries", () => {
     const globalHtml = renderToStaticMarkup(
       <AutomationsList filters={{}} response={response()} />,
     );
     expect(globalHtml).toContain('href="/automations/new"');
+    expect(globalHtml).toContain('href="/automations/agent-loop/new"');
     expect(globalHtml).not.toContain('href="/settings/background-agents"');
 
     const repoHtml = renderToStaticMarkup(
@@ -145,6 +146,9 @@ describe("AutomationsList", () => {
     );
     expect(repoHtml).toContain(
       'href="/automations/new?repoOwner=Acme+Org&amp;repoName=widgets%2Fapi"',
+    );
+    expect(repoHtml).toContain(
+      'href="/automations/agent-loop/new?repoOwner=Acme+Org&amp;repoName=widgets%2Fapi"',
     );
   });
 
@@ -236,6 +240,7 @@ describe("AutomationsList", () => {
 
     expect(html).toContain("Multi-step unavailable");
     expect(html).not.toContain('href="/loops/new"');
+    expect(html).not.toContain('href="/automations/agent-loop/new"');
     expect(html).toContain('href="/automations/new"');
     expect(html).toContain("No automations configured");
     expect(html).toContain("Create a single-step automation");

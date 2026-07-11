@@ -83,6 +83,50 @@ const GITHUB_CHECK_DEF: LoopDefinition = {
   ],
 };
 
+const RESTRICTED_AGENT_STEP_DEF = {
+  nodes: [
+    { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+    {
+      id: "restricted-step",
+      kind: "agent_step",
+      label: "Restricted unattended step",
+      position: { x: 240, y: 0 },
+      instructions: "Review the change without network or shell access.",
+      outputSchema: { verdict: "string", findings: "array" },
+      checkCommand: "bun test --isolate apps/web/lib/agent-loops",
+      permissions: {
+        github: {
+          contents: "read",
+          pullRequests: "write",
+          issues: "read",
+          deployments: "read",
+          statuses: "read",
+          checks: "read",
+        },
+      },
+      composioToolkitSlugs: ["github", "linear"],
+      builtinToolNames: ["file_read", "file_search"],
+      futureCompatiblePolicy: { revision: 2, mode: "restricted" },
+    },
+    { id: "end", kind: "end", label: "End", position: { x: 480, y: 0 } },
+  ],
+  edges: [
+    {
+      id: "start-to-step",
+      source: "start",
+      target: "restricted-step",
+      when: "always",
+      futureCompatibleEvidence: { label: "unchanged" },
+    },
+    {
+      id: "step-to-end",
+      source: "restricted-step",
+      target: "end",
+      when: "success",
+    },
+  ],
+} as unknown as LoopDefinition;
+
 // ── BT-001: Round-trip losslessness ───────────────────────────────────────────
 
 describe("definitionToFlow + flowToDefinition round-trip", () => {
@@ -126,6 +170,19 @@ describe("canonical serialization stability", () => {
     const { nodes, edges } = definitionToFlow(CONDITION_DEF);
     const result = flowToDefinition(nodes, edges);
     expect(JSON.stringify(result)).toBe(JSON.stringify(CONDITION_DEF));
+  });
+
+  it("preserves restricted built-ins and every unchanged node and edge field byte-for-byte", () => {
+    const { nodes, edges } = definitionToFlow(RESTRICTED_AGENT_STEP_DEF);
+    const result = flowToDefinition(nodes, edges);
+
+    expect(result).toEqual(RESTRICTED_AGENT_STEP_DEF);
+    expect(JSON.stringify(result)).toBe(
+      JSON.stringify(RESTRICTED_AGENT_STEP_DEF),
+    );
+    expect(result.nodes[1]).toMatchObject({
+      builtinToolNames: ["file_read", "file_search"],
+    });
   });
 });
 

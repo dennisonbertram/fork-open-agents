@@ -47,6 +47,7 @@ type LoopTriggersCardProps = {
   loopStatus: string;
   triggers: LoopTriggerCardRow[];
   onTriggersChanged: () => void;
+  surface?: "legacy" | "automation";
 };
 
 function formatNextRun(value: Date | string | null | undefined): string | null {
@@ -65,7 +66,9 @@ export function LoopTriggersCard({
   loopStatus,
   triggers,
   onTriggersChanged,
+  surface = "legacy",
 }: LoopTriggersCardProps) {
+  const automationSurface = surface === "automation";
   const [showAddForm, setShowAddForm] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
@@ -172,7 +175,9 @@ export function LoopTriggersCard({
 
       {triggers.length === 0 && !showAddForm ? (
         <div className="p-4 text-xs text-muted-foreground">
-          No triggers yet — this loop only runs when you press Run now. Add one:
+          {automationSurface
+            ? "No triggers yet — this Automation only runs when you press Run now. Add one:"
+            : "No triggers yet — this loop only runs when you press Run now. Add one:"}
           <div className="mt-2">
             <Button
               size="sm"
@@ -267,8 +272,9 @@ export function LoopTriggersCard({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this trigger?</AlertDialogTitle>
             <AlertDialogDescription>
-              This loop will stop firing automatically for this trigger. This
-              cannot be undone.
+              {automationSurface
+                ? "This Automation will stop firing automatically for this trigger. This cannot be undone."
+                : "This loop will stop firing automatically for this trigger. This cannot be undone."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

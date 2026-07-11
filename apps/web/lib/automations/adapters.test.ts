@@ -233,8 +233,8 @@ describe("Automation adapters", () => {
       stepCount: 2,
       verification: { configuredStepCount: 2, totalVerifiableSteps: 2 },
       output: { declaredSchemaCount: 1, publishingActionCount: 0 },
-      detailUrl: "/loops/shared-id",
-      editUrl: "/loops/shared-id/builder",
+      detailUrl: "/automations/agent-loop/shared-id",
+      editUrl: "/automations/agent-loop/shared-id/edit",
       latestRun: {
         sourceId: "loop-run-1",
         detailUrl: "/runs/loop/loop-run-1",
