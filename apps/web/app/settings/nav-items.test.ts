@@ -3,6 +3,7 @@ import { Bot, Cpu, Lightbulb, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
+  resolveSettingsFallbackRouteId,
   SETTINGS_NAV_GROUPS,
   visibleNavGroups,
 } from "./nav-items";
@@ -132,6 +133,16 @@ describe("settings nav data", () => {
     expect(findActiveNavItem("/loops")).toBeUndefined();
     expect(findActiveNavItem("/settings/background-agents")?.id).toBe(
       "automations",
+    );
+  });
+
+  test("NAV-008b: legacy Automation alias retains valid Settings fallback metadata", () => {
+    expect(
+      resolveSettingsFallbackRouteId("/settings/background-agents"),
+    ).toBe("background-agents");
+    expect(resolveSettingsFallbackRouteId("/settings/usage")).toBe("usage");
+    expect(resolveSettingsFallbackRouteId("/settings/nonexistent")).toBe(
+      "profile",
     );
   });
 
