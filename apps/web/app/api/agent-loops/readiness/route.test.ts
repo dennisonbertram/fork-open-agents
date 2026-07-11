@@ -21,6 +21,13 @@ const getAgentLoopsRepoPolicy = mock<() => RepositoryAllowlistPolicy>(() => ({
 }));
 const getAgentLoopRepoAccess = mock(() => ({ allowed: true as const }));
 const isAgentLoopRepoAllowed = mock(() => true);
+const getBackgroundAgentsRepoPolicy = mock<() => RepositoryAllowlistPolicy>(
+  () => ({
+    state: "wildcard",
+    entries: new Set(),
+  }),
+);
+const getBackgroundAgentRepoAccess = mock(() => ({ allowed: true as const }));
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -34,6 +41,11 @@ mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopRepoAllowed,
 }));
 
+mock.module("@/lib/background-agents/config", () => ({
+  getBackgroundAgentsRepoPolicy,
+  getBackgroundAgentRepoAccess,
+}));
+
 const routeModulePromise = import("./route");
 
 describe("GET /api/agent-loops/readiness", () => {
@@ -42,6 +54,10 @@ describe("GET /api/agent-loops/readiness", () => {
     isAgentLoopsEnabled.mockImplementation(() => false);
     getAgentLoopsAllowedRepos.mockImplementation(() => null);
     getAgentLoopsRepoPolicy.mockImplementation(() => ({
+      state: "wildcard" as const,
+      entries: new Set<string>(),
+    }));
+    getBackgroundAgentsRepoPolicy.mockImplementation(() => ({
       state: "wildcard" as const,
       entries: new Set<string>(),
     }));
@@ -155,5 +171,24 @@ describe("GET /api/agent-loops/readiness", () => {
 
     expect(bodyText).toContain('"status":"missing"');
     expect(bodyText).not.toContain("private-malformed-value");
+  });
+
+  test("reports the background-agent allowlist required by shared webhook dispatch", async () => {
+    getBackgroundAgentsRepoPolicy.mockImplementation(() => ({
+      state: "missing" as const,
+      entries: new Set<string>(),
+    }));
+
+    const { GET } = await routeModulePromise;
+    const response = await GET();
+    const body = await response.json();
+    const sharedWebhookCheck = body.checks.find(
+      (check: { id: string }) => check.id === "shared_webhook_allowlist",
+    );
+
+    expect(sharedWebhookCheck).toMatchObject({
+      status: "missing",
+      missing: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
+    });
   });
 });

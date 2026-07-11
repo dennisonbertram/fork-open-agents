@@ -582,6 +582,37 @@ describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
     expect(result.loopRunIds).toEqual([]);
     expect(result.runIds).toContain("run-agent-1");
   });
+
+  test("records the trigger skip when the shared background policy refuses a loop webhook", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "other/repo";
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTrigger,
+    };
+    loopForTriggerResult = { ...activeLoop, id: "loop-webhook-1" };
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_123",
+      event: {
+        externalId: "err-loop-policy-refused",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-06-11T10:00:00.000Z",
+      },
+      requestId: "req-loop-webhook-policy-refused",
+    });
+
+    expect(result).toMatchObject({
+      created: 0,
+      skipReason: "repo_not_allowlisted",
+    });
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: loopWebhookTrigger.id,
+      skipReason: "repo_not_allowlisted",
+    });
+    expect(dispatchLoopRunForTrigger).not.toHaveBeenCalled();
+  });
 });
 
 // ── INT-3b: REGRESSION — webhook loop branch pins repo to loop, not caller payload ──────────

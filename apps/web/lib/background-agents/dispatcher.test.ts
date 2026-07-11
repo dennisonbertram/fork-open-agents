@@ -511,6 +511,10 @@ describe("dispatchWebhookErrorEvent", () => {
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: webhookTrigger.id,
+      skipReason: "repo_not_allowlisted",
+    });
   });
 
   test("refuses signed webhooks before run creation when the allowlist is missing", async () => {

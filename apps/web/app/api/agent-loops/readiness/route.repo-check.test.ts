@@ -36,6 +36,23 @@ const getAgentLoopRepoAccess = mock<
       }
 >(() => ({ allowed: true }));
 const isAgentLoopRepoAllowed = mock(() => true);
+const getBackgroundAgentsRepoPolicy = mock<() => RepositoryAllowlistPolicy>(
+  () => ({
+    state: "wildcard",
+    entries: new Set(),
+  }),
+);
+const getBackgroundAgentRepoAccess = mock<
+  () =>
+    | { allowed: true }
+    | {
+        allowed: false;
+        reason:
+          | "repo_allowlist_unconfigured"
+          | "repo_allowlist_invalid"
+          | "repo_not_allowlisted";
+      }
+>(() => ({ allowed: true }));
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -47,6 +64,11 @@ mock.module("@/lib/agent-loops/config", () => ({
   getAgentLoopsRepoPolicy,
   getAgentLoopRepoAccess,
   isAgentLoopRepoAllowed,
+}));
+
+mock.module("@/lib/background-agents/config", () => ({
+  getBackgroundAgentsRepoPolicy,
+  getBackgroundAgentRepoAccess,
 }));
 
 const routeModulePromise = import("./route");
@@ -62,6 +84,11 @@ describe("GET /api/agent-loops/readiness?owner=&repo= (#767)", () => {
     }));
     getAgentLoopRepoAccess.mockImplementation(() => ({ allowed: true }));
     isAgentLoopRepoAllowed.mockImplementation(() => true);
+    getBackgroundAgentsRepoPolicy.mockImplementation(() => ({
+      state: "wildcard" as const,
+      entries: new Set<string>(),
+    }));
+    getBackgroundAgentRepoAccess.mockImplementation(() => ({ allowed: true }));
   });
 
   test("omits the repo check when owner/repo are not provided (backward-compatible)", async () => {
@@ -140,6 +167,29 @@ describe("GET /api/agent-loops/readiness?owner=&repo= (#767)", () => {
     expect(repoCheck).toMatchObject({
       status: "missing",
       missing: ["AGENT_LOOPS_ALLOWED_REPOS"],
+    });
+  });
+
+  test("reports shared webhook repo access disabled when the background policy excludes the loop repo", async () => {
+    getBackgroundAgentRepoAccess.mockImplementation(() => ({
+      allowed: false,
+      reason: "repo_not_allowlisted",
+    }));
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/agent-loops/readiness?owner=acme&repo=widgets",
+      ),
+    );
+    const body = await response.json();
+    const sharedWebhookRepoCheck = body.checks.find(
+      (check: { id: string }) => check.id === "shared_webhook_repo_access",
+    );
+
+    expect(sharedWebhookRepoCheck).toMatchObject({
+      status: "disabled",
+      missing: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
     });
   });
 });
