@@ -23,6 +23,29 @@ type MockReadinessData = {
     detail: string;
     missing: string[];
   }[];
+  repoAccess: {
+    ready: boolean;
+    repoOwner: string;
+    repoName: string;
+    requiredUserPermission: "write";
+    reason: string | null;
+    message: string;
+    installationId: number | null;
+    repositoryId: number | null;
+    defaultBranch: string | null;
+  };
+};
+
+const readyRepoAccess: MockReadinessData["repoAccess"] = {
+  ready: true,
+  repoOwner: "acme",
+  repoName: "widgets",
+  requiredUserPermission: "write",
+  reason: null,
+  message: "Repository access is ready.",
+  installationId: 1,
+  repositoryId: 2,
+  defaultBranch: "main",
 };
 
 let readinessData: MockReadinessData = {
@@ -30,6 +53,7 @@ let readinessData: MockReadinessData = {
   ready: true,
   missing: [],
   checks: [],
+  repoAccess: readyRepoAccess,
 };
 
 mock.module("next/navigation", () => ({
@@ -114,6 +138,7 @@ describe("NewAgentBuilder", () => {
       ready: true,
       missing: [],
       checks: [],
+      repoAccess: readyRepoAccess,
     };
   });
 
@@ -161,6 +186,7 @@ describe("NewAgentBuilder", () => {
           missing: ["GITHUB_APP_ID"],
         },
       ],
+      repoAccess: readyRepoAccess,
     };
     const { NewAgentBuilder } = await builderPromise;
 

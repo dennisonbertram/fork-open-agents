@@ -30,7 +30,23 @@ mock.module("sonner", () => ({
 
 mock.module("swr", () => ({
   default: () => ({
-    data: { enabled: true, ready: true, missing: [], checks: [] },
+    data: {
+      enabled: true,
+      ready: true,
+      missing: [],
+      checks: [],
+      repoAccess: {
+        ready: true,
+        repoOwner: "acme",
+        repoName: "widgets",
+        requiredUserPermission: "write",
+        reason: null,
+        message: "Repository access is ready.",
+        installationId: 1,
+        repositoryId: 2,
+        defaultBranch: "main",
+      },
+    },
     error: null,
     isLoading: false,
     mutate: async () => undefined,

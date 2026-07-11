@@ -56,18 +56,22 @@ function buildRepoAccessCheck(
 export function buildCombinedAgentReadiness(
   readinessData: AgentReadinessResponse,
 ): BackgroundReadinessResponse {
-  const repoAccessCheck = buildRepoAccessCheck(readinessData.repoAccess);
-  const repoAccessReady = readinessData.repoAccess?.ready ?? true;
-  const repoAccessMissing = repoAccessCheck?.missing ?? [];
+  const repoAccessCheck = buildRepoAccessCheck(readinessData.repoAccess) ?? {
+    id: "repo_access",
+    label: "Repository access",
+    status: "missing" as const,
+    detail: "Repository access readiness was not returned.",
+    missing: ["Repository access readiness"],
+  };
+  const repoAccessReady = readinessData.repoAccess?.ready ?? false;
+  const repoAccessMissing = repoAccessCheck.missing;
   return {
     enabled: readinessData.enabled,
     ready: readinessData.ready && repoAccessReady,
     missing: Array.from(
       new Set([...readinessData.missing, ...repoAccessMissing]),
     ),
-    checks: repoAccessCheck
-      ? [...readinessData.checks, repoAccessCheck]
-      : readinessData.checks,
+    checks: [...readinessData.checks, repoAccessCheck],
   };
 }
 
