@@ -49,11 +49,17 @@ mock.module("../agent-spec-editor", () => ({
   AgentSpecEditor: ({
     createdAgentId,
     testRunId,
+    surface,
+    readinessReady,
+    persistedEnabled,
     onSave,
     onRunTest,
   }: {
     createdAgentId: string | null;
     testRunId: string | null;
+    surface?: string;
+    readinessReady?: boolean;
+    persistedEnabled?: boolean;
     onSave: (payload: unknown) => void | Promise<void>;
     onRunTest: () => void | Promise<void>;
   }) => {
@@ -62,6 +68,13 @@ mock.module("../agent-spec-editor", () => ({
       <div>
         <span data-testid="created-agent-id">{createdAgentId ?? "none"}</span>
         <span data-testid="test-run-id">{testRunId ?? "none"}</span>
+        <span data-testid="editor-surface">{surface ?? "legacy"}</span>
+        <span data-testid="readiness-ready">
+          {String(readinessReady ?? true)}
+        </span>
+        <span data-testid="persisted-enabled">
+          {String(persistedEnabled ?? false)}
+        </span>
         <button
           onClick={() =>
             void onSave(
@@ -277,6 +290,46 @@ describe("NewAgentBuilder — second save updates instead of duplicating (#860)"
 
     const status = await q.findByRole("status");
     expect(status.textContent).toContain("Agent updated");
+  });
+
+  test("Automation surface saves disabled first, tracks persisted enablement, and keeps links canonical", async () => {
+    const { NewAgentBuilder } = await builderPromise;
+    const { container } = render(
+      <NewAgentBuilder owner="acme" repo="widgets" surface="automation" />,
+    );
+    const q = within(container);
+
+    await userClick(q.getByRole("button", { name: /start blank/i }));
+    expect((await q.findByTestId("editor-surface")).textContent).toBe(
+      "automation",
+    );
+    expect((await q.findByTestId("readiness-ready")).textContent).toBe("true");
+
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    const [firstUrl, firstOptions] = globalFetch.mock.calls[0] as [
+      string,
+      { body: string },
+    ];
+    expect(firstUrl).toBe("/api/background-agents");
+    expect(JSON.parse(firstOptions.body).status).toBe("disabled");
+    expect((await q.findByTestId("persisted-enabled")).textContent).toBe(
+      "false",
+    );
+    expect(
+      q.getByRole("link", { name: /view automation/i }).getAttribute("href"),
+    ).toBe("/automations/background-agent/agent-123");
+
+    await userClick(q.getByRole("button", { name: /enable agent/i }));
+    await userClick(q.getByRole("button", { name: /save agent/i }));
+    const [secondUrl, secondOptions] = globalFetch.mock.calls[1] as [
+      string,
+      { body: string },
+    ];
+    expect(secondUrl).toBe("/api/background-agents/agent-123");
+    expect(JSON.parse(secondOptions.body).status).toBe("enabled");
+    expect((await q.findByTestId("persisted-enabled")).textContent).toBe(
+      "true",
+    );
   });
 });
 

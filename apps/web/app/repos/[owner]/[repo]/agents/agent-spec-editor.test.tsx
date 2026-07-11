@@ -7,8 +7,10 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 // Mock the console component to avoid its SWR dependency in this test scope
 mock.module("./run-test-console", () => ({
-  RunTestConsole: ({ runId }: { runId: string }) => (
-    <div data-testid="run-test-console">console:{runId}</div>
+  RunTestConsole: ({ runId, surface }: { runId: string; surface?: string }) => (
+    <div data-testid="run-test-console" data-surface={surface ?? "legacy"}>
+      console:{runId}
+    </div>
   ),
 }));
 
@@ -73,6 +75,12 @@ describe("AgentSpecEditor", () => {
     return html.slice(openIdx, labelIdx);
   }
 
+  function buttonTagForLabel(html: string, label: string): string {
+    const labelIdx = html.indexOf(label);
+    const openIdx = html.lastIndexOf("<button", labelIdx);
+    return html.slice(openIdx, labelIdx);
+  }
+
   test("(C1) with createdAgentId=null the Run a test button is disabled and helper text is present", async () => {
     const { AgentSpecEditor } = await modulePromise;
 
@@ -126,6 +134,73 @@ describe("AgentSpecEditor", () => {
     );
 
     expect(html).not.toContain("run-test-console");
+  });
+
+  test("Automation create starts disabled and gates enablement on saved identity plus readiness", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const unsaved = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        surface="automation"
+        readinessReady={true}
+        persistedEnabled={false}
+      />,
+    );
+    expect(unsaved).toContain(
+      "Save this Automation disabled. Review readiness, then enable and save before testing.",
+    );
+    expect(buttonTagForLabel(unsaved, "Enabled")).toContain('disabled=""');
+    expect(runTestButtonTag(unsaved)).toContain('disabled=""');
+
+    const notReady = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        surface="automation"
+        createdAgentId="agent-123"
+        readinessReady={false}
+        persistedEnabled={false}
+      />,
+    );
+    expect(buttonTagForLabel(notReady, "Enabled")).toContain('disabled=""');
+    expect(notReady).toContain(
+      "Readiness must pass before this Automation can be enabled.",
+    );
+  });
+
+  test("Automation testing requires persisted enabled state and warns about real GitHub mutations", async () => {
+    const { AgentSpecEditor } = await modulePromise;
+
+    const savedDisabled = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        surface="automation"
+        createdAgentId="agent-123"
+        readinessReady={true}
+        persistedEnabled={false}
+      />,
+    );
+    expect(buttonTagForLabel(savedDisabled, "Enabled")).not.toContain(
+      'disabled=""',
+    );
+    expect(runTestButtonTag(savedDisabled)).toContain('disabled=""');
+    expect(savedDisabled).toContain(
+      "Manual tests use the real dispatcher and configured GitHub permissions.",
+    );
+    expect(savedDisabled).toContain("can create configured GitHub mutations");
+
+    const savedEnabled = renderToStaticMarkup(
+      <AgentSpecEditor
+        {...defaultEditorProps}
+        surface="automation"
+        createdAgentId="agent-123"
+        readinessReady={true}
+        persistedEnabled={true}
+        testRunId="run-abc"
+      />,
+    );
+    expect(runTestButtonTag(savedEnabled)).not.toContain('disabled=""');
+    expect(savedEnabled).toContain('data-surface="automation"');
   });
 
   test("(E4) Tools section renders GitHub tool card with segmented control and Composio sub-section", async () => {
