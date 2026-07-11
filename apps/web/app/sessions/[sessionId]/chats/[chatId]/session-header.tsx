@@ -27,7 +27,11 @@ import { useSessionLayout } from "@/app/sessions/[sessionId]/session-layout-cont
  * Session header that uses only layout-level data (persists across chat switches).
  * Sandbox-specific props are removed to prevent layout shift during navigation.
  */
-export function SessionHeader() {
+export function SessionHeader({
+  verifiedBuildExposed,
+}: {
+  verifiedBuildExposed: boolean;
+}) {
   const { toggleSidebar } = useSidebar();
   const {
     gitPanelOpen,
@@ -258,25 +262,18 @@ export function SessionHeader() {
             </TooltipContent>
           </Tooltip>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-7 w-7 shrink-0",
-                  gitPanelOpen &&
-                    rightPanelView === "verified-build" &&
-                    "bg-accent text-accent-foreground",
-                )}
-                aria-label="Verified Build"
-                onClick={handleVerifiedBuildPanelToggle}
-              >
-                <ShieldCheck className="h-4 w-4 text-blue-500" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Verified Build</TooltipContent>
-          </Tooltip>
+          {verifiedBuildExposed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <VerifiedBuildHeaderButton
+                  exposed={verifiedBuildExposed}
+                  isActive={gitPanelOpen && rightPanelView === "verified-build"}
+                  onClick={handleVerifiedBuildPanelToggle}
+                />
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Verified Build</TooltipContent>
+            </Tooltip>
+          ) : null}
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -310,12 +307,18 @@ export function SessionHeader() {
  * Exported for isolated testing of the aria-label contract.
  */
 export function VerifiedBuildHeaderButton({
+  exposed,
   isActive,
   onClick,
 }: {
+  exposed: boolean;
   isActive: boolean;
   onClick: () => void;
 }) {
+  if (!exposed) {
+    return null;
+  }
+
   return (
     <Button
       variant="ghost"

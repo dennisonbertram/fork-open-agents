@@ -352,8 +352,9 @@ background-agent routes. Trigger CRUD reuses the existing background-agent
 trigger management with a loop target.
 
 **Feature flags:** `AGENT_LOOPS_ENABLED` (global), `AGENT_LOOPS_ALLOWED_REPOS`
-(rollout allowlist) — same pattern as background agents. Readiness surfaced via
-the existing readiness endpoint pattern.
+(required rollout allowlist; missing/invalid denies all, exact `*` deliberately
+allows all) — same pattern as background agents. Readiness surfaced via the
+existing readiness endpoint pattern.
 
 ---
 

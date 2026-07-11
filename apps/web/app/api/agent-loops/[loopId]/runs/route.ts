@@ -75,6 +75,26 @@ export async function POST(req: Request, ctx: RouteContext): Promise<Response> {
           { status: 403 },
         );
 
+      case "repo_allowlist_unconfigured":
+        return Response.json(
+          {
+            errorKind: "repo_allowlist_unconfigured",
+            message:
+              "Agent loop repository access is not configured. Set AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
+          },
+          { status: 503 },
+        );
+
+      case "repo_allowlist_invalid":
+        return Response.json(
+          {
+            errorKind: "repo_allowlist_invalid",
+            message:
+              "Agent loop repository access is misconfigured. Correct AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
+          },
+          { status: 503 },
+        );
+
       case "ownership_fail":
         return Response.json(
           { error: "Agent loop not found" },

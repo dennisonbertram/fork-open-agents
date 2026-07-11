@@ -37,6 +37,10 @@ Start here:
 - [Chief of Staff Account Coordinator](../plans/chief-of-staff-account-coordinator.md)
   - backend-first account status and diagnosis API contract for future Chief of
   Staff UI/tooling.
+- [Sessions, Automations, and Runs](../plans/sessions-automations-runs.md) -
+  canonical product contract and dependency-ordered reset plan for durable
+  interactive work, unattended coding definitions, and trustworthy execution
+  evidence.
 - [Managed Runtime Proof Standard](managed-runtime-proof-standard.md) - the
   evidence bundle required before managed-runtime work can claim it is proven.
 - [Deployed Feature Proof Standard](deployed-feature-proof-standard.md) -

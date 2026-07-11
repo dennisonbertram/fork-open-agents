@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, beforeEach, describe, expect, mock, test } from "bun:test";
 
 mock.module("server-only", () => ({}));
 
@@ -15,6 +15,8 @@ type AuthResult =
     };
 
 let authResult: AuthResult = { ok: true, userId: "user-1" };
+const originalWorkflowCatalogExposure =
+  process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG;
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
   requireAuthenticatedUser: async () => authResult,
@@ -116,10 +118,31 @@ const routeModulePromise = import("./route");
 
 describe("/api/workflows/catalog GET", () => {
   beforeEach(() => {
+    process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG = "true";
     authResult = { ok: true, userId: "user-1" };
     catalogShouldThrow = false;
     catalogShouldThrowNonError = false;
     includeEnabledEntry = false;
+  });
+
+  afterAll(() => {
+    if (originalWorkflowCatalogExposure === undefined) {
+      delete process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG;
+    } else {
+      process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG =
+        originalWorkflowCatalogExposure;
+    }
+  });
+
+  test("returns a stable gated response by default", async () => {
+    delete process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG;
+    const { GET } = await routeModulePromise;
+
+    const response = await GET();
+    const body = (await response.json()) as { errorKind: string };
+
+    expect(response.status).toBe(404);
+    expect(body.errorKind).toBe("product_surface_disabled");
   });
 
   // BT-001: unauthenticated request returns 401

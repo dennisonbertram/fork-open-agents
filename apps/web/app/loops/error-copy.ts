@@ -42,6 +42,8 @@ export const ALL_KNOWN_LOOP_ERROR_KINDS = [
   "installation_missing",
   "permission_missing",
   "dispatch_failed",
+  "repo_allowlist_unconfigured",
+  "repo_allowlist_invalid",
   "repo_not_allowed",
   "loop_inactive",
   "loop_invalid",
@@ -101,6 +103,20 @@ function knownCopy(
           "This repository isn't enabled for loops on this deployment.",
         whatToDo:
           "Ask your workspace administrator to add this repository to the loops allowlist.",
+      };
+    case "repo_allowlist_unconfigured":
+      return {
+        whatHappened:
+          "Loop repository access isn't configured on this deployment.",
+        whatToDo:
+          "Ask your workspace administrator to set AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
+      };
+    case "repo_allowlist_invalid":
+      return {
+        whatHappened:
+          "Loop repository access is misconfigured on this deployment.",
+        whatToDo:
+          "Ask your workspace administrator to correct AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
       };
     case "loop_inactive":
       return {

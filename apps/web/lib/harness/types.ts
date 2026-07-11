@@ -11,6 +11,7 @@ export type VerifiedBuildGoNoGo = "unknown" | "go" | "no_go";
 export type HarnessJsonObject = Record<string, unknown>;
 
 export type HarnessErrorCode =
+  | "product_surface_disabled"
   | "harness_disabled"
   | "harness_config_invalid"
   | "harness_unavailable"

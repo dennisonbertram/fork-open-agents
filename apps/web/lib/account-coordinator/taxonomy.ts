@@ -5,12 +5,13 @@ import type {
 } from "./types";
 
 const ACTIVE_STATUSES = new Set<AccountWorkStatus>(["queued", "running"]);
-const COMPLETED_STATUSES = new Set<AccountWorkStatus>(["completed"]);
+const COMPLETED_STATUSES = new Set<AccountWorkStatus>(["completed", "skipped"]);
 const ATTENTION_STATUSES = new Set<AccountWorkStatus>([
   "failed",
   "cancelled",
   "stale",
   "waiting_on_user",
+  "unknown",
 ]);
 
 export function getAttentionReasons(
@@ -25,6 +26,8 @@ export function getAttentionReasons(
       return ["stale"];
     case "waiting_on_user":
       return ["waiting_on_user"];
+    case "unknown":
+      return ["unknown_status"];
     default:
       return [];
   }

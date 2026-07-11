@@ -136,6 +136,7 @@ let loopsEnabled = true;
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => loopsEnabled,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 

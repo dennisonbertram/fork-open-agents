@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   buildAccountSnapshot,
+  normalizeAgentLoopRun,
   normalizeBackgroundAgentRun,
+  normalizeChatWorkflowRun,
   normalizeSession,
+  type AgentLoopRunRow,
   type BackgroundAgentRunRow,
+  type ChatWorkflowRunRow,
   type SessionRow,
 } from "./snapshot";
 
@@ -57,6 +61,49 @@ function backgroundRunRow(
   };
 }
 
+function chatWorkflowRunRow(
+  overrides: Partial<ChatWorkflowRunRow> = {},
+): ChatWorkflowRunRow {
+  return {
+    id: "workflow-1",
+    chatId: "chat-1",
+    chatTitle: "Build report",
+    sessionId: "session-1",
+    sessionTitle: "Fix checkout",
+    status: "completed",
+    runtimeMode: "classic",
+    errorMessage: null,
+    startedAt: new Date("2026-06-20T08:00:00.000Z"),
+    finishedAt: new Date("2026-06-20T08:01:00.000Z"),
+    createdAt: new Date("2026-06-20T08:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function agentLoopRunRow(
+  overrides: Partial<AgentLoopRunRow> = {},
+): AgentLoopRunRow {
+  return {
+    id: "loop-run-1",
+    loopId: "loop-1",
+    loopName: "Deploy loop",
+    status: "completed",
+    source: "manual",
+    repoOwner: "acme",
+    repoName: "shop",
+    currentNodeId: "finish",
+    stepCount: 3,
+    failedStepCount: 0,
+    errorKind: null,
+    errorMessage: null,
+    createdAt: new Date("2026-06-20T07:00:00.000Z"),
+    updatedAt: new Date("2026-06-20T07:30:00.000Z"),
+    startedAt: new Date("2026-06-20T07:00:00.000Z"),
+    finishedAt: new Date("2026-06-20T07:30:00.000Z"),
+    ...overrides,
+  };
+}
+
 describe("account coordinator snapshot", () => {
   test("normalizes running, stale, completed, and needs-attention items", async () => {
     const snapshot = await buildAccountSnapshot({
@@ -71,39 +118,14 @@ describe("account coordinator snapshot", () => {
             updatedAt: new Date("2026-06-20T01:00:00.000Z"),
           }),
         ],
-        chatWorkflowRuns: async () => [
-          {
-            id: "workflow-1",
-            chatId: "chat-1",
-            chatTitle: "Build report",
-            sessionId: "session-1",
-            sessionTitle: "Fix checkout",
-            status: "completed",
-            runtimeMode: "classic",
-            errorMessage: null,
-            startedAt: new Date("2026-06-20T08:00:00.000Z"),
-            finishedAt: new Date("2026-06-20T08:01:00.000Z"),
-            createdAt: new Date("2026-06-20T08:00:00.000Z"),
-          },
-        ],
+        chatWorkflowRuns: async () => [chatWorkflowRunRow()],
         backgroundAgentRuns: async () => [backgroundRunRow()],
         agentLoopRuns: async () => [
-          {
-            id: "loop-run-1",
-            loopName: "Deploy loop",
+          agentLoopRunRow({
             status: "paused",
-            source: "manual",
-            repoOwner: "acme",
-            repoName: "shop",
             currentNodeId: "approval",
-            stepCount: 3,
-            errorKind: null,
-            errorMessage: null,
-            createdAt: new Date("2026-06-20T07:00:00.000Z"),
-            updatedAt: new Date("2026-06-20T07:30:00.000Z"),
-            startedAt: new Date("2026-06-20T07:00:00.000Z"),
             finishedAt: null,
-          },
+          }),
         ],
         scheduledAgents: async () => [
           {
@@ -225,5 +247,59 @@ describe("account coordinator snapshot", () => {
         now,
       ).summary,
     ).toBe("Session failed");
+  });
+
+  test("wraps canonical run mappings without replacing source-native ids", () => {
+    const unknownWorkflow = normalizeChatWorkflowRun(
+      chatWorkflowRunRow({
+        status: "provider_mystery",
+        errorMessage: "Unknown does not prove failure",
+      }),
+    );
+    const skippedBackground = normalizeBackgroundAgentRun(
+      backgroundRunRow({ status: "skipped" }),
+      now,
+    );
+    const completedLoopWithFailure = normalizeAgentLoopRun(
+      agentLoopRunRow({ failedStepCount: 2 }),
+      now,
+    );
+
+    expect(unknownWorkflow).toMatchObject({
+      id: "workflow-1",
+      status: "unknown",
+      needsAttention: true,
+      metadata: {
+        normalizedRunId: "chat_workflow:workflow-1",
+        nativeStatus: "provider_mystery",
+        runState: "unknown",
+        runOutcome: "unknown",
+        runHealth: "unknown",
+      },
+    });
+    expect(unknownWorkflow.summary).toBeUndefined();
+    expect(skippedBackground).toMatchObject({
+      id: "bg-run-1",
+      status: "skipped",
+      needsAttention: false,
+      metadata: {
+        normalizedRunId: "background_agent:bg-run-1",
+        nativeStatus: "skipped",
+        runOutcome: "skipped",
+      },
+    });
+    expect(completedLoopWithFailure).toMatchObject({
+      id: "loop-run-1",
+      status: "completed",
+      needsAttention: true,
+      attentionReasons: ["failed_steps"],
+      metadata: {
+        normalizedRunId: "agent_loop:loop-run-1",
+        nativeStatus: "completed",
+        runOutcome: "succeeded",
+        runHealth: "warning",
+        failedStepCount: 2,
+      },
+    });
   });
 });
