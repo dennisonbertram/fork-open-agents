@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { RefreshCw } from "lucide-react";
+import { Workflow } from "lucide-react";
 import {
   getSettingsRouteMetadata,
   type SettingsRouteId,
@@ -53,14 +53,13 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("composio"),
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
-      settingsNavItem("background-agents"),
-      settingsNavItem("repositories"),
       {
-        id: "loops",
-        label: "Loops",
-        href: "/loops",
-        icon: RefreshCw,
+        id: "automations",
+        label: "Automations",
+        href: "/automations",
+        icon: Workflow,
       },
+      settingsNavItem("repositories"),
       settingsNavItem("runtime-profiles"),
     ],
   },
@@ -101,7 +100,27 @@ export function findActiveNavItem(
   pathname: string,
   groups = SETTINGS_NAV_GROUPS,
 ) {
-  return flattenNavItems(groups).find(
+  const items = flattenNavItems(groups);
+  if (
+    pathname === "/settings/background-agents" ||
+    pathname.startsWith("/settings/background-agents/")
+  ) {
+    return items.find((item) => item.id === "automations");
+  }
+  return items.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
+}
+
+/**
+ * Resolve metadata for the Settings auth-loading fallback. External product
+ * destinations may own nav state without being SettingsRouteId values.
+ */
+export function resolveSettingsFallbackRouteId(
+  pathname: string,
+  groups = SETTINGS_NAV_GROUPS,
+): SettingsRouteId {
+  const activeId = findActiveNavItem(pathname, groups)?.id;
+  if (activeId === "automations") return "background-agents";
+  return (activeId as SettingsRouteId | undefined) ?? "profile";
 }

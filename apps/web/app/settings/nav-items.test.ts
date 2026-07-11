@@ -3,6 +3,7 @@ import { Bot, Cpu, Lightbulb, Sparkles, Users } from "lucide-react";
 import {
   findActiveNavItem,
   flattenNavItems,
+  resolveSettingsFallbackRouteId,
   SETTINGS_NAV_GROUPS,
   visibleNavGroups,
 } from "./nav-items";
@@ -36,9 +37,8 @@ describe("settings nav data", () => {
       "/settings/composio",
       "/settings/mcp",
       "/settings/skills",
-      "/settings/background-agents",
+      "/automations",
       "/settings/repositories",
-      "/loops",
       "/settings/runtime-profiles",
     ]);
     expect(byId.insights).toEqual([
@@ -64,8 +64,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(16);
-    expect(new Set(items.map((i) => i.id)).size).toBe(16);
+    expect(items).toHaveLength(15);
+    expect(new Set(items.map((i) => i.id)).size).toBe(15);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {
@@ -89,7 +89,7 @@ describe("settings nav data", () => {
     expect(toolsGroup?.items[0]?.id).toBe("agents");
   });
 
-  // NAV-003: agents item does not use the Bot icon (reserved for background-agents)
+  // NAV-003: chat roles remain visually distinct from unattended Automations.
   test("NAV-003: agents item uses Users icon (not Bot)", () => {
     const item = findActiveNavItem("/settings/agents");
     // Verify by reference equality — lucide icons don't expose .name
@@ -129,21 +129,33 @@ describe("settings nav data", () => {
     expect(ids).toContain("runtime-profiles");
   });
 
-  // NAV-008: loops item resolves to /loops and is in the tools group
-  test("NAV-008: loops nav item resolves to /loops and is in the tools group (M1-09)", () => {
-    const item = findActiveNavItem("/loops");
-    expect(item?.id).toBe("loops");
-    expect(item?.href).toBe("/loops");
-    expect(item?.label).toBe("Loops");
-
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("loops");
+  test("NAV-008: legacy definition routes remain direct-only", () => {
+    expect(findActiveNavItem("/loops")).toBeUndefined();
+    expect(findActiveNavItem("/settings/background-agents")?.id).toBe(
+      "automations",
+    );
   });
 
-  // NAV-009: loops item also resolves for nested loop routes
-  test("NAV-009: loops nav item is active for nested routes /loops/[loopId]", () => {
-    const item = findActiveNavItem("/loops/loop_abc123");
-    expect(item?.id).toBe("loops");
+  test("NAV-008b: legacy Automation alias retains valid Settings fallback metadata", () => {
+    expect(resolveSettingsFallbackRouteId("/settings/background-agents")).toBe(
+      "background-agents",
+    );
+    expect(resolveSettingsFallbackRouteId("/settings/usage")).toBe("usage");
+    expect(resolveSettingsFallbackRouteId("/settings/nonexistent")).toBe(
+      "profile",
+    );
+  });
+
+  test("NAV-012: Automations replaces duplicate background-agent and Loops entries", () => {
+    const toolsGroup = SETTINGS_NAV_GROUPS.find(
+      (group) => group.id === "tools",
+    );
+    const ids = toolsGroup?.items.map((item) => item.id);
+
+    expect(ids).toContain("automations");
+    expect(ids).not.toContain("background-agents");
+    expect(ids).not.toContain("loops");
+    expect(findActiveNavItem("/automations")?.label).toBe("Automations");
   });
 
   // NAV-010 (#805): Repositories item exists in the tools group and points
