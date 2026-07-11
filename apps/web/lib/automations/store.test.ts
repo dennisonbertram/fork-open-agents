@@ -1,6 +1,17 @@
 import { describe, expect, mock, test } from "bun:test";
-import { listAutomations, type AutomationSourceLoaders } from "./store";
+import type { AutomationSourceLoaders } from "./store";
 import type { AutomationListItem } from "./types";
+
+mock.module("server-only", () => ({}));
+
+const storeModulePromise = import("./store");
+
+async function listAutomations(
+  ...args: Parameters<(typeof import("./store"))["listAutomations"]>
+) {
+  const store = await storeModulePromise;
+  return store.listAutomations(...args);
+}
 
 function item(
   sourceId: string,
@@ -110,9 +121,9 @@ describe("listAutomations", () => {
       deps,
     );
 
-    expect(result.automations.map((automation) => automation.sourceId)).toEqual([
-      "review",
-    ]);
+    expect(result.automations.map((automation) => automation.sourceId)).toEqual(
+      ["review"],
+    );
   });
 
   test("keeps a healthy source visible when the other source fails", async () => {

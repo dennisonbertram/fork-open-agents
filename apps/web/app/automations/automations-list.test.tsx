@@ -165,4 +165,34 @@ describe("AutomationsList", () => {
     expect(html).toContain("Automations could not be loaded");
     expect(html).not.toContain("No automations configured");
   });
+
+  test("does not link to the multi-step creator when loops are disabled", () => {
+    const html = renderToStaticMarkup(
+      <AutomationsList
+        filters={{}}
+        response={response({
+          sourceStatus: [
+            {
+              source: "background_agent",
+              status: "ok",
+              itemCount: 0,
+              invalidItemCount: 0,
+              errorKind: null,
+            },
+            {
+              source: "agent_loop",
+              status: "disabled",
+              itemCount: 0,
+              invalidItemCount: 0,
+              errorKind: "feature_disabled",
+            },
+          ],
+        })}
+      />,
+    );
+
+    expect(html).toContain("Multi-step unavailable");
+    expect(html).not.toContain('href="/loops/new"');
+    expect(html).toContain('href="/settings/background-agents"');
+  });
 });

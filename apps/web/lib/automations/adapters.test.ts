@@ -74,7 +74,8 @@ function backgroundRecord(): BackgroundAutomationSourceRecord {
       issueNumber: null,
       deploymentUrl: null,
       sandboxName: "sandbox-secret-marker",
-      outputUrl: "https://github.com/acme/widgets/pull/42",
+      outputUrl:
+        "https://github.com/acme/widgets/pull/42?token=output-token-marker",
       errorKind: null,
       errorMessage: null,
       payloadSummary: {},
@@ -101,7 +102,12 @@ function loopRecord(): LoopAutomationSourceRecord {
       status: "paused",
       definition: {
         nodes: [
-          { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+          {
+            id: "start",
+            kind: "start",
+            label: "Start",
+            position: { x: 0, y: 0 },
+          },
           {
             id: "review",
             kind: "agent_step",
@@ -182,6 +188,7 @@ describe("Automation adapters", () => {
       "webhook-secret-marker",
       "idempotency-secret-marker",
       "sandbox-secret-marker",
+      "output-token-marker",
     ]) {
       expect(serialized).not.toContain(marker);
     }
@@ -204,7 +211,7 @@ describe("Automation adapters", () => {
       latestRun: {
         sourceId: "loop-run-1",
         detailUrl: "/loops/shared-id/runs/loop-run-1",
-        health: "needs_attention",
+        health: "warning",
       },
     });
   });

@@ -39,8 +39,7 @@ mock.module("drizzle-orm", () => ({
   count: (value: unknown) => predicate("count", value),
   desc: (value: unknown) => predicate("desc", value),
   eq: (left: unknown, right: unknown) => predicate("eq", left, right),
-  inArray: (left: unknown, right: unknown) =>
-    predicate("inArray", left, right),
+  inArray: (left: unknown, right: unknown) => predicate("inArray", left, right),
   isNotNull: (value: unknown) => predicate("isNotNull", value),
 }));
 
@@ -105,8 +104,7 @@ describe("default Automation SQL source scopes", () => {
   });
 
   test("binds owner and all agent ids in one latest-background-run query", async () => {
-    const { listLatestBackgroundAutomationRuns } =
-      await sourceLoadersPromise;
+    const { listLatestBackgroundAutomationRuns } = await sourceLoadersPromise;
 
     await listLatestBackgroundAutomationRuns({
       userId: "owner-1",
@@ -121,10 +119,8 @@ describe("default Automation SQL source scopes", () => {
   });
 
   test("binds owner and all loop ids in batched trigger and latest-run queries", async () => {
-    const {
-      listLatestLoopAutomationRuns,
-      listLoopAutomationTriggers,
-    } = await sourceLoadersPromise;
+    const { listLatestLoopAutomationRuns, listLoopAutomationTriggers } =
+      await sourceLoadersPromise;
     const scope = {
       userId: "owner-1",
       loopIds: ["loop-1", "loop-2"],

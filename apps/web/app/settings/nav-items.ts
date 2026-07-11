@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { RefreshCw } from "lucide-react";
+import { Workflow } from "lucide-react";
 import {
   getSettingsRouteMetadata,
   type SettingsRouteId,
@@ -53,14 +53,13 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("composio"),
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
-      settingsNavItem("background-agents"),
-      settingsNavItem("repositories"),
       {
-        id: "loops",
-        label: "Loops",
-        href: "/loops",
-        icon: RefreshCw,
+        id: "automations",
+        label: "Automations",
+        href: "/automations",
+        icon: Workflow,
       },
+      settingsNavItem("repositories"),
       settingsNavItem("runtime-profiles"),
     ],
   },

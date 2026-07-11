@@ -1,10 +1,30 @@
 import { describe, expect, mock, test } from "bun:test";
-import {
-  loadBackgroundAutomationSource,
-  loadLoopAutomationSource,
-  type BackgroundSourceLoaderDependencies,
-  type LoopSourceLoaderDependencies,
+import type {
+  BackgroundSourceLoaderDependencies,
+  LoopSourceLoaderDependencies,
 } from "./source-loaders";
+
+mock.module("server-only", () => ({}));
+
+const sourceLoadersPromise = import("./source-loaders");
+
+async function loadBackgroundAutomationSource(
+  ...args: Parameters<
+    (typeof import("./source-loaders"))["loadBackgroundAutomationSource"]
+  >
+) {
+  const sourceLoaders = await sourceLoadersPromise;
+  return sourceLoaders.loadBackgroundAutomationSource(...args);
+}
+
+async function loadLoopAutomationSource(
+  ...args: Parameters<
+    (typeof import("./source-loaders"))["loadLoopAutomationSource"]
+  >
+) {
+  const sourceLoaders = await sourceLoadersPromise;
+  return sourceLoaders.loadLoopAutomationSource(...args);
+}
 
 function backgroundAgent(id: string) {
   return {
@@ -75,7 +95,12 @@ function loop(id: string) {
     repoName: "widgets",
     definition: {
       nodes: [
-        { id: "start", kind: "start", label: "Start", position: { x: 0, y: 0 } },
+        {
+          id: "start",
+          kind: "start",
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
         { id: "end", kind: "end", label: "End", position: { x: 1, y: 0 } },
       ],
       edges: [],
@@ -143,10 +168,9 @@ describe("Automation source loaders", () => {
       userId: "owner-1",
       agentIds: ["agent-1", "agent-2"],
     });
-    expect(result.items.map((item) => item.latestRun?.sourceId ?? null)).toEqual([
-      "owned-run",
-      null,
-    ]);
+    expect(
+      result.items.map((item) => item.latestRun?.sourceId ?? null),
+    ).toEqual(["owned-run", null]);
   });
 
   test("batches loop triggers/latest runs by loopId and rejects cross-owner rows", async () => {
@@ -156,8 +180,8 @@ describe("Automation source loaders", () => {
       loopRun("foreign-loop-run", "loop-1", "other-user"),
       loopRun("owned-loop-run", "loop-2", "owner-1"),
     ]);
-    const listFailedStepCounts = mock(async () =>
-      new Map([["owned-loop-run", 0]]),
+    const listFailedStepCounts = mock(
+      async () => new Map([["owned-loop-run", 0]]),
     );
     const dependencies = {
       listLoops,
@@ -181,9 +205,8 @@ describe("Automation source loaders", () => {
       userId: "owner-1",
       runIds: ["owned-loop-run"],
     });
-    expect(result.items.map((item) => item.latestRun?.sourceId ?? null)).toEqual([
-      null,
-      "owned-loop-run",
-    ]);
+    expect(
+      result.items.map((item) => item.latestRun?.sourceId ?? null),
+    ).toEqual([null, "owned-loop-run"]);
   });
 });
