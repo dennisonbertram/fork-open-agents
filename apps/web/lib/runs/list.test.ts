@@ -102,6 +102,41 @@ describe("unified Runs list", () => {
     });
   });
 
+  test("reports total source failure without exposing raw errors", async () => {
+    const result = await listAutomationRuns({
+      requestId: "request-total-failure",
+      filters: { view: "all" },
+      limit: 25,
+      loaders: {
+        background_agent: async () => {
+          throw new Error("postgres://private-host/background");
+        },
+        agent_loop: async () => {
+          throw new Error("postgres://private-host/loops");
+        },
+      },
+    });
+
+    expect(result.allSourcesFailed).toBe(true);
+    expect(result.items).toEqual([]);
+    expect(result.nextCursor).toBeUndefined();
+    expect(result.sourceStatus).toEqual([
+      {
+        source: "background_agent",
+        status: "failed",
+        itemCount: 0,
+        safeErrorKind: "source_unavailable",
+      },
+      {
+        source: "agent_loop",
+        status: "failed",
+        itemCount: 0,
+        safeErrorKind: "source_unavailable",
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("private-host");
+  });
+
   test("passes owner-independent filters to only the selected Automation source", async () => {
     const background = mock(async () => []);
     const loops = mock(async () => []);
