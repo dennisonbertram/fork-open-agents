@@ -130,7 +130,9 @@ describe("settings nav data", () => {
 
   test("NAV-008: legacy definition routes remain direct-only", () => {
     expect(findActiveNavItem("/loops")).toBeUndefined();
-    expect(findActiveNavItem("/settings/background-agents")).toBeUndefined();
+    expect(findActiveNavItem("/settings/background-agents")?.id).toBe(
+      "automations",
+    );
   });
 
   test("NAV-012: Automations replaces duplicate background-agent and Loops entries", () => {

@@ -34,8 +34,12 @@ describe("GET /api/automations", () => {
     const { GET } = await routeModulePromise;
 
     const response = await GET(new Request("http://localhost/api/automations"));
+    const requestId = response.headers.get("x-request-id");
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(requestId).toMatch(/^[A-Za-z0-9._:/=-]{8,128}$/);
+    expect(requestId?.length).toBeLessThanOrEqual(128);
     expect(listAutomations).not.toHaveBeenCalled();
   });
 

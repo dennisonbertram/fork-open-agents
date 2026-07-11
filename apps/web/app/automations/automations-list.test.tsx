@@ -49,8 +49,8 @@ describe("AutomationsList", () => {
               repository: { owner: "acme", name: "widgets" },
               nativeStatus: "enabled",
               operability: "active",
-              configurationHealth: "valid",
-              configurationErrorKind: null,
+              configurationHealth: "invalid",
+              configurationErrorKind: "automation_definition_invalid",
               observedRevision: {
                 contractVersion: 1,
                 sourceUpdatedAt: "2026-07-10T00:00:00.000Z",
@@ -88,6 +88,27 @@ describe("AutomationsList", () => {
                   finishedAt: "2026-07-10T00:01:00.000Z",
                 },
                 metadata: {},
+                automation: {
+                  source: "background_agent",
+                  sourceId: "agent-1",
+                },
+                automationName: "PR reviewer",
+                trigger: {
+                  id: "trigger-1",
+                  source: "github",
+                  kind: "github.pull_request",
+                },
+                progress: {
+                  currentStepId: null,
+                  completedSteps: 1,
+                  totalSteps: 1,
+                },
+                evidence: {
+                  requestId: "request-1",
+                  workflowRunId: "workflow-1",
+                  sandboxName: null,
+                  outputUrl: null,
+                },
               },
               detailUrl: "/repos/acme/widgets/agents/agent-1",
               editUrl: "/repos/acme/widgets/agents/agent-1/edit",
@@ -103,6 +124,8 @@ describe("AutomationsList", () => {
     expect(html).toContain("/repos/acme/widgets/agents/agent-1/edit");
     expect(html).toContain("/background-runs/run-1");
     expect(html).toContain('aria-label="Filter automations"');
+    expect(html).toMatch(/>enabled</i);
+    expect(html).toContain("Needs attention");
   });
 
   test("shows healthy results and an explicit partial-source warning together", () => {
@@ -194,5 +217,9 @@ describe("AutomationsList", () => {
     expect(html).toContain("Multi-step unavailable");
     expect(html).not.toContain('href="/loops/new"');
     expect(html).toContain('href="/settings/background-agents"');
+    expect(html).toContain("No automations configured");
+    expect(html).toContain("Create a single-step automation");
+    expect(html).not.toContain("No automations match these filters");
+    expect(html).not.toContain("retry after");
   });
 });

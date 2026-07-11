@@ -80,8 +80,8 @@ function backgroundRecord(): BackgroundAutomationSourceRecord {
       errorMessage: null,
       payloadSummary: {},
       resultSummary: null,
-      requestId: null,
-      workflowRunId: null,
+      requestId: "request-evidence-1",
+      workflowRunId: "workflow-evidence-1",
       startedAt: new Date("2026-07-10T01:00:00.000Z"),
       finishedAt: new Date("2026-07-10T01:05:00.000Z"),
       createdAt: new Date("2026-07-10T01:00:00.000Z"),
@@ -134,7 +134,19 @@ function loopRecord(): LoopAutomationSourceRecord {
       createdAt: new Date("2026-07-01T00:00:00.000Z"),
       updatedAt: new Date("2026-07-09T00:00:00.000Z"),
     },
-    triggers: [],
+    triggers: [
+      {
+        id: "loop-trigger-1",
+        loopId: "shared-id",
+        userId: "user-1",
+        kind: "schedule.cron",
+        status: "enabled",
+        conditions: {},
+        schedule: "0 * * * *",
+        nextRunAt: new Date("2026-07-12T00:00:00.000Z"),
+        createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      },
+    ],
     latestRun: {
       id: "loop-run-1",
       loopId: "shared-id",
@@ -146,13 +158,13 @@ function loopRecord(): LoopAutomationSourceRecord {
       iterationCount: 0,
       stepCount: 2,
       context: {},
-      source: "manual",
-      triggerId: null,
+      source: "schedule",
+      triggerId: "loop-trigger-1",
       idempotencyKey: "loop-idempotency-secret",
       errorKind: null,
       errorMessage: null,
-      workflowRunId: null,
-      requestId: null,
+      workflowRunId: "loop-workflow-evidence-1",
+      requestId: "loop-request-evidence-1",
       startedAt: new Date("2026-07-09T01:00:00.000Z"),
       finishedAt: new Date("2026-07-09T01:05:00.000Z"),
       createdAt: new Date("2026-07-09T01:00:00.000Z"),
@@ -175,7 +187,21 @@ describe("Automation adapters", () => {
       stepCount: 1,
       detailUrl: "/repos/acme%20owner/widgets%2Freview/agents/shared-id",
       editUrl: "/repos/acme%20owner/widgets%2Freview/agents/shared-id/edit",
-      latestRun: { sourceId: "background-run-1" },
+      latestRun: {
+        sourceId: "background-run-1",
+        automation: { source: "background_agent", sourceId: "shared-id" },
+        trigger: {
+          id: "trigger-1",
+          source: "github",
+          kind: "github.pull_request",
+        },
+        evidence: {
+          requestId: "request-evidence-1",
+          workflowRunId: "workflow-evidence-1",
+          sandboxName: null,
+          outputUrl: null,
+        },
+      },
     });
     expect(result.item.triggers).toMatchObject({ total: 1, enabled: 1 });
     const serialized = JSON.stringify(result.item);
@@ -212,6 +238,23 @@ describe("Automation adapters", () => {
         sourceId: "loop-run-1",
         detailUrl: "/loops/shared-id/runs/loop-run-1",
         health: "warning",
+        automation: { source: "agent_loop", sourceId: "shared-id" },
+        trigger: {
+          id: "loop-trigger-1",
+          source: "schedule",
+          kind: "schedule.cron",
+        },
+        progress: {
+          currentStepId: null,
+          completedSteps: 2,
+          totalSteps: 2,
+        },
+        evidence: {
+          requestId: "loop-request-evidence-1",
+          workflowRunId: "loop-workflow-evidence-1",
+          sandboxName: null,
+          outputUrl: null,
+        },
       },
     });
   });

@@ -175,10 +175,28 @@ describe("Automation source loaders", () => {
 
   test("batches loop triggers/latest runs by loopId and rejects cross-owner rows", async () => {
     const listLoops = mock(async () => [loop("loop-1"), loop("loop-2")]);
-    const listTriggers = mock(async () => []);
+    const listTriggers = mock(async () => [
+      {
+        id: "loop-trigger-1",
+        loopId: "loop-2",
+        userId: "owner-1",
+        kind: "github.issue",
+        status: "enabled",
+        conditions: {},
+        schedule: null,
+        nextRunAt: null,
+        createdAt: new Date("2026-07-01T00:00:00.000Z"),
+      },
+    ]);
     const listLatestRuns = mock(async () => [
       loopRun("foreign-loop-run", "loop-1", "other-user"),
-      loopRun("owned-loop-run", "loop-2", "owner-1"),
+      {
+        ...loopRun("owned-loop-run", "loop-2", "owner-1"),
+        source: "github",
+        triggerId: "loop-trigger-1",
+        requestId: "loop-request-1",
+        workflowRunId: "loop-workflow-1",
+      },
     ]);
     const listFailedStepCounts = mock(
       async () => new Map([["owned-loop-run", 0]]),
@@ -208,5 +226,19 @@ describe("Automation source loaders", () => {
     expect(
       result.items.map((item) => item.latestRun?.sourceId ?? null),
     ).toEqual([null, "owned-loop-run"]);
+    expect(result.items[1]?.latestRun).toMatchObject({
+      automation: { source: "agent_loop", sourceId: "loop-2" },
+      trigger: {
+        id: "loop-trigger-1",
+        source: "github",
+        kind: "github.issue",
+      },
+      evidence: {
+        requestId: "loop-request-1",
+        workflowRunId: "loop-workflow-1",
+        sandboxName: null,
+        outputUrl: null,
+      },
+    });
   });
 });
