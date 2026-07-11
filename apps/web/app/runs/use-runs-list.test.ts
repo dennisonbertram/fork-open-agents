@@ -59,17 +59,14 @@ describe("Runs list polling", () => {
 
   test("starts a fresh deadline after an active period becomes inactive", () => {
     const firstStartedAt = 1_000;
-    const firstDeadline = nextRunsPollingDeadline(
-      null,
-      true,
-      firstStartedAt,
-    );
-    expect(firstDeadline).toBe(firstStartedAt + 10 * 60 * 1000);
+    const firstDeadline = nextRunsPollingDeadline(null, true, firstStartedAt);
+    const expectedFirstDeadline = firstStartedAt + 10 * 60 * 1000;
+    expect(firstDeadline).toBe(expectedFirstDeadline);
 
     const resetDeadline = nextRunsPollingDeadline(firstDeadline, false, 2_000);
     expect(resetDeadline).toBeNull();
 
-    const secondStartedAt = firstDeadline + 1;
+    const secondStartedAt = expectedFirstDeadline + 1;
     const secondDeadline = nextRunsPollingDeadline(
       resetDeadline,
       true,
