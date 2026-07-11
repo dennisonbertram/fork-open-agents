@@ -189,6 +189,7 @@ describe("Automation adapters", () => {
       editUrl: "/repos/acme%20owner/widgets%2Freview/agents/shared-id/edit",
       latestRun: {
         sourceId: "background-run-1",
+        detailUrl: "/runs/background-agent/background-run-1",
         automation: { source: "background_agent", sourceId: "shared-id" },
         trigger: {
           id: "trigger-1",
@@ -236,7 +237,7 @@ describe("Automation adapters", () => {
       editUrl: "/loops/shared-id/builder",
       latestRun: {
         sourceId: "loop-run-1",
-        detailUrl: "/loops/shared-id/runs/loop-run-1",
+        detailUrl: "/runs/loop/loop-run-1",
         health: "warning",
         automation: { source: "agent_loop", sourceId: "shared-id" },
         trigger: {

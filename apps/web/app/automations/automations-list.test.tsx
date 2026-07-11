@@ -32,7 +32,7 @@ function response(
 }
 
 describe("AutomationsList", () => {
-  test("renders a unified item with safe legacy edit and latest Run links", () => {
+  test("renders a unified item with a source-native edit link and canonical latest Run link", () => {
     const html = renderToStaticMarkup(
       <AutomationsList
         filters={{}}
@@ -80,7 +80,7 @@ describe("AutomationsList", () => {
                 health: "ok",
                 attentionReasons: [],
                 repository: { owner: "acme", name: "widgets" },
-                detailUrl: "/background-runs/run-1",
+                detailUrl: "/runs/background-agent/run-1",
                 timestamps: {
                   createdAt: "2026-07-10T00:00:00.000Z",
                   updatedAt: "2026-07-10T00:01:00.000Z",
@@ -122,7 +122,8 @@ describe("AutomationsList", () => {
 
     expect(html).toContain("Single step");
     expect(html).toContain("/repos/acme/widgets/agents/agent-1/edit");
-    expect(html).toContain("/background-runs/run-1");
+    expect(html).toContain("/runs/background-agent/run-1");
+    expect(html).not.toContain("/background-runs/run-1");
     expect(html).toContain('aria-label="Filter automations"');
     expect(html).toMatch(/>enabled</i);
     expect(html).toContain("Needs attention");
