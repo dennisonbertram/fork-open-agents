@@ -8,6 +8,7 @@ import {
   RunMetadataTable,
   type RunMetadataRow,
 } from "@/components/run-metadata-table";
+import { RunErrorBanner } from "./run-error-banner";
 import { RunSummarySection } from "./run-summary-section";
 import { LiveTimeline } from "./live-timeline";
 import {
@@ -420,6 +421,8 @@ export function BackgroundRunDetail({
             </Link>
           )}
         </div>
+
+        <RunErrorBanner errorKind={run.errorKind} />
 
         <RunMetadataTable
           rows={buildProofStripRows(run, agent, events, outputs, runCost)}
