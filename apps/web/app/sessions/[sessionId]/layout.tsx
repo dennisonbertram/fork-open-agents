@@ -4,6 +4,7 @@ import { getChatSummariesBySessionId } from "@/lib/db/sessions";
 import { getSessionByIdCached } from "@/lib/db/sessions-cache";
 import { getUserPreferences } from "@/lib/db/user-preferences";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { getProductSurfaceExposurePolicy } from "@/lib/product-surfaces/config";
 import { SessionLayoutShell } from "./session-layout-shell";
 
 interface SessionLayoutProps {
@@ -16,6 +17,7 @@ export default async function SessionLayout({
   children,
 }: SessionLayoutProps) {
   const { sessionId } = await params;
+  const productSurfaceExposure = getProductSurfaceExposurePolicy();
 
   const sessionPromise = getServerSession();
   const sessionRecordPromise = getSessionByIdCached(sessionId);
@@ -58,6 +60,9 @@ export default async function SessionLayout({
     <SessionLayoutShell
       session={sessionRecord}
       initialChatsData={initialChatsData}
+      productSurfaceExposure={{
+        verifiedBuild: productSurfaceExposure.verifiedBuild,
+      }}
     >
       {children}
     </SessionLayoutShell>

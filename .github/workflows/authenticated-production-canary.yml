@@ -35,62 +35,144 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          PRODUCTION_CANARY_REQUIRE_CONFIG: "true"
           PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
           PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
           PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}
           PRODUCTION_CANARY_AUTH_COOKIE: ${{ secrets.PRODUCTION_CANARY_AUTH_COOKIE }}
         run: |
+          set +e
           bun run --cwd apps/web ops:authenticated-canary 2>&1 | tee canary.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          case "$exit_code" in
+            0) classification="passed" ;;
+            1) classification="failed" ;;
+            2) classification="blocked_by_configuration" ;;
+            *) classification="failed" ;;
+          esac
+          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
 
       - name: Run background-agent journey proof
         id: background_journey
         continue-on-error: true
         shell: bash
         env:
+          PRODUCTION_CANARY_REQUIRE_CONFIG: "true"
           PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
           PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
           PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}
           PRODUCTION_CANARY_AUTH_COOKIE: ${{ secrets.PRODUCTION_CANARY_AUTH_COOKIE }}
         run: |
+          set +e
           bun run --cwd apps/web ops:canary-journey -- background-agents 2>&1 | tee background-agent-journey.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          case "$exit_code" in
+            0) classification="passed" ;;
+            1) classification="failed" ;;
+            2) classification="blocked_by_configuration" ;;
+            *) classification="failed" ;;
+          esac
+          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
 
       - name: Run agent-loop journey proof
         id: loops_journey
         continue-on-error: true
         shell: bash
         env:
+          PRODUCTION_CANARY_REQUIRE_CONFIG: "true"
           PRODUCTION_CANARY_URL: ${{ vars.PRODUCTION_URL || 'https://open-agents-azure-xi.vercel.app' }}
           PRODUCTION_CANARY_REPO: ${{ vars.PRODUCTION_CANARY_REPO }}
           PRODUCTION_CANARY_IDENTITY: ${{ vars.PRODUCTION_CANARY_IDENTITY }}
           PRODUCTION_CANARY_AUTH_COOKIE: ${{ secrets.PRODUCTION_CANARY_AUTH_COOKIE }}
         run: |
+          set +e
           bun run --cwd apps/web ops:canary-journey -- loops 2>&1 | tee loops-journey.log
+          exit_code=${PIPESTATUS[0]}
+          set -e
+          case "$exit_code" in
+            0) classification="passed" ;;
+            1) classification="failed" ;;
+            2) classification="blocked_by_configuration" ;;
+            *) classification="failed" ;;
+          esac
+          echo "classification=${classification}" >> "$GITHUB_OUTPUT"
+          echo "exit_code=${exit_code}" >> "$GITHUB_OUTPUT"
+          exit "$exit_code"
 
-      - name: Alert on canary failure
-        if: steps.canary.outcome == 'failure' || steps.background_journey.outcome == 'failure' || steps.loops_journey.outcome == 'failure'
+      - name: Aggregate authenticated canary results
+        id: aggregate
+        if: always()
+        shell: bash
+        env:
+          ACCOUNT_CLASSIFICATION: ${{ steps.canary.outputs.classification }}
+          BACKGROUND_CLASSIFICATION: ${{ steps.background_journey.outputs.classification }}
+          LOOPS_CLASSIFICATION: ${{ steps.loops_journey.outputs.classification }}
+          WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          normalize_classification() {
+            case "$1" in
+              passed|failed|blocked_by_configuration) printf '%s' "$1" ;;
+              *) printf '%s' "failed" ;;
+            esac
+          }
+
+          account="$(normalize_classification "$ACCOUNT_CLASSIFICATION")"
+          background="$(normalize_classification "$BACKGROUND_CLASSIFICATION")"
+          loops="$(normalize_classification "$LOOPS_CLASSIFICATION")"
+
+          all_passed="false"
+          overall="blocked_by_configuration"
+          if [ "$account" = "passed" ] && [ "$background" = "passed" ] && [ "$loops" = "passed" ]; then
+            all_passed="true"
+            overall="passed"
+          elif [ "$account" = "failed" ] || [ "$background" = "failed" ] || [ "$loops" = "failed" ]; then
+            overall="failed"
+          fi
+
+          {
+            echo "all_passed=${all_passed}"
+            echo "overall=${overall}"
+            echo "account_classification=${account}"
+            echo "background_classification=${background}"
+            echo "loops_classification=${loops}"
+          } >> "$GITHUB_OUTPUT"
+
+          {
+            echo "## Authenticated production canary"
+            echo
+            echo "| journey | classification | workflowRunUrl |"
+            echo "| --- | --- | --- |"
+            echo "| account-status | \`${account}\` | ${WORKFLOW_RUN_URL} |"
+            echo "| background-agents-journey | \`${background}\` | ${WORKFLOW_RUN_URL} |"
+            echo "| loops-journey | \`${loops}\` | ${WORKFLOW_RUN_URL} |"
+            echo
+            echo "Overall classification: \`${overall}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Alert on non-passing canary
+        if: always() && steps.aggregate.outputs.all_passed != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
+          ACCOUNT_CLASSIFICATION: ${{ steps.aggregate.outputs.account_classification }}
+          BACKGROUND_CLASSIFICATION: ${{ steps.aggregate.outputs.background_classification }}
+          LOOPS_CLASSIFICATION: ${{ steps.aggregate.outputs.loops_classification }}
         run: |
-          failed_checks=""
-          if [ "${{ steps.canary.outcome }}" = "failure" ]; then
-            failed_checks="${failed_checks}account-status "
-          fi
-          if [ "${{ steps.background_journey.outcome }}" = "failure" ]; then
-            failed_checks="${failed_checks}background-agents-journey "
-          fi
-          if [ "${{ steps.loops_journey.outcome }}" = "failure" ]; then
-            failed_checks="${failed_checks}loops-journey "
-          fi
           bun run --cwd apps/web ops:alert -- \
             --source authenticated-canary \
             --environment production \
             --status failing \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --commit-sha "${{ github.sha }}" \
-            --summary "Failed checks: ${failed_checks}. $(tail -n 40 canary.log 2>/dev/null) $(tail -n 40 background-agent-journey.log 2>/dev/null) $(tail -n 40 loops-journey.log 2>/dev/null)"
+            --summary "Authenticated canary did not pass. account-status=${ACCOUNT_CLASSIFICATION}; background-agents-journey=${BACKGROUND_CLASSIFICATION}; loops-journey=${LOOPS_CLASSIFICATION}. blocked_by_configuration means no journey executed; failed means an executed journey failed/timed out or did not export a valid classification."
 
       - name: Mark canary recovery
-        if: steps.canary.outcome == 'success' && steps.background_journey.outcome == 'success' && steps.loops_journey.outcome == 'success'
+        if: always() && steps.aggregate.outputs.all_passed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -100,8 +182,15 @@ jobs:
             --status recovered \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --commit-sha "${{ github.sha }}" \
-            --summary "Authenticated canary and journey proofs passed or are blocked by explicit configuration."
+            --summary "All three authenticated production canary journeys passed."
 
-      - name: Fail workflow when any canary check failed
-        if: steps.canary.outcome == 'failure' || steps.background_journey.outcome == 'failure' || steps.loops_journey.outcome == 'failure'
-        run: exit 1
+      - name: Fail workflow unless all authenticated journeys passed
+        if: always()
+        env:
+          ALL_PASSED: ${{ steps.aggregate.outputs.all_passed }}
+          OVERALL_CLASSIFICATION: ${{ steps.aggregate.outputs.overall }}
+        run: |
+          if [ "$ALL_PASSED" != "true" ]; then
+            echo "::error::Authenticated production canary classification=${OVERALL_CLASSIFICATION:-failed}; all three journeys must pass." >&2
+            exit 1
+          fi

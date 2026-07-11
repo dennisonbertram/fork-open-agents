@@ -258,7 +258,7 @@ const githubEvent: NormalizedBackgroundTriggerEvent = {
 
 function resetIntegrationMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   workflowRunId = "workflow-1";
   matchingAgentRows = [];
   agentScheduleRows = [];
@@ -337,6 +337,32 @@ describe("dispatchScheduledBackgroundAgents — loop trigger branch", () => {
     // Both schedule states advance
     expect(advanceTriggerScheduleState).toHaveBeenCalledTimes(2);
   });
+
+  test("records a typed trigger skip when loop policy refuses a scheduled run", async () => {
+    agentScheduleRows = [
+      {
+        agent: { ...baseAgent, id: "loop-pseudo-agent" },
+        trigger: loopScheduleTrigger,
+      },
+    ];
+    loopDispatchResult = {
+      skipped: true,
+      reason: "repo_allowlist_unconfigured",
+    };
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:00:00.000Z"),
+      requestId: "req-loop-policy-skip",
+    });
+
+    expect(result.loopRunIds).toEqual([]);
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: loopScheduleTrigger.id,
+      skipReason: "repo_allowlist_unconfigured",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+  });
 });
 
 // ── BT-326-15: event trigger dispatch includes loop-bound triggers ─────────────
@@ -375,6 +401,36 @@ describe("dispatchBackgroundTriggerEvent — loop trigger branch", () => {
     expect(result.loopRunIds).toContain("loop-run-1");
 
     // Agent dispatch path NOT called for loop trigger
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+  });
+
+  test("surfaces a typed loop policy refusal for a matching event trigger", async () => {
+    matchingAgentRows = [
+      {
+        agent: { ...baseAgent, id: "loop-event-pseudo" },
+        trigger: loopEventTrigger,
+      },
+    ];
+    loopDispatchResult = {
+      skipped: true,
+      reason: "repo_allowlist_invalid",
+    };
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-loop-invalid-policy",
+    });
+
+    expect(result).toMatchObject({
+      created: 0,
+      loopRunIds: [],
+      skipReason: "repo_allowlist_invalid",
+    });
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: loopEventTrigger.id,
+      skipReason: "repo_allowlist_invalid",
+    });
     expect(createRunForTrigger).not.toHaveBeenCalled();
   });
 
@@ -525,6 +581,37 @@ describe("dispatchWebhookErrorEvent — loop trigger branch", () => {
     expect(result.created).toBe(1);
     expect(result.loopRunIds).toEqual([]);
     expect(result.runIds).toContain("run-agent-1");
+  });
+
+  test("records the trigger skip when the shared background policy refuses a loop webhook", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "other/repo";
+    webhookRow = {
+      agent: { ...baseAgent, status: "enabled" },
+      trigger: loopWebhookTrigger,
+    };
+    loopForTriggerResult = { ...activeLoop, id: "loop-webhook-1" };
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_loop_123",
+      event: {
+        externalId: "err-loop-policy-refused",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-06-11T10:00:00.000Z",
+      },
+      requestId: "req-loop-webhook-policy-refused",
+    });
+
+    expect(result).toMatchObject({
+      created: 0,
+      skipReason: "repo_not_allowlisted",
+    });
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: loopWebhookTrigger.id,
+      skipReason: "repo_not_allowlisted",
+    });
+    expect(dispatchLoopRunForTrigger).not.toHaveBeenCalled();
   });
 });
 

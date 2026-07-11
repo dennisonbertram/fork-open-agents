@@ -250,7 +250,7 @@ const prEvent: NormalizedBackgroundTriggerEvent = {
 
 function resetMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   matchingRows = [];
   createRunResult = { created: true, run: { id: "run-new" } };
   start.mockClear();

@@ -54,13 +54,34 @@ describe("background agent config", () => {
     }
   });
 
-  test("allows all repos when no allowlist is configured", async () => {
-    const { getBackgroundAgentsAllowedRepos, isBackgroundAgentRepoAllowed } =
-      await modulePromise;
+  test("denies all repos when no allowlist is configured", async () => {
+    const {
+      getBackgroundAgentRepoAccess,
+      getBackgroundAgentsAllowedRepos,
+      getBackgroundAgentsRepoPolicy,
+      isBackgroundAgentRepoAllowed,
+    } = await modulePromise;
     delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
 
-    expect(getBackgroundAgentsAllowedRepos()).toBeNull();
-    expect(isBackgroundAgentRepoAllowed("Acme", "Widgets")).toBe(true);
+    expect(getBackgroundAgentsRepoPolicy()).toEqual({
+      state: "missing",
+      entries: new Set(),
+    });
+    expect(getBackgroundAgentsAllowedRepos()).toEqual(new Set());
+    expect(isBackgroundAgentRepoAllowed("Acme", "Widgets")).toBe(false);
+    expect(getBackgroundAgentRepoAccess("Acme", "Widgets")).toEqual({
+      allowed: false,
+      reason: "repo_allowlist_unconfigured",
+    });
+  });
+
+  test("denies all repos when the allowlist is blank", async () => {
+    const { getBackgroundAgentsRepoPolicy, isBackgroundAgentRepoAllowed } =
+      await modulePromise;
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "   ";
+
+    expect(getBackgroundAgentsRepoPolicy().state).toBe("missing");
+    expect(isBackgroundAgentRepoAllowed("Acme", "Widgets")).toBe(false);
   });
 
   test("allows all repos when wildcard is configured", async () => {
@@ -84,6 +105,29 @@ describe("background agent config", () => {
     expect(isBackgroundAgentRepoAllowed("acme", "widgets")).toBe(true);
     expect(isBackgroundAgentRepoAllowed("ACME", "WIDGETS")).toBe(true);
     expect(isBackgroundAgentRepoAllowed("acme", "other")).toBe(false);
+  });
+
+  test("fails closed for malformed or mixed-wildcard allowlists", async () => {
+    const {
+      getBackgroundAgentRepoAccess,
+      getBackgroundAgentsAllowedRepos,
+      getBackgroundAgentsRepoPolicy,
+      isBackgroundAgentRepoAllowed,
+    } = await modulePromise;
+
+    for (const value of ["not-a-repo", "*,acme/widgets"]) {
+      process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = value;
+      expect(getBackgroundAgentsRepoPolicy()).toMatchObject({
+        state: "invalid",
+        entries: new Set(),
+      });
+      expect(getBackgroundAgentsAllowedRepos()).toEqual(new Set());
+      expect(isBackgroundAgentRepoAllowed("acme", "widgets")).toBe(false);
+      expect(getBackgroundAgentRepoAccess("acme", "widgets")).toEqual({
+        allowed: false,
+        reason: "repo_allowlist_invalid",
+      });
+    }
   });
 
   test("getBackgroundAgentMaxTurns defaults to 16 when unset (#862)", async () => {

@@ -27,6 +27,9 @@ checks -> ready PR or typed failure -> inspectable run detail.
 - Use a disposable repository owned by Dennison's workspace.
 - In production proof, set `BACKGROUND_AGENTS_ALLOWED_REPOS` to the disposable
   repo before enabling `BACKGROUND_AGENTS_ENABLED=true`.
+- Missing, blank, malformed, or mixed wildcard/list allowlist values deny all
+  background-agent dispatch. Exact `*` is the only allow-all value; treat it as
+  an explicit high-risk operator override, not a setup shortcut.
 - Keep production disabled unless explicitly approved. Prefer a preview or
   staging-like environment.
 - Never paste secrets into GitHub issues, PR comments, screenshots, shell logs,
@@ -127,7 +130,7 @@ not a secret or env-var problem.
   - `GITHUB_WEBHOOK_SECRET`
 - Background-agent dispatch configuration:
   - `BACKGROUND_AGENTS_ENABLED=true`
-  - `BACKGROUND_AGENTS_ALLOWED_REPOS=<owner>/<repo>` for controlled proof
+- `BACKGROUND_AGENTS_ALLOWED_REPOS=<owner>/<repo>` for controlled proof
   - `CRON_SECRET` or `BACKGROUND_AGENTS_CRON_SECRET`
   - `BACKGROUND_AGENTS_WEBHOOK_SECRET`
 - Sandbox/runtime and inference provider configuration used by ordinary chat
