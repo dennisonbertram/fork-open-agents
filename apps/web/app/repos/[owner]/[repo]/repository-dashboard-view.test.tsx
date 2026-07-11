@@ -82,4 +82,21 @@ describe("RepositoryDashboardView", () => {
     expect(html).toContain("3 Runs");
     expect(html).not.toContain("0 Automations");
   });
+
+  test("labels bounded Run counts and source gaps truthfully", () => {
+    const html = renderToStaticMarkup(
+      <RepositoryDashboardView
+        owner="acme"
+        repo="widgets"
+        summary={{
+          automations: { status: "ready", count: 1 },
+          runs: { status: "partial", count: 5, hasMore: true },
+        }}
+      />,
+    );
+
+    expect(html).toContain("5+ recent Runs");
+    expect(html).toContain("Some Run sources unavailable");
+    expect(html).not.toContain("5 Runs total");
+  });
 });

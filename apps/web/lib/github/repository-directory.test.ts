@@ -27,6 +27,7 @@ function dependencies(
       { installationId: 1, accountLogin: "acme" },
     ]),
     getUserToken: mock(async () => "token"),
+    createRequestId: () => "request-1",
     listInstallationRepositories: mock(async () => [
       repository("acme/widgets", "2026-07-11T00:00:00.000Z"),
     ]),
@@ -82,7 +83,11 @@ describe("loadRepositoryDirectory", () => {
         "user-1",
         dependencies({ hasGitHubAccount: mock(async () => false) }),
       ),
-    ).toMatchObject({ status: "github_not_connected", repositories: [] });
+    ).toMatchObject({
+      status: "github_not_connected",
+      repositories: [],
+      requestId: "request-1",
+    });
 
     expect(
       await loadRepositoryDirectory(
@@ -152,6 +157,46 @@ describe("loadRepositoryDirectory", () => {
       errorKind: "provider_unavailable",
       failedInstallationCount: 2,
       repositories: [],
+    });
+  });
+
+  test("classifies invalid provider payloads without exposing raw provider details", async () => {
+    const snapshot = await loadRepositoryDirectory(
+      "user-1",
+      dependencies({
+        listInstallationRepositories: mock(async () => {
+          throw new Error(
+            "Invalid GitHub user installation repositories response: raw secret",
+          );
+        }),
+      }),
+    );
+
+    expect(snapshot).toMatchObject({
+      status: "error",
+      errorKind: "provider_invalid_response",
+      requestId: "request-1",
+    });
+    expect(JSON.stringify(snapshot)).not.toContain("raw secret");
+  });
+
+  test("turns installation bootstrap failures into a safe correlated error", async () => {
+    const snapshot = await loadRepositoryDirectory(
+      "user-1",
+      dependencies({
+        getInstallations: mock(async () => {
+          throw new Error("database DSN and provider body must not escape");
+        }),
+      }),
+    );
+
+    expect(snapshot).toEqual({
+      status: "error",
+      repositories: [],
+      installationCount: 0,
+      failedInstallationCount: 0,
+      errorKind: "provider_unavailable",
+      requestId: "request-1",
     });
   });
 });

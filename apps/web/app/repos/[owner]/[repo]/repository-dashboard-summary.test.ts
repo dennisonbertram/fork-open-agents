@@ -133,6 +133,7 @@ describe("loadRepositoryDashboardSummary", () => {
               itemCount: 1,
             },
           ],
+          nextCursor: "more-runs",
           allSourcesFailed: false,
         })),
       }),
@@ -140,7 +141,31 @@ describe("loadRepositoryDashboardSummary", () => {
 
     expect(result).toEqual({
       automations: { status: "partial", count: 2 },
-      runs: { status: "partial", count: 1 },
+      runs: { status: "partial", count: 1, hasMore: true },
     });
+  });
+
+  test("does not classify a disabled Automation source as partial", async () => {
+    const result = await loadRepositoryDashboardSummary(
+      input,
+      dependencies({
+        listAutomations: mock(async () => ({
+          total: 1,
+          automations: [],
+          sourceStatus: [
+            {
+              source: "agent_loop" as const,
+              status: "disabled" as const,
+              itemCount: 0,
+              invalidItemCount: 0,
+              errorKind: "feature_disabled" as const,
+            },
+          ],
+          facets: { repositories: [], kinds: [], states: [] },
+        })),
+      }),
+    );
+
+    expect(result.automations).toEqual({ status: "ready", count: 1 });
   });
 });

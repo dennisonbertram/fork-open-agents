@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 let userId: string | null = "user-1";
 let accessAllowed = true;
+let accessThrows = false;
 const callOrder: string[] = [];
 const redirect = mock((_path: string) => {
   throw new Error("redirect");
@@ -12,6 +13,7 @@ const notFound = mock(() => {
 });
 const verifyRepoAccess = mock(async () => {
   callOrder.push("access");
+  if (accessThrows) throw new Error("GitHub unavailable");
   return accessAllowed
     ? {
         ok: true as const,
@@ -53,6 +55,9 @@ mock.module("./repository-dashboard-view", () => ({
       {owner}/{repo} dashboard
     </div>
   ),
+  RepositoryDashboardAccessError: () => (
+    <div role="alert">Repository access could not be verified</div>
+  ),
 }));
 
 // Old dashboard dependencies remain mocked so this RED test can characterize
@@ -78,6 +83,7 @@ describe("RepoDashboardPage ownership", () => {
   beforeEach(() => {
     userId = "user-1";
     accessAllowed = true;
+    accessThrows = false;
     callOrder.length = 0;
     redirect.mockClear();
     notFound.mockClear();
@@ -131,5 +137,20 @@ describe("RepoDashboardPage ownership", () => {
     ).rejects.toThrow("notFound");
     expect(callOrder).toEqual(["auth", "access"]);
     expect(loadRepositoryDashboardSummary).not.toHaveBeenCalled();
+  });
+
+  test("renders a deliberate safe error when repository verification is unavailable", async () => {
+    accessThrows = true;
+    const { default: RepoDashboardPage } = await pageModulePromise;
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(callOrder).toEqual(["auth", "access"]);
+    expect(loadRepositoryDashboardSummary).not.toHaveBeenCalled();
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Repository access could not be verified");
   });
 });
