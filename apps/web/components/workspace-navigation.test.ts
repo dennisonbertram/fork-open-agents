@@ -2,9 +2,14 @@ import { describe, expect, test } from "bun:test";
 import {
   getActiveWorkspaceNavigationItem,
   getWorkspaceNavigationItems,
+  type WorkspaceNavigationId,
 } from "./workspace-navigation";
 
-const expectedDestinations = [
+const expectedDestinations: {
+  id: WorkspaceNavigationId;
+  label: string;
+  href: string;
+}[] = [
   { id: "sessions", label: "Sessions", href: "/sessions" },
   { id: "runs", label: "Runs", href: "/runs" },
   { id: "automations", label: "Automations", href: "/automations" },
@@ -41,7 +46,10 @@ describe("workspace navigation contract (#961)", () => {
 });
 
 describe("workspace navigation route matching (#961)", () => {
-  const cases: [pathname: string, expectedId: string | null][] = [
+  const cases: [
+    pathname: string,
+    expectedId: WorkspaceNavigationId | null,
+  ][] = [
     ["/sessions", "sessions"],
     ["/sessions/s_1/chats/c_1", "sessions"],
     ["/runs", "runs"],

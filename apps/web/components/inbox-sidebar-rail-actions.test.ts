@@ -133,7 +133,9 @@ describe("getCollapsedRepoRailActions", () => {
 
   test("RAIL-014: repo links use the target repo", () => {
     const actions = getCollapsedRepoRailActions("dennison", "open-agents");
-    const byId = new Map(actions.map((action) => [action.id, action]));
+    const byId = new Map<string, CollapsedRepoRailAction>(
+      actions.map((action) => [action.id, action]),
+    );
 
     expect(byId.get("repo-dashboard")?.href).toBe(
       "/repos/dennison/open-agents",
