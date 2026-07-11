@@ -25,6 +25,8 @@ const previousEnv = {
   HARNESS_SERVICE_TOKEN: process.env.HARNESS_SERVICE_TOKEN,
   HARNESS_TENANT_ID: process.env.HARNESS_TENANT_ID,
   HARNESS_DEFAULT_PROJECT_ID: process.env.HARNESS_DEFAULT_PROJECT_ID,
+  OPEN_AGENTS_EXPOSE_VERIFIED_BUILD:
+    process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD,
 };
 
 function restoreHarnessEnv() {
@@ -97,6 +99,7 @@ const routeModulePromise = import("./route");
 describe("/api/harness/runs", () => {
   beforeEach(() => {
     restoreHarnessEnv();
+    delete process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
     authResult = { ok: true, userId: "user-1" };
     ownedResult = {
       ok: true,
@@ -146,6 +149,7 @@ describe("/api/harness/runs", () => {
 
   test("POST starts a run when enabled", async () => {
     enableHarnessEnv();
+    process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD = "true";
     const { POST } = await routeModulePromise;
 
     const response = await POST(
@@ -165,5 +169,40 @@ describe("/api/harness/runs", () => {
     expect(response.status).toBe(202);
     expect(body.run.id).toBe("vbrun-1");
     expect(startCalls).toHaveLength(1);
+  });
+
+  test("POST blocks creation by default without hiding existing GET access", async () => {
+    enableHarnessEnv();
+    latestRun = createRun();
+    const { GET, POST } = await routeModulePromise;
+
+    const postResponse = await POST(
+      new Request("http://localhost/api/harness/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: "session-1",
+          chatId: "chat-1",
+          latestUserMessageId: "message-1",
+        }),
+      }),
+    );
+    const postBody = (await postResponse.json()) as { code: string };
+
+    expect(postResponse.status).toBe(404);
+    expect(postBody.code).toBe("product_surface_disabled");
+    expect(startCalls).toHaveLength(0);
+
+    const getResponse = await GET(
+      new Request(
+        "http://localhost/api/harness/runs?sessionId=session-1&chatId=chat-1",
+      ),
+    );
+    const getBody = (await getResponse.json()) as {
+      run: { id: string } | null;
+    };
+
+    expect(getResponse.status).toBe(200);
+    expect(getBody.run?.id).toBe("vbrun-1");
   });
 });

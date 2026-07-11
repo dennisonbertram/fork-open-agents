@@ -66,10 +66,28 @@ describe("SessionHeader ShieldCheck button", () => {
     const { VerifiedBuildHeaderButton } = mod;
     const html = renderToStaticMarkup(
       // Render with isActive=false (panel closed state)
-      <VerifiedBuildHeaderButton isActive={false} onClick={() => {}} />,
+      <VerifiedBuildHeaderButton
+        exposed
+        isActive={false}
+        onClick={() => {}}
+      />,
     );
     // The button must carry aria-label="Verified Build"
     expect(html).toContain('aria-label="Verified Build"');
+  });
+
+  test("does not render the header control when product exposure is off", async () => {
+    const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
+
+    const html = renderToStaticMarkup(
+      <VerifiedBuildHeaderButton
+        exposed={false}
+        isActive={false}
+        onClick={() => {}}
+      />,
+    );
+
+    expect(html).toBe("");
   });
 });
 
@@ -148,10 +166,14 @@ describe("Verified Build aria-label regression", () => {
     const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
 
     const htmlInactive = renderToStaticMarkup(
-      <VerifiedBuildHeaderButton isActive={false} onClick={() => {}} />,
+      <VerifiedBuildHeaderButton
+        exposed
+        isActive={false}
+        onClick={() => {}}
+      />,
     );
     const htmlActive = renderToStaticMarkup(
-      <VerifiedBuildHeaderButton isActive={true} onClick={() => {}} />,
+      <VerifiedBuildHeaderButton exposed isActive onClick={() => {}} />,
     );
 
     // aria-label must appear in both states — removing it from either state breaks a11y
@@ -165,7 +187,11 @@ describe("Verified Build aria-label regression", () => {
     const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
 
     const html = renderToStaticMarkup(
-      <VerifiedBuildHeaderButton isActive={false} onClick={() => {}} />,
+      <VerifiedBuildHeaderButton
+        exposed
+        isActive={false}
+        onClick={() => {}}
+      />,
     );
 
     // Lucide ShieldCheck renders as an svg with a path
