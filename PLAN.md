@@ -1,271 +1,210 @@
-# Runtime Agents Plan
+# Sessions, Automations, and Runs Product Reset
 
-## Goal
+## Summary
 
-Make agent work visible in the chat transcript with a compact "Running N agents"
-experience like the reference UI, and evolve managed runtimes so they can host
-an actual working agent inside the runtime.
+Issue [#932](https://github.com/dennisonbertram/fork-open-agents/issues/932)
+defines the durable product and delivery contract for parent epic
+[#931](https://github.com/dennisonbertram/fork-open-agents/issues/931).
+Open Agents will preserve its mature session, sandbox, webhook, background-agent,
+and loop runtimes while reducing the default product to **Sessions**,
+**Automations**, **Runs**, and supporting **Settings**.
 
-## GitHub Backlog
+The detailed, canonical plan is
+[Sessions, Automations, and Runs](docs/plans/sessions-automations-runs.md).
+This root plan is the active-task execution map; it intentionally does not
+duplicate every contract and acceptance criterion from the durable plan.
 
-- Epic: [#656 Runtime agents for managed runtimes and transcript visibility](https://github.com/dennisonbertram/fork-open-agents/issues/656)
-- [#657 Add runtime-agent read model and observability API](https://github.com/dennisonbertram/fork-open-agents/issues/657)
-- [#658 Render runtime-agent summary cards in the transcript](https://github.com/dennisonbertram/fork-open-agents/issues/658)
-- [#659 Record live runtime-agent lifecycle and activity events](https://github.com/dennisonbertram/fork-open-agents/issues/659)
-- [#660 Drill from runtime-agent cards into runtime observability](https://github.com/dennisonbertram/fork-open-agents/issues/660)
-- [#661 Add seeded runtime-agent regression and browser smoke harness](https://github.com/dennisonbertram/fork-open-agents/issues/661)
-- [#662 Bridge runtime-agent cards to Verified Build workcells](https://github.com/dennisonbertram/fork-open-agents/issues/662)
+## Context
 
-The main product distinction should be:
+The repository already has the necessary primitives, but exposes overlapping
+product and implementation nouns:
 
-- **Managed runtime**: the environment, sandbox, tools, profile, setup, and proof.
-- **Runtime agent**: the actor doing a scoped job inside that environment.
-- **Verified Build workcell**: the governed task contract that can later assign a
-  runtime agent.
+- interactive sessions and chat workflow runs;
+- background agents and background-agent runs;
+- loops, loop steps, watchdogs, and loop runs;
+- Verified Build and harness surfaces;
+- a disabled generic workflow catalog;
+- managed-runtime profile authoring;
+- GTM and Account Coordinator systems.
 
-Do not rename managed runtimes into subagents. That would blur the important
-boundary between "where work runs" and "who is doing the work."
+The earlier
+[workflows unification plan](docs/plans/workflows-unification.md) correctly
+identified that background agents and loops share triggers and execution
+concepts. Its **Agents + Workflows** product vocabulary is superseded by this
+plan because `Agent` is also used for interactive chat roles and subagents, and
+`Workflow` is also an internal runtime concept.
 
-## Existing Seams To Reuse
+## Product Contract
 
-The codebase already has most of the persistence and proof structure:
+The primary surfaces are:
 
-- `delegated_worker_runs` in `apps/web/lib/db/schema.ts`
-  - worker id/type/title/status
-  - workspace mode and child workspace metadata
-  - sandbox name
-  - managed runtime profile id/version/run id
-  - lifecycle events, completion packet, cleanup status, evidence refs
-- `managed_runtime_profile_runs`
-  - setup and verification observations for the runtime environment
-- `session_events`
-  - event-backed timeline with source, actor type, status, sandbox/profile refs
-- `workflow_runs`
-  - coordinator-level request/run attribution
-- `apps/web/lib/db/delegated-worker-runs.ts`
-  - records delegated worker runs from task tool output
-- `apps/web/app/api/sessions/[sessionId]/observability/route.ts`
-  - current read endpoint for runtime observability
-- `apps/web/app/sessions/[sessionId]/chats/[chatId]/runtime-observability-panel.tsx`
-  - current detailed actor/runtime panel
-- `apps/web/components/assistant-message-groups.tsx`
-  - current transcript summary bar where "Used tools, ran agents" belongs
-- Verified Build contracts:
-  - `WorkcellContract.assigned_agent`
-  - `WorkcellContract.delegated_worker`
-  - `WorkerCompletionPacket`
+1. **Sessions** — durable interactive coding work attached to a workspace.
+2. **Automations** — versioned repository-scoped coding definitions with one or
+   more steps, triggers, permissions, verification, outputs, and limits.
+3. **Runs** — durable automation execution attempts with an honest lifecycle,
+   evidence, outputs, cost, and recovery controls.
+4. **Settings** — account, connections, repository policy, models, usage, and
+   explicitly advanced configuration.
 
-Important gap: the current observability route still derives `workers` from
-assistant message parts for managed runtime. The durable UI should read from
-`delegated_worker_runs` first, with message extraction only as a compatibility
-fallback. Also, worker rows are currently recorded post-finish, so live
-"Running N agents" requires earlier lifecycle writes or live session events.
+A one-step Automation is backed initially by today's background-agent storage
+and executor. A multi-step Automation is backed initially by today's loop
+storage and step executor. Source-qualified adapters hide that split without
+pretending the sources have identical fields or statuses.
 
-## Product Shape
+## System Impact
 
-### Transcript Summary
+### Source of truth before the reset
 
-For assistant turns with workers, the existing collapsible summary should become
-something like:
+- `sessions`, chats, workflow runs, and sandbox lifecycle records own
+  interactive work.
+- `background_agents`, their triggers, runs, events, and outputs own
+  single-step unattended work.
+- `agent_loops`, loop runs, step runs, and events own multi-step unattended
+  work.
+- Source-specific pages and APIs expose each model separately.
 
-- Active: `Running 3 agents · 18s · 5 tools`
-- Completed collapsed: `Used 7 tools, ran 6 agents`
-- Expanded: a compact grid of runtime agent cards.
+### Source of truth during the reset
 
-Each card should show:
+- Existing tables and executors remain authoritative for writes and detailed
+  evidence.
+- Additive Automation and Run adapters provide canonical read contracts.
+- Canonical references always include a source kind and source id.
+- New product routes compose or delegate to source-specific detail and action
+  handlers until parity is proven.
 
-- status dot
-- short task title
-- current activity pill, for example `Searching the web` or `Running tests`
-- agent kind, for example `research`, `implementation`, `qa`
-- runtime/profile hint only when useful, for example `web-bun-agent-browser`
-- warning/proof state when the worker lacks completion evidence
+### Source of truth after product parity
 
-The grid should live inline in the transcript, not inside a modal. Detailed
-sandbox/runtime proof still belongs in the existing runtime activity panel.
+- Sessions, Automations, and Runs are the only default product nouns.
+- Existing source storage may remain permanently if adapters are reliable.
+- Shared executor contracts may be extracted only after characterization.
+- A canonical-table migration is a separate research decision, not an assumed
+  requirement.
 
-### Detail Drill-In
+## Dependency-Ordered Delivery
 
-Clicking a card should open the detailed runtime/sandbox panel filtered to that
-agent where possible:
-
-- worker lifecycle
-- sandbox name
-- managed runtime profile run
-- setup/probe evidence
-- tool calls and events
-- completion packet
-- cleanup state
-
-This keeps the transcript scannable while preserving proof depth.
-
-## Data Model
-
-### First Pass: Read Model, No New Table
-
-Add a small read-model layer:
-
-- `apps/web/lib/runtime-agents/runtime-agent-read-model.ts`
-- `apps/web/lib/runtime-agents/runtime-agent-read-model.test.ts`
-
-It should convert existing rows into a UI DTO:
-
-```ts
-type RuntimeAgentCard = {
-  id: string;
-  workerRunId: string;
-  taskTitle: string;
-  agentKind: string;
-  status: "queued" | "starting" | "running" | "blocked" | "completed" | "failed" | "cancelled" | "stale";
-  activity: string;
-  sandboxName: string | null;
-  profileLabel: string | null;
-  workspaceMode: "shared" | "isolated" | null;
-  evidenceCount: number;
-  startedAt: string | null;
-  updatedAt: string;
-  finishedAt: string | null;
-};
+```text
+contract and exposure boundaries
+  -> truthful allowlists and canaries
+  -> Automation and Run adapters
+  -> unified Runs list
+  -> normalized Run detail shell
+  -> unified Automations list
+  -> single-step editor rehome
+  -> multi-step editor rehome
+  -> navigation, Settings, landing, and onboarding reduction
+  -> shared executor contracts
+  -> optional storage-migration spike
 ```
 
-Source priority:
+Runs ship before editor rehoming because an Automation test or webhook delivery
+must have a trustworthy observation surface before the new creation experience
+is promoted.
 
-1. `delegated_worker_runs`
-2. matching `session_events`
-3. matching `managed_runtime_profile_runs`
-4. current message-part extraction only as fallback for in-flight old messages
+## Implementation Waves
 
-### Live Updates
+### Wave 0 — durable contract
 
-To make active agent cards reliable, record worker lifecycle earlier than
-post-finish:
+- Complete #932 as a docs-only PR into `develop`.
+- Mark old vocabulary as superseded while preserving its technical evidence.
+- Create or attach PR-sized native child issues under #931 before coding.
 
-- on task tool creation: write `planned` or `launching`
-- when runtime setup starts: write `starting`
-- when the worker begins executing: write `running`
-- when current tool changes: emit a `session_event` with safe current activity
-- on completion/error/approval block: update terminal status
+### Wave 1 — trust and product exposure
 
-Prefer event-backed state. The UI can poll the existing observability endpoint
-every few seconds at first, then later switch to streaming/SSE if needed.
+- Make missing unattended repository allowlists fail closed; preserve explicit
+  `*` only as a deliberate override.
+- Distinguish passed, failed, cancelled, and blocked/unproven canary outcomes.
+- Add explicit product exposure gates for Verified Build/harness UI, GTM,
+  generic workflow catalog, and custom runtime-profile authoring.
 
-## API Changes
+### Wave 2 — additive contracts
 
-Extend `/api/sessions/[sessionId]/observability`:
+- Add source-qualified Automation adapters over background agents and loops.
+- Add normalized Run adapters over background-agent and loop runs.
+- Reuse Account Coordinator redaction and partial-source isolation patterns,
+  while fixing optimistic unknown/skipped mappings.
 
-- include `runtimeAgents`
-- populate it from `listDelegatedWorkerRunsForSession`
-- preserve existing `workers` field during migration
-- include enough ids for deep-linking to the runtime panel
+### Wave 3 — Runs product
 
-Potential shape:
+- Add a unified Runs API/list with repository, Automation, trigger, lifecycle,
+  and attention filters.
+- Add a normalized Run detail shell that composes existing evidence and control
+  panels.
+- Keep legacy detail routes until parity and redirect tests pass.
 
-```ts
-type RuntimeAgentsObservability = {
-  summary: {
-    total: number;
-    running: number;
-    blocked: number;
-    failed: number;
-    completed: number;
-  };
-  agents: RuntimeAgentCard[];
-};
-```
+### Wave 4 — Automations product
 
-## UI Implementation
+- Add a unified read-only Automations list.
+- Rehome the background-agent builder as the default single-step flow.
+- Rehome the loop builder as the advanced multi-step flow.
+- Preserve existing payloads, storage, dispatch, and execution behavior.
 
-Add colocated components rather than growing `session-chat-content.tsx`:
+### Wave 5 — product reduction
 
-- `apps/web/components/runtime-agent-summary-grid.tsx`
-- `apps/web/components/runtime-agent-card.tsx`
-- `apps/web/components/runtime-agent-summary-grid.test.tsx`
+- Reduce workspace and repository navigation to Sessions, Automations, Runs,
+  and Settings.
+- Rename interactive `Agents` settings to `Chat roles` and move non-core tools
+  under Advanced.
+- Align landing and onboarding with
+  `Connect GitHub -> start Session -> create Automation -> inspect Run`.
 
-Thread into:
+### Wave 6 — runtime convergence after parity
 
-- `apps/web/components/assistant-message-groups.tsx`
-- `apps/web/components/tool-calls-summary-bar.tsx`
-- `apps/web/app/sessions/[sessionId]/chats/[chatId]/runtime-observability-panel.tsx`
+- Characterize both unattended executors.
+- Extract shared step, permission, verification, output, context, and result
+  contracts without changing behavior.
+- Time-box a storage-migration spike only after all existing records round-trip
+  losslessly through adapters.
 
-The transcript summary bar should support:
+## Planned Changes For #932
 
-- agent count segment
-- active agent activity segment
-- expanded grid below the summary row
-- no layout shift when collapsed
-- compact mobile behavior with horizontal wrapping instead of overflow
+- `PLAN.md` — replace the stale runtime-agents task with this active execution
+  map.
+- `docs/plans/sessions-automations-runs.md` — add the canonical product,
+  lifecycle, contracts, implementation waves, verification, rollout, rollback,
+  and stop-condition plan.
+- `docs/plans/workflows-unification.md` — mark its product vocabulary as
+  superseded, while retaining it as technical evidence.
+- `docs/process/index.md` — link the canonical plan from the repository process
+  routing document.
 
-## Verified Build Alignment
+No code, schema, API, UI, environment, workflow, or deployment behavior changes
+in #932.
 
-Do not make this depend on Verified Build yet. Verified Build docs say current
-work is still in the contract phase, and UI/workcell orchestration is a later
-step.
+## Verification For #932
 
-But design the DTO to map cleanly later:
+- Check Markdown formatting through the repository formatter.
+- Validate changed Markdown local links resolve.
+- Run `git diff --check`.
+- Inspect the final diff for docs-only scope and consistent issue links.
 
-- `RuntimeAgentCard.id` -> `WorkcellContract.assigned_agent.agent_id`
-- `workerRunId` -> `WorkcellContract.delegated_worker.run_id`
-- `taskTitle` -> `WorkcellContract.title`
-- `status` -> workcell status
-- `evidenceCount` -> evidence matrix count
+This slice uses a documented TDD exception: it changes no runtime behavior, so
+there is no meaningful red behavioral test. Later behavior-changing child
+issues must follow behavior-first TDD and the proof-level requirements in the
+canonical plan.
 
-When Verified Build workcells become active, the same grid can show governed
-workcells instead of raw delegated workers.
+## Global Stop Conditions
 
-## Rollout Plan
+Stop rather than widen an implementation slice when it requires:
 
-1. Create or identify the GitHub issue/epic for runtime-agent transcript
-   visibility, linked to managed runtime and Verified Build plans.
-2. Add the runtime-agent read model and tests against fixture rows/events.
-3. Extend the observability route with `runtimeAgents` while keeping existing
-   `workers` unchanged.
-4. Add transcript UI for completed worker runs using persisted rows.
-5. Add live lifecycle events/early upserts so active turns show "Running N
-   agents" before the response finishes.
-6. Add card click/drill-in wiring to the runtime observability panel.
-7. Add Verified Build mapping only after the roadmap reaches real workcells.
+- destructive migration or record deletion;
+- loss-prone conversion of a legacy definition or evidence packet;
+- executor behavior changes before characterization tests exist;
+- a normalized Run that omits source-specific evidence or controls;
+- unattended execution outside an explicit repository allowlist;
+- false success for blocked, skipped, unknown, or unproven states;
+- pulling frozen systems back into the default product path;
+- a live external dependency merely to prove deterministic local behavior.
 
-## Regression Tests
+## Definition Of Done
 
-Minimum durable coverage:
+For #932:
 
-- read model maps `delegated_worker_runs` to cards with sandbox/profile proof
-- read model prefers persisted worker rows over message extraction
-- observability API returns `runtimeAgents` for owned sessions only
-- completed assistant turn shows `ran N agents`
-- active worker shows `Running N agents`
-- expanded transcript shows card grid without requiring the runtime modal
-- failed/blocked/stale worker cards render warning state
-- long task titles truncate without expanding the chat layout
-- runtime panel can filter/open from a card id
+- the root plan points to the canonical contract;
+- the detailed plan is dependency-ordered and executable by bounded agents;
+- the old vocabulary is unambiguously superseded but not deleted;
+- the process index links the new plan;
+- formatting, local-link validation, and diff checks pass;
+- a detailed docs-only PR targets `develop` and references #931 and #932.
 
-Browser QA:
-
-- run local app on `localhost:3002`
-- open a managed-runtime chat with seeded worker fixtures
-- verify collapsed summary, expanded grid, card hover, and drill-in
-- check console and server logs
-
-Required final checks:
-
-- focused tests first
-- `git diff --check`
-- `bun --bun run ci`
-
-## Non-Goals For First PR
-
-- no large-scale autonomous swarm
-- no direct worker-to-worker chat
-- no new generalized workflow product surface
-- no claim that worker self-checks are final proof
-- no replacement of the existing runtime/sandbox activity panel
-
-## Open Decisions
-
-- Product label: `Runtime agents`, `Workers`, or `Subagents`.
-- Should completed grids stay expandable forever, or collapse into a one-line
-  "Used tools, ran agents" record after the run is old?
-- Should classic `task` subagents appear in the same grid, or only managed
-  runtime workers?
-- Should active updates be polling-only for V1, or should we add a session event
-  stream while touching this area?
+For parent epic #931, completion requires the full criteria in
+[the canonical plan](docs/plans/sessions-automations-runs.md#epic-definition-of-done).

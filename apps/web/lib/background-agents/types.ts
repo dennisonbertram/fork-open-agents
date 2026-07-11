@@ -55,6 +55,24 @@ export const backgroundAgentErrorKinds = [
   "pr_creation_failed",
   "model_resolution_failed",
   "webhook_signature_invalid",
+  // (#916) Superseded for the progress-based stall path by "agent_stalled"
+  // below — escalate-and-commit-on-stall replaces the hard kill. Retained
+  // for backward compatibility with historical run rows (and the opt-in
+  // absolute hard turn ceiling, #862/#896, which still uses this kind).
+  "agent_turn_budget_exceeded",
+  // (#916) A background-agent run that made no progress (git-delta) or kept
+  // repeating/cycling the same tool calls, was nudged to re-plan, then
+  // escalated to a tool-aware finalize instruction, and still did not
+  // recover within the finalize window. Distinct from
+  // agent_turn_budget_exceeded: work already committed/pushed/commented by
+  // the agent's finalize turns is preserved, not discarded.
+  "agent_stalled",
+  // (#917) A background-agent run whose accumulated token usage breached the
+  // per-run token fuse (BACKGROUND_AGENT_MAX_RUN_TOKENS) — a runaway-COST
+  // backstop, not a work limit. Routes through the same escalate-and-commit
+  // path as agent_stalled (work is preserved), but surfaces distinctly so
+  // operators can review cost/runaway rather than a progress stall.
+  "token_budget_exceeded",
 ] as const;
 
 export type BackgroundAgentErrorKind =

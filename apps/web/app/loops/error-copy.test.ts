@@ -89,4 +89,16 @@ describe("getLoopErrorCopy", () => {
     expect(copy.whatHappened.toLowerCase()).not.toContain("toctou");
     expect(copy.whatHappened.toLowerCase()).toMatch(/already retried|refresh/);
   });
+
+  it("maps turn_budget_exceeded to copy naming the agent-turns-per-step control (#862)", () => {
+    const copy = getLoopErrorCopy("turn_budget_exceeded");
+    expect(copy.isKnown).toBe(true);
+    expect(copy.whatToDo).toMatch(/agent turns per step/i);
+  });
+
+  it("corrects workflow_failed's whatToDo to name the real knob, not step limits (#862)", () => {
+    const copy = getLoopErrorCopy("workflow_failed");
+    expect(copy.whatToDo.toLowerCase()).toContain("timeout");
+    expect(copy.whatToDo.toLowerCase()).not.toContain("step limits");
+  });
 });

@@ -16,6 +16,7 @@ import {
   getNextLifecycleVersion,
 } from "@/lib/sandbox/lifecycle";
 import { kickSandboxLifecycleWorkflow } from "@/lib/sandbox/lifecycle-kick";
+import { getRequestId } from "@/lib/harness/request-id";
 import {
   canOperateOnSandbox,
   clearSandboxResumeState,
@@ -23,6 +24,7 @@ import {
   getResumableSandboxName,
   getSessionSandboxName,
   hasRuntimeSandboxState,
+  isSandboxAlreadyRunningError,
   isSandboxNotFoundError,
 } from "@/lib/sandbox/utils";
 
@@ -34,11 +36,29 @@ interface RestoreSnapshotRequest {
   sessionId: string;
 }
 
+export type SandboxLifecycleErrorKind =
+  | "sandbox_pause_failed"
+  | "sandbox_resume_failed"
+  | "sandbox_resume_state_missing"
+  | "sandbox_resume_unavailable";
+
+function lifecycleResponse(
+  body: Record<string, unknown>,
+  status: number,
+  requestId: string,
+): Response {
+  return Response.json(
+    { ...body, requestId },
+    { status, headers: { "X-Request-ID": requestId } },
+  );
+}
+
 /**
  * POST - Compatibility pause endpoint.
  * Stops the current persistent sandbox session and preserves resumability via sandboxName.
  */
 export async function POST(req: Request) {
+  const requestId = getRequestId(req.headers);
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -86,18 +106,37 @@ export async function POST(req: Request) {
       ...buildHibernatedLifecycleUpdate(),
     });
 
-    return Response.json({
-      snapshotId:
-        getResumableSandboxName(clearedState) ??
-        sessionRecord.snapshotUrl ??
-        null,
-      createdAt: Date.now(),
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return Response.json(
-      { error: `Failed to pause sandbox: ${message}` },
-      { status: 500 },
+    return lifecycleResponse(
+      {
+        snapshotId:
+          getResumableSandboxName(clearedState) ??
+          sessionRecord.snapshotUrl ??
+          null,
+        createdAt: Date.now(),
+      },
+      200,
+      requestId,
+    );
+  } catch {
+    const sandboxName = getResumableSandboxName(sessionRecord.sandboxState);
+    console.error(
+      JSON.stringify({
+        event: "sandbox-lifecycle",
+        message: "pause-failed",
+        sessionId,
+        sandboxName,
+        errorKind: "sandbox_pause_failed",
+        requestId,
+      }),
+    );
+    return lifecycleResponse(
+      {
+        error: "Sandbox pause failed. Try again.",
+        errorKind: "sandbox_pause_failed" satisfies SandboxLifecycleErrorKind,
+        retryable: true,
+      },
+      500,
+      requestId,
     );
   }
 }
@@ -107,6 +146,7 @@ export async function POST(req: Request) {
  * Resumes a named persistent sandbox, or lazily migrates a legacy snapshot-backed session.
  */
 export async function PUT(req: Request) {
+  const requestId = getRequestId(req.headers);
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -154,11 +194,16 @@ export async function PUT(req: Request) {
     console.log(
       `[Snapshot Restore] session=${sessionId} already_running=true sandboxType=${sandboxType}`,
     );
-    return Response.json({
-      success: true,
-      alreadyRunning: true,
-      restoredFrom,
-    });
+    return lifecycleResponse(
+      {
+        success: true,
+        alreadyRunning: true,
+        restoredFrom,
+        sandboxName: getResumableSandboxName(sessionRecord.sandboxState),
+      },
+      200,
+      requestId,
+    );
   }
 
   const persistentSandboxName = getResumableSandboxName(
@@ -170,9 +215,15 @@ export async function PUT(req: Request) {
     console.error(
       `[Snapshot Restore] session=${sessionId} error=no_resume_state sandboxType=${sandboxType}`,
     );
-    return Response.json(
-      { error: "No sandbox available for resume" },
-      { status: 404 },
+    return lifecycleResponse(
+      {
+        error: "No sandbox available for resume",
+        errorKind:
+          "sandbox_resume_state_missing" satisfies SandboxLifecycleErrorKind,
+        retryable: false,
+      },
+      404,
+      requestId,
     );
   }
 
@@ -248,13 +299,42 @@ export async function PUT(req: Request) {
       `[Snapshot Restore] session=${sessionId} success=true sandboxType=${sandboxType} sandboxName=${restoredSandboxName} restoredFrom=${restoredFromLabel}`,
     );
 
-    return Response.json({
-      success: true,
-      restoredFrom,
-      sandboxId: "id" in sandbox ? sandbox.id : undefined,
-    });
+    return lifecycleResponse(
+      {
+        success: true,
+        restoredFrom,
+        sandboxName: restoredSandboxName,
+        sandboxId: "id" in sandbox ? sandbox.id : undefined,
+      },
+      200,
+      requestId,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
+    if (isSandboxAlreadyRunningError(message)) {
+      const runningSandboxName =
+        persistentSandboxName ?? getSessionSandboxName(sessionId);
+      console.log(
+        JSON.stringify({
+          event: "sandbox-lifecycle",
+          message: "resume-already-running",
+          sessionId,
+          sandboxName: runningSandboxName,
+          requestId,
+        }),
+      );
+      return lifecycleResponse(
+        {
+          success: true,
+          alreadyRunning: true,
+          restoredFrom: persistentSandboxName ?? legacySnapshotId,
+          sandboxName: runningSandboxName,
+        },
+        200,
+        requestId,
+      );
+    }
 
     if (
       persistentSandboxName &&
@@ -266,22 +346,45 @@ export async function PUT(req: Request) {
         ...buildHibernatedLifecycleUpdate(),
       });
       console.error(
-        `[Snapshot Restore] session=${sessionId} success=false error=${message}`,
+        JSON.stringify({
+          event: "sandbox-lifecycle",
+          message: "resume-unavailable",
+          sessionId,
+          sandboxName: persistentSandboxName,
+          errorKind: "sandbox_resume_unavailable",
+          requestId,
+        }),
       );
-      return Response.json(
+      return lifecycleResponse(
         {
           error: "Saved sandbox is no longer available. Create a new sandbox.",
+          errorKind:
+            "sandbox_resume_unavailable" satisfies SandboxLifecycleErrorKind,
+          retryable: false,
         },
-        { status: 404 },
+        404,
+        requestId,
       );
     }
 
     console.error(
-      `[Snapshot Restore] session=${sessionId} success=false error=${message}`,
+      JSON.stringify({
+        event: "sandbox-lifecycle",
+        message: "resume-failed",
+        sessionId,
+        sandboxName: persistentSandboxName,
+        errorKind: "sandbox_resume_failed",
+        requestId,
+      }),
     );
-    return Response.json(
-      { error: `Failed to restore snapshot: ${message}` },
-      { status: 500 },
+    return lifecycleResponse(
+      {
+        error: "Sandbox resume failed. Try again.",
+        errorKind: "sandbox_resume_failed" satisfies SandboxLifecycleErrorKind,
+        retryable: true,
+      },
+      500,
+      requestId,
     );
   }
 }

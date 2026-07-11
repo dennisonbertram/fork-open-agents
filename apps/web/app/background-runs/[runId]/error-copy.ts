@@ -50,12 +50,15 @@ export const ALL_KNOWN_BACKGROUND_RUN_ERROR_KINDS = [
   "pr_creation_failed",
   "model_resolution_failed",
   "webhook_signature_invalid",
+  "agent_turn_budget_exceeded",
+  "agent_stalled",
+  "token_budget_exceeded",
 ] as const;
 
 export type KnownBackgroundRunErrorKind =
   (typeof ALL_KNOWN_BACKGROUND_RUN_ERROR_KINDS)[number];
 
-const GITHUB_SETTINGS_HREF = "/settings/github";
+const GITHUB_SETTINGS_HREF = "/settings/connections";
 
 function knownCopy(
   kind: KnownBackgroundRunErrorKind,
@@ -122,6 +125,26 @@ function knownCopy(
         whatHappened: "An incoming webhook failed signature verification.",
         whatToDo:
           "Check the GitHub App webhook secret configuration, then retry.",
+      };
+    case "agent_turn_budget_exceeded":
+      return {
+        whatHappened:
+          "The agent reached its configured turn limit before it could finish.",
+        whatToDo:
+          "Review the partial work and event log, then retry with a narrower task or a higher turn limit.",
+      };
+    case "agent_stalled":
+      return {
+        whatHappened:
+          "The agent stopped making progress after its recovery attempts.",
+        whatToDo:
+          "Review the preserved work and event log, then retry with clearer or narrower instructions.",
+      };
+    case "token_budget_exceeded":
+      return {
+        whatHappened: "The run reached its configured token safety limit.",
+        whatToDo:
+          "Review the partial work and usage evidence, then retry with a narrower task or adjust the token limit.",
       };
     default: {
       // Exhaustiveness guard: if a new kind is added to

@@ -1,18 +1,21 @@
 "use client";
 
-import {
-  ArrowLeft,
-  Bot,
-  CheckCircle2,
-  Clock3,
-  ExternalLink,
-} from "lucide-react";
+import { ArrowLeft, Bot, CheckCircle2, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
-import { cn } from "@/lib/utils";
+import {
+  RunMetadataTable,
+  type RunMetadataRow,
+} from "@/components/run-metadata-table";
 import { RunErrorBanner } from "./run-error-banner";
 import { RunSummarySection } from "./run-summary-section";
+import { LiveTimeline } from "./live-timeline";
+import {
+  StatusPill,
+  formatDate,
+  stringifyPayloadValue,
+} from "./timeline-format";
 import { useBackgroundRunEventSource } from "./use-background-run-event-source";
 import type {
   BackgroundRunDetailData,
@@ -36,70 +39,8 @@ async function fetchJson<T>(url: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-function StatusPill({ status }: { status: string }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex h-5 items-center rounded-full border px-1.5 text-[10px] font-medium capitalize",
-        status === "succeeded" || status === "created"
-          ? "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-          : status === "failed"
-            ? "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300"
-            : status === "running" || status === "queued"
-              ? "border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-300"
-              : "border-border bg-muted/40 text-muted-foreground",
-      )}
-    >
-      {status.replaceAll("_", " ")}
-    </span>
-  );
-}
-
-function formatDate(value: string | null) {
-  if (!value) {
-    return "-";
-  }
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
-}
-
-function ProofItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0 rounded-md border border-border bg-muted/20 px-3 py-2">
-      <p className="text-[10px] font-medium uppercase text-muted-foreground">
-        {label}
-      </p>
-      <p className="mt-1 truncate font-mono text-xs">{value}</p>
-    </div>
-  );
-}
-
-function DebugRow({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div className="grid gap-1 px-4 py-2">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="break-all font-mono text-xs">{value ?? "-"}</span>
-    </div>
-  );
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stringifyPayloadValue(value: unknown): string | null {
-  if (typeof value === "string") {
-    return value.trim() || null;
-  }
-  if (typeof value === "number" || typeof value === "boolean") {
-    return String(value);
-  }
-  return null;
 }
 
 function formatDuration(startedAt: string | null, finishedAt: string | null) {
@@ -238,38 +179,77 @@ function formatRunTarget(run: SerializedBackgroundRun) {
   return run.externalId;
 }
 
-function CommandOutput({ event }: { event: SerializedBackgroundEvent }) {
-  const command = stringifyPayloadValue(event.payload.command);
-  const stdout = stringifyPayloadValue(event.payload.stdout);
-  const stderr = stringifyPayloadValue(event.payload.stderr);
-  const durationMs = stringifyPayloadValue(event.payload.durationMs);
+// ── Run metadata rows (#895) ─────────────────────────────────────────────────
 
-  if (!(command || stdout || stderr || durationMs)) {
-    return null;
+/**
+ * Proof-strip rows for the terminal-style RunMetadataTable, replacing the
+ * old content-sized ProofItem card grid. Every row here is already a STABLE
+ * field on the run (nullable fields fall through to RunMetadataTable's "—"
+ * placeholder instead of disappearing). Cost is genuinely conditional (only
+ * derivable when an event payload carries a cost) and is appended last, at a
+ * stable trailing position.
+ */
+function buildProofStripRows(
+  run: SerializedBackgroundRun,
+  agent: SerializedBackgroundAgent | null,
+  events: SerializedBackgroundEvent[],
+  outputs: SerializedBackgroundOutput[],
+  runCost: string | null,
+): RunMetadataRow[] {
+  const rows: RunMetadataRow[] = [
+    { key: "status", label: "Status", value: run.status },
+    { key: "trigger", label: "Trigger", value: run.triggerKind },
+    {
+      key: "repository",
+      label: "Repository",
+      value: `${run.repoOwner}/${run.repoName}`,
+    },
+    { key: "ref", label: "Ref", value: run.sha ?? run.ref ?? run.branch },
+    { key: "sandbox", label: "Sandbox", value: run.sandboxName },
+    {
+      key: "permissions",
+      label: "Permissions",
+      value: formatPermissionSummary(agent),
+    },
+    {
+      key: "checks",
+      label: "Checks",
+      value: formatCheckSummary(events, agent),
+    },
+    { key: "output", label: "Output", value: formatOutputSummary(outputs) },
+    {
+      key: "duration",
+      label: "Duration",
+      value: formatDuration(run.startedAt, run.finishedAt),
+    },
+  ];
+
+  if (runCost) {
+    rows.push({ key: "cost", label: "Cost", value: runCost });
   }
 
-  return (
-    <div className="space-y-2 rounded-md border border-border bg-muted/20 p-3 text-xs">
-      {command && (
-        <p className="truncate font-mono text-muted-foreground">{command}</p>
-      )}
-      {durationMs && (
-        <p className="font-mono text-[10px] text-muted-foreground">
-          {durationMs}ms
-        </p>
-      )}
-      {stdout && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-background p-2 font-mono text-[11px]">
-          {stdout}
-        </pre>
-      )}
-      {stderr && (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-red-500/5 p-2 font-mono text-[11px] text-red-700 dark:text-red-300">
-          {stderr}
-        </pre>
-      )}
-    </div>
-  );
+  return rows;
+}
+
+/** Debug sidebar rows — same stable-placeholder terminal-style treatment. */
+function buildDebugRows(run: SerializedBackgroundRun): RunMetadataRow[] {
+  return [
+    { key: "run-id", label: "Run ID", value: run.id },
+    { key: "request-id", label: "Request ID", value: run.requestId },
+    { key: "workflow-run", label: "Workflow Run", value: run.workflowRunId },
+    {
+      key: "idempotency-key",
+      label: "Idempotency Key",
+      value: run.idempotencyKey,
+    },
+    { key: "source", label: "Source", value: run.source },
+    { key: "external-event", label: "External Event", value: run.externalId },
+    {
+      key: "trigger-target",
+      label: "Trigger Target",
+      value: formatRunTarget(run),
+    },
+  ];
 }
 
 const STREAM_STATUS_LABELS: Record<StreamStatus, string> = {
@@ -351,11 +331,48 @@ export function BackgroundRunDetail({
     return [...detail.events, ...extra];
   }, [sseEnabled, detail.events, streamEvents]);
 
-  const { run, events } = { run: mergedRun, events: mergedEvents };
+  // Backfill run-level identifiers (workflow run / sandbox / request id) from
+  // the stream events when the run object itself hasn't been populated yet.
+  // With SSE enabled, SWR polling is suppressed and `mergedRun` only picks up
+  // the terminal status — so a queued run opened before the executor set these
+  // fields would otherwise show them nowhere (they were removed from the
+  // per-event footer to cut noise, and the sidebar's copy is still null).
+  const runWithLiveIds: SerializedBackgroundRun = useMemo(() => {
+    if (
+      mergedRun.workflowRunId &&
+      mergedRun.sandboxName &&
+      mergedRun.requestId
+    ) {
+      return mergedRun;
+    }
+    let workflowRunId = mergedRun.workflowRunId;
+    let sandboxName = mergedRun.sandboxName;
+    let requestId = mergedRun.requestId;
+    for (const event of mergedEvents) {
+      workflowRunId ||= event.workflowRunId;
+      sandboxName ||= event.sandboxName;
+      requestId ||= event.requestId;
+      if (workflowRunId && sandboxName && requestId) {
+        break;
+      }
+    }
+    return { ...mergedRun, workflowRunId, sandboxName, requestId };
+  }, [mergedRun, mergedEvents]);
+
+  const { run, events } = { run: runWithLiveIds, events: mergedEvents };
   const runCost = formatRunCost(events);
   const isLive = run.status === "queued" || run.status === "running";
   const streamStatusLabel =
     sseEnabled && isLive ? STREAM_STATUS_LABELS[sseStatus] : null;
+  const timelineStatusLabel = isLive
+    ? sseEnabled
+      ? sseStatus === "live"
+        ? "Streaming"
+        : sseStatus === "connecting" || sseStatus === "reconnecting"
+          ? "Connecting"
+          : "Refreshing"
+      : "Refreshing"
+    : null;
 
   return (
     <main className="min-h-0 flex-1 overflow-y-auto bg-background text-foreground">
@@ -407,30 +424,9 @@ export function BackgroundRunDetail({
 
         <RunErrorBanner errorKind={run.errorKind} />
 
-        <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-          <ProofItem label="Status" value={run.status} />
-          <ProofItem label="Trigger" value={run.triggerKind} />
-          <ProofItem
-            label="Repository"
-            value={`${run.repoOwner}/${run.repoName}`}
-          />
-          <ProofItem
-            label="Ref"
-            value={run.sha ?? run.ref ?? run.branch ?? "-"}
-          />
-          <ProofItem label="Sandbox" value={run.sandboxName ?? "-"} />
-          <ProofItem
-            label="Permissions"
-            value={formatPermissionSummary(agent)}
-          />
-          <ProofItem label="Checks" value={formatCheckSummary(events, agent)} />
-          <ProofItem label="Output" value={formatOutputSummary(outputs)} />
-          <ProofItem
-            label="Duration"
-            value={formatDuration(run.startedAt, run.finishedAt)}
-          />
-          {runCost && <ProofItem label="Cost" value={runCost} />}
-        </section>
+        <RunMetadataTable
+          rows={buildProofStripRows(run, agent, events, outputs, runCost)}
+        />
 
         <section className="rounded-md border border-border">
           <div className="border-b border-border px-4 py-3">
@@ -495,72 +491,11 @@ export function BackgroundRunDetail({
             {run.resultSummary ? (
               <RunSummarySection summary={run.resultSummary} />
             ) : null}
-            <section className="rounded-md border border-border">
-              <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Live timeline</h2>
-                {isLive && (
-                  <span className="text-xs text-muted-foreground">
-                    {sseEnabled
-                      ? sseStatus === "live"
-                        ? "Streaming"
-                        : sseStatus === "connecting" ||
-                            sseStatus === "reconnecting"
-                          ? "Connecting"
-                          : "Refreshing"
-                      : "Refreshing"}
-                  </span>
-                )}
-              </div>
-              {events.length === 0 ? (
-                <div className="p-8 text-center text-sm text-muted-foreground">
-                  No events recorded.
-                </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {events.map((event) => (
-                    <div key={event.id} className="grid gap-3 px-4 py-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {event.summary ?? event.eventName}
-                          </p>
-                          <p className="mt-1 truncate font-mono text-[10px] text-muted-foreground">
-                            {event.eventName}
-                          </p>
-                        </div>
-                        <StatusPill status={event.status} />
-                      </div>
-                      <CommandOutput event={event} />
-                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-muted-foreground">
-                        <Clock3 className="h-3 w-3" />
-                        <span>{formatDate(event.createdAt)}</span>
-                        {event.workflowRunId && (
-                          <span className="font-mono">
-                            workflow {event.workflowRunId}
-                          </span>
-                        )}
-                        {event.requestId && (
-                          <span className="font-mono">
-                            request {event.requestId}
-                          </span>
-                        )}
-                        {event.sandboxName && (
-                          <span className="font-mono">
-                            sandbox {event.sandboxName}
-                          </span>
-                        )}
-                        <span className="font-mono">
-                          redaction {event.redactionStatus}
-                        </span>
-                        {event.errorKind && (
-                          <span className="font-mono">{event.errorKind}</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
+            <LiveTimeline
+              events={events}
+              isLive={isLive}
+              statusLabel={timelineStatusLabel}
+            />
           </div>
 
           <aside className="space-y-6">
@@ -601,31 +536,23 @@ export function BackgroundRunDetail({
               </div>
             </section>
 
-            <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
-                <h2 className="text-sm font-medium">Debug</h2>
-              </div>
-              <div className="divide-y divide-border text-sm">
-                <DebugRow label="Run ID" value={run.id} />
-                <DebugRow label="Request ID" value={run.requestId} />
-                <DebugRow label="Workflow Run" value={run.workflowRunId} />
-                <DebugRow label="Idempotency Key" value={run.idempotencyKey} />
-                <DebugRow label="Source" value={run.source} />
-                <DebugRow label="External Event" value={run.externalId} />
-                <DebugRow label="Trigger Target" value={formatRunTarget(run)} />
-              </div>
-            </section>
+            <RunMetadataTable heading="Debug" rows={buildDebugRows(run)} />
 
             <section className="rounded-md border border-border">
-              <div className="border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Outputs</h2>
+                {outputs.length > 0 && (
+                  <span className="text-xs text-muted-foreground">
+                    {outputs.length}
+                  </span>
+                )}
               </div>
               {outputs.length === 0 ? (
                 <div className="p-4 text-sm text-muted-foreground">
                   No outputs recorded.
                 </div>
               ) : (
-                <div className="divide-y divide-border">
+                <div className="max-h-[24rem] divide-y divide-border overflow-y-auto">
                   {outputs.map((output) => (
                     <div key={output.id} className="px-4 py-3">
                       <div className="flex items-center justify-between gap-3">

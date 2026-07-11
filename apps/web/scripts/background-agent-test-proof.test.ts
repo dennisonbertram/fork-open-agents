@@ -3,6 +3,7 @@ import {
   assertProofRun,
   assertTestDispatch,
   BackgroundAgentTestProofError,
+  dispatchAndPollToTerminal,
   getProofConfig,
   isTerminalStatus,
   parseRunSnapshot,
@@ -11,7 +12,27 @@ import {
   WORKFLOW_STARTED_EVENT,
   type TestDispatchResult,
   type RunSnapshot,
+  type TestProofConfig,
 } from "./background-agent-test-proof";
+
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function baseConfig(overrides: Partial<TestProofConfig> = {}): TestProofConfig {
+  return {
+    baseUrl: new URL("https://open-agents.example"),
+    agentId: "agent_123",
+    cookie: "open_agents_test_user_id=dev-user",
+    timeoutMs: 5000,
+    pollIntervalMs: 1,
+    requireSucceeded: false,
+    ...overrides,
+  };
+}
 
 describe("background-agent-test-proof", () => {
   test("builds a proof config from environment", () => {
@@ -296,5 +317,85 @@ describe("background-agent-test-proof", () => {
       outputs: [],
     };
     expect(() => assertProofRun(noEvents)).not.toThrow();
+  });
+});
+
+describe("dispatchAndPollToTerminal", () => {
+  test("dispatches, polls to terminal status, and logs the existing evidence line", async () => {
+    const config = baseConfig();
+    const calls: string[] = [];
+    let runCallCount = 0;
+    const fetchImpl = (async (url: string | URL) => {
+      const pathname = new URL(url).pathname;
+      calls.push(pathname);
+      if (pathname === "/api/background-agents/agent_123/test") {
+        return jsonResponse(200, {
+          enabled: true,
+          matched: 1,
+          created: 1,
+          duplicates: 0,
+          runIds: ["run-1"],
+        });
+      }
+      if (pathname === "/api/background-agent-runs/run-1") {
+        runCallCount += 1;
+        if (runCallCount === 1) {
+          return jsonResponse(200, {
+            run: { id: "run-1", status: "running" },
+            events: [],
+            outputs: [],
+          });
+        }
+        return jsonResponse(200, {
+          run: { id: "run-1", status: "succeeded" },
+          events: [{ eventName: WORKFLOW_STARTED_EVENT }],
+          outputs: [],
+        });
+      }
+      throw new Error(`Unexpected fetch: ${pathname}`);
+    }) as typeof fetch;
+
+    const logLines: string[] = [];
+    const result = await dispatchAndPollToTerminal(config, {
+      log: (line) => logLines.push(line),
+      fetchImpl,
+    });
+
+    expect(result.snapshot.run.id).toBe("run-1");
+    expect(result.snapshot.run.status).toBe("succeeded");
+    expect(result.dispatch.runIds).toEqual(["run-1"]);
+    expect(logLines).toContain(
+      "dispatch: matched=1 created=1 duplicates=0 runId=run-1",
+    );
+    expect(calls).toEqual([
+      "/api/background-agents/agent_123/test",
+      "/api/background-agent-runs/run-1",
+      "/api/background-agent-runs/run-1",
+    ]);
+  });
+
+  test("rejects a run that never reaches a terminal status within the timeout", async () => {
+    const config = baseConfig({ timeoutMs: 10, pollIntervalMs: 1 });
+    const fetchImpl = (async (url: string | URL) => {
+      const pathname = new URL(url).pathname;
+      if (pathname === "/api/background-agents/agent_123/test") {
+        return jsonResponse(200, {
+          enabled: true,
+          matched: 1,
+          created: 1,
+          duplicates: 0,
+          runIds: ["run-1"],
+        });
+      }
+      return jsonResponse(200, {
+        run: { id: "run-1", status: "running" },
+        events: [],
+        outputs: [],
+      });
+    }) as typeof fetch;
+
+    await expect(
+      dispatchAndPollToTerminal(config, { fetchImpl }),
+    ).rejects.toThrow(/did not reach a terminal status/);
   });
 });

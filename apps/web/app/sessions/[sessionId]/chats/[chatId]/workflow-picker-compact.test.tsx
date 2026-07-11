@@ -53,6 +53,22 @@ describe("WorkflowPickerCompact", () => {
     swrState = {};
   });
 
+  test("does not render or discover catalog entries when product exposure is off", async () => {
+    swrState = { data: { workflows: [enabledWorkflow] } };
+    const { WorkflowPickerCompact } = await componentModulePromise;
+
+    const html = renderToStaticMarkup(
+      <WorkflowPickerCompact
+        disabled={false}
+        exposed={false}
+        selectedWorkflowId={null}
+        onSelectWorkflow={() => {}}
+      />,
+    );
+
+    expect(html).toBe("");
+  });
+
   // BT-001: trigger renders with accessible label and default label
   test("renders trigger button with accessible label and default Workflow label", async () => {
     swrState = { data: { workflows: [enabledWorkflow] } };
@@ -61,6 +77,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -78,6 +95,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -94,6 +112,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -111,6 +130,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -127,6 +147,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -143,6 +164,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -160,6 +182,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={true}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -186,6 +209,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -206,6 +230,7 @@ describe("WorkflowPickerCompact", () => {
     const htmlNoneSelected = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -213,6 +238,7 @@ describe("WorkflowPickerCompact", () => {
     const htmlOneSelected = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -496,6 +522,7 @@ describe("WorkflowPickerCompact regression", () => {
     const htmlNotDisabledProp = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,

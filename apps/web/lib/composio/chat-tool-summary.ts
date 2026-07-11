@@ -4,6 +4,15 @@
  * toolkits, not just an opaque profile name.
  */
 
+/**
+ * Disclaimer shown in the chat tool selector popover (#803 item 7, C4) —
+ * the selector only shows what is *selected* for this chat, never a live
+ * connection check. This static caption distinguishes "selected" from
+ * "connected" without adding any per-item live-status behavior.
+ */
+export const SELECTED_NOT_CONNECTED_CAPTION =
+  "Selected for this chat — connection status shown in Settings → Composio.";
+
 /** Turn a toolkit slug ("github", "web_search") into a readable name ("Github", "Web search"). */
 export function prettifyToolkitSlug(slug: string): string {
   const cleaned = slug.trim().replace(/[_-]+/g, " ").trim();

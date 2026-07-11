@@ -77,6 +77,36 @@ describe("ComposioWorkspaceSettingsPanel — profile-restriction copy (B4)", () 
   });
 });
 
+describe("ComposioWorkspaceSettingsPanel — saved-vs-pending heading copy (#803 item 6, G13)", () => {
+  test("BT-803-006: heading and caption communicate this reflects SAVED state, not any unsaved edits above", async () => {
+    mockData = {
+      profiles: [
+        { id: "profile-1", name: "Main profile", toolkitSlugs: ["gmail"] },
+      ],
+      profileOptions: [
+        {
+          id: "profile-1",
+          name: "Main profile",
+          available: true,
+          disabledReason: null,
+        },
+      ],
+      repositorySettings: null,
+    };
+    const { ComposioWorkspaceSettingsPanel } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      createElement(ComposioWorkspaceSettingsPanel, {
+        repoOwner: "acme",
+        repoName: "widgets",
+      }),
+    );
+
+    expect(html).toMatch(/saved tool rules/i);
+    expect(html).toMatch(/saved.*not.*unsaved|shows what.?s saved now/i);
+  });
+});
+
 // #805 (epic #796 T9): the workspace panel is currently the ONLY mount point
 // for repo Composio policy, reachable only from an active session. It must
 // link out to the new discoverable per-repo Tools surface

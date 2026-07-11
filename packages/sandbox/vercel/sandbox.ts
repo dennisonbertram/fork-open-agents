@@ -194,6 +194,11 @@ export class VercelSandbox implements Sandbox {
    */
   readonly currentBranch?: string;
   readonly hooks?: SandboxHooks;
+  /**
+   * True when this instance was produced by create() (fresh workspace), false
+   * when produced by connect() (attach/resume of an existing named sandbox).
+   */
+  readonly wasCreated: boolean;
 
   private sdk: VercelSandboxSDK;
   private session: VercelSandboxSession;
@@ -232,6 +237,7 @@ export class VercelSandbox implements Sandbox {
     timeout?: number,
     startTime?: number,
     ports?: number[],
+    wasCreated = false,
   ) {
     this.sdk = sdk;
     this.session = session;
@@ -242,6 +248,7 @@ export class VercelSandbox implements Sandbox {
     this.currentBranch = currentBranch;
     this.hooks = hooks;
     this._ports = ports;
+    this.wasCreated = wasCreated;
     this.isStopped = isStoppedSessionStatus(session.status);
 
     // Set timeout tracking for proactive stop
@@ -658,6 +665,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       effectiveTimeout,
       startTime,
       ports,
+      true,
     );
 
     // Call afterStart hook if provided
@@ -720,6 +728,7 @@ ${hostLine}${portLines}${runtimeEnvLine}`;
       remainingTimeout,
       startTime,
       options.ports,
+      false,
     );
 
     // Call afterStart hook if provided (useful for reconnection setup)

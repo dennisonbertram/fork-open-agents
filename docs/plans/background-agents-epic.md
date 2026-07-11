@@ -193,8 +193,9 @@ trigger is fired:
 - `GET /api/background-agents/readiness?repoOwner=<owner>&repoName=<repo>`
   also verifies user-token plus GitHub App repo coverage with typed readiness
   reasons when called by an authenticated operator;
-- `BACKGROUND_AGENTS_ALLOWED_REPOS` is optional but can limit dispatch to one
-  or more `owner/repo` entries for production live proof and staged rollout;
+- `BACKGROUND_AGENTS_ALLOWED_REPOS` is required whenever dispatch is enabled;
+  missing/invalid values deny all, a valid list scopes dispatch, and only exact
+  `*` deliberately allows every repository;
 - `/settings/background-agents` shows a compact readiness section with feature
   flag, auth/database, Vercel sign-in, GitHub OAuth, GitHub App, cron secret,
   sandbox runtime, inference gateway, cron secret, and generic webhook secret

@@ -1654,6 +1654,7 @@ const MessageRow = memo(function MessageRow({
 
 export function SessionChatContent({
   harnessEnabled,
+  workflowCatalogExposed,
   initialIsOnlyChatInSession,
   messageDurationMap,
   messageStartedAtMap,
@@ -1661,6 +1662,7 @@ export function SessionChatContent({
   codeEditorDisabledReason,
 }: {
   harnessEnabled: boolean;
+  workflowCatalogExposed: boolean;
   initialIsOnlyChatInSession: boolean;
   /** Pre-computed generation duration (ms) per assistant message ID */
   messageDurationMap: Record<string, number>;
@@ -5017,6 +5019,7 @@ export function SessionChatContent({
                             />
                             <WorkflowPickerCompact
                               disabled={isArchived || isChatInFlight}
+                              exposed={workflowCatalogExposed}
                               onSelectWorkflow={setSelectedWorkflowId}
                               selectedWorkflowId={selectedWorkflowId}
                             />

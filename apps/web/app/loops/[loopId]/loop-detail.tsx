@@ -2,7 +2,6 @@
 
 import { ChevronRight, Play, Workflow } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import useSWR from "swr";
 import { toast } from "sonner";
@@ -17,7 +16,6 @@ import {
 import type {
   GetAgentLoopResponse,
   ListAgentLoopRunsResponse,
-  StartAgentLoopRunResponse,
 } from "@/app/api/agent-loops/types";
 import type { AgentLoopRun } from "@/lib/db/schema";
 import type { LoopDefinition } from "@/lib/agent-loops/types";
@@ -28,8 +26,10 @@ import { getActiveStatusNote } from "./status-trigger-notice";
 import { LoopTriggersCard } from "./loop-triggers-card";
 import { StatusPill } from "./status-pill";
 import { getGuardrailLabel } from "./guardrail-labels";
+import { useLoopRunNow } from "./use-loop-run-now";
 import { getScheduleTruthLine } from "./schedule-truth-line";
 import { getRunCompletionLabel } from "./run-completion-label";
+import { getRunHistoryEmptyState } from "./run-history-empty-state";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -119,8 +119,6 @@ type LoopDetailProps = {
 };
 
 export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
-  const router = useRouter();
-  const [runningNow, setRunningNow] = useState(false);
   const [activeRunNotice, setActiveRunNotice] = useState<string | null>(null);
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -149,77 +147,23 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
   // paint even before triggersData loads.
   const triggers = triggersData?.triggers ?? initialLoopData.triggers;
 
-  async function handleRunNow() {
-    setRunningNow(true);
-    setActiveRunNotice(null);
-    try {
-      const res = await fetch(`/api/agent-loops/${loopId}/runs`, {
-        method: "POST",
-      });
-
-      if (res.status === 409) {
-        const body = (await res.json()) as {
-          errorKind?: string;
-          message?: string;
-          activeRunId?: string;
-        };
-        if (body.errorKind === "active_run") {
-          // Surface a non-destructive notice instead of an error toast.
-          // The API returns activeRunId when available (includes paused runs).
-          // Fall back to searching the local runs list for running, queued,
-          // OR paused runs — hasActiveRunForLoop counts all three.
-          const activeId =
-            body.activeRunId ??
-            runs.find(
-              (r) =>
-                r.status === "running" ||
-                r.status === "queued" ||
-                r.status === "paused",
-            )?.id;
-          setActiveRunNotice(activeId ?? "unknown");
-          return;
-        }
-        toast.error(body.message ?? "Cannot start run right now.");
-        return;
-      }
-
-      if (res.status === 502) {
-        // Issue #763 — no false success: the execution backend rejected the
-        // dispatch. The run was created but is already marked failed —
-        // surface the real state and point at the run page for details.
-        const body = (await res.json().catch(() => ({}))) as {
-          errorKind?: string;
-          runId?: string;
-        };
-        toast.error(
-          "Couldn't start the run — the execution backend rejected the dispatch. The run is marked failed; see the run page for details.",
-        );
-        if (body.runId) {
-          router.push(`/loops/${loopId}/runs/${body.runId}`);
-        }
-        return;
-      }
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as {
-          message?: string;
-        };
-        toast.error(body.message ?? "Failed to start run.");
-        return;
-      }
-
-      const { runId } = (await res.json()) as StartAgentLoopRunResponse;
-      toast.success("Run started");
+  const { runNow: handleRunNow, runningNow } = useLoopRunNow({
+    loopId,
+    onStart: () => setActiveRunNotice(null),
+    onActiveRun: (id) => setActiveRunNotice(id),
+    resolveActiveRunId: () =>
+      runs.find(
+        (r) =>
+          r.status === "running" ||
+          r.status === "queued" ||
+          r.status === "paused",
+      )?.id,
+    onStarted: () => {
       // Revalidate the runs list immediately (#767) so it doesn't disagree
       // with the run-detail page the user is about to land on.
       void mutateRunsData();
-      router.push(`/loops/${loopId}/runs/${runId}`);
-    } catch {
-      toast.error("Failed to start run.");
-    } finally {
-      setRunningNow(false);
-    }
-  }
+    },
+  });
 
   async function handleStatusChange(newStatus: string) {
     setUpdatingStatus(true);
@@ -288,7 +232,7 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
               {loop.repoOwner}/{loop.repoName}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div id="loop-run-now" className="flex items-center gap-2">
             <Link href={`/loops/${loopId}/builder`}>
               <Button variant="outline" size="sm">
                 <Workflow className="mr-2 h-4 w-4" />
@@ -347,14 +291,16 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <div className="space-y-6">
             {/* Run history */}
-            <section className="rounded-md border border-border">
+            <section
+              id="loop-run-history"
+              className="rounded-md border border-border"
+            >
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Run history</h2>
               </div>
               {runs.length === 0 ? (
                 <div className="p-8 text-center text-sm text-muted-foreground">
-                  No runs yet. Click &ldquo;Run now&rdquo; to start the first
-                  run.
+                  {getRunHistoryEmptyState(loop.status)}
                 </div>
               ) : (
                 <div className="divide-y divide-border">
@@ -405,7 +351,10 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
 
           <aside className="space-y-6">
             {/* Status control */}
-            <section className="rounded-md border border-border">
+            <section
+              id="loop-status-section"
+              className="rounded-md border border-border"
+            >
               <div className="border-b border-border px-4 py-3">
                 <h2 className="text-sm font-medium">Loop status</h2>
               </div>
@@ -451,14 +400,16 @@ export function LoopDetail({ loopId, initialLoopData }: LoopDetailProps) {
             </section>
 
             {/* Trigger manager (#762) */}
-            <LoopTriggersCard
-              loopId={loopId}
-              loopStatus={loop.status}
-              triggers={triggers}
-              onTriggersChanged={() => {
-                void mutateTriggersData();
-              }}
-            />
+            <div id="loop-triggers-section">
+              <LoopTriggersCard
+                loopId={loopId}
+                loopStatus={loop.status}
+                triggers={triggers}
+                onTriggersChanged={() => {
+                  void mutateTriggersData();
+                }}
+              />
+            </div>
 
             {/* Guardrails */}
             {loop.guardrails && (

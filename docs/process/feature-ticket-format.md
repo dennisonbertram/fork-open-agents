@@ -90,6 +90,11 @@ Good observability sections:
   sandboxName, errorKind, providerStatus }`.
 - Debug recipe: `grep '"chatId":"<id>"' logs | grep '"service":"debug-bundle"'`.
 
+See [Deployed Feature Proof Standard](deployed-feature-proof-standard.md) for
+the user-visible feedback contract (pending/success/error states with
+`role="alert"` semantics) and the live-evidence expectations its Definition
+of Done requires.
+
 ## Regression Harness Plan Rules
 
 Each implementation issue should identify the smallest durable signal that
@@ -105,7 +110,9 @@ Use one or more of:
 - a future harness/catalog scenario when the behavior spans multiple systems.
 
 If no continuous harness is practical for the slice, the issue must say why and
-name the manual proof that will be captured in the PR.
+name the manual proof that will be captured in the PR. User-facing feature and
+bug-fix issues must also pick a proof level and Definition of Done evidence
+from [Deployed Feature Proof Standard](deployed-feature-proof-standard.md).
 
 ## Agent Todo Checklist Rules
 

@@ -28,13 +28,13 @@ describe("getBackgroundRunErrorCopy", () => {
   it("maps permission_missing to a GitHub-connect/access action with an href", () => {
     const copy = getBackgroundRunErrorCopy("permission_missing");
     expect(copy.whatToDo.toLowerCase()).toMatch(/access|permission|github/);
-    expect(copy.actionHref).toBeTruthy();
+    expect(copy.actionHref).toBe("/settings/connections");
   });
 
   it("maps installation_missing to a GitHub-connect action with an href", () => {
     const copy = getBackgroundRunErrorCopy("installation_missing");
     expect(copy.whatToDo.toLowerCase()).toContain("github");
-    expect(copy.actionHref).toBeTruthy();
+    expect(copy.actionHref).toBe("/settings/connections");
   });
 
   it("never echoes raw errorMessage content into headline copy", () => {

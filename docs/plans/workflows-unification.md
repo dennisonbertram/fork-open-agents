@@ -1,5 +1,12 @@
 # Unifying agents + loops into one concept ("Workflows")
 
+> **Product vocabulary superseded.** The canonical product contract is now
+> [Sessions, Automations, and Runs](sessions-automations-runs.md), tracked by
+> [epic #931](https://github.com/dennisonbertram/fork-open-agents/issues/931).
+> This document remains technical evidence for the shared-trigger,
+> shared-contract, adapter-first direction. Do not use its **Agents +
+> Workflows** names for new user-facing product work.
+
 A product-architecture assessment prompted by the loops design review. The
 question: are **background agents** and **loops** actually the same thing, and
 should they be one concept?

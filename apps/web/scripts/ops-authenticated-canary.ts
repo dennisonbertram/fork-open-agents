@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
 import { redactOpsText } from "./ops-redaction";
 
-type CanaryStatus =
+export type CanaryStatus =
   | "blocked_by_configuration"
   | "running"
   | "passed"
   | "failed"
   | "timed_out";
+
+export type CanaryClassification =
+  | "passed"
+  | "failed"
+  | "blocked_by_configuration";
+
+export type CanaryExitCode = 0 | 1 | 2;
 
 export interface CanaryConfig {
   targetUrl: string;
@@ -32,9 +39,52 @@ export interface CanaryResult {
   sourceGap?: string;
 }
 
+export function isCanaryConfigRequired(
+  env: Record<string, string | undefined> = process.env,
+): boolean {
+  return env.PRODUCTION_CANARY_REQUIRE_CONFIG?.trim().toLowerCase() === "true";
+}
+
+export function classifyCanaryStatus(
+  status: CanaryStatus,
+): CanaryClassification {
+  if (status === "passed") {
+    return "passed";
+  }
+  if (status === "blocked_by_configuration") {
+    return "blocked_by_configuration";
+  }
+  return "failed";
+}
+
+export function canaryExitCodeForStatus(
+  status: CanaryStatus,
+  requireConfig: boolean,
+): CanaryExitCode {
+  const classification = classifyCanaryStatus(status);
+  if (classification === "passed") {
+    return 0;
+  }
+  if (classification === "blocked_by_configuration") {
+    return requireConfig ? 2 : 0;
+  }
+  return 1;
+}
+
 function normalizeRepo(value: string): string | null {
   const trimmed = value.trim().toLowerCase();
   return /^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(trimmed) ? trimmed : null;
+}
+
+function normalizeTargetUrl(value: string): string | null {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.origin
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function readCanaryConfig(
@@ -45,27 +95,37 @@ export function readCanaryConfig(
   const testIdentity = env.PRODUCTION_CANARY_IDENTITY;
   const authCookie = env.PRODUCTION_CANARY_AUTH_COOKIE;
   const timeoutMs = Number(env.PRODUCTION_CANARY_TIMEOUT_MS ?? "45000");
-  if (!targetUrl || !testRepo || !testIdentity || !authCookie) {
+  if (!targetUrl || !testRepo || !testIdentity?.trim() || !authCookie?.trim()) {
     return null;
   }
+  const normalizedTargetUrl = normalizeTargetUrl(targetUrl);
   const normalizedRepo = normalizeRepo(testRepo);
-  if (!normalizedRepo) {
+  if (!normalizedTargetUrl || !normalizedRepo) {
+    return null;
+  }
+  const normalizedTimeoutMs = Number(timeoutMs);
+  if (!Number.isFinite(normalizedTimeoutMs) || normalizedTimeoutMs <= 0) {
     return null;
   }
   return {
-    targetUrl,
+    targetUrl: normalizedTargetUrl,
     testRepo: normalizedRepo,
-    testIdentity,
-    authCookie,
-    timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : 45_000,
+    testIdentity: testIdentity.trim(),
+    authCookie: authCookie.trim(),
+    timeoutMs: normalizedTimeoutMs,
   };
 }
 
 export function formatCanaryResult(result: CanaryResult): string {
+  const classification = classifyCanaryStatus(result.status);
   const lines = [
     "Production authenticated canary",
     `Request: ${result.requestId}`,
     `Status: ${result.status}`,
+    `Classification: ${classification}`,
+    ...(classification === "blocked_by_configuration"
+      ? ["Proof: No production proof occurred."]
+      : []),
     ...(result.targetUrl ? [`Target: ${result.targetUrl}`] : []),
     ...(result.repo ? [`Repo: ${result.repo}`] : []),
     "",
@@ -196,13 +256,15 @@ export async function runAuthenticatedCanary(
   }
 }
 
-export async function runCanaryCli(): Promise<number> {
-  const result = await runAuthenticatedCanary(readCanaryConfig());
-  console.log(formatCanaryResult(result));
-  return result.status === "passed" ||
-    result.status === "blocked_by_configuration"
-    ? 0
-    : 1;
+export async function runCanaryCli(deps?: {
+  env?: Record<string, string | undefined>;
+  log?: (line: string) => void;
+}): Promise<CanaryExitCode> {
+  const env = deps?.env ?? process.env;
+  const log = deps?.log ?? console.log;
+  const result = await runAuthenticatedCanary(readCanaryConfig(env));
+  log(formatCanaryResult(result));
+  return canaryExitCodeForStatus(result.status, isCanaryConfigRequired(env));
 }
 
 if (import.meta.main) {

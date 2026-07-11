@@ -117,14 +117,15 @@ describe("BackgroundRunDetail", () => {
     expect(html).toContain("bun --bun run ci");
     expect(html).toContain("1234ms");
     expect(html).toContain("all tests passed");
-    expect(html).toContain("workflow workflow-1");
-    expect(html).toContain("sandbox background_agent_run_123");
+    // Run-level metadata (workflow run, request id, sandbox) is shown ONCE in
+    // the Run/Debug sidebar + proof strip, not repeated on every timeline event.
+    expect(html).toContain("workflow-1");
+    expect(html).toContain("background_agent_run_123");
     expect(html).toContain("Debug");
     expect(html).toContain("agent-1:trigger-1:delivery-123");
     expect(html).toContain("delivery-123");
     expect(html).toContain("req_123");
     expect(html).toContain("PR #7");
-    expect(html).toContain("redaction passed");
     expect(html).toContain("https://github.com/acme/widgets/pull/42");
     expect(html).toContain("#42");
     expect(html).toContain("ready_pr");
@@ -168,6 +169,41 @@ describe("BackgroundRunDetail", () => {
     const timelinePos = html.indexOf("Live timeline");
     expect(summaryPos).toBeGreaterThanOrEqual(0);
     expect(timelinePos).toBeGreaterThan(summaryPos);
+  });
+
+  // Regression: run-level ids backfill from stream events into the sidebar when
+  // the run object hasn't been populated yet (they were removed from per-event
+  // metadata to cut noise, so the sidebar must pick them up).
+  test("backfills workflow/sandbox/request ids from events when run fields are null", async () => {
+    const { BackgroundRunDetail } = await componentModulePromise;
+    const base = detailData();
+    const data = {
+      ...base,
+      run: {
+        ...base.run,
+        workflowRunId: null,
+        sandboxName: null,
+        requestId: null,
+      },
+      events: [
+        {
+          ...base.events[0],
+          workflowRunId: "wrun_live",
+          sandboxName: "sbx_live",
+          requestId: "req_live",
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      <BackgroundRunDetail initialData={data} />,
+    );
+
+    // The live identifiers appear (from the sidebar/proof-strip backfill), even
+    // though the run object's own fields were null.
+    expect(html).toContain("wrun_live");
+    expect(html).toContain("sbx_live");
+    expect(html).toContain("req_live");
   });
 
   // BT-UI-002: summary section is absent / gracefully absent when no summary (#163)

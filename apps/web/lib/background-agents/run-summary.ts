@@ -337,6 +337,14 @@ export function buildRunSummary(params: BuildRunSummaryParams): RunSummary {
       next.push("Grant required GitHub App permissions and re-trigger");
     } else if (kind === "sandbox_unavailable") {
       next.push("Retry the run; sandbox may have been temporarily unavailable");
+    } else if (kind === "agent_stalled") {
+      next.push(
+        "Agent stalled — review the stuck-report comment for what it tried and the decision it needs, then re-trigger.",
+      );
+    } else if (kind === "token_budget_exceeded") {
+      next.push(
+        "Token fuse tripped — review the run for runaway cost or a looping agent before re-triggering; raise BACKGROUND_AGENT_MAX_RUN_TOKENS only if the work legitimately needs it.",
+      );
     } else {
       next.push("Review error details and re-trigger");
     }

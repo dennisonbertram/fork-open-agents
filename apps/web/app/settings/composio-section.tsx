@@ -33,12 +33,19 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import {
+  BRING_YOUR_OWN_AUTH_EXPLAINER,
+  BRING_YOUR_OWN_AUTH_TITLE,
+  EMPTY_TOOL_PROFILES_TEXT,
+  TOOL_PROFILES_DESCRIPTION,
+} from "./composio-copy";
 import { mapComposioStatusToVerdict } from "./composio-status-verdict";
 import { ComposioToolCatalog } from "./composio-tool-catalog";
 import { ComposioToolkitPicker } from "./composio-toolkit-picker";
 import {
   shouldShowMainDefaultTip,
   profileRowSummary,
+  profileRowToolNamesText,
   AGENT_ROLE_DESCRIPTIONS,
   canSaveProfile,
   shouldShowZeroToolHint,
@@ -548,12 +555,17 @@ function ProfileListRow({
             {/* Name */}
             <span className="text-sm font-medium shrink-0">{profile.name}</span>
 
-            {/* Logo strip */}
-            <span className="flex-1 min-w-0">
+            {/* Logo strip + tool names as visible text (#803 item 8, W3) — a
+                screen-reader user and a sighted user scanning quickly both
+                see the tool names, not only icons. */}
+            <span className="flex flex-1 min-w-0 items-center gap-2">
               <LogoStrip
                 toolkitSlugs={profile.toolkitSlugs}
                 catalog={catalog}
               />
+              <span className="truncate text-xs text-muted-foreground">
+                {profileRowToolNamesText(profile.toolkitSlugs)}
+              </span>
             </span>
 
             {/* Tool count */}
@@ -832,7 +844,7 @@ export function ComposioSection() {
       {/* ── Tool profiles: single bordered panel ─────────────────────── */}
       <SettingsSection
         title="Tool profiles"
-        description="Named bundles of connected tools. Assign a profile to an agent below (Main, Explorer, …) so different agents get different tools — or pick tools directly in a chat."
+        description={TOOL_PROFILES_DESCRIPTION}
         learnMore={{ href: COMPOSIO_DASHBOARD_URL, label: "Open Composio" }}
       >
         <div className="rounded-lg border border-border/70 overflow-hidden">
@@ -886,7 +898,7 @@ export function ComposioSection() {
           ) : (
             /* Empty state — no profiles yet */
             <p className="px-3 py-4 text-sm text-muted-foreground text-center">
-              No tool profiles yet. Create one to bundle tools for an agent.
+              {EMPTY_TOOL_PROFILES_TEXT}
             </p>
           )}
 
@@ -1019,8 +1031,8 @@ export function ComposioSection() {
 
       {/* Bring your own auth — demoted to a closed disclosure */}
       <SettingsSection
-        title="Bring your own auth (advanced)"
-        description="Most people don't need this. Use Connect tools above to connect apps in one click."
+        title={BRING_YOUR_OWN_AUTH_TITLE}
+        description={BRING_YOUR_OWN_AUTH_EXPLAINER}
         learnMore={{
           href: COMPOSIO_DASHBOARD_URL,
           label: "Open Composio dashboard",

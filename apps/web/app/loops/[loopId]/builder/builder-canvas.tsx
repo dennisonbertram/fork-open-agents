@@ -45,6 +45,7 @@ import {
   GitBranch,
   ListChecks,
   Lock,
+  Play,
   Save,
 } from "lucide-react";
 import Link from "next/link";
@@ -65,11 +66,19 @@ import { BuilderErrorContext } from "./builder-error-context";
 import { nodeErrorsById } from "./node-config-panel";
 import { createLoopBuilderStore } from "./use-loop-builder";
 import { definitionToFlow } from "./definition-mapping";
+import {
+  buildInitialLoopSettings,
+  settingsToUpdatePayload,
+  validateLoopSettings,
+} from "./loop-settings-panel";
 import { computeLoopFrames, type FrameNode } from "./loop-frames";
 import { buildBuilderGuidance } from "./builder-guidance";
 import { BuilderWhatsNextNote } from "./builder-whats-next-note";
 import { TemplateTriggerNudge } from "../template-trigger-nudge";
+import { StatusPill } from "../status-pill";
+import { useLoopRunNow } from "../use-loop-run-now";
 import type { LoopDefinition, LoopGuardrails } from "@/lib/agent-loops/types";
+import type { AgentLoop } from "@/lib/db/schema";
 import type { LoopFlowEdge } from "./definition-mapping";
 
 const edgeTypes = {
@@ -147,22 +156,14 @@ type PendingNodeDelete = {
 type BuilderCanvasInnerProps = {
   loopId: string;
   loopName: string;
-  loopDescription?: string | null;
-  loopGuardrails?: LoopGuardrails;
-  watchdogEnabled?: boolean;
-  watchdogInstructions?: string | null;
-  watchdogRetryBudget?: number;
+  loopStatus: AgentLoop["status"];
   store: ReturnType<typeof createLoopBuilderStore>;
 };
 
 function BuilderCanvasInner({
   loopId,
   loopName,
-  loopDescription,
-  loopGuardrails,
-  watchdogEnabled,
-  watchdogInstructions,
-  watchdogRetryBudget,
+  loopStatus,
   store,
 }: BuilderCanvasInnerProps) {
   const { fitView } = useReactFlow();
@@ -187,6 +188,16 @@ function BuilderCanvasInner({
   const markClean = useStore(store, (s) => s.markClean);
   const currentDefinition = useStore(store, (s) => s.currentDefinition);
   const updateEdgeWhen = useStore(store, (s) => s.updateEdgeWhen);
+  const settings = useStore(store, (s) => s.settings);
+  const setSettingsErrors = useStore(store, (s) => s.setSettingsErrors);
+
+  const { runNow, runningNow } = useLoopRunNow({
+    loopId,
+    onActiveRun: () =>
+      toast.error(
+        "This loop already has an active or paused run — wait for it to finish or open the loop to manage it.",
+      ),
+  });
 
   const [saving, setSaving] = useState(false);
   const [whatsNextDismissed, setWhatsNextDismissed] = useState(false);
@@ -399,16 +410,46 @@ function BuilderCanvasInner({
     setTimeout(() => fitView({ duration: 300, ...LOOP_FIT_VIEW_OPTIONS }), 60);
   }
 
-  // Save
+  // Save — persists the graph definition and every loop-settings field in one
+  // PATCH (#877: previously the settings panel had its own disconnected save
+  // path, so settings edits never marked the store dirty and this button
+  // stayed disabled/inert for them).
   async function handleSave() {
     if (!isDirty || validationErrors.length > 0 || saving) return;
+
+    const validation = validateLoopSettings({
+      name: settings.name,
+      description: settings.description || null,
+      guardrails:
+        Object.keys(settings.guardrails).length > 0
+          ? (settings.guardrails as LoopGuardrails)
+          : undefined,
+      watchdog: {
+        watchdogEnabled: settings.watchdogEnabled,
+        watchdogInstructions: settings.watchdogInstructions || null,
+        watchdogRetryBudget: settings.watchdogRetryBudget,
+      },
+    });
+    if (!validation.ok) {
+      const errors: Record<string, string> = {};
+      for (const err of validation.errors) {
+        errors[err.field] = err.message;
+      }
+      setSettingsErrors(errors);
+      toast.error("Fix the highlighted loop settings, then save again.");
+      return;
+    }
+
     setSaving(true);
     try {
       const def = currentDefinition();
       const res = await fetch(`/api/agent-loops/${loopId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: def }),
+        body: JSON.stringify({
+          definition: def,
+          ...settingsToUpdatePayload(settings),
+        }),
       });
 
       if (!res.ok) {
@@ -420,7 +461,7 @@ function BuilderCanvasInner({
         return;
       }
       markClean();
-      toast.success("Definition saved.");
+      toast.success("Changes saved.");
     } catch {
       toast.error("Failed to save loop definition.");
     } finally {
@@ -434,6 +475,17 @@ function BuilderCanvasInner({
   const pendingOptions = pickerSourceNodeId
     ? legalWhenValues(pickerSourceNodeId)
     : [];
+
+  // Run now must reflect the persisted definition, not in-memory builder
+  // edits (the runs endpoint dispatches from the saved loop.definition). If
+  // the loop isn't active, that takes priority; otherwise, unsaved or
+  // invalid edits block the run until Save clears them (#894).
+  const runNowBlockedReason =
+    loopStatus === "active"
+      ? isDirty || validationErrors.length > 0
+        ? "Save your changes first"
+        : null
+      : "Set to Active to run";
 
   return (
     <BuilderErrorContext.Provider value={errorsById}>
@@ -480,16 +532,35 @@ function BuilderCanvasInner({
           )}
 
           <div className="ml-auto flex items-center gap-2">
+            <StatusPill status={loopStatus} />
+            <Link href={`/loops/${loopId}`}>
+              <Button variant="outline" size="sm">
+                View loop
+              </Button>
+            </Link>
+            {runNowBlockedReason ? (
+              <div className="flex items-center gap-1.5">
+                <Button size="sm" disabled>
+                  <Play className="mr-1.5 size-3.5" />
+                  Run now
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  {runNowBlockedReason}
+                </span>
+              </div>
+            ) : (
+              <Button
+                size="sm"
+                onClick={() => void runNow()}
+                disabled={runningNow}
+              >
+                <Play className="mr-1.5 size-3.5" />
+                {runningNow ? "Starting…" : "Run now"}
+              </Button>
+            )}
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
             <ErrorIndicator errors={validationErrors} />
-            <LoopSettingsPanel
-              loopId={loopId}
-              loopName={loopName}
-              loopDescription={loopDescription}
-              guardrails={loopGuardrails}
-              watchdogEnabled={watchdogEnabled}
-              watchdogInstructions={watchdogInstructions}
-              watchdogRetryBudget={watchdogRetryBudget}
-            />
+            <LoopSettingsPanel store={store} />
             <Button
               size="sm"
               onClick={() => void handleSave()}
@@ -506,6 +577,7 @@ function BuilderCanvasInner({
         </div>
 
         <BuilderWhatsNextNote
+          loopId={loopId}
           dismissed={whatsNextDismissed}
           onDismiss={() => setWhatsNextDismissed(true)}
         />
@@ -732,6 +804,7 @@ type BuilderCanvasProps = {
   loopId: string;
   loopName: string;
   loopDescription?: string | null;
+  loopStatus?: AgentLoop["status"];
   loopGuardrails?: LoopGuardrails;
   watchdogEnabled?: boolean;
   watchdogInstructions?: string | null;
@@ -743,6 +816,7 @@ export function BuilderCanvas({
   loopId,
   loopName,
   loopDescription,
+  loopStatus = "draft",
   loopGuardrails,
   watchdogEnabled,
   watchdogInstructions,
@@ -778,6 +852,16 @@ export function BuilderCanvas({
     } else {
       storeRef.current.getState().initialize(definition);
     }
+    storeRef.current.getState().initializeSettings(
+      buildInitialLoopSettings({
+        loopName,
+        loopDescription,
+        loopGuardrails,
+        watchdogEnabled,
+        watchdogInstructions,
+        watchdogRetryBudget,
+      }),
+    );
   }
 
   return (
@@ -785,11 +869,7 @@ export function BuilderCanvas({
       <BuilderCanvasInner
         loopId={loopId}
         loopName={loopName}
-        loopDescription={loopDescription}
-        loopGuardrails={loopGuardrails}
-        watchdogEnabled={watchdogEnabled}
-        watchdogInstructions={watchdogInstructions}
-        watchdogRetryBudget={watchdogRetryBudget}
+        loopStatus={loopStatus}
         store={storeRef.current}
       />
     </ReactFlowProvider>

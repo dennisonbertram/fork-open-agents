@@ -12,9 +12,12 @@
  *   4. Record agent-loop.step.sandbox.started event.
  *   5. Build prompt via buildLoopStepPrompt.
  *   6. Run openAgent in a bounded loop:
- *        Loop until finishReason !== "tool-calls", up to AGENT_MAX_LOOP_STEPS.
+ *        Loop until finishReason !== "tool-calls", up to maxAgentTurnsPerStep.
  *        Each iteration appends response messages so the next call sees
- *        tool results.  Exhausting the bound → typed workflow_failed failure.
+ *        tool results, then records an agent-loop.step.agent.turn.completed
+ *        heartbeat event (turn number, finish reason, duration, tool call
+ *        count, usage) — emitted on every turn, including the final one
+ *        (#863). Exhausting the bound → typed turn_budget_exceeded failure.
  *        AbortError / timeout → typed workflow_failed failure.
  *   7. Record agent-loop.step.agent.completed event with usage summary.
  *   8. Read /tmp/loop-step-output.json from sandbox:
@@ -98,6 +101,7 @@ import {
 import { buildLoopStepPrompt } from "./loop-step-prompt";
 import type { ModelMessage } from "ai";
 import type { AgentLoop, AgentLoopRun } from "@/lib/db/schema";
+import { GUARDRAIL_CEILINGS, GUARDRAIL_DEFAULTS } from "./types";
 import type { AgentStepNode } from "./types";
 import type { StepExecutionResult } from "./step-executor";
 import type { Sandbox } from "@open-agents/sandbox";
@@ -123,13 +127,16 @@ const CHECK_COMMAND_TIMEOUT_MS = 120_000;
 const STEP_OUTPUT_PATH = "/tmp/loop-step-output.json";
 
 /**
- * Maximum number of openAgent.generate iterations before giving up.
- * Mirrors the DEFAULT_AGENT_MAX_STEPS bound used by runMutationAgent in
- * background-agents/executor.ts.  A single call may return "tool-calls"
- * (meaning the model wants to see tool results before continuing); we loop
- * until finishReason is no longer "tool-calls" or we exhaust this bound.
+ * Number of turns remaining at (and below) which the wrap-up nudge is
+ * injected into the per-turn customInstructions (#891). A single named
+ * constant satisfies "configurable" per the issue; a per-loop setting is
+ * out of scope.
  */
-const AGENT_MAX_LOOP_STEPS = 8;
+const WRAP_UP_THRESHOLD_TURNS = 2;
+
+/** Base per-step instructions, before the per-turn budget block is appended. */
+const BASE_STEP_CUSTOM_INSTRUCTIONS =
+  "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -149,6 +156,14 @@ export type AgentStepParams = {
    * AGENT_STEP_TIMEOUT_MS when omitted (e.g. direct unit-test calls).
    */
   stepTimeoutMs?: number;
+  /**
+   * Resolved (default-applied, ceiling-clamped) internal openAgent.generate
+   * turn budget for this step — see resolveGuardrails in chain.ts. Falls
+   * back to GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep for direct unit-test
+   * calls; Math.min against GUARDRAIL_CEILINGS is the hard server-side
+   * backstop.
+   */
+  maxAgentTurnsPerStep?: number;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -159,6 +174,34 @@ function buildSandboxName(stepRunId: string): string {
 
 function nowMs(): number {
   return Date.now();
+}
+
+/**
+ * Build the per-turn customInstructions for the agent step loop (#891).
+ *
+ * Every turn is told the current turn number and the total budget so
+ * open-ended instructions can converge instead of burning every turn
+ * exploring. Once turnsRemaining drops to WRAP_UP_THRESHOLD_TURNS or below,
+ * a wrap-up nudge instructs the agent to stop exploring and write its
+ * output JSON now with findings so far.
+ */
+function buildBudgetAwareInstructions({
+  turn,
+  maxTurns,
+}: {
+  turn: number;
+  maxTurns: number;
+}): { instructions: string; wrapUp: boolean } {
+  const turnsRemaining = maxTurns - turn;
+  const wrapUp = turnsRemaining <= WRAP_UP_THRESHOLD_TURNS;
+
+  let instructions = `${BASE_STEP_CUSTOM_INSTRUCTIONS}\n\n## Turn Budget\nTurn ${turn} of ${maxTurns}.`;
+
+  if (wrapUp) {
+    instructions += `\n\n## Wrap up now\nStop exploring. Write the step's required output JSON to ${STEP_OUTPUT_PATH} now with the findings you have so far.`;
+  }
+
+  return { instructions, wrapUp };
 }
 
 /**
@@ -282,6 +325,7 @@ async function recordAgentStepFailure(params: {
   startedAt: number;
   errorKind: string;
   errorMessage: string;
+  payloadExtras?: Record<string, unknown>;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
@@ -308,6 +352,7 @@ async function recordAgentStepFailure(params: {
       errorMessage: params.errorMessage,
       nodeKind: params.nodeKind,
       attempt: params.attempt,
+      ...params.payloadExtras,
     },
     workflowRunId: params.workflowRunId,
   });
@@ -342,6 +387,10 @@ export async function executeAgentStep(
     watchdogHint,
     stepTimeoutMs = AGENT_STEP_TIMEOUT_MS,
   } = params;
+  const maxAgentTurns = Math.min(
+    params.maxAgentTurnsPerStep ?? GUARDRAIL_DEFAULTS.maxAgentTurnsPerStep,
+    GUARDRAIL_CEILINGS.maxAgentTurnsPerStep,
+  );
 
   const sandboxName = buildSandboxName(stepRunId);
 
@@ -490,7 +539,7 @@ export async function executeAgentStep(
     // A single generate call may return finishReason "tool-calls", meaning
     // the model wants to see tool results before it is done. We keep looping
     // until finishReason is no longer "tool-calls", or until we exceed
-    // AGENT_MAX_LOOP_STEPS. This mirrors the runMutationAgent pattern in
+    // maxAgentTurnsPerStep. This mirrors the runMutationAgent pattern in
     // background-agents/executor.ts.
 
     let agentResult: Awaited<ReturnType<typeof openAgent.generate>>;
@@ -514,8 +563,7 @@ export async function executeAgentStep(
       unattended: true,
       // Pre-approved built-in tools for this step. null = default policy.
       allowedBuiltinToolNames: node.builtinToolNames ?? null,
-      customInstructions:
-        "You are running inside an unattended agent loop step. Work autonomously, keep changes scoped, and write your structured output JSON to /tmp/loop-step-output.json when done.",
+      customInstructions: BASE_STEP_CUSTOM_INSTRUCTIONS,
     };
 
     // Resolve any Composio tools this step is granted (B-P2). Gated by the
@@ -609,12 +657,13 @@ export async function executeAgentStep(
     // stepTimeoutMs is the budget for the WHOLE step, not each individual
     // openAgent.generate call. Compute a single deadline before the loop and
     // pass each call only the remaining budget — otherwise a step configured
-    // at e.g. 30 minutes could run up to AGENT_MAX_LOOP_STEPS x 30 minutes if
+    // at e.g. 30 minutes could run up to maxAgentTurns x 30 minutes if
     // every iteration reset the timeout to the full stepTimeoutMs.
     const deadlineAt = Date.now() + stepTimeoutMs;
 
     try {
       let loopStep = 0;
+      let wrapUpIssued = false;
       while (true) {
         loopStep++;
 
@@ -627,13 +676,22 @@ export async function executeAgentStep(
           });
         }
 
+        const budget = buildBudgetAwareInstructions({
+          turn: loopStep,
+          maxTurns: maxAgentTurns,
+        });
+        if (budget.wrapUp) {
+          wrapUpIssued = true;
+        }
+
         // Repair any approval-gated tool call the previous turn left without a
         // result before re-sending history — otherwise the provider rejects the
         // request ("Tool result is missing for tool call …") and fails the run.
         agentMessages = sanitizeUnattendedToolCalls(agentMessages);
+        const turnStartedAt = Date.now();
         agentResult = await openAgent.generate({
           messages: agentMessages,
-          options: agentOptions,
+          options: { ...agentOptions, customInstructions: budget.instructions },
           timeout: { totalMs: Math.max(1, remainingMs) },
           ...(composioTools ? { tools: composioTools } : {}),
         } as Parameters<typeof openAgent.generate>[0]);
@@ -643,16 +701,49 @@ export async function executeAgentStep(
           agentMessages.push(...agentResult.response.messages);
         }
 
+        // Per-turn heartbeat: emitted on EVERY turn (including the final one)
+        // so a run in progress shows incremental activity instead of sitting
+        // static until the whole internal generate loop completes. Mirrors
+        // executor.ts's background-agent.agent.step.completed payload shape.
+        await recordAgentLoopEvent({
+          loopRunId,
+          stepRunId,
+          nodeId: node.id,
+          eventName: "agent-loop.step.agent.turn.completed",
+          status: "succeeded",
+          level: "info",
+          summary: `Agent turn ${loopStep} completed (finishReason: ${agentResult.finishReason})`,
+          payload: {
+            turn: loopStep,
+            maxAgentTurnsPerStep: maxAgentTurns,
+            finishReason: agentResult.finishReason,
+            rawFinishReason: agentResult.rawFinishReason ?? null,
+            durationMs: Date.now() - turnStartedAt,
+            toolCallCount: agentResult.steps.reduce(
+              (c, s) => c + s.toolCalls.length,
+              0,
+            ),
+            usage: agentResult.usage,
+            totalUsage: agentResult.totalUsage,
+          },
+          workflowRunId,
+        });
+
         if (agentResult.finishReason !== "tool-calls") {
           // Agent has stopped requesting tool calls — exit loop.
           break;
         }
 
-        if (loopStep >= AGENT_MAX_LOOP_STEPS) {
+        if (loopStep >= maxAgentTurns) {
           return await recordAgentStepFailure({
             ...failureCtx,
-            errorKind: "workflow_failed",
-            errorMessage: `Agent step exhausted ${AGENT_MAX_LOOP_STEPS} steps without finishing`,
+            errorKind: "turn_budget_exceeded",
+            errorMessage: `Agent step exhausted ${maxAgentTurns} agent turns without finishing`,
+            payloadExtras: {
+              turnsUsed: loopStep,
+              maxAgentTurnsPerStep: maxAgentTurns,
+              wrapUpIssued,
+            },
           });
         }
       }

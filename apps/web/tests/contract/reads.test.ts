@@ -50,12 +50,22 @@ describe.skipIf(!(contractEnabled && authAvailable))(
       expect(Array.isArray(data.sessions)).toBe(true);
     });
 
-    test("GET /api/workflows/catalog -> { workflows: [] }", async () => {
-      const { status, data } = await apiJson<{ workflows: unknown[] }>(
-        "/api/workflows/catalog",
-      );
-      expect(status).toBe(200);
-      expect(Array.isArray(data.workflows)).toBe(true);
+    test("GET /api/workflows/catalog follows product exposure", async () => {
+      const exposed =
+        process.env.OPEN_AGENTS_EXPOSE_WORKFLOW_CATALOG === "true";
+      const { status, data } = await apiJson<{
+        workflows?: unknown[];
+        errorKind?: string;
+      }>("/api/workflows/catalog");
+
+      if (exposed) {
+        expect(status).toBe(200);
+        expect(Array.isArray(data.workflows)).toBe(true);
+        return;
+      }
+
+      expect(status).toBe(404);
+      expect(data.errorKind).toBe("product_surface_disabled");
     });
 
     test("GET /api/usage -> { usage, insights }", async () => {

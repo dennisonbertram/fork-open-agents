@@ -3,6 +3,8 @@
  * from persisted schedule trigger state.
  */
 
+import { formatRunTimestamp } from "@/lib/date/format-run-timestamp";
+
 type ScheduleTriggerState = {
   id: string;
   schedule: string | null;
@@ -15,30 +17,6 @@ type ScheduleTriggerState = {
 type AgentScheduleCardProps = {
   trigger: ScheduleTriggerState;
 };
-
-function toDate(value: string | Date | null): Date | null {
-  if (!value) return null;
-  return typeof value === "string" ? new Date(value) : value;
-}
-
-/**
- * Formats a date in UTC. Schedule expressions (cron) are evaluated in UTC
- * (see schedule.ts / schedule-presets.ts), so last-run/next-run times must be
- * labeled and rendered in UTC to avoid misleading the user about when a run
- * actually fired or will fire.
- */
-function formatDateTime(value: string | Date | null): string {
-  const date = toDate(value);
-  if (!date) return "Never";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(date);
-}
 
 /**
  * Card showing schedule trigger state: last run, next run, skip reasons.
@@ -77,18 +55,18 @@ export function AgentScheduleCard({ trigger }: AgentScheduleCardProps) {
     <div className="grid grid-cols-2 gap-2 rounded border border-border bg-muted/10 px-3 py-2 text-xs">
       <div>
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Last run (UTC)
+          Last run
         </p>
         <p className="mt-0.5 text-foreground">
-          {formatDateTime(trigger.lastRunAt)}
+          {formatRunTimestamp(trigger.lastRunAt, { fallback: "Never" })}
         </p>
       </div>
       <div>
         <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Next run (UTC)
+          Next run
         </p>
         <p className="mt-0.5 text-foreground">
-          {formatDateTime(trigger.nextRunAt)}
+          {formatRunTimestamp(trigger.nextRunAt, { fallback: "Never" })}
         </p>
       </div>
     </div>

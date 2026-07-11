@@ -120,7 +120,7 @@ Neon preview lesson):
 | repoOwner / repoName | text notNull | loops are repo-scoped in v1, like background agents |
 | definition | jsonb notNull | `{ nodes: LoopNode[], edges: LoopEdge[] }`, zod-validated on write |
 | status | enum draft \| active \| paused \| archived | only `active` loops accept triggers |
-| guardrails | jsonb | `{ maxStepsPerRun?: number, maxIterations?: number, maxRunDurationMs?: number, stepTimeoutMs?: number }` with server-enforced ceilings |
+| guardrails | jsonb | `{ maxStepsPerRun?: number, maxIterations?: number, maxRunDurationMs?: number, stepTimeoutMs?: number, maxAgentTurnsPerStep?: number }` with server-enforced ceilings |
 | permissions | jsonb | same shape as backgroundAgents.permissions |
 | createdAt / updatedAt | timestamp | |
 
@@ -316,7 +316,10 @@ completed).
 
 **Guardrails:** server-side ceilings regardless of user config —
 maxStepsPerRun (default 50, ceiling 200), maxIterations (default 10, ceiling
-50), maxRunDurationMs (default 2h), stepTimeoutMs (default 10m, ceiling 30m).
+50), maxRunDurationMs (default 2h), stepTimeoutMs (default 10m, ceiling 30m),
+maxAgentTurnsPerStep (default 8, ceiling 32) — internal openAgent.generate
+turns within one agent_step; exhaustion fails the step with
+`turn_budget_exceeded`.
 Tripping a guardrail fails the run with `guardrail_exceeded` + event.
 
 **Stall sweep:** extend the existing background-agents cron route (or a
@@ -349,8 +352,9 @@ background-agent routes. Trigger CRUD reuses the existing background-agent
 trigger management with a loop target.
 
 **Feature flags:** `AGENT_LOOPS_ENABLED` (global), `AGENT_LOOPS_ALLOWED_REPOS`
-(rollout allowlist) — same pattern as background agents. Readiness surfaced via
-the existing readiness endpoint pattern.
+(required rollout allowlist; missing/invalid denies all, exact `*` deliberately
+allows all) — same pattern as background agents. Readiness surfaced via the
+existing readiness endpoint pattern.
 
 ---
 

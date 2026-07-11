@@ -42,6 +42,8 @@ export const ALL_KNOWN_LOOP_ERROR_KINDS = [
   "installation_missing",
   "permission_missing",
   "dispatch_failed",
+  "repo_allowlist_unconfigured",
+  "repo_allowlist_invalid",
   "repo_not_allowed",
   "loop_inactive",
   "loop_invalid",
@@ -61,6 +63,7 @@ export const ALL_KNOWN_LOOP_ERROR_KINDS = [
   "step_failed",
   "stall_sweep",
   "retry_conflict",
+  "turn_budget_exceeded",
 ] as const;
 
 export type KnownLoopErrorKind = (typeof ALL_KNOWN_LOOP_ERROR_KINDS)[number];
@@ -100,6 +103,20 @@ function knownCopy(
           "This repository isn't enabled for loops on this deployment.",
         whatToDo:
           "Ask your workspace administrator to add this repository to the loops allowlist.",
+      };
+    case "repo_allowlist_unconfigured":
+      return {
+        whatHappened:
+          "Loop repository access isn't configured on this deployment.",
+        whatToDo:
+          "Ask your workspace administrator to set AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
+      };
+    case "repo_allowlist_invalid":
+      return {
+        whatHappened:
+          "Loop repository access is misconfigured on this deployment.",
+        whatToDo:
+          "Ask your workspace administrator to correct AGENT_LOOPS_ALLOWED_REPOS before starting unattended runs.",
       };
     case "loop_inactive":
       return {
@@ -141,7 +158,15 @@ function knownCopy(
       return {
         whatHappened:
           "A step timed out or ran out of retries before it could finish.",
-        whatToDo: "Retry the run, or open the builder to adjust step limits.",
+        whatToDo:
+          "Retry the run. If it keeps timing out, raise the step timeout in the loop's settings.",
+      };
+    case "turn_budget_exceeded":
+      return {
+        whatHappened:
+          "A step used its entire agent-turn budget before it could finish.",
+        whatToDo:
+          'Open the loop\'s settings and raise "Agent turns per step", or split the step into smaller steps.',
       };
     case "step_output_invalid":
       return {

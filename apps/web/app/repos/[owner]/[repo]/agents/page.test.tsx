@@ -14,6 +14,7 @@ let repoAgents: Array<{
 }> = [];
 let repoRuns: Array<{
   id: string;
+  agentId: string;
   triggerKind: string;
   status: string;
   payloadSummary: {
@@ -95,6 +96,7 @@ describe("RepoAgentsPage", () => {
     repoRuns = [
       {
         id: "run-1",
+        agentId: "agent-1",
         triggerKind: "github.deployment_status",
         status: "succeeded",
         payloadSummary: {
@@ -174,6 +176,7 @@ describe("RepoAgentsPage", () => {
     // Create 7 runs
     repoRuns = Array.from({ length: 7 }, (_, i) => ({
       id: `run-${i + 1}`,
+      agentId: "agent-1",
       triggerKind: "schedule.cron",
       status: "succeeded",
       payloadSummary: { title: `Run ${i + 1}` },
@@ -199,5 +202,146 @@ describe("RepoAgentsPage", () => {
     expect(html).not.toContain("/background-runs/run-7");
     // A "more exist" affordance should appear when there are more than 5
     expect(html).toContain("Showing latest 5");
+  });
+
+  // #803 item 9 (W11): when multiple agents have run in the same repo, each
+  // "Recent runs" row must show the agent's name, not just a run id/timestamp.
+  test("BT-803-009: recent-runs rows show each run's agent name", async () => {
+    repoAgents = [
+      {
+        id: "agent-1",
+        name: "Deploy smoke",
+        status: "enabled",
+        instructions: "Run smoke checks after deployments.",
+        triggers: [],
+      },
+      {
+        id: "agent-2",
+        name: "Issue triage",
+        status: "enabled",
+        instructions: "Label and route new issues.",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-1",
+        agentId: "agent-1",
+        triggerKind: "github.deployment_status",
+        status: "succeeded",
+        payloadSummary: { title: "Production deployment succeeded" },
+        externalId: "delivery-1",
+        sha: "abc123",
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-05-27T12:00:00.000Z"),
+      },
+      {
+        id: "run-2",
+        agentId: "agent-2",
+        triggerKind: "github.issue",
+        status: "succeeded",
+        payloadSummary: { title: "Issue #42 triaged" },
+        externalId: "delivery-2",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-05-27T13:00:00.000Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    // Isolate the "Recent runs" section so this test fails if the agent name
+    // only appears in the "Configured agents" cards above — it must appear
+    // in the actual per-run row.
+    const recentRunsHtml = html.slice(html.indexOf("Recent runs"));
+    expect(recentRunsHtml).toContain("Production deployment succeeded");
+    expect(recentRunsHtml).toContain("Deploy smoke");
+    expect(recentRunsHtml).toContain("Issue #42 triaged");
+    expect(recentRunsHtml).toContain("Issue triage");
+  });
+
+  // Regression: a run referencing an agent that no longer appears in the
+  // roster (deleted agent, or agentId null on an older/loop-owned run) must
+  // not crash the page render — it should fall back to an honest label
+  // instead of an unhandled Map lookup failure.
+  test("REGRESSION-803-009: a run with an unknown or missing agentId renders a fallback label instead of crashing", async () => {
+    repoAgents = [
+      {
+        id: "agent-1",
+        name: "Deploy smoke",
+        status: "enabled",
+        instructions: "Run smoke checks after deployments.",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-orphaned",
+        agentId: "agent-deleted",
+        triggerKind: "schedule.cron",
+        status: "succeeded",
+        payloadSummary: { title: "Orphaned run" },
+        externalId: "delivery-orphan",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-05-27T12:00:00.000Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    const recentRunsHtml = html.slice(html.indexOf("Recent runs"));
+    expect(recentRunsHtml).toContain("Orphaned run");
+    expect(recentRunsHtml).toContain("Unknown agent");
+  });
+
+  // #863: the run list must render the same instant in the same explicit,
+  // labeled UTC treatment as the schedule card and agent detail page.
+  test("BT-863: recent-runs row renders createdAt via the shared UTC-labeled formatter", async () => {
+    repoAgents = [
+      {
+        id: "agent-1",
+        name: "Deploy smoke",
+        status: "enabled",
+        instructions: "Run smoke checks after deployments.",
+        triggers: [],
+      },
+    ];
+    repoRuns = [
+      {
+        id: "run-863",
+        agentId: "agent-1",
+        triggerKind: "schedule.cron",
+        status: "succeeded",
+        payloadSummary: { title: "Timezone parity run" },
+        externalId: "delivery-863",
+        sha: null,
+        ref: null,
+        branch: null,
+        createdAt: new Date("2026-07-03T21:20:00Z"),
+      },
+    ];
+    const { default: RepoAgentsPage } = await pageModulePromise;
+
+    const html = renderToStaticMarkup(
+      await RepoAgentsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    );
+
+    expect(html).toContain("Jul 3, 2026, 9:20 PM UTC");
   });
 });
