@@ -1,5 +1,4 @@
 import type { LucideIcon } from "lucide-react";
-import { Workflow } from "lucide-react";
 import {
   getSettingsRouteMetadata,
   type SettingsRouteId,
@@ -53,12 +52,6 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("composio"),
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
-      {
-        id: "automations",
-        label: "Automations",
-        href: "/automations",
-        icon: Workflow,
-      },
       settingsNavItem("repositories"),
       settingsNavItem("runtime-profiles"),
     ],
@@ -101,12 +94,6 @@ export function findActiveNavItem(
   groups = SETTINGS_NAV_GROUPS,
 ) {
   const items = flattenNavItems(groups);
-  if (
-    pathname === "/settings/background-agents" ||
-    pathname.startsWith("/settings/background-agents/")
-  ) {
-    return items.find((item) => item.id === "automations");
-  }
   return items.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
@@ -120,7 +107,12 @@ export function resolveSettingsFallbackRouteId(
   pathname: string,
   groups = SETTINGS_NAV_GROUPS,
 ): SettingsRouteId {
+  if (
+    pathname === "/settings/background-agents" ||
+    pathname.startsWith("/settings/background-agents/")
+  ) {
+    return "background-agents";
+  }
   const activeId = findActiveNavItem(pathname, groups)?.id;
-  if (activeId === "automations") return "background-agents";
   return (activeId as SettingsRouteId | undefined) ?? "profile";
 }

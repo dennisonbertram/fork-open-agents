@@ -23,10 +23,9 @@ export function getSidebarToggleActions(): SidebarToggleAction[] {
 }
 
 export type CollapsedRailAction = {
-  id: "expand" | "new-session" | "quick-chat" | "runs" | "settings";
+  id: "expand" | "new-session" | "quick-chat";
   ariaLabel: string;
   tooltip: string;
-  href?: string;
 };
 
 export function getCollapsedRailActions(): CollapsedRailAction[] {
@@ -46,28 +45,11 @@ export function getCollapsedRailActions(): CollapsedRailAction[] {
       ariaLabel: "Quick chat (no repo)",
       tooltip: "Quick chat (no repo)",
     },
-    {
-      id: "runs",
-      ariaLabel: "Open runs",
-      tooltip: "Runs",
-      href: "/runs",
-    },
-    {
-      id: "settings",
-      ariaLabel: "Open settings",
-      tooltip: "Settings",
-    },
   ];
 }
 
 export type CollapsedRepoRailAction = {
-  id:
-    | "repo-dashboard"
-    | "repo-branch"
-    | "repo-settings"
-    | "repo-new-session"
-    | "repo-agents"
-    | "repo-loops";
+  id: "repo-dashboard" | "repo-branch" | "repo-settings" | "repo-new-session";
   ariaLabel: string;
   tooltip: string;
   href?: string;
@@ -102,18 +84,6 @@ export function getCollapsedRepoRailActions(
       id: "repo-new-session",
       ariaLabel: `Create session for ${repoLabel}`,
       tooltip: "Create session",
-    },
-    {
-      id: "repo-agents",
-      ariaLabel: `Open agents for ${repoLabel}`,
-      tooltip: "Agents",
-      href: `/repos/${encodedOwner}/${encodedName}/agents`,
-    },
-    {
-      id: "repo-loops",
-      ariaLabel: `Open loops for ${repoLabel}`,
-      tooltip: "Loops",
-      href: `/loops?repoOwner=${encodedOwner}&repoName=${encodedName}`,
     },
   ];
 }

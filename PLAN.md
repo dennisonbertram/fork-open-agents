@@ -6,8 +6,8 @@ Issue [#932](https://github.com/dennisonbertram/fork-open-agents/issues/932)
 defines the durable product and delivery contract for parent epic
 [#931](https://github.com/dennisonbertram/fork-open-agents/issues/931).
 Open Agents will preserve its mature session, sandbox, webhook, background-agent,
-and loop runtimes while reducing the default product to **Sessions**,
-**Automations**, **Runs**, and supporting **Settings**.
+and loop runtimes while reducing default navigation to **Sessions**, **Runs**,
+**Automations**, **Repositories**, and **Settings**.
 
 The detailed, canonical plan is
 [Sessions, Automations, and Runs](docs/plans/sessions-automations-runs.md).
@@ -39,12 +39,18 @@ plan because `Agent` is also used for interactive chat roles and subagents, and
 The primary surfaces are:
 
 1. **Sessions** — durable interactive coding work attached to a workspace.
-2. **Automations** — versioned repository-scoped coding definitions with one or
-   more steps, triggers, permissions, verification, outputs, and limits.
-3. **Runs** — durable automation execution attempts with an honest lifecycle,
+2. **Runs** — durable automation execution attempts with an honest lifecycle,
    evidence, outputs, cost, and recovery controls.
-4. **Settings** — account, connections, repository policy, models, usage, and
+3. **Automations** — versioned repository-scoped coding definitions with one or
+   more steps, triggers, permissions, verification, outputs, and limits.
+4. **Repositories** — the top-level context directory for repository
+   dashboards and links into Sessions, Automations, and Runs.
+5. **Settings** — account, connections, repository policy, models, usage, and
    explicitly advanced configuration.
+
+Sessions, Automations, and Runs are the only default execution nouns.
+Repositories is the top-level context directory; Settings owns supporting
+configuration. Workspace remains execution context, not a sixth destination.
 
 A one-step Automation is backed initially by today's background-agent storage
 and executor. A multi-step Automation is backed initially by today's loop
@@ -74,7 +80,9 @@ pretending the sources have identical fields or statuses.
 
 ### Source of truth after product parity
 
-- Sessions, Automations, and Runs are the only default product nouns.
+- Sessions, Automations, and Runs are the only default execution nouns.
+- Repositories is the top-level context directory; Settings owns supporting
+  configuration.
 - Existing source storage may remain permanently if adapters are reliable.
 - Shared executor contracts may be extracted only after characterization.
 - A canonical-table migration is a separate research decision, not an assumed
@@ -140,8 +148,8 @@ is promoted.
 
 ### Wave 5 — product reduction
 
-- Reduce workspace and repository navigation to Sessions, Automations, Runs,
-  and Settings.
+- Reduce workspace and repository navigation to Sessions, Runs, Automations,
+  Repositories, and Settings.
 - Rename interactive `Agents` settings to `Chat roles` and move non-core tools
   under Advanced.
 - Align landing and onboarding with

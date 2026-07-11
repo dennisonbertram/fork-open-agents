@@ -82,15 +82,14 @@ describe("getSidebarToggleActions", () => {
 // ---------------------------------------------------------------------------
 
 describe("getCollapsedRailActions", () => {
-  test("RAIL-008: returns expand, new-session, quick-chat, Runs, and settings actions", () => {
+  test("RAIL-008: returns only panel and session creation actions", () => {
     const actions = getCollapsedRailActions();
     const ids = actions.map((a) => a.id);
     expect(ids).toContain("expand");
     expect(ids).toContain("new-session");
     expect(ids).toContain("quick-chat");
-    expect(ids).toContain("runs");
-    expect(ids).toContain("settings");
-    expect(actions.find((action) => action.id === "runs")?.href).toBe("/runs");
+    expect(ids).not.toContain("runs");
+    expect(ids).not.toContain("settings");
   });
 
   test("RAIL-009: expand is the first action in the rail", () => {
@@ -106,9 +105,9 @@ describe("getCollapsedRailActions", () => {
     }
   });
 
-  test("RAIL-011: returns exactly 5 actions", () => {
+  test("RAIL-011: returns exactly 3 actions", () => {
     const actions = getCollapsedRailActions();
-    expect(actions).toHaveLength(5);
+    expect(actions).toHaveLength(3);
   });
 
   test("RAIL-012: action ids are unique", () => {
@@ -120,7 +119,7 @@ describe("getCollapsedRailActions", () => {
 });
 
 describe("getCollapsedRepoRailActions", () => {
-  test("RAIL-013: returns repo dashboard, branch, settings, new session, agents, and loops actions", () => {
+  test("RAIL-013: returns repo context and session actions without agent or loop discovery", () => {
     const actions = getCollapsedRepoRailActions("dennison", "open-agents");
     const ids = actions.map((a) => a.id);
 
@@ -129,24 +128,20 @@ describe("getCollapsedRepoRailActions", () => {
       "repo-branch",
       "repo-settings",
       "repo-new-session",
-      "repo-agents",
-      "repo-loops",
     ]);
   });
 
   test("RAIL-014: repo links use the target repo", () => {
     const actions = getCollapsedRepoRailActions("dennison", "open-agents");
-    const byId = new Map(actions.map((action) => [action.id, action]));
+    const byId = new Map<string, CollapsedRepoRailAction>(
+      actions.map((action) => [action.id, action]),
+    );
 
     expect(byId.get("repo-dashboard")?.href).toBe(
       "/repos/dennison/open-agents",
     );
-    expect(byId.get("repo-agents")?.href).toBe(
-      "/repos/dennison/open-agents/agents",
-    );
-    expect(byId.get("repo-loops")?.href).toBe(
-      "/loops?repoOwner=dennison&repoName=open-agents",
-    );
+    expect(byId.has("repo-agents")).toBe(false);
+    expect(byId.has("repo-loops")).toBe(false);
   });
 
   test("RAIL-015: every repo action has accessible label metadata", () => {
