@@ -155,7 +155,7 @@ const regressionTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
 
 function resetRegressionMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   workflowRunId = "wf-regression-1";
   scheduleRows = [];
   startMock.mockClear();

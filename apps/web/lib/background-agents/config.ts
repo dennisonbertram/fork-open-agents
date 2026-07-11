@@ -1,41 +1,57 @@
 import "server-only";
 
-function normalizeRepoKey(owner: string, repo: string): string {
-  return `${owner.trim().toLowerCase()}/${repo.trim().toLowerCase()}`;
-}
+import {
+  checkRepositoryAllowlist,
+  parseRepositoryAllowlist,
+} from "@/lib/repository-allowlist";
+
+export type BackgroundAgentRepoRefusalReason =
+  | "repo_allowlist_unconfigured"
+  | "repo_allowlist_invalid"
+  | "repo_not_allowlisted";
+
+export type BackgroundAgentRepoAccess =
+  | { allowed: true }
+  | { allowed: false; reason: BackgroundAgentRepoRefusalReason };
 
 export function isBackgroundAgentsEnabled(): boolean {
   return process.env.BACKGROUND_AGENTS_ENABLED === "true";
 }
 
 export function getBackgroundAgentsAllowedRepos(): Set<string> | null {
-  const rawValue = process.env.BACKGROUND_AGENTS_ALLOWED_REPOS?.trim();
-  if (!rawValue) {
-    return null;
+  const policy = getBackgroundAgentsRepoPolicy();
+  return policy.state === "wildcard" ? null : new Set(policy.entries);
+}
+
+export function getBackgroundAgentsRepoPolicy() {
+  return parseRepositoryAllowlist(process.env.BACKGROUND_AGENTS_ALLOWED_REPOS);
+}
+
+export function getBackgroundAgentRepoAccess(
+  owner: string,
+  repo: string,
+): BackgroundAgentRepoAccess {
+  const access = checkRepositoryAllowlist(
+    getBackgroundAgentsRepoPolicy(),
+    owner,
+    repo,
+  );
+  if (access.allowed) {
+    return access;
   }
-
-  const entries = rawValue
-    .split(/[\s,]+/)
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0);
-
-  if (entries.includes("*")) {
-    return null;
-  }
-
-  return new Set(entries);
+  const reasonByPolicyReason = {
+    missing: "repo_allowlist_unconfigured",
+    invalid: "repo_allowlist_invalid",
+    not_listed: "repo_not_allowlisted",
+  } as const;
+  return { allowed: false, reason: reasonByPolicyReason[access.reason] };
 }
 
 export function isBackgroundAgentRepoAllowed(
   owner: string,
   repo: string,
 ): boolean {
-  const allowedRepos = getBackgroundAgentsAllowedRepos();
-  if (!allowedRepos) {
-    return true;
-  }
-
-  return allowedRepos.has(normalizeRepoKey(owner, repo));
+  return getBackgroundAgentRepoAccess(owner, repo).allowed;
 }
 
 export function getBackgroundAgentsCronSecret(): string | null {

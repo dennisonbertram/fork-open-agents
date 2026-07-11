@@ -162,7 +162,7 @@ const githubEvent: NormalizedBackgroundTriggerEvent = {
 
 function resetDispatcherMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   workflowRunId = "workflow-1";
   matchingRows = [];
   webhookRow = null;
@@ -281,10 +281,62 @@ describe("dispatchBackgroundTriggerEvent", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     });
     expect(listMatchingTriggersForEvent).not.toHaveBeenCalled();
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+  });
+
+  test("refuses GitHub events before matching when the allowlist is missing", async () => {
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    matchingRows = [{ agent, trigger: enabledTrigger }];
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-missing-policy",
+    });
+
+    expect(result).toMatchObject({
+      matched: 0,
+      created: 0,
+      skipReason: "repo_allowlist_unconfigured",
+    });
+    expect(listMatchingTriggersForEvent).not.toHaveBeenCalled();
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[background-agents] repository policy refused dispatch",
+      expect.objectContaining({
+        eventName: "background-agent.dispatch.repo-policy-refused",
+        policyState: "missing",
+        reason: "repo_allowlist_unconfigured",
+        requestId: "req-missing-policy",
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  test("refuses GitHub events with an invalid allowlist without logging its value", async () => {
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "private-malformed-value";
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchBackgroundTriggerEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchBackgroundTriggerEvent({
+      event: githubEvent,
+      requestId: "req-invalid-policy",
+    });
+
+    expect(result).toMatchObject({
+      matched: 0,
+      created: 0,
+      skipReason: "repo_allowlist_invalid",
+    });
+    expect(JSON.stringify(warnSpy.mock.calls)).not.toContain(
+      "private-malformed-value",
+    );
+    warnSpy.mockRestore();
   });
 
   // #749: per-agent-per-PR run budget — the ping-pong loop backstop.
@@ -455,9 +507,49 @@ describe("dispatchWebhookErrorEvent", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: webhookTrigger.id,
+      skipReason: "repo_not_allowlisted",
+    });
+  });
+
+  test("refuses signed webhooks before run creation when the allowlist is missing", async () => {
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    webhookRow = { agent, trigger: webhookTrigger };
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchWebhookErrorEvent } = await dispatcherModulePromise;
+
+    const result = await dispatchWebhookErrorEvent({
+      webhookPublicId: "wh_123",
+      event: {
+        externalId: "error-1",
+        title: "Unhandled error",
+        message: "TypeError",
+        occurredAt: "2026-05-27T12:00:00.000Z",
+      },
+      requestId: "req-webhook-missing-policy",
+    });
+
+    expect(result).toMatchObject({
+      matched: 0,
+      created: 0,
+      skipReason: "repo_allowlist_unconfigured",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[background-agents] repository policy refused dispatch",
+      expect.objectContaining({
+        eventName: "background-agent.dispatch.repo-policy-refused",
+        policyState: "missing",
+        reason: "repo_allowlist_unconfigured",
+        triggerId: webhookTrigger.id,
+      }),
+    );
+    warnSpy.mockRestore();
   });
 
   test("does not let signed webhook payload repo values bypass the agent allowlist", async () => {
@@ -492,6 +584,7 @@ describe("dispatchWebhookErrorEvent", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
@@ -587,6 +680,24 @@ describe("dispatchScheduledBackgroundAgents", () => {
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();
   });
+
+  test("records a typed skip without creating scheduled runs when policy is missing", async () => {
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    scheduleRows = [{ agent, trigger: scheduleTrigger }];
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-05-27T12:34:00.000Z"),
+      requestId: "req-cron-missing-policy",
+    });
+
+    expect(result.created).toBe(0);
+    expect(recordTriggerSkipReason).toHaveBeenCalledWith({
+      triggerId: scheduleTrigger.id,
+      skipReason: "repo_allowlist_unconfigured",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+  });
 });
 
 describe("dispatchManualBackgroundAgentTest", () => {
@@ -680,6 +791,31 @@ describe("dispatchManualBackgroundAgentTest", () => {
         eventName: "background-agent.manual_test.skipped",
         agentId: agent.id,
         skipReason: "repo_not_allowlisted",
+      }),
+    );
+    warnSpy.mockRestore();
+  });
+
+  test("reports operator configuration when a manual test allowlist is missing", async () => {
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    const { dispatchManualBackgroundAgentTest } = await dispatcherModulePromise;
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const result = await dispatchManualBackgroundAgentTest({
+      agent,
+      requestId: "req-manual-missing-policy",
+    });
+
+    expect(result).toMatchObject({
+      matched: 0,
+      created: 0,
+      skipReason: "repo_allowlist_unconfigured",
+    });
+    expect(createRunForTrigger).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(
+      "[background-agents] manual test skipped",
+      expect.objectContaining({
+        skipReason: "repo_allowlist_unconfigured",
       }),
     );
     warnSpy.mockRestore();
