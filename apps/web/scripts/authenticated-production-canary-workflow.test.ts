@@ -20,15 +20,21 @@ function stepBlock(name: string): string {
 
 describe("authenticated production canary workflow", () => {
   test("all three journey legs always require configuration", () => {
-    expect(workflow.match(/PRODUCTION_CANARY_REQUIRE_CONFIG: "true"/g)).toHaveLength(
-      3,
-    );
+    expect(
+      workflow.match(/PRODUCTION_CANARY_REQUIRE_CONFIG: "true"/g),
+    ).toHaveLength(3);
   });
 
   test("each leg captures the real pipeline exit and exports a classification", () => {
     expect(workflow.match(/PIPESTATUS\[0\]/g)).toHaveLength(3);
-    expect(workflow.match(/classification=.*GITHUB_OUTPUT/g)).toHaveLength(3);
-    expect(workflow.match(/exit_code=.*GITHUB_OUTPUT/g)).toHaveLength(3);
+    expect(
+      workflow.match(
+        /echo "classification=\$\{classification\}" >> "\$GITHUB_OUTPUT"/g,
+      ),
+    ).toHaveLength(3);
+    expect(
+      workflow.match(/echo "exit_code=\$\{exit_code\}" >> "\$GITHUB_OUTPUT"/g),
+    ).toHaveLength(3);
   });
 
   test("always aggregates safe per-journey classifications into the step summary", () => {

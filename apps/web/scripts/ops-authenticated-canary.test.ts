@@ -25,6 +25,27 @@ describe("ops authenticated canary", () => {
     ).toBeNull();
   });
 
+  test("rejects malformed target URLs and timeouts as configuration blocks", () => {
+    const base = {
+      PRODUCTION_CANARY_REPO: "owner/repo",
+      PRODUCTION_CANARY_IDENTITY: "test-user",
+      PRODUCTION_CANARY_AUTH_COOKIE: "session=secret",
+    };
+    expect(
+      readCanaryConfig({
+        ...base,
+        PRODUCTION_CANARY_URL: "not-a-url",
+      }),
+    ).toBeNull();
+    expect(
+      readCanaryConfig({
+        ...base,
+        PRODUCTION_CANARY_URL: "https://example.com",
+        PRODUCTION_CANARY_TIMEOUT_MS: "-1",
+      }),
+    ).toBeNull();
+  });
+
   test("returns a normalized config once all four env vars are present", () => {
     const config = readCanaryConfig({
       PRODUCTION_CANARY_URL: "https://example.com",
