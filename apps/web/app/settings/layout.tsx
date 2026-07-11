@@ -2,7 +2,7 @@
 
 import { LogOut, Menu } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { signOut } from "@/lib/auth/actions";
 import { useSession } from "@/hooks/use-session";
 import { AuthGuard } from "@/components/auth/auth-guard";
@@ -23,7 +23,11 @@ import { ComposioSectionSkeleton } from "./composio-section";
 import { InferenceProfilesSectionSkeleton } from "./inference-profiles-section";
 import { LeaderboardSectionSkeleton } from "./leaderboard-section";
 import { ModelVariantsSectionSkeleton } from "./model-variants-section";
-import { findActiveNavItem, resolveSettingsFallbackRouteId } from "./nav-items";
+import {
+  findActiveNavItem,
+  resolveSettingsFallbackRouteId,
+  visibleNavGroups,
+} from "./nav-items";
 import { PreferencesSectionSkeleton } from "./preferences-section";
 import { SettingsPageHeader } from "./_components/page-header";
 import { getSettingsRouteMetadata } from "./settings-routes";
@@ -93,14 +97,20 @@ function SettingsLayout({
   isAdmin: boolean;
 }) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-  const activeItem = findActiveNavItem(pathname);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const activeItem = findActiveNavItem(pathname, visibleNavGroups(isAdmin));
   const activeWorkspaceItem = getActiveWorkspaceNavigationItem(pathname);
+
+  function closeMobileSidebar() {
+    setMobileSidebarOpen(false);
+    requestAnimationFrame(() => mobileTriggerRef.current?.focus());
+  }
 
   const navItems = (
     <SettingsNav
       pathname={pathname}
       isAdmin={isAdmin}
-      onNavigate={() => setMobileSidebarOpen(false)}
+      onNavigate={closeMobileSidebar}
     />
   );
 
@@ -127,7 +137,15 @@ function SettingsLayout({
         </div>
       </aside>
 
-      <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
+      <Sheet
+        open={mobileSidebarOpen}
+        onOpenChange={(open) => {
+          setMobileSidebarOpen(open);
+          if (!open) {
+            closeMobileSidebar();
+          }
+        }}
+      >
         <SheetContent side="left" className="flex w-64 flex-col p-0">
           <SheetHeader className="sr-only">
             <SheetTitle>Settings navigation</SheetTitle>
@@ -136,10 +154,13 @@ function SettingsLayout({
             <WorkspaceNavigation
               mode="mobile"
               pathname={pathname}
-              onNavigate={() => setMobileSidebarOpen(false)}
+              onNavigate={closeMobileSidebar}
             />
           </div>
-          <nav aria-label="Settings navigation" className="flex-1 px-2 py-2">
+          <nav
+            aria-label="Settings navigation"
+            className="min-h-0 flex-1 overflow-y-auto px-2 py-2"
+          >
             {navItems}
           </nav>
           <div className="border-t border-border px-2 py-3">
@@ -159,6 +180,7 @@ function SettingsLayout({
         <div className="flex items-center gap-3 border-b border-border px-4 py-3 md:hidden">
           <button
             type="button"
+            ref={mobileTriggerRef}
             onClick={() => setMobileSidebarOpen(true)}
             className="rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             aria-label="Open workspace navigation"
@@ -182,8 +204,12 @@ function SettingsLayout({
 export default function Layout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { isAdmin } = useSession();
-  const activeItem = findActiveNavItem(pathname);
-  const fallbackRouteId = resolveSettingsFallbackRouteId(pathname);
+  const fallbackGroups = visibleNavGroups(false);
+  const activeItem = findActiveNavItem(pathname, fallbackGroups);
+  const fallbackRouteId = resolveSettingsFallbackRouteId(
+    pathname,
+    fallbackGroups,
+  );
   const fallbackRoute = getSettingsRouteMetadata(fallbackRouteId);
   const fallbackContent =
     activeItem?.id === "connections" ? (

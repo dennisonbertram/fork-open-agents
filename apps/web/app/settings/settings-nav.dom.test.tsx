@@ -12,11 +12,9 @@ describe("SettingsNav information architecture (#964)", () => {
     );
     const q = within(container);
 
-    expect(q.getAllByRole("heading", { level: 2 }).map((h) => h.textContent)).toEqual([
-      "Account",
-      "Workspace",
-      "Advanced",
-    ]);
+    expect(
+      q.getAllByRole("heading", { level: 2 }).map((h) => h.textContent),
+    ).toEqual(["Account", "Workspace", "Advanced"]);
     expect(q.getAllByRole("list")).toHaveLength(3);
     expect(q.getAllByRole("link")).toHaveLength(13);
     expect(q.queryByRole("heading", { name: "Admin" })).toBeNull();

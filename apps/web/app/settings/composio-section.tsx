@@ -759,7 +759,7 @@ export function ComposioSection() {
         throw new Error(body?.error ?? "Failed to update defaults");
       }
       await mutate();
-      toast.success("Agent default updated");
+      toast.success("Chat role default updated");
     } catch (defaultsError) {
       setActionError(
         defaultsError instanceof Error
@@ -836,7 +836,7 @@ export function ComposioSection() {
 
       <SettingsSection
         title="Connect tools"
-        description="Connect the apps your agents can use. Search for an app, connect it once, and it stays pinned here."
+        description="Connect the apps your Chat roles can use. Search for an app, connect it once, and it stays pinned here."
       >
         <ComposioToolCatalog />
       </SettingsSection>
@@ -931,10 +931,10 @@ export function ComposioSection() {
         </div>
       </SettingsSection>
 
-      {/* Agent defaults — compact one-row cards */}
+      {/* Chat role defaults — compact one-row cards */}
       <SettingsSection
-        title="Agent defaults"
-        description="Pick the tools each agent starts with when a chat hasn't chosen its own. Main is your chat agent; Explorer and Executor are subagents it spawns for bigger tasks; Design handles design work. 'Off' means that agent gets no external tools."
+        title="Chat role defaults"
+        description="Pick the tools each role starts with in an interactive Session. Main role is the Session coordinator; Explorer, Executor, and Design are helper roles. Automations choose their toolkits separately. 'Off' means that role gets no external tools."
       >
         {defaults ? (
           <div className="space-y-3">
@@ -985,9 +985,9 @@ export function ComposioSection() {
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span
                       className="hidden text-xs text-muted-foreground sm:inline"
-                      title="When on, an individual chat can swap this agent's tools for that conversation only — your saved default stays. Off locks the default."
+                      title="When on, an individual Session can swap this role's tools for that Session only — your saved default stays. Off locks the default."
                     >
-                      Chat override
+                      Session override
                     </span>
                     <Switch
                       id={`composio-agent-chat-override-${agentKey}`}
@@ -1002,7 +1002,7 @@ export function ComposioSection() {
                           },
                         });
                       }}
-                      aria-label={`Allow chat override for ${AGENT_LABELS[agentKey]}`}
+                      aria-label={`Allow Session override for ${AGENT_LABELS[agentKey]}`}
                     />
                   </div>
                 </div>
@@ -1011,17 +1011,16 @@ export function ComposioSection() {
 
             <p className="text-xs text-muted-foreground">
               <span className="font-medium text-foreground">
-                Chat override:
+                Session override:
               </span>{" "}
-              when on, an individual chat can change that agent&apos;s tools for
-              the conversation; your saved default stays. Turn it off to lock
-              the default.
+              when on, an individual Session can change that role&apos;s tools;
+              your saved default stays. Turn it off to lock the default.
             </p>
 
             {/* Tip: suggest setting Main's default when profiles exist */}
             {showMainTip && (
               <p className="text-xs text-muted-foreground rounded-md border border-border/50 bg-muted/40 px-3 py-2">
-                Tip: set a default profile for Main so new chats start with
+                Tip: set a default profile for Main so new Sessions start with
                 tools.
               </p>
             )}

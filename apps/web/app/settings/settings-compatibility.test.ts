@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { getActiveWorkspaceNavigationItem } from "@/components/workspace-navigation";
-import {
-  findActiveNavItem,
-  resolveSettingsFallbackRouteId,
-} from "./nav-items";
+import { findActiveNavItem, resolveSettingsFallbackRouteId } from "./nav-items";
 import {
   getSettingsRouteMetadata,
   SETTINGS_ROUTE_METADATA,

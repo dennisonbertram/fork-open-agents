@@ -10,7 +10,10 @@ const composioSection = readFileSync(
   join(import.meta.dir, "composio-section.tsx"),
   "utf8",
 );
-const settingsLayout = readFileSync(join(import.meta.dir, "layout.tsx"), "utf8");
+const settingsLayout = readFileSync(
+  join(import.meta.dir, "layout.tsx"),
+  "utf8",
+);
 
 describe("narrow Chat roles copy boundary (#964)", () => {
   test("role cards use the requested visible subtitles and role mutation copy", () => {

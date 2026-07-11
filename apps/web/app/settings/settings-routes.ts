@@ -70,9 +70,9 @@ export const SETTINGS_ROUTE_METADATA = {
     audience: "user",
   },
   agents: {
-    title: "Agents",
+    title: "Chat roles",
     description:
-      "Agents are the AI roles that work inside your chats, from Main to helper subagents.",
+      "Configure the roles used inside interactive Sessions. Webhook and scheduled coding work lives in Automations.",
     href: "/settings/agents",
     icon: Users,
     audience: "user",
@@ -117,7 +117,7 @@ export const SETTINGS_ROUTE_METADATA = {
     audience: "user",
   },
   repositories: {
-    title: "Repositories",
+    title: "Repository settings",
     description:
       "Per-repository defaults and tool access, including which tools agents can use in each repository.",
     href: "/settings/repositories",

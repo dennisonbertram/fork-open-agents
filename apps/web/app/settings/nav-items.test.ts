@@ -146,9 +146,7 @@ describe("settings nav data", () => {
 
   // NAV-007: runtime-profiles is in the advanced group
   test("NAV-007: runtime-profiles item is in the advanced group", () => {
-    const advancedGroup = SETTINGS_NAV_GROUPS.find(
-      (g) => g.id === "advanced",
-    );
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
     const ids = advancedGroup?.items.map((i) => i.id);
     expect(ids).toContain("runtime-profiles");
   });
@@ -207,9 +205,7 @@ describe("settings nav data", () => {
     expect(item?.href).toBe("/settings/learnings");
     expect(item?.icon).toBe(Lightbulb);
 
-    const advancedGroup = SETTINGS_NAV_GROUPS.find(
-      (g) => g.id === "advanced",
-    );
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
     expect(advancedGroup?.items.map((i) => i.id)).toContain("learnings");
   });
 
@@ -217,8 +213,8 @@ describe("settings nav data", () => {
     expect(
       findActiveNavItem("/settings/admin", visibleNavGroups(false)),
     ).toBeUndefined();
-    expect(findActiveNavItem("/settings/admin", visibleNavGroups(true))?.id).toBe(
-      "admin",
-    );
+    expect(
+      findActiveNavItem("/settings/admin", visibleNavGroups(true))?.id,
+    ).toBe("admin");
   });
 });
