@@ -18,6 +18,8 @@ type DispatchResult =
       skipped: true;
       reason:
         | "feature_disabled"
+        | "repo_allowlist_unconfigured"
+        | "repo_allowlist_invalid"
         | "repo_not_allowed"
         | "loop_inactive"
         | "loop_invalid"
@@ -214,6 +216,46 @@ describe("POST /api/agent-loops/[loopId]/runs", () => {
     const body = await response.json();
     expect(response.status).toBe(403);
     expect(body).toMatchObject({ errorKind: "repo_not_allowed" });
+  });
+
+  test("returns 503 when the repository allowlist is not configured", async () => {
+    dispatchManualAgentLoopStart.mockImplementation(async () => ({
+      skipped: true as const,
+      reason: "repo_allowlist_unconfigured" as const,
+    }));
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/agent-loops/loop-1/runs", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({
+      errorKind: "repo_allowlist_unconfigured",
+    });
+  });
+
+  test("returns 503 when the repository allowlist is invalid", async () => {
+    dispatchManualAgentLoopStart.mockImplementation(async () => ({
+      skipped: true as const,
+      reason: "repo_allowlist_invalid" as const,
+    }));
+    const { POST } = await routeModulePromise;
+
+    const response = await POST(
+      new Request("http://localhost/api/agent-loops/loop-1/runs", {
+        method: "POST",
+      }),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({ errorKind: "repo_allowlist_invalid" });
   });
 
   test("BT-033: returns 502 with success:false, errorKind:dispatch_failed when initial dispatch fails (issue #763 — no false {created:true})", async () => {

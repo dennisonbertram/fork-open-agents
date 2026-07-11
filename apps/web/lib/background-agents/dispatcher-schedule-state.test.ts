@@ -5,7 +5,7 @@
  * BT-005: Disabled / not-due / invalid / repo-disallowed → skip reason recorded.
  * BT-006: Failed run → schedule state still advances (no wedge).
  */
-import { beforeEach, describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import type { BackgroundAgentRun } from "@/lib/db/schema";
 import type { BackgroundAgentWithTriggers } from "./store";
 
@@ -110,7 +110,7 @@ const scheduleTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
 
 function resetMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   workflowRunId = "workflow-run-1";
   scheduleRows = [];
   start.mockClear();
@@ -391,6 +391,32 @@ describe("dispatchScheduledBackgroundAgents — persisted schedule state", () =>
     expect(result.created).toBe(0);
     expect(createRunForTriggerMock).not.toHaveBeenCalled();
     expect(recordTriggerSkipReason).not.toHaveBeenCalled();
+  });
+
+  test("does not evaluate, persist, or log repo policy for a future schedule", async () => {
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+    const notDueTrigger = {
+      ...scheduleTrigger,
+      id: "trigger-not-due-policy",
+      schedule: "0 9 * * *",
+      nextRunAt: new Date("2026-06-02T09:00:00.000Z"),
+    };
+    scheduleRows = [{ agent: baseAgent, trigger: notDueTrigger }];
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => undefined);
+    const { dispatchScheduledBackgroundAgents } = await dispatcherModulePromise;
+
+    const result = await dispatchScheduledBackgroundAgents({
+      now: new Date("2026-06-01T09:12:00.000Z"),
+      requestId: "req-not-due-policy",
+    });
+
+    expect(result.created).toBe(0);
+    expect(recordTriggerSkipReason).not.toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      "[background-agents] repository policy refused dispatch",
+      expect.anything(),
+    );
+    warnSpy.mockRestore();
   });
 
   test("terminalizes stale queued or running background-agent runs", async () => {

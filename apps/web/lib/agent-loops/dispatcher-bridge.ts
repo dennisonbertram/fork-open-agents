@@ -24,13 +24,19 @@ import {
   recordAgentLoopEvent,
   setInitialStepPointer,
 } from "./store";
-import { isAgentLoopRepoAllowed, isAgentLoopsEnabled } from "./config";
+import {
+  getAgentLoopRepoAccess,
+  isAgentLoopsEnabled,
+  type AgentLoopRepoRefusalReason,
+} from "./config";
 import { validateLoopDefinition } from "./validation";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type LoopDispatchSkipReason =
   | "feature_disabled"
+  | "repo_allowlist_unconfigured"
+  | "repo_allowlist_invalid"
   | "repo_not_allowed"
   | "loop_inactive"
   | "loop_invalid"
@@ -126,6 +132,38 @@ export type DispatchLoopRunForTriggerParams = {
   event: LoopDispatchEvent;
   requestId?: string | null;
 };
+
+function policyStateForReason(reason: AgentLoopRepoRefusalReason) {
+  if (reason === "repo_allowlist_unconfigured") {
+    return "missing" as const;
+  }
+  if (reason === "repo_allowlist_invalid") {
+    return "invalid" as const;
+  }
+  return "list" as const;
+}
+
+function warnAgentLoopRepoPolicyRefused(params: {
+  loop: Pick<AgentLoop, "id" | "repoOwner" | "repoName">;
+  reason: AgentLoopRepoRefusalReason;
+  requestId?: string | null;
+  deliveryId?: string | null;
+  triggerId?: string | null;
+}) {
+  const log =
+    params.reason === "repo_not_allowed" ? console.info : console.warn;
+  log("[agent-loops] repository policy refused dispatch", {
+    eventName: "agent-loop.dispatch.repo-policy-refused",
+    loopId: params.loop.id,
+    repoOwner: params.loop.repoOwner,
+    repoName: params.loop.repoName,
+    policyState: policyStateForReason(params.reason),
+    reason: params.reason,
+    requestId: params.requestId ?? null,
+    deliveryId: params.deliveryId ?? null,
+    triggerId: params.triggerId ?? null,
+  });
+}
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
 
@@ -427,8 +465,16 @@ export async function dispatchLoopRunForTrigger(
   // loop's own values prevents both false-skips (payload repo differs from
   // loop's allowlisted repo) and allowlist bypass (payload carries an
   // allowlisted repo for a loop whose actual repo is NOT in the allowlist).
-  if (!isAgentLoopRepoAllowed(loop.repoOwner, loop.repoName)) {
-    return { skipped: true, reason: "repo_not_allowed" };
+  const repoAccess = getAgentLoopRepoAccess(loop.repoOwner, loop.repoName);
+  if (!repoAccess.allowed) {
+    warnAgentLoopRepoPolicyRefused({
+      loop,
+      reason: repoAccess.reason,
+      requestId,
+      deliveryId: event.externalId,
+      triggerId: trigger.id,
+    });
+    return { skipped: true, reason: repoAccess.reason };
   }
 
   // Gate 3: loop must be active
@@ -480,8 +526,14 @@ export async function dispatchManualAgentLoopStart(params: {
   }
 
   // Gate 2: repo allowlist
-  if (!isAgentLoopRepoAllowed(loop.repoOwner, loop.repoName)) {
-    return { skipped: true, reason: "repo_not_allowed" };
+  const repoAccess = getAgentLoopRepoAccess(loop.repoOwner, loop.repoName);
+  if (!repoAccess.allowed) {
+    warnAgentLoopRepoPolicyRefused({
+      loop,
+      reason: repoAccess.reason,
+      requestId,
+    });
+    return { skipped: true, reason: repoAccess.reason };
   }
 
   // Gate 3: loop must be active

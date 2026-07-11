@@ -223,6 +223,10 @@ above): the disposable repo must be present in both
 `BACKGROUND_AGENTS_ALLOWED_REPOS` and `AGENT_LOOPS_ALLOWED_REPOS`,
 `AGENT_LOOPS_ENABLED=true` must be set in the production Vercel environment,
 and the GitHub App must be installed on the disposable repo.
+Both allowlists fail closed when missing, blank, malformed, or when `*` is
+mixed with repository entries. Exact `*` is a deliberate allow-all override;
+do not use it to bypass repository inventory before a release. Readiness
+reports only policy state and valid-entry count, never raw malformed values.
 
 Debugging blocked vs. failed: inspect the workflow step summary first, which
 lists `account-status`, `background-agents-journey`, and `loops-journey` with

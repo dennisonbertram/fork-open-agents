@@ -74,7 +74,7 @@ The **only** external (non-GitHub, non-cron) trigger surface is the `webhook.err
 
 - **Redaction is enforced but pattern-based.** `redactBackgroundAgentPayload` runs at both DB-write boundaries (`store.ts:449,475`). Gaps: regex-pattern-based (a secret under a non-conforming key name persists; the payload layer lacks the `sk-` pattern the browser layer has), outbound Composio content is not filtered, and event `summary`/`payloadSummary` are stored raw (`store.ts:444`). Treat as defense-in-depth, not a guarantee.
 - **publicId is an identifier, not a credential** — `nanoid(16)` (~95 bits). The HMAC secret is the trust boundary. This is correct design.
-- **Allowlist asymmetry for loops is intentional** — the external webhook path double-gates loop-bound triggers (both allowlists), the internal cron path single-gates (loops allowlist only). Defensible, but `AGENT_LOOPS_ALLOWED_REPOS` is **empty** (allow-all) in `.env.local`, so loop-bound schedule triggers fire on any repo with an active loop.
+- **Allowlist asymmetry for loops is intentional** — the external webhook path double-gates loop-bound triggers (both allowlists), while the internal cron path uses the loops allowlist only. Since #933, an empty `AGENT_LOOPS_ALLOWED_REPOS` denies dispatch; only exact `*` deliberately allows every repository.
 
 ---
 
