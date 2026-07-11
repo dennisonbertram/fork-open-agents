@@ -11,6 +11,7 @@ type QueryRecord = {
   fromTable: unknown;
   limit: number | null;
   orderByArgs: unknown[];
+  whereArg: unknown;
 };
 
 function makeTable(
@@ -107,6 +108,12 @@ const agentLoopsTable = makeTable("agentLoops", [
   "repoName",
 ]);
 
+const agentLoopStepRunsTable = makeTable("agentLoopStepRuns", [
+  "id",
+  "loopRunId",
+  "status",
+]);
+
 const backgroundAgentTriggersTable = makeTable("backgroundAgentTriggers", [
   "id",
   "name",
@@ -127,7 +134,10 @@ function makeQueryChain(record: QueryRecord) {
       return chain;
     }),
     leftJoin: mock((_table: unknown, _condition?: unknown) => chain),
-    where: mock((_condition?: unknown) => chain),
+    where: mock((condition?: unknown) => {
+      record.whereArg = condition;
+      return chain;
+    }),
     orderBy: mock((...args: unknown[]) => {
       record.orderByArgs = args;
       return chain;
@@ -146,6 +156,7 @@ const selectMock = mock((_columns?: unknown) => {
     fromTable: null,
     limit: null,
     orderByArgs: [],
+    whereArg: null,
   };
   queryRecords.push(record);
 
@@ -160,6 +171,7 @@ mock.module("@/lib/db/client", () => ({
 
 mock.module("@/lib/db/schema", () => ({
   agentLoopRuns: agentLoopRunsTable,
+  agentLoopStepRuns: agentLoopStepRunsTable,
   agentLoops: agentLoopsTable,
   backgroundAgentRuns: backgroundAgentRunsTable,
   backgroundAgents: backgroundAgentsTable,
@@ -258,5 +270,34 @@ describe("account snapshot store query ordering", () => {
         column: backgroundAgentTriggersTable.nextRunAt,
       },
     ]);
+  });
+
+  test("keeps every normalized run source scoped to the authenticated user", async () => {
+    const { createAccountSnapshotLoaders } = await storePromise;
+    const loaders = createAccountSnapshotLoaders({
+      userId: "user-1",
+      since: new Date("2026-06-19T12:00:00.000Z"),
+      limit: 3,
+    });
+
+    await loaders.chatWorkflowRuns();
+    await loaders.backgroundAgentRuns();
+    await loaders.agentLoopRuns();
+
+    for (const [table, userIdColumn] of [
+      [workflowRunsTable, workflowRunsTable.userId],
+      [backgroundAgentRunsTable, backgroundAgentRunsTable.userId],
+      [agentLoopRunsTable, agentLoopRunsTable.userId],
+    ] as const) {
+      const query = queryRecords.find((record) => record.fromTable === table);
+      const predicates = (query?.whereArg as { values?: unknown[] } | null)
+        ?.values;
+
+      expect(predicates).toContainEqual({
+        kind: "eq",
+        left: userIdColumn,
+        right: "user-1",
+      });
+    }
   });
 });

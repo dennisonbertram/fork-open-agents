@@ -56,7 +56,9 @@ describe("normalized run status", () => {
   ])(
     "$source preserves $nativeStatus honestly",
     ({ source, nativeStatus, expected }) => {
-      expect(normalizeRunStatus({ source, nativeStatus })).toEqual(expected);
+      expect(normalizeRunStatus({ source, nativeStatus }) as unknown).toEqual(
+        expected,
+      );
     },
   );
 

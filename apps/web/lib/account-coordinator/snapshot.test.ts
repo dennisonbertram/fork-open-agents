@@ -118,9 +118,7 @@ describe("account coordinator snapshot", () => {
             updatedAt: new Date("2026-06-20T01:00:00.000Z"),
           }),
         ],
-        chatWorkflowRuns: async () => [
-          chatWorkflowRunRow(),
-        ],
+        chatWorkflowRuns: async () => [chatWorkflowRunRow()],
         backgroundAgentRuns: async () => [backgroundRunRow()],
         agentLoopRuns: async () => [
           agentLoopRunRow({
@@ -253,7 +251,10 @@ describe("account coordinator snapshot", () => {
 
   test("wraps canonical run mappings without replacing source-native ids", () => {
     const unknownWorkflow = normalizeChatWorkflowRun(
-      chatWorkflowRunRow({ status: "provider_mystery" }),
+      chatWorkflowRunRow({
+        status: "provider_mystery",
+        errorMessage: "Unknown does not prove failure",
+      }),
     );
     const skippedBackground = normalizeBackgroundAgentRun(
       backgroundRunRow({ status: "skipped" }),
@@ -276,6 +277,7 @@ describe("account coordinator snapshot", () => {
         runHealth: "unknown",
       },
     });
+    expect(unknownWorkflow.summary).toBeUndefined();
     expect(skippedBackground).toMatchObject({
       id: "bg-run-1",
       status: "skipped",

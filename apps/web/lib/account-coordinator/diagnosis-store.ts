@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   agentLoopEvents,
@@ -1145,7 +1145,11 @@ async function loadAgentLoopDiagnosis(params: {
   limit: number;
 }): Promise<AccountDiagnosisResponse | null> {
   const [row] = await db
-    .select({ run: agentLoopRuns, loop: agentLoops })
+    .select({
+      run: agentLoopRuns,
+      loop: agentLoops,
+      failedStepCount: sql<number>`COALESCE((SELECT COUNT(*)::int FROM ${agentLoopStepRuns} WHERE ${agentLoopStepRuns.loopRunId} = ${agentLoopRuns.id} AND ${agentLoopStepRuns.status} = 'failed'), 0)`,
+    })
     .from(agentLoopRuns)
     .leftJoin(agentLoops, eq(agentLoops.id, agentLoopRuns.loopId))
     .where(
@@ -1164,6 +1168,7 @@ async function loadAgentLoopDiagnosis(params: {
   const target = normalizeAgentLoopRun(
     {
       id: run.id,
+      loopId: run.loopId,
       loopName: loop.name,
       status: run.status,
       source: run.source,
@@ -1171,6 +1176,7 @@ async function loadAgentLoopDiagnosis(params: {
       repoName: loop.repoName,
       currentNodeId: run.currentNodeId,
       stepCount: run.stepCount,
+      failedStepCount: Number(row.failedStepCount),
       errorKind: run.errorKind,
       errorMessage: run.errorMessage,
       createdAt: run.createdAt,
