@@ -402,6 +402,10 @@ export async function dispatchWebhookErrorEvent(params: {
       loop.repoName,
     );
     if (!loopRepoAccess.allowed) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: loopRepoAccess.reason,
+      });
       warnBackgroundAgentRepoPolicyRefused({
         repoOwner: loop.repoOwner,
         repoName: loop.repoName,
@@ -490,6 +494,10 @@ export async function dispatchWebhookErrorEvent(params: {
     event.repoName,
   );
   if (!repoAccess.allowed) {
+    await recordTriggerSkipReason({
+      triggerId: row.trigger.id,
+      skipReason: repoAccess.reason,
+    });
     warnBackgroundAgentRepoPolicyRefused({
       repoOwner: event.repoOwner,
       repoName: event.repoName,
@@ -806,13 +814,47 @@ export async function dispatchScheduledBackgroundAgents(params?: {
   const matchedRows: typeof allRows = [];
 
   // Separate rows into matched (will dispatch) and skipped (record skip reason).
-  // Loop-bound rows skip the background-agents allowlist — they use
-  // isAgentLoopRepoAllowed inside dispatchLoopRunForTrigger (different env var).
-  // Agent-bound rows use isBackgroundAgentRepoAllowed as before.
+  // Schedule validity/due state is evaluated before repository policy. A
+  // future schedule is expected idle state and must not persist or log a
+  // policy refusal on every cron sweep. Loop-bound rows skip the
+  // background-agents allowlist and use the loop allowlist in the bridge.
   for (const row of allRows) {
+    // An invalid schedule expression is an actionable misconfiguration —
+    // record a skip reason so the user sees it in the schedule card.
+    // An ordinary "not due yet" result is expected on nearly every sweep
+    // (the cron tick runs every 5 minutes) and must NOT record a skip
+    // reason, or the schedule card would show a permanent amber warning.
+    if (!validateSchedule(row.trigger.schedule).valid) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: "invalid schedule expression",
+      });
+      continue;
+    }
+
+    // Legacy rows created before #750 have nextRunAt null and would only
+    // ever fire on an exact-minute coincidence with the */5 platform tick —
+    // off-grid schedules (e.g. '7 * * * *') would never fire at all. Seed
+    // the persisted nextRunAt once so the due-window path below reaches
+    // them on the first sweep after their next matching minute.
+    const persistedNextRunAt = row.trigger.nextRunAt;
+    if (persistedNextRunAt == null) {
+      const seeded = computeNextRuns(row.trigger.schedule, now, 1)[0] ?? null;
+      await seedTriggerNextRunAt({
+        triggerId: row.trigger.id,
+        nextRunAt: seeded,
+      });
+    }
+
+    const scheduleMatches = persistedNextRunAt
+      ? persistedNextRunAt <= now
+      : scheduleMatchesNow(row.trigger.schedule, now);
+    if (!scheduleMatches) {
+      continue;
+    }
+
     // Branch on loopId BEFORE accessing row.agent (null for loop triggers).
     if (!row.trigger.loopId) {
-      // Agent-bound: guard non-null agent then check allowlist.
       const agent = row.agent;
       if (!agent) {
         // Defensive: row has neither loopId nor agent — skip.
@@ -836,41 +878,6 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         });
         continue;
       }
-    }
-    // Loop-bound rows: allowlist check deferred to dispatchLoopRunForTrigger.
-
-    // An invalid schedule expression is an actionable misconfiguration —
-    // record a skip reason so the user sees it in the schedule card.
-    // An ordinary "not due yet" result is expected on nearly every sweep
-    // (the cron tick runs every 5 minutes) and must NOT record a skip
-    // reason, or the schedule card would show a permanent amber warning.
-    if (!validateSchedule(row.trigger.schedule).valid) {
-      await recordTriggerSkipReason({
-        triggerId: row.trigger.id,
-        skipReason: "invalid schedule expression",
-      });
-      continue;
-    }
-
-    // Legacy rows created before #750 have nextRunAt null and would only
-    // ever fire on an exact-minute coincidence with the */5 platform tick —
-    // off-grid schedules (e.g. '7 * * * *') would never fire at all. Seed
-    // the persisted nextRunAt once so the due-window path below reaches
-    // them on the first sweep after their next matching minute.
-    if (row.trigger.nextRunAt == null) {
-      const seeded = computeNextRuns(row.trigger.schedule, now, 1)[0] ?? null;
-      await seedTriggerNextRunAt({
-        triggerId: row.trigger.id,
-        nextRunAt: seeded,
-      });
-      row.trigger.nextRunAt = seeded;
-    }
-
-    const dueAt = getDueScheduleTime(row.trigger, now);
-    const scheduleMatches =
-      dueAt < now || scheduleMatchesNow(row.trigger.schedule, now);
-    if (!scheduleMatches) {
-      continue;
     }
 
     matchedRows.push(row);
