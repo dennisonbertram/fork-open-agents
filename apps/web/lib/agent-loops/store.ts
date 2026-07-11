@@ -409,6 +409,32 @@ export async function getAgentLoopRunWithLoop(
   return { run: row.run, loop: row.loop };
 }
 
+export async function getOwnedAgentLoopRunWithLoop(params: {
+  runId: string;
+  userId: string;
+}): Promise<AgentLoopRunWithLoop | null> {
+  const [row] = await db
+    .select({ run: agentLoopRuns, loop: agentLoops })
+    .from(agentLoopRuns)
+    .leftJoin(
+      agentLoops,
+      and(
+        eq(agentLoops.id, agentLoopRuns.loopId),
+        eq(agentLoops.userId, params.userId),
+      ),
+    )
+    .where(
+      and(
+        eq(agentLoopRuns.id, params.runId),
+        eq(agentLoopRuns.userId, params.userId),
+      ),
+    )
+    .limit(1);
+
+  if (!row?.loop) return null;
+  return { run: row.run, loop: row.loop };
+}
+
 /** An AgentLoopRun extended with the count of its failed step runs (#767). */
 export type AgentLoopRunWithFailedStepCount = AgentLoopRun & {
   failedStepCount: number;

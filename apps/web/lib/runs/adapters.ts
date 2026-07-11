@@ -9,6 +9,7 @@ import type {
   RunRepository,
   RunSource,
 } from "./types";
+import { canonicalRunDetailUrl } from "./detail-routes";
 
 interface BaseRunAdapterInput {
   id: string;
@@ -223,7 +224,7 @@ export function adaptBackgroundAgentRun(
     nativeSource: input.nativeSource,
     title: input.title,
     repository: repository(input.repoOwner, input.repoName, input.branch),
-    detailUrl: `/background-runs/${encodeURIComponent(input.id)}`,
+    detailUrl: canonicalRunDetailUrl("background_agent", input.id),
     createdAt: input.createdAt,
     updatedAt: input.updatedAt,
     startedAt: input.startedAt,
@@ -274,7 +275,7 @@ export function adaptAgentLoopRun(
     nativeSource: input.nativeSource,
     title: input.title,
     repository: repository(input.repoOwner, input.repoName),
-    detailUrl: `/loops/${encodeURIComponent(input.loopId)}/runs/${encodeURIComponent(input.id)}`,
+    detailUrl: canonicalRunDetailUrl("agent_loop", input.id),
     createdAt: input.createdAt,
     updatedAt: input.updatedAt,
     startedAt: input.startedAt,

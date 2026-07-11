@@ -78,7 +78,7 @@ describe("normalized run adapters", () => {
       nativeSource: "github",
       state: "finished",
       outcome: "skipped",
-      detailUrl: "/background-runs/run%2F1",
+      detailUrl: "/runs/background-agent/run%2F1",
       repository: { owner: "acme", name: "shop", branch: "feature" },
       timestamps: {
         createdAt: "2026-07-11T10:00:00.000Z",
@@ -143,7 +143,7 @@ describe("normalized run adapters", () => {
       outcome: "succeeded",
       health: "warning",
       attentionReasons: ["failed_steps"],
-      detailUrl: "/loops/loop%2F1/runs/loop-run-1",
+      detailUrl: "/runs/loop/loop-run-1",
       metadata: { stepCount: 4, failedStepCount: 1 },
     });
   });
