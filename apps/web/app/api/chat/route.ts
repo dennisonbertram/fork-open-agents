@@ -24,6 +24,7 @@ import {
 } from "@/lib/db/sessions";
 import { createCancelableReadableStream } from "@/lib/chat/create-cancelable-readable-stream";
 import { getServerSession } from "@/lib/session/get-server-session";
+import { isProductSurfaceExposed } from "@/lib/product-surfaces/config";
 import {
   requireAuthenticatedUser,
   requireOwnedSessionChat,
@@ -166,73 +167,75 @@ export async function POST(req: Request) {
     persistAssistantMessagesWithToolResults(chatId, messages),
   ]);
 
-  const harnessConfig = getHarnessConfig();
-  const classification = classifyVerifiedBuildTask(messages);
-  const modeDecision = decideVerifiedBuildMode({
-    classification,
-    config: harnessConfig,
-  });
+  if (isProductSurfaceExposed("verifiedBuild")) {
+    const harnessConfig = getHarnessConfig();
+    const classification = classifyVerifiedBuildTask(messages);
+    const modeDecision = decideVerifiedBuildMode({
+      classification,
+      config: harnessConfig,
+    });
 
-  logHarnessEvent("info", {
-    event: "verified_build.mode.selected",
-    request_id: requestId,
-    session_id: sessionId,
-    chat_id: chatId,
-    mode: classification.mode,
-    reason_code: classification.reasonCode,
-    confidence: classification.confidence,
-    direct_mode_allowed: harnessConfig.allowedDirectMode,
-  });
+    logHarnessEvent("info", {
+      event: "verified_build.mode.selected",
+      request_id: requestId,
+      session_id: sessionId,
+      chat_id: chatId,
+      mode: classification.mode,
+      reason_code: classification.reasonCode,
+      confidence: classification.confidence,
+      direct_mode_allowed: harnessConfig.allowedDirectMode,
+    });
 
-  if (
-    modeDecision.action === "start_verified_build" ||
-    modeDecision.action === "start_investigation"
-  ) {
-    const latestUserMessage = getLatestUserMessage(messages);
-    if (!latestUserMessage) {
-      return Response.json(
-        { error: "A user message is required" },
-        { status: 400 },
-      );
-    }
+    if (
+      modeDecision.action === "start_verified_build" ||
+      modeDecision.action === "start_investigation"
+    ) {
+      const latestUserMessage = getLatestUserMessage(messages);
+      if (!latestUserMessage) {
+        return Response.json(
+          { error: "A user message is required" },
+          { status: 400 },
+        );
+      }
 
-    try {
-      const run = await startVerifiedBuildRun({
-        client: createHarnessClient(harnessConfig),
-        input: {
-          sessionId,
-          chatId,
-          userId,
-          latestUserMessageId: latestUserMessage.id,
-          intentSummary: classification.summary,
-          selectionReason: modeDecision.reason,
-          mode:
-            modeDecision.action === "start_investigation"
-              ? "investigation"
-              : "verified_build",
-          requestId,
-        },
-      });
+      try {
+        const run = await startVerifiedBuildRun({
+          client: createHarnessClient(harnessConfig),
+          input: {
+            sessionId,
+            chatId,
+            userId,
+            latestUserMessageId: latestUserMessage.id,
+            intentSummary: classification.summary,
+            selectionReason: modeDecision.reason,
+            mode:
+              modeDecision.action === "start_investigation"
+                ? "investigation"
+                : "verified_build",
+            requestId,
+          },
+        });
 
-      return createUIMessageStreamResponse({
-        stream: createVerifiedBuildStartedStream({
-          run: toVerifiedBuildRunSnapshot(run),
-          requestId,
-          reason: modeDecision.reason,
-        }),
-        headers: {
-          "x-verified-build-run-id": run.id,
-          "x-request-id": requestId,
-        },
-      });
-    } catch {
-      return Response.json(
-        {
-          error: "Verified Build could not be started",
-          requestId,
-        },
-        { status: 502, headers: { "X-Request-ID": requestId } },
-      );
+        return createUIMessageStreamResponse({
+          stream: createVerifiedBuildStartedStream({
+            run: toVerifiedBuildRunSnapshot(run),
+            requestId,
+            reason: modeDecision.reason,
+          }),
+          headers: {
+            "x-verified-build-run-id": run.id,
+            "x-request-id": requestId,
+          },
+        });
+      } catch {
+        return Response.json(
+          {
+            error: "Verified Build could not be started",
+            requestId,
+          },
+          { status: 502, headers: { "X-Request-ID": requestId } },
+        );
+      }
     }
   }
 

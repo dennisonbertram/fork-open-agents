@@ -42,6 +42,7 @@ let compareAndSetResults: boolean[] = [];
 let startCalls: unknown[][] = [];
 let routeEvents: string[] = [];
 let verifiedBuildRunCalls: unknown[] = [];
+let verifiedBuildClassificationCalls: unknown[] = [];
 let preferencesState: {
   autoCommitPush: boolean;
   autoCreatePr: boolean;
@@ -81,6 +82,8 @@ const updateChatSpy = mock(async () => {
 });
 
 const originalFetch = globalThis.fetch;
+const originalVerifiedBuildExposure =
+  process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
 
 globalThis.fetch = (async (_input: RequestInfo | URL) => {
   return new Response("{}", {
@@ -221,6 +224,18 @@ mock.module("@/lib/harness/run-mapping", () => ({
   toVerifiedBuildEventSnapshot: (event: unknown) => event,
 }));
 
+mock.module("@/lib/verified-build/task-classifier", () => ({
+  classifyVerifiedBuildTask: (messages: unknown) => {
+    verifiedBuildClassificationCalls.push(messages);
+    return {
+      mode: "verified_build",
+      reasonCode: "mutating_software_work",
+      confidence: "high",
+      summary: "Fix the bug",
+    };
+  },
+}));
+
 mock.module("@/lib/db/user-preferences", () => ({
   getUserPreferences: async () => preferencesState,
 }));
@@ -254,6 +269,12 @@ const routeModulePromise = import("./route");
 
 afterAll(() => {
   globalThis.fetch = originalFetch;
+  if (originalVerifiedBuildExposure === undefined) {
+    delete process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
+  } else {
+    process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD =
+      originalVerifiedBuildExposure;
+  }
 });
 
 function createRequest(body: string, url = "http://localhost/api/chat") {
@@ -294,6 +315,8 @@ describe("/api/chat route", () => {
     startCalls = [];
     routeEvents = [];
     verifiedBuildRunCalls = [];
+    verifiedBuildClassificationCalls = [];
+    delete process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
     cachedSkillsState = null;
     discoverSkillDirsCalls = [];
     preferencesState = {
@@ -358,6 +381,7 @@ describe("/api/chat route", () => {
       HARNESS_SERVICE_TOKEN: "service-token",
       HARNESS_TENANT_ID: "tenant-1",
       HARNESS_DEFAULT_PROJECT_ID: "project-1",
+      OPEN_AGENTS_EXPOSE_VERIFIED_BUILD: "true",
     });
 
     try {
@@ -376,6 +400,43 @@ describe("/api/chat route", () => {
           mode: "verified_build",
         },
       });
+    } finally {
+      for (const [key, value] of Object.entries(previousEnv)) {
+        if (value === undefined) {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+
+  test("keeps default chat direct when harness capability is enabled but product exposure is off", async () => {
+    const previousEnv = {
+      HARNESS_ENABLED: process.env.HARNESS_ENABLED,
+      HARNESS_BASE_URL: process.env.HARNESS_BASE_URL,
+      HARNESS_SERVICE_TOKEN: process.env.HARNESS_SERVICE_TOKEN,
+      HARNESS_TENANT_ID: process.env.HARNESS_TENANT_ID,
+      HARNESS_DEFAULT_PROJECT_ID: process.env.HARNESS_DEFAULT_PROJECT_ID,
+    };
+    Object.assign(process.env, {
+      HARNESS_ENABLED: "true",
+      HARNESS_BASE_URL: "http://localhost:4318",
+      HARNESS_SERVICE_TOKEN: "service-token",
+      HARNESS_TENANT_ID: "tenant-1",
+      HARNESS_DEFAULT_PROJECT_ID: "project-1",
+    });
+    delete process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD;
+
+    try {
+      const { POST } = await routeModulePromise;
+      const response = await POST(createValidRequest());
+
+      expect(response.ok).toBe(true);
+      expect(response.headers.get("x-verified-build-run-id")).toBeNull();
+      expect(startCalls).toHaveLength(1);
+      expect(verifiedBuildClassificationCalls).toHaveLength(0);
+      expect(verifiedBuildRunCalls).toHaveLength(0);
     } finally {
       for (const [key, value] of Object.entries(previousEnv)) {
         if (value === undefined) {
