@@ -9,6 +9,7 @@ import {
   type FormState,
 } from "@/lib/background-agents/agent-spec";
 import type { BackgroundAgentWithTriggers } from "@/lib/background-agents/store";
+import { canonicalBackgroundAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import { AgentSpecEditor } from "../../agent-spec-editor";
 import { manualTestSkipMessages } from "../../manual-test-feedback";
 import type { ManualTestResponse } from "../../manual-test-feedback";
@@ -20,6 +21,8 @@ type AgentEditFormProps = {
   agent: BackgroundAgentWithTriggers;
   owner: string;
   repo: string;
+  surface?: "legacy" | "automation";
+  readinessReady?: boolean;
   /**
    * Pre-seeds saveError state. Used only in tests to verify the
    * role="alert" error rendering without a live DOM re-render cycle.
@@ -41,6 +44,8 @@ export function AgentEditForm({
   agent,
   owner,
   repo,
+  surface = "legacy",
+  readinessReady = true,
   _testSaveError,
   _testRunError,
 }: AgentEditFormProps) {
@@ -52,9 +57,15 @@ export function AgentEditForm({
     _testRunError ?? null,
   );
   const [testRunId, setTestRunId] = useState<string | null>(null);
+  const [persistedEnabled, setPersistedEnabled] = useState(
+    agent.status === "enabled",
+  );
 
   const form = buildFormFromAgent(agent);
-  const detailHref = `/repos/${owner}/${repo}/agents/${agent.id}`;
+  const detailHref =
+    surface === "automation"
+      ? canonicalBackgroundAutomationDetailUrl(agent.id)
+      : `/repos/${owner}/${repo}/agents/${agent.id}`;
 
   async function handleSave(payload: ReturnType<typeof buildAgentPayload>) {
     setSaveError(null);
@@ -77,7 +88,10 @@ export function AgentEditForm({
         setSaveError(detail);
         return;
       }
-      toast.success("Agent updated.");
+      setPersistedEnabled(payload.status === "enabled");
+      toast.success(
+        surface === "automation" ? "Automation updated." : "Agent updated.",
+      );
       router.push(detailHref);
       router.refresh();
     } catch (err) {
@@ -119,6 +133,7 @@ export function AgentEditForm({
     <div className="space-y-6">
       <AgentSpecEditor
         mode="edit"
+        surface={surface}
         repoOwner={owner}
         repoName={repo}
         initialName={form.name}
@@ -141,6 +156,8 @@ export function AgentEditForm({
         initialRequireCiGreenForMerge={form.requireCiGreenForMerge}
         initialModelId={form.modelId}
         createdAgentId={agent.id}
+        readinessReady={readinessReady}
+        persistedEnabled={persistedEnabled}
         testRunId={testRunId}
         onSave={handleSave}
         onRunTest={handleRunTest}

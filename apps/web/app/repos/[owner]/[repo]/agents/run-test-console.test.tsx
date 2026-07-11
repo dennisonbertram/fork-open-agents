@@ -102,6 +102,17 @@ describe("RunTestConsole", () => {
     expect(html.toLowerCase()).toContain("open full run");
   });
 
+  test("Automation surface opens the canonical source-qualified Run", async () => {
+    const { RunTestConsole } = await modulePromise;
+
+    const html = renderToStaticMarkup(
+      <RunTestConsole runId="run-terminal" surface="automation" />,
+    );
+
+    expect(html).toContain("/runs/background-agent/run-terminal");
+    expect(html).not.toContain("/background-runs/run-terminal");
+  });
+
   test("non-terminal running status renders waiting/refreshing affordance and no success state", async () => {
     const { RunTestConsole } = await modulePromise;
 

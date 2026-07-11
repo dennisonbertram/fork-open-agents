@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import Link from "next/link";
+import { canonicalRunDetailUrl } from "@/lib/runs/detail-routes";
 import { useBackgroundRunPolling } from "./use-background-run-polling";
 
 /**
@@ -59,9 +60,13 @@ function RunStatusIndicator({ status }: { status: string }) {
 
 type RunTestConsoleProps = {
   runId: string;
+  surface?: "legacy" | "automation";
 };
 
-export function RunTestConsole({ runId }: RunTestConsoleProps) {
+export function RunTestConsole({
+  runId,
+  surface = "legacy",
+}: RunTestConsoleProps) {
   const { data, error } = useBackgroundRunPolling(runId);
 
   if (error) {
@@ -96,7 +101,11 @@ export function RunTestConsole({ runId }: RunTestConsoleProps) {
           <RunStatusIndicator status={run.status} />
         </div>
         <Link
-          href={`/background-runs/${runId}`}
+          href={
+            surface === "automation"
+              ? canonicalRunDetailUrl("background_agent", runId)
+              : `/background-runs/${runId}`
+          }
           className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
         >
           Open full run

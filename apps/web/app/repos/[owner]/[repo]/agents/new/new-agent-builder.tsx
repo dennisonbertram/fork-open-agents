@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { ReadinessVerdict } from "@/components/ui/readiness-verdict";
+import { canonicalBackgroundAutomationDetailUrl } from "@/lib/automations/definition-routes";
 import {
   buildAgentPayload,
   type GitHubAccessLevel,
@@ -14,10 +15,13 @@ import {
   type TriggerKind,
 } from "@/lib/background-agents/agent-spec";
 import {
-  mapReadinessToVerdict,
-  type BackgroundReadinessCheck,
-  type BackgroundReadinessResponse,
-} from "@/app/settings/background-readiness-verdict";
+  buildAgentReadinessUrl,
+  buildCombinedAgentReadiness,
+  fetchAgentReadiness,
+  isAgentReadinessReady,
+  mapAgentReadinessToVerdict,
+  type AgentReadinessResponse,
+} from "../background-agent-readiness";
 import { AgentSpecEditor } from "../agent-spec-editor";
 import {
   getBlankTemplate,
@@ -30,86 +34,12 @@ import { TemplatePicker } from "../template-picker";
 import { submitNewAgent } from "./create-agent-request";
 import { submitAgentUpdate } from "./update-agent-request";
 
-type BackgroundAgentRepoReadiness = {
-  ready: boolean;
-  repoOwner: string;
-  repoName: string;
-  requiredUserPermission: "read" | "write";
-  reason: string | null;
-  message: string;
-  installationId: number | null;
-  repositoryId: number | null;
-  defaultBranch: string | null;
-};
-
-type NewAgentReadinessResponse = BackgroundReadinessResponse & {
-  repoAccess?: BackgroundAgentRepoReadiness;
-};
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error("Failed to load");
-  }
-  return (await response.json()) as T;
-}
-
-function buildReadinessUrl(owner: string, repo: string): string {
-  const params = new URLSearchParams({
-    repoOwner: owner,
-    repoName: repo,
-    permission: "write",
-  });
-  return `/api/background-agents/readiness?${params.toString()}`;
-}
-
-function buildRepoAccessCheck(
-  repoAccess: BackgroundAgentRepoReadiness | undefined,
-): BackgroundReadinessCheck | null {
-  if (!repoAccess) {
-    return null;
-  }
-
-  return {
-    id: "repo_access",
-    label: "Repository access",
-    status: repoAccess.ready ? "ready" : "missing",
-    detail: repoAccess.message,
-    missing: repoAccess.ready
-      ? []
-      : [
-          `${repoAccess.repoOwner}/${repoAccess.repoName} ${repoAccess.requiredUserPermission} access`,
-        ],
-  };
-}
-
-function buildCombinedReadiness(
-  readinessData: NewAgentReadinessResponse,
-): BackgroundReadinessResponse {
-  const repoAccessCheck = buildRepoAccessCheck(readinessData.repoAccess);
-  const repoAccessReady = readinessData.repoAccess?.ready ?? true;
-  const repoAccessMissing =
-    repoAccessCheck && repoAccessCheck.missing.length > 0
-      ? repoAccessCheck.missing
-      : [];
-
-  return {
-    enabled: readinessData.enabled,
-    ready: readinessData.ready && repoAccessReady,
-    missing: Array.from(
-      new Set([...readinessData.missing, ...repoAccessMissing]),
-    ),
-    checks: repoAccessCheck
-      ? [...readinessData.checks, repoAccessCheck]
-      : readinessData.checks,
-  };
-}
-
 type Step = "pick-template" | "edit-spec";
 
 type NewAgentBuilderProps = {
   owner: string;
   repo: string;
+  surface?: "legacy" | "automation";
 };
 
 /**
@@ -117,7 +47,11 @@ type NewAgentBuilderProps = {
  * Template-first: shows TemplatePicker first, then AgentSpecEditor.
  * After save, STAYS on the page (no router.push) so "Run a test" works.
  */
-export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
+export function NewAgentBuilder({
+  owner,
+  repo,
+  surface = "legacy",
+}: NewAgentBuilderProps) {
   const [step, setStep] = useState<Step>("pick-template");
   const [selectedTemplate, setSelectedTemplate] = useState<
     AgentTemplate | BlankTemplate | null
@@ -128,15 +62,20 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [testRunId, setTestRunId] = useState<string | null>(null);
   const [saveVerb, setSaveVerb] = useState<"created" | "updated">("created");
+  const [persistedEnabled, setPersistedEnabled] = useState(false);
 
   const {
     data: readinessData,
     isLoading: readinessLoading,
     mutate: mutateReadiness,
-  } = useSWR<NewAgentReadinessResponse>(
-    buildReadinessUrl(owner, repo),
-    fetchJson,
+  } = useSWR<AgentReadinessResponse>(
+    buildAgentReadinessUrl(owner, repo),
+    fetchAgentReadiness,
   );
+  const combinedReadiness = readinessData
+    ? buildCombinedAgentReadiness(readinessData)
+    : undefined;
+  const readinessReady = isAgentReadinessReady(combinedReadiness);
 
   function handleSelectTemplate(template: AgentTemplate | BlankTemplate) {
     setSelectedTemplate(template);
@@ -156,9 +95,16 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
       // CRITICAL: stay on this page — do NOT navigate. Set the id so
       // "Run a test" becomes enabled.
       setCreatedAgentId(result.agentId);
+      setPersistedEnabled(payload.status === "enabled");
       setSaveVerb(isUpdate ? "updated" : "created");
       toast.success(
-        isUpdate ? "Agent updated." : "Agent created successfully.",
+        surface === "automation"
+          ? isUpdate
+            ? "Automation updated."
+            : "Automation created disabled."
+          : isUpdate
+            ? "Agent updated."
+            : "Agent created successfully.",
       );
     } else {
       setSaveError(result.error);
@@ -166,8 +112,12 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   }
 
   async function handleRunTest() {
-    if (!createdAgentId) {
-      setMessage("Save the agent first before running a test.");
+    if (!createdAgentId || (surface === "automation" && !persistedEnabled)) {
+      setMessage(
+        surface === "automation"
+          ? "Enable and save the Automation before running a manual test."
+          : "Save the agent first before running a test.",
+      );
       return;
     }
     setMessage(null);
@@ -201,7 +151,7 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
   const template = selectedTemplate ?? getBlankTemplate();
   const readinessPanel = readinessData ? (
     <ReadinessVerdict
-      {...mapReadinessToVerdict(buildCombinedReadiness(readinessData))}
+      {...mapAgentReadinessToVerdict(combinedReadiness!, surface)}
       action={
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="outline">
@@ -275,6 +225,9 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         initialComposioToolkitSlugs={[]}
         initialGithubActions={templateGithubActions}
         createdAgentId={createdAgentId}
+        surface={surface}
+        readinessReady={readinessReady}
+        persistedEnabled={persistedEnabled}
         testRunId={testRunId}
         onSave={handleSave}
         onRunTest={handleRunTest}
@@ -286,12 +239,22 @@ export function NewAgentBuilder({ owner, repo }: NewAgentBuilderProps) {
         >
           <p>
             {saveVerb === "updated"
-              ? "Agent updated."
-              : "Agent created successfully."}
+              ? surface === "automation"
+                ? "Automation updated."
+                : "Agent updated."
+              : surface === "automation"
+                ? "Automation created disabled. Review readiness before enabling it."
+                : "Agent created successfully."}
           </p>
           <Button asChild className="mt-2" size="sm" variant="outline">
-            <Link href={`/repos/${owner}/${repo}/agents/${createdAgentId}`}>
-              View agent
+            <Link
+              href={
+                surface === "automation"
+                  ? canonicalBackgroundAutomationDetailUrl(createdAgentId)
+                  : `/repos/${owner}/${repo}/agents/${createdAgentId}`
+              }
+            >
+              {surface === "automation" ? "View Automation" : "View agent"}
             </Link>
           </Button>
         </div>

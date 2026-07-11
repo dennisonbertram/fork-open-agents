@@ -14,6 +14,7 @@ import type {
   AutomationSourceStatus,
   ListAutomationsResponse,
 } from "@/lib/automations/types";
+import { canonicalNewAutomationUrl } from "@/lib/automations/definition-routes";
 import { cn } from "@/lib/utils";
 
 type AutomationsListProps = {
@@ -40,14 +41,14 @@ function filterRepositoryValue(filters: AutomationFilters): string {
 function createLinks(filters: AutomationFilters) {
   if (!filters.repository) {
     return {
-      single: "/settings/background-agents",
+      single: canonicalNewAutomationUrl(),
       multi: "/loops/new",
     };
   }
   const owner = encodeURIComponent(filters.repository.owner);
   const name = encodeURIComponent(filters.repository.name);
   return {
-    single: `/repos/${owner}/${name}/agents/new`,
+    single: canonicalNewAutomationUrl(filters.repository),
     multi: `/loops/new?repoOwner=${owner}&repoName=${name}`,
   };
 }

@@ -110,8 +110,8 @@ describe("AutomationsList", () => {
                   outputUrl: null,
                 },
               },
-              detailUrl: "/repos/acme/widgets/agents/agent-1",
-              editUrl: "/repos/acme/widgets/agents/agent-1/edit",
+              detailUrl: "/automations/background-agent/agent-1",
+              editUrl: "/automations/background-agent/agent-1/edit",
               createdAt: "2026-07-01T00:00:00.000Z",
               updatedAt: "2026-07-10T00:00:00.000Z",
             },
@@ -121,12 +121,31 @@ describe("AutomationsList", () => {
     );
 
     expect(html).toContain("Single step");
-    expect(html).toContain("/repos/acme/widgets/agents/agent-1/edit");
+    expect(html).toContain("/automations/background-agent/agent-1/edit");
+    expect(html).toContain("/automations/background-agent/agent-1");
     expect(html).toContain("/runs/background-agent/run-1");
     expect(html).not.toContain("/background-runs/run-1");
     expect(html).toContain('aria-label="Filter automations"');
     expect(html).toMatch(/>enabled</i);
     expect(html).toContain("Needs attention");
+  });
+
+  test("routes create actions through the canonical single-step Automation entry", () => {
+    const globalHtml = renderToStaticMarkup(
+      <AutomationsList filters={{}} response={response()} />,
+    );
+    expect(globalHtml).toContain('href="/automations/new"');
+    expect(globalHtml).not.toContain('href="/settings/background-agents"');
+
+    const repoHtml = renderToStaticMarkup(
+      <AutomationsList
+        filters={{ repository: { owner: "Acme Org", name: "widgets/api" } }}
+        response={response()}
+      />,
+    );
+    expect(repoHtml).toContain(
+      'href="/automations/new?repoOwner=Acme+Org&amp;repoName=widgets%2Fapi"',
+    );
   });
 
   test("shows healthy results and an explicit partial-source warning together", () => {
@@ -217,7 +236,7 @@ describe("AutomationsList", () => {
 
     expect(html).toContain("Multi-step unavailable");
     expect(html).not.toContain('href="/loops/new"');
-    expect(html).toContain('href="/settings/background-agents"');
+    expect(html).toContain('href="/automations/new"');
     expect(html).toContain("No automations configured");
     expect(html).toContain("Create a single-step automation");
     expect(html).not.toContain("No automations match these filters");

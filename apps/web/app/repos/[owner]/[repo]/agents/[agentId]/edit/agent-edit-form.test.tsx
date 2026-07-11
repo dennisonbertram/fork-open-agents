@@ -64,6 +64,9 @@ mock.module("../../agent-spec-editor", () => ({
     onRunTest: () => Promise<void>;
     initialName?: string;
     initialInstructions?: string;
+    surface?: string;
+    readinessReady?: boolean;
+    persistedEnabled?: boolean;
   }) => {
     capturedOnSave = props.onSave;
     capturedOnRunTest = props.onRunTest;
@@ -74,6 +77,9 @@ mock.module("../../agent-spec-editor", () => ({
         data-testid="agent-spec-editor-stub"
         data-initial-name={props.initialName ?? ""}
         data-initial-instructions={props.initialInstructions ?? ""}
+        data-surface={props.surface ?? "legacy"}
+        data-readiness-ready={String(props.readinessReady ?? true)}
+        data-persisted-enabled={String(props.persistedEnabled ?? false)}
       />
     );
   },
@@ -234,6 +240,33 @@ describe("AgentEditForm", () => {
       "/repos/acme/widgets/agents/agent-edit-1",
     );
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  test("Automation edit preserves PATCH bytes and returns to canonical definition detail", async () => {
+    const { AgentEditForm, buildEditPatch, buildFormFromAgent } =
+      await editFormModulePromise;
+    const agent = makeAgent();
+    const html = renderToStaticMarkup(
+      <AgentEditForm
+        agent={agent}
+        owner="acme"
+        repo="widgets"
+        surface="automation"
+        readinessReady={true}
+      />,
+    );
+    expect(html).toContain('data-surface="automation"');
+    expect(html).toContain('data-readiness-ready="true"');
+    expect(html).toContain('data-persisted-enabled="true"');
+
+    const payload = buildEditPatch(buildFormFromAgent(agent));
+    await capturedOnSave(payload);
+
+    const [, options] = globalFetch.mock.calls[0] as [string, { body: string }];
+    expect(options.body).toBe(JSON.stringify(payload));
+    expect(push).toHaveBeenCalledWith(
+      "/automations/background-agent/agent-edit-1",
+    );
   });
 
   test("BT-WI6-004: handleSave on API error with body.error surfaces inline alert text", async () => {
