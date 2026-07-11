@@ -1,6 +1,6 @@
 import "server-only";
 
-import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db/client";
 import {
   agentLoopEvents,
@@ -860,22 +860,24 @@ async function loadWorkflowDiagnosis(params: {
   }
 
   const targetRepo = repoFromSession(row.session);
+  const normalizedTarget = normalizeChatWorkflowRun({
+    id: row.workflowRun.id,
+    chatId: row.workflowRun.chatId,
+    chatTitle: row.chat?.title ?? null,
+    sessionId: row.workflowRun.sessionId,
+    sessionTitle: row.session?.title ?? null,
+    status: row.workflowRun.status,
+    runtimeMode: row.workflowRun.runtimeMode,
+    errorMessage: row.workflowRun.errorMessage,
+    startedAt: row.workflowRun.startedAt,
+    finishedAt: row.workflowRun.finishedAt,
+    createdAt: row.workflowRun.createdAt,
+  } satisfies ChatWorkflowRunRow);
   const target: AccountWorkItem = {
-    ...normalizeChatWorkflowRun({
-      id: row.workflowRun.id,
-      chatId: row.workflowRun.chatId,
-      chatTitle: row.chat?.title ?? null,
-      sessionId: row.workflowRun.sessionId,
-      sessionTitle: row.session?.title ?? null,
-      status: row.workflowRun.status,
-      runtimeMode: row.workflowRun.runtimeMode,
-      errorMessage: row.workflowRun.errorMessage,
-      startedAt: row.workflowRun.startedAt,
-      finishedAt: row.workflowRun.finishedAt,
-      createdAt: row.workflowRun.createdAt,
-    } satisfies ChatWorkflowRunRow),
+    ...normalizedTarget,
     ...(targetRepo ? { repo: targetRepo } : {}),
     metadata: {
+      ...normalizedTarget.metadata,
       chatId: row.workflowRun.chatId,
       sessionId: row.workflowRun.sessionId,
       runtimeMode: row.workflowRun.runtimeMode,
@@ -1145,7 +1147,11 @@ async function loadAgentLoopDiagnosis(params: {
   limit: number;
 }): Promise<AccountDiagnosisResponse | null> {
   const [row] = await db
-    .select({ run: agentLoopRuns, loop: agentLoops })
+    .select({
+      run: agentLoopRuns,
+      loop: agentLoops,
+      failedStepCount: sql<number>`COALESCE((SELECT COUNT(*)::int FROM ${agentLoopStepRuns} WHERE ${agentLoopStepRuns.loopRunId} = ${agentLoopRuns.id} AND ${agentLoopStepRuns.status} = 'failed'), 0)`,
+    })
     .from(agentLoopRuns)
     .leftJoin(agentLoops, eq(agentLoops.id, agentLoopRuns.loopId))
     .where(
@@ -1164,6 +1170,7 @@ async function loadAgentLoopDiagnosis(params: {
   const target = normalizeAgentLoopRun(
     {
       id: run.id,
+      loopId: run.loopId,
       loopName: loop.name,
       status: run.status,
       source: run.source,
@@ -1171,6 +1178,7 @@ async function loadAgentLoopDiagnosis(params: {
       repoName: loop.repoName,
       currentNodeId: run.currentNodeId,
       stepCount: run.stepCount,
+      failedStepCount: Number(row.failedStepCount),
       errorKind: run.errorKind,
       errorMessage: run.errorMessage,
       createdAt: run.createdAt,

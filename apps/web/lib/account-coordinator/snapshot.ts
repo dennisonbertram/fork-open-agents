@@ -1,5 +1,11 @@
 import { redactMetadata, redactText } from "./redaction";
 import {
+  adaptAgentLoopRun,
+  adaptBackgroundAgentRun,
+  adaptChatWorkflowRun,
+} from "@/lib/runs/adapters";
+import type { NormalizedRun, RunAttentionReason } from "@/lib/runs/types";
+import {
   isRecentlyCompleted,
   isRunning,
   isStale,
@@ -8,6 +14,7 @@ import {
 } from "./taxonomy";
 import type {
   AccountScheduledAgent,
+  AccountAttentionReason,
   AccountSnapshotResponse,
   AccountSnapshotSource,
   AccountSourceStatus,
@@ -27,6 +34,8 @@ const ATTENTION_PRIORITY: Record<AccountWorkStatus, number> = {
   queued: 4,
   running: 4,
   completed: 4,
+  skipped: 4,
+  unknown: 0,
   scheduled: 4,
 };
 
@@ -106,6 +115,7 @@ export interface BackgroundAgentRunRow {
 
 export interface AgentLoopRunRow {
   id: string;
+  loopId: string;
   loopName: string | null;
   status: string;
   source: string;
@@ -113,16 +123,13 @@ export interface AgentLoopRunRow {
   repoName: string | null;
   currentNodeId: string | null;
   stepCount: number;
+  failedStepCount: number;
   errorKind: string | null;
   errorMessage: string | null;
   createdAt: Date;
   updatedAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
-}
-
-function toIso(value: Date | null | undefined): string | undefined {
-  return value?.toISOString();
 }
 
 export function parseSnapshotWindow(
@@ -208,59 +215,58 @@ function normalizeSessionStatus(row: SessionRow, now: Date): AccountWorkStatus {
   return markStale("running", row.updatedAt, now);
 }
 
-function normalizeWorkflowStatus(status: string): AccountWorkStatus {
-  switch (status) {
-    case "completed":
-      return "completed";
-    case "aborted":
-      return "cancelled";
-    case "failed":
-      return "failed";
-    default:
-      return "completed";
+function accountStatusFromRun(run: NormalizedRun): AccountWorkStatus {
+  if (
+    run.attentionReasons.includes("stale") ||
+    run.attentionReasons.includes("stalled")
+  ) {
+    return "stale";
+  }
+
+  switch (run.state) {
+    case "queued":
+      return "queued";
+    case "running":
+      return "running";
+    case "waiting":
+      return "waiting_on_user";
+    case "unknown":
+      return "unknown";
+    case "finished":
+      switch (run.outcome) {
+        case "succeeded":
+          return "completed";
+        case "failed":
+          return "failed";
+        case "cancelled":
+          return "cancelled";
+        case "skipped":
+          return "skipped";
+        case "unknown":
+        case null:
+          return "unknown";
+      }
   }
 }
 
-function normalizeBackgroundRunStatus(
-  row: BackgroundAgentRunRow,
-  now: Date,
-): AccountWorkStatus {
-  switch (row.status) {
-    case "queued":
-    case "running":
-      return markStale(row.status, row.updatedAt, now);
-    case "succeeded":
-    case "skipped":
-      return "completed";
-    case "cancelled":
-      return "cancelled";
-    case "failed":
-      return "failed";
-    default:
-      return "failed";
-  }
+function accountAttentionReasons(
+  reasons: RunAttentionReason[],
+): AccountAttentionReason[] {
+  return reasons.flatMap((reason): AccountAttentionReason[] =>
+    reason === "blocked" ? ["waiting_on_user"] : [reason],
+  );
 }
 
-function normalizeAgentLoopRunStatus(
-  row: AgentLoopRunRow,
-  now: Date,
-): AccountWorkStatus {
-  switch (row.status) {
-    case "queued":
-    case "running":
-      return markStale(row.status, row.updatedAt, now);
-    case "paused":
-    case "stalled":
-      return row.status === "paused" ? "waiting_on_user" : "stale";
-    case "completed":
-      return "completed";
-    case "cancelled":
-      return "cancelled";
-    case "failed":
-      return "failed";
-    default:
-      return "failed";
-  }
+function canonicalRunMetadata(run: NormalizedRun) {
+  return {
+    normalizedRunId: run.id,
+    nativeStatus: run.nativeStatus,
+    nativeSource: run.nativeSource,
+    runState: run.state,
+    runOutcome: run.outcome,
+    runHealth: run.health,
+    detailUrl: run.detailUrl,
+  };
 }
 
 export function normalizeSession(
@@ -290,20 +296,35 @@ export function normalizeSession(
 export function normalizeChatWorkflowRun(
   row: ChatWorkflowRunRow,
 ): AccountWorkItem {
-  const status = normalizeWorkflowStatus(row.status);
+  const run = adaptChatWorkflowRun({
+    id: row.id,
+    chatId: row.chatId,
+    sessionId: row.sessionId,
+    title:
+      redactText(row.chatTitle ?? row.sessionTitle, 120) ?? "Chat workflow run",
+    nativeStatus: row.status,
+    runtimeMode: row.runtimeMode,
+    createdAt: row.createdAt,
+    startedAt: row.startedAt,
+    finishedAt: row.finishedAt,
+  });
+  const status = accountStatusFromRun(run);
   return withAttention({
     id: row.id,
     source: "chat_workflow",
-    title:
-      redactText(row.chatTitle ?? row.sessionTitle, 120) ?? "Chat workflow run",
+    title: run.title,
     status,
-    attentionReasons: [],
-    updatedAt: row.finishedAt.toISOString(),
-    createdAt: row.startedAt.toISOString(),
-    completedAt: row.finishedAt.toISOString(),
+    attentionReasons: accountAttentionReasons(run.attentionReasons),
+    updatedAt: run.timestamps.updatedAt,
+    createdAt: run.timestamps.startedAt ?? run.timestamps.createdAt,
+    completedAt: run.timestamps.finishedAt ?? undefined,
     diagnosisHref: diagnosisHref("chat_workflow", row.id),
-    summary: row.errorMessage ? "Workflow failed" : undefined,
+    summary:
+      run.outcome === "failed" && row.errorMessage
+        ? "Workflow failed"
+        : undefined,
     metadata: redactMetadata({
+      ...canonicalRunMetadata(run),
       chatId: row.chatId,
       sessionId: row.sessionId,
       runtimeMode: row.runtimeMode,
@@ -315,28 +336,51 @@ export function normalizeBackgroundAgentRun(
   row: BackgroundAgentRunRow,
   now = new Date(),
 ): AccountWorkItem {
-  const status = normalizeBackgroundRunStatus(row, now);
   const title =
     redactText(row.agentName, 120) ??
     redactText(String(row.payloadSummary.title ?? ""), 120) ??
     "Background agent run";
+  const run = adaptBackgroundAgentRun(
+    {
+      id: row.id,
+      title,
+      nativeStatus: row.status,
+      nativeSource: row.source,
+      triggerKind: row.triggerKind,
+      repoOwner: row.repoOwner,
+      repoName: row.repoName,
+      branch: row.branch,
+      prNumber: row.prNumber,
+      issueNumber: row.issueNumber,
+      outputUrl: row.outputUrl,
+      errorKind: row.errorKind,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
+    },
+    { now, staleAfterMs: STALE_AFTER_MS },
+  );
+  const status = accountStatusFromRun(run);
 
   return withAttention({
     id: row.id,
     source: "background_agent",
-    title,
+    title: run.title,
     status,
-    attentionReasons: [],
-    updatedAt: row.updatedAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
-    completedAt: toIso(row.finishedAt),
-    repo: maybeRepo(row.repoOwner, row.repoName, row.branch),
+    attentionReasons: accountAttentionReasons(run.attentionReasons),
+    updatedAt: run.timestamps.updatedAt,
+    createdAt: run.timestamps.createdAt,
+    completedAt: run.timestamps.finishedAt ?? undefined,
+    repo: run.repository ?? undefined,
     href: row.outputUrl ?? undefined,
     diagnosisHref: diagnosisHref("background_agent", row.id),
-    summary: row.errorMessage
-      ? failureSummary("Background agent run failed", row.errorKind)
-      : undefined,
+    summary:
+      run.outcome === "failed" && row.errorMessage
+        ? failureSummary("Background agent run failed", row.errorKind)
+        : undefined,
     metadata: redactMetadata({
+      ...canonicalRunMetadata(run),
       source: row.source,
       triggerKind: row.triggerKind,
       prNumber: row.prNumber,
@@ -352,25 +396,50 @@ export function normalizeAgentLoopRun(
   row: AgentLoopRunRow,
   now = new Date(),
 ): AccountWorkItem {
-  const status = normalizeAgentLoopRunStatus(row, now);
+  const run = adaptAgentLoopRun(
+    {
+      id: row.id,
+      loopId: row.loopId,
+      title: redactText(row.loopName, 120) ?? "Agent loop run",
+      nativeStatus: row.status,
+      nativeSource: row.source,
+      repoOwner: row.repoOwner,
+      repoName: row.repoName,
+      currentNodeId: row.currentNodeId,
+      stepCount: row.stepCount,
+      failedStepCount: row.failedStepCount,
+      errorKind: row.errorKind,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      startedAt: row.startedAt,
+      finishedAt: row.finishedAt,
+    },
+    { now, staleAfterMs: STALE_AFTER_MS },
+  );
+  const status = accountStatusFromRun(run);
   return withAttention({
     id: row.id,
     source: "agent_loop",
-    title: redactText(row.loopName, 120) ?? "Agent loop run",
+    title: run.title,
     status,
-    attentionReasons: [],
-    updatedAt: row.updatedAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
-    completedAt: toIso(row.finishedAt),
-    repo: maybeRepo(row.repoOwner, row.repoName),
+    attentionReasons: accountAttentionReasons(run.attentionReasons),
+    updatedAt: run.timestamps.updatedAt,
+    createdAt: run.timestamps.createdAt,
+    completedAt: run.timestamps.finishedAt ?? undefined,
+    repo: run.repository ?? undefined,
     diagnosisHref: diagnosisHref("agent_loop", row.id),
-    summary: row.errorMessage
-      ? failureSummary("Agent loop run failed", row.errorKind)
-      : undefined,
+    summary:
+      row.failedStepCount > 0 && row.status === "completed"
+        ? "Agent loop completed with failed steps"
+        : run.outcome === "failed" && row.errorMessage
+          ? failureSummary("Agent loop run failed", row.errorKind)
+          : undefined,
     metadata: redactMetadata({
+      ...canonicalRunMetadata(run),
       source: row.source,
       currentNodeId: row.currentNodeId,
       stepCount: row.stepCount,
+      failedStepCount: row.failedStepCount,
       errorKind: row.errorKind,
     }),
   });
