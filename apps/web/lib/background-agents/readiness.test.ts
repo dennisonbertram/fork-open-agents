@@ -67,6 +67,49 @@ describe("background agent readiness", () => {
     expect(JSON.stringify(readiness)).not.toContain("secret-value");
   });
 
+  test("reports an enabled deployment with a missing allowlist as not ready", async () => {
+    const { getBackgroundAgentReadiness } = await modulePromise;
+    for (const key of managedEnvKeys) {
+      process.env[key] = `${key.toLowerCase()}-value`;
+    }
+    process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.VERCEL = "1";
+    delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+
+    const readiness = getBackgroundAgentReadiness();
+
+    expect(readiness.ready).toBe(false);
+    expect(readiness.missing).toContain("BACKGROUND_AGENTS_ALLOWED_REPOS");
+    expect(
+      readiness.checks.find((check) => check.id === "repo_allowlist"),
+    ).toMatchObject({
+      status: "missing",
+      missing: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
+    });
+  });
+
+  test("reports an invalid allowlist without exposing its raw value", async () => {
+    const { getBackgroundAgentReadiness } = await modulePromise;
+    for (const key of managedEnvKeys) {
+      process.env[key] = `${key.toLowerCase()}-value`;
+    }
+    process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.VERCEL = "1";
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "private-malformed-value";
+
+    const readiness = getBackgroundAgentReadiness();
+    const serialized = JSON.stringify(readiness);
+
+    expect(readiness.ready).toBe(false);
+    expect(
+      readiness.checks.find((check) => check.id === "repo_allowlist"),
+    ).toMatchObject({
+      status: "missing",
+      missing: ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
+    });
+    expect(serialized).not.toContain("private-malformed-value");
+  });
+
   test("accepts Vercel hosted runtime for sandbox and gateway readiness", async () => {
     const { getBackgroundAgentReadiness } = await modulePromise;
     for (const key of managedEnvKeys) {

@@ -14,6 +14,10 @@ let authResult: AuthResult = { ok: true, userId: "user-1" };
 
 const isAgentLoopsEnabled = mock(() => false);
 const getAgentLoopsAllowedRepos = mock(() => null);
+const getAgentLoopsRepoPolicy = mock(() => ({
+  state: "wildcard" as const,
+  entries: new Set<string>(),
+}));
 const isAgentLoopRepoAllowed = mock(() => true);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -23,6 +27,7 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled,
   getAgentLoopsAllowedRepos,
+  getAgentLoopsRepoPolicy,
   isAgentLoopRepoAllowed,
 }));
 
@@ -33,6 +38,10 @@ describe("GET /api/agent-loops/readiness", () => {
     authResult = { ok: true, userId: "user-1" };
     isAgentLoopsEnabled.mockImplementation(() => false);
     getAgentLoopsAllowedRepos.mockImplementation(() => null);
+    getAgentLoopsRepoPolicy.mockImplementation(() => ({
+      state: "wildcard" as const,
+      entries: new Set<string>(),
+    }));
   });
 
   test("BT-033: requires authentication", async () => {
@@ -106,5 +115,42 @@ describe("GET /api/agent-loops/readiness", () => {
     expect(allowlistCheck).toBeDefined();
     // wildcard means unrestricted = ready
     expect(allowlistCheck.status).toBe("ready");
+  });
+
+  test("reports a missing allowlist as not ready", async () => {
+    isAgentLoopsEnabled.mockImplementation(() => true);
+    getAgentLoopsAllowedRepos.mockImplementation(() => new Set());
+    getAgentLoopsRepoPolicy.mockImplementation(() => ({
+      state: "missing" as const,
+      entries: new Set<string>(),
+    }));
+
+    const { GET } = await routeModulePromise;
+    const response = await GET();
+    const body = await response.json();
+    const allowlistCheck = body.checks.find(
+      (check: { id: string }) => check.id === "repo_allowlist",
+    );
+
+    expect(allowlistCheck).toMatchObject({
+      status: "missing",
+      missing: ["AGENT_LOOPS_ALLOWED_REPOS"],
+    });
+  });
+
+  test("reports an invalid allowlist without exposing its raw value", async () => {
+    getAgentLoopsAllowedRepos.mockImplementation(() => new Set());
+    getAgentLoopsRepoPolicy.mockImplementation(() => ({
+      state: "invalid" as const,
+      entries: new Set<string>(),
+      invalidEntryCount: 1,
+    }));
+
+    const { GET } = await routeModulePromise;
+    const response = await GET();
+    const bodyText = await response.text();
+
+    expect(bodyText).toContain('"status":"missing"');
+    expect(bodyText).not.toContain("private-malformed-value");
   });
 });
