@@ -185,8 +185,8 @@ describe("Automation adapters", () => {
       nativeStatus: "enabled",
       operability: "active",
       stepCount: 1,
-      detailUrl: "/repos/acme%20owner/widgets%2Freview/agents/shared-id",
-      editUrl: "/repos/acme%20owner/widgets%2Freview/agents/shared-id/edit",
+      detailUrl: "/automations/background-agent/shared-id",
+      editUrl: "/automations/background-agent/shared-id/edit",
       latestRun: {
         sourceId: "background-run-1",
         detailUrl: "/runs/background-agent/background-run-1",
