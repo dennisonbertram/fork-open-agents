@@ -20,10 +20,12 @@ This document establishes one product contract and a dependency-ordered path to
 reach it without a risky rewrite:
 
 1. **Sessions** for interactive cloud coding.
-2. **Automations** for repeatable, manually or externally triggered coding
+2. **Runs** for trustworthy automation execution state, evidence, and recovery.
+3. **Automations** for repeatable, manually or externally triggered coding
    work.
-3. **Runs** for trustworthy automation execution state, evidence, and recovery.
-4. **Settings** for supporting account, repository, model, connection, usage,
+4. **Repositories** as the top-level context directory for repository
+   dashboards and filtered links into execution work.
+5. **Settings** for supporting account, repository, model, connection, usage,
    and explicitly advanced configuration.
 
 This plan supersedes the **Agents + Workflows** product vocabulary in
@@ -37,6 +39,9 @@ than a big-bang migration.
 - Preserve existing tables and mature source-specific executors initially.
 - Present background agents and loops as one Automation product.
 - Present their executions through one normalized Runs product.
+- Expose Repositories as a top-level context directory, not a fourth execution
+  noun.
+- Keep Settings as supporting configuration, not an execution noun.
 - Use source-qualified references; source ids are not assumed globally unique.
 - Keep honest optional fields and source-specific detail instead of false
   parity.
@@ -123,6 +128,11 @@ Workspace shell
 │   ├── New session
 │   ├── Active sessions
 │   └── Archived sessions
+├── Runs
+│   ├── Active
+│   ├── Needs attention
+│   ├── Completed
+│   └── Repository, automation, and trigger filters
 ├── Automations
 │   ├── All repositories
 │   ├── Repository filter
@@ -134,11 +144,10 @@ Workspace shell
 │   │   ├── Output
 │   │   └── Review and test
 │   └── Advanced: multiple steps
-├── Runs
-│   ├── Active
-│   ├── Needs attention
-│   ├── Completed
-│   └── Repository, automation, and trigger filters
+├── Repositories
+│   ├── Repository directory
+│   ├── Repository dashboard
+│   └── Filtered links into Sessions, Automations, and Runs
 └── Settings
     ├── Account
     ├── Connections
@@ -154,9 +163,10 @@ Workspace shell
     └── Admin
 ```
 
-Repositories are context and filters for Sessions, Automations, and Runs. The
-repository dashboard may provide compact summaries and links, but must not
-reintroduce a second product hierarchy called Project, Agents, or Loops.
+Repositories is the top-level context directory and provides filters for
+Sessions, Automations, and Runs. The repository dashboard may provide compact
+summaries and links, but must not reintroduce a second product hierarchy called
+Project, Agents, or Loops.
 
 GitHub remains the system of record for general pull-request, issue, Actions,
 and secrets administration. Open Agents shows only the GitHub context required
