@@ -24,6 +24,7 @@ let sessionRecord: {
 
 let workflowRunStatus: string = "running";
 let getRunShouldThrow = false;
+const getRunCalls: string[] = [];
 
 const spies = {
   compareAndSetChatActiveStreamId: mock(
@@ -62,7 +63,8 @@ mock.module("ai", () => ({
 }));
 
 mock.module("workflow/api", () => ({
-  getRun: () => {
+  getRun: (runId: string) => {
+    getRunCalls.push(runId);
     if (getRunShouldThrow) throw new Error("Run not found");
     return {
       status: Promise.resolve(workflowRunStatus),
@@ -121,6 +123,7 @@ beforeEach(() => {
   };
   workflowRunStatus = "running";
   getRunShouldThrow = false;
+  getRunCalls.length = 0;
   Object.values(spies).forEach((s) => s.mockClear());
 });
 
@@ -167,6 +170,22 @@ describe("GET /api/chat/[chatId]/stream", () => {
     expect(response.status).toBe(200);
     expect(spies.compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
     expect(spies.updateChatActiveStreamId).not.toHaveBeenCalled();
+  });
+
+  test("repeated reconnects attach to the same active stream without mutating its owner", async () => {
+    const { GET } = await routeModulePromise;
+
+    const firstResponse = await GET(createStreamRequest(), routeContext);
+    const secondResponse = await GET(createStreamRequest(), routeContext);
+
+    expect(firstResponse.status).toBe(200);
+    expect(secondResponse.status).toBe(200);
+    expect(getRunCalls).toEqual([
+      "wrun_active-123",
+      "wrun_active-123",
+    ]);
+    expect(chatRecord?.activeStreamId).toBe("wrun_active-123");
+    expect(spies.compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
   });
 
   test("returns stream response when workflow is pending", async () => {
