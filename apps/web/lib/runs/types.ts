@@ -1,5 +1,7 @@
 export type RunSource = "chat_workflow" | "background_agent" | "agent_loop";
 
+export type AutomationRunSource = Exclude<RunSource, "chat_workflow">;
+
 export type NormalizedRunId = `${RunSource}:${string}`;
 
 export type RunState =
@@ -66,4 +68,48 @@ export interface NormalizedRun {
   detailUrl: string;
   timestamps: NormalizedRunTimestamps;
   metadata: NormalizedRunMetadata;
+}
+
+export interface AutomationReference {
+  source: AutomationRunSource;
+  sourceId: string;
+}
+
+export type AutomationTriggerSource =
+  | "github"
+  | "schedule"
+  | "webhook"
+  | "manual"
+  | "unknown";
+
+export interface NormalizedRunTrigger {
+  id: string | null;
+  source: AutomationTriggerSource;
+  kind: string | null;
+}
+
+export interface NormalizedRunProgress {
+  currentStepId: string | null;
+  completedSteps: number | null;
+  totalSteps: number | null;
+}
+
+export interface NormalizedRunEvidence {
+  requestId: string | null;
+  workflowRunId: string | null;
+  sandboxName: string | null;
+  outputUrl: string | null;
+}
+
+/**
+ * Automation-only extension used by the unified Runs product. Interactive chat
+ * workflows intentionally remain NormalizedRun values owned by Sessions.
+ */
+export interface NormalizedAutomationRun extends NormalizedRun {
+  source: AutomationRunSource;
+  automation: AutomationReference | null;
+  automationName: string;
+  trigger: NormalizedRunTrigger;
+  progress: NormalizedRunProgress;
+  evidence: NormalizedRunEvidence;
 }

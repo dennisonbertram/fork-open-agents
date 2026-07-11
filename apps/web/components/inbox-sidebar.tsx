@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Activity,
   Archive,
   Bot,
   ChevronDown,
@@ -1243,6 +1244,26 @@ export function InboxSidebar({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  asChild
+                  variant="ghost"
+                  size="icon"
+                  className="size-9 text-muted-foreground hover:bg-background hover:text-foreground"
+                >
+                  <Link
+                    href="/runs"
+                    aria-label={railActionById.get("runs")?.ariaLabel}
+                  >
+                    <Activity className="size-4" />
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" sideOffset={6}>
+                {railActionById.get("runs")?.tooltip}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
                   type="button"
                   variant="ghost"
                   size="icon"
@@ -1324,6 +1345,14 @@ export function InboxSidebar({
                 </TooltipContent>
               </Tooltip>
             </div>
+
+            <Link
+              href="/runs"
+              className="mb-2 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <Activity className="size-4" aria-hidden="true" />
+              Runs
+            </Link>
 
             <div className="flex gap-1">
               <button

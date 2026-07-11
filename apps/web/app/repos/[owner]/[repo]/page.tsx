@@ -178,7 +178,7 @@ export default async function RepoDashboardPage({
             </TabsContent>
           </Tabs>
 
-          <ActivityWindow runs={runs} />
+          <ActivityWindow runs={runs} repoOwner={owner} repoName={repo} />
         </div>
       </div>
     </main>

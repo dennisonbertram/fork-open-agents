@@ -107,6 +107,20 @@ describe("RepoDashboardPage", () => {
     getRepoToolsEffectiveStatuses.mockClear();
   });
 
+  test("links repository activity to the filtered unified Runs list", async () => {
+    const { default: RepoDashboardPage } = await pageModulePromise;
+    const html = renderToStaticMarkup(
+      await RepoDashboardPage({
+        params: Promise.resolve({ owner: "acme team", repo: "widgets/api" }),
+      }),
+    );
+
+    expect(html).toContain(
+      "/runs?repoOwner=acme%20team&amp;repoName=widgets%2Fapi",
+    );
+    expect(html).toContain("View all runs");
+  });
+
   // BT-001: unauthenticated visitor is redirected
   test("BT-001: redirects unauthenticated visitors", async () => {
     sessionUserId = null;
