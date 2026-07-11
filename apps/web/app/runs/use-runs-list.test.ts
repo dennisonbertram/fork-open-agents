@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   computeRunsRefreshInterval,
   fetchRunsWithTimeout,
+  nextRunsPollingDeadline,
   shouldShowRunsPollingPaused,
 } from "./use-runs-list";
 
@@ -54,5 +55,33 @@ describe("Runs list polling", () => {
     expect(shouldShowRunsPollingPaused([{ state: "running" }], true)).toBe(
       true,
     );
+  });
+
+  test("starts a fresh deadline after an active period becomes inactive", () => {
+    const firstStartedAt = 1_000;
+    const firstDeadline = nextRunsPollingDeadline(
+      null,
+      true,
+      firstStartedAt,
+    );
+    expect(firstDeadline).toBe(firstStartedAt + 10 * 60 * 1000);
+
+    const resetDeadline = nextRunsPollingDeadline(firstDeadline, false, 2_000);
+    expect(resetDeadline).toBeNull();
+
+    const secondStartedAt = firstDeadline + 1;
+    const secondDeadline = nextRunsPollingDeadline(
+      resetDeadline,
+      true,
+      secondStartedAt,
+    );
+    expect(secondDeadline).toBe(secondStartedAt + 10 * 60 * 1000);
+    expect(
+      computeRunsRefreshInterval(
+        [{ state: "running" }],
+        secondStartedAt,
+        secondDeadline ?? 0,
+      ),
+    ).toBeGreaterThan(0);
   });
 });
