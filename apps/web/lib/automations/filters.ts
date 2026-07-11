@@ -41,12 +41,12 @@ export function parseAutomationFilters(
     return { ok: false, errorKind: "invalid_filters" };
   }
 
-  const kind = oneValue(params, "kind");
+  const kind = oneValue(params, "kind")?.toLowerCase();
   if (kind && !automationKinds.includes(kind as AutomationKind)) {
     return { ok: false, errorKind: "invalid_filters" };
   }
 
-  const state = oneValue(params, "state");
+  const state = oneValue(params, "state")?.toLowerCase();
   if (
     state &&
     !automationNativeStatuses.includes(state as AutomationNativeStatus)

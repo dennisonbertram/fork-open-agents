@@ -100,7 +100,14 @@ export function findActiveNavItem(
   pathname: string,
   groups = SETTINGS_NAV_GROUPS,
 ) {
-  return flattenNavItems(groups).find(
+  const items = flattenNavItems(groups);
+  if (
+    pathname === "/settings/background-agents" ||
+    pathname.startsWith("/settings/background-agents/")
+  ) {
+    return items.find((item) => item.id === "automations");
+  }
+  return items.find(
     (item) => pathname === item.href || pathname.startsWith(`${item.href}/`),
   );
 }

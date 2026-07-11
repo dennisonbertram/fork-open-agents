@@ -1,4 +1,4 @@
-import type { NormalizedRun } from "@/lib/runs/types";
+import type { NormalizedAutomationRun } from "@/lib/runs/types";
 
 export const automationSources = ["background_agent", "agent_loop"] as const;
 export type AutomationSource = (typeof automationSources)[number];
@@ -56,7 +56,7 @@ export type AutomationListItem = {
     declaredSchemaCount: number | null;
     publishingActionCount: number | null;
   };
-  latestRun: NormalizedRun | null;
+  latestRun: NormalizedAutomationRun | null;
   detailUrl: string;
   editUrl: string;
   createdAt: string;

@@ -10,11 +10,24 @@ function responseHeaders(requestId: string) {
   };
 }
 
-export async function GET(request: Request): Promise<Response> {
-  const authResult = await requireAuthenticatedUser();
-  if (!authResult.ok) return authResult.response;
+function withResponseHeaders(response: Response, requestId: string): Response {
+  const headers = new Headers(response.headers);
+  headers.set("Cache-Control", "no-store");
+  headers.set("X-Request-ID", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
 
+export async function GET(request: Request): Promise<Response> {
   const requestId = getRequestId(request.headers);
+  const authResult = await requireAuthenticatedUser();
+  if (!authResult.ok) {
+    return withResponseHeaders(authResult.response, requestId);
+  }
+
   const parsed = parseAutomationFilters(new URL(request.url).searchParams);
   if (!parsed.ok) {
     return Response.json(

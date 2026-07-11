@@ -116,6 +116,8 @@ export function adaptBackgroundAutomation(
     ? adaptBackgroundAgentRun(
         {
           id: latestRun.id,
+          agentId: latestRun.agentId,
+          triggerId: latestRun.triggerId,
           title: agent.name,
           nativeStatus: latestRun.status,
           nativeSource: latestRun.source,
@@ -129,6 +131,9 @@ export function adaptBackgroundAutomation(
           // not need arbitrary source output URLs, which may contain signed
           // query parameters or other credentials.
           outputUrl: null,
+          sandboxName: null,
+          requestId: latestRun.requestId,
+          workflowRunId: latestRun.workflowRunId,
           errorKind: latestRun.errorKind,
           createdAt: latestRun.createdAt,
           updatedAt: latestRun.updatedAt,
@@ -229,11 +234,17 @@ export function adaptLoopAutomation(
   }
 
   const loopPath = encodedPath(loop.id);
+  const latestTriggerKind = latestRun?.triggerId
+    ? (record.triggers.find((trigger) => trigger.id === latestRun.triggerId)
+        ?.kind ?? null)
+    : null;
   const normalizedLatestRun = latestRun
     ? adaptAgentLoopRun(
         {
           id: latestRun.id,
           loopId: loop.id,
+          triggerId: latestRun.triggerId,
+          triggerKind: latestTriggerKind,
           title: loop.name,
           nativeStatus: latestRun.status,
           nativeSource: latestRun.source,
@@ -241,7 +252,10 @@ export function adaptLoopAutomation(
           repoName: loop.repoName,
           currentNodeId: latestRun.currentNodeId,
           stepCount: latestRun.stepCount,
+          totalStepCount: stepCount,
           failedStepCount: latestRun.failedStepCount,
+          requestId: latestRun.requestId,
+          workflowRunId: latestRun.workflowRunId,
           errorKind: latestRun.errorKind,
           createdAt: latestRun.createdAt,
           updatedAt: latestRun.updatedAt,

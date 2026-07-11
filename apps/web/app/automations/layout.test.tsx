@@ -8,9 +8,7 @@ const getLastRepoByUserId = mock(async () => ({
   owner: "acme",
   repo: "widgets",
 }));
-const getSessionsWithUnreadByUserId = mock(async () => [
-  { id: "session-1" },
-]);
+const getSessionsWithUnreadByUserId = mock(async () => [{ id: "session-1" }]);
 const getArchivedSessionCountByUserId = mock(async () => 3);
 let serverSession: { user: { id: string; name: string } } | null = {
   user: { id: "user-1", name: "Ada" },
@@ -47,9 +45,9 @@ describe("Automations layout", () => {
     serverSession = null;
     const { default: AutomationsLayout } = await layoutModulePromise;
 
-    await expect(
-      AutomationsLayout({ children: "protected" }),
-    ).rejects.toThrow("redirect:/");
+    await expect(AutomationsLayout({ children: "protected" })).rejects.toThrow(
+      "redirect:/",
+    );
 
     expect(getLastRepoByUserId).not.toHaveBeenCalled();
     expect(getSessionsWithUnreadByUserId).not.toHaveBeenCalled();

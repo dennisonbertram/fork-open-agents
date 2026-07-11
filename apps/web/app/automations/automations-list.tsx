@@ -61,9 +61,6 @@ function sourceLabel(source: AutomationListItem["source"]): string {
 }
 
 function statusClass(item: AutomationListItem): string {
-  if (item.configurationHealth === "invalid") {
-    return "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-300";
-  }
   if (item.operability === "active") {
     return "border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
   }
@@ -130,10 +127,13 @@ function AutomationCard({ item }: { item: AutomationListItem }) {
                 statusClass(item),
               )}
             >
-              {item.configurationHealth === "invalid"
-                ? "Needs attention"
-                : item.nativeStatus}
+              {item.nativeStatus}
             </span>
+            {item.configurationHealth === "invalid" ? (
+              <span className="rounded-full border border-red-500/25 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-700 dark:text-red-300">
+                Needs attention
+              </span>
+            ) : null}
           </div>
           <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
             {item.repository.owner}/{item.repository.name}
@@ -222,6 +222,10 @@ export function AutomationsList({ response, filters }: AutomationsListProps) {
   const notices = response.sourceStatus.filter(
     (status) => status.status !== "ok",
   );
+  const hasBlockingSourceGap = response.sourceStatus.some(
+    (status) => status.status === "failed" || status.status === "partial",
+  );
+  const filteredOrIncomplete = activeFilters || hasBlockingSourceGap;
   const allUnavailable =
     response.sourceStatus.some((status) => status.status === "failed") &&
     response.sourceStatus.every(
@@ -378,21 +382,25 @@ export function AutomationsList({ response, filters }: AutomationsListProps) {
           <section className="rounded-lg border border-dashed border-border p-10 text-center">
             <Bot className="mx-auto size-5 text-muted-foreground" />
             <h2 className="mt-3 text-balance text-sm font-semibold">
-              {activeFilters || notices.length > 0
+              {filteredOrIncomplete
                 ? "No automations match these filters"
                 : "No automations configured"}
             </h2>
             <p className="mx-auto mt-2 max-w-md text-pretty text-sm text-muted-foreground">
-              {activeFilters || notices.length > 0
+              {filteredOrIncomplete
                 ? "Clear the filters or retry after the unavailable source recovers."
                 : "Create a single-step automation to review pull requests, implement issues, or respond to webhooks."}
             </p>
             <Link
-              href={activeFilters ? "/automations" : links.single}
+              href={filteredOrIncomplete ? "/automations" : links.single}
               className="mt-4 inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
             >
-              {activeFilters ? null : <Plus className="size-4" />}
-              {activeFilters ? "Clear filters" : "Create automation"}
+              {filteredOrIncomplete ? null : <Plus className="size-4" />}
+              {activeFilters
+                ? "Clear filters"
+                : hasBlockingSourceGap
+                  ? "Retry automations"
+                  : "Create automation"}
             </Link>
           </section>
         ) : (
