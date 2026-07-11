@@ -22,6 +22,9 @@ at all — the only prior proof came from one-off `ux-walker` browser walks
   real repo.
 - In production proof, set `AGENT_LOOPS_ALLOWED_REPOS` to the disposable repo
   **before** setting `AGENT_LOOPS_ENABLED=true`.
+- Missing, blank, malformed, or mixed wildcard/list values deny all loop
+  dispatch. Exact `*` is the only allow-all value; treat it as an explicit
+  high-risk operator override, not a setup shortcut.
 - Never paste secrets, cookies, or auth headers into issues, PRs, screenshots,
   shell logs, or chat.
 - Rollback: set `AGENT_LOOPS_ENABLED=false`.

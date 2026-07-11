@@ -250,6 +250,7 @@ mock.module("@/app/workflows/agent-loop-step", () => ({
 
 mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled: () => true,
+  getAgentLoopRepoAccess: () => ({ allowed: true }),
   isAgentLoopRepoAllowed: () => true,
 }));
 

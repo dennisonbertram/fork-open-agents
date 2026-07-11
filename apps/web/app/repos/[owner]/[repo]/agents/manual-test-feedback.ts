@@ -31,6 +31,10 @@ export const manualTestSkipMessages: Record<ManualTestSkipReason, string> = {
     "This agent is disabled — enable it above, then run the test again.",
   no_enabled_trigger:
     "This agent has no enabled trigger to test — add or enable one first.",
+  repo_allowlist_unconfigured:
+    "Background-agent repository access isn't configured — ask an operator to set BACKGROUND_AGENTS_ALLOWED_REPOS.",
+  repo_allowlist_invalid:
+    "Background-agent repository access is misconfigured — ask an operator to correct BACKGROUND_AGENTS_ALLOWED_REPOS.",
   repo_not_allowlisted:
     "This repository isn't allowlisted for background agents — check Background agent settings.",
 };

@@ -580,6 +580,7 @@ describe("dispatchWebhookErrorEvent", () => {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: "repo_not_allowlisted",
     });
     expect(createRunForTrigger).not.toHaveBeenCalled();
     expect(start).not.toHaveBeenCalled();

@@ -110,7 +110,7 @@ const scheduleTrigger: BackgroundAgentWithTriggers["triggers"][number] = {
 
 function resetMocks() {
   process.env.BACKGROUND_AGENTS_ENABLED = "true";
-  delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
+  process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "*";
   workflowRunId = "workflow-run-1";
   scheduleRows = [];
   start.mockClear();

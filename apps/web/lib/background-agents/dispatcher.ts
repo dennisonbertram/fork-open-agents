@@ -21,8 +21,9 @@ import {
   type NormalizedBackgroundTriggerEvent,
 } from "./types";
 import {
-  isBackgroundAgentRepoAllowed,
+  getBackgroundAgentRepoAccess,
   isBackgroundAgentsEnabled,
+  type BackgroundAgentRepoRefusalReason,
 } from "./config";
 import { scheduleMatchesNow } from "./schedule";
 import { computeNextRuns, validateSchedule } from "./schedule-presets";
@@ -47,8 +48,55 @@ export type BackgroundDispatchResult = {
    * against a repo outside the allowlist (#861). Callers (the test API
    * route) surface this so the operator sees WHY nothing ran.
    */
-  skipReason?: "agent_disabled" | "no_enabled_trigger" | "repo_not_allowlisted";
+  skipReason?:
+    | "agent_disabled"
+    | "no_enabled_trigger"
+    | BackgroundAgentRepoRefusalReason;
 };
+
+function policyStateForReason(reason: BackgroundAgentRepoRefusalReason) {
+  if (reason === "repo_allowlist_unconfigured") {
+    return "missing" as const;
+  }
+  if (reason === "repo_allowlist_invalid") {
+    return "invalid" as const;
+  }
+  return "list" as const;
+}
+
+function warnBackgroundAgentRepoPolicyRefused(params: {
+  repoOwner: string;
+  repoName: string;
+  reason: BackgroundAgentRepoRefusalReason;
+  requestId?: string | null;
+  deliveryId?: string | null;
+  triggerId?: string | null;
+}) {
+  const log =
+    params.reason === "repo_not_allowlisted" ? console.info : console.warn;
+  log("[background-agents] repository policy refused dispatch", {
+    eventName: "background-agent.dispatch.repo-policy-refused",
+    repoOwner: params.repoOwner,
+    repoName: params.repoName,
+    policyState: policyStateForReason(params.reason),
+    reason: params.reason,
+    requestId: params.requestId ?? null,
+    deliveryId: params.deliveryId ?? null,
+    triggerId: params.triggerId ?? null,
+  });
+}
+
+function mapLoopRepoPolicySkipReason(
+  reason: string | undefined,
+): BackgroundAgentRepoRefusalReason | null {
+  if (
+    reason === "repo_allowlist_unconfigured" ||
+    reason === "repo_allowlist_invalid"
+  ) {
+    return reason;
+  }
+  return reason === "repo_not_allowed" ? "repo_not_allowlisted" : null;
+}
 
 type WorkflowStartFailureInput = {
   runId: string;
@@ -157,9 +205,18 @@ export async function dispatchBackgroundTriggerEvent(params: {
       loopRunIds: [],
     };
   }
-  if (
-    !isBackgroundAgentRepoAllowed(params.event.repoOwner, params.event.repoName)
-  ) {
+  const repoAccess = getBackgroundAgentRepoAccess(
+    params.event.repoOwner,
+    params.event.repoName,
+  );
+  if (!repoAccess.allowed) {
+    warnBackgroundAgentRepoPolicyRefused({
+      repoOwner: params.event.repoOwner,
+      repoName: params.event.repoName,
+      reason: repoAccess.reason,
+      requestId: params.requestId,
+      deliveryId: params.event.externalId,
+    });
     return {
       enabled: true,
       matched: 0,
@@ -167,6 +224,7 @@ export async function dispatchBackgroundTriggerEvent(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: repoAccess.reason,
     };
   }
 
@@ -175,6 +233,7 @@ export async function dispatchBackgroundTriggerEvent(params: {
   let duplicates = 0;
   const runIds: string[] = [];
   const loopRunIds: string[] = [];
+  let loopPolicySkipReason: BackgroundAgentRepoRefusalReason | undefined;
 
   for (const match of matches) {
     // ── Loop-bound trigger branch (M1-07) ────────────────────────────────────
@@ -192,6 +251,15 @@ export async function dispatchBackgroundTriggerEvent(params: {
       });
       if (!loopResult.skipped && loopResult.runId) {
         loopRunIds.push(loopResult.runId);
+      } else if (loopResult.skipped) {
+        const reason = mapLoopRepoPolicySkipReason(loopResult.reason);
+        if (reason) {
+          loopPolicySkipReason ??= reason;
+          await recordTriggerSkipReason({
+            triggerId: match.trigger.id,
+            skipReason: reason,
+          });
+        }
       }
       continue;
     }
@@ -263,6 +331,9 @@ export async function dispatchBackgroundTriggerEvent(params: {
     duplicates,
     runIds,
     loopRunIds,
+    ...(created === 0 && duplicates === 0 && loopPolicySkipReason
+      ? { skipReason: loopPolicySkipReason }
+      : {}),
   };
 }
 
@@ -326,7 +397,19 @@ export async function dispatchWebhookErrorEvent(params: {
     // loop-bound trigger whose repo is allowed by AGENT_LOOPS_ALLOWED_REPOS
     // but not by BACKGROUND_AGENTS_ALLOWED_REPOS — the agent-bound path would
     // be blocked (line 295) but the loop path would slip through.
-    if (!isBackgroundAgentRepoAllowed(loop.repoOwner, loop.repoName)) {
+    const loopRepoAccess = getBackgroundAgentRepoAccess(
+      loop.repoOwner,
+      loop.repoName,
+    );
+    if (!loopRepoAccess.allowed) {
+      warnBackgroundAgentRepoPolicyRefused({
+        repoOwner: loop.repoOwner,
+        repoName: loop.repoName,
+        reason: loopRepoAccess.reason,
+        requestId: params.requestId,
+        deliveryId: params.event.externalId,
+        triggerId: row.trigger.id,
+      });
       return {
         enabled: true,
         matched: 0,
@@ -334,6 +417,7 @@ export async function dispatchWebhookErrorEvent(params: {
         duplicates: 0,
         runIds: [],
         loopRunIds: [],
+        skipReason: loopRepoAccess.reason,
       };
     }
 
@@ -360,6 +444,15 @@ export async function dispatchWebhookErrorEvent(params: {
     if (!loopResult.skipped && loopResult.runId) {
       loopRunIds.push(loopResult.runId);
     }
+    const loopPolicySkipReason = loopResult.skipped
+      ? mapLoopRepoPolicySkipReason(loopResult.reason)
+      : null;
+    if (loopPolicySkipReason) {
+      await recordTriggerSkipReason({
+        triggerId: row.trigger.id,
+        skipReason: loopPolicySkipReason,
+      });
+    }
     return {
       enabled: true,
       matched: 1,
@@ -367,6 +460,7 @@ export async function dispatchWebhookErrorEvent(params: {
       duplicates: loopResult.skipped ? 0 : loopResult.created === false ? 1 : 0,
       runIds: [],
       loopRunIds,
+      ...(loopPolicySkipReason ? { skipReason: loopPolicySkipReason } : {}),
     };
   }
 
@@ -391,7 +485,19 @@ export async function dispatchWebhookErrorEvent(params: {
     repoOwner: agent.repoOwner,
     repoName: agent.repoName,
   };
-  if (!isBackgroundAgentRepoAllowed(event.repoOwner, event.repoName)) {
+  const repoAccess = getBackgroundAgentRepoAccess(
+    event.repoOwner,
+    event.repoName,
+  );
+  if (!repoAccess.allowed) {
+    warnBackgroundAgentRepoPolicyRefused({
+      repoOwner: event.repoOwner,
+      repoName: event.repoName,
+      reason: repoAccess.reason,
+      requestId: params.requestId,
+      deliveryId: params.event.externalId,
+      triggerId: row.trigger.id,
+    });
     return {
       enabled: true,
       matched: 0,
@@ -399,6 +505,7 @@ export async function dispatchWebhookErrorEvent(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
+      skipReason: repoAccess.reason,
     };
   }
 
@@ -523,10 +630,19 @@ export async function dispatchManualBackgroundAgentTest(params: {
       skipReason: "no_enabled_trigger",
     };
   }
-  if (
-    !isBackgroundAgentRepoAllowed(params.agent.repoOwner, params.agent.repoName)
-  ) {
-    warnManualTestSkipped(params, "repo_not_allowlisted");
+  const repoAccess = getBackgroundAgentRepoAccess(
+    params.agent.repoOwner,
+    params.agent.repoName,
+  );
+  if (!repoAccess.allowed) {
+    warnBackgroundAgentRepoPolicyRefused({
+      repoOwner: params.agent.repoOwner,
+      repoName: params.agent.repoName,
+      reason: repoAccess.reason,
+      requestId: params.requestId,
+      triggerId: trigger.id,
+    });
+    warnManualTestSkipped(params, repoAccess.reason);
     return {
       enabled: true,
       matched: 0,
@@ -534,7 +650,7 @@ export async function dispatchManualBackgroundAgentTest(params: {
       duplicates: 0,
       runIds: [],
       loopRunIds: [],
-      skipReason: "repo_not_allowlisted",
+      skipReason: repoAccess.reason,
     };
   }
 
@@ -702,14 +818,21 @@ export async function dispatchScheduledBackgroundAgents(params?: {
         // Defensive: row has neither loopId nor agent — skip.
         continue;
       }
-      const repoAllowed = isBackgroundAgentRepoAllowed(
+      const repoAccess = getBackgroundAgentRepoAccess(
         agent.repoOwner,
         agent.repoName,
       );
-      if (!repoAllowed) {
+      if (!repoAccess.allowed) {
         await recordTriggerSkipReason({
           triggerId: row.trigger.id,
-          skipReason: "repo not in allowlist",
+          skipReason: repoAccess.reason,
+        });
+        warnBackgroundAgentRepoPolicyRefused({
+          repoOwner: agent.repoOwner,
+          repoName: agent.repoName,
+          reason: repoAccess.reason,
+          requestId: params?.requestId,
+          triggerId: row.trigger.id,
         });
         continue;
       }
@@ -787,6 +910,14 @@ export async function dispatchScheduledBackgroundAgents(params?: {
 
       if (!loopResult.skipped && loopResult.runId) {
         loopRunIds.push(loopResult.runId);
+      } else if (loopResult.skipped) {
+        const reason = mapLoopRepoPolicySkipReason(loopResult.reason);
+        if (reason) {
+          await recordTriggerSkipReason({
+            triggerId: row.trigger.id,
+            skipReason: reason,
+          });
+        }
       }
       continue;
     }

@@ -3,6 +3,7 @@
  * Written first (RED phase) — all tests fail before implementation.
  */
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import type { RepositoryAllowlistPolicy } from "@/lib/repository-allowlist";
 
 mock.module("server-only", () => ({}));
 
@@ -13,11 +14,12 @@ type AuthResult =
 let authResult: AuthResult = { ok: true, userId: "user-1" };
 
 const isAgentLoopsEnabled = mock(() => false);
-const getAgentLoopsAllowedRepos = mock(() => null);
-const getAgentLoopsRepoPolicy = mock(() => ({
-  state: "wildcard" as const,
-  entries: new Set<string>(),
+const getAgentLoopsAllowedRepos = mock<() => Set<string> | null>(() => null);
+const getAgentLoopsRepoPolicy = mock<() => RepositoryAllowlistPolicy>(() => ({
+  state: "wildcard",
+  entries: new Set(),
 }));
+const getAgentLoopRepoAccess = mock(() => ({ allowed: true as const }));
 const isAgentLoopRepoAllowed = mock(() => true);
 
 mock.module("@/app/api/sessions/_lib/session-context", () => ({
@@ -28,6 +30,7 @@ mock.module("@/lib/agent-loops/config", () => ({
   isAgentLoopsEnabled,
   getAgentLoopsAllowedRepos,
   getAgentLoopsRepoPolicy,
+  getAgentLoopRepoAccess,
   isAgentLoopRepoAllowed,
 }));
 

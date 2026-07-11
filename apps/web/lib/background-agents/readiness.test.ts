@@ -73,6 +73,7 @@ describe("background agent readiness", () => {
       process.env[key] = `${key.toLowerCase()}-value`;
     }
     process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/widgets";
     process.env.VERCEL = "1";
     delete process.env.BACKGROUND_AGENTS_ALLOWED_REPOS;
 
@@ -118,6 +119,7 @@ describe("background agent readiness", () => {
     delete process.env.VERCEL_TOKEN;
     delete process.env.AI_GATEWAY_API_KEY;
     process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/widgets";
     process.env.VERCEL = "1";
     process.env.VERCEL_ENV = "preview";
 
@@ -139,7 +141,7 @@ describe("background agent readiness", () => {
     });
   });
 
-  test("reports the optional repo allowlist without making it required", async () => {
+  test("reports an explicit repo allowlist as ready", async () => {
     const { getBackgroundAgentReadiness } = await modulePromise;
     for (const key of managedEnvKeys) {
       process.env[key] = `${key.toLowerCase()}-value`;
@@ -156,7 +158,7 @@ describe("background agent readiness", () => {
     ).toMatchObject({
       status: "ready",
       missing: [],
-      detail: "Dispatch is limited to BACKGROUND_AGENTS_ALLOWED_REPOS.",
+      detail: "Dispatch is limited to 1 configured repository.",
     });
   });
 
@@ -167,6 +169,7 @@ describe("background agent readiness", () => {
     }
     delete process.env.BACKGROUND_AGENTS_CRON_SECRET;
     process.env.BACKGROUND_AGENTS_ENABLED = "true";
+    process.env.BACKGROUND_AGENTS_ALLOWED_REPOS = "acme/widgets";
     process.env.CRON_SECRET = "cron-secret-value";
 
     const readiness = getBackgroundAgentReadiness();

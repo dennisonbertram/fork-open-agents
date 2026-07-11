@@ -1,7 +1,7 @@
 import { requireAuthenticatedUser } from "@/app/api/sessions/_lib/session-context";
 import {
-  getAgentLoopsAllowedRepos,
-  isAgentLoopRepoAllowed,
+  getAgentLoopRepoAccess,
+  getAgentLoopsRepoPolicy,
   isAgentLoopsEnabled,
 } from "@/lib/agent-loops/config";
 import type {
@@ -31,12 +31,24 @@ export async function GET(req?: Request): Promise<Response> {
   }
 
   const enabled = isAgentLoopsEnabled();
-  const allowedRepos = getAgentLoopsAllowedRepos();
+  const repoPolicy = getAgentLoopsRepoPolicy();
+  const repoPolicyReady =
+    repoPolicy.state === "wildcard" || repoPolicy.state === "list";
+  const repoPolicyDetail = (() => {
+    switch (repoPolicy.state) {
+      case "wildcard":
+        return "AGENT_LOOPS_ALLOWED_REPOS explicitly allows every repository with *.";
+      case "list":
+        return `AGENT_LOOPS_ALLOWED_REPOS is configured with ${repoPolicy.entries.size} entr${repoPolicy.entries.size === 1 ? "y" : "ies"}.`;
+      case "invalid":
+        return "AGENT_LOOPS_ALLOWED_REPOS contains invalid entries; loop dispatch is denied until it is corrected.";
+      case "missing":
+        return "AGENT_LOOPS_ALLOWED_REPOS is required; loop dispatch is denied until it is configured.";
+    }
+  })();
 
   // Check 1: feature flag
   // Check 2: repo allowlist
-  // allowedRepos === null means wildcard (unrestricted) which is ready.
-  // allowedRepos = Set means an explicit allowlist is configured (also ready — operator opted in).
   const checks: AgentLoopsReadinessCheck[] = [
     {
       id: "feature_flag",
@@ -49,12 +61,9 @@ export async function GET(req?: Request): Promise<Response> {
     {
       id: "repo_allowlist",
       label: "Repository allowlist",
-      status: "ready",
-      detail:
-        allowedRepos === null
-          ? "AGENT_LOOPS_ALLOWED_REPOS is unset — all repositories are allowed (wildcard)."
-          : `AGENT_LOOPS_ALLOWED_REPOS is configured with ${allowedRepos.size} entr${allowedRepos.size === 1 ? "y" : "ies"}.`,
-      missing: [],
+      status: repoPolicyReady ? "ready" : "missing",
+      detail: repoPolicyDetail,
+      missing: repoPolicyReady ? [] : ["AGENT_LOOPS_ALLOWED_REPOS"],
     },
   ];
 
@@ -63,15 +72,25 @@ export async function GET(req?: Request): Promise<Response> {
   const repo = url?.searchParams.get("repo")?.trim();
 
   if (owner && repo) {
-    const allowed = isAgentLoopRepoAllowed(owner, repo);
+    const access = getAgentLoopRepoAccess(owner, repo);
+    const configurationRefused =
+      !access.allowed &&
+      (access.reason === "repo_allowlist_unconfigured" ||
+        access.reason === "repo_allowlist_invalid");
     checks.push({
       id: "repo_access",
       label: "This repository",
-      status: allowed ? "ready" : "disabled",
-      detail: allowed
+      status: access.allowed
+        ? "ready"
+        : configurationRefused
+          ? "missing"
+          : "disabled",
+      detail: access.allowed
         ? `${owner}/${repo} is enabled for loops on this deployment.`
-        : `${owner}/${repo} isn't enabled for loops on this deployment.`,
-      missing: allowed ? [] : ["AGENT_LOOPS_ALLOWED_REPOS"],
+        : configurationRefused
+          ? "Loop repository access cannot be evaluated until AGENT_LOOPS_ALLOWED_REPOS is valid."
+          : `${owner}/${repo} isn't enabled for loops on this deployment.`,
+      missing: access.allowed ? [] : ["AGENT_LOOPS_ALLOWED_REPOS"],
     });
   }
 
