@@ -140,8 +140,8 @@ is promoted.
 
 ### Wave 5 — product reduction
 
-- Reduce workspace and repository navigation to Sessions, Automations, Runs,
-  and Settings.
+- Reduce workspace and repository navigation to Sessions, Runs, Automations,
+  Repositories, and Settings.
 - Rename interactive `Agents` settings to `Chat roles` and move non-core tools
   under Advanced.
 - Align landing and onboarding with

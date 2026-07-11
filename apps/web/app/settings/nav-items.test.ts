@@ -37,7 +37,6 @@ describe("settings nav data", () => {
       "/settings/composio",
       "/settings/mcp",
       "/settings/skills",
-      "/automations",
       "/settings/repositories",
       "/settings/runtime-profiles",
     ]);
@@ -64,8 +63,8 @@ describe("settings nav data", () => {
 
   test("flattenNavItems lists every item once with unique ids", () => {
     const items = flattenNavItems();
-    expect(items).toHaveLength(15);
-    expect(new Set(items.map((i) => i.id)).size).toBe(15);
+    expect(items).toHaveLength(14);
+    expect(new Set(items.map((i) => i.id)).size).toBe(14);
   });
 
   test("findActiveNavItem resolves exact and nested routes", () => {

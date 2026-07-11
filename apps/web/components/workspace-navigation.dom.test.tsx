@@ -1,5 +1,6 @@
 import { fireEvent, registerDomTestHooks, render, within } from "@/tests/dom";
 import { describe, expect, mock, test } from "bun:test";
+import { WorkspaceNavigation } from "./workspace-navigation";
 
 mock.module("next/link", () => ({
   default: ({
@@ -9,8 +10,6 @@ mock.module("next/link", () => ({
     <a {...props}>{children}</a>
   ),
 }));
-
-import { WorkspaceNavigation } from "./workspace-navigation";
 
 registerDomTestHooks();
 
@@ -41,8 +40,7 @@ describe("WorkspaceNavigation render modes (#961)", () => {
       ]);
       expect(
         links.map(
-          (link) =>
-            link.textContent?.trim() || link.getAttribute("aria-label"),
+          (link) => link.textContent?.trim() || link.getAttribute("aria-label"),
         ),
       ).toEqual(destinationNames);
       for (const link of links) {
@@ -53,10 +51,7 @@ describe("WorkspaceNavigation render modes (#961)", () => {
 
   test("marks only the highest-precedence active destination", () => {
     const { container } = render(
-      <WorkspaceNavigation
-        mode="expanded"
-        pathname="/loops/l_1/runs/r_1"
-      />,
+      <WorkspaceNavigation mode="expanded" pathname="/loops/l_1/runs/r_1" />,
     );
     const current = within(container).getByRole("link", { current: "page" });
 
@@ -76,9 +71,9 @@ describe("WorkspaceNavigation render modes (#961)", () => {
     expect(container.querySelectorAll("[data-navigation-label]")).toHaveLength(
       0,
     );
-    expect(container.querySelectorAll("[data-navigation-tooltip]")).toHaveLength(
-      5,
-    );
+    expect(
+      container.querySelectorAll("[data-navigation-tooltip]"),
+    ).toHaveLength(5);
   });
 
   test("mobile navigation closes its Sheet after a destination is chosen", () => {

@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  Activity,
   Archive,
-  Bot,
   ChevronDown,
   CircleDashed,
   FolderGit2,
@@ -18,11 +16,10 @@ import {
   PanelLeftOpen,
   Pencil,
   Plus,
-  RefreshCw,
   Settings,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import type { CSSProperties } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useWorkspaceSettings } from "@/app/sessions/workspace-settings-context";
@@ -34,17 +31,10 @@ import {
 } from "@/components/inbox-sidebar-rail-actions";
 import { getValidRenameTitle } from "@/components/inbox-sidebar-rename";
 import {
-  filterAgentsByRepo,
-  getRepoSubGroupRailActions,
-  RepoSubGroups,
-} from "@/components/inbox-sidebar-repo-subgroups";
-import {
-  type SidebarRepoRef,
   buildRepoGroups,
   getRepoGroupContentId,
 } from "@/components/inbox-sidebar-repo-groups";
-import { useAllAgents } from "@/hooks/use-repo-agents";
-import { useAllLoops } from "@/hooks/use-all-loops";
+import { WorkspaceNavigation } from "@/components/workspace-navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -658,7 +648,7 @@ export function InboxSidebar({
   onCreateSessionFromBranch,
   initialUser,
 }: InboxSidebarProps) {
-  const router = useRouter();
+  const pathname = usePathname();
   const { session } = useSession();
   const { rank: leaderboardRank, loading: leaderboardLoading } =
     useLeaderboardRank();
@@ -764,30 +754,9 @@ export function InboxSidebar({
     (showArchived && archivedSessionsLoading && archivedSessions.length === 0);
   const sidebarUser = session?.user ?? initialUser;
 
-  // Repos with agents or loops keep their sidebar group even after every
-  // session/branch is gone, so the repo's tooling doesn't silently disappear.
-  const { agents: allAgents } = useAllAgents();
-  const { loops: allLoops, featureDisabled: loopsFeatureDisabled } =
-    useAllLoops();
-  const anchorRepos = useMemo<SidebarRepoRef[]>(
-    () => [
-      ...(allAgents ?? []).map((a) => ({
-        repoOwner: a.repoOwner,
-        repoName: a.repoName,
-      })),
-      ...(allLoops ?? []).map((l) => ({
-        repoOwner: l.repoOwner,
-        repoName: l.repoName,
-      })),
-    ],
-    [allAgents, allLoops],
-  );
-
   const groupedSessions = useMemo(
-    // Only union anchor repos into the active view — the archived view should
-    // list archived sessions only, not empty tooling-anchored groups.
-    () => buildRepoGroups(displayedSessions, showArchived ? [] : anchorRepos),
-    [displayedSessions, anchorRepos, showArchived],
+    () => buildRepoGroups(displayedSessions),
+    [displayedSessions],
   );
   const activeGroupId = useMemo(
     () =>
@@ -1054,6 +1023,10 @@ export function InboxSidebar({
             </Tooltip>
           </div>
 
+          <div className="w-full border-b border-border/70 px-1 py-2">
+            <WorkspaceNavigation mode="collapsed" pathname={pathname} />
+          </div>
+
           <nav
             aria-label="Sidebar rail repositories"
             className="flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-y-auto px-1 py-2"
@@ -1098,32 +1071,7 @@ export function InboxSidebar({
               const repoActions = getCollapsedRepoRailActions(
                 groupRepoOwner,
                 groupRepoName,
-              ).filter(
-                (action) =>
-                  action.id !== "repo-dashboard" &&
-                  action.id !== "repo-agents" &&
-                  action.id !== "repo-loops",
-              );
-              const repoAgents = filterAgentsByRepo(
-                allAgents ?? [],
-                groupRepoOwner,
-                groupRepoName,
-              );
-              const repoLoops =
-                allLoops?.filter(
-                  (loop) =>
-                    loop.repoOwner.toLowerCase() ===
-                      groupRepoOwner.toLowerCase() &&
-                    loop.repoName.toLowerCase() === groupRepoName.toLowerCase(),
-                ) ?? null;
-              const resourceActions = getRepoSubGroupRailActions({
-                repoOwner: groupRepoOwner,
-                repoName: groupRepoName,
-                agents: repoAgents,
-                loops: repoLoops,
-                loopsFeatureDisabled,
-              });
-              const allRepoActions = [...repoActions, ...resourceActions];
+              ).filter((action) => action.id !== "repo-dashboard");
 
               return (
                 <div
@@ -1150,7 +1098,7 @@ export function InboxSidebar({
                   </Tooltip>
 
                   <div className="flex flex-col items-center gap-1 border-l border-border/70 pl-1">
-                    {allRepoActions.map((action) => {
+                    {repoActions.map((action) => {
                       const icon =
                         action.id === "repo-dashboard" ? (
                           <LayoutDashboard className="h-3.5 w-3.5" />
@@ -1158,17 +1106,9 @@ export function InboxSidebar({
                           <GitBranch className="h-3.5 w-3.5" />
                         ) : action.id === "repo-settings" ? (
                           <Settings className="h-3.5 w-3.5" />
-                        ) : action.id === "repo-new-session" ? (
-                          <Plus className="h-3.5 w-3.5" />
-                        ) : action.id === "agents" ? (
-                          <Bot className="h-3.5 w-3.5" />
                         ) : (
-                          <RefreshCw className="h-3.5 w-3.5" />
+                          <Plus className="h-3.5 w-3.5" />
                         );
-                      const badge =
-                        "count" in action && action.count > 0
-                          ? action.count
-                          : null;
 
                       if (action.href) {
                         return (
@@ -1180,11 +1120,6 @@ export function InboxSidebar({
                                 aria-label={action.ariaLabel}
                               >
                                 {icon}
-                                {badge ? (
-                                  <span className="-right-0.5 -top-0.5 absolute flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] font-medium leading-none text-primary-foreground">
-                                    {badge}
-                                  </span>
-                                ) : null}
                               </Link>
                             </TooltipTrigger>
                             <TooltipContent side="right" sideOffset={6}>
@@ -1239,46 +1174,6 @@ export function InboxSidebar({
               );
             })}
           </nav>
-
-          <div className="flex w-full flex-col items-center border-t border-border/70 px-1 pt-2">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  asChild
-                  variant="ghost"
-                  size="icon"
-                  className="size-9 text-muted-foreground hover:bg-background hover:text-foreground"
-                >
-                  <Link
-                    href="/runs"
-                    aria-label={railActionById.get("runs")?.ariaLabel}
-                  >
-                    <Activity className="size-4" />
-                  </Link>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={6}>
-                {railActionById.get("runs")?.tooltip}
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-9 w-9 text-muted-foreground hover:bg-background hover:text-foreground"
-                  onClick={() => router.push("/settings")}
-                  aria-label={railActionById.get("settings")?.ariaLabel}
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="right" sideOffset={6}>
-                {railActionById.get("settings")?.tooltip}
-              </TooltipContent>
-            </Tooltip>
-          </div>
         </div>
       ) : (
         <>
@@ -1293,13 +1188,15 @@ export function InboxSidebar({
                     size="icon"
                     onClick={toggleSidebar}
                     className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label="Collapse panel"
+                    aria-label={
+                      isMobile ? "Close navigation" : "Collapse panel"
+                    }
                   >
                     <PanelLeftClose className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="bottom" sideOffset={4}>
-                  Collapse panel
+                  {isMobile ? "Close navigation" : "Collapse panel"}
                 </TooltipContent>
               </Tooltip>
               <Button
@@ -1346,13 +1243,12 @@ export function InboxSidebar({
               </Tooltip>
             </div>
 
-            <Link
-              href="/runs"
-              className="mb-2 flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <Activity className="size-4" aria-hidden="true" />
-              Runs
-            </Link>
+            <WorkspaceNavigation
+              mode={isMobile ? "mobile" : "expanded"}
+              pathname={pathname}
+              onNavigate={isMobile ? () => setOpenMobile(false) : undefined}
+              className="mb-3 border-t border-border/70 pt-3"
+            />
 
             <div className="flex gap-1">
               <button
@@ -1580,17 +1476,6 @@ export function InboxSidebar({
                           }`}
                         >
                           <div className="overflow-hidden">
-                            {/* Repo resources (Agents, Loops) sit ABOVE the session
-                            list so the repo's tooling is the first thing under
-                            the repo, not buried below its branches. */}
-                            {hasRepo ? (
-                              <div className="ml-4 border-l border-border/40 pl-1.5">
-                                <RepoSubGroups
-                                  repoOwner={groupRepoOwner}
-                                  repoName={groupRepoName}
-                                />
-                              </div>
-                            ) : null}
                             <div className="ml-4 space-y-1 border-l border-border/40 pl-1.5">
                               {group.sessions.map((session) => (
                                 <SessionRow
@@ -1677,16 +1562,6 @@ export function InboxSidebar({
                     <span className="mt-1 block h-4 w-24 animate-pulse rounded bg-muted" />
                   ) : null}
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
-                  onClick={() => router.push("/settings")}
-                  aria-label="Open settings"
-                >
-                  <Settings className="h-4 w-4" />
-                </Button>
               </div>
             </div>
           ) : null}

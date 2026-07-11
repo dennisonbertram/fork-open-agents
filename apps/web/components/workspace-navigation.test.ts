@@ -80,9 +80,9 @@ describe("workspace navigation route matching (#961)", () => {
   }
 
   test("legacy loop run matching takes precedence over legacy loops", () => {
-    expect(
-      getActiveWorkspaceNavigationItem("/loops/l_1/runs/r_1")?.id,
-    ).toBe("runs");
+    expect(getActiveWorkspaceNavigationItem("/loops/l_1/runs/r_1")?.id).toBe(
+      "runs",
+    );
   });
 
   test("automation compatibility routes take precedence over repository and settings parents", () => {

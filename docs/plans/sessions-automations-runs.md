@@ -881,7 +881,7 @@ Dependencies: Waves 3 and 4 feature parity.
 
 Scope:
 
-- primary workspace links: Sessions, Automations, Runs, Settings;
+- primary workspace links: Sessions, Runs, Automations, Repositories, Settings;
 - repository links become filters into those products;
 - replace Project/Agents/Loops destinations;
 - demote general GitHub administration and keep direct GitHub links;
@@ -1213,8 +1213,8 @@ dependency order.
 
 Parent epic #931 is complete only when:
 
-- default navigation and onboarding expose Sessions, Automations, Runs, and
-  Settings only;
+- default navigation and onboarding expose Sessions, Runs, Automations,
+  Repositories, and Settings only;
 - existing one-step and multi-step definitions remain readable, editable, and
   executable through their proven source runtimes;
 - GitHub-triggered and scheduled execution fail closed outside explicit
