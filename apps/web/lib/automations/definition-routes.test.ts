@@ -35,9 +35,7 @@ describe("canonical single-step Automation routes", () => {
   });
 
   test("keeps repository context explicit on canonical multi-step create", () => {
-    expect(canonicalNewLoopAutomationUrl()).toBe(
-      "/automations/agent-loop/new",
-    );
+    expect(canonicalNewLoopAutomationUrl()).toBe("/automations/agent-loop/new");
     expect(
       canonicalNewLoopAutomationUrl({
         owner: "Acme Org",

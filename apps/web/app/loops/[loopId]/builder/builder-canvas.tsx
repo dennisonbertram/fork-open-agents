@@ -158,6 +158,7 @@ type BuilderCanvasInnerProps = {
   loopName: string;
   loopStatus: AgentLoop["status"];
   store: ReturnType<typeof createLoopBuilderStore>;
+  surface: "legacy" | "automation";
 };
 
 function BuilderCanvasInner({
@@ -165,7 +166,12 @@ function BuilderCanvasInner({
   loopName,
   loopStatus,
   store,
+  surface,
 }: BuilderCanvasInnerProps) {
+  const automationSurface = surface === "automation";
+  const detailHref = automationSurface
+    ? `/automations/agent-loop/${encodeURIComponent(loopId)}`
+    : `/loops/${loopId}`;
   const { fitView } = useReactFlow();
   const { resolvedTheme } = useTheme();
   // #765: reads the suggestedTrigger* query params the create form appended
@@ -193,6 +199,7 @@ function BuilderCanvasInner({
 
   const { runNow, runningNow } = useLoopRunNow({
     loopId,
+    surface,
     onActiveRun: () =>
       toast.error(
         "This loop already has an active or paused run — wait for it to finish or open the loop to manage it.",
@@ -497,20 +504,22 @@ function BuilderCanvasInner({
             className="flex min-w-0 items-center gap-1.5 text-sm"
           >
             <Link
-              href="/loops"
+              href={automationSurface ? "/automations" : "/loops"}
               className="shrink-0 text-muted-foreground hover:text-foreground"
             >
-              Loops
+              {automationSurface ? "Automations" : "Loops"}
             </Link>
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
             <Link
-              href={`/loops/${loopId}`}
+              href={detailHref}
               className="min-w-0 truncate text-muted-foreground hover:text-foreground"
             >
               {loopName}
             </Link>
             <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
-            <span className="shrink-0 font-medium">Builder</span>
+            <span className="shrink-0 font-medium">
+              {automationSurface ? "Edit Steps" : "Builder"}
+            </span>
           </nav>
 
           <div className="hidden min-w-0 flex-1 items-center gap-2 border-l border-border pl-3 lg:flex">
@@ -533,9 +542,9 @@ function BuilderCanvasInner({
 
           <div className="ml-auto flex items-center gap-2">
             <StatusPill status={loopStatus} />
-            <Link href={`/loops/${loopId}`}>
+            <Link href={detailHref}>
               <Button variant="outline" size="sm">
-                View loop
+                {automationSurface ? "View Automation" : "View loop"}
               </Button>
             </Link>
             {runNowBlockedReason ? (
@@ -572,14 +581,26 @@ function BuilderCanvasInner({
           </div>
         </div>
 
+        {automationSurface ? (
+          <p className="border-b border-border px-4 py-2 text-pretty text-xs text-amber-700 dark:text-amber-300">
+            Run now starts real unattended work with the configured repository
+            permissions.
+          </p>
+        ) : null}
+
         <div className="px-4 pt-3">
-          <TemplateTriggerNudge loopId={loopId} searchParams={searchParams} />
+          <TemplateTriggerNudge
+            loopId={loopId}
+            searchParams={searchParams}
+            surface={surface}
+          />
         </div>
 
         <BuilderWhatsNextNote
           loopId={loopId}
           dismissed={whatsNextDismissed}
           onDismiss={() => setWhatsNextDismissed(true)}
+          surface={surface}
         />
 
         {/* Canvas + panels */}
@@ -810,6 +831,7 @@ type BuilderCanvasProps = {
   watchdogInstructions?: string | null;
   watchdogRetryBudget?: number;
   definition: LoopDefinition;
+  surface?: "legacy" | "automation";
 };
 
 export function BuilderCanvas({
@@ -822,6 +844,7 @@ export function BuilderCanvas({
   watchdogInstructions,
   watchdogRetryBudget,
   definition,
+  surface = "legacy",
 }: BuilderCanvasProps) {
   // Create store once and initialize with the definition
   const storeRef = useRef<ReturnType<typeof createLoopBuilderStore> | null>(
@@ -871,6 +894,7 @@ export function BuilderCanvas({
         loopName={loopName}
         loopStatus={loopStatus}
         store={storeRef.current}
+        surface={surface}
       />
     </ReactFlowProvider>
   );

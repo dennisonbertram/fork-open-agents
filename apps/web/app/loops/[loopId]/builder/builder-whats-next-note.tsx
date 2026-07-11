@@ -27,6 +27,7 @@ export type BuilderWhatsNextNoteProps = {
   loopId: string;
   dismissed: boolean;
   onDismiss: () => void;
+  surface?: "legacy" | "automation";
 };
 
 const LINK_CLASSNAME = "underline underline-offset-2 hover:text-foreground";
@@ -35,7 +36,13 @@ export function BuilderWhatsNextNote({
   loopId,
   dismissed,
   onDismiss,
+  surface = "legacy",
 }: BuilderWhatsNextNoteProps) {
+  const detailHref =
+    surface === "automation"
+      ? `/automations/agent-loop/${encodeURIComponent(loopId)}`
+      : `/loops/${loopId}`;
+
   if (dismissed) {
     return null;
   }
@@ -46,25 +53,25 @@ export function BuilderWhatsNextNote({
         <span className="font-medium text-foreground">What happens next: </span>
         Draft →{" "}
         <Link
-          href={`/loops/${loopId}#loop-status-section`}
+          href={`${detailHref}#loop-status-section`}
           className={LINK_CLASSNAME}
         >
           Activate
         </Link>{" "}
         →{" "}
         <Link
-          href={`/loops/${loopId}#loop-triggers-section`}
+          href={`${detailHref}#loop-triggers-section`}
           className={LINK_CLASSNAME}
         >
           Add a trigger
         </Link>{" "}
         (or{" "}
-        <Link href={`/loops/${loopId}#loop-run-now`} className={LINK_CLASSNAME}>
+        <Link href={`${detailHref}#loop-run-now`} className={LINK_CLASSNAME}>
           Run now
         </Link>
         ) →{" "}
         <Link
-          href={`/loops/${loopId}#loop-run-history`}
+          href={`${detailHref}#loop-run-history`}
           className={LINK_CLASSNAME}
         >
           Watch runs

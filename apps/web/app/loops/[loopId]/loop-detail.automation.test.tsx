@@ -176,6 +176,26 @@ describe("LoopDetail canonical Automation presentation", () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*Run now/);
   });
 
+  test("fails closed when readiness omits the repository access check", async () => {
+    readiness = {
+      enabled: true,
+      checks:
+        readiness?.checks.filter((check) => check.id !== "repo_access") ?? [],
+    };
+    const { LoopDetail } = await detailModulePromise;
+    const html = renderToStaticMarkup(
+      <LoopDetail
+        loopId="loop-1"
+        initialLoopData={loopData()}
+        surface="automation"
+      />,
+    );
+
+    expect(html).toContain("Execution prerequisites need attention");
+    expect(html).not.toContain("Ready for manual execution");
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>[^<]*<svg[\s\S]*Run now/);
+  });
+
   test("legacy default keeps native links and copy", async () => {
     const { LoopDetail } = await detailModulePromise;
     const html = renderToStaticMarkup(

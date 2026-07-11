@@ -561,7 +561,7 @@ export function RunDetail({
   if (variant === "canonical") {
     return (
       <RunDetailShell
-        summary={buildLoopRunDetailSummary(detail)}
+        summary={buildLoopRunDetailSummary(detail, { variant: "canonical" })}
         statusMessage={livenessMessage}
       >
         {nativeDetail}

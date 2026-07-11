@@ -19,6 +19,8 @@ import {
 import {
   canonicalBackgroundAutomationDetailUrl,
   canonicalBackgroundAutomationEditUrl,
+  canonicalLoopAutomationDetailUrl,
+  canonicalLoopAutomationEditUrl,
 } from "./definition-routes";
 import { makeAutomationId } from "./identity";
 import type { AutomationListItem } from "./types";
@@ -51,10 +53,6 @@ export type AutomationAdaptation = {
   item: AutomationListItem;
   invalid: boolean;
 };
-
-function encodedPath(...parts: string[]): string {
-  return parts.map((part) => encodeURIComponent(part)).join("/");
-}
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
@@ -235,7 +233,6 @@ export function adaptLoopAutomation(
     declaredSchemaCount = null;
   }
 
-  const loopPath = encodedPath(loop.id);
   const latestTriggerKind = latestRun?.triggerId
     ? (record.triggers.find((trigger) => trigger.id === latestRun.triggerId)
         ?.kind ?? null)
@@ -294,8 +291,8 @@ export function adaptLoopAutomation(
         publishingActionCount: invalid ? null : 0,
       },
       latestRun: normalizedLatestRun,
-      detailUrl: `/loops/${loopPath}`,
-      editUrl: `/loops/${loopPath}/builder`,
+      detailUrl: canonicalLoopAutomationDetailUrl(loop.id),
+      editUrl: canonicalLoopAutomationEditUrl(loop.id),
       createdAt: loop.createdAt.toISOString(),
       updatedAt: loop.updatedAt.toISOString(),
     },

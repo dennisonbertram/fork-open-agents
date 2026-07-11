@@ -37,6 +37,7 @@ import {
 type LoopCreateExperienceProps = {
   initialRepoOwner?: string;
   initialRepoName?: string;
+  surface?: "legacy" | "automation";
 };
 
 type Prefill = {
@@ -91,6 +92,7 @@ function FlowPreview({ definition }: { definition: LoopDefinition }) {
 export function LoopCreateExperience({
   initialRepoOwner,
   initialRepoName,
+  surface = "legacy",
 }: LoopCreateExperienceProps) {
   const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [aiDescription, setAiDescription] = useState("");
@@ -110,7 +112,11 @@ export function LoopCreateExperience({
   async function generateFromDescription() {
     const description = aiDescription.trim();
     if (description.length < 8) {
-      setAiError("Add a sentence or two describing what the loop should do.");
+      setAiError(
+        surface === "automation"
+          ? "Add a sentence or two describing what the Automation should do."
+          : "Add a sentence or two describing what the loop should do.",
+      );
       return;
     }
     setAiError(null);
@@ -186,6 +192,7 @@ export function LoopCreateExperience({
           redirectTo="builder"
           suggestedTriggerSpec={prefill.suggestedTriggerSpec}
           definitionCollapsible
+          surface={surface}
         />
       </div>
     );
@@ -212,7 +219,9 @@ export function LoopCreateExperience({
       {/* Templates */}
       <TabsContent value="template" className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Start from a working loop and adjust the steps.
+          {surface === "automation"
+            ? "Start from a working multi-step Automation and adjust the Steps."
+            : "Start from a working loop and adjust the steps."}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           {LOOP_TEMPLATES.map((template) => (
@@ -261,15 +270,20 @@ export function LoopCreateExperience({
       {/* Describe with AI */}
       <TabsContent value="ai" className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Describe what the loop should do. We&apos;ll draft the steps and
-          branches — you review and edit before anything is saved.
+          {surface === "automation"
+            ? "Describe what the Automation should do. We'll draft the Steps and branches for review before saving a draft."
+            : "Describe what the loop should do. We'll draft the steps and branches — you review and edit before anything is saved."}
         </p>
         <Textarea
           value={aiDescription}
           onChange={(e) => setAiDescription(e.target.value)}
           placeholder="e.g. Every time there's a new PR, review the code and file any problems as GitHub issues."
           className="min-h-28"
-          aria-label="Describe your loop"
+          aria-label={
+            surface === "automation"
+              ? "Describe your Automation"
+              : "Describe your loop"
+          }
         />
         <div className="flex flex-wrap gap-2">
           {AI_EXAMPLES.map((example) => (
@@ -293,7 +307,11 @@ export function LoopCreateExperience({
             disabled={aiLoading}
           >
             <Wand2 className="mr-1.5 h-4 w-4" />
-            {aiLoading ? "Drafting…" : "Generate loop"}
+            {aiLoading
+              ? "Drafting…"
+              : surface === "automation"
+                ? "Generate Automation draft"
+                : "Generate loop"}
           </Button>
           {aiLoading ? (
             <p className="text-xs text-muted-foreground">
@@ -307,12 +325,15 @@ export function LoopCreateExperience({
       {/* Blank / advanced */}
       <TabsContent value="blank" className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Author the loop definition directly as JSON.
+          {surface === "automation"
+            ? "Author the multi-step Automation definition directly as JSON."
+            : "Author the loop definition directly as JSON."}
         </p>
         <LoopCreateForm
           initialRepoOwner={initialRepoOwner}
           initialRepoName={initialRepoName}
           redirectTo="builder"
+          surface={surface}
         />
       </TabsContent>
     </Tabs>
