@@ -860,22 +860,24 @@ async function loadWorkflowDiagnosis(params: {
   }
 
   const targetRepo = repoFromSession(row.session);
+  const normalizedTarget = normalizeChatWorkflowRun({
+    id: row.workflowRun.id,
+    chatId: row.workflowRun.chatId,
+    chatTitle: row.chat?.title ?? null,
+    sessionId: row.workflowRun.sessionId,
+    sessionTitle: row.session?.title ?? null,
+    status: row.workflowRun.status,
+    runtimeMode: row.workflowRun.runtimeMode,
+    errorMessage: row.workflowRun.errorMessage,
+    startedAt: row.workflowRun.startedAt,
+    finishedAt: row.workflowRun.finishedAt,
+    createdAt: row.workflowRun.createdAt,
+  } satisfies ChatWorkflowRunRow);
   const target: AccountWorkItem = {
-    ...normalizeChatWorkflowRun({
-      id: row.workflowRun.id,
-      chatId: row.workflowRun.chatId,
-      chatTitle: row.chat?.title ?? null,
-      sessionId: row.workflowRun.sessionId,
-      sessionTitle: row.session?.title ?? null,
-      status: row.workflowRun.status,
-      runtimeMode: row.workflowRun.runtimeMode,
-      errorMessage: row.workflowRun.errorMessage,
-      startedAt: row.workflowRun.startedAt,
-      finishedAt: row.workflowRun.finishedAt,
-      createdAt: row.workflowRun.createdAt,
-    } satisfies ChatWorkflowRunRow),
+    ...normalizedTarget,
     ...(targetRepo ? { repo: targetRepo } : {}),
     metadata: {
+      ...normalizedTarget.metadata,
       chatId: row.workflowRun.chatId,
       sessionId: row.workflowRun.sessionId,
       runtimeMode: row.workflowRun.runtimeMode,
