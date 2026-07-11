@@ -8,7 +8,10 @@ import {
   type GithubActions,
   type WriteScope,
 } from "@/lib/background-agents/agent-spec";
-import type { BackgroundAgentPermissions } from "@/lib/db/schema";
+import type {
+  BackgroundAgentPermissions,
+  BackgroundAgentTriggerConditions,
+} from "@/lib/db/schema";
 import {
   agentDefinitionPermissionsSchema,
   agentDefinitionV1Schema,
@@ -42,7 +45,18 @@ export const RESOLVED_AGENT_FIELD_CLASSIFICATION = {
   AgentSourceFieldClassification
 >;
 
-export type BackgroundAgentDefinitionSource = BackgroundAgent & {
+type AdaptableBackgroundAgentTrigger = Omit<
+  BackgroundAgentTrigger,
+  "conditions"
+> & {
+  conditions?: BackgroundAgentTriggerConditions;
+};
+
+export type BackgroundAgentDefinitionSource = Omit<
+  BackgroundAgent,
+  "triggers"
+> & {
+  triggers: AdaptableBackgroundAgentTrigger[];
   /** Present on persisted background-agent rows; absent from older client specs. */
   builtinToolNames?: string[] | null;
   /** Present on persisted rows; the client-safe spec inherits the DB default. */
@@ -123,16 +137,31 @@ export type ResolvedAgentDefinitionAdaptation = {
   };
 };
 
-type SafeTriggerBinding = Pick<
-  BackgroundAgentTrigger,
-  | "id"
-  | "name"
-  | "kind"
-  | "status"
-  | "conditions"
-  | "schedule"
-  | "webhookPublicId"
->;
+type SafeTriggerBinding = Omit<
+  Pick<
+    AdaptableBackgroundAgentTrigger,
+    | "id"
+    | "name"
+    | "kind"
+    | "status"
+    | "conditions"
+    | "schedule"
+    | "webhookPublicId"
+  >,
+  "conditions"
+> & {
+  conditions?: Pick<
+    BackgroundAgentTriggerConditions,
+    | "actions"
+    | "branches"
+    | "labels"
+    | "environments"
+    | "severities"
+    | "mergedOnly"
+    | "actors"
+    | "ignoreActors"
+  >;
+};
 
 export type BackgroundAgentDefinitionAdaptation = {
   definition: AgentDefinitionV1;
@@ -185,7 +214,9 @@ function parsePermissions(
   return agentDefinitionPermissionsSchema.parse(permissions ?? {});
 }
 
-function cloneTrigger(trigger: BackgroundAgentTrigger): SafeTriggerBinding {
+function cloneTrigger(
+  trigger: AdaptableBackgroundAgentTrigger,
+): SafeTriggerBinding {
   const conditions = trigger.conditions
     ? {
         ...(trigger.conditions.actions
@@ -203,6 +234,9 @@ function cloneTrigger(trigger: BackgroundAgentTrigger): SafeTriggerBinding {
         ...(trigger.conditions.severities
           ? { severities: [...trigger.conditions.severities] }
           : {}),
+        ...(trigger.conditions.mergedOnly === undefined
+          ? {}
+          : { mergedOnly: trigger.conditions.mergedOnly }),
         ...(trigger.conditions.actors
           ? { actors: [...trigger.conditions.actors] }
           : {}),

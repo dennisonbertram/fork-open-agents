@@ -55,7 +55,9 @@ lifecycle data cannot pass the strict definition schema.
 
 Trigger adapters copy only the client-safe trigger shape. A structurally wider
 database object cannot smuggle `webhookSecretHash` or other unknown fields into
-either the definition or the returned binding.
+either the definition or the returned binding. The allowlist includes the
+`mergedOnly` boolean because it is an execution guard: dropping either `true`
+or `false` would change which pull-request events the Automation may handle.
 
 ### Frozen loop agent step
 
