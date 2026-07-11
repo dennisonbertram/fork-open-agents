@@ -24,6 +24,7 @@ import {
   getResumableSandboxName,
   getSessionSandboxName,
   hasRuntimeSandboxState,
+  isSandboxAlreadyRunningError,
   isSandboxNotFoundError,
 } from "@/lib/sandbox/utils";
 
@@ -310,6 +311,30 @@ export async function PUT(req: Request) {
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+
+    if (isSandboxAlreadyRunningError(message)) {
+      const runningSandboxName =
+        persistentSandboxName ?? getSessionSandboxName(sessionId);
+      console.log(
+        JSON.stringify({
+          event: "sandbox-lifecycle",
+          message: "resume-already-running",
+          sessionId,
+          sandboxName: runningSandboxName,
+          requestId,
+        }),
+      );
+      return lifecycleResponse(
+        {
+          success: true,
+          alreadyRunning: true,
+          restoredFrom: persistentSandboxName ?? legacySnapshotId,
+          sandboxName: runningSandboxName,
+        },
+        200,
+        requestId,
+      );
+    }
 
     if (
       persistentSandboxName &&
