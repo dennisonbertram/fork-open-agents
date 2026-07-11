@@ -21,6 +21,7 @@ describe("RepositoryDirectoryView", () => {
           repositories: [repository],
           installationCount: 1,
           failedInstallationCount: 0,
+          requestId: "request-1",
         }}
       />,
     );
@@ -45,6 +46,7 @@ describe("RepositoryDirectoryView", () => {
           repositories: [],
           installationCount: 0,
           failedInstallationCount: 0,
+          requestId: "request-1",
         }}
       />,
     );
@@ -60,12 +62,33 @@ describe("RepositoryDirectoryView", () => {
           installationCount: 2,
           failedInstallationCount: 1,
           errorKind: "partial_provider_failure",
+          requestId: "request-1",
         }}
       />,
     );
     expect(html).toContain('role="alert"');
     expect(html).toContain("Some GitHub installations could not be loaded");
     expect(html).toContain("Acme Org/widgets &amp; api");
+  });
+
+  test("does not misreport a partial provider response as a successful empty list", () => {
+    const html = renderToStaticMarkup(
+      <RepositoryDirectoryView
+        snapshot={{
+          status: "partial",
+          repositories: [],
+          installationCount: 2,
+          failedInstallationCount: 1,
+          errorKind: "partial_provider_failure",
+          requestId: "request-1",
+        }}
+      />,
+    );
+    expect(html).toContain("Some GitHub installations could not be loaded");
+    expect(html).toContain(
+      "No repositories returned by available installations",
+    );
+    expect(html).not.toContain("No accessible repositories");
   });
 
   test("renders an accessible provider error with a recovery action", () => {
@@ -77,6 +100,7 @@ describe("RepositoryDirectoryView", () => {
           installationCount: 1,
           failedInstallationCount: 1,
           errorKind: "provider_unavailable",
+          requestId: "request-1",
         }}
       />,
     );

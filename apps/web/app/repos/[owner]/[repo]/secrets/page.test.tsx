@@ -1,16 +1,15 @@
-import { describe, expect, mock, test } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-mock.module("next/navigation", () => ({
-  redirect: (path: string) => {
-    throw new Error(`redirect:${path}`);
-  },
-}));
+let userId: string | null = "user-1";
+const redirect = mock((path: string) => {
+  throw new Error(`redirect:${path}`);
+});
+
+mock.module("next/navigation", () => ({ redirect }));
 
 mock.module("@/lib/session/get-server-session", () => ({
-  getServerSession: async () => ({
-    user: { id: "user-1" },
-  }),
+  getServerSession: async () => (userId ? { user: { id: userId } } : {}),
 }));
 
 mock.module("./repository-secrets-client", () => ({
@@ -24,6 +23,11 @@ mock.module("./repository-secrets-client", () => ({
 }));
 
 describe("Secrets page", () => {
+  beforeEach(() => {
+    userId = "user-1";
+    redirect.mockClear();
+  });
+
   test("renders the repo-scoped secrets surface with SettingsPageHeader and section copy", async () => {
     const { default: SecretsPage } = await import("./page");
 
@@ -43,6 +47,17 @@ describe("Secrets page", () => {
       "GitHub never returns secret values, so we only show names.",
     );
     expect(html).toContain("SECRETS_CLIENT_STUB:acme/widgets");
+  });
+
+  test("retains the signed-out auth gate on direct legacy access", async () => {
+    userId = null;
+    const { default: SecretsPage } = await import("./page");
+    await expect(
+      SecretsPage({
+        params: Promise.resolve({ owner: "acme", repo: "widgets" }),
+      }),
+    ).rejects.toThrow("redirect:/");
+    expect(redirect).toHaveBeenCalledWith("/");
   });
 
   test("secret value input supports multiline values", async () => {

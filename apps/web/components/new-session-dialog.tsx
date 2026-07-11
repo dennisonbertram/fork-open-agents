@@ -38,6 +38,7 @@ interface NewSessionDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lastRepo: { owner: string; repo: string } | null;
+  initialRepository?: { owner: string; repo: string } | null;
   createSession: (input: CreateSessionInput) => Promise<{
     session: { id: string };
     chat: { id: string };
@@ -54,6 +55,7 @@ export function NewSessionDialog({
   open,
   onOpenChange,
   lastRepo,
+  initialRepository,
   createSession,
   _testCreateSessionError,
 }: NewSessionDialogProps) {
@@ -93,6 +95,7 @@ export function NewSessionDialog({
             onSubmit={handleCreateSession}
             isLoading={isCreating}
             lastRepo={lastRepo}
+            initialRepository={initialRepository}
           />
           {createSessionError ? (
             <div

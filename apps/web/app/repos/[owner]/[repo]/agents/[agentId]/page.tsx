@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Clock3, ExternalLink, Pencil } from "lucide-react";
 import Link from "next/link";
-import { redirect } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
   canonicalBackgroundAutomationDetailUrl,
@@ -93,22 +93,24 @@ export default async function AgentDetailPage({
 
   const { owner, repo, agentId } = await params;
 
-  const [agent, runs] = await Promise.all([
-    getOwnedBackgroundAgentWithTriggers({
-      userId: session.user.id,
-      agentId,
-    }),
-    listBackgroundAgentRuns({
-      userId: session.user.id,
-      repoOwner: owner,
-      repoName: repo,
-      limit: 20,
-    }),
-  ]);
+  const agent = await getOwnedBackgroundAgentWithTriggers({
+    userId: session.user.id,
+    agentId,
+  });
 
   if (!agent) {
     redirect(`/repos/${owner}/${repo}/agents`);
   }
+  if (agent.repoOwner !== owner || agent.repoName !== repo) {
+    notFound();
+  }
+
+  const runs = await listBackgroundAgentRuns({
+    userId: session.user.id,
+    repoOwner: owner,
+    repoName: repo,
+    limit: 20,
+  });
 
   // Filter runs for this specific agent
   const agentRuns = runs.filter((r) => r.agentId === agentId);

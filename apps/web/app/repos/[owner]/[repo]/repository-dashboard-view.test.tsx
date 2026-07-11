@@ -1,19 +1,28 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { SessionsShellProvider } from "@/app/sessions/sessions-shell-context";
 import { RepositoryDashboardView } from "./repository-dashboard-view";
+
+function renderDashboard(
+  props: React.ComponentProps<typeof RepositoryDashboardView>,
+) {
+  return renderToStaticMarkup(
+    <SessionsShellProvider value={{ openNewSessionDialog: () => undefined }}>
+      <RepositoryDashboardView {...props} />
+    </SessionsShellProvider>,
+  );
+}
 
 describe("RepositoryDashboardView", () => {
   test("renders the four primary destinations in order with shipped filters", () => {
-    const html = renderToStaticMarkup(
-      <RepositoryDashboardView
-        owner="Acme Org+β"
-        repo="widgets & api"
-        summary={{
-          automations: { status: "ready", count: 4 },
-          runs: { status: "partial", count: 2 },
-        }}
-      />,
-    );
+    const html = renderDashboard({
+      owner: "Acme Org+β",
+      repo: "widgets & api",
+      summary: {
+        automations: { status: "ready", count: 4 },
+        runs: { status: "partial", count: 2 },
+      },
+    });
 
     const newSession = html.indexOf("New Session");
     const automations = html.indexOf(">Automations<");
@@ -40,16 +49,14 @@ describe("RepositoryDashboardView", () => {
   });
 
   test("does not expose duplicate product or GitHub-admin discovery nouns", () => {
-    const html = renderToStaticMarkup(
-      <RepositoryDashboardView
-        owner="acme"
-        repo="widgets"
-        summary={{
-          automations: { status: "ready", count: 0 },
-          runs: { status: "ready", count: 0 },
-        }}
-      />,
-    );
+    const html = renderDashboard({
+      owner: "acme",
+      repo: "widgets",
+      summary: {
+        automations: { status: "ready", count: 0 },
+        runs: { status: "ready", count: 0 },
+      },
+    });
 
     for (const noun of [
       "Project",
@@ -68,32 +75,28 @@ describe("RepositoryDashboardView", () => {
   });
 
   test("shows independent summary failures without converting them to zero", () => {
-    const html = renderToStaticMarkup(
-      <RepositoryDashboardView
-        owner="acme"
-        repo="widgets"
-        summary={{
-          automations: { status: "error" },
-          runs: { status: "ready", count: 3 },
-        }}
-      />,
-    );
+    const html = renderDashboard({
+      owner: "acme",
+      repo: "widgets",
+      summary: {
+        automations: { status: "error" },
+        runs: { status: "ready", count: 3 },
+      },
+    });
     expect(html).toContain("Automation summary unavailable");
     expect(html).toContain("3 Runs");
     expect(html).not.toContain("0 Automations");
   });
 
   test("labels bounded Run counts and source gaps truthfully", () => {
-    const html = renderToStaticMarkup(
-      <RepositoryDashboardView
-        owner="acme"
-        repo="widgets"
-        summary={{
-          automations: { status: "ready", count: 1 },
-          runs: { status: "partial", count: 5, hasMore: true },
-        }}
-      />,
-    );
+    const html = renderDashboard({
+      owner: "acme",
+      repo: "widgets",
+      summary: {
+        automations: { status: "ready", count: 1 },
+        runs: { status: "partial", count: 5, hasMore: true },
+      },
+    });
 
     expect(html).toContain("5+ recent Runs");
     expect(html).toContain("Some Run sources unavailable");
