@@ -291,7 +291,7 @@ describe("background-agent adapter", () => {
       branch: "branch-marker",
       workspace: { sandboxName: "workspace-marker" },
       providerToken: "provider-token-marker",
-    } as BackgroundAgentDefinitionSource & Record<string, unknown>;
+    } as unknown as BackgroundAgentDefinitionSource & Record<string, unknown>;
 
     const result = adaptBackgroundAgentDefinition(source);
     const serializedDefinition = JSON.stringify(result.definition);
