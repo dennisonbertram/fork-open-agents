@@ -158,3 +158,7 @@ A forced status sync fires immediately after each chat completion (`streaming â†
 | `app/api/sandbox/status/route.ts` | Lightweight DB-backed status polling |
 | `app/api/sandbox/reconnect/route.ts` | Sandbox connectivity probe |
 | `app/api/chat/route.ts` | Activity refresh at start and finish |
+
+The durable stream, persistent sandbox identity, ownership, idempotency, and
+redacted recovery contracts are mapped in
+[`docs/process/session-durability-proof.md`](../../docs/process/session-durability-proof.md).

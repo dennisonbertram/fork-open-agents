@@ -180,10 +180,7 @@ describe("GET /api/chat/[chatId]/stream", () => {
 
     expect(firstResponse.status).toBe(200);
     expect(secondResponse.status).toBe(200);
-    expect(getRunCalls).toEqual([
-      "wrun_active-123",
-      "wrun_active-123",
-    ]);
+    expect(getRunCalls).toEqual(["wrun_active-123", "wrun_active-123"]);
     expect(chatRecord?.activeStreamId).toBe("wrun_active-123");
     expect(spies.compareAndSetChatActiveStreamId).not.toHaveBeenCalled();
   });
