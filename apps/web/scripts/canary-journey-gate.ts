@@ -4,16 +4,22 @@
  * Wraps the background-agent and loop journey harnesses so the
  * authenticated production canary can invoke them without ever crashing on
  * missing env: while `PRODUCTION_CANARY_*` configuration is unset the
- * journey is deliberately skipped (blocked, not failed) — mirroring
- * ops-authenticated-canary.ts's own blocked_by_configuration semantics.
+ * journey is deliberately skipped and classified blocked_by_configuration.
+ * Local diagnostics retain exit 0 unless strict configuration mode is set;
+ * scheduled/manual production monitoring sets strict mode and receives exit 2.
  * Once configured, the wrapper maps the shared canary config into each
  * harness's own env var names and spawns it, propagating its exit code.
  *
  * Exit codes:
- *   0 = journey passed OR blocked_by_configuration (not a failure)
- *   1 = journey failed
+ *   0 = journey passed (or a non-strict local configuration block)
+ *   1 = journey executed and failed/timed out
+ *   2 = blocked_by_configuration in strict mode
  */
-import { readCanaryConfig } from "./ops-authenticated-canary";
+import {
+  canaryExitCodeForStatus,
+  isCanaryConfigRequired,
+  readCanaryConfig,
+} from "./ops-authenticated-canary";
 import type { CanaryConfig } from "./ops-authenticated-canary";
 
 export type CanaryJourneyKind = "background-agents" | "loops";
@@ -80,7 +86,8 @@ export function formatBlockedResult(kind: CanaryJourneyKind): string {
     "",
     "Set PRODUCTION_CANARY_URL, PRODUCTION_CANARY_REPO, PRODUCTION_CANARY_IDENTITY, and PRODUCTION_CANARY_AUTH_COOKIE for the disposable test identity.",
     "",
-    `This is NOT a failure — the ${kind} journey was skipped because the canary configuration is unset.`,
+    `This is not a failure from an executed product journey — the ${kind} journey was skipped because the canary configuration is unset.`,
+    "No production proof occurred.",
     "See docs/process/production-release-runbook.md for provisioning steps.",
   ].join("\n");
 }
@@ -115,14 +122,18 @@ export async function runCanaryJourneyCli(deps?: {
   const config = readCanaryConfig(env);
   if (!config) {
     log(formatBlockedResult(kind));
-    return 0;
+    return canaryExitCodeForStatus(
+      "blocked_by_configuration",
+      isCanaryConfigRequired(env),
+    );
   }
 
   const journeyEnv = buildJourneyEnv(config, kind);
-  return await spawn(["bun", "run", journeyScriptPath(kind)], {
+  const exitCode = await spawn(["bun", "run", journeyScriptPath(kind)], {
     ...(env as Record<string, string>),
     ...journeyEnv,
   });
+  return exitCode === 0 || exitCode === 1 || exitCode === 2 ? exitCode : 1;
 }
 
 if (import.meta.main) {

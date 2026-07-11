@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { isRecreatableSandboxError, isSandboxNotFoundError } from "./utils";
+import {
+  isRecreatableSandboxError,
+  isSandboxAlreadyRunningError,
+  isSandboxNotFoundError,
+} from "./utils";
 
 describe("isSandboxNotFoundError (strict)", () => {
   test("matches status code 404 and the sandbox-specific not-found phrase", () => {
@@ -32,5 +36,23 @@ describe("isRecreatableSandboxError (lenient, for warm-reconnect recreate)", () 
   test("does not match unrelated errors", () => {
     expect(isRecreatableSandboxError("connection reset by peer")).toBe(false);
     expect(isRecreatableSandboxError("permission denied")).toBe(false);
+  });
+});
+
+describe("isSandboxAlreadyRunningError", () => {
+  test("matches known provider already-running messages case-insensitively", () => {
+    expect(isSandboxAlreadyRunningError("Sandbox is still running")).toBe(true);
+    expect(isSandboxAlreadyRunningError("SANDBOX IS ALREADY RUNNING")).toBe(
+      true,
+    );
+  });
+
+  test("does not classify unrelated provider failures as already running", () => {
+    expect(isSandboxAlreadyRunningError("connection reset by peer")).toBe(
+      false,
+    );
+    expect(isSandboxAlreadyRunningError("workflow is still running")).toBe(
+      false,
+    );
   });
 });

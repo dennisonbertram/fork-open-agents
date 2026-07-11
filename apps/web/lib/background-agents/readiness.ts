@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getBackgroundAgentsRepoPolicy } from "./config";
 import { getGitHubAppWebhookReadinessCheck } from "./github-app-webhooks";
 
 export type BackgroundAgentReadinessStatus = "ready" | "missing" | "disabled";
@@ -70,7 +71,21 @@ function checkAny(
 
 export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
   const enabled = process.env.BACKGROUND_AGENTS_ENABLED === "true";
-  const allowedRepos = process.env.BACKGROUND_AGENTS_ALLOWED_REPOS?.trim();
+  const repoPolicy = getBackgroundAgentsRepoPolicy();
+  const repoPolicyReady =
+    repoPolicy.state === "wildcard" || repoPolicy.state === "list";
+  const repoPolicyDetail = (() => {
+    switch (repoPolicy.state) {
+      case "wildcard":
+        return "Dispatch is explicitly allowed for every repository with BACKGROUND_AGENTS_ALLOWED_REPOS=*.";
+      case "list":
+        return `Dispatch is limited to ${repoPolicy.entries.size} configured repositor${repoPolicy.entries.size === 1 ? "y" : "ies"}.`;
+      case "invalid":
+        return "BACKGROUND_AGENTS_ALLOWED_REPOS contains invalid entries; dispatch is denied until it is corrected.";
+      case "missing":
+        return "BACKGROUND_AGENTS_ALLOWED_REPOS is required; dispatch is denied until it is configured.";
+    }
+  })();
   const checks: BackgroundAgentReadinessCheck[] = [
     {
       id: "feature_flag",
@@ -123,11 +138,9 @@ export function getBackgroundAgentReadiness(): BackgroundAgentReadiness {
     {
       id: "repo_allowlist",
       label: "Repo allowlist",
-      status: "ready",
-      detail: allowedRepos
-        ? "Dispatch is limited to BACKGROUND_AGENTS_ALLOWED_REPOS."
-        : "Unset allows all repos; set BACKGROUND_AGENTS_ALLOWED_REPOS for controlled proof.",
-      missing: [],
+      status: repoPolicyReady ? "ready" : "missing",
+      detail: repoPolicyDetail,
+      missing: repoPolicyReady ? [] : ["BACKGROUND_AGENTS_ALLOWED_REPOS"],
     },
     checkAny(
       "cron_secret",

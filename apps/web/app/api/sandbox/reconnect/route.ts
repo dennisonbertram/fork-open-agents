@@ -16,6 +16,7 @@ import {
   hasRuntimeSandboxState,
   isSandboxUnavailableError,
 } from "@/lib/sandbox/utils";
+import { getRequestId } from "@/lib/harness/request-id";
 
 export type ReconnectStatus =
   | "connected"
@@ -26,6 +27,9 @@ export type ReconnectStatus =
 export type ReconnectResponse = {
   status: ReconnectStatus;
   hasSnapshot: boolean;
+  requestId: string;
+  errorKind?: "sandbox_unavailable";
+  warningKind?: "sandbox_reconnect_transient";
   /** Timestamp (ms) when sandbox expires. Only present when status is "connected". */
   expiresAt?: number;
   lifecycle: {
@@ -36,6 +40,15 @@ export type ReconnectResponse = {
     sandboxExpiresAt: number | null;
   };
 };
+
+function reconnectResponse(
+  payload: Omit<ReconnectResponse, "requestId">,
+  requestId: string,
+): Response {
+  return Response.json({ ...payload, requestId } satisfies ReconnectResponse, {
+    headers: { "X-Request-ID": requestId },
+  });
+}
 
 function buildLifecyclePayload(
   sessionRecord: SessionRecord | null | undefined,
@@ -82,11 +95,13 @@ function logReconnectResolved({
   sandboxName,
   path,
   durationMs,
+  requestId,
 }: {
   sessionId: string;
   sandboxName: string | null;
   path: "db-fast" | "live-probe";
   durationMs: number;
+  requestId: string;
 }) {
   console.info(
     JSON.stringify({
@@ -96,12 +111,14 @@ function logReconnectResolved({
       sandboxName,
       path,
       durationMs,
+      requestId,
     }),
   );
 }
 
 export async function GET(req: Request): Promise<Response> {
   const startedAt = Date.now();
+  const requestId = getRequestId(req.headers);
   const authResult = await requireAuthenticatedUser();
   if (!authResult.ok) {
     return authResult.response;
@@ -133,11 +150,14 @@ export async function GET(req: Request): Promise<Response> {
     console.log(
       `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${hasPausedState} runtimeState=false`,
     );
-    return Response.json({
-      status: "no_sandbox",
-      hasSnapshot: hasPausedState,
-      lifecycle: buildLifecyclePayload(sessionRecord),
-    } satisfies ReconnectResponse);
+    return reconnectResponse(
+      {
+        status: "no_sandbox",
+        hasSnapshot: hasPausedState,
+        lifecycle: buildLifecyclePayload(sessionRecord),
+      },
+      requestId,
+    );
   }
 
   const state = sessionRecord.sandboxState;
@@ -145,11 +165,14 @@ export async function GET(req: Request): Promise<Response> {
     console.log(
       `[Reconnect] session=${sessionId} status=no_sandbox hasSnapshot=${hasPausedState} runtimeState=false`,
     );
-    return Response.json({
-      status: "no_sandbox",
-      hasSnapshot: hasPausedState,
-      lifecycle: buildLifecyclePayload(sessionRecord),
-    } satisfies ReconnectResponse);
+    return reconnectResponse(
+      {
+        status: "no_sandbox",
+        hasSnapshot: hasPausedState,
+        lifecycle: buildLifecyclePayload(sessionRecord),
+      },
+      requestId,
+    );
   }
 
   if (
@@ -165,13 +188,17 @@ export async function GET(req: Request): Promise<Response> {
       sandboxName: getStateSandboxName(state),
       path: "db-fast",
       durationMs: Date.now() - startedAt,
+      requestId,
     });
-    return Response.json({
-      status: "connected",
-      hasSnapshot: hasPausedState,
-      expiresAt,
-      lifecycle: buildLifecyclePayload(sessionRecord),
-    } satisfies ReconnectResponse);
+    return reconnectResponse(
+      {
+        status: "connected",
+        hasSnapshot: hasPausedState,
+        expiresAt,
+        lifecycle: buildLifecyclePayload(sessionRecord),
+      },
+      requestId,
+    );
   }
 
   // Connect and probe the persisted runtime sandbox state.
@@ -230,18 +257,29 @@ export async function GET(req: Request): Promise<Response> {
       sandboxName: getStateSandboxName(refreshedState),
       path: "live-probe",
       durationMs: Date.now() - startedAt,
+      requestId,
     });
-    return Response.json({
-      status: "connected",
-      hasSnapshot: hasPausedState,
-      expiresAt: sandbox.expiresAt,
-      lifecycle: buildLifecyclePayload(updatedSession ?? sessionRecord),
-    } satisfies ReconnectResponse);
+    return reconnectResponse(
+      {
+        status: "connected",
+        hasSnapshot: hasPausedState,
+        expiresAt: sandbox.expiresAt,
+        lifecycle: buildLifecyclePayload(updatedSession ?? sessionRecord),
+      },
+      requestId,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!isSandboxUnavailableError(message)) {
       console.warn(
-        `[Reconnect] session=${sessionId} transient reconnect error, preserving runtime state: ${message}`,
+        JSON.stringify({
+          event: "sandbox-lifecycle",
+          message: "reconnect-transient",
+          sessionId,
+          sandboxName: getStateSandboxName(state),
+          errorKind: "sandbox_reconnect_transient",
+          requestId,
+        }),
       );
       // Only forward expiresAt if it's still in the future; stale values
       // cause the client to compute a zero/negative timeout and flip to expired.
@@ -250,12 +288,16 @@ export async function GET(req: Request): Promise<Response> {
         rawExpiresAt !== undefined && rawExpiresAt > Date.now()
           ? rawExpiresAt
           : undefined;
-      return Response.json({
-        status: "connected",
-        hasSnapshot: hasPausedState,
-        expiresAt: safeExpiresAt,
-        lifecycle: buildLifecyclePayload(sessionRecord),
-      } satisfies ReconnectResponse);
+      return reconnectResponse(
+        {
+          status: "connected",
+          hasSnapshot: hasPausedState,
+          expiresAt: safeExpiresAt,
+          warningKind: "sandbox_reconnect_transient",
+          lifecycle: buildLifecyclePayload(sessionRecord),
+        },
+        requestId,
+      );
     }
 
     const clearedState = clearUnavailableSandboxState(
@@ -270,18 +312,30 @@ export async function GET(req: Request): Promise<Response> {
       ...buildHibernatedLifecycleUpdate(),
     });
     console.error(
-      `[Reconnect] session=${sessionId} status=expired hasSnapshot=${hasResumeStateAfterFailure} error=${message}`,
+      JSON.stringify({
+        event: "sandbox-lifecycle",
+        message: "reconnect-unavailable",
+        sessionId,
+        sandboxName: getStateSandboxName(state),
+        errorKind: "sandbox_unavailable",
+        requestId,
+        hasSnapshot: hasResumeStateAfterFailure,
+      }),
     );
-    return Response.json({
-      status: "expired",
-      hasSnapshot: hasResumeStateAfterFailure,
-      lifecycle: {
-        serverTime: Date.now(),
-        state: "hibernated",
-        lastActivityAt: null,
-        hibernateAfter: null,
-        sandboxExpiresAt: null,
+    return reconnectResponse(
+      {
+        status: "expired",
+        hasSnapshot: hasResumeStateAfterFailure,
+        errorKind: "sandbox_unavailable",
+        lifecycle: {
+          serverTime: Date.now(),
+          state: "hibernated",
+          lastActivityAt: null,
+          hibernateAfter: null,
+          sandboxExpiresAt: null,
+        },
       },
-    } satisfies ReconnectResponse);
+      requestId,
+    );
   }
 }

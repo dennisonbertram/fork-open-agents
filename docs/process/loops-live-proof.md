@@ -22,6 +22,9 @@ at all — the only prior proof came from one-off `ux-walker` browser walks
   real repo.
 - In production proof, set `AGENT_LOOPS_ALLOWED_REPOS` to the disposable repo
   **before** setting `AGENT_LOOPS_ENABLED=true`.
+- Missing, blank, malformed, or mixed wildcard/list values deny all loop
+  dispatch. Exact `*` is the only allow-all value; treat it as an explicit
+  high-risk operator override, not a setup shortcut.
 - Never paste secrets, cookies, or auth headers into issues, PRs, screenshots,
   shell logs, or chat.
 - Rollback: set `AGENT_LOOPS_ENABLED=false`.
@@ -38,6 +41,11 @@ at all — the only prior proof came from one-off `ux-walker` browser walks
 - `AGENT_LOOPS_ENABLED=true` in the target environment.
 - `AGENT_LOOPS_ALLOWED_REPOS` includes the disposable repo (dispatch is
   gated on this allowlist independently of `AGENT_LOOPS_ENABLED`).
+- Loop-bound `webhook.error` triggers use the shared background-agent webhook
+  surface and are intentionally double-gated: `BACKGROUND_AGENTS_ALLOWED_REPOS`
+  must also include the repo. The readiness response reports this as separate
+  `shared_webhook_allowlist` and `shared_webhook_repo_access` checks so it does
+  not imply that schedules or manual starts use the background policy.
 - An authenticated session cookie for the target environment (e.g.
   `open_agents_test_user_id=<user>` for a test-auth user, or a real Better
   Auth session cookie).

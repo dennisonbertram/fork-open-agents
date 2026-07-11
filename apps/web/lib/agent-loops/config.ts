@@ -1,38 +1,54 @@
 import "server-only";
 
-function normalizeRepoKey(owner: string, repo: string): string {
-  return `${owner.trim().toLowerCase()}/${repo.trim().toLowerCase()}`;
-}
+import {
+  checkRepositoryAllowlist,
+  parseRepositoryAllowlist,
+} from "@/lib/repository-allowlist";
+
+export type AgentLoopRepoRefusalReason =
+  | "repo_allowlist_unconfigured"
+  | "repo_allowlist_invalid"
+  | "repo_not_allowed";
+
+export type AgentLoopRepoAccess =
+  | { allowed: true }
+  | { allowed: false; reason: AgentLoopRepoRefusalReason };
 
 export function isAgentLoopsEnabled(): boolean {
   return process.env.AGENT_LOOPS_ENABLED === "true";
 }
 
 export function getAgentLoopsAllowedRepos(): Set<string> | null {
-  const rawValue = process.env.AGENT_LOOPS_ALLOWED_REPOS?.trim();
-  if (!rawValue) {
-    return null;
+  const policy = getAgentLoopsRepoPolicy();
+  return policy.state === "wildcard" ? null : new Set(policy.entries);
+}
+
+export function getAgentLoopsRepoPolicy() {
+  return parseRepositoryAllowlist(process.env.AGENT_LOOPS_ALLOWED_REPOS);
+}
+
+export function getAgentLoopRepoAccess(
+  owner: string,
+  repo: string,
+): AgentLoopRepoAccess {
+  const access = checkRepositoryAllowlist(
+    getAgentLoopsRepoPolicy(),
+    owner,
+    repo,
+  );
+  if (access.allowed) {
+    return access;
   }
-
-  const entries = rawValue
-    .split(/[\s,]+/)
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => entry.length > 0);
-
-  if (entries.includes("*")) {
-    return null;
-  }
-
-  return new Set(entries);
+  const reasonByPolicyReason = {
+    missing: "repo_allowlist_unconfigured",
+    invalid: "repo_allowlist_invalid",
+    not_listed: "repo_not_allowed",
+  } as const;
+  return { allowed: false, reason: reasonByPolicyReason[access.reason] };
 }
 
 export function isAgentLoopRepoAllowed(owner: string, repo: string): boolean {
-  const allowedRepos = getAgentLoopsAllowedRepos();
-  if (!allowedRepos) {
-    return true;
-  }
-
-  return allowedRepos.has(normalizeRepoKey(owner, repo));
+  return getAgentLoopRepoAccess(owner, repo).allowed;
 }
 
 /**
