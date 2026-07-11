@@ -4,6 +4,7 @@ export type SerializedBackgroundRun = {
   id: string;
   status: string;
   source: string;
+  triggerId: string | null;
   triggerKind: string;
   externalId: string;
   idempotencyKey: string;
@@ -22,6 +23,7 @@ export type SerializedBackgroundRun = {
   errorKind: string | null;
   errorMessage: string | null;
   createdAt: string;
+  updatedAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   resultSummary?: RunSummary | null;
