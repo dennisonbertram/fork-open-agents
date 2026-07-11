@@ -46,38 +46,36 @@ describe("workspace navigation contract (#961)", () => {
 });
 
 describe("workspace navigation route matching (#961)", () => {
-  const cases: [
-    pathname: string,
-    expectedId: WorkspaceNavigationId | null,
-  ][] = [
-    ["/sessions", "sessions"],
-    ["/sessions/s_1/chats/c_1", "sessions"],
-    ["/runs", "runs"],
-    ["/runs/background-agent/r_1", "runs"],
-    ["/background-runs/r_1", "runs"],
-    ["/loops/l_1/runs/r_1", "runs"],
-    ["/loops/l_1/runs", "automations"],
-    ["/automations", "automations"],
-    ["/automations/background-agent/a_1", "automations"],
-    ["/loops", "automations"],
-    ["/loops/l_1", "automations"],
-    ["/repos/acme/widgets/agents", "automations"],
-    ["/repos/acme/widgets/agents/a_1", "automations"],
-    ["/repos/acme/widgets/project", "automations"],
-    ["/repos/acme/widgets/loops", "automations"],
-    ["/settings/background-agents", "automations"],
-    ["/settings/background-agents/a_1", "automations"],
-    ["/repos", "repositories"],
-    ["/repos/acme/widgets", "repositories"],
-    ["/repos/acme/widgets/actions", "repositories"],
-    ["/repos/acme/widgets/agentsmith", "repositories"],
-    ["/repos/acme/widgets/projector", "repositories"],
-    ["/repos/acme/widgets/loopsmith", "repositories"],
-    ["/settings", "settings"],
-    ["/settings/models", "settings"],
-    ["/settings/background-agents-old", "settings"],
-    ["/", null],
-  ];
+  const cases: [pathname: string, expectedId: WorkspaceNavigationId | null][] =
+    [
+      ["/sessions", "sessions"],
+      ["/sessions/s_1/chats/c_1", "sessions"],
+      ["/runs", "runs"],
+      ["/runs/background-agent/r_1", "runs"],
+      ["/background-runs/r_1", "runs"],
+      ["/loops/l_1/runs/r_1", "runs"],
+      ["/loops/l_1/runs", "automations"],
+      ["/automations", "automations"],
+      ["/automations/background-agent/a_1", "automations"],
+      ["/loops", "automations"],
+      ["/loops/l_1", "automations"],
+      ["/repos/acme/widgets/agents", "automations"],
+      ["/repos/acme/widgets/agents/a_1", "automations"],
+      ["/repos/acme/widgets/project", "automations"],
+      ["/repos/acme/widgets/loops", "automations"],
+      ["/settings/background-agents", "automations"],
+      ["/settings/background-agents/a_1", "automations"],
+      ["/repos", "repositories"],
+      ["/repos/acme/widgets", "repositories"],
+      ["/repos/acme/widgets/actions", "repositories"],
+      ["/repos/acme/widgets/agentsmith", "repositories"],
+      ["/repos/acme/widgets/projector", "repositories"],
+      ["/repos/acme/widgets/loopsmith", "repositories"],
+      ["/settings", "settings"],
+      ["/settings/models", "settings"],
+      ["/settings/background-agents-old", "settings"],
+      ["/", null],
+    ];
 
   for (const [pathname, expectedId] of cases) {
     test(`${pathname} resolves to ${expectedId ?? "no destination"}`, () => {
