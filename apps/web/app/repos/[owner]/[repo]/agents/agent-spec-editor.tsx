@@ -41,6 +41,8 @@ import { GithubActionsPanel } from "./github-actions-panel";
 type AgentSpecEditorProps = {
   /** "create" (default) shows creation-oriented copy; "edit" shows update-oriented copy. */
   mode?: "create" | "edit";
+  /** Opt-in canonical product presentation; omitted preserves legacy behavior. */
+  surface?: "legacy" | "automation";
   repoOwner: string;
   repoName: string;
   initialName: string;
@@ -73,6 +75,10 @@ type AgentSpecEditorProps = {
   createdAgentId?: string | null;
   /** The run ID to show inline console for, or null if no test has been run yet. */
   testRunId?: string | null;
+  /** Canonical surface may enable a disabled definition only after readiness. */
+  readinessReady?: boolean;
+  /** Last successfully saved definition status, independent of unsaved toggles. */
+  persistedEnabled?: boolean;
   onSave: (
     payload: ReturnType<typeof buildAgentPayload>,
   ) => void | Promise<void>;
@@ -92,6 +98,7 @@ type AgentSpecEditorProps = {
  */
 export function AgentSpecEditor({
   mode = "create",
+  surface = "legacy",
   repoOwner,
   repoName,
   initialName,
@@ -117,6 +124,8 @@ export function AgentSpecEditor({
   initialModelId = null,
   createdAgentId = null,
   testRunId = null,
+  readinessReady = true,
+  persistedEnabled = initialEnabled,
   onSave,
   onRunTest,
 }: AgentSpecEditorProps) {
@@ -239,6 +248,13 @@ export function AgentSpecEditor({
   }
 
   async function handleRunTest() {
+    if (
+      running ||
+      !createdAgentId ||
+      (surface === "automation" && !persistedEnabled)
+    ) {
+      return;
+    }
     setRunning(true);
     try {
       await onRunTest();
@@ -288,7 +304,43 @@ export function AgentSpecEditor({
     }
   }
 
-  const runTestDisabled = running || !createdAgentId;
+  const enableBlocked =
+    surface === "automation" &&
+    !persistedEnabled &&
+    (!createdAgentId || !readinessReady);
+  const runTestDisabled =
+    running ||
+    !createdAgentId ||
+    (surface === "automation" && !persistedEnabled);
+
+  function lifecycleCopy(): string {
+    if (surface !== "automation") {
+      if (!createdAgentId) return "Save first to run a test.";
+      if (mode === "edit") {
+        return enabled
+          ? "This agent is on — it runs when its trigger fires."
+          : "This agent is off — it won't run until you turn it on.";
+      }
+      return enabled
+        ? "This agent will be created on."
+        : "New agents start off — test it, then turn it on here.";
+    }
+    if (!createdAgentId) {
+      return "Save this Automation disabled. Review readiness, then enable and save before testing.";
+    }
+    if (!persistedEnabled && !readinessReady) {
+      return "Readiness must pass before this Automation can be enabled.";
+    }
+    if (!persistedEnabled && enabled) {
+      return "Save again to enable this Automation before running a manual test.";
+    }
+    if (!persistedEnabled) {
+      return "This Automation is saved disabled. Enable and save it before testing.";
+    }
+    return enabled
+      ? "This Automation is enabled and can run when its trigger fires."
+      : "Save to disable this Automation; until then, the persisted definition remains enabled.";
+  }
 
   return (
     <div className="space-y-6">
@@ -298,10 +350,16 @@ export function AgentSpecEditor({
           <div className="flex flex-wrap items-center gap-3">
             <Button disabled={!canSave || saving} onClick={handleSave}>
               <Save className="h-4 w-4" />
-              Save
+              {surface === "automation" ? "Save Automation" : "Save"}
             </Button>
             <span
-              title={!createdAgentId ? "Save first to run a test." : undefined}
+              title={
+                runTestDisabled
+                  ? surface === "automation"
+                    ? "Enable and save this Automation before testing."
+                    : "Save first to run a test."
+                  : undefined
+              }
             >
               <Button
                 variant="outline"
@@ -320,7 +378,10 @@ export function AgentSpecEditor({
             <div className="flex items-center rounded-md border border-border bg-muted/20 p-0.5">
               <button
                 type="button"
-                onClick={() => setEnabled(true)}
+                disabled={enableBlocked}
+                onClick={() => {
+                  if (!enableBlocked) setEnabled(true);
+                }}
                 aria-pressed={enabled}
                 className={cn(
                   "rounded px-3 py-1 text-xs font-medium transition-colors",
@@ -347,21 +408,20 @@ export function AgentSpecEditor({
             </div>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">
-          {!createdAgentId
-            ? "Save first to run a test."
-            : mode === "edit"
-              ? enabled
-                ? "This agent is on — it runs when its trigger fires."
-                : "This agent is off — it won't run until you turn it on."
-              : enabled
-                ? "This agent will be created on."
-                : "New agents start off — test it, then turn it on here."}
-        </p>
+        <p className="text-xs text-muted-foreground">{lifecycleCopy()}</p>
+        {surface === "automation" ? (
+          <p className="text-pretty text-xs text-amber-700 dark:text-amber-300">
+            Manual tests use the real dispatcher and configured GitHub
+            permissions. They can create configured GitHub mutations such as
+            comments, branches, commits, pull requests, approvals, or merges.
+          </p>
+        ) : null}
       </div>
 
       {/* Inline run test console — mounts below action bar when a test run is active */}
-      {testRunId && <RunTestConsole runId={testRunId} />}
+      {testRunId ? (
+        <RunTestConsole runId={testRunId} surface={surface} />
+      ) : null}
 
       {/* 1 — Name */}
       <SettingsSection

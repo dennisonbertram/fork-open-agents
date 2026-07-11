@@ -16,6 +16,10 @@ import {
   adaptBackgroundAgentRun,
   type RunAdapterOptions,
 } from "@/lib/runs/adapters";
+import {
+  canonicalBackgroundAutomationDetailUrl,
+  canonicalBackgroundAutomationEditUrl,
+} from "./definition-routes";
 import { makeAutomationId } from "./identity";
 import type { AutomationListItem } from "./types";
 
@@ -110,8 +114,6 @@ export function adaptBackgroundAutomation(
     invalid = true;
   }
 
-  const repoPath = encodedPath(agent.repoOwner, agent.repoName);
-  const agentPath = encodedPath(agent.id);
   const normalizedLatestRun = latestRun
     ? adaptBackgroundAgentRun(
         {
@@ -173,8 +175,8 @@ export function adaptBackgroundAutomation(
         publishingActionCount,
       },
       latestRun: normalizedLatestRun,
-      detailUrl: `/repos/${repoPath}/agents/${agentPath}`,
-      editUrl: `/repos/${repoPath}/agents/${agentPath}/edit`,
+      detailUrl: canonicalBackgroundAutomationDetailUrl(agent.id),
+      editUrl: canonicalBackgroundAutomationEditUrl(agent.id),
       createdAt: agent.createdAt.toISOString(),
       updatedAt: agent.updatedAt.toISOString(),
     },

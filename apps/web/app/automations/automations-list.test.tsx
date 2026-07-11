@@ -236,7 +236,7 @@ describe("AutomationsList", () => {
 
     expect(html).toContain("Multi-step unavailable");
     expect(html).not.toContain('href="/loops/new"');
-    expect(html).toContain('href="/settings/background-agents"');
+    expect(html).toContain('href="/automations/new"');
     expect(html).toContain("No automations configured");
     expect(html).toContain("Create a single-step automation");
     expect(html).not.toContain("No automations match these filters");

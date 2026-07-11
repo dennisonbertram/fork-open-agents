@@ -79,7 +79,7 @@ describe("AutomationAgentEditExperience", () => {
     expect(swrKey).toBe(
       "/api/background-agents/readiness?repoOwner=acme&repoName=widgets&permission=write",
     );
-    expect(html).toContain("Background agents need a bit more setup.");
+    expect(html).toContain("Automation needs a bit more setup.");
     expect(html).toContain('data-surface="automation"');
     expect(html).toContain('data-readiness-ready="false"');
     expect(html).toContain('data-repository="acme/widgets"');
@@ -92,7 +92,7 @@ describe("AutomationAgentEditExperience", () => {
       <AutomationAgentEditExperience agent={agent} />,
     );
 
-    expect(html).toContain("Background agents are ready.");
+    expect(html).toContain("Automation prerequisites are ready.");
     expect(html).toContain('data-readiness-ready="true"');
   });
 });
