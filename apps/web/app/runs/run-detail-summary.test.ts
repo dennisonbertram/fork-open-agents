@@ -119,6 +119,11 @@ describe("Run detail summary adapters", () => {
     expect(serialized).not.toContain("private loop prompt");
     expect(serialized).not.toContain("raw-token");
     expect(serialized).not.toContain("maxIterations");
+    expect(summary.automation.href).toBe("/loops/loop-1");
+    expect(
+      buildLoopRunDetailSummary(data, { variant: "canonical" }).automation
+        .href,
+    ).toBe("/automations/agent-loop/loop-1");
   });
 
   test("queued loops use the same stale attention window as the Runs list", () => {

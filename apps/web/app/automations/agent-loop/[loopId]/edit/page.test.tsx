@@ -63,6 +63,10 @@ describe("canonical multi-step Automation edit page", () => {
         params: Promise.resolve({ loopId: "foreign" }),
       }),
     ).rejects.toThrow("not-found");
+    expect(getOwnedAgentLoop).toHaveBeenCalledWith({
+      userId: "user-1",
+      loopId: "foreign",
+    });
   });
 
   test("reuses BuilderCanvas with canonical presentation", async () => {
