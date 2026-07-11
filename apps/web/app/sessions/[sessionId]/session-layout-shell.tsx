@@ -30,6 +30,9 @@ type SessionLayoutShellProps = {
     chats: SessionChatListItem[];
   };
   children: ReactNode;
+  productSurfaceExposure: {
+    verifiedBuild: boolean;
+  };
 };
 
 /**
@@ -39,9 +42,11 @@ type SessionLayoutShellProps = {
 function SessionLayoutInner({
   activeChatId,
   children,
+  verifiedBuildExposed,
 }: {
   activeChatId: string;
   children: ReactNode;
+  verifiedBuildExposed: boolean;
 }) {
   const { panelPortalRef, gitPanelOpen, setGitPanelOpen } = useGitPanel();
 
@@ -49,7 +54,7 @@ function SessionLayoutInner({
     <div className="relative flex h-full overflow-hidden">
       {/* Left column: header + tabs + page content */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-        <SessionHeader />
+        <SessionHeader verifiedBuildExposed={verifiedBuildExposed} />
         {activeChatId && <ChatTabs activeChatId={activeChatId} />}
         <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
       </div>
@@ -81,6 +86,7 @@ export function SessionLayoutShell({
   session: initialSession,
   initialChatsData,
   children,
+  productSurfaceExposure,
 }: SessionLayoutShellProps) {
   const router = useRouter();
   const params = useParams<{ chatId?: string }>();
@@ -183,7 +189,10 @@ export function SessionLayoutShell({
   return (
     <SessionLayoutContext.Provider value={layoutContext}>
       <GitPanelProvider>
-        <SessionLayoutInner activeChatId={activeChatId}>
+        <SessionLayoutInner
+          activeChatId={activeChatId}
+          verifiedBuildExposed={productSurfaceExposure.verifiedBuild}
+        >
           {children}
         </SessionLayoutInner>
       </GitPanelProvider>

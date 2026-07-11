@@ -77,6 +77,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -94,6 +95,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -110,6 +112,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -127,6 +130,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -143,6 +147,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -159,6 +164,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -176,6 +182,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={true}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -202,6 +209,7 @@ describe("WorkflowPickerCompact", () => {
     const html = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -222,6 +230,7 @@ describe("WorkflowPickerCompact", () => {
     const htmlNoneSelected = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,
@@ -229,6 +238,7 @@ describe("WorkflowPickerCompact", () => {
     const htmlOneSelected = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId="test-run"
         onSelectWorkflow={() => {}}
       />,
@@ -512,6 +522,7 @@ describe("WorkflowPickerCompact regression", () => {
     const htmlNotDisabledProp = renderToStaticMarkup(
       <WorkflowPickerCompact
         disabled={false}
+        exposed
         selectedWorkflowId={null}
         onSelectWorkflow={() => {}}
       />,

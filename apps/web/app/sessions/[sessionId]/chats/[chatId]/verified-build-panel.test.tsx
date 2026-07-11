@@ -66,11 +66,7 @@ describe("SessionHeader ShieldCheck button", () => {
     const { VerifiedBuildHeaderButton } = mod;
     const html = renderToStaticMarkup(
       // Render with isActive=false (panel closed state)
-      <VerifiedBuildHeaderButton
-        exposed
-        isActive={false}
-        onClick={() => {}}
-      />,
+      <VerifiedBuildHeaderButton exposed isActive={false} onClick={() => {}} />,
     );
     // The button must carry aria-label="Verified Build"
     expect(html).toContain('aria-label="Verified Build"');
@@ -166,11 +162,7 @@ describe("Verified Build aria-label regression", () => {
     const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
 
     const htmlInactive = renderToStaticMarkup(
-      <VerifiedBuildHeaderButton
-        exposed
-        isActive={false}
-        onClick={() => {}}
-      />,
+      <VerifiedBuildHeaderButton exposed isActive={false} onClick={() => {}} />,
     );
     const htmlActive = renderToStaticMarkup(
       <VerifiedBuildHeaderButton exposed isActive onClick={() => {}} />,
@@ -187,11 +179,7 @@ describe("Verified Build aria-label regression", () => {
     const { VerifiedBuildHeaderButton } = await sessionHeaderModule;
 
     const html = renderToStaticMarkup(
-      <VerifiedBuildHeaderButton
-        exposed
-        isActive={false}
-        onClick={() => {}}
-      />,
+      <VerifiedBuildHeaderButton exposed isActive={false} onClick={() => {}} />,
     );
 
     // Lucide ShieldCheck renders as an svg with a path

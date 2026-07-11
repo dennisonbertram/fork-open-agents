@@ -130,6 +130,7 @@ describe("/api/harness/runs", () => {
   });
 
   test("POST fails closed when harness is disabled", async () => {
+    process.env.OPEN_AGENTS_EXPOSE_VERIFIED_BUILD = "true";
     const { POST } = await routeModulePromise;
 
     const response = await POST(
@@ -187,10 +188,12 @@ describe("/api/harness/runs", () => {
         }),
       }),
     );
-    const postBody = (await postResponse.json()) as { code: string };
+    const postBody = (await postResponse.json()) as {
+      error: { code: string };
+    };
 
     expect(postResponse.status).toBe(404);
-    expect(postBody.code).toBe("product_surface_disabled");
+    expect(postBody.error.code).toBe("product_surface_disabled");
     expect(startCalls).toHaveLength(0);
 
     const getResponse = await GET(
