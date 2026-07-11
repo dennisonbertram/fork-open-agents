@@ -311,6 +311,55 @@ describe("background-agent adapter", () => {
     expect(serializedResult).not.toContain("secret-hash-marker");
     expect(serializedResult).not.toContain("provider-token-marker");
   });
+
+  test("preserves the merge-only trigger guard while excluding unknown trigger fields", () => {
+    for (const mergedOnly of [true, false] as const) {
+      const source = {
+        id: `agent-merged-only-${mergedOnly}`,
+        name: "Merged PR agent",
+        description: null,
+        status: "enabled",
+        repoOwner: "acme",
+        repoName: "widgets",
+        instructions: "Handle merged pull requests",
+        checkCommand: null,
+        triggers: [
+          {
+            id: `trigger-merged-only-${mergedOnly}`,
+            name: "Merged PR",
+            kind: "github.pull_request",
+            status: "enabled",
+            conditions: {
+              actions: ["closed"],
+              mergedOnly,
+              unknownCondition: "unknown-condition-marker",
+            },
+            schedule: null,
+            webhookPublicId: null,
+            webhookSecretHash: "secret-hash-marker",
+          },
+        ],
+        permissions: {},
+        composioToolkitSlugs: [],
+        builtinToolNames: null,
+        githubActions: {},
+        writeScope: { mode: "this_repo" },
+        requireCiGreenForMerge: true,
+        runBudgetPerTarget: 10,
+        modelId: null,
+      } as unknown as BackgroundAgentDefinitionSource;
+
+      const result = adaptBackgroundAgentDefinition(source);
+      const [trigger] = result.separation.automationBinding.triggers;
+
+      expect(trigger?.conditions).toEqual({
+        actions: ["closed"],
+        mergedOnly,
+      });
+      expect(JSON.stringify(trigger)).not.toContain("unknown-condition-marker");
+      expect(JSON.stringify(trigger)).not.toContain("secret-hash-marker");
+    }
+  });
 });
 
 describe("frozen loop agent-step adapter", () => {
