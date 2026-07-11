@@ -22,13 +22,19 @@ mock.module("next/navigation", () => ({
 // Stub SessionStarter — captures onSubmit so tests can invoke it directly,
 // and renders isLoading so BT-784-006's isCreating-resets assertion holds.
 let capturedOnSubmit: (input: unknown) => Promise<void> = async () => {};
+let capturedInitialRepository:
+  | { owner: string; repo: string }
+  | null
+  | undefined;
 
 mock.module("@/components/session-starter", () => ({
   SessionStarter: (props: {
     onSubmit: (input: unknown) => Promise<void>;
     isLoading: boolean;
+    initialRepository?: { owner: string; repo: string } | null;
   }) => {
     capturedOnSubmit = props.onSubmit;
+    capturedInitialRepository = props.initialRepository;
     return (
       <div
         data-testid="session-starter-stub"
@@ -73,6 +79,28 @@ const BASE_INPUT = {
 describe("NewSessionDialog — create-session failure surfacing", () => {
   beforeEach(() => {
     push.mockClear();
+    capturedInitialRepository = undefined;
+  });
+
+  test("forwards an explicit repository seed to the existing SessionStarter contract", async () => {
+    const { NewSessionDialog } = await dialogModulePromise;
+    renderToStaticMarkup(
+      <NewSessionDialog
+        open={true}
+        onOpenChange={() => undefined}
+        lastRepo={null}
+        initialRepository={{ owner: "acme", repo: "widgets" }}
+        createSession={async () => ({
+          session: { id: "s1" },
+          chat: { id: "c1" },
+        })}
+      />,
+    );
+
+    expect(capturedInitialRepository).toEqual({
+      owner: "acme",
+      repo: "widgets",
+    });
   });
 
   test("BT-784-006: 403 Vercel-reauth rejection renders inline message + Go to Settings link, isCreating resets", async () => {

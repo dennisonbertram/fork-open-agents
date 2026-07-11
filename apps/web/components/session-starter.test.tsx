@@ -247,6 +247,24 @@ describe("SessionStarter - repo defaults pre-fill", () => {
     expect(mockRepoDefaultsEnabled).toBe(false);
   });
 
+  test("an explicit repository seed starts in repository mode without changing generic last-repo behavior", async () => {
+    mockRepoDefaults = DEFAULTS_COMMIT_PUSH_ON;
+    const { SessionStarter } = await modulePromise;
+    const html = renderToStaticMarkup(
+      <SessionStarter
+        onSubmit={() => {}}
+        isLoading={false}
+        lastRepo={null}
+        initialRepository={{ owner: "acme", repo: "widgets" }}
+      />,
+    );
+
+    expect(mockRepoDefaultsEnabled).toBe(true);
+    expect(html).toContain('data-testid="repo-selector"');
+    expect(html).toContain('data-testid="branch-selector"');
+    expect(html).not.toContain("Start a new chat — no repository required.");
+  });
+
   // BT-SS-002: Branch defaults — verify the one-time apply logic
   test("BT-SS-002: isNewBranch and defaultBranch from repoDefaults take effect once per repo", () => {
     // Simulates the useEffect logic: when repoDefaults first loads for a repo
