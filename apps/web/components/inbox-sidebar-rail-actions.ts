@@ -23,9 +23,10 @@ export function getSidebarToggleActions(): SidebarToggleAction[] {
 }
 
 export type CollapsedRailAction = {
-  id: "expand" | "new-session" | "quick-chat" | "settings";
+  id: "expand" | "new-session" | "quick-chat" | "runs" | "settings";
   ariaLabel: string;
   tooltip: string;
+  href?: string;
 };
 
 export function getCollapsedRailActions(): CollapsedRailAction[] {
@@ -44,6 +45,12 @@ export function getCollapsedRailActions(): CollapsedRailAction[] {
       id: "quick-chat",
       ariaLabel: "Quick chat (no repo)",
       tooltip: "Quick chat (no repo)",
+    },
+    {
+      id: "runs",
+      ariaLabel: "Open runs",
+      tooltip: "Runs",
+      href: "/runs",
     },
     {
       id: "settings",

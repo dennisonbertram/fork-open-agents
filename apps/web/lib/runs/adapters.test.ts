@@ -86,6 +86,11 @@ describe("normalized run adapters", () => {
         startedAt: null,
         finishedAt: "2026-07-11T10:05:00.000Z",
       },
+      progress: {
+        currentStepId: null,
+        completedSteps: 0,
+        totalSteps: 1,
+      },
     });
   });
 
@@ -140,6 +145,84 @@ describe("normalized run adapters", () => {
       attentionReasons: ["failed_steps"],
       detailUrl: "/loops/loop%2F1/runs/loop-run-1",
       metadata: { stepCount: 4, failedStepCount: 1 },
+    });
+  });
+
+  test("adds safe Automation, trigger, progress, and evidence context", () => {
+    const background = adaptBackgroundAgentRun({
+      id: "background-run-1",
+      agentId: null,
+      triggerId: "trigger-1",
+      title: "Deleted automation",
+      nativeStatus: "running",
+      nativeSource: "github",
+      triggerKind: "github.issue",
+      repoOwner: "acme",
+      repoName: "shop",
+      branch: "fix/42",
+      prNumber: null,
+      issueNumber: 42,
+      outputUrl: null,
+      errorKind: null,
+      sandboxName: "sandbox-1",
+      requestId: "request-1",
+      workflowRunId: "workflow-1",
+      createdAt,
+      updatedAt,
+      startedAt: createdAt,
+      finishedAt: null,
+    });
+    const loop = adaptAgentLoopRun({
+      id: "loop-run-1",
+      loopId: "loop-1",
+      triggerId: null,
+      triggerKind: null,
+      title: "Release",
+      nativeStatus: "running",
+      nativeSource: "manual",
+      repoOwner: "acme",
+      repoName: "shop",
+      currentNodeId: "verify",
+      stepCount: 2,
+      totalStepCount: 4,
+      failedStepCount: 0,
+      errorKind: null,
+      requestId: "request-2",
+      workflowRunId: "workflow-2",
+      createdAt,
+      updatedAt,
+      startedAt: createdAt,
+      finishedAt: null,
+    });
+
+    expect(background).toMatchObject({
+      automation: null,
+      automationName: "Deleted automation",
+      trigger: {
+        id: "trigger-1",
+        source: "github",
+        kind: "github.issue",
+      },
+      progress: { currentStepId: null, completedSteps: 0, totalSteps: 1 },
+      evidence: {
+        sandboxName: "sandbox-1",
+        requestId: "request-1",
+        workflowRunId: "workflow-1",
+        outputUrl: null,
+      },
+    });
+    expect(loop).toMatchObject({
+      automation: { source: "agent_loop", sourceId: "loop-1" },
+      trigger: { id: null, source: "manual", kind: null },
+      progress: {
+        currentStepId: "verify",
+        completedSteps: 2,
+        totalSteps: 4,
+      },
+      evidence: {
+        requestId: "request-2",
+        workflowRunId: "workflow-2",
+      },
     });
   });
 });
