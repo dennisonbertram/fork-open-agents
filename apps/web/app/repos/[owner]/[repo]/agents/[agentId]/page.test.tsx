@@ -18,9 +18,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 const redirect = mock((_path: string) => {
   throw new Error("redirect");
 });
+const notFound = mock(() => {
+  throw new Error("notFound");
+});
 
 mock.module("next/navigation", () => ({
   redirect,
+  notFound,
   useRouter: () => ({ push: () => undefined }),
 }));
 
@@ -41,10 +45,11 @@ mock.module("@/lib/session/get-server-session", () => ({
 
 let mockAgent: unknown = null;
 let mockRuns: unknown[] = [];
+const listBackgroundAgentRuns = mock(async () => mockRuns);
 
 mock.module("@/lib/background-agents/store", () => ({
   getOwnedBackgroundAgentWithTriggers: async () => mockAgent,
-  listBackgroundAgentRuns: async () => mockRuns,
+  listBackgroundAgentRuns,
   listRepoBackgroundAgents: async () => [],
   listBackgroundAgentOutputs: async () => [],
 }));
@@ -57,6 +62,8 @@ describe("AgentDetailPage", () => {
   beforeEach(() => {
     sessionUserId = "user-1";
     redirect.mockClear();
+    notFound.mockClear();
+    listBackgroundAgentRuns.mockClear();
     mockAgent = {
       id: "agent-1",
       userId: "user-1",
@@ -258,6 +265,23 @@ describe("AgentDetailPage", () => {
     ).rejects.toThrow("redirect");
 
     expect(redirect).toHaveBeenCalledWith("/");
+  });
+
+  test("404s an owned agent at mismatched URL coordinates before loading repository runs", async () => {
+    const { default: AgentDetailPage } = await pageModulePromise;
+
+    await expect(
+      AgentDetailPage({
+        params: Promise.resolve({
+          owner: "attacker-chosen",
+          repo: "other-repo",
+          agentId: "agent-1",
+        }),
+      }),
+    ).rejects.toThrow("notFound");
+
+    expect(notFound).toHaveBeenCalledTimes(1);
+    expect(listBackgroundAgentRuns).not.toHaveBeenCalled();
   });
 
   test("redirects to agents list when agent not found", async () => {

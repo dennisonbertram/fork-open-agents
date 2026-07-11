@@ -44,7 +44,7 @@ export function SessionsIndexShell() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button onClick={openNewSessionDialog}>
+            <Button onClick={() => openNewSessionDialog()}>
               <Plus className="h-4 w-4" />
               New Session
             </Button>
