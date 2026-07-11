@@ -321,6 +321,53 @@ describe("/api/sandbox/snapshot", () => {
     expect(updateCalls).toHaveLength(1);
   });
 
+  test("PUT treats a provider already-running race as safe idempotent recovery", async () => {
+    const { PUT } = await routeModulePromise;
+    sessionRecord = makeSessionRecord({
+      sandboxState: {
+        type: "vercel",
+        sandboxName: "session_session-1",
+      },
+      lifecycleState: "hibernated",
+      sandboxExpiresAt: null,
+      hibernateAfter: null,
+    });
+    connectSandboxResumeError = new Error(
+      "Sandbox is still running provider_token=super-secret",
+    );
+
+    const response = await PUT(
+      new Request("http://localhost/api/sandbox/snapshot", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "x-request-id": "request-already-running",
+        },
+        body: JSON.stringify({ sessionId: "session-1" }),
+      }),
+    );
+    const payload = (await response.json()) as {
+      success?: boolean;
+      alreadyRunning?: boolean;
+      sandboxName?: string;
+      restoredFrom?: string;
+      requestId?: string;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload).toMatchObject({
+      success: true,
+      alreadyRunning: true,
+      sandboxName: "session_session-1",
+      restoredFrom: "session_session-1",
+      requestId: "request-already-running",
+    });
+    expect(JSON.stringify(payload)).not.toContain("super-secret");
+    expect(consoleErrors.join("\n")).not.toContain("super-secret");
+    expect(updateCalls).toHaveLength(0);
+    expect(kickCalls).toHaveLength(0);
+  });
+
   test("PUT does not reveal or reconnect a sandbox outside session ownership", async () => {
     const { PUT } = await routeModulePromise;
     ownedSessionAllowed = false;
