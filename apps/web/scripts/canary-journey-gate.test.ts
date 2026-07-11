@@ -64,7 +64,7 @@ describe("canary-journey-gate", () => {
     expect(output).toMatch(/not a failure/i);
   });
 
-  test("runCanaryJourneyCli returns 0 without spawning when config is missing", async () => {
+  test("runCanaryJourneyCli retains non-strict exit 0 without spawning when config is missing", async () => {
     const logs: string[] = [];
     let spawnCalled = false;
     const exitCode = await runCanaryJourneyCli({
@@ -78,6 +78,24 @@ describe("canary-journey-gate", () => {
     });
     expect(exitCode).toBe(0);
     expect(logs.join("\n")).toContain("blocked_by_configuration");
+    expect(spawnCalled).toBe(false);
+  });
+
+  test("runCanaryJourneyCli returns 2 without spawning when strict config is missing", async () => {
+    const logs: string[] = [];
+    let spawnCalled = false;
+    const exitCode = await runCanaryJourneyCli({
+      argv: ["loops"],
+      env: { PRODUCTION_CANARY_REQUIRE_CONFIG: "true" },
+      log: (line: string) => logs.push(line),
+      spawn: () => {
+        spawnCalled = true;
+        return Promise.resolve(0);
+      },
+    });
+    expect(exitCode).toBe(2);
+    expect(logs.join("\n")).toContain("blocked_by_configuration");
+    expect(logs.join("\n")).toContain("No production proof occurred");
     expect(spawnCalled).toBe(false);
   });
 
@@ -104,5 +122,20 @@ describe("canary-journey-gate", () => {
       "scripts/background-agent-journey-proof.ts",
     );
     expect(spawnArgs?.env.BACKGROUND_AGENT_JOURNEY_REPO_OWNER).toBe("owner");
+  });
+
+  test("runCanaryJourneyCli preserves blocked exit 2 from a configured child", async () => {
+    const exitCode = await runCanaryJourneyCli({
+      argv: ["loops"],
+      env: {
+        PRODUCTION_CANARY_URL: "https://prod.example",
+        PRODUCTION_CANARY_REPO: "Owner/Repo",
+        PRODUCTION_CANARY_IDENTITY: "canary-user",
+        PRODUCTION_CANARY_AUTH_COOKIE: "better-auth.session_token=abc",
+      },
+      log: () => undefined,
+      spawn: () => Promise.resolve(2),
+    });
+    expect(exitCode).toBe(2);
   });
 });
