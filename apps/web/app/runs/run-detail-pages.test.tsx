@@ -37,6 +37,8 @@ mock.module("@/app/loops/[loopId]/runs/[runId]/run-detail", () => ({
 
 const backgroundPageModule = import("./background-agent/[runId]/page");
 const loopPageModule = import("./loop/[runId]/page");
+const legacyBackgroundPageModule = import("../background-runs/[runId]/page");
+const legacyLoopPageModule = import("../loops/[loopId]/runs/[runId]/page");
 
 beforeEach(() => {
   currentSession = { user: { id: "user-1" } };
@@ -101,5 +103,22 @@ describe("canonical Run detail pages", () => {
 
     expect(renderToStaticMarkup(background)).toContain("background:canonical");
     expect(renderToStaticMarkup(loop)).toContain("loop:canonical");
+  });
+
+  test("legacy deep-link pages still render the source-native legacy variant", async () => {
+    loadOwnedBackgroundRunDetail.mockResolvedValue({ marker: "background" });
+    loadOwnedLoopRunDetail.mockResolvedValue({ marker: "loop" });
+    const { default: BackgroundPage } = await legacyBackgroundPageModule;
+    const { default: LoopPage } = await legacyLoopPageModule;
+
+    const background = await BackgroundPage({
+      params: Promise.resolve({ runId: "bg-1" }),
+    });
+    const loop = await LoopPage({
+      params: Promise.resolve({ loopId: "loop-parent", runId: "loop-run-1" }),
+    });
+
+    expect(renderToStaticMarkup(background)).toContain("background:legacy");
+    expect(renderToStaticMarkup(loop)).toContain("loop:legacy");
   });
 });

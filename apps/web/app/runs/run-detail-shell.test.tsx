@@ -11,6 +11,7 @@ describe("RunDetailShell", () => {
           runId: "run-1",
           automation: {
             name: "Review pull requests",
+            sourceId: "agent-1",
             href: "/repos/acme/shop/agents/agent-1",
           },
           repository: {
@@ -18,7 +19,11 @@ describe("RunDetailShell", () => {
             name: "shop",
             href: "/repos/acme/shop",
           },
-          trigger: { source: "github", kind: "github.pull_request" },
+          trigger: {
+            id: "trigger-1",
+            source: "github",
+            kind: "github.pull_request",
+          },
           nativeStatus: "failed",
           state: "finished",
           outcome: "failed",
@@ -26,6 +31,7 @@ describe("RunDetailShell", () => {
           attentionReasons: ["failed"],
           timestamps: {
             createdAt: "2026-07-11T10:00:00.000Z",
+            updatedAt: "2026-07-11T10:00:30.000Z",
             startedAt: "2026-07-11T10:01:00.000Z",
             finishedAt: "2026-07-11T10:02:00.000Z",
           },
@@ -52,6 +58,7 @@ describe("RunDetailShell", () => {
     expect(html).toContain("request-1");
     expect(html).toContain("sandbox-1");
     expect(html).toContain("Created");
+    expect(html).toContain("Updated");
     expect(html).toContain("Started");
     expect(html).toContain("Finished");
     expect(html).toContain("Native body");

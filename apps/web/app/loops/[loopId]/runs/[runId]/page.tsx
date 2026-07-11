@@ -1,13 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getServerSession } from "@/lib/session/get-server-session";
-import {
-  getAgentLoopRunWithLoop,
-  listAgentLoopEvents,
-  listStepRunsForRun,
-  listWatchdogRunsForLoopRun,
-} from "@/lib/agent-loops/store";
-import type { GetAgentLoopRunDetailResponse } from "@/app/api/agent-loops/types";
+import { loadOwnedLoopRunDetail } from "@/lib/runs/detail-loaders";
 import { RunDetail } from "./run-detail";
 
 type RunDetailPageProps = {
@@ -28,36 +22,11 @@ export default async function LoopRunDetailPage({
   }
 
   const { runId } = await params;
-  const row = await getAgentLoopRunWithLoop(runId);
-
-  if (!row) {
-    notFound();
-  }
-
-  // Ownership check — do not leak existence
-  if (row.run.userId !== session.user.id) {
-    notFound();
-  }
-
-  const [steps, events, watchdogRuns] = await Promise.all([
-    listStepRunsForRun(runId),
-    listAgentLoopEvents(runId),
-    listWatchdogRunsForLoopRun(runId),
-  ]);
-
-  const initialData: GetAgentLoopRunDetailResponse = {
-    run: row.run,
-    loop: {
-      id: row.loop.id,
-      name: row.loop.name,
-      repoOwner: row.loop.repoOwner,
-      repoName: row.loop.repoName,
-      guardrails: row.loop.guardrails,
-    },
-    steps,
-    events,
-    watchdogRuns,
-  };
+  const initialData = await loadOwnedLoopRunDetail({
+    userId: session.user.id,
+    runId,
+  });
+  if (!initialData) notFound();
 
   return <RunDetail initialData={initialData} />;
 }

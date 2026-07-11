@@ -47,7 +47,7 @@ const agentLoopRuns = {
   loopId: "agentLoopRuns.loopId",
   userId: "agentLoopRuns.userId",
 };
-const agentLoops = { id: "agentLoops.id" };
+const agentLoops = { id: "agentLoops.id", userId: "agentLoops.userId" };
 
 mock.module("@/lib/db/schema", () => ({
   agentLoopEvents: {},

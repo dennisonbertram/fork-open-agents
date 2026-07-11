@@ -13,6 +13,7 @@ describe("Run detail summary adapters", () => {
         id: "run-1",
         status: "running",
         source: "github",
+        triggerId: "trigger-1",
         triggerKind: "github.pull_request",
         externalId: "delivery-1",
         idempotencyKey: "key-1",
