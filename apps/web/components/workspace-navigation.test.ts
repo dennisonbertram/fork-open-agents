@@ -26,7 +26,7 @@ describe("workspace navigation contract (#961)", () => {
   test("every destination owns one icon and an accessible label", () => {
     for (const item of getWorkspaceNavigationItems()) {
       expect(item.icon).toBeDefined();
-      expect(item.ariaLabel).toBe(`Open ${item.label.toLowerCase()}`);
+      expect(item.ariaLabel).toBe(item.label);
     }
   });
 
@@ -48,6 +48,7 @@ describe("workspace navigation route matching (#961)", () => {
     ["/runs/background-agent/r_1", "runs"],
     ["/background-runs/r_1", "runs"],
     ["/loops/l_1/runs/r_1", "runs"],
+    ["/loops/l_1/runs", "automations"],
     ["/automations", "automations"],
     ["/automations/background-agent/a_1", "automations"],
     ["/loops", "automations"],
@@ -61,8 +62,12 @@ describe("workspace navigation route matching (#961)", () => {
     ["/repos", "repositories"],
     ["/repos/acme/widgets", "repositories"],
     ["/repos/acme/widgets/actions", "repositories"],
+    ["/repos/acme/widgets/agentsmith", "repositories"],
+    ["/repos/acme/widgets/projector", "repositories"],
+    ["/repos/acme/widgets/loopsmith", "repositories"],
     ["/settings", "settings"],
     ["/settings/models", "settings"],
+    ["/settings/background-agents-old", "settings"],
     ["/", null],
   ];
 
@@ -96,8 +101,7 @@ describe("workspace navigation route matching (#961)", () => {
       "/loopsmith",
       "/repository",
       "/settings-old",
-      "/repos/acme/widgets/agentsmith",
-      "/settings/background-agents-old",
+      "/background-runs-old/r_1",
     ]) {
       expect(getActiveWorkspaceNavigationItem(pathname)).toBeNull();
     }

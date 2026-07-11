@@ -131,9 +131,7 @@ describe("settings nav data", () => {
 
   test("NAV-008: legacy definition routes remain direct-only", () => {
     expect(findActiveNavItem("/loops")).toBeUndefined();
-    expect(findActiveNavItem("/settings/background-agents")?.id).toBe(
-      "automations",
-    );
+    expect(findActiveNavItem("/settings/background-agents")).toBeUndefined();
   });
 
   test("NAV-008b: legacy Automation alias retains valid Settings fallback metadata", () => {
@@ -146,16 +144,16 @@ describe("settings nav data", () => {
     );
   });
 
-  test("NAV-012: Automations replaces duplicate background-agent and Loops entries", () => {
+  test("NAV-012: top-level navigation owns Automations without a duplicate Settings entry", () => {
     const toolsGroup = SETTINGS_NAV_GROUPS.find(
       (group) => group.id === "tools",
     );
     const ids = toolsGroup?.items.map((item) => item.id);
 
-    expect(ids).toContain("automations");
+    expect(ids).not.toContain("automations");
     expect(ids).not.toContain("background-agents");
     expect(ids).not.toContain("loops");
-    expect(findActiveNavItem("/automations")?.label).toBe("Automations");
+    expect(findActiveNavItem("/automations")).toBeUndefined();
   });
 
   // NAV-010 (#805): Repositories item exists in the tools group and points

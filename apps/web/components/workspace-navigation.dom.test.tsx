@@ -30,6 +30,8 @@ describe("WorkspaceNavigation render modes (#961)", () => {
       );
       const links = within(container).getAllByRole("link");
 
+      expect(within(container).getAllByRole("navigation")).toHaveLength(1);
+
       expect(links.map((link) => link.getAttribute("href"))).toEqual([
         "/sessions",
         "/runs",
@@ -43,6 +45,9 @@ describe("WorkspaceNavigation render modes (#961)", () => {
             link.textContent?.trim() || link.getAttribute("aria-label"),
         ),
       ).toEqual(destinationNames);
+      for (const link of links) {
+        expect(link.className).toContain("focus-visible:ring-2");
+      }
     });
   }
 
@@ -70,6 +75,9 @@ describe("WorkspaceNavigation render modes (#961)", () => {
     }
     expect(container.querySelectorAll("[data-navigation-label]")).toHaveLength(
       0,
+    );
+    expect(container.querySelectorAll("[data-navigation-tooltip]")).toHaveLength(
+      5,
     );
   });
 
