@@ -21,6 +21,10 @@ import {
 } from "bun:test";
 import type { BackgroundAgent, BackgroundAgentRun } from "@/lib/db/schema";
 import type { ExecResult, Sandbox } from "@open-agents/sandbox";
+import {
+  buildBackgroundAgentExecutionSnapshot,
+  hashBackgroundAgentExecutionSnapshot,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -162,8 +166,9 @@ const fakeSandbox = {
   }),
 } as unknown as Sandbox;
 
+const connectSandbox = mock(async () => fakeSandbox);
 mock.module("@open-agents/sandbox", () => ({
-  connectSandbox: mock(async () => fakeSandbox),
+  connectSandbox,
   getCurrentBranch: mock(async () => "main"),
   getStagedDiff: mock(async () => "diff content"),
   hasUncommittedChanges: mock(async () => true),
@@ -421,6 +426,23 @@ function buildAgent(overrides: Partial<BackgroundAgent> = {}): BackgroundAgent {
   };
 }
 
+function buildSnapshotRun(
+  acceptedAgent: BackgroundAgent,
+  overrides: Record<string, unknown> = {},
+): BackgroundAgentRun {
+  const executionSnapshot =
+    buildBackgroundAgentExecutionSnapshot(acceptedAgent);
+  return buildRun({
+    ...({
+      executionSnapshot,
+      definitionVersion: 1,
+      definitionHash:
+        hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+      ...overrides,
+    } as unknown as Partial<BackgroundAgentRun>),
+  });
+}
+
 function recordedEvents() {
   return recordBackgroundAgentEvent.mock.calls.map(([input]) => input);
 }
@@ -459,6 +481,7 @@ beforeEach(() => {
   listBackgroundAgentOutputsMock.mockClear();
   updateBackgroundAgentRunStatus.mockClear();
   sandboxExec.mockClear();
+  connectSandbox.mockClear();
   verifyRepoAccess.mockClear();
   mintInstallationToken.mockClear();
   revokeInstallationToken.mockClear();
@@ -500,6 +523,139 @@ describe("(a) comment-only agent toolset", () => {
     const call = generateCalls[0];
     const toolNames = Object.keys(call?.tools ?? {});
     expect(toolNames).toEqual(["github_comment_on_pr_or_issue"]);
+  });
+});
+
+describe("execution snapshot binding", () => {
+  test("uses every frozen behavior field after the live source is edited", async () => {
+    const accepted = buildAgent({
+      name: "Frozen definition",
+      instructions: "FROZEN-INSTRUCTIONS-CANARY",
+      checkCommand: null,
+      composioToolkitSlugs: [],
+      builtinToolNames: ["bash"],
+      githubActions: { comment_on_pr_or_issue: true },
+      writeScope: { mode: "this_repo" },
+      requireCiGreenForMerge: true,
+      modelId: "anthropic/claude-haiku-4.5",
+    });
+    currentRun = buildSnapshotRun(accepted);
+    currentAgent = buildAgent({
+      name: "Edited definition",
+      instructions: "MUTATED-INSTRUCTIONS-CANARY",
+      builtinToolNames: null,
+      githubActions: { push: true },
+      writeScope: { mode: "all_repos" },
+      requireCiGreenForMerge: false,
+      modelId: null,
+    });
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-snapshot",
+    });
+
+    const call = generateCalls[0];
+    expect(JSON.stringify(call?.messages)).toContain(
+      "FROZEN-INSTRUCTIONS-CANARY",
+    );
+    expect(JSON.stringify(call?.messages)).not.toContain(
+      "MUTATED-INSTRUCTIONS-CANARY",
+    );
+    expect(call?.options.allowedBuiltinToolNames).toEqual(["bash"]);
+    expect(call?.options.model).toMatchObject({
+      id: "anthropic/claude-haiku-4.5",
+    });
+    expect(Object.keys(call?.tools ?? {})).toEqual([
+      "github_comment_on_pr_or_issue",
+    ]);
+  });
+
+  const invalidCases: Array<{
+    label: string;
+    overrides: Record<string, unknown>;
+    errorKind: string;
+  }> = [
+    {
+      label: "partial tuple",
+      overrides: { definitionHash: null },
+      errorKind: "snapshot_invalid",
+    },
+    {
+      label: "unsupported version",
+      overrides: { definitionVersion: 2 },
+      errorKind: "snapshot_version_unsupported",
+    },
+    {
+      label: "hash mismatch",
+      overrides: { definitionHash: "0".repeat(64) },
+      errorKind: "snapshot_hash_mismatch",
+    },
+    {
+      label: "repository mismatch",
+      overrides: { repoName: "different-repo" },
+      errorKind: "snapshot_invalid",
+    },
+  ];
+
+  invalidCases.forEach(({ label, overrides, errorKind }) => {
+    test(`fails ${label} before running or allocating a sandbox`, async () => {
+      currentRun = buildSnapshotRun(buildAgent(), overrides);
+      const { executeBackgroundAgentRun } = await executorModulePromise;
+
+      await executeBackgroundAgentRun({
+        runId: currentRun.id,
+        workflowRunId: "wf-invalid",
+      });
+
+      expect(connectSandbox).not.toHaveBeenCalled();
+      expect(generate).not.toHaveBeenCalled();
+      expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+        status: "failed",
+        errorKind,
+      });
+      expect(recordedEvent("background-agent.workflow.started")).toBeUndefined();
+    });
+  });
+
+  test("distinguishes deleted from disabled sources before sandbox cost", async () => {
+    currentRun = buildSnapshotRun(buildAgent());
+    currentAgent = null;
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-deleted",
+    });
+
+    expect(connectSandbox).not.toHaveBeenCalled();
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_deleted",
+    });
+
+    updateBackgroundAgentRunStatus.mockClear();
+    currentAgent = buildAgent({ status: "disabled" });
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-disabled",
+    });
+    expect(updateBackgroundAgentRunStatus.mock.calls[0]?.[0]).toMatchObject({
+      errorKind: "agent_disabled",
+    });
+  });
+
+  test("legacy rows use an explicit observable live fallback", async () => {
+    currentRun = buildRun();
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-legacy",
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(recordedEvent("background-agent.snapshot.legacy_fallback")).toBeTruthy();
   });
 });
 
