@@ -655,6 +655,21 @@ describe("execution snapshot binding", () => {
       expect(
         recordedEvent("background-agent.workflow.started"),
       ).toBeUndefined();
+      const invalidEvent = recordedEvent("background-agent.snapshot.invalid");
+      expect(invalidEvent).toMatchObject({
+        status: "failed",
+        level: "warn",
+        errorKind,
+        payload: {
+          definitionVersion: currentRun.definitionVersion,
+          definitionHash: currentRun.definitionHash,
+        },
+      });
+      expect(JSON.stringify(invalidEvent)).not.toContain("instructions");
+      expect(recordedEvents().map((event) => event.eventName)).toEqual([
+        "background-agent.snapshot.invalid",
+        "background-agent.run.failed",
+      ]);
     });
   });
 

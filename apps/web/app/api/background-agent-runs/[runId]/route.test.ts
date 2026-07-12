@@ -293,7 +293,35 @@ describe("GET /api/background-agent-runs/[runId]", () => {
     expect(body.run).toMatchObject({
       definitionVersion: 1,
       definitionHash: "b".repeat(64),
-      snapshotSource: "frozen",
+      snapshotSource: "invalid",
     });
+    expect(body.agent).toBeNull();
+  });
+
+  test("does not present mutable live definition evidence when a frozen hash is tampered", async () => {
+    if (runRow) {
+      runRow.run = {
+        ...(runRow.run as Record<string, unknown>),
+        executionSnapshot: {
+          snapshotVersion: 1,
+          instructions: "tampered-snapshot-canary",
+        },
+        definitionVersion: 1,
+        definitionHash: "0".repeat(64),
+      };
+    }
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs/run-1"),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.run.snapshotSource).toBe("invalid");
+    expect(body.agent).toBeNull();
+    expect(JSON.stringify(body)).not.toContain("tampered-snapshot-canary");
+    expect(JSON.stringify(body)).not.toContain("PR reviewer");
   });
 });
