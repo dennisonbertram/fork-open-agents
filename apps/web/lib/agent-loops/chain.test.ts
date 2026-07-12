@@ -22,7 +22,12 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
-import { AgentLoopSnapshotError } from "./execution-snapshot";
+import {
+  AgentLoopSnapshotError,
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+  toAgentLoopExecutionPolicy,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -543,6 +548,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "queued",
     definitionSnapshot: makeCanonicalDefinition() as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: "start",
     currentStepRunId: null,
     iterationCount: 0,
@@ -786,6 +794,9 @@ describe("BT-C02: failure stop — failed step, no failure edge → run failed",
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-1",
     });
@@ -901,6 +912,9 @@ describe("BT-C03: failure routed — failed step WITH failure edge → continues
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-2",
     });
@@ -972,6 +986,9 @@ describe("BT-C04: chain_route_missing — dangling/null route on success", () =>
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-3",
     });
@@ -1070,6 +1087,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-1",
       stepCount: 50, // exactly at default maxStepsPerRun ceiling
@@ -1102,6 +1122,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-2",
       stepCount: 5,
@@ -1132,6 +1155,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-3",
       stepCount: 5,
@@ -1195,6 +1221,9 @@ describe("BT-C05: guardrails", () => {
     currentStepRun = sr;
     currentLoopRun = makeRunningRun({
       definitionSnapshot: makeDefinitionWithWork() as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-guard-timeout",
       stepCount: 0,
@@ -1242,6 +1271,53 @@ describe("BT-C05: guardrails", () => {
     const { loopGuardrailsSchema } = await import("./types");
     const result = loopGuardrailsSchema.safeParse({ maxAgentTurnsPerStep: 12 });
     expect(result.success).toBe(true);
+  });
+
+  test("accepted snapshot guardrails survive a live edit and still pass current ceilings", async () => {
+    const definition = makeDefinitionWithWork();
+    const accepted = makeLoop({
+      definition,
+      guardrails: {
+        stepTimeoutMs: 5 * 60 * 1000,
+        maxAgentTurnsPerStep: 12,
+      },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(accepted);
+    currentLoopRun = makeRunningRun({
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+      currentNodeId: "work",
+      currentStepRunId: "step-frozen-guardrails",
+    });
+    currentStepRun = makeStepRunForNode(
+      "work",
+      "step-frozen-guardrails",
+    );
+    currentLoop = toAgentLoopExecutionPolicy(
+      currentLoopRun,
+      makeLoop({
+        definition,
+        guardrails: { stepTimeoutMs: 1, maxAgentTurnsPerStep: 1 },
+      }),
+    ).loop as unknown as AgentLoop;
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "wf-frozen-guardrails",
+    });
+
+    const call = executeAgentLoopStepMock.mock.calls.find(
+      (candidate) =>
+        (candidate[0] as { stepRunId: string }).stepRunId ===
+        "step-frozen-guardrails",
+    );
+    expect(call?.[0]).toMatchObject({
+      stepTimeoutMs: 5 * 60 * 1000,
+      maxAgentTurnsPerStep: 12,
+    });
   });
 });
 
@@ -1616,6 +1692,9 @@ describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnab
     currentLoopRun = makeLoopRun({
       status: "running",
       definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
       currentNodeId: "work",
       currentStepRunId: "step-work-wd",
     });

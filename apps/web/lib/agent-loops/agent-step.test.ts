@@ -55,6 +55,11 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import {
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+  toAgentLoopExecutionPolicy,
+} from "./execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -293,9 +298,12 @@ const resolveComposioToolsForBgRunMock = mock(
     reason: "no_slugs_selected",
   }),
 );
+const assertComposioRepoToolkitsStillAllowedMock = mock(async () => undefined);
 
 mock.module("@/lib/background-agents/composio-tools", () => ({
   resolveComposioToolsForBgRun: resolveComposioToolsForBgRunMock,
+  assertComposioRepoToolkitsStillAllowed:
+    assertComposioRepoToolkitsStillAllowedMock,
 }));
 
 // ── openAgent mock ────────────────────────────────────────────────────────────
@@ -439,6 +447,9 @@ function makeLoopRun(overrides: Partial<AgentLoopRun> = {}): AgentLoopRun {
     userId: "user-1",
     status: "running",
     definitionSnapshot: {} as Record<string, unknown>,
+    executionSnapshot: null,
+    definitionVersion: null,
+    definitionHash: null,
     currentNodeId: null,
     currentStepRunId: null,
     iterationCount: 0,
@@ -565,6 +576,7 @@ function resetMocks() {
   // the composio resolver does not leak into later tests that rely on the
   // default off/no_slugs_selected behavior.
   resolveComposioToolsForBgRunMock.mockReset();
+  assertComposioRepoToolkitsStillAllowedMock.mockClear();
   resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
     status: "off",
     reason: "no_slugs_selected",
@@ -638,6 +650,64 @@ describe("source deletion race guards", () => {
     expect(result.errorKind).toBe("source_deleted");
     expect(buildCommitIntentFromSandboxMock).toHaveBeenCalledTimes(1);
     expect(createCommitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("frozen repository and permission intent", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun();
+    currentLoop = makeLoop();
+  });
+
+  test("live source edits cannot redirect the accepted repo or narrow frozen permissions", async () => {
+    const node = makeAgentStepNode({
+      permissions: { github: { issues: "write" } },
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    const accepted = makeLoop({
+      repoOwner: "accepted-owner",
+      repoName: "accepted-repo",
+      definition: { nodes: [node], edges: [] },
+      permissions: { github: { contents: "write", issues: "write" } },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(accepted);
+    currentLoopRun = makeLoopRun({
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+    });
+    const policy = toAgentLoopExecutionPolicy(
+      currentLoopRun,
+      makeLoop({
+        repoOwner: "edited-owner",
+        repoName: "edited-repo",
+        definition: accepted.definition,
+        permissions: { github: { contents: "read" } },
+      }),
+    ).loop;
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node,
+      loopRun: currentLoopRun,
+      loop: policy,
+      startedAt: Date.now(),
+    });
+
+    expect(verifyRepoAccessMock.mock.calls[0]?.[0]).toMatchObject({
+      owner: "accepted-owner",
+      repo: "accepted-repo",
+    });
+    expect(mintInstallationTokenMock.mock.calls[0]?.[0]).toMatchObject({
+      permissions: expect.objectContaining({
+        contents: "write",
+        issues: "write",
+      }),
+    });
   });
 });
 
@@ -1012,6 +1082,29 @@ describe("BT-S07: checkCommand passes → success", () => {
     expect(result.outcome).toBe("success");
     // Sandbox exec was called for the checkCommand
     expect(sandboxMock.exec.mock.calls.length).toBeGreaterThan(0);
+  });
+
+  test("check evidence never serializes the frozen command", async () => {
+    const privateCommand = "echo check-command-private-canary";
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({ checkCommand: privateCommand }) as Parameters<
+        typeof executeAgentStep
+      >[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    expect(JSON.stringify(recordedEvents)).not.toContain(privateCommand);
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.step.check.completed",
+        payload: expect.objectContaining({ checkConfigured: true }),
+      }),
+    );
   });
 });
 
@@ -2080,6 +2173,45 @@ describe("BT-S26/S27/S28: agent-loop Composio degradation events (#798)", () => 
     expect(notConnectedEvent).toBeDefined();
     const payload = notConnectedEvent?.payload as Record<string, unknown>;
     expect(payload?.["disconnectedToolkits"]).toEqual(["slack"]);
+  });
+
+  test("cached Composio tools recheck current repository policy before execute", async () => {
+    const toolExecute = mock(async () => ({ ok: true }));
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "ready",
+      tools: {
+        github_create_issue: {
+          description: "Create issue",
+          execute: toolExecute,
+        },
+      },
+      toolkitSlugs: ["github"],
+      disconnectedToolkits: [],
+    }));
+
+    await executeAgentStep({
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: makeAgentStepNode({
+        composioToolkitSlugs: ["github"],
+      }) as Parameters<typeof executeAgentStep>[0]["node"],
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+    });
+
+    const generateInput = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      tools?: Record<string, { execute?: (...args: unknown[]) => unknown }>;
+    };
+    await generateInput.tools?.github_create_issue?.execute?.({});
+    expect(assertComposioRepoToolkitsStillAllowedMock).toHaveBeenCalledWith({
+      userId: "user-1",
+      repoOwner: "acme",
+      repoName: "my-repo",
+      toolkitSlugs: ["github"],
+    });
+    expect(toolExecute).toHaveBeenCalledTimes(1);
   });
 });
 
