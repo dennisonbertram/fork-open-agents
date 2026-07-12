@@ -108,6 +108,32 @@ describe("GetStartedFlow - reconnect intent is explicit (#781)", () => {
   });
 });
 
+describe("GetStartedFlow - product next action (#967)", () => {
+  test("connected default renders Start a Session without another Connect action", async () => {
+    searchParamValues = { step: "github", next: "/sessions" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+    expect(html).toContain("Start a Session");
+    expect(html).not.toContain(">Connect GitHub<");
+  });
+
+  test("connected saved internal destination renders Continue", async () => {
+    searchParamValues = { step: "github", next: "/settings/profile" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: true };
+    const { GetStartedFlow } = await flowModulePromise;
+    const html = renderToStaticMarkup(<GetStartedFlow />);
+    expect(html).toContain(">Continue<");
+  });
+
+  test("linked identity without installation keeps Install GitHub App", async () => {
+    searchParamValues = { step: "github", next: "/sessions" };
+    sessionState = { hasGitHubAccount: true, hasGitHubInstallations: false };
+    const { GetStartedFlow } = await flowModulePromise;
+    expect(renderToStaticMarkup(<GetStartedFlow />)).toContain("Install GitHub App");
+  });
+});
+
 describe("GetStartedFlow - regression: buildGitHubReconnectUrl integration (#781)", () => {
   test("a real reconnect surface's generated URL (via buildGitHubReconnectUrl) forces the reconnect flow for a connected user", async () => {
     // Regression guard: if a future change removes `reconnect=1` from
