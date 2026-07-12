@@ -1003,7 +1003,7 @@ describe("normalized loop behavior consumption (#968)", () => {
     await executeAgentStep(callParams);
 
     const tokenPermissions = (
-      mintInstallationTokenMock.mock.calls[0]?.[0] as {
+      (mintInstallationTokenMock.mock.calls[0]?.[0] ?? {}) as {
         permissions?: Record<string, string>;
       }
     ).permissions;

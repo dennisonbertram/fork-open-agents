@@ -47,6 +47,16 @@ import {
 } from "./store";
 import { executeAgentStep } from "./agent-step";
 import { AgentLoopSourceDeletedError } from "./source-deleted-error";
+import {
+  buildAgentLoopNormalizedStepInput,
+  projectAgentLoopLiveSource,
+} from "./normalized-step-input";
+import {
+  resolveAgentLoopExecutionDefinition,
+  type AgentLoopExecutionPolicy,
+} from "./execution-snapshot";
+import { NormalizedUnattendedInputError } from "@/lib/unattended-runtime/normalized-step-input";
+import type { AgentLoop } from "@/lib/db/schema";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
@@ -170,6 +180,16 @@ export async function executeAgentLoopStep(params: {
   const { stepRun, loopRun, loop } = ctx;
   const loopRunId = loopRun.id;
 
+  // Durable workflow delivery is at-least-once. A terminal step already owns
+  // its evidence and side effects, so a duplicate delivery is a strict no-op.
+  if (["succeeded", "failed", "skipped"].includes(stepRun.status)) {
+    return {
+      outcome: stepRun.status === "succeeded" ? "success" : "failure",
+      ...(stepRun.errorKind ? { errorKind: stepRun.errorKind } : {}),
+      ...(stepRun.errorMessage ? { errorMessage: stepRun.errorMessage } : {}),
+    };
+  }
+
   // ── 2. Parse definitionSnapshot ────────────────────────────────────────────
 
   const snapshotParse = loopDefinitionSchema.safeParse(
@@ -247,12 +267,23 @@ export async function executeAgentLoopStep(params: {
   // ── 4. Mark step running + emit step.started ────────────────────────────────
 
   const startedDate = new Date();
-  await updateAgentLoopStepRun({
-    stepRunId,
-    status: "running",
-    workflowRunId,
-    startedAt: startedDate,
-  });
+  if (stepRun.status === "queued") {
+    const claimed = await updateAgentLoopStepRun({
+      stepRunId,
+      status: "running",
+      workflowRunId,
+      startedAt: startedDate,
+      expectedStatuses: ["queued"],
+    });
+    if (!claimed) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
+  } else if (
+    stepRun.status === "running" &&
+    stepRun.workflowRunId !== workflowRunId
+  ) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
 
   await recordAgentLoopEvent({
     loopRunId,
@@ -293,12 +324,103 @@ export async function executeAgentLoopStep(params: {
     // checkCommand, commit/push, disposal, and events internally.
     // On failure it records the step update + event and returns a typed result.
     // On success it records the step update + context merge + completion event.
-    // Extract watchdog hint from stepInput (set by retryCurrentStepForWatchdog)
-    const stepInputRaw = (stepRun.stepInput ?? {}) as Record<string, unknown>;
-    const watchdogHint =
-      typeof stepInputRaw["watchdogHint"] === "string"
-        ? stepInputRaw["watchdogHint"]
-        : undefined;
+    const resolvedDefinition =
+      ctx.resolvedDefinition ??
+      resolveAgentLoopExecutionDefinition(
+        loopRun,
+        loop as unknown as AgentLoop,
+      );
+    const liveSource =
+      ctx.liveSource ??
+      projectAgentLoopLiveSource(loop as unknown as AgentLoop, stepRun.nodeId);
+
+    // The live default branch is the only repository fact unavailable in the
+    // frozen Run. Resolve it before normalization, but do not mint a token or
+    // allocate a sandbox until strict V1 validation succeeds.
+    const repository = resolvedDefinition.definition.repository;
+    const checkoutAccess = await verifyRepoAccess({
+      userId: loopRun.userId,
+      owner: repository.owner,
+      repo: repository.name,
+      requiredUserPermission: "write",
+    });
+    if (!checkoutAccess.ok) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind:
+          checkoutAccess.reason === "no_installation"
+            ? "installation_missing"
+            : "permission_missing",
+        errorMessage: `Repo access denied: ${checkoutAccess.reason}`,
+      });
+    }
+
+    let normalizedInput: ReturnType<typeof buildAgentLoopNormalizedStepInput>;
+    try {
+      normalizedInput = buildAgentLoopNormalizedStepInput({
+        resolvedDefinition,
+        loopRun,
+        stepRun,
+        workflowRunId,
+        defaultBranch: checkoutAccess.defaultBranch,
+      });
+    } catch (error) {
+      const normalizedError =
+        error instanceof NormalizedUnattendedInputError ? error : null;
+      const errorKind =
+        normalizedError?.errorKind ?? "normalized_input_invalid";
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId: stepRun.nodeId,
+        eventName: "agent-loop.step.normalized-input.rejected",
+        status: "failed",
+        level: "error",
+        summary: "Normalized loop step input was rejected.",
+        payload: {
+          runId: loopRunId,
+          stepRunId,
+          nodeId: stepRun.nodeId,
+          errorKind,
+          safeFieldPaths:
+            normalizedError?.issues.map((issue) =>
+              issue.path.map(String).join("."),
+            ) ?? [],
+          workflowRunId,
+        },
+        requestId: loopRun.requestId,
+        workflowRunId,
+      });
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind,
+        errorMessage: "Normalized loop step input was rejected.",
+      });
+    }
+
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId: normalizedInput.identity.nodeId,
+      eventName: "agent-loop.step.normalized-input.accepted",
+      status: "succeeded",
+      level: "info",
+      summary: "Accepted normalized loop step input.",
+      payload: {
+        runId: normalizedInput.identity.runId,
+        stepRunId: normalizedInput.identity.stepRunId,
+        nodeId: normalizedInput.identity.nodeId,
+        attempt: normalizedInput.identity.attempt,
+        inputVersion: normalizedInput.version,
+        definitionVersion: normalizedInput.provenance.definitionVersion,
+        definitionHash: normalizedInput.provenance.definitionHash,
+        snapshotSource: normalizedInput.provenance.snapshotSource,
+        workflowRunId: normalizedInput.identity.workflowRunId,
+        workspacePolicy: normalizedInput.workspace.policy,
+      },
+      requestId: normalizedInput.identity.requestId,
+      workflowRunId,
+    });
 
     return executeAgentStep({
       stepRunId,
@@ -306,9 +428,10 @@ export async function executeAgentLoopStep(params: {
       loopRunId,
       node,
       loopRun,
-      loop,
+      loop: loop as AgentLoopExecutionPolicy,
       startedAt,
-      watchdogHint,
+      normalizedInput,
+      liveSource,
       stepTimeoutMs,
       maxAgentTurnsPerStep,
     });

@@ -40,7 +40,12 @@ import {
   hashAgentLoopExecutionSnapshot,
   toAgentLoopExecutionPolicy,
   type AgentLoopExecutionPolicy,
+  type ResolvedAgentLoopExecutionDefinition,
 } from "./execution-snapshot";
+import {
+  projectAgentLoopLiveSource,
+  type AgentLoopLiveSourceProjection,
+} from "./normalized-step-input";
 import { toPublicAgentLoopRun, type PublicAgentLoopRun } from "./public-run";
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -137,6 +142,8 @@ export type UpdateAgentLoopStepRunInput = {
   startedAt?: Date | null;
   finishedAt?: Date | null;
   durationMs?: number | null;
+  /** Optional compare-and-set guard used when claiming queued work. */
+  expectedStatuses?: AgentLoopStepRun["status"][];
 };
 
 export type RecordAgentLoopEventInput = {
@@ -869,6 +876,8 @@ export type AgentLoopStepRunWithContext = {
   stepRun: AgentLoopStepRun;
   loopRun: AgentLoopRun;
   loop: AgentLoopExecutionPolicy;
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
+  liveSource: AgentLoopLiveSourceProjection | null;
   snapshotSource: "frozen" | "legacy_live_fallback";
   definitionVersion: number | null;
   definitionHash: string | null;
@@ -877,16 +886,15 @@ export type AgentLoopStepRunWithContext = {
 export type AgentLoopRunExecutionContext = {
   loopRun: AgentLoopRun;
   loop: AgentLoopExecutionPolicy;
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
   snapshotSource: "frozen" | "legacy_live_fallback";
   definitionVersion: number | null;
   definitionHash: string | null;
 };
 
-export async function getAgentLoopRunExecutionContext(
-  runId: string,
-): Promise<AgentLoopRunExecutionContext | null> {
-  const row = await getAgentLoopRunWithLoop(runId);
-  if (!row) return null;
+function resolveAgentLoopRunExecutionContext(
+  row: AgentLoopRunWithLoop,
+): AgentLoopRunExecutionContext {
   try {
     const policy = toAgentLoopExecutionPolicy(row.run, row.loop);
     if (!isAgentLoopsEnabled()) {
@@ -917,6 +925,14 @@ export async function getAgentLoopRunExecutionContext(
   }
 }
 
+export async function getAgentLoopRunExecutionContext(
+  runId: string,
+): Promise<AgentLoopRunExecutionContext | null> {
+  const row = await getAgentLoopRunWithLoop(runId);
+  if (!row) return null;
+  return resolveAgentLoopRunExecutionContext(row);
+}
+
 /**
  * Loads a step run together with its parent loop run and the loop definition
  * row. Used by the step executor to obtain all data it needs in one round trip.
@@ -932,11 +948,16 @@ export async function getAgentLoopStepRunWithContext(
     return null;
   }
 
-  const context = await getAgentLoopRunExecutionContext(stepRun.loopRunId);
-  if (!context) {
+  const row = await getAgentLoopRunWithLoop(stepRun.loopRunId);
+  if (!row) {
     return null;
   }
-  return { stepRun, ...context };
+  const context = resolveAgentLoopRunExecutionContext(row);
+  return {
+    stepRun,
+    ...context,
+    liveSource: projectAgentLoopLiveSource(row.loop, stepRun.nodeId),
+  };
 }
 
 export async function createAgentLoopStepRun(
@@ -1072,6 +1093,9 @@ export async function updateAgentLoopStepRun(
     .where(
       and(
         eq(agentLoopStepRuns.id, params.stepRunId),
+        ...(params.expectedStatuses
+          ? [inArray(agentLoopStepRuns.status, params.expectedStatuses)]
+          : []),
         sql`exists (
           select 1 from ${agentLoopRuns}
           where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}
