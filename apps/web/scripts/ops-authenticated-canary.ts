@@ -142,6 +142,64 @@ export function formatCanaryResult(result: CanaryResult): string {
   return lines.join("\n");
 }
 
+const diagnosisSections = [
+  "needsAttention",
+  "running",
+  "recentlyCompleted",
+  "waitingOnUser",
+  "stale",
+] as const;
+
+const diagnosisSources = new Set([
+  "session",
+  "chat_workflow",
+  "background_agent",
+  "agent_loop",
+]);
+
+export function findDiagnosisHref(body: unknown): string | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return null;
+  }
+
+  const snapshot = body as Record<string, unknown>;
+  for (const section of diagnosisSections) {
+    const items = snapshot[section];
+    if (!Array.isArray(items)) {
+      continue;
+    }
+
+    for (const item of items) {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        continue;
+      }
+      const href = (item as Record<string, unknown>).diagnosisHref;
+      if (typeof href !== "string") {
+        continue;
+      }
+
+      try {
+        const url = new URL(href, "https://canary.invalid");
+        const source = url.searchParams.get("source");
+        const id = url.searchParams.get("id");
+        if (
+          url.origin === "https://canary.invalid" &&
+          url.pathname === "/api/account/diagnosis" &&
+          source &&
+          diagnosisSources.has(source) &&
+          id
+        ) {
+          return `${url.pathname}${url.search}`;
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return null;
+}
+
 async function fetchJson(params: {
   url: string;
   cookie: string;
@@ -209,9 +267,26 @@ export async function runAuthenticatedCanary(
       evidence: "account/status accepted the test session.",
     };
 
+    const diagnosisHref = findDiagnosisHref(account.body);
+    if (!diagnosisHref) {
+      steps.push({
+        name: "diagnosis",
+        status: "passed",
+        evidence:
+          "Account snapshot is healthy and has no diagnosable work item yet.",
+      });
+      return {
+        requestId,
+        status: "passed",
+        targetUrl: config.targetUrl,
+        repo: config.testRepo,
+        steps,
+      };
+    }
+
     steps.push({ name: "diagnosis", status: "running" });
     const diagnosis = await fetchJson({
-      url: new URL("/api/account/diagnosis", config.targetUrl).toString(),
+      url: new URL(diagnosisHref, config.targetUrl).toString(),
       cookie: config.authCookie,
       signal: controller.signal,
     });
@@ -225,7 +300,7 @@ export async function runAuthenticatedCanary(
         : {
             name: "diagnosis",
             status: "failed",
-            errorKind: "github_installation_missing",
+            errorKind: "account_diagnosis_unavailable",
             evidence: `account/diagnosis returned ${diagnosis.status}`,
           };
 

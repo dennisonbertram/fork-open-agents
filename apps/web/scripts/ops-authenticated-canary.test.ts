@@ -5,6 +5,7 @@ import {
   formatCanaryResult,
   isCanaryConfigRequired,
   readCanaryConfig,
+  runAuthenticatedCanary,
   runCanaryCli,
 } from "./ops-authenticated-canary";
 
@@ -168,5 +169,87 @@ describe("ops authenticated canary", () => {
         running: [{ diagnosisHref: "https://attacker.example/diagnosis" }],
       }),
     ).toBeNull();
+  });
+
+  test("passes a new disposable identity without inventing a diagnosis target", async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async () =>
+        Response.json({
+          needsAttention: [],
+          running: [],
+          recentlyCompleted: [],
+          waitingOnUser: [],
+          stale: [],
+        }),
+      { preconnect: originalFetch.preconnect },
+    );
+
+    try {
+      const result = await runAuthenticatedCanary({
+        targetUrl: "https://example.com",
+        testRepo: "owner/repo",
+        testIdentity: "canary-user",
+        authCookie: "session=secret",
+        timeoutMs: 1_000,
+      });
+
+      expect(result.status).toBe("passed");
+      expect(result.steps).toEqual([
+        {
+          name: "auth",
+          status: "passed",
+          evidence: "account/status accepted the test session.",
+        },
+        {
+          name: "diagnosis",
+          status: "passed",
+          evidence:
+            "Account snapshot is healthy and has no diagnosable work item yet.",
+        },
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test("calls diagnosis with the owned snapshot target", async () => {
+    const requestedUrls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = Object.assign(
+      async (input: URL | RequestInfo) => {
+        const url = input.toString();
+        requestedUrls.push(url);
+        return url.includes("/api/account/status")
+          ? Response.json({
+              running: [
+                {
+                  diagnosisHref:
+                    "/api/account/diagnosis?source=agent_loop&id=loop-run-1",
+                },
+              ],
+            })
+          : Response.json({ diagnosis: { status: "running" } });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    try {
+      const result = await runAuthenticatedCanary({
+        targetUrl: "https://example.com",
+        testRepo: "owner/repo",
+        testIdentity: "canary-user",
+        authCookie: "session=secret",
+        timeoutMs: 1_000,
+      });
+
+      expect(result.status).toBe("passed");
+      expect(requestedUrls).toEqual([
+        "https://example.com/api/account/status",
+        "https://example.com/api/account/diagnosis?source=agent_loop&id=loop-run-1",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
