@@ -609,6 +609,32 @@ describe("execution snapshot binding", () => {
     ).toBe(false);
   });
 
+  test("executes a frozen private check command without persisting it in events", async () => {
+    const privateCommand = "bun test --token=private-check-command-canary";
+    currentRun = buildSnapshotRun(buildAgent({ checkCommand: privateCommand }));
+    const { executeBackgroundAgentRun } = await executorModulePromise;
+
+    await executeBackgroundAgentRun({
+      runId: currentRun.id,
+      workflowRunId: "wf-private-check",
+    });
+
+    expect(sandboxExec).toHaveBeenCalledWith(
+      privateCommand,
+      "/workspace/widgets",
+      expect.any(Number),
+    );
+    expect(JSON.stringify(recordedEvents())).not.toContain(
+      "private-check-command-canary",
+    );
+    expect(recordedEvent("background-agent.check.completed")).toMatchObject({
+      payload: {
+        commandLabel: "required_check",
+        commandHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+      },
+    });
+  });
+
   const invalidCases: Array<{
     label: string;
     overrides: Record<string, unknown>;
@@ -634,6 +660,14 @@ describe("execution snapshot binding", () => {
       overrides: { repoName: "different-repo" },
       errorKind: "snapshot_invalid",
     },
+    {
+      label: "unsafe corrupted metadata",
+      overrides: {
+        definitionVersion: 1_000_001,
+        definitionHash: "secret-looking-corrupt-hash-value",
+      },
+      errorKind: "snapshot_version_unsupported",
+    },
   ];
 
   invalidCases.forEach(({ label, overrides, errorKind }) => {
@@ -658,14 +692,27 @@ describe("execution snapshot binding", () => {
       const invalidEvent = recordedEvent("background-agent.snapshot.invalid");
       expect(invalidEvent).toMatchObject({
         status: "failed",
-        level: "warn",
+        level: "error",
         errorKind,
         payload: {
-          definitionVersion: currentRun.definitionVersion,
-          definitionHash: currentRun.definitionHash,
+          definitionVersion:
+            typeof currentRun.definitionVersion === "number" &&
+            Number.isSafeInteger(currentRun.definitionVersion) &&
+            currentRun.definitionVersion >= 0 &&
+            currentRun.definitionVersion <= 1000
+              ? currentRun.definitionVersion
+              : null,
+          definitionHash:
+            typeof currentRun.definitionHash === "string" &&
+            /^[0-9a-f]{64}$/.test(currentRun.definitionHash)
+              ? currentRun.definitionHash
+              : null,
         },
       });
       expect(JSON.stringify(invalidEvent)).not.toContain("instructions");
+      expect(JSON.stringify(invalidEvent)).not.toContain(
+        "secret-looking-corrupt-hash-value",
+      );
       expect(recordedEvents().map((event) => event.eventName)).toEqual([
         "background-agent.snapshot.invalid",
         "background-agent.run.failed",

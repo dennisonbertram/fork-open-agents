@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  hashBackgroundAgentExecutionSnapshot,
+  type BackgroundAgentExecutionSnapshotV1,
+} from "@/lib/background-agents/execution-snapshot";
 
 mock.module("server-only", () => ({}));
 
@@ -80,6 +84,36 @@ const routeModulePromise = import("./route");
 function context(runId = "run-1") {
   return {
     params: Promise.resolve({ runId }),
+  };
+}
+
+function validPrivateSnapshot(): BackgroundAgentExecutionSnapshotV1 {
+  return {
+    snapshotVersion: 1,
+    source: {
+      definitionId: "agent-1",
+      name: "Frozen reviewer",
+      updatedAt: "2026-07-11T12:00:00.000Z",
+      builtinKind: null,
+    },
+    repository: { owner: "acme", name: "widgets" },
+    instructions: "private-instructions-canary",
+    permissions: { github: { contents: "read" } },
+    checkCommand: "bun test --token=private-check-command-canary",
+    composioToolkitSlugs: [],
+    builtinToolNames: null,
+    githubActions: {
+      open_pull_request: false,
+      comment_on_pr_or_issue: true,
+      approve_pull_request: false,
+      request_changes: false,
+      merge_pull_request: false,
+      push: false,
+      delete_branch: false,
+    },
+    writeScope: { mode: "this_repo" },
+    requireCiGreenForMerge: true,
+    modelId: null,
   };
 }
 
@@ -323,5 +357,39 @@ describe("GET /api/background-agent-runs/[runId]", () => {
     expect(body.agent).toBeNull();
     expect(JSON.stringify(body)).not.toContain("tampered-snapshot-canary");
     expect(JSON.stringify(body)).not.toContain("PR reviewer");
+  });
+
+  test("exposes only safe check metadata from a verified frozen snapshot", async () => {
+    const executionSnapshot = validPrivateSnapshot();
+    if (runRow) {
+      runRow.run = {
+        ...(runRow.run as Record<string, unknown>),
+        agentId: "agent-1",
+        executionSnapshot,
+        definitionVersion: 1,
+        definitionHash: hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+      };
+    }
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs/run-1"),
+      context(),
+    );
+    const body = await response.json();
+    const serialized = JSON.stringify(body);
+
+    expect(response.status).toBe(200);
+    expect(body.run.snapshotSource).toBe("frozen");
+    expect(body.agent).toEqual({
+      id: "agent-1",
+      name: "Frozen reviewer",
+      permissions: { github: { contents: "read" } },
+      checkConfigured: true,
+      sourceDeleted: false,
+    });
+    expect(serialized).not.toContain("private-instructions-canary");
+    expect(serialized).not.toContain("private-check-command-canary");
+    expect(serialized).not.toContain("checkCommand");
   });
 });

@@ -117,6 +117,19 @@ describe("background agent public snapshot provenance", () => {
     ).toBe("invalid");
   });
 
+  test("rejects a correctly hashed snapshot bound to another source identity", () => {
+    const otherAgent = buildAgent({ id: "agent-other" });
+    const executionSnapshot = buildBackgroundAgentExecutionSnapshot(otherAgent);
+    const run = buildRun({
+      executionSnapshot,
+      definitionVersion: 1,
+      definitionHash: hashBackgroundAgentExecutionSnapshot(executionSnapshot),
+    });
+
+    expect(getBackgroundAgentSnapshotSource(run)).toBe("invalid");
+    expect(toSafeBackgroundAgentEvidence(run, buildAgent())).toBeNull();
+  });
+
   test("does not expose snapshot or mutable live evidence for invalid frozen provenance", () => {
     const liveAgent = buildAgent();
     const frozenRun = buildFrozenRun(
