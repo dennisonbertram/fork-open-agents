@@ -565,10 +565,19 @@ describe("(a) comment-only agent toolset", () => {
 
 describe("execution snapshot binding", () => {
   test("terminal retries short-circuit before snapshot validation or authorization", async () => {
+    const completedSummary = {
+      headline: "Keep the completed summary",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
     currentRun = buildSnapshotRun(buildAgent(), {
       status: "succeeded",
       definitionHash: "0".repeat(64),
-      resultSummary: { headline: "Keep the completed summary" },
+      resultSummary: completedSummary,
     });
     currentAgent = buildAgent({ status: "disabled" });
     const { executeBackgroundAgentRun } = await executorModulePromise;
@@ -582,9 +591,7 @@ describe("execution snapshot binding", () => {
     expect(updateBackgroundAgentRunStatus).not.toHaveBeenCalled();
     expect(recordBackgroundAgentEvent).not.toHaveBeenCalled();
     expect(persistRunSummary).not.toHaveBeenCalled();
-    expect(currentRun.resultSummary).toEqual({
-      headline: "Keep the completed summary",
-    });
+    expect(currentRun.resultSummary).toBe(completedSummary);
   });
 
   test("an invalid-snapshot retry cannot append failure evidence or overwrite its summary", async () => {
@@ -615,7 +622,15 @@ describe("execution snapshot binding", () => {
     currentRun = buildSnapshotRun(buildAgent(), {
       definitionHash: "0".repeat(64),
     });
-    const winningSummary = { headline: "Another worker already completed" };
+    const winningSummary = {
+      headline: "Another worker already completed",
+      checked: [],
+      changed: [],
+      blocked: [],
+      artifacts: [],
+      next: [],
+      warnings: [],
+    };
     beforeStatusUpdate = () => {
       currentRun = {
         ...currentRun,

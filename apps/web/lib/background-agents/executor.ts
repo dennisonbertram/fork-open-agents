@@ -529,8 +529,9 @@ async function recordFailure(params: {
   errorKind: string;
   summary: string;
   payload?: Record<string, unknown>;
-}) {
-  await updateBackgroundAgentRunStatus({
+  onTransitionWon?: () => Promise<void>;
+}): Promise<boolean> {
+  const failedRun = await updateBackgroundAgentRunStatus({
     runId: params.runId,
     status: "failed",
     workflowRunId: params.workflowRunId,
@@ -538,6 +539,11 @@ async function recordFailure(params: {
     errorKind: params.errorKind,
     errorMessage: params.summary,
   });
+  if (!failedRun) {
+    return false;
+  }
+
+  await params.onTransitionWon?.();
   await recordBackgroundAgentEvent({
     runId: params.runId,
     agentId: params.agentId,
@@ -572,6 +578,16 @@ async function recordFailure(params: {
       // Best-effort; do not re-throw.
     }
   }
+  return true;
+}
+
+function isTerminalRunStatus(status: BackgroundAgentRun["status"]): boolean {
+  return (
+    status === "succeeded" ||
+    status === "failed" ||
+    status === "skipped" ||
+    status === "cancelled"
+  );
 }
 
 function isSnapshotValidationErrorKind(errorKind: string): boolean {
@@ -1513,6 +1529,9 @@ export async function executeBackgroundAgentRun(params: {
   }
 
   const { run } = row;
+  if (isTerminalRunStatus(run.status)) {
+    return;
+  }
   const sandboxName = buildSandboxName(run.id);
 
   let resolvedDefinition: ReturnType<
@@ -1529,22 +1548,6 @@ export async function executeBackgroundAgentRun(params: {
       error instanceof BackgroundAgentSnapshotError ? error : null;
     const freshRow = await getBackgroundAgentRunWithAgent(run.id);
     const errorKind = snapshotError?.errorKind ?? "snapshot_invalid";
-    if (isSnapshotValidationErrorKind(errorKind)) {
-      await recordBackgroundAgentEvent({
-        runId: run.id,
-        agentId: freshRow?.run.agentId ?? null,
-        userId: run.userId,
-        eventName: "background-agent.snapshot.invalid",
-        status: "failed",
-        level: "error",
-        summary: "Background execution snapshot validation failed.",
-        workflowRunId: params.workflowRunId,
-        requestId: run.requestId,
-        sandboxName,
-        errorKind,
-        payload: safeSnapshotMetadata(run),
-      });
-    }
     await recordFailure({
       runId: run.id,
       agentId: freshRow?.run.agentId ?? null,
@@ -1555,6 +1558,24 @@ export async function executeBackgroundAgentRun(params: {
       errorKind,
       summary:
         snapshotError?.message ?? "Background execution snapshot is invalid.",
+      onTransitionWon: isSnapshotValidationErrorKind(errorKind)
+        ? async () => {
+            await recordBackgroundAgentEvent({
+              runId: run.id,
+              agentId: freshRow?.run.agentId ?? null,
+              userId: run.userId,
+              eventName: "background-agent.snapshot.invalid",
+              status: "failed",
+              level: "error",
+              summary: "Background execution snapshot validation failed.",
+              workflowRunId: params.workflowRunId,
+              requestId: run.requestId,
+              sandboxName,
+              errorKind,
+              payload: safeSnapshotMetadata(run),
+            });
+          }
+        : undefined,
     });
     return;
   }
