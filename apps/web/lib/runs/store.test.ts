@@ -420,4 +420,105 @@ describe("Runs source loaders", () => {
     });
     expect(filtered).toEqual([]);
   });
+
+  test("verified V1 evidence wins over live edits for display and filters", async () => {
+    const now = new Date("2026-07-11T12:00:00.000Z");
+    const definition = {
+      nodes: [
+        {
+          id: "start",
+          kind: "start" as const,
+          label: "Start",
+          position: { x: 0, y: 0 },
+        },
+        {
+          id: "end",
+          kind: "end" as const,
+          label: "End",
+          position: { x: 1, y: 0 },
+        },
+      ],
+      edges: [
+        {
+          id: "edge",
+          source: "start",
+          target: "end",
+          when: "always" as const,
+        },
+      ],
+    };
+    const acceptedLoop = {
+      id: "edited-loop",
+      userId: "user-1",
+      name: "Accepted release",
+      description: null,
+      repoOwner: "accepted",
+      repoName: "repository",
+      definition,
+      status: "active",
+      guardrails: null,
+      permissions: {},
+      watchdogEnabled: false,
+      watchdogInstructions: null,
+      watchdogRetryBudget: 2,
+      createdAt: now,
+      updatedAt: now,
+    } satisfies AgentLoop;
+    const snapshot = buildAgentLoopExecutionSnapshot(acceptedLoop);
+    loopRows = [
+      {
+        id: "edited-run",
+        loopId: "edited-loop",
+        triggerId: null,
+        triggerKind: null,
+        loopName: "Mutable renamed release",
+        repoOwner: "mutable",
+        repoName: "redirected",
+        definitionSnapshot: snapshot.definition,
+        executionSnapshot: snapshot,
+        definitionVersion: 1,
+        definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+        status: "running",
+        source: "manual",
+        currentNodeId: "start",
+        stepCount: 1,
+        failedStepCount: 0,
+        errorKind: null,
+        requestId: null,
+        workflowRunId: null,
+        createdAt: now,
+        updatedAt: now,
+        startedAt: now,
+        finishedAt: null,
+      },
+    ];
+
+    const { createDbRunSourceLoaders } = await storePromise;
+    const loader = createDbRunSourceLoaders({ userId: "user-1" }).agent_loop;
+    const accepted = await loader({
+      filters: {
+        view: "all",
+        repoOwner: "accepted",
+        repoName: "repository",
+      },
+      limit: 26,
+      now,
+    });
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]).toMatchObject({
+      automationName: "Accepted release",
+      repository: { owner: "accepted", name: "repository" },
+    });
+
+    const mutable = await loader({
+      filters: {
+        view: "all",
+        repoOwner: "mutable",
+        repoName: "redirected",
+      },
+      limit: 26,
+      now,
+    });
+    expect(mutable).toEqual([]);
+  });
 });
