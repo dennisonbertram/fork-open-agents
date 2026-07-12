@@ -114,13 +114,13 @@ const ROLE_DESCRIPTIONS: Record<
   "main" | "explorer" | "executor" | "design",
   string
 > = {
-  main: "Drives every chat. Plans, calls tools, and delegates work to subagents.",
+  main: "Coordinates each Session, plans work, calls tools, and delegates to helper roles.",
   explorer:
-    "Use for read-only codebase exploration, tracing behavior, and answering questions without changing files",
+    "A helper role for read-only codebase exploration, tracing behavior, and answering questions without changing files",
   executor:
-    "Use for well-scoped implementation work, including edits, scaffolding, refactors, and other file changes",
+    "A helper role for well-scoped implementation work, including edits, scaffolding, refactors, and other file changes",
   design:
-    "Use for creating distinctive, production-grade frontend interfaces with high design quality. Generates creative, polished code that avoids generic AI aesthetics.",
+    "A helper role for creating distinctive, production-grade frontend interfaces with high design quality.",
 };
 
 /**

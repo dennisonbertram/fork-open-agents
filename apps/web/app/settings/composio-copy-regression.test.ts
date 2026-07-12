@@ -17,13 +17,11 @@ import { getSettingsRouteMetadata } from "./settings-routes";
 describe("composio copy — regression", () => {
   test("REGRESSION-001 tool-profiles description no longer says 'in a chat' as the only usage path", () => {
     // The old string implied chats were the only place tools mattered.
-    // The new copy must describe agent/loop usage explicitly.
+    // The new copy must describe Automation/loop usage explicitly.
     expect(TOOL_PROFILES_DESCRIPTION).not.toMatch(
       /so different agents get different tools — or pick tools directly in a chat\.$/,
     );
-    expect(TOOL_PROFILES_DESCRIPTION.toLowerCase()).toContain(
-      "background agents",
-    );
+    expect(TOOL_PROFILES_DESCRIPTION.toLowerCase()).toContain("automations");
   });
 
   // Codex P2-2 on PR #851: catches a regression back to the overpromise that

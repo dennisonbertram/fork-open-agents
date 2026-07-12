@@ -21,9 +21,9 @@ import {
 } from "./agents-copy";
 
 describe("External tools 'none assigned' copy (#803 item 5, W4)", () => {
-  test("BT-803-005a label says 'assigned to this agent', not just 'connected'", () => {
+  test("BT-803-005a label uses the interactive role noun", () => {
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_LABEL).toBe(
-      "None assigned to this agent",
+      "None assigned to this role",
     );
   });
 
@@ -32,9 +32,9 @@ describe("External tools 'none assigned' copy (#803 item 5, W4)", () => {
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).not.toMatch(/assign one here/i);
   });
 
-  test("BT-803-005c hint points to Settings -> Composio's Agent defaults as where a default profile IS assignable", () => {
+  test("BT-803-005c hint points to Settings -> Composio's Chat role defaults", () => {
     expect(EXTERNAL_TOOLS_NONE_ASSIGNED_HINT).toMatch(
-      /settings.*composio.*agent defaults/i,
+      /settings.*composio.*chat role defaults/i,
     );
   });
 });

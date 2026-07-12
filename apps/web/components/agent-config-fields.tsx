@@ -67,7 +67,15 @@ type GitHubPermissionsFieldConfig = {
   toolAuthoringEnabled: boolean;
   onToolAuthoringEnabledChange: (enabled: boolean) => void;
   disabled?: boolean;
+  presentationNoun?: "agent" | "role";
 };
+
+export function getGitHubPermissionsCopy(noun: "agent" | "role" = "agent") {
+  return {
+    github: `Let this ${noun} read and act on GitHub issues, branches, and PRs for repos you have access to.`,
+    authoring: `Let this ${noun} propose new Composio tools. Proposals are recorded for review and do not auto-enable tools.`,
+  };
+}
 
 type DeclaredOutputsFieldConfig = {
   outputSchema?: Record<string, unknown>;
@@ -223,16 +231,14 @@ function GitHubPermissionsField({
 }) {
   const handleGithubToolsEnabledChange = config.onGithubToolsEnabledChange;
   const handleToolAuthoringEnabledChange = config.onToolAuthoringEnabledChange;
+  const copy = getGitHubPermissionsCopy(config.presentationNoun);
 
   return (
     <>
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
           <Label htmlFor="agent-github-tools-enabled">GitHub tools</Label>
-          <p className="text-xs text-muted-foreground">
-            Let this agent read and act on GitHub issues, branches, and PRs for
-            repos you have access to.
-          </p>
+          <p className="text-xs text-muted-foreground">{copy.github}</p>
         </div>
         <Switch
           id="agent-github-tools-enabled"
@@ -244,10 +250,7 @@ function GitHubPermissionsField({
       <div className="flex items-center justify-between gap-4">
         <div className="space-y-0.5">
           <Label htmlFor="agent-tool-authoring-enabled">Tool authoring</Label>
-          <p className="text-xs text-muted-foreground">
-            Let this agent propose new Composio tools. Proposals are recorded
-            for review and do not auto-enable tools.
-          </p>
+          <p className="text-xs text-muted-foreground">{copy.authoring}</p>
         </div>
         <Switch
           id="agent-tool-authoring-enabled"

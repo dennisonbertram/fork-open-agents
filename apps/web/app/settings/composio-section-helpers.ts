@@ -137,9 +137,9 @@ export function shouldShowZeroToolHint(
  * the compact agent defaults row.
  */
 export const AGENT_ROLE_DESCRIPTIONS: Record<ComposioAgentKey, string> = {
-  main: "The main chat agent — handles top-level tasks and conversations.",
-  explorer: "Subagent that researches and maps out solutions before acting.",
+  main: "Main role — coordinates top-level work in interactive Sessions.",
+  explorer: "Helper role that researches and maps solutions before acting.",
   executor:
-    "Subagent that carries out concrete actions (file edits, API calls).",
-  design: "Subagent focused on design-related tasks and visual output.",
+    "Helper role that carries out concrete actions (file edits, API calls).",
+  design: "Helper role focused on design-related tasks and visual output.",
 };

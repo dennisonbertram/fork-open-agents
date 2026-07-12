@@ -21,6 +21,7 @@ let storedAgent: {
   githubToolsEnabled: boolean;
   toolAuthoringEnabled: boolean;
 } | null = null;
+const deleteCalls: Array<{ userId: string; role: AgentRole }> = [];
 
 mock.module("server-only", () => ({}));
 
@@ -30,7 +31,9 @@ mock.module("@/app/api/sessions/_lib/session-context", () => ({
 
 mock.module("@/lib/db/agents", () => ({
   listAgentsForUser: async () => [],
-  deleteUserDefaultAgent: async () => undefined,
+  deleteUserDefaultAgent: async (userId: string, role: AgentRole) => {
+    deleteCalls.push({ userId, role });
+  },
   upsertUserDefaultAgent: async (
     userId: string,
     role: AgentRole,
@@ -66,6 +69,31 @@ describe("/api/settings/agents", () => {
     authenticatedUser = { ok: true, userId: "user-1" };
     upsertCalls.length = 0;
     storedAgent = null;
+    deleteCalls.length = 0;
+  });
+
+  test("GET preserves the agents root and canonical legacy role/field shape", async () => {
+    const { GET } = await routeModulePromise;
+    const response = await GET();
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(Object.keys(body)).toEqual(["agents"]);
+    const agents = body.agents as Array<Record<string, unknown>>;
+    expect(agents.map((agent) => agent.role)).toEqual([
+      "main",
+      "explorer",
+      "executor",
+      "design",
+    ]);
+    expect(Object.keys(agents[0])).toEqual([
+      "role",
+      "modelId",
+      "composioToolkitSlugs",
+      "composioProfileId",
+      "instructions",
+      "managedRuntimeProfileId",
+      "githubToolsEnabled",
+      "toolAuthoringEnabled",
+    ]);
   });
 
   test("PATCH toggles toolAuthoringEnabled for an agent", async () => {
@@ -88,5 +116,18 @@ describe("/api/settings/agents", () => {
     ]);
     expect(body.agent.role).toBe("main");
     expect(body.agent.toolAuthoringEnabled).toBe(true);
+  });
+
+  test("DELETE preserves the role request and exact ok response", async () => {
+    const { DELETE } = await routeModulePromise;
+    const response = await DELETE(
+      new Request("http://localhost/api/settings/agents", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role: "design" }),
+      }),
+    );
+    expect(await response.json()).toEqual({ ok: true });
+    expect(deleteCalls).toEqual([{ userId: "user-1", role: "design" }]);
   });
 });

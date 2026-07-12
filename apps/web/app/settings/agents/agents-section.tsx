@@ -28,10 +28,10 @@ import type { AgentRosterRow } from "./agents-roster";
 
 /** Map each role to a subtitle shown beneath the role name in the card. */
 const ROLE_SUBTITLES: Record<AgentRosterRow["key"], string> = {
-  main: "Chat coordinator",
-  explorer: "Subagent",
-  executor: "Subagent",
-  design: "Subagent",
+  main: "Session coordinator",
+  explorer: "Helper role",
+  executor: "Helper role",
+  design: "Helper role",
 };
 
 const RUNTIME_PROFILES = listManagedRuntimeProfiles();
@@ -136,14 +136,14 @@ function AgentEditor({
 
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
-        toast.error(body.error ?? "Failed to save agent settings.");
+        toast.error(body.error ?? "Failed to save role settings.");
         return;
       }
 
-      toast.success(`${row.name} agent updated.`);
+      toast.success(`${row.name} role updated.`);
       onSaved();
     } catch {
-      toast.error("Failed to save agent settings.");
+      toast.error("Failed to save role settings.");
     } finally {
       setSaving(false);
     }
@@ -160,14 +160,14 @@ function AgentEditor({
 
       if (!res.ok) {
         const body = (await res.json()) as { error?: string };
-        toast.error(body.error ?? "Failed to reset agent settings.");
+        toast.error(body.error ?? "Failed to reset role settings.");
         return;
       }
 
-      toast.success(`${row.name} agent reset to defaults.`);
+      toast.success(`${row.name} role reset to defaults.`);
       onReset();
     } catch {
-      toast.error("Failed to reset agent settings.");
+      toast.error("Failed to reset role settings.");
     } finally {
       setResetting(false);
     }
@@ -234,6 +234,7 @@ function AgentEditor({
                 toolAuthoringEnabled,
                 onToolAuthoringEnabledChange: setToolAuthoringEnabled,
                 disabled: isBusy,
+                presentationNoun: "role",
               }
             : undefined
         }

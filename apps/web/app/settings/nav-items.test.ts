@@ -13,11 +13,11 @@ import {
 // Repositories entry that reaches the same effective-status view").
 
 describe("settings nav data", () => {
-  test("groups are ordered Account, Tools, Insights, Admin", () => {
+  test("groups are ordered Account, Workspace, Advanced, Admin", () => {
     expect(SETTINGS_NAV_GROUPS.map((g) => g.id)).toEqual([
       "account",
-      "tools",
-      "insights",
+      "workspace",
+      "advanced",
       "admin",
     ]);
   });
@@ -30,20 +30,20 @@ describe("settings nav data", () => {
       "/settings/profile",
       "/settings/preferences",
       "/settings/connections",
+      "/settings/usage",
     ]);
-    expect(byId.tools).toEqual([
+    expect(byId.workspace).toEqual([
       "/settings/agents",
       "/settings/models",
       "/settings/composio",
       "/settings/mcp",
       "/settings/skills",
       "/settings/repositories",
-      "/settings/runtime-profiles",
     ]);
-    expect(byId.insights).toEqual([
-      "/settings/usage",
-      "/settings/leaderboard",
+    expect(byId.advanced).toEqual([
+      "/settings/runtime-profiles",
       "/settings/learnings",
+      "/settings/leaderboard",
     ]);
     expect(byId.admin).toEqual(["/settings/admin"]);
   });
@@ -57,8 +57,26 @@ describe("settings nav data", () => {
   });
 
   test("visibleNavGroups hides the admin group unless isAdmin", () => {
-    expect(visibleNavGroups(false).map((g) => g.id)).not.toContain("admin");
-    expect(visibleNavGroups(true).map((g) => g.id)).toContain("admin");
+    expect(visibleNavGroups(false).map((g) => g.id)).toEqual([
+      "account",
+      "workspace",
+      "advanced",
+    ]);
+    expect(visibleNavGroups(true).map((g) => g.id)).toEqual([
+      "account",
+      "workspace",
+      "advanced",
+      "admin",
+    ]);
+  });
+
+  test("visibleNavGroups removes empty groups", () => {
+    expect(
+      visibleNavGroups(false, [
+        ...SETTINGS_NAV_GROUPS,
+        { id: "empty", label: "Empty", items: [] },
+      ]).map((group) => group.id),
+    ).not.toContain("empty");
   });
 
   test("flattenNavItems lists every item once with unique ids", () => {
@@ -79,13 +97,16 @@ describe("settings nav data", () => {
     const item = findActiveNavItem("/settings/agents");
     expect(item?.id).toBe("agents");
     expect(item?.href).toBe("/settings/agents");
+    expect(item?.label).toBe("Chat roles");
   });
 
-  // NAV-002: agents item is in the tools group
-  test("NAV-002: agents item is in the tools group and is the first item", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup).toBeDefined();
-    expect(toolsGroup?.items[0]?.id).toBe("agents");
+  // NAV-002: agents item is in the workspace group
+  test("NAV-002: agents item is in the workspace group and is the first item", () => {
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup).toBeDefined();
+    expect(workspaceGroup?.items[0]?.id).toBe("agents");
   });
 
   // NAV-003: chat roles remain visually distinct from unattended Automations.
@@ -103,8 +124,10 @@ describe("settings nav data", () => {
     expect(item?.href).toBe("/settings/skills");
     expect(item?.icon).toBe(Sparkles);
 
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("skills");
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup?.items.map((i) => i.id)).toContain("skills");
   });
 
   // NAV-005: runtime-profiles item resolves correctly and is in Tools group
@@ -121,10 +144,10 @@ describe("settings nav data", () => {
     expect(item?.icon).toBe(Cpu);
   });
 
-  // NAV-007: runtime-profiles is in the tools group
-  test("NAV-007: runtime-profiles item is in the tools group", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    const ids = toolsGroup?.items.map((i) => i.id);
+  // NAV-007: runtime-profiles is in the advanced group
+  test("NAV-007: runtime-profiles item is in the advanced group", () => {
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
+    const ids = advancedGroup?.items.map((i) => i.id);
     expect(ids).toContain("runtime-profiles");
   });
 
@@ -144,10 +167,10 @@ describe("settings nav data", () => {
   });
 
   test("NAV-012: top-level navigation owns Automations without a duplicate Settings entry", () => {
-    const toolsGroup = SETTINGS_NAV_GROUPS.find(
-      (group) => group.id === "tools",
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (group) => group.id === "workspace",
     );
-    const ids = toolsGroup?.items.map((item) => item.id);
+    const ids = workspaceGroup?.items.map((item) => item.id);
 
     expect(ids).not.toContain("automations");
     expect(ids).not.toContain("background-agents");
@@ -162,8 +185,12 @@ describe("settings nav data", () => {
     expect(item?.id).toBe("repositories");
     expect(item?.href).toBe("/settings/repositories");
 
-    const toolsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "tools");
-    expect(toolsGroup?.items.map((i) => i.id)).toContain("repositories");
+    expect(item?.label).toBe("Repository settings");
+
+    const workspaceGroup = SETTINGS_NAV_GROUPS.find(
+      (g) => g.id === "workspace",
+    );
+    expect(workspaceGroup?.items.map((i) => i.id)).toContain("repositories");
   });
 
   // NAV-011 (#805): nested per-repo routes still resolve to the same nav item.
@@ -172,13 +199,22 @@ describe("settings nav data", () => {
     expect(item?.id).toBe("repositories");
   });
 
-  test("learnings item lives in Insights and uses its route slug for active matching", () => {
+  test("learnings item lives in Advanced and uses its route slug for active matching", () => {
     const item = findActiveNavItem("/settings/learnings");
     expect(item?.id).toBe("learnings");
     expect(item?.href).toBe("/settings/learnings");
     expect(item?.icon).toBe(Lightbulb);
 
-    const insightsGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "insights");
-    expect(insightsGroup?.items.map((i) => i.id)).toContain("learnings");
+    const advancedGroup = SETTINGS_NAV_GROUPS.find((g) => g.id === "advanced");
+    expect(advancedGroup?.items.map((i) => i.id)).toContain("learnings");
+  });
+
+  test("non-admin active matching cannot resolve the Admin item", () => {
+    expect(
+      findActiveNavItem("/settings/admin", visibleNavGroups(false)),
+    ).toBeUndefined();
+    expect(
+      findActiveNavItem("/settings/admin", visibleNavGroups(true))?.id,
+    ).toBe("admin");
   });
 });

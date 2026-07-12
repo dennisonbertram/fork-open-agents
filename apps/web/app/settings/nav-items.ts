@@ -5,7 +5,7 @@ import {
 } from "./settings-routes";
 
 export type SettingsNavItem = {
-  id: string;
+  id: SettingsRouteId;
   label: string;
   href: string;
   icon: LucideIcon;
@@ -41,11 +41,12 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("profile"),
       settingsNavItem("preferences"),
       settingsNavItem("connections"),
+      settingsNavItem("usage"),
     ],
   },
   {
-    id: "tools",
-    label: "Tools",
+    id: "workspace",
+    label: "Workspace",
     items: [
       settingsNavItem("agents"),
       settingsNavItem("models"),
@@ -53,16 +54,15 @@ export const SETTINGS_NAV_GROUPS: SettingsNavGroup[] = [
       settingsNavItem("mcp"),
       settingsNavItem("skills"),
       settingsNavItem("repositories"),
-      settingsNavItem("runtime-profiles"),
     ],
   },
   {
-    id: "insights",
-    label: "Insights",
+    id: "advanced",
+    label: "Advanced",
     items: [
-      settingsNavItem("usage"),
-      settingsNavItem("leaderboard"),
+      settingsNavItem("runtime-profiles"),
       settingsNavItem("learnings"),
+      settingsNavItem("leaderboard"),
     ],
   },
   {
@@ -78,7 +78,9 @@ export function visibleNavGroups(
   isAdmin: boolean,
   groups = SETTINGS_NAV_GROUPS,
 ) {
-  return groups.filter((group) => !group.adminOnly || isAdmin);
+  return groups.filter(
+    (group) => group.items.length > 0 && (!group.adminOnly || isAdmin),
+  );
 }
 
 export function flattenNavItems(groups = SETTINGS_NAV_GROUPS) {
@@ -114,5 +116,5 @@ export function resolveSettingsFallbackRouteId(
     return "background-agents";
   }
   const activeId = findActiveNavItem(pathname, groups)?.id;
-  return (activeId as SettingsRouteId | undefined) ?? "profile";
+  return activeId ?? "profile";
 }

@@ -6,9 +6,11 @@ function Stub() {
   return createElement("div");
 }
 
+let currentPathname = "/settings/background-agents";
+
 mock.module("next/navigation", () => ({
   redirect: () => undefined,
-  usePathname: () => "/settings/background-agents",
+  usePathname: () => currentPathname,
   useRouter: () => ({ push: () => undefined, replace: () => undefined }),
   useSearchParams: () => new URLSearchParams(),
 }));
@@ -61,5 +63,29 @@ describe("Settings layout fallback metadata", () => {
 
     expect(html).toContain("Background agents");
     expect(html).toContain("Automations");
+  });
+
+  test("auth loading for /settings/admin does not flash admin metadata", async () => {
+    currentPathname = "/settings/admin";
+    const { default: SettingsLayout } = await layoutModulePromise;
+
+    const html = renderToStaticMarkup(
+      <SettingsLayout>settings-content</SettingsLayout>,
+    );
+
+    expect(html).not.toContain("Operator tools for managing tokens");
+    expect(html).toContain("Review your identity, activity, usage");
+  });
+
+  test("auth loading uses Chat roles metadata on the stable agents URL", async () => {
+    currentPathname = "/settings/agents";
+    const { default: SettingsLayout } = await layoutModulePromise;
+
+    const html = renderToStaticMarkup(
+      <SettingsLayout>settings-content</SettingsLayout>,
+    );
+
+    expect(html).toContain("Chat roles");
+    expect(html).toContain("inside interactive Sessions");
   });
 });

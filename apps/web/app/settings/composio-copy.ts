@@ -16,11 +16,11 @@
  * claim otherwise.
  */
 export const TOOL_PROFILES_DESCRIPTION =
-  "Named bundles of external tools (Gmail, Slack, Linear, and more) you can pick in a chat, or assign as an agent's default below. Background agents and loops don't use profiles — they pick toolkits directly on their own editor.";
+  "Named bundles of external tools (Gmail, Slack, Linear, and more) you can pick in a Session, or assign as a Chat role default below. Automations and loops don't use profiles — they pick toolkits directly in their own editor.";
 
 /** Empty "Tool profiles" state copy (item 3). */
 export const EMPTY_TOOL_PROFILES_TEXT =
-  "No tool profiles yet. A profile is a named bundle of external tools (like Gmail or Slack) you can hand to an agent or pick in a chat — create one to get started.";
+  "No tool profiles yet. A profile is a named bundle of external tools (like Gmail or Slack) you can assign to a Chat role or pick in a Session — create one to get started.";
 
 /** "Bring your own auth" disclosure title (item 4). */
 export const BRING_YOUR_OWN_AUTH_TITLE =
