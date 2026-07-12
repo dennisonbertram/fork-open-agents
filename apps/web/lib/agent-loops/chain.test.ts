@@ -1816,6 +1816,39 @@ describe("BT-C12: watchdog branch — failed step, no failure edge, watchdogEnab
     expect(callArgs.errorMessage).toBe("Sandbox failed");
   });
 
+  test("stale terminal failure replay does not route or invoke watchdog after the run advanced", async () => {
+    const staleFailedStep = makeStepRun({
+      id: "step-work-wd",
+      nodeId: "work",
+      nodeKind: "agent_step",
+      status: "failed",
+      errorKind: "sandbox_unavailable",
+      errorMessage: "Sandbox failed",
+      finishedAt: new Date(),
+    });
+    currentStepRun = staleFailedStep;
+    stepRunIdToStepRun[staleFailedStep.id] = staleFailedStep;
+    currentLoopRun = makeLoopRun({
+      status: "running",
+      definitionSnapshot: definition as Record<string, unknown>,
+      executionSnapshot: null,
+      definitionVersion: null,
+      definitionHash: null,
+      currentNodeId: "work",
+      currentStepRunId: "step-work-wd-attempt-2",
+    });
+
+    const { runAgentLoopStep } = await chainPromise;
+    await runAgentLoopStep({
+      stepRunId: staleFailedStep.id,
+      workflowRunId: "wf-stale-delivery",
+    });
+
+    expect(invokeWatchdogMock).not.toHaveBeenCalled();
+    expect(recordedStepRunCreations).toHaveLength(0);
+    expect(workflowStartCalls).toHaveLength(0);
+  });
+
   test("BT-C12c: invokeWatchdog throws → fall back to fail-fast (watchdog bug safety)", async () => {
     // Simulate watchdog bug: invokeWatchdog throws
     invokeWatchdogMock.mockImplementation(async () => {

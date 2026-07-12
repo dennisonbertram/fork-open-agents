@@ -47,10 +47,22 @@ import {
 } from "./store";
 import { executeAgentStep } from "./agent-step";
 import { AgentLoopSourceDeletedError } from "./source-deleted-error";
+import {
+  buildAgentLoopNormalizedStepInput,
+  projectAgentLoopLiveSource,
+  validateAgentLoopNormalizedStepDynamicInput,
+} from "./normalized-step-input";
+import {
+  resolveAgentLoopExecutionDefinition,
+  type AgentLoopExecutionPolicy,
+} from "./execution-snapshot";
+import { NormalizedUnattendedInputError } from "@/lib/unattended-runtime/normalized-step-input";
+import type { AgentLoop } from "@/lib/db/schema";
+import { resolveWorkingBranchIntent } from "./resolve-working-branch";
 
 // ── Public types ───────────────────────────────────────────────────────────────
 
-export type StepOutcome = "success" | "failure" | "true" | "false";
+export type StepOutcome = "success" | "failure" | "true" | "false" | "replay";
 
 export type StepExecutionResult = {
   outcome: StepOutcome;
@@ -78,18 +90,29 @@ async function recordStepFailure(params: {
   startedAt: number;
   errorKind: string;
   errorMessage: string;
+  executionClaimGeneration?: string;
 }): Promise<StepExecutionResult> {
   const finishedAt = new Date();
   const durationMs = nowMs() - params.startedAt;
 
-  await updateAgentLoopStepRun({
+  const updated = await updateAgentLoopStepRun({
     stepRunId: params.stepRunId,
     status: "failed",
     errorKind: params.errorKind,
     errorMessage: params.errorMessage,
     finishedAt,
     durationMs,
+    ...(params.executionClaimGeneration
+      ? {
+          expectedStatuses: ["running" as const],
+          expectedWorkflowRunId: params.workflowRunId,
+          expectedExecutionClaimGeneration: params.executionClaimGeneration,
+        }
+      : {}),
   });
+  if (updated === null) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
 
   await recordAgentLoopEvent({
     loopRunId: params.loopRunId,
@@ -122,7 +145,7 @@ async function recordStepFailure(params: {
  * Implements the github_check, condition, end, start, and agent_step (stub) arms.
  * Does NOT evaluate edges or dispatch the next step (that is M1-06 chain.ts).
  */
-export async function executeAgentLoopStep(params: {
+export type ExecuteAgentLoopStepParams = {
   stepRunId: string;
   workflowRunId: string;
   /**
@@ -137,7 +160,28 @@ export async function executeAgentLoopStep(params: {
    * Forwarded to executeAgentStep; ignored by other node kinds.
    */
   maxAgentTurnsPerStep?: number;
-}): Promise<StepExecutionResult> {
+};
+
+const activeStepDeliveries = new Set<string>();
+
+export async function executeAgentLoopStep(
+  params: ExecuteAgentLoopStepParams,
+): Promise<StepExecutionResult> {
+  const deliveryKey = `${params.stepRunId}:${params.workflowRunId}`;
+  if (activeStepDeliveries.has(deliveryKey)) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
+  activeStepDeliveries.add(deliveryKey);
+  try {
+    return await executeAgentLoopStepDelivery(params);
+  } finally {
+    activeStepDeliveries.delete(deliveryKey);
+  }
+}
+
+async function executeAgentLoopStepDelivery(
+  params: ExecuteAgentLoopStepParams,
+): Promise<StepExecutionResult> {
   const { stepRunId, workflowRunId, stepTimeoutMs, maxAgentTurnsPerStep } =
     params;
   const startedAt = nowMs();
@@ -169,6 +213,16 @@ export async function executeAgentLoopStep(params: {
 
   const { stepRun, loopRun, loop } = ctx;
   const loopRunId = loopRun.id;
+
+  // Durable workflow delivery is at-least-once. A terminal step already owns
+  // its evidence and side effects, so a duplicate delivery is a strict no-op.
+  if (["succeeded", "failed", "skipped"].includes(stepRun.status)) {
+    return {
+      outcome: "replay",
+      ...(stepRun.errorKind ? { errorKind: stepRun.errorKind } : {}),
+      ...(stepRun.errorMessage ? { errorMessage: stepRun.errorMessage } : {}),
+    };
+  }
 
   // ── 2. Parse definitionSnapshot ────────────────────────────────────────────
 
@@ -247,12 +301,42 @@ export async function executeAgentLoopStep(params: {
   // ── 4. Mark step running + emit step.started ────────────────────────────────
 
   const startedDate = new Date();
-  await updateAgentLoopStepRun({
-    stepRunId,
-    status: "running",
-    workflowRunId,
-    startedAt: startedDate,
-  });
+  if (stepRun.status === "queued") {
+    const claimed = await updateAgentLoopStepRun({
+      stepRunId,
+      status: "running",
+      workflowRunId,
+      startedAt: startedDate,
+      expectedStatuses: ["queued"],
+    });
+    if (!claimed) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
+  } else if (
+    stepRun.status === "running" &&
+    stepRun.workflowRunId !== workflowRunId
+  ) {
+    return { outcome: "failure", errorKind: "step_ownership_lost" };
+  }
+
+  // A workflow correlation identifies the durable delivery, while this
+  // generation identifies the one process allowed to perform its external
+  // side effects. The absent-generation CAS survives worker boundaries and
+  // deliberately remains on the step attempt after the local lease releases.
+  let executionClaimGeneration: string | undefined;
+  if (node.kind === "agent_step") {
+    executionClaimGeneration = crypto.randomUUID();
+    const claimedExecution = await updateAgentLoopStepRun({
+      stepRunId,
+      expectedStatuses: ["running"],
+      expectedWorkflowRunId: workflowRunId,
+      expectedExecutionClaimGeneration: null,
+      executionClaimGeneration,
+    });
+    if (!claimedExecution) {
+      return { outcome: "failure", errorKind: "step_ownership_lost" };
+    }
+  }
 
   await recordAgentLoopEvent({
     loopRunId,
@@ -282,6 +366,7 @@ export async function executeAgentLoopStep(params: {
     attempt: stepRun.attempt,
     workflowRunId,
     startedAt,
+    ...(executionClaimGeneration ? { executionClaimGeneration } : {}),
   };
 
   // ── 5. Dispatch by node kind ────────────────────────────────────────────────
@@ -293,12 +378,137 @@ export async function executeAgentLoopStep(params: {
     // checkCommand, commit/push, disposal, and events internally.
     // On failure it records the step update + event and returns a typed result.
     // On success it records the step update + context merge + completion event.
-    // Extract watchdog hint from stepInput (set by retryCurrentStepForWatchdog)
-    const stepInputRaw = (stepRun.stepInput ?? {}) as Record<string, unknown>;
-    const watchdogHint =
-      typeof stepInputRaw["watchdogHint"] === "string"
-        ? stepInputRaw["watchdogHint"]
-        : undefined;
+    const resolvedDefinition =
+      ctx.resolvedDefinition ??
+      resolveAgentLoopExecutionDefinition(
+        loopRun,
+        loop as unknown as AgentLoop,
+      );
+    const liveSource =
+      ctx.liveSource ??
+      projectAgentLoopLiveSource(loop as unknown as AgentLoop, stepRun.nodeId);
+
+    const rejectNormalizedInput = async (
+      error: unknown,
+    ): Promise<StepExecutionResult> => {
+      const normalizedError =
+        error instanceof NormalizedUnattendedInputError ? error : null;
+      const errorKind =
+        normalizedError?.errorKind ?? "normalized_input_invalid";
+      await recordAgentLoopEvent({
+        loopRunId,
+        stepRunId,
+        nodeId: stepRun.nodeId,
+        eventName: "agent-loop.step.normalized-input.rejected",
+        status: "failed",
+        level: "error",
+        summary: "Normalized loop step input was rejected.",
+        payload: {
+          runId: loopRunId,
+          stepRunId,
+          nodeId: stepRun.nodeId,
+          errorKind,
+          safeFieldPaths:
+            normalizedError?.issues.map((issue) =>
+              issue.path.map(String).join("."),
+            ) ?? [],
+          workflowRunId,
+        },
+        requestId: loopRun.requestId,
+        workflowRunId,
+      });
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind,
+        errorMessage: "Normalized loop step input was rejected.",
+      });
+    };
+
+    // If accepted Run context already determines the checkout, validate every
+    // dynamic value before making even a read-only credentialed GitHub lookup.
+    // The live default branch is only required when no context branch exists.
+    const repository = resolvedDefinition.definition.repository;
+    try {
+      validateAgentLoopNormalizedStepDynamicInput({ loopRun, stepRun });
+    } catch (error) {
+      return rejectNormalizedInput(error);
+    }
+    const contextCheckout = resolveWorkingBranchIntent(
+      loopRun.context ?? {},
+      stepRun.nodeId,
+      "",
+    );
+    let normalizedInput:
+      | ReturnType<typeof buildAgentLoopNormalizedStepInput>
+      | undefined;
+    if (contextCheckout.ref) {
+      try {
+        normalizedInput = buildAgentLoopNormalizedStepInput({
+          resolvedDefinition,
+          loopRun,
+          stepRun,
+          workflowRunId,
+          defaultBranch: null,
+        });
+      } catch (error) {
+        return rejectNormalizedInput(error);
+      }
+    }
+
+    const checkoutAccess = await verifyRepoAccess({
+      userId: loopRun.userId,
+      owner: repository.owner,
+      repo: repository.name,
+      requiredUserPermission: "write",
+    });
+    if (!checkoutAccess.ok) {
+      return recordStepFailure({
+        ...failureCtx,
+        errorKind:
+          checkoutAccess.reason === "no_installation"
+            ? "installation_missing"
+            : "permission_missing",
+        errorMessage: `Repo access denied: ${checkoutAccess.reason}`,
+      });
+    }
+
+    if (!normalizedInput) {
+      try {
+        normalizedInput = buildAgentLoopNormalizedStepInput({
+          resolvedDefinition,
+          loopRun,
+          stepRun,
+          workflowRunId,
+          defaultBranch: checkoutAccess.defaultBranch,
+        });
+      } catch (error) {
+        return rejectNormalizedInput(error);
+      }
+    }
+
+    await recordAgentLoopEvent({
+      loopRunId,
+      stepRunId,
+      nodeId: normalizedInput.identity.nodeId,
+      eventName: "agent-loop.step.normalized-input.accepted",
+      status: "succeeded",
+      level: "info",
+      summary: "Accepted normalized loop step input.",
+      payload: {
+        runId: normalizedInput.identity.runId,
+        stepRunId: normalizedInput.identity.stepRunId,
+        nodeId: normalizedInput.identity.nodeId,
+        attempt: normalizedInput.identity.attempt,
+        inputVersion: normalizedInput.version,
+        definitionVersion: normalizedInput.provenance.definitionVersion,
+        definitionHash: normalizedInput.provenance.definitionHash,
+        snapshotSource: normalizedInput.provenance.snapshotSource,
+        workflowRunId: normalizedInput.identity.workflowRunId,
+        workspacePolicy: normalizedInput.workspace.policy,
+      },
+      requestId: normalizedInput.identity.requestId,
+      workflowRunId,
+    });
 
     return executeAgentStep({
       stepRunId,
@@ -306,11 +516,13 @@ export async function executeAgentLoopStep(params: {
       loopRunId,
       node,
       loopRun,
-      loop,
+      loop: loop as AgentLoopExecutionPolicy,
       startedAt,
-      watchdogHint,
+      normalizedInput,
+      liveSource,
       stepTimeoutMs,
       maxAgentTurnsPerStep,
+      executionClaimGeneration,
     });
   }
 

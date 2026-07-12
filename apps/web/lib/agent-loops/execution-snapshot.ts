@@ -439,6 +439,7 @@ export function toAgentLoopExecutionPolicy(
   liveLoop: AgentLoop | null,
 ): {
   loop: AgentLoopExecutionPolicy;
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
   snapshotSource: "frozen" | "legacy_live_fallback";
   definitionVersion: number | null;
   definitionHash: string | null;
@@ -463,6 +464,7 @@ export function toAgentLoopExecutionPolicy(
         WATCHDOG_RETRY_BUDGET_CEILING,
       ),
     },
+    resolvedDefinition: resolved,
     snapshotSource: resolved.snapshotSource,
     definitionVersion: resolved.definitionVersion,
     definitionHash: resolved.definitionHash,

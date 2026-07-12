@@ -23,6 +23,11 @@ import type {
   AgentLoopRun,
   AgentLoopStepRun,
 } from "@/lib/db/schema";
+import {
+  buildAgentLoopExecutionSnapshot,
+  hashAgentLoopExecutionSnapshot,
+} from "./execution-snapshot";
+import * as normalizedRuntime from "@/lib/unattended-runtime/normalized-step-input";
 
 mock.module("server-only", () => ({}));
 
@@ -68,6 +73,7 @@ let recordedContextUpdates: {
   runId: string;
   context: Record<string, unknown>;
 }[] = [];
+let boundaryOrder: string[] = [];
 
 // ── Store mocks ───────────────────────────────────────────────────────────────
 
@@ -154,7 +160,10 @@ const verifyRepoAccessMock = mock(async () => verifyRepoAccessResult);
 let mintInstallationTokenResult: { token: string } = {
   token: "ghs_test_token",
 };
-const mintInstallationTokenMock = mock(async () => mintInstallationTokenResult);
+const mintInstallationTokenMock = mock(async () => {
+  boundaryOrder.push("token.mint");
+  return mintInstallationTokenResult;
+});
 const revokeInstallationTokenMock = mock(async () => undefined);
 
 mock.module("@/lib/github/access", () => ({
@@ -232,6 +241,29 @@ mock.module("@/lib/sandbox/config", () => ({
   DEFAULT_SANDBOX_PORTS: [3000],
   DEFAULT_SANDBOX_TIMEOUT_MS: 300_000,
   DEFAULT_SANDBOX_VCPUS: 2,
+}));
+
+type LoopBuilderInput = Parameters<
+  typeof normalizedRuntime.buildNormalizedLoopStepInput
+>[0];
+type LoopNormalizedInput = ReturnType<
+  typeof normalizedRuntime.buildNormalizedLoopStepInput
+>;
+const realBuildNormalizedLoopStepInput =
+  normalizedRuntime.buildNormalizedLoopStepInput;
+let normalizedLoopBuilderImpl = (input: LoopBuilderInput) =>
+  realBuildNormalizedLoopStepInput(input);
+const normalizedLoopOutputs: LoopNormalizedInput[] = [];
+const buildNormalizedLoopStepInputMock = mock((input: LoopBuilderInput) => {
+  boundaryOrder.push("normalized.build");
+  const output = normalizedLoopBuilderImpl(input);
+  normalizedLoopOutputs.push(output);
+  return output;
+});
+
+mock.module("@/lib/unattended-runtime/normalized-step-input", () => ({
+  ...normalizedRuntime,
+  buildNormalizedLoopStepInput: buildNormalizedLoopStepInputMock,
 }));
 
 // ── GitHub API client mock ────────────────────────────────────────────────────
@@ -400,6 +432,7 @@ function resetMocks() {
   recordedStepUpdates = [];
   recordedRunUpdates = [];
   recordedContextUpdates = [];
+  boundaryOrder = [];
   terminalTransitionWins = true;
   conditionallyTransitionRunStatusMock.mockClear();
   githubApiCallCount = 0;
@@ -429,6 +462,10 @@ function resetMocks() {
   verifyRepoAccessMock.mockClear();
   mintInstallationTokenMock.mockClear();
   revokeInstallationTokenMock.mockClear();
+  normalizedLoopBuilderImpl = (input) =>
+    realBuildNormalizedLoopStepInput(input);
+  normalizedLoopOutputs.length = 0;
+  buildNormalizedLoopStepInputMock.mockClear();
   issuesMock.listForRepo.mockClear();
   pullsMock.get.mockClear();
   reposMock.listDeployments.mockClear();
@@ -1417,6 +1454,226 @@ describe("agent_step node", () => {
     expect(result.errorKind).not.toBe("not_implemented");
     // Verify it attempted to connect a sandbox (reached executeAgentStep)
     expect(verifyRepoAccessMock.mock.calls.length).toBeGreaterThan(0);
+  });
+});
+
+describe("normalized loop agent_step boundary (#968)", () => {
+  function configureFrozenAgentStep(
+    options: {
+      attempt?: number;
+      context?: Record<string, unknown>;
+      watchdogHint?: string;
+    } = {},
+  ) {
+    resetMocks();
+    const node = {
+      id: "normalized-agent-node",
+      kind: "agent_step" as const,
+      label: "Frozen normalized node",
+      position: { x: 0, y: 0 },
+      instructions: "FROZEN-NORMALIZED-INSTRUCTIONS",
+      outputSchema: { required: ["result"] },
+      checkCommand: "bun test frozen-normalized-check",
+      permissions: { github: { issues: "write" as const } },
+      composioToolkitSlugs: ["linear"],
+      builtinToolNames: ["bash"],
+    };
+    const acceptedLoop = makeLoop({
+      name: "Frozen loop",
+      repoOwner: "frozen-owner",
+      repoName: "frozen-repo",
+      definition: { nodes: [node], edges: [] },
+      guardrails: {
+        stepTimeoutMs: 321_000,
+        maxAgentTurnsPerStep: 7,
+      },
+      permissions: { github: { contents: "write" } },
+    });
+    const snapshot = buildAgentLoopExecutionSnapshot(acceptedLoop);
+    currentStepRun = makeStepRun({
+      id: "step-normalized-1",
+      nodeId: node.id,
+      nodeKind: "agent_step",
+      attempt: options.attempt ?? 1,
+      status: "queued",
+      stepInput: options.watchdogHint
+        ? { watchdogHint: options.watchdogHint }
+        : null,
+    });
+    currentLoopRun = makeLoopRun({
+      id: "loop-run-normalized-1",
+      loopId: acceptedLoop.id,
+      definitionSnapshot: snapshot.definition,
+      executionSnapshot: snapshot,
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+      context: options.context ?? {
+        trigger: { eventKind: "github.issue", issueNumber: 42 },
+      },
+      requestId: "request-normalized-1",
+      workflowRunId: "workflow-original",
+    });
+    currentLoop = makeLoop({
+      id: acceptedLoop.id,
+      userId: acceptedLoop.userId,
+      name: "Live edited loop",
+      repoOwner: "live-edited-owner",
+      repoName: "live-edited-repo",
+      definition: {
+        nodes: [
+          {
+            ...node,
+            instructions: "LIVE-EDITED-INSTRUCTIONS",
+            builtinToolNames: ["write"],
+          },
+        ],
+        edges: [],
+      },
+      guardrails: { stepTimeoutMs: 1, maxAgentTurnsPerStep: 1 },
+      permissions: { github: { issues: "read" } },
+    });
+    return { node, snapshot };
+  }
+
+  test("builds one strict normalized input from the resolved snapshot before token or sandbox work", async () => {
+    const { node } = configureFrozenAgentStep();
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-1",
+      stepTimeoutMs: 321_000,
+      maxAgentTurnsPerStep: 7,
+    });
+
+    expect(buildNormalizedLoopStepInputMock).toHaveBeenCalledTimes(1);
+    expect(boundaryOrder[0]).toBe("normalized.build");
+    expect(boundaryOrder).toContain("token.mint");
+    expect(buildNormalizedLoopStepInputMock.mock.calls[0]?.[0]).toMatchObject({
+      resolvedDefinition: {
+        snapshotSource: "frozen",
+        definitionVersion: 1,
+        definitionHash: currentLoopRun.definitionHash,
+      },
+      identity: {
+        runId: currentLoopRun.id,
+        stepRunId: currentStepRun.id,
+        nodeId: node.id,
+        attempt: 1,
+        userId: currentLoopRun.userId,
+        requestId: currentLoopRun.requestId,
+        workflowRunId: "workflow-normalized-1",
+      },
+      promptContext: currentLoopRun.context,
+      workspace: {
+        sandboxName: `agent_loop_${currentStepRun.id}`,
+        initialCheckout: {
+          ref: "main",
+          source: "live_default_branch",
+        },
+      },
+    });
+    expect(recordedEvents).toContainEqual(
+      expect.objectContaining({
+        eventName: "agent-loop.step.normalized-input.accepted",
+        status: "succeeded",
+        level: "info",
+        payload: {
+          runId: currentLoopRun.id,
+          stepRunId: currentStepRun.id,
+          nodeId: node.id,
+          attempt: 1,
+          inputVersion: 1,
+          definitionVersion: 1,
+          definitionHash: currentLoopRun.definitionHash,
+          snapshotSource: "frozen",
+          workflowRunId: "workflow-normalized-1",
+          workspacePolicy: "disposable_step",
+        },
+      }),
+    );
+  });
+
+  test("rejects unsafe context and oversized watchdog hints before token minting", async () => {
+    configureFrozenAgentStep({
+      context: { trigger: { token: "PRIVATE-CONTEXT-TOKEN-CANARY" } },
+      watchdogHint: "x".repeat(4097),
+    });
+    const { executeAgentLoopStep } = await executorPromise;
+
+    const result = await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-rejected",
+    });
+
+    expect(result).toMatchObject({
+      outcome: "failure",
+      errorKind: "normalized_input_invalid",
+    });
+    expect(mintInstallationTokenMock).not.toHaveBeenCalled();
+    expect(
+      recordedEvents.find(
+        (event) =>
+          event.eventName === "agent-loop.step.normalized-input.rejected",
+      ),
+    ).toMatchObject({
+      status: "failed",
+      level: "error",
+      payload: {
+        runId: currentLoopRun.id,
+        stepRunId: currentStepRun.id,
+        nodeId: currentStepRun.nodeId,
+        errorKind: "normalized_input_invalid",
+        safeFieldPaths: expect.any(Array),
+        workflowRunId: "workflow-normalized-rejected",
+      },
+    });
+    expect(JSON.stringify(recordedEvents)).not.toContain(
+      "PRIVATE-CONTEXT-TOKEN-CANARY",
+    );
+  });
+
+  test("retry attempts keep frozen provenance while receiving a new attempt identity", async () => {
+    configureFrozenAgentStep({
+      attempt: 2,
+      watchdogHint: "Bounded retry guidance",
+    });
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-normalized-retry",
+    });
+
+    const input = normalizedLoopOutputs[0];
+    expect(input).toMatchObject({
+      identity: {
+        stepRunId: currentStepRun.id,
+        attempt: 2,
+        workflowRunId: "workflow-normalized-retry",
+      },
+      provenance: {
+        snapshotSource: "frozen",
+        definitionVersion: 1,
+        definitionHash: currentLoopRun.definitionHash,
+      },
+      prompt: { watchdogHint: "Bounded retry guidance" },
+    });
+  });
+
+  test("terminal duplicate delivery produces no normalized rebuild, token, sandbox, or new events", async () => {
+    configureFrozenAgentStep();
+    currentStepRun = { ...currentStepRun, status: "succeeded" };
+    const { executeAgentLoopStep } = await executorPromise;
+
+    await executeAgentLoopStep({
+      stepRunId: currentStepRun.id,
+      workflowRunId: "workflow-duplicate",
+    });
+
+    expect(buildNormalizedLoopStepInputMock).not.toHaveBeenCalled();
+    expect(mintInstallationTokenMock).not.toHaveBeenCalled();
+    expect(recordedEvents).toEqual([]);
   });
 });
 

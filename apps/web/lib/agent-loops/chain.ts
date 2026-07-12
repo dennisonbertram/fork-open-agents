@@ -182,6 +182,15 @@ export async function runAgentLoopStep(
   const { loopRun, loop } = ctx;
   const loopRunId = loopRun.id;
 
+  // A delayed delivery for an older attempt must never route, retry, or invoke
+  // the watchdog after the Run pointer has advanced to a newer step.
+  if (
+    loopRun.currentStepRunId !== null &&
+    loopRun.currentStepRunId !== stepRunId
+  ) {
+    return;
+  }
+
   if (ctx.snapshotSource) {
     const legacy = ctx.snapshotSource === "legacy_live_fallback";
     await recordAgentLoopEvent({
@@ -382,6 +391,8 @@ export async function runAgentLoopStep(
     stepTimeoutMs: guardrails.stepTimeoutMs,
     maxAgentTurnsPerStep: guardrails.maxAgentTurnsPerStep,
   });
+
+  if (result.outcome === "replay") return;
 
   // ── 5b. Re-check run status after execution ────────────────────────────────
   //

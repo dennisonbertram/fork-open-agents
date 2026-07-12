@@ -1060,6 +1060,63 @@ describe("retryCurrentStep — TOCTOU race protection", () => {
   });
 });
 
+describe("retryCurrentStepForWatchdog — execution claim isolation", () => {
+  beforeEach(resetMocks);
+
+  test("retry strips the prior claim, preserves durable input, and accepts a new generation", async () => {
+    const run = makeLoopRun({
+      status: "running",
+      currentNodeId: "work",
+      currentStepRunId: "step-old",
+      workflowRunId: "workflow-1",
+    });
+    const failedStep = makeStepRun({
+      id: "step-old",
+      loopRunId: "run-1",
+      nodeId: "work",
+      nodeKind: "agent_step",
+      attempt: 1,
+      status: "failed",
+      workflowRunId: "workflow-1",
+      stepInput: {
+        executionClaimGeneration: "generation-old",
+        watchdogHint: "Earlier guidance",
+        userInput: { issueNumber: 42 },
+      },
+    });
+
+    txSelectResultsQueue = [[run], [{ maxAttempt: 1 }]];
+    txFindFirstMock.mockResolvedValue(failedStep);
+    txUpdateReturningOverride = [
+      { ...run, status: "running", currentStepRunId: "step-new" },
+    ];
+
+    const store = await storePromise;
+    const retry = await store.retryCurrentStepForWatchdog({
+      runId: run.id,
+      expectedStepRunId: failedStep.id,
+      hint: "Try the smaller repair",
+    });
+
+    expect(retry.stepInput).toEqual({
+      watchdogHint: "Try the smaller repair",
+      userInput: { issueNumber: 42 },
+    });
+    expect(
+      (retry.stepInput as Record<string, unknown>)["executionClaimGeneration"],
+    ).toBeUndefined();
+
+    const claimed = await store.updateAgentLoopStepRun({
+      stepRunId: retry.id,
+      expectedStatuses: ["queued"],
+      expectedExecutionClaimGeneration: null,
+      executionClaimGeneration: "generation-new",
+    });
+    expect(claimed).not.toBeNull();
+    expect("generation-new").not.toBe("generation-old");
+  });
+});
+
 // ── Migration SQL inspection ────────────────────────────────────────────────
 // Verifies that the generated + hand-edited migration SQL is idempotent and
 // contains the required check constraint.  Uses file system inspection rather

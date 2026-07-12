@@ -40,7 +40,12 @@ import {
   hashAgentLoopExecutionSnapshot,
   toAgentLoopExecutionPolicy,
   type AgentLoopExecutionPolicy,
+  type ResolvedAgentLoopExecutionDefinition,
 } from "./execution-snapshot";
+import {
+  projectAgentLoopLiveSource,
+  type AgentLoopLiveSourceProjection,
+} from "./normalized-step-input";
 import { toPublicAgentLoopRun, type PublicAgentLoopRun } from "./public-run";
 
 // ── Public types ───────────────────────────────────────────────────────────────
@@ -132,11 +137,18 @@ export type UpdateAgentLoopStepRunInput = {
   stepOutput?: Record<string, unknown> | null;
   sandboxName?: string | null;
   workflowRunId?: string | null;
+  executionClaimGeneration?: string | null;
   errorKind?: string | null;
   errorMessage?: string | null;
   startedAt?: Date | null;
   finishedAt?: Date | null;
   durationMs?: number | null;
+  /** Optional compare-and-set guard used when claiming queued work. */
+  expectedStatuses?: AgentLoopStepRun["status"][];
+  /** Optional workflow-owner compare-and-set guard for running work. */
+  expectedWorkflowRunId?: string;
+  /** Optional durable execution-generation compare-and-set guard. */
+  expectedExecutionClaimGeneration?: string | null;
 };
 
 export type RecordAgentLoopEventInput = {
@@ -869,6 +881,8 @@ export type AgentLoopStepRunWithContext = {
   stepRun: AgentLoopStepRun;
   loopRun: AgentLoopRun;
   loop: AgentLoopExecutionPolicy;
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
+  liveSource: AgentLoopLiveSourceProjection | null;
   snapshotSource: "frozen" | "legacy_live_fallback";
   definitionVersion: number | null;
   definitionHash: string | null;
@@ -877,16 +891,15 @@ export type AgentLoopStepRunWithContext = {
 export type AgentLoopRunExecutionContext = {
   loopRun: AgentLoopRun;
   loop: AgentLoopExecutionPolicy;
+  resolvedDefinition: ResolvedAgentLoopExecutionDefinition;
   snapshotSource: "frozen" | "legacy_live_fallback";
   definitionVersion: number | null;
   definitionHash: string | null;
 };
 
-export async function getAgentLoopRunExecutionContext(
-  runId: string,
-): Promise<AgentLoopRunExecutionContext | null> {
-  const row = await getAgentLoopRunWithLoop(runId);
-  if (!row) return null;
+function resolveAgentLoopRunExecutionContext(
+  row: AgentLoopRunWithLoop,
+): AgentLoopRunExecutionContext {
   try {
     const policy = toAgentLoopExecutionPolicy(row.run, row.loop);
     if (!isAgentLoopsEnabled()) {
@@ -917,6 +930,14 @@ export async function getAgentLoopRunExecutionContext(
   }
 }
 
+export async function getAgentLoopRunExecutionContext(
+  runId: string,
+): Promise<AgentLoopRunExecutionContext | null> {
+  const row = await getAgentLoopRunWithLoop(runId);
+  if (!row) return null;
+  return resolveAgentLoopRunExecutionContext(row);
+}
+
 /**
  * Loads a step run together with its parent loop run and the loop definition
  * row. Used by the step executor to obtain all data it needs in one round trip.
@@ -932,11 +953,16 @@ export async function getAgentLoopStepRunWithContext(
     return null;
   }
 
-  const context = await getAgentLoopRunExecutionContext(stepRun.loopRunId);
-  if (!context) {
+  const row = await getAgentLoopRunWithLoop(stepRun.loopRunId);
+  if (!row) {
     return null;
   }
-  return { stepRun, ...context };
+  const context = resolveAgentLoopRunExecutionContext(row);
+  return {
+    stepRun,
+    ...context,
+    liveSource: projectAgentLoopLiveSource(row.loop, stepRun.nodeId),
+  };
 }
 
 export async function createAgentLoopStepRun(
@@ -1053,6 +1079,14 @@ export async function updateAgentLoopStepRun(
       ...(params.workflowRunId !== undefined
         ? { workflowRunId: params.workflowRunId }
         : {}),
+      ...(params.executionClaimGeneration !== undefined
+        ? {
+            stepInput:
+              params.executionClaimGeneration === null
+                ? sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) - 'executionClaimGeneration'`
+                : sql`coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) || jsonb_build_object('executionClaimGeneration', ${params.executionClaimGeneration})`,
+          }
+        : {}),
       ...(params.errorKind !== undefined
         ? { errorKind: params.errorKind }
         : {}),
@@ -1072,6 +1106,21 @@ export async function updateAgentLoopStepRun(
     .where(
       and(
         eq(agentLoopStepRuns.id, params.stepRunId),
+        ...(params.expectedStatuses
+          ? [inArray(agentLoopStepRuns.status, params.expectedStatuses)]
+          : []),
+        ...(params.expectedWorkflowRunId !== undefined
+          ? [eq(agentLoopStepRuns.workflowRunId, params.expectedWorkflowRunId)]
+          : []),
+        ...(params.expectedExecutionClaimGeneration === null
+          ? [
+              sql`not (coalesce(${agentLoopStepRuns.stepInput}, '{}'::jsonb) ? 'executionClaimGeneration')`,
+            ]
+          : params.expectedExecutionClaimGeneration !== undefined
+            ? [
+                sql`${agentLoopStepRuns.stepInput} ->> 'executionClaimGeneration' = ${params.expectedExecutionClaimGeneration}`,
+              ]
+            : []),
         sql`exists (
           select 1 from ${agentLoopRuns}
           where ${agentLoopRuns.id} = ${agentLoopStepRuns.loopRunId}
@@ -1970,6 +2019,7 @@ export async function listWatchdogRunsForLoopRun(
  */
 export async function retryCurrentStepForWatchdog(params: {
   runId: string;
+  expectedStepRunId: string;
   hint?: string;
 }): Promise<AgentLoopStepRun> {
   return db.transaction(async (tx) => {
@@ -1991,6 +2041,11 @@ export async function retryCurrentStepForWatchdog(params: {
     if (!run.currentNodeId || !run.currentStepRunId) {
       throw new Error(
         `Watchdog retry: run ${params.runId} missing currentNodeId or currentStepRunId`,
+      );
+    }
+    if (run.currentStepRunId !== params.expectedStepRunId) {
+      throw new Error(
+        `Watchdog retry: current step changed for run ${params.runId} (TOCTOU race — rejected)`,
       );
     }
 
@@ -2032,14 +2087,19 @@ export async function retryCurrentStepForWatchdog(params: {
           : capped;
     }
 
-    // Build stepInput merging the hint
+    // A retry is a new step attempt and must acquire its own execution claim.
+    // Preserve durable caller input, but never copy attempt-local ownership or
+    // stale watchdog guidance into the new queued row.
     const baseStepInput = (currentStepRun.stepInput ?? {}) as Record<
       string,
       unknown
     >;
-    const stepInput: Record<string, unknown> = sanitizedHint
-      ? { ...baseStepInput, watchdogHint: sanitizedHint }
-      : { ...baseStepInput };
+    const stepInput = Object.fromEntries(
+      Object.entries(baseStepInput).filter(
+        ([key]) => key !== "executionClaimGeneration" && key !== "watchdogHint",
+      ),
+    );
+    if (sanitizedHint) stepInput["watchdogHint"] = sanitizedHint;
 
     const [newStepRun] = await tx
       .insert(agentLoopStepRuns)
@@ -2074,6 +2134,7 @@ export async function retryCurrentStepForWatchdog(params: {
           eq(agentLoopRuns.id, params.runId),
           inArray(agentLoopRuns.status, ["stalled", "running"]),
           eq(agentLoopRuns.currentStepRunId, observedStepRunId),
+          eq(agentLoopRuns.currentStepRunId, params.expectedStepRunId),
           isNotNull(agentLoopRuns.loopId),
         ),
       )

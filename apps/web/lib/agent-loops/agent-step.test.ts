@@ -60,6 +60,10 @@ import {
   hashAgentLoopExecutionSnapshot,
   toAgentLoopExecutionPolicy,
 } from "./execution-snapshot";
+import {
+  buildNormalizedLoopStepInput,
+  type NormalizedUnattendedStepInputV1,
+} from "@/lib/unattended-runtime/normalized-step-input";
 
 mock.module("server-only", () => ({}));
 
@@ -520,6 +524,64 @@ function makeLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
   };
 }
 
+function makeNormalizedLoopInput(
+  params: {
+    node?: ReturnType<typeof makeAgentStepNode>;
+    context?: Record<string, unknown>;
+    watchdogHint?: string | null;
+  } = {},
+): Extract<
+  NormalizedUnattendedStepInputV1,
+  { executionKind: "loop_agent_step" }
+> {
+  const node = params.node ?? makeAgentStepNode();
+  const acceptedLoop = makeLoop({
+    name: "Frozen normalized loop",
+    repoOwner: "frozen-owner",
+    repoName: "frozen-repo",
+    definition: { nodes: [node], edges: [] },
+    guardrails: {
+      stepTimeoutMs: 321_000,
+      maxAgentTurnsPerStep: 7,
+    },
+    permissions: { github: { contents: "write" } },
+  });
+  const snapshot = buildAgentLoopExecutionSnapshot(acceptedLoop);
+  return buildNormalizedLoopStepInput({
+    resolvedDefinition: {
+      definition: snapshot,
+      snapshotSource: "frozen",
+      definitionVersion: 1,
+      definitionHash: hashAgentLoopExecutionSnapshot(snapshot),
+    },
+    identity: {
+      runId: "loop-run-1",
+      userId: "user-1",
+      stepRunId: "step-run-1",
+      nodeId: node.id,
+      attempt: 1,
+      requestId: "request-normalized-agent-step",
+      workflowRunId: "wf-run-1",
+    },
+    repositoryIntent: {
+      branch: "frozen-branch",
+      defaultBranch: "main",
+    },
+    promptContext: params.context ?? {
+      trigger: { eventKind: "github.issue", issueNumber: 42 },
+      prior: { result: "FROZEN-CONTEXT-CANARY" },
+    },
+    watchdogHint: params.watchdogHint ?? "FROZEN-WATCHDOG-HINT",
+    workspace: {
+      sandboxName: "agent_loop_step-run-1",
+      initialCheckout: {
+        ref: "frozen-branch",
+        source: "context_branch",
+      },
+    },
+  });
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 function resetMocks() {
@@ -795,6 +857,165 @@ describe("frozen repository and permission intent", () => {
         issues: "write",
       }),
     });
+  });
+});
+
+describe("normalized loop behavior consumption (#968)", () => {
+  beforeEach(() => {
+    resetMocks();
+    currentStepRun = makeStepRun();
+    currentLoopRun = makeLoopRun({
+      context: {
+        trigger: { eventKind: "live.edited" },
+        private: "LIVE-MUTABLE-CONTEXT-CANARY",
+      },
+      requestId: "request-normalized-agent-step",
+    });
+    currentLoop = makeLoop();
+  });
+
+  test("uses normalized frozen prompt, repo, tools, permissions, check, output, budgets, and disposable workspace", async () => {
+    const frozenNode = makeAgentStepNode({
+      instructions: "FROZEN-NORMALIZED-INSTRUCTIONS",
+      outputSchema: { required: ["result"] },
+      checkCommand: "bun test frozen-normalized-check",
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash"],
+      composioToolkitSlugs: ["linear"],
+    });
+    const normalizedInput = makeNormalizedLoopInput({ node: frozenNode });
+    const liveNode = makeAgentStepNode({
+      instructions: "LIVE-EDITED-INSTRUCTIONS",
+      outputSchema: { required: ["liveRequired"] },
+      checkCommand: "bun test live-edited-check",
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash", "write"],
+      composioToolkitSlugs: ["linear", "slack"],
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    currentLoop = makeLoop({
+      repoOwner: "live-edited-owner",
+      repoName: "live-edited-repo",
+      definition: { nodes: [liveNode], edges: [] },
+      permissions: { github: { issues: "write" } },
+    });
+    sandboxReadFileResult = JSON.stringify({
+      result: "done",
+      branch: "frozen-branch",
+    });
+    resolveComposioToolsForBgRunMock.mockImplementation(async () => ({
+      status: "ready",
+      tools: {},
+      toolkitSlugs: ["linear"],
+      disconnectedToolkits: [],
+    }));
+    const callParams = {
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: liveNode,
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      normalizedInput,
+    };
+
+    const result = await executeAgentStep(callParams);
+
+    expect(result.outcome).toBe("success");
+    expect(verifyRepoAccessMock.mock.calls[0]?.[0]).toMatchObject({
+      owner: "frozen-owner",
+      repo: "frozen-repo",
+    });
+    expect(mintInstallationTokenMock.mock.calls[0]?.[0]).toMatchObject({
+      permissions: expect.objectContaining({
+        contents: "write",
+        issues: "write",
+      }),
+    });
+    expect(resolveComposioToolsForBgRunMock.mock.calls[0]?.[0]).toMatchObject({
+      slugs: ["linear"],
+      repoOwner: "frozen-owner",
+      repoName: "frozen-repo",
+    });
+    const generateCall = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      messages?: unknown;
+      options?: {
+        allowedBuiltinToolNames?: string[];
+      };
+      timeout?: { totalMs?: number };
+    };
+    const serializedPrompt = JSON.stringify(generateCall.messages);
+    expect(serializedPrompt).toContain("FROZEN-NORMALIZED-INSTRUCTIONS");
+    expect(serializedPrompt).toContain("FROZEN-CONTEXT-CANARY");
+    expect(serializedPrompt).toContain("FROZEN-WATCHDOG-HINT");
+    expect(serializedPrompt).not.toContain("LIVE-EDITED-INSTRUCTIONS");
+    expect(serializedPrompt).not.toContain("LIVE-MUTABLE-CONTEXT-CANARY");
+    expect(generateCall.options?.allowedBuiltinToolNames).toEqual(["bash"]);
+    expect(generateCall.timeout?.totalMs).toBeLessThanOrEqual(321_000);
+    expect(sandboxMock.exec).toHaveBeenCalledWith(
+      "bun test frozen-normalized-check",
+      sandboxMock.workingDirectory,
+      expect.any(Number),
+    );
+    const sandboxConfig = connectSandboxMock.mock.calls[0]?.[0] as {
+      state?: { sandboxName?: string; source?: { branch?: string } };
+      options?: { persistent?: boolean; resume?: boolean };
+    };
+    expect(sandboxConfig).toMatchObject({
+      state: {
+        sandboxName: "agent_loop_step-run-1",
+        source: { branch: "frozen-branch" },
+      },
+      options: { persistent: false, resume: false },
+    });
+    expect(sandboxMock.stop).toHaveBeenCalledTimes(1);
+    expect(revokeInstallationTokenMock).toHaveBeenCalled();
+  });
+
+  test("live permission and tool removal narrows normalized frozen intent without granting later expansion", async () => {
+    const frozenNode = makeAgentStepNode({
+      permissions: { github: { issues: "write" } },
+      builtinToolNames: ["bash"],
+      composioToolkitSlugs: ["linear"],
+    });
+    const normalizedInput = makeNormalizedLoopInput({ node: frozenNode });
+    const liveNode = makeAgentStepNode({
+      permissions: { github: { issues: "read" } },
+      builtinToolNames: [],
+      composioToolkitSlugs: [],
+    }) as Parameters<typeof executeAgentStep>[0]["node"];
+    currentLoop = makeLoop({
+      definition: { nodes: [liveNode], edges: [] },
+      permissions: { github: { issues: "read" } },
+    });
+
+    const callParams = {
+      stepRunId: "step-run-1",
+      workflowRunId: "wf-run-1",
+      loopRunId: "loop-run-1",
+      node: liveNode,
+      loopRun: currentLoopRun,
+      loop: currentLoop,
+      startedAt: Date.now(),
+      normalizedInput,
+    };
+
+    await executeAgentStep(callParams);
+
+    const tokenPermissions = (
+      (mintInstallationTokenMock.mock.calls[0]?.[0] ?? {}) as {
+        permissions?: Record<string, string>;
+      }
+    ).permissions;
+    expect(tokenPermissions).toMatchObject({
+      contents: "write",
+      issues: "read",
+    });
+    expect(resolveComposioToolsForBgRunMock).not.toHaveBeenCalled();
+    const generateCall = openAgentGenerateMock.mock.calls[0]?.[0] as {
+      options?: { allowedBuiltinToolNames?: string[] };
+    };
+    expect(generateCall.options?.allowedBuiltinToolNames).toEqual([]);
   });
 });
 
