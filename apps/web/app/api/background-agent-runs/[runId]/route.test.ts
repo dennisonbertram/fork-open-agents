@@ -266,4 +266,33 @@ describe("GET /api/background-agent-runs/[runId]", () => {
     // resultSummary should be null or undefined (not a non-null wrong value)
     expect(body.run.resultSummary ?? null).toBeNull();
   });
+
+  test("never serializes the private execution snapshot in detail responses", async () => {
+    if (runRow) {
+      runRow.run = {
+        ...(runRow.run as Record<string, unknown>),
+        executionSnapshot: {
+          snapshotVersion: 1,
+          instructions: "instructions-canary-secret",
+        },
+        definitionVersion: 1,
+        definitionHash: "b".repeat(64),
+      };
+    }
+    const { GET } = await routeModulePromise;
+
+    const response = await GET(
+      new Request("http://localhost/api/background-agent-runs/run-1"),
+      context(),
+    );
+    const body = await response.json();
+
+    expect(JSON.stringify(body)).not.toContain("executionSnapshot");
+    expect(JSON.stringify(body)).not.toContain("instructions-canary-secret");
+    expect(body.run).toMatchObject({
+      definitionVersion: 1,
+      definitionHash: "b".repeat(64),
+      snapshotSource: "frozen",
+    });
+  });
 });
